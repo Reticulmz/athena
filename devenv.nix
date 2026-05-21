@@ -48,14 +48,31 @@ in
   };
 
   git-hooks.hooks = {
-    # built-in hooks
     ruff.enable = true;
     ruff-format.enable = true;
-    check-merge-conflict.enable = true;
-    end-of-file-fixer.enable = true;
-    trim-trailing-whitespace.enable = true;
-
-    # custom hooks
+    check-merge-conflict = {
+      enable = true;
+      entry = "${pkgs.python3Packages.pre-commit-hooks}/bin/check-merge-conflict";
+      types = [ "text" ];
+    };
+    trailing-whitespace = {
+      enable = true;
+      entry = "${pkgs.python3Packages.pre-commit-hooks}/bin/trailing-whitespace-fixer";
+      excludes = [ ".devenv/.*" ];
+      types = [ "text" ];
+    };
+    end-of-file-fixer = {
+      enable = true;
+      entry = "${pkgs.python3Packages.pre-commit-hooks}/bin/end-of-file-fixer";
+      excludes = [ ".devenv/.*" ];
+      types = [ "text" ];
+    };
+    gitleaks = {
+      enable = true;
+      name = "gitleaks";
+      entry = "${pkgs.gitleaks}/bin/gitleaks protect --staged --no-banner";
+      pass_filenames = false;
+    };
     basedpyright = {
       enable = true;
       name = "basedpyright";
