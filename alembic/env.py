@@ -14,6 +14,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from osu_server.infrastructure.database.base import Base
+from osu_server.repositories.sqlalchemy.models import *  # noqa: F403 — register models with Base.metadata
 
 # Alembic Config object
 config = context.config
