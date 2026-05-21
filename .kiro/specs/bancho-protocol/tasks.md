@@ -61,7 +61,7 @@
   - _Depends: 2.1, 2.2_
   - _Boundary: write_packet_
 
-- [ ] 3.4 (P) PacketDispatcher を実装する
+- [x] 3.4 (P) PacketDispatcher を実装する
   - デコレータで ClientPacketID にハンドラ関数を紐づけて登録する機能を実装する
   - 受信パケットの ClientPacketID に対応するハンドラを呼び出し、未登録 ID は無視する
   - 登録済み全ハンドラの一覧を取得する機能を実装する
