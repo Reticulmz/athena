@@ -105,7 +105,7 @@
   - _Depends: 3.4_
   - _Boundary: PacketDispatcher, DI Container_
 
-- [ ] 5.2 read_packets → PacketDispatcher の end-to-end フロー検証
+- [x] 5.2 read_packets → PacketDispatcher の end-to-end フロー検証
   - バイトストリームから read_packets で読み取り → dispatch で各ハンドラ呼び出しの統合テストを書く
   - ダミーハンドラを登録し正しい PacketID でのみ呼び出されることを検証する
   - ruff check, basedpyright, import-linter が全て通ること
