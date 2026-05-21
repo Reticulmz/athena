@@ -41,7 +41,7 @@
   - _Depends: 2.3_
   - _Boundary: Wire Types_
 
-- [ ] 3.2 (P) RawPacket struct と read_packets 関数を実装する
+- [x] 3.2 (P) RawPacket struct と read_packets 関数を実装する
   - ヘッダフィールドと可変長ペイロードを一体化したパケット struct を定義する
   - Caterpillar の Greedy 配列で HTTP body から全パケットを一括パースする関数を実装する
   - パース結果を ClientPacketID とペイロードバイト列の組に変換する

@@ -13,6 +13,7 @@ from osu_server.transports.bancho.protocol.header import (
     HEADER_SIZE,
     PacketHeader,
 )
+from osu_server.transports.bancho.protocol.reader import RawPacket, read_packets
 from osu_server.transports.bancho.protocol.types import (
     BanchoString,
     Channel,
@@ -32,6 +33,8 @@ __all__ = [
     "PacketError",
     "PacketHeader",
     "PacketReadError",
+    "RawPacket",
     "ServerPacketID",
     "StatusUpdate",
+    "read_packets",
 ]
