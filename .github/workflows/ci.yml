@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Create venv symlink for basedpyright
+        run: mkdir -p .devenv/state && ln -s $(pwd)/.venv .devenv/state/venv
+
+      - name: Lint (ruff check)
+        if: success() || failure()
+        run: uv run ruff check src/ tests/
+
+      - name: Format (ruff format)
+        if: success() || failure()
+        run: uv run ruff format --check src/ tests/
+
+      - name: Type check (basedpyright)
+        if: success() || failure()
+        run: uv run basedpyright src/
+
+      - name: Import lint (import-linter)
+        if: success() || failure()
+        run: uv run lint-imports
+
+      - name: Prune uv cache
+        if: always()
+        run: uv cache prune --ci
