@@ -33,7 +33,7 @@
   - _Boundary: BanchoString_
 
 - [ ] 3. ワイヤ型とパケット I/O
-- [ ] 3.1 Message, IntList, Channel, StatusUpdate を定義する
+- [x] 3.1 Message, IntList, Channel, StatusUpdate を定義する
   - 各型を Caterpillar struct として定義し BanchoString を文字列フィールドに使用する
   - IntList は長さプレフィックス付き動的配列として定義する
   - 各型の pack/unpack ラウンドトリップテストと既知バイト列照合テストが通ること

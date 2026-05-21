@@ -1,17 +1,29 @@
 # ruff: noqa: PLR2004
 # pyright: reportUnknownMemberType=false
-"""Tests for BanchoString custom FieldStruct.
+"""Tests for bancho wire types.
 
 Validates:
 - Req 3.1: BanchoString type (presence byte 0x00 = empty, 0x0b = ULEB128 length + UTF-8)
+- Req 3.2: Message type (sender, content, target BanchoStrings + sender_id int32)
+- Req 3.3: IntList type (uint16 count + int32[] dynamic array)
+- Req 3.4: Channel type (name, topic BanchoStrings + user_count int16)
+- Req 3.5: StatusUpdate type (status, status_text, beatmap_md5, mods, play_mode, beatmap_id)
 - Req 3.6: Bidirectional conversion (parse + build) for all wire types
 """
+
+import struct as pystruct
 
 from caterpillar.byteorder import LittleEndian
 from caterpillar.fields import uint8
 from caterpillar.model import pack, struct, unpack
 
-from osu_server.transports.bancho.protocol.types import BanchoString
+from osu_server.transports.bancho.protocol.types import (
+    BanchoString,
+    Channel,
+    IntList,
+    Message,
+    StatusUpdate,
+)
 
 
 class TestBanchoStringPackEmpty:
@@ -202,3 +214,235 @@ class TestBanchoStringInStruct:
         restored = unpack(MultiString, data)
         assert restored.first == "hello"
         assert restored.second == "world"
+
+
+# ── Message (Req 3.2, 3.6) ──────────────────────────────────────────
+
+
+class TestMessagePack:
+    """Req 3.2: Message has sender, content, target (BanchoString) + sender_id (int32)."""
+
+    def test_pack_known_message(self) -> None:
+        msg = Message(sender="user", content="hello", target="#osu", sender_id=1000)
+        data = pack(msg)
+        # sender_id should be last 4 bytes, little-endian
+        assert data[-4:] == pystruct.pack("<i", 1000)
+
+    def test_pack_has_three_bancho_strings(self) -> None:
+        msg = Message(sender="a", content="b", target="c", sender_id=0)
+        data = pack(msg)
+        # Each non-empty 1-char string: 0x0b 0x01 <char> = 3 bytes
+        # 3 strings * 3 bytes + 4 bytes sender_id = 13
+        assert len(data) == 13
+
+    def test_pack_empty_strings(self) -> None:
+        msg = Message(sender="", content="", target="", sender_id=-1)
+        data = pack(msg)
+        # 3 empty strings (0x00 each) + 4 bytes sender_id = 7
+        assert len(data) == 7
+
+
+class TestMessageUnpack:
+    """Req 3.2: Message unpacks from binary."""
+
+    def test_unpack_known_message(self) -> None:
+        msg = Message(sender="user", content="hello", target="#osu", sender_id=1000)
+        data = pack(msg)
+        restored = unpack(Message, data)
+        assert restored.sender == "user"
+        assert restored.content == "hello"
+        assert restored.target == "#osu"
+        assert restored.sender_id == 1000
+
+
+class TestMessageRoundTrip:
+    """Req 3.6: unpack(pack(msg)) == msg."""
+
+    def test_roundtrip_typical(self) -> None:
+        original = Message(sender="peppy", content="Welcome!", target="#announce", sender_id=2)
+        data = pack(original)
+        restored = unpack(Message, data)
+        assert restored.sender == original.sender
+        assert restored.content == original.content
+        assert restored.target == original.target
+        assert restored.sender_id == original.sender_id
+
+    def test_roundtrip_negative_sender_id(self) -> None:
+        original = Message(sender="sys", content="error", target="user1", sender_id=-1)
+        data = pack(original)
+        restored = unpack(Message, data)
+        assert restored.sender_id == -1
+
+    def test_roundtrip_multibyte(self) -> None:
+        original = Message(sender="ユーザー", content="こんにちは", target="#日本語", sender_id=42)
+        data = pack(original)
+        restored = unpack(Message, data)
+        assert restored.sender == original.sender
+        assert restored.content == original.content
+        assert restored.target == original.target
+
+
+# ── IntList (Req 3.3, 3.6) ──────────────────────────────────────────
+
+
+class TestIntListPack:
+    """Req 3.3: IntList has uint16 count + int32[] dynamic array."""
+
+    def test_pack_known_values(self) -> None:
+        il = IntList(count=3, values=[1, 2, 3])
+        data = pack(il)
+        # count (2 bytes) + 3 * int32 (12 bytes) = 14 bytes
+        assert len(data) == 14
+        assert data[:2] == pystruct.pack("<H", 3)
+
+    def test_pack_empty_list(self) -> None:
+        il = IntList(count=0, values=[])
+        data = pack(il)
+        # count only, 2 bytes
+        assert len(data) == 2
+        assert data == pystruct.pack("<H", 0)
+
+    def test_pack_values_are_little_endian_int32(self) -> None:
+        il = IntList(count=1, values=[0x01020304])
+        data = pack(il)
+        assert data[2:6] == pystruct.pack("<i", 0x01020304)
+
+
+class TestIntListUnpack:
+    """Req 3.3: IntList unpacks from binary."""
+
+    def test_unpack_known_values(self) -> None:
+        il = IntList(count=2, values=[100, 200])
+        data = pack(il)
+        restored = unpack(IntList, data)
+        assert restored.count == 2
+        assert list(restored.values) == [100, 200]
+
+
+class TestIntListRoundTrip:
+    """Req 3.6: unpack(pack(il)) == il."""
+
+    def test_roundtrip_typical(self) -> None:
+        original = IntList(count=4, values=[10, 20, 30, 40])
+        data = pack(original)
+        restored = unpack(IntList, data)
+        assert restored.count == 4
+        assert list(restored.values) == [10, 20, 30, 40]
+
+    def test_roundtrip_negative_values(self) -> None:
+        original = IntList(count=2, values=[-1, -100])
+        data = pack(original)
+        restored = unpack(IntList, data)
+        assert list(restored.values) == [-1, -100]
+
+    def test_roundtrip_empty(self) -> None:
+        original = IntList(count=0, values=[])
+        data = pack(original)
+        restored = unpack(IntList, data)
+        assert restored.count == 0
+        assert list(restored.values) == []
+
+
+# ── Channel (Req 3.4, 3.6) ──────────────────────────────────────────
+
+
+class TestChannelPack:
+    """Req 3.4: Channel has name, topic (BanchoString) + user_count (int16)."""
+
+    def test_pack_known_channel(self) -> None:
+        ch = Channel(name="#osu", topic="General chat", user_count=150)
+        data = pack(ch)
+        # user_count is last 2 bytes LE
+        assert data[-2:] == pystruct.pack("<h", 150)
+
+    def test_pack_empty_topic(self) -> None:
+        ch = Channel(name="#test", topic="", user_count=0)
+        data = pack(ch)
+        assert data is not None
+        assert len(data) > 0
+
+
+class TestChannelRoundTrip:
+    """Req 3.6: unpack(pack(ch)) == ch."""
+
+    def test_roundtrip_typical(self) -> None:
+        original = Channel(name="#osu", topic="Main channel", user_count=500)
+        data = pack(original)
+        restored = unpack(Channel, data)
+        assert restored.name == "#osu"
+        assert restored.topic == "Main channel"
+        assert restored.user_count == 500
+
+    def test_roundtrip_multibyte(self) -> None:
+        original = Channel(name="#日本語", topic="日本語チャンネル", user_count=10)
+        data = pack(original)
+        restored = unpack(Channel, data)
+        assert restored.name == original.name
+        assert restored.topic == original.topic
+        assert restored.user_count == 10
+
+
+# ── StatusUpdate (Req 3.5, 3.6) ─────────────────────────────────────
+
+
+class TestStatusUpdatePack:
+    """Req 3.5: StatusUpdate has status, status_text, beatmap_md5, mods, play_mode, beatmap_id."""
+
+    def test_pack_known_status(self) -> None:
+        su = StatusUpdate(
+            status=2,
+            status_text="Playing",
+            beatmap_md5="abc123",
+            mods=64,
+            play_mode=0,
+            beatmap_id=12345,
+        )
+        data = pack(su)
+        assert data is not None
+        # first byte is status
+        assert data[0] == 2
+
+    def test_pack_idle_status(self) -> None:
+        su = StatusUpdate(
+            status=0,
+            status_text="",
+            beatmap_md5="",
+            mods=0,
+            play_mode=0,
+            beatmap_id=0,
+        )
+        data = pack(su)
+        # status(1) + 2 empty strings(1+1) + mods(4) + play_mode(1) + beatmap_id(4) = 12
+        assert len(data) == 12
+
+
+class TestStatusUpdateRoundTrip:
+    """Req 3.6: unpack(pack(su)) == su."""
+
+    def test_roundtrip_typical(self) -> None:
+        original = StatusUpdate(
+            status=2,
+            status_text="Listening",
+            beatmap_md5="d41d8cd98f00b204e9800998ecf8427e",
+            mods=64,
+            play_mode=0,
+            beatmap_id=99999,
+        )
+        data = pack(original)
+        restored = unpack(StatusUpdate, data)
+        assert restored.status == 2
+        assert restored.status_text == "Listening"
+        assert restored.beatmap_md5 == original.beatmap_md5
+        assert restored.mods == 64
+        assert restored.play_mode == 0
+        assert restored.beatmap_id == 99999
+
+    def test_roundtrip_all_zeros(self) -> None:
+        original = StatusUpdate(
+            status=0, status_text="", beatmap_md5="", mods=0, play_mode=0, beatmap_id=0
+        )
+        data = pack(original)
+        restored = unpack(StatusUpdate, data)
+        assert restored.status == 0
+        assert restored.status_text == ""
+        assert restored.mods == 0

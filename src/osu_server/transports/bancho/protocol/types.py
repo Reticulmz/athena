@@ -1,25 +1,23 @@
 # pyright: reportAny=false, reportUnknownVariableType=false
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
+# pyright: reportInvalidTypeForm=false
 """Wire types for the bancho binary protocol.
 
-BanchoString — osu! proprietary string encoding:
-  - Presence byte ``0x00`` → empty string
-  - Presence byte ``0x0b`` + ULEB128 byte-length + UTF-8 data → non-empty string
-
-Design ref: BanchoString component in bancho-protocol design.md
-Requirements: 3.1, 3.6
+BanchoString — osu! proprietary string encoding (Req 3.1, 3.6)
+Message — chat message with sender, content, target, sender_id (Req 3.2, 3.6)
+IntList — uint16 count + int32[] dynamic array (Req 3.3, 3.6)
+Channel — channel name, topic, user_count (Req 3.4, 3.6)
+StatusUpdate — player status with mods, mode, beatmap info (Req 3.5, 3.6)
 """
 
-from __future__ import annotations
+from io import BytesIO
+from typing import cast, override
 
-from typing import TYPE_CHECKING, cast, override
-
-if TYPE_CHECKING:
-    from io import BytesIO
-
-from caterpillar.context import CTX_STREAM
+from caterpillar.byteorder import LittleEndian
+from caterpillar.context import CTX_STREAM, this
 from caterpillar.exception import DynamicSizeError
-from caterpillar.fields import FieldStruct
+from caterpillar.fields import FieldStruct, int16, int32, uint8, uint16
+from caterpillar.model import struct
 
 _PRESENCE_EMPTY: int = 0x00
 _PRESENCE_STRING: int = 0x0B
@@ -94,7 +92,61 @@ BanchoString: _BanchoString = _BanchoString()
 Usage::
 
     @struct(order=LittleEndian)
-    class Message:
-        sender: BanchoString   # pyright: ignore[reportInvalidTypeForm]
-        content: BanchoString  # pyright: ignore[reportInvalidTypeForm]
+    class SomePacket:
+        name: BanchoString
 """
+
+
+# ── Wire Types (Req 3.2-3.5, 3.6) ───────────────────────────────────
+
+
+@struct(order=LittleEndian)
+class Message:
+    """Chat message: sender, content, target (BanchoString) + sender_id (signed 32-bit).
+
+    Req 3.2: Message type definition.
+    """
+
+    sender: BanchoString
+    content: BanchoString
+    target: BanchoString
+    sender_id: int32
+
+
+@struct(order=LittleEndian)
+class IntList:
+    """Length-prefixed list of signed 32-bit integers.
+
+    Req 3.3: uint16 count + int32[] dynamic array.
+    """
+
+    count: uint16
+    values: int32[this.count]  # type: ignore[name-defined]
+
+
+@struct(order=LittleEndian)
+class Channel:
+    """Channel info: name, topic (BanchoString) + user_count (signed 16-bit).
+
+    Req 3.4: Channel type definition.
+    """
+
+    name: BanchoString
+    topic: BanchoString
+    user_count: int16
+
+
+@struct(order=LittleEndian)
+class StatusUpdate:
+    """Player status update.
+
+    Req 3.5: status (uint8), status_text/beatmap_md5 (BanchoString),
+    mods (int32), play_mode (uint8), beatmap_id (int32).
+    """
+
+    status: uint8
+    status_text: BanchoString
+    beatmap_md5: BanchoString
+    mods: int32
+    play_mode: uint8
+    beatmap_id: int32
