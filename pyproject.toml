@@ -13,6 +13,7 @@ dependencies = [
     "alembic",
     "redis[hiredis]",
     "argon2-cffi",
+    "caterpillar-py>=2.8.1",
 ]
 
 [dependency-groups]
