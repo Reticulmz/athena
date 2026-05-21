@@ -21,6 +21,7 @@ from osu_server.transports.bancho.protocol.types import (
     Message,
     StatusUpdate,
 )
+from osu_server.transports.bancho.protocol.writer import write_packet
 
 __all__ = [
     "HEADER_SIZE",
@@ -37,4 +38,5 @@ __all__ = [
     "ServerPacketID",
     "StatusUpdate",
     "read_packets",
+    "write_packet",
 ]

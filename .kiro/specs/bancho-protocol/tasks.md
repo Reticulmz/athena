@@ -53,7 +53,7 @@
   - _Depends: 2.1, 2.2_
   - _Boundary: RawPacket, read_packets_
 
-- [ ] 3.3 (P) write_packet 関数を実装する
+- [x] 3.3 (P) write_packet 関数を実装する
   - ServerPacketID とペイロードバイト列からヘッダ付き完全パケットバイト列を生成する
   - Compression は常に False で構築する
   - 空ペイロードと既知パケットの出力テストが通ること
