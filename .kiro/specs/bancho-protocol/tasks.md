@@ -72,7 +72,7 @@
   - _Boundary: PacketDispatcher_
 
 - [ ] 4. ログイン関連 S2C パケット型
-- [ ] 4.1 スカラーペイロードの S2C パケット型とビルダー関数を定義する
+- [x] 4.1 スカラーペイロードの S2C パケット型とビルダー関数を定義する
   - LoginReply（signed 32-bit: ユーザー ID またはエラーコード）のビルダーを実装する
   - ProtocolVersion（signed 32-bit）のビルダーを実装する
   - LoginPermissions（signed 32-bit: 権限ビットマスク）のビルダーを実装する
@@ -86,7 +86,7 @@
   - _Depends: 3.1, 3.3_
   - _Boundary: S2C Login Packets_
 
-- [ ] 4.2 複合ペイロードの S2C パケット型とビルダー関数を定義する
+- [x] 4.2 複合ペイロードの S2C パケット型とビルダー関数を定義する
   - UserPresence（UserId, Username, Timezone, CountryId, Permissions|Mode packed, Longitude, Latitude, Rank）の struct とビルダーを実装する
   - UserStats（UserId, StatusUpdate, RankedScore, Accuracy, PlayCount, TotalScore, Rank, PP）の struct とビルダーを実装する
   - ChannelAvailable と ChannelAvailableAutojoin（Channel 型ペイロード、異なる ServerPacketID）のビルダーを実装する
