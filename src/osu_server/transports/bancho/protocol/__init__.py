@@ -13,9 +13,11 @@ from osu_server.transports.bancho.protocol.header import (
     HEADER_SIZE,
     PacketHeader,
 )
+from osu_server.transports.bancho.protocol.types import BanchoString
 
 __all__ = [
     "HEADER_SIZE",
+    "BanchoString",
     "ClientPacketID",
     "DuplicateHandlerError",
     "PacketError",

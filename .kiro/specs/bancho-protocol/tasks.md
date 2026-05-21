@@ -25,7 +25,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4_
   - _Boundary: PacketHeader_
 
-- [ ] 2.3 (P) BanchoString を Caterpillar カスタムフィールド型として実装する
+- [x] 2.3 (P) BanchoString を Caterpillar カスタムフィールド型として実装する
   - osu! 独自のプレゼンスバイト方式（空文字列 / ULEB128 長 + UTF-8 データ）を双方向変換する
   - 他の Caterpillar struct にフィールドとしてネスト可能であること
   - 空文字列、ASCII 文字列、マルチバイト UTF-8 文字列のラウンドトリップテストが通ること
