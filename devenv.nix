@@ -47,6 +47,31 @@ in
     ENVIRONMENT = "development";
   };
 
+  git-hooks.hooks = {
+    # built-in hooks
+    ruff.enable = true;
+    ruff-format.enable = true;
+    check-merge-conflict.enable = true;
+    end-of-file-fixer.enable = true;
+    trim-trailing-whitespace.enable = true;
+
+    # custom hooks
+    basedpyright = {
+      enable = true;
+      name = "basedpyright";
+      entry = "uv run basedpyright src/";
+      files = "\\.py$";
+      pass_filenames = false;
+    };
+    import-linter = {
+      enable = true;
+      name = "import-linter";
+      entry = "uv run lint-imports";
+      files = "\\.py$";
+      pass_filenames = false;
+    };
+  };
+
   packages = with pkgs; [
     git
   ];
