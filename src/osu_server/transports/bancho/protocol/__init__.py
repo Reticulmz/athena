@@ -9,11 +9,17 @@ from osu_server.transports.bancho.protocol.errors import (
     PacketError,
     PacketReadError,
 )
+from osu_server.transports.bancho.protocol.header import (
+    HEADER_SIZE,
+    PacketHeader,
+)
 
 __all__ = [
+    "HEADER_SIZE",
     "ClientPacketID",
     "DuplicateHandlerError",
     "PacketError",
+    "PacketHeader",
     "PacketReadError",
     "ServerPacketID",
 ]

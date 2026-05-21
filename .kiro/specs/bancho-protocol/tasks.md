@@ -18,7 +18,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4_
   - _Boundary: ClientPacketID, ServerPacketID_
 
-- [ ] 2.2 (P) パケットヘッダを Caterpillar struct として定義する
+- [x] 2.2 (P) パケットヘッダを Caterpillar struct として定義する
   - PacketID (unsigned 16-bit)、Compression (boolean)、ContentSize (unsigned 32-bit) の 3 フィールドをリトルエンディアンで定義する
   - ヘッダサイズ定数（7 バイト）を定義する
   - pack/unpack ラウンドトリップテストと既知バイト列との照合テストが通ること
