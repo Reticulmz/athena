@@ -35,11 +35,11 @@ async def build_container(config: AppConfig) -> Container:
     container = Container()
 
     # -- Database engine (singleton) ------------------------------------------
-    engine = create_engine(config.database_url)
+    engine = create_engine(str(config.database_url))
     container.register_singleton(AsyncEngine, lambda: engine)
 
     # -- Redis client (singleton) ---------------------------------------------
-    redis = create_redis_client(config.redis_url)
+    redis = create_redis_client(str(config.redis_url))
     container.register_singleton(Redis, lambda: redis)
 
     # -- Session factory (singleton) ------------------------------------------

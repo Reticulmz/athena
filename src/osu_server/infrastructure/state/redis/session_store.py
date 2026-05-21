@@ -23,9 +23,46 @@ class RedisSessionStore:
 
     The internal ``_user_id`` field is stripped from the data returned by
     ``get`` and ``get_by_user`` so callers see exactly the dict they stored.
+
+    Atomicity: ``create`` and ``delete`` use Lua scripts to avoid TOCTOU
+    races between the session and user-mapping keys.
     """
 
     _INTERNAL_USER_ID_KEY: Final[str] = "_user_id"
+
+    # Lua script: atomically evict old session (if any) and write new session.
+    # KEYS[1] = user_session:{user_id}, KEYS[2] = session:{new_token}
+    # ARGV[1] = session key prefix, ARGV[2] = JSON data, ARGV[3] = TTL, ARGV[4] = token
+    _CREATE_SCRIPT: Final[str] = """\
+local old_token = redis.call('GET', KEYS[1])
+if old_token then
+    redis.call('DEL', ARGV[1] .. old_token)
+end
+redis.call('SET', KEYS[2], ARGV[2], 'EX', tonumber(ARGV[3]))
+redis.call('SET', KEYS[1], ARGV[4], 'EX', tonumber(ARGV[3]))
+return 1"""
+
+    # Lua script: atomically delete session and its user mapping (only if
+    # the user mapping still points to this token — prevents racing with a
+    # concurrent create that already overwrote the mapping).
+    # KEYS[1] = session:{token}
+    # ARGV[1] = internal user ID field name, ARGV[2] = user key prefix, ARGV[3] = token
+    _DELETE_SCRIPT: Final[str] = """\
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+    return 0
+end
+local data = cjson.decode(raw)
+local user_id = data[ARGV[1]]
+if user_id ~= nil then
+    local user_key = ARGV[2] .. tostring(math.floor(user_id))
+    local current_token = redis.call('GET', user_key)
+    if current_token == ARGV[3] then
+        redis.call('DEL', user_key)
+    end
+end
+redis.call('DEL', KEYS[1])
+return 1"""
 
     def __init__(
         self,
@@ -57,21 +94,17 @@ class RedisSessionStore:
 
     async def create(self, user_id: int, token: str, data: dict[str, object]) -> None:
         """Store a session.  If the user already has one, remove the old session first."""
-        # Evict previous session for this user (if any)
-        old_token_raw = await self._redis.get(self._user_key(user_id))
-        if old_token_raw is not None:
-            old_token = (
-                old_token_raw.decode() if isinstance(old_token_raw, bytes) else str(old_token_raw)
-            )
-            await self._redis.delete(self._session_key(old_token))
-
-        # Embed user_id so delete() can build the reverse key without scanning.
         stored = {**data, self._INTERNAL_USER_ID_KEY: user_id}
-
-        pipe = self._redis.pipeline()
-        _ = pipe.set(self._session_key(token), json.dumps(stored), ex=self._ttl)
-        _ = pipe.set(self._user_key(user_id), token, ex=self._ttl)
-        _ = await pipe.execute()
+        _ = await self._redis.eval(  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
+            self._CREATE_SCRIPT,
+            2,
+            self._user_key(user_id),
+            self._session_key(token),
+            f"{self._prefix}session:",
+            json.dumps(stored),
+            str(self._ttl),
+            token,
+        )
 
     async def get(self, token: str) -> dict[str, object] | None:
         """Return session data for *token*, or ``None`` if not found."""
@@ -93,26 +126,20 @@ class RedisSessionStore:
     async def delete(self, token: str) -> None:
         """Remove the session identified by *token*.
 
-        Also removes the reverse ``user_session:{user_id}`` mapping so that
-        ``get_by_user`` no longer finds this session.
+        Also removes the reverse ``user_session:{user_id}`` mapping, but only
+        if it still points to this token (avoids destroying a newer session
+        created by a concurrent login).
         """
-        # Read the session first to recover the embedded user_id.
-        raw = await self._redis.get(self._session_key(token))
-        if raw is None:
-            # Nothing to delete.
-            return
-
-        payload: str = raw.decode() if isinstance(raw, bytes) else str(raw)
-        data: dict[str, object] = json.loads(payload)
-        user_id = data.get(self._INTERNAL_USER_ID_KEY)
-
-        keys_to_delete = [self._session_key(token)]
-        if user_id is not None:
-            keys_to_delete.append(self._user_key(int(str(user_id))))
-
-        await self._redis.delete(*keys_to_delete)
+        _ = await self._redis.eval(  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
+            self._DELETE_SCRIPT,
+            1,
+            self._session_key(token),
+            self._INTERNAL_USER_ID_KEY,
+            f"{self._prefix}user_session:",
+            token,
+        )
 
     async def exists(self, token: str) -> bool:
         """Return ``True`` if a session with *token* exists."""
         result = await self._redis.exists(self._session_key(token))
-        return int(str(result)) > 0
+        return bool(result)

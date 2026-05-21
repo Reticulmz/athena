@@ -7,14 +7,15 @@ Optional fields with defaults: ENVIRONMENT, SERVER_HOST, SERVER_PORT.
 
 from typing import ClassVar
 
+from pydantic import PostgresDsn, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppConfig(BaseSettings):
     """Type-safe application configuration loaded from environment variables."""
 
-    database_url: str
-    redis_url: str
+    database_url: PostgresDsn
+    redis_url: RedisDsn
     environment: str = "development"
     server_host: str = "0.0.0.0"
     server_port: int = 8000

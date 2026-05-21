@@ -30,14 +30,13 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
     """
     config = load_config()
     container = await build_container(config)
-    await container.initialize()
-
-    app.state.config = config
-    app.state.container = container
-
-    yield
-
-    await container.shutdown()
+    try:
+        await container.initialize()
+        app.state.config = config
+        app.state.container = container
+        yield
+    finally:
+        await container.shutdown()
 
 
 async def bancho_placeholder(_request: Request) -> Response:

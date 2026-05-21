@@ -18,11 +18,16 @@ from osu_server.infrastructure.database.base import Base
 # Alembic Config object
 config = context.config
 
-# Set sqlalchemy.url from environment variable
-database_url = os.environ.get("DATABASE_URL", "")
-if database_url:
-    async_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    config.set_main_option("sqlalchemy.url", async_url)
+# Set sqlalchemy.url from environment variable (required for all migration operations)
+database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    msg = "DATABASE_URL environment variable is required for migrations"
+    raise RuntimeError(msg)
+
+async_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1).replace(
+    "postgresql://", "postgresql+asyncpg://", 1
+)
+config.set_main_option("sqlalchemy.url", async_url)
 
 # Python logging configuration
 if config.config_file_name is not None:

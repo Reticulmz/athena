@@ -27,14 +27,14 @@ class TestAppConfigEnvVarReading:
         monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
 
         config = load_config()
-        assert config.database_url == _TEST_DATABASE_URL
+        assert str(config.database_url) == _TEST_DATABASE_URL
 
     def test_reads_redis_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
 
         config = load_config()
-        assert config.redis_url == _TEST_REDIS_URL
+        assert str(config.redis_url) == _TEST_REDIS_URL
 
 
 class TestAppConfigValidation:

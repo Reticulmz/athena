@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from collections.abc import Awaitable, Callable
 from typing import TypeVar, final
 
@@ -11,33 +12,42 @@ type Factory[T] = Callable[..., T | Awaitable[T]]
 type ShutdownHook = Callable[[], Awaitable[None]]
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 @final
 class _Registration[T]:
     """Internal registration record."""
 
-    __slots__ = ("factory", "instance", "singleton")
+    __slots__ = ("_lock", "factory", "instance", "singleton")
 
     def __init__(self, factory: Factory[T], *, singleton: bool) -> None:
         self.factory = factory
         self.singleton = singleton
         self.instance: T | None = None
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     async def resolve(self) -> T:
+        # Fast path: already resolved singleton
         if self.singleton and self.instance is not None:
             return self.instance
 
+        if not self.singleton:
+            return await self._create()
+
+        # Slow path: acquire lock, double-check, then create
+        async with self._lock:
+            if self.instance is not None:
+                return self.instance
+            instance = await self._create()
+            self.instance = instance
+            return instance
+
+    async def _create(self) -> T:
         result = self.factory()
         if inspect.isawaitable(result):
-            instance: T = await result
-        else:
-            instance = result
-
-        if self.singleton:
-            self.instance = instance
-
-        return instance
+            return await result
+        return result  # type: ignore[return-value]
 
 
 class Container:
@@ -81,6 +91,9 @@ class Container:
         self._shutdown_hooks.append(hook)
 
     async def shutdown(self) -> None:
-        """Invoke all registered shutdown hooks."""
+        """Invoke all registered shutdown hooks, ensuring all run even on failure."""
         for hook in self._shutdown_hooks:
-            await hook()
+            try:
+                await hook()
+            except Exception:
+                logger.exception("Shutdown hook %r failed", hook)

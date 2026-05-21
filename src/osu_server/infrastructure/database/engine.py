@@ -19,5 +19,7 @@ def create_engine(database_url: str) -> AsyncEngine:
     Returns:
         An AsyncEngine configured with asyncpg driver.
     """
-    url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    url = database_url.replace("postgres://", "postgresql+asyncpg://", 1).replace(
+        "postgresql://", "postgresql+asyncpg://", 1
+    )
     return create_async_engine(url)
