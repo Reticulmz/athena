@@ -10,7 +10,7 @@
   - _Requirements: 1.1, 4.4, 4.5, 5.5_
 
 - [ ] 2. コアデータ定義
-- [ ] 2.1 (P) C2S / S2C パケット ID 列挙型を定義する
+- [x] 2.1 (P) C2S / S2C パケット ID 列挙型を定義する
   - ClientPacketID を整数列挙型として定義し、bancho-documentation Wiki 準拠の C2S 全 41 エントリを含める
   - ServerPacketID を整数列挙型として定義し、S2C 全 62 エントリを含める
   - 2 つの列挙型が独立しており同一数値 ID が方向別に共存できること
