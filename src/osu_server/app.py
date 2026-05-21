@@ -14,6 +14,7 @@ from starlette.routing import Mount, Route
 
 from osu_server.config import load_config
 from osu_server.infrastructure.di.providers import build_container
+from osu_server.transports.bancho.dispatch import PacketDispatcher, dispatcher
 
 
 @asynccontextmanager
@@ -30,6 +31,7 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
     """
     config = load_config()
     container = await build_container(config)
+    container.register_singleton(PacketDispatcher, lambda: dispatcher)
     try:
         await container.initialize()
         app.state.config = config

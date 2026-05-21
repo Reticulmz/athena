@@ -96,7 +96,7 @@
   - _Boundary: S2C Login Packets_
 
 - [ ] 5. 統合と検証
-- [ ] 5.1 PacketDispatcher の DI 登録と protocol パブリック API を整備する
+- [x] 5.1 PacketDispatcher の DI 登録と protocol パブリック API を整備する
   - app.py の lifespan 内で PacketDispatcher を DI コンテナにシングルトン登録する（infrastructure → transports の逆方向 import を回避）
   - protocol パッケージの公開 API を re-export する
   - Container 経由で PacketDispatcher を resolve できること

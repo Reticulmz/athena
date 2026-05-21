@@ -53,3 +53,7 @@ class PacketDispatcher:
     def get_handlers(self) -> dict[ClientPacketID, PacketHandler]:
         """Return a read-only copy of all registered handlers."""
         return dict(self._handlers)
+
+
+# Module-level default instance for decorator-based handler registration.
+dispatcher: PacketDispatcher = PacketDispatcher()
