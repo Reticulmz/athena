@@ -105,7 +105,7 @@
 
 - [ ] 4. ビジネスロジック（AuthService）
 
-- [ ] 4.1 AuthService.register()（登録オーケストレーション）
+- [x] 4.1 AuthService.register()（登録オーケストレーション）
   - バリデーション: ユーザー名（2-15文字、`[a-zA-Z0-9_ -]+`、スペース+アンダースコア共存不可）、パスワード（8-32文字、ユニーク文字数4以上）、メール形式
   - 重複チェック: UserRepository.get_by_safe_username()、UserRepository.get_by_email()
   - 禁止ユーザー名チェック: UserRepository.is_username_disallowed()
