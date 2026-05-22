@@ -39,7 +39,7 @@ in
     ports.http.allocate = 8000;
   };
   processes.nginx = {
-    exec = "mkdir -p .devenv/state/nginx && sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1; nginx -p ${toString ./.}/ -c ${toString ./.}/nginx.dev.conf -g 'daemon off;'";
+    exec = "mkdir -p .devenv/state/nginx && sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1; nginx -e /dev/stderr -p ${toString ./.}/ -c ${toString ./.}/nginx.dev.conf -g 'daemon off;'";
   };
   # processes.worker = {
   #   exec = "uv run arq osu_server.worker.WorkerSettings";
