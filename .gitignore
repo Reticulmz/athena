@@ -25,3 +25,6 @@ devenv.local.yaml
 .pre-commit-config.yaml
 
 .idea
+
+# mkcert certificates
+*.pem
