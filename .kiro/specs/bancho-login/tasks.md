@@ -35,7 +35,7 @@
   - `import-linter` が新規契約で成功すること
   - _Requirements: 4.5_
 
-- [ ] 1.4 SessionStore Protocol 拡張（TTL リフレッシュ）
+- [x] 1.4 SessionStore Protocol 拡張（TTL リフレッシュ）
   - SessionStore Protocol に `refresh(token: str) -> bool` メソッド追加
   - InMemorySessionStore: 存在チェックのみ（TTL 概念なし → True/False 返却）
   - RedisSessionStore: Redis `EXPIRE` コマンドで TTL リセット

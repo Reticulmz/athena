@@ -143,3 +143,24 @@ return 1"""
         """Return ``True`` if a session with *token* exists."""
         result = await self._redis.exists(self._session_key(token))
         return bool(result)
+
+    async def refresh(self, token: str) -> bool:
+        """Reset the TTL on both session and user-mapping keys.
+
+        Returns ``True`` if the session exists and was refreshed.
+        """
+        session_key = self._session_key(token)
+        refreshed = await self._redis.expire(session_key, self._ttl)
+        if not refreshed:
+            return False
+        # Also refresh the user mapping key so it stays in sync.
+        raw = await self._redis.get(session_key)
+        if raw is not None:
+            payload: str = raw.decode() if isinstance(raw, bytes) else str(raw)
+            data: dict[str, object] = json.loads(payload)
+            user_id = data.get(self._INTERNAL_USER_ID_KEY)
+            if isinstance(user_id, int):
+                await self._redis.expire(self._user_key(user_id), self._ttl)
+            elif isinstance(user_id, float):
+                await self._redis.expire(self._user_key(int(user_id)), self._ttl)
+        return True

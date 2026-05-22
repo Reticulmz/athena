@@ -94,3 +94,20 @@ async def test_create_overwrites_previous_session(store: InMemorySessionStore) -
     result_by_user = await store.get_by_user(user_id=1)
     assert result_by_user is not None
     assert result_by_user["version"] == "new"
+
+
+async def test_refresh_existing_token(store: InMemorySessionStore) -> None:
+    """refresh returns True for an existing session."""
+    data: dict[str, object] = {"username": "peppy"}
+    await store.create(user_id=1, token="abc-123", data=data)
+
+    result = await store.refresh("abc-123")
+
+    assert result is True
+
+
+async def test_refresh_nonexistent_token(store: InMemorySessionStore) -> None:
+    """refresh returns False for an unknown token."""
+    result = await store.refresh("nonexistent-token")
+
+    assert result is False

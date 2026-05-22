@@ -33,3 +33,7 @@ class SessionStore(Protocol):
     async def exists(self, token: str) -> bool:
         """Return ``True`` if a session with *token* exists."""
         ...
+
+    async def refresh(self, token: str) -> bool:
+        """Refresh the session TTL.  Return ``True`` if the session exists."""
+        ...

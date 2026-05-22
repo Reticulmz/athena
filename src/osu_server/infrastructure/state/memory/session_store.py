@@ -50,3 +50,10 @@ class InMemorySessionStore:
     async def exists(self, token: str) -> bool:
         """Return ``True`` if a session with *token* exists."""
         return token in self._by_token
+
+    async def refresh(self, token: str) -> bool:
+        """Refresh the session TTL.
+
+        In-memory store has no TTL concept, so this is a pure existence check.
+        """
+        return token in self._by_token
