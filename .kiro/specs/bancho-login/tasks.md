@@ -54,7 +54,7 @@
   - _Requirements: 1.3, 1.5, 1.6, 1.7, 3.6, 5.1_
   - _Boundary: UserRepository_
 
-- [ ] 2.2 (P) RoleRepository（Protocol + InMemory + SQLAlchemy）
+- [x] 2.2 (P) RoleRepository（Protocol + InMemory + SQLAlchemy）
   - RoleRepository Protocol 定義: get_by_id, get_by_name, get_roles_for_user, assign_role, get_default_role
   - InMemoryRoleRepository 実装（シードデータ付きで初期化可能）
   - SQLAlchemyRoleRepository 実装
@@ -165,10 +165,11 @@
 
 - [ ] 6. 統合・検証
 
-- [ ] 6.1 DI 統合 + ルート登録
+- [ ] 6.1 DI 統合 + ルート登録 + サブドメインルーティング
   - providers.py 更新: UserRepository, RoleRepository（環境別: InMemory/SQLAlchemy）, PasswordService, HIBPClient, httpx.AsyncClient, PermissionService, AuthService, CountryResolver（CloudflareCountryResolver）の DI 登録
   - httpx.AsyncClient の lifecycle 管理: startup で作成、shutdown hook で aclose()
-  - app.py 更新: POST / を bancho_handler に差し替え、/web マウントに registration routes 追加
+  - app.py 更新: Starlette の Host ベースルーティングに変更。`c.$DOMAIN` → bancho トランスポート（POST / ログイン/ポーリング）、`osu.$DOMAIN` → web_legacy トランスポート（POST /users 登録等）
+  - POST / を bancho_handler に差し替え、/web（osu.$DOMAIN）に registration routes 追加
   - `python -c "from osu_server.app import app"` がインポートエラーなく成功すること
   - `import-linter` が成功すること
   - _Requirements: 1.1, 5.1_
