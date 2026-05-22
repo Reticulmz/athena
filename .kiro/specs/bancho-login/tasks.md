@@ -65,7 +65,7 @@
 
 - [ ] 3. Infrastructure・サービス層実装
 
-- [ ] 3.1 (P) PasswordService（ハッシュ/検証）
+- [x] 3.1 (P) PasswordService（ハッシュ/検証）
   - argon2-cffi PasswordHasher を使用した hash() / verify() 実装
   - `asyncio.get_running_loop().run_in_executor(None, ...)` でイベントループブロック回避
   - prepare_password(plain_password): 平文 → hashlib.md5() → argon2id の一連処理（登録時用）
