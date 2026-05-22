@@ -13,7 +13,7 @@
 
 - [ ] 2. config + ヘルスチェックエンドポイント
 
-- [ ] 2.1 config.py domain デフォルト変更 + ヘルスチェック実装
+- [x] 2.1 config.py domain デフォルト変更 + ヘルスチェック実装
   - config.py の domain デフォルトを "localhost" → "athena.local" に変更
   - app.py にバージョン情報取得処理を追加: importlib.metadata.version("athena") + git rev-parse --short HEAD（起動時1回）
   - bancho routes（c.*）と web_legacy routes（osu.*）の GET / にヘルスレスポンスを返すハンドラを追加

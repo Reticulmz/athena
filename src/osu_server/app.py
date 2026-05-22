@@ -11,11 +11,14 @@ to ``osu_server.app`` because it sits outside the layer hierarchy.
 
 from __future__ import annotations
 
+import importlib.metadata
+import subprocess
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
 from starlette.routing import Host, Mount, Route, Router
 
 from osu_server.config import AppConfig, load_config
@@ -43,6 +46,29 @@ if TYPE_CHECKING:
     from starlette.responses import Response
 
     from osu_server.infrastructure.di.container import Container
+
+
+def get_version_info() -> tuple[str, str]:
+    """Return ``(package_version, commit_hash)`` for health responses.
+
+    * ``package_version`` comes from ``importlib.metadata`` (pyproject.toml).
+    * ``commit_hash`` is the short git HEAD hash; falls back to ``"unknown"``
+      when git is unavailable or the repo is missing.
+    """
+    version = importlib.metadata.version("athena")
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        commit = result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        commit = "unknown"
+
+    return version, commit
 
 
 async def _register_services(container: Container, config: AppConfig) -> None:
@@ -144,6 +170,7 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
         app.state.container = container
         app.state.login_handler = login_handler
         app.state.registration_handler = registration_handler
+        app.state.version_info = get_version_info()
         yield
     finally:
         await container.shutdown()
@@ -161,6 +188,12 @@ async def _registration_endpoint(request: Request) -> Response:
     return await handler(request)
 
 
+async def _health_endpoint(request: Request) -> PlainTextResponse:
+    """Return a plain-text health response with version and commit hash."""
+    version, commit = request.app.state.version_info  # pyright: ignore[reportAny]
+    return PlainTextResponse(f"athena v{version} ({commit})\n")
+
+
 def create_app() -> Starlette:
     """Create and return the Starlette root application.
 
@@ -174,13 +207,15 @@ def create_app() -> Starlette:
     # bancho routes (c.$DOMAIN)
     bancho_routes = Router(
         routes=[
-            Route("/", endpoint=_bancho_endpoint, methods=["POST", "GET"]),
+            Route("/", endpoint=_bancho_endpoint, methods=["POST"]),
+            Route("/", endpoint=_health_endpoint, methods=["GET"]),
         ],
     )
 
     # web_legacy routes (osu.$DOMAIN)
     web_routes = Router(
         routes=[
+            Route("/", endpoint=_health_endpoint, methods=["GET"]),
             Route("/users", endpoint=_registration_endpoint, methods=["POST"]),
         ],
     )
@@ -190,7 +225,8 @@ def create_app() -> Starlette:
         Host("c.{domain}", app=bancho_routes),
         Host("osu.{domain}", app=web_routes),
         # Path-based fallbacks for local dev
-        Route("/", endpoint=_bancho_endpoint, methods=["POST", "GET"]),
+        Route("/", endpoint=_bancho_endpoint, methods=["POST"]),
+        Route("/", endpoint=_health_endpoint, methods=["GET"]),
         Mount(
             "/web",
             routes=[

@@ -182,11 +182,11 @@ class TestHttpxLifecycle:
 
 
 class TestConfigDomainField:
-    """AppConfig includes a domain field with default 'localhost'."""
+    """AppConfig includes a domain field with default 'athena.local'."""
 
     def test_default_domain(self) -> None:
         config = _make_config()
-        assert config.domain == "localhost"
+        assert config.domain == "athena.local"
 
     def test_custom_domain(self) -> None:
         config = AppConfig(
