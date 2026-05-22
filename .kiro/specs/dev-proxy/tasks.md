@@ -35,7 +35,7 @@
 
 - [ ] 4. スモークテスト
 
-- [ ] 4.1 E2E スモークテスト
+- [x] 4.1 E2E スモークテスト（手動確認済み: osu! stable → nginx:443 → athena:8000 でアカウント作成+ログイン成功）
   - `devenv up` 後に `curl http://c.athena.local/` が 200 + バージョン文字列を返すことを手動確認
   - `curl http://osu.athena.local/` が 200 + バージョン文字列を返すことを手動確認
   - `curl -X POST http://c.athena.local/` がログインレスポンス（パケットストリームまたはエラー）を返すことを手動確認
