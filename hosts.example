@@ -1,0 +1,12 @@
+# athena development server
+# Copy these lines to C:\Windows\System32\drivers\etc\hosts
+127.0.0.1 c.athena.local c1.athena.local ce.athena.local
+127.0.0.1 c4.athena.local c5.athena.local c6.athena.local
+127.0.0.1 osu.athena.local a.athena.local b.athena.local
+127.0.0.1 api.athena.local
+
+# HTTPS (optional):
+# 1. Install mkcert: `mkcert -install`
+# 2. Generate certs: `mkcert "*.athena.local"`
+# 3. Uncomment HTTPS block in nginx.dev.conf
+# 4. Update cert paths in nginx.dev.conf
