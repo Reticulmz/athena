@@ -45,7 +45,7 @@
 
 - [ ] 2. Repository 層実装
 
-- [ ] 2.1 (P) UserRepository（Protocol + InMemory + SQLAlchemy）
+- [x] 2.1 (P) UserRepository（Protocol + InMemory + SQLAlchemy）
   - UserRepository Protocol 定義: create, get_by_id, get_by_safe_username, get_by_email, is_username_disallowed, add_disallowed_username
   - InMemoryUserRepository 実装（テスト用、dict ベース、safe_username で case-insensitive 検索）
   - SQLAlchemyUserRepository 実装（async_sessionmaker 使用）

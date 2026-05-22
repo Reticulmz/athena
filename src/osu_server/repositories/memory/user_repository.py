@@ -1,0 +1,72 @@
+"""InMemoryUserRepository — dict-based user repository for testing."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from osu_server.domain.user import User
+
+
+class InMemoryUserRepository:
+    """In-memory implementation of the UserRepository Protocol.
+
+    Uses plain dicts for storage with auto-incrementing id.
+    Not thread-safe — intended for single-threaded test environments only.
+    """
+
+    def __init__(self) -> None:
+        self._users_by_id: dict[int, User] = {}
+        self._id_by_safe_username: dict[str, int] = {}
+        self._id_by_email: dict[str, int] = {}
+        self._disallowed_usernames: set[str] = set()
+        self._next_id: int = 1
+
+    async def create(self, user: User) -> User:
+        """Persist a new user with an auto-generated id.
+
+        Raises ``ValueError`` if ``safe_username`` or ``email`` already exists.
+        """
+        if user.safe_username.lower() in self._id_by_safe_username:
+            msg = f"safe_username already exists: {user.safe_username}"
+            raise ValueError(msg)
+
+        if user.email.lower() in self._id_by_email:
+            msg = f"email already exists: {user.email}"
+            raise ValueError(msg)
+
+        created = replace(user, id=self._next_id)
+        self._next_id += 1
+
+        self._users_by_id[created.id] = created
+        self._id_by_safe_username[created.safe_username.lower()] = created.id
+        self._id_by_email[created.email.lower()] = created.id
+
+        return created
+
+    async def get_by_id(self, user_id: int) -> User | None:
+        """Return the user with *user_id*, or ``None`` if not found."""
+        return self._users_by_id.get(user_id)
+
+    async def get_by_safe_username(self, safe_username: str) -> User | None:
+        """Return the user with *safe_username* (case-insensitive), or ``None``."""
+        user_id = self._id_by_safe_username.get(safe_username.lower())
+        if user_id is None:
+            return None
+        return self._users_by_id.get(user_id)
+
+    async def get_by_email(self, email: str) -> User | None:
+        """Return the user with *email* (case-insensitive), or ``None``."""
+        user_id = self._id_by_email.get(email.lower())
+        if user_id is None:
+            return None
+        return self._users_by_id.get(user_id)
+
+    async def is_username_disallowed(self, safe_username: str) -> bool:
+        """Return ``True`` if *safe_username* is in the disallowed list."""
+        return safe_username.lower() in self._disallowed_usernames
+
+    async def add_disallowed_username(self, safe_username: str) -> None:
+        """Add *safe_username* to the disallowed list.  Idempotent."""
+        self._disallowed_usernames.add(safe_username.lower())

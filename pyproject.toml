@@ -108,7 +108,8 @@ type = "layers"
 layers = [
     "osu_server.transports",
     "osu_server.services",
-    "osu_server.domain | osu_server.repositories",
+    "osu_server.repositories",
+    "osu_server.domain",
     "osu_server.infrastructure",
     "osu_server.shared",
 ]
