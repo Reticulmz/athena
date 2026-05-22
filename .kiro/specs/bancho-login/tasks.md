@@ -141,7 +141,7 @@
   - _Requirements: 5.2, 5.3_
   - _Boundary: LoginParser_
 
-- [ ] 5.2 (P) LoginHandler（POST / ログイン + ポーリング stub）
+- [x] 5.2 (P) LoginHandler（POST / ログイン + ポーリング stub）
   - bancho_handler(request): `osu-token` ヘッダの有無でログイン/ポーリングを判別
   - _handle_login(request): LoginParser.parse_login_request() → AuthService.login() → 成功時: build_login_response_stream() でS2Cパケットストリーム構築 → Response(content=stream, headers={"cho-token": token})、失敗時: Response(content=login_reply(error_code))
   - build_login_response_stream(login_response): 12個のS2Cビルダー関数を順次呼び出し、b"".join() で結合。login_reply, protocol_version, login_permissions（to_client_flags 変換）, user_presence（country_id 数値変換使用）, user_stats, channel_info, channel_info_end, friends_list, silence_end, user_presence_bundle
