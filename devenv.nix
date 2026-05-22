@@ -6,6 +6,8 @@ let
   redis_port = toString config.services.redis.port;
 in
 {
+  process.manager.implementation = "process-compose";
+
   languages.python = {
     enable = true;
     version = "3.14";
@@ -38,7 +40,6 @@ in
   };
   processes.nginx = {
     exec = "sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1; nginx -c ${toString ./.}/nginx.dev.conf -g 'daemon off; error_log /dev/stderr;'";
-    after = [ "devenv:processes:app" ];
   };
   # processes.worker = {
   #   exec = "uv run arq osu_server.worker.WorkerSettings";
