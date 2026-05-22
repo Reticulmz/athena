@@ -165,7 +165,7 @@
 
 - [ ] 6. 統合・検証
 
-- [ ] 6.1 DI 統合 + ルート登録 + サブドメインルーティング
+- [x] 6.1 DI 統合 + ルート登録 + サブドメインルーティング
   - providers.py 更新: UserRepository, RoleRepository（環境別: InMemory/SQLAlchemy）, PasswordService, HIBPClient, httpx.AsyncClient, PermissionService, AuthService, CountryResolver（CloudflareCountryResolver）の DI 登録
   - httpx.AsyncClient の lifecycle 管理: startup で作成、shutdown hook で aclose()
   - app.py 更新: Starlette の Host ベースルーティングに変更。`c.$DOMAIN` → bancho トランスポート（POST / ログイン/ポーリング）、`osu.$DOMAIN` → web_legacy トランスポート（POST /users 登録等）

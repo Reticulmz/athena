@@ -45,10 +45,10 @@ class TestAppStartup:
             assert isinstance(app.state.config, AppConfig)
             assert isinstance(app.state.container, Container)
 
-    def test_get_root_returns_method_not_allowed(self) -> None:
-        """GET / returns 405 because only POST is allowed on the root route."""
+    def test_get_root_returns_ok(self) -> None:
+        """GET / returns 200 — bancho handler accepts GET for connectivity probes."""
         _require_services()
         app = create_app()
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.get("/")
-            assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+            assert response.status_code == HTTPStatus.OK
