@@ -15,6 +15,7 @@ dependencies = [
     "argon2-cffi",
     "caterpillar-py>=2.8.1",
     "httpx>=0.28.1",
+    "python-multipart>=0.0.29",
 ]
 
 [dependency-groups]

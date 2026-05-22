@@ -152,7 +152,7 @@
   - _Boundary: LoginHandler_
   - _Depends: 4.2, 5.1_
 
-- [ ] 5.3 (P) RegistrationHandler（POST /users）
+- [x] 5.3 (P) RegistrationHandler（POST /users）
   - register_handler(request): フォームデータパース — user[username], user[user_email], user[password], check パラメータ
   - check パラメータ判定: int(check) == 1 → AuthService.register(form, check_only=True)、== 0 → AuthService.register(form, check_only=False)
   - 成功時: Response(content=b"ok", status_code=200)
