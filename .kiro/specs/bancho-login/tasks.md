@@ -132,7 +132,7 @@
 
 - [ ] 5. Transport 層実装
 
-- [ ] 5.1 LoginParser（ログインリクエストパーサー）
+- [x] 5.1 LoginParser（ログインリクエストパーサー）
   - parse_login_request(body: bytes) → LoginRequest: body を改行で3行に分離（username, password_md5, client_info_raw）
   - parse_client_info(raw: str) → ClientInfo: パイプ区切りで分離（osu_version|utc_offset|display_city|client_hashes|pm_private）
   - 型変換: utc_offset → int、display_city → bool（"1"/"0"）、pm_private → bool
