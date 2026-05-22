@@ -175,7 +175,7 @@
   - _Requirements: 1.1, 5.1_
   - _Depends: 5.2, 5.3_
 
-- [ ] 6.2 E2E 統合テスト
+- [x] 6.2 E2E 統合テスト
   - 登録 → ログインフロー: POST /users (check=0) → b"ok" → POST / (credentials) → cho-token + パケットストリーム検証
   - 登録バリデーション: POST /users (check=1) → 200 ok → DB にユーザー未作成
   - 登録エラー: 重複ユーザー名 → 400 form_error、短すぎるパスワード → 400 form_error
