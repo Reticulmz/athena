@@ -74,7 +74,7 @@
   - _Requirements: 4.1, 4.2, 4.3_
   - _Boundary: PasswordService_
 
-- [ ] 3.2 (P) HIBPClient + パスワードセキュリティ強化
+- [x] 3.2 (P) HIBPClient + パスワードセキュリティ強化
   - HIBPClient: httpx.AsyncClient で `GET https://api.pwnedpasswords.com/range/{prefix}` 呼び出し、SHA-1 先頭5文字 → サフィックス照合
   - PasswordService.check_hibp(): HIBPClient 呼び出しで漏洩パスワード判定
   - API 到達不能時は False を返す（フォールバック）

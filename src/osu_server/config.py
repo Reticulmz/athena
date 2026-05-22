@@ -19,6 +19,7 @@ class AppConfig(BaseSettings):
     environment: str = "development"
     server_host: str = "0.0.0.0"
     server_port: int = 8000
+    banned_passwords: list[str] = []
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="", env_file=".env")
 

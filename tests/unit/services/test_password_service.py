@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+from unittest.mock import AsyncMock
 
+from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.services.password_service import PasswordService
 
 
@@ -79,3 +81,121 @@ class TestPreparePassword:
         # Login — client computes MD5 client-side
         client_md5 = hashlib.md5(plain.encode()).hexdigest()
         assert await svc.verify(stored_hash, client_md5) is True
+
+
+class TestCheckHibp:
+    """PasswordService.check_hibp のテスト。"""
+
+    async def test_returns_true_when_compromised(self) -> None:
+        """HIBPClient が漏洩判定した場合 True を返す。"""
+        hibp = AsyncMock(spec=HIBPClient)
+        hibp.is_password_compromised.return_value = True
+        svc = PasswordService(hibp_client=hibp, banned_passwords=[])
+
+        result = await svc.check_hibp("leaked_password")
+
+        assert result is True
+        hibp.is_password_compromised.assert_called_once_with("leaked_password")
+
+    async def test_returns_false_when_safe(self) -> None:
+        """HIBPClient が安全判定した場合 False を返す。"""
+        hibp = AsyncMock(spec=HIBPClient)
+        hibp.is_password_compromised.return_value = False
+        svc = PasswordService(hibp_client=hibp, banned_passwords=[])
+
+        result = await svc.check_hibp("safe_password")
+
+        assert result is False
+
+    async def test_returns_false_when_hibp_client_is_none(self) -> None:
+        """HIBPClient が None の場合 False を返す(HIBP 無効環境)。"""
+        svc = PasswordService(hibp_client=None, banned_passwords=[])
+
+        result = await svc.check_hibp("any_password")
+
+        assert result is False
+
+
+class TestIsPasswordBanned:
+    """PasswordService.is_password_banned のテスト。"""
+
+    async def test_banned_by_custom_list(self) -> None:
+        """カスタム禁止リストに含まれるパスワードは True を返す。"""
+        svc = PasswordService(hibp_client=None, banned_passwords=["forbidden", "secret123"])
+
+        assert await svc.is_password_banned("forbidden") is True
+        assert await svc.is_password_banned("secret123") is True
+
+    async def test_custom_list_case_insensitive(self) -> None:
+        """カスタム禁止リストの照合は大文字小文字を区別しない。"""
+        svc = PasswordService(hibp_client=None, banned_passwords=["Forbidden"])
+
+        assert await svc.is_password_banned("forbidden") is True
+        assert await svc.is_password_banned("FORBIDDEN") is True
+
+    async def test_not_in_custom_list_and_no_hibp(self) -> None:
+        """禁止リストに無く、HIBP も None の場合は False。"""
+        svc = PasswordService(hibp_client=None, banned_passwords=["other"])
+
+        assert await svc.is_password_banned("safe_password") is False
+
+    async def test_banned_by_hibp(self) -> None:
+        """カスタムリストに無いが HIBP で漏洩判定された場合は True。"""
+        hibp = AsyncMock(spec=HIBPClient)
+        hibp.is_password_compromised.return_value = True
+        svc = PasswordService(hibp_client=hibp, banned_passwords=[])
+
+        result = await svc.is_password_banned("leaked_password")
+
+        assert result is True
+
+    async def test_custom_list_checked_before_hibp(self) -> None:
+        """カスタムリストを先にチェックし、一致すれば HIBP は呼ばない。"""
+        hibp = AsyncMock(spec=HIBPClient)
+        svc = PasswordService(hibp_client=hibp, banned_passwords=["banned_pass"])
+
+        result = await svc.is_password_banned("banned_pass")
+
+        assert result is True
+        hibp.is_password_compromised.assert_not_called()
+
+    async def test_hibp_fallback_on_api_unreachable(self) -> None:
+        """HIBP が False を返す(API 不達フォールバック)場合、カスタムリストのみで判定。"""
+        hibp = AsyncMock(spec=HIBPClient)
+        hibp.is_password_compromised.return_value = False
+        svc = PasswordService(hibp_client=hibp, banned_passwords=["banned_one"])
+
+        # カスタムリストに無い + HIBP False → False
+        assert await svc.is_password_banned("safe_password") is False
+        # カスタムリストに含まれる → True(HIBP 結果に関係なく)
+        assert await svc.is_password_banned("banned_one") is True
+
+    async def test_safe_password_with_both_checks(self) -> None:
+        """両方のチェックをパスした場合のみ False。"""
+        hibp = AsyncMock(spec=HIBPClient)
+        hibp.is_password_compromised.return_value = False
+        svc = PasswordService(hibp_client=hibp, banned_passwords=["other"])
+
+        result = await svc.is_password_banned("completely_safe")
+
+        assert result is False
+
+
+class TestPasswordServiceBackwardCompatibility:
+    """既存コンストラクタとの後方互換性テスト。"""
+
+    async def test_default_constructor_still_works(self) -> None:
+        """引数なしコンストラクタで既存動作が維持される。"""
+        svc = PasswordService()
+        hashed = await svc.hash("test")
+        assert hashed.startswith("$argon2id$")
+
+    async def test_check_hibp_returns_false_with_defaults(self) -> None:
+        """デフォルト構築時、check_hibp は常に False。"""
+        svc = PasswordService()
+        assert await svc.check_hibp("anything") is False
+
+    async def test_is_password_banned_returns_false_with_defaults(self) -> None:
+        """デフォルト構築時、is_password_banned は常に False。"""
+        svc = PasswordService()
+        assert await svc.is_password_banned("anything") is False
