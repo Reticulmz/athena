@@ -125,11 +125,11 @@ class TestHealthEndpoint:
 
 
 class TestConfigDomainDefault:
-    """AppConfig.domain defaults to 'athena.local'."""
+    """AppConfig.domain defaults to 'athena.localhost'."""
 
     def test_domain_default_is_athena_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/osu")
         monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
 
         config = AppConfig()  # pyright: ignore[reportCallIssue]
-        assert config.domain == "athena.local"
+        assert config.domain == "athena.localhost"
