@@ -36,6 +36,10 @@ in
     after = [ "devenv:processes:postgres" "devenv:processes:redis" ];
     ports.http.allocate = 8000;
   };
+  processes.nginx = {
+    exec = "sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1; nginx -c ${toString ./.}/nginx.dev.conf -g 'daemon off; error_log /dev/stderr;'";
+    after = [ "devenv:processes:app" ];
+  };
   # processes.worker = {
   #   exec = "uv run arq osu_server.worker.WorkerSettings";
   #   after = [ "devenv:processes:redis" ];
@@ -91,11 +95,14 @@ in
 
   packages = with pkgs; [
     git
+    nginx
+    mkcert
   ];
 
   enterShell = ''
     echo "athena dev environment ready"
-    echo "  devenv up  - start services (postgres, redis) + app"
+    echo "  devenv up  - start services (postgres, redis) + app + nginx"
     echo "  uv run pytest  - run tests"
+    echo "  nginx listens on :80 → athena :8000"
   '';
 }

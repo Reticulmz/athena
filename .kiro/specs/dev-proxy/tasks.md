@@ -24,7 +24,7 @@
 
 - [ ] 3. devenv 統合
 
-- [ ] 3.1 devenv.nix に nginx プロセスと mkcert パッケージを追加
+- [x] 3.1 devenv.nix に nginx プロセスと mkcert パッケージを追加
   - processes.nginx: sysctl で非特権ポート 80 を有効化し、nginx.dev.conf でフォアグラウンド起動
   - after 依存: app プロセスの後に起動
   - error_log を stderr に出力（devenv コンソール表示）
