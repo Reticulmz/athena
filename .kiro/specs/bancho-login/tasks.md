@@ -85,7 +85,7 @@
   - _Requirements: 4.4, 4.5, 4.6_
   - _Boundary: HIBPClient, PasswordService_
 
-- [ ] 3.3 (P) CountryResolver（Protocol + Cloudflare 実装 + 国コード変換）
+- [x] 3.3 (P) CountryResolver（Protocol + Cloudflare 実装 + 国コード変換）
   - CountryResolver Protocol: resolve(request) -> str（2文字の国コード）
   - CloudflareCountryResolver: `request.headers.get("CF-IPCountry", "XX")`
   - 国コード変換ユーティリティ: 2文字コード（"JP", "US" 等）→ osu! 数値 ID への変換テーブル。不明コードは 0
