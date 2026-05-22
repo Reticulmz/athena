@@ -1,8 +1,14 @@
 # athena development server
 # Copy these lines to C:\Windows\System32\drivers\etc\hosts
-127.0.0.1 c.athena.localhost c1.athena.localhost ce.athena.localhost
-127.0.0.1 c4.athena.localhost c5.athena.localhost c6.athena.localhost
-127.0.0.1 osu.athena.localhost a.athena.localhost b.athena.localhost
+127.0.0.1 c.athena.localhost
+127.0.0.1 c1.athena.localhost
+127.0.0.1 ce.athena.localhost
+127.0.0.1 c4.athena.localhost
+127.0.0.1 c5.athena.localhost
+127.0.0.1 c6.athena.localhost
+127.0.0.1 osu.athena.localhost
+127.0.0.1 a.athena.localhost
+127.0.0.1 b.athena.localhost
 127.0.0.1 api.athena.localhost
 
 # HTTPS (optional):
