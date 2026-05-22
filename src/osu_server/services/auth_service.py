@@ -2,20 +2,34 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import secrets
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from osu_server.domain.auth import RegistrationForm, RegistrationResult
+from osu_server.domain.auth import (
+    LoginResponse,
+    LoginResult,
+    RegistrationForm,
+    RegistrationResult,
+)
+from osu_server.domain.session import SessionData
 from osu_server.domain.user import User
 
 if TYPE_CHECKING:
+    from starlette.requests import Request
+
+    from osu_server.domain.auth import LoginRequest
     from osu_server.infrastructure.country.interfaces import CountryResolver
     from osu_server.infrastructure.state.interfaces.session_store import SessionStore
     from osu_server.repositories.interfaces.role_repository import RoleRepository
     from osu_server.repositories.interfaces.user_repository import UserRepository
     from osu_server.services.password_service import PasswordService
     from osu_server.services.permission_service import PermissionService
+
+_log = logging.getLogger(__name__)
 
 # ── Validation constants ─────────────────────────────────────────────
 
@@ -123,6 +137,86 @@ class AuthService:
         await self._role_repo.assign_role(created_user.id, default_role.id)
 
         return RegistrationResult(success=True)
+
+    async def login(
+        self,
+        request: Request,
+        login_request: LoginRequest,
+    ) -> LoginResponse | LoginResult:
+        """ログイン認証を実行し、成功時に SessionData を構築して返す。
+
+        認証失敗(ユーザー不在・パスワード不一致)は区別せず
+        ``LoginResult.AUTHENTICATION_FAILED`` を返す。
+        予期しない例外は ``LoginResult.SERVER_ERROR`` を返す。
+        """
+        assert self._permission_service is not None
+        assert self._session_store is not None
+        assert self._country_resolver is not None
+
+        try:
+            return await self._do_login(request, login_request)
+        except Exception:
+            _log.exception("Unexpected error during login")
+            return LoginResult.SERVER_ERROR
+
+    async def _do_login(
+        self,
+        request: Request,
+        login_request: LoginRequest,
+    ) -> LoginResponse | LoginResult:
+        """login() の内部実装。例外は呼び出し元でキャッチする。"""
+        assert self._permission_service is not None
+        assert self._session_store is not None
+        assert self._country_resolver is not None
+
+        # 1. ユーザー検索
+        safe_username = User.normalize_username(login_request.username)
+        user = await self._user_repo.get_by_safe_username(safe_username)
+        if user is None:
+            return LoginResult.AUTHENTICATION_FAILED
+
+        # 2. パスワード照合 (argon2id hash vs MD5 hex)
+        password_ok = await self._password_service.verify(
+            user.password_hash,
+            login_request.password_md5,
+        )
+        if not password_ok:
+            return LoginResult.AUTHENTICATION_FAILED
+
+        # 3. 権限計算
+        privileges = await self._permission_service.compute_permissions(user.id)
+
+        # 4. 国コード解決
+        country = self._country_resolver.resolve(request)
+
+        # 5. トークン生成
+        token = secrets.token_urlsafe(32)
+
+        # 6. SessionData 構築
+        client = login_request.client_info
+        session_data = SessionData(
+            user_id=user.id,
+            username=user.username,
+            privileges=int(privileges),
+            country=country,
+            osu_version=client.osu_version,
+            utc_offset=client.utc_offset,
+            display_city=client.display_city,
+            client_hashes=client.client_hashes,
+            pm_private=client.pm_private,
+        )
+
+        # 7. セッション作成(既存セッションは SessionStore.create() が自動置換)
+        await self._session_store.create(user.id, token, asdict(session_data))
+
+        # 8. LoginResponse 返却
+        return LoginResponse(
+            token=token,
+            user=user,
+            privileges=privileges,
+            country=country,
+            session_data=session_data,
+        )
 
     # ── Private validation helpers ───────────────────────────────────
 

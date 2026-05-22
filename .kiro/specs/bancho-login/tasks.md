@@ -118,7 +118,7 @@
   - _Requirements: 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 3.5, 4.4, 4.5, 4.6, 8.7_
   - _Depends: 2.1, 2.2, 3.1, 3.2_
 
-- [ ] 4.2 AuthService.login()（ログインオーケストレーション）
+- [x] 4.2 AuthService.login()（ログインオーケストレーション）
   - UserRepository.get_by_safe_username(normalize(username)) でユーザー検索
   - PasswordService.verify(user.password_hash, password_md5) でパスワード照合
   - 認証失敗時: LoginResult.AUTHENTICATION_FAILED (-1) 返却（ユーザー不在/パスワード不一致を区別しない）
