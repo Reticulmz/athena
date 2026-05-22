@@ -94,7 +94,7 @@
   - _Requirements: 9.1, 9.2, 9.3_
   - _Boundary: CountryResolver_
 
-- [ ] 3.4 (P) PermissionService（RBAC 計算 + クライアントフラグ変換）
+- [x] 3.4 (P) PermissionService（RBAC 計算 + クライアントフラグ変換）
   - compute_permissions(user_id): RoleRepository から全ロール取得 → permissions を OR 結合して Privileges 返却
   - to_client_flags(privileges): Privileges → ClientPermissions 変換（MODERATOR→2, SUPPORTER→4, ADMIN→8, DEVELOPER→16, else→1）
   - テスト: 単一ロール計算、複数ロール OR 結合、クライアントフラグ変換（全組み合わせ）、ロールなし → Privileges.NONE
