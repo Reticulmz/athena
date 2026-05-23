@@ -19,7 +19,7 @@
   - _Boundary: setup_logging, mask_sensitive_fields, Container_
 
 - [ ] 2. Core: 個別ログ実装
-- [ ] 2.1 (P) C2S パケットログ
+- [x] 2.1 (P) C2S パケットログ
   - dispatch.py に `QUIET_C2S_PACKETS: frozenset[ClientPacketID]` を定義（PING, USER_STATS_REQUEST, USER_PRESENCE_REQUEST）
   - `dispatch()` メソッド内でパケット受信をログ: 通常パケットは `logger.info("c2s_packet", packet=..., size=...)`、ノイジーパケットは `logger.debug()`
   - ハンドラ未登録パケットは `logger.debug("c2s_unhandled", packet=..., size=...)`

@@ -2,14 +2,27 @@
 
 Design ref: PacketDispatcher component in bancho-protocol design.md
 Requirements: 5.1, 5.2, 5.3, 5.4, 5.5
+Logging requirements: 5.1-5.4 (structured-logging spec)
 """
 
 from collections.abc import Awaitable, Callable
+
+import structlog
 
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.bancho.protocol.errors import DuplicateHandlerError
 
 type PacketHandler = Callable[..., Awaitable[None]]
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+
+QUIET_C2S_PACKETS: frozenset[ClientPacketID] = frozenset(
+    {
+        ClientPacketID.PONG,
+        ClientPacketID.STATS_REQUEST,
+        ClientPacketID.PRESENCE_REQUEST,
+    }
+)
 
 
 class PacketDispatcher:
@@ -42,13 +55,24 @@ class PacketDispatcher:
     async def dispatch(
         self, packet_id: ClientPacketID, payload: bytes, *args: object, **kwargs: object
     ) -> None:
-        """Call the registered handler for *packet_id*.
+        """Call the registered handler for *packet_id*, with structured logging.
 
-        If no handler is registered for *packet_id*, silently returns.
+        Logging behaviour:
+        - Registered + quiet packet → ``logger.debug("c2s_packet", ...)``
+        - Registered + normal packet → ``logger.info("c2s_packet", ...)``
+        - Unregistered packet → ``logger.debug("c2s_unhandled", ...)``
         """
         handler = self._handlers.get(packet_id)
-        if handler is not None:
-            await handler(payload, *args, **kwargs)
+        if handler is None:
+            logger.debug("c2s_unhandled", packet=packet_id.name, size=len(payload))
+            return
+
+        if packet_id in QUIET_C2S_PACKETS:
+            logger.debug("c2s_packet", packet=packet_id.name, size=len(payload))
+        else:
+            logger.info("c2s_packet", packet=packet_id.name, size=len(payload))
+
+        await handler(payload, *args, **kwargs)
 
     def get_handlers(self) -> dict[ClientPacketID, PacketHandler]:
         """Return a read-only copy of all registered handlers."""
