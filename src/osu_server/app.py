@@ -79,6 +79,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         await logger.ainfo(
             "http_request",
+            host=request.url.hostname,
             method=request.method,
             path=request.url.path,
             status=response.status_code,
