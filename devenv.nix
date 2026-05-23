@@ -37,6 +37,14 @@ in
     exec = "uv run uvicorn osu_server.app:app --reload --reload-dir src --host $SERVER_HOST --port $SERVER_PORT";
     after = [ "devenv:processes:postgres" "devenv:processes:redis" ];
     ports.http.allocate = 8000;
+    ready = {
+      http.get = {
+        port = config.processes.app.ports.http.value;
+        path = "/";
+      };
+      initial_delay = 2;
+      period = 5;
+    };
   };
   processes.nginx = {
     exec = "mkdir -p .devenv/state/nginx && sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1; nginx -e /dev/stderr -p ${toString ./.}/ -c ${toString ./.}/nginx.dev.conf -g 'daemon off;'";
