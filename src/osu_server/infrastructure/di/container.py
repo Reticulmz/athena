@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import logging
 from collections.abc import Awaitable, Callable
 from typing import TypeVar, final
+
+import structlog
 
 type Factory[T] = Callable[..., T | Awaitable[T]]
 type ShutdownHook = Callable[[], Awaitable[None]]
 
 T = TypeVar("T")
-logger = logging.getLogger(__name__)
+logger: structlog.stdlib.BoundLogger = structlog.get_logger()  # pyright: ignore[reportAny]
 
 
 @final
@@ -96,4 +97,4 @@ class Container:
             try:
                 await hook()
             except Exception:
-                logger.exception("Shutdown hook %r failed", hook)
+                logger.exception("shutdown_hook_failed", hook=repr(hook))

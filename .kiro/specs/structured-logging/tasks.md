@@ -8,7 +8,7 @@
   - `uv sync` 完了後、`import structlog` が成功し、AppConfig の新フィールドがデフォルト値で読み取れること
   - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 1.2 infrastructure/logging.py 実装 + container.py ログ移行
+- [x] 1.2 infrastructure/logging.py 実装 + container.py ログ移行
   - `setup_logging(config: AppConfig) -> None` を実装: structlog + stdlib 統合初期化（共有プロセッサチェーン、ProcessorFormatter、ConsoleRenderer 用 StreamHandler）
   - JSON 出力有効時は JSONRenderer 用 FileHandler を追加。書き込み失敗時は warning 出力して継続
   - `mask_sensitive_fields` プロセッサを実装: `password`, `password_hash`, `password_md5` キーを `***` に置換
