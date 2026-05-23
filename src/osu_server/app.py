@@ -20,7 +20,9 @@ from typing import TYPE_CHECKING
 import structlog
 import structlog.contextvars
 import structlog.stdlib
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from redis.asyncio import Redis
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -181,6 +183,21 @@ async def _register_services(container: Container, config: AppConfig) -> None:
     container.register_singleton(PacketDispatcher, lambda: dispatcher)
 
 
+async def _check_infrastructure(container: Container) -> None:
+    """Verify PostgreSQL and Redis connectivity at startup.
+
+    Raises on failure so the server refuses to start with broken dependencies.
+    """
+    engine = await container.resolve(AsyncEngine)
+    async with engine.connect() as conn:
+        _ = await conn.execute(text("SELECT 1"))
+    logger.info("startup_health_check", service="postgresql", status="ok")
+
+    redis = await container.resolve(Redis)
+    await redis.ping()  # pyright: ignore[reportUnknownMemberType]
+    logger.info("startup_health_check", service="redis", status="ok")
+
+
 @asynccontextmanager
 async def lifespan(app: Starlette) -> AsyncGenerator[None]:
     """Manage application startup and shutdown lifecycle.
@@ -201,6 +218,9 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
     await _register_services(container, config)
     try:
         await container.initialize()
+
+        if config.environment != "test":
+            await _check_infrastructure(container)
 
         # Resolve handlers from DI container
         login_handler = await container.resolve(LoginHandler)
