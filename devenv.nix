@@ -34,7 +34,7 @@ in
   };
 
   processes.app = {
-    exec = "uv run uvicorn osu_server.app:app --reload --reload-dir src --host 0.0.0.0 --port ${toString config.processes.app.ports.http.value}";
+    exec = "uv run uvicorn osu_server.app:app --reload --reload-dir src --host $SERVER_HOST --port $SERVER_PORT";
     after = [ "devenv:processes:postgres" "devenv:processes:redis" ];
     ports.http.allocate = 8000;
   };
@@ -50,6 +50,9 @@ in
     DATABASE_URL = "postgresql://localhost:${pg_port}/${db_name}";
     REDIS_URL = "redis://localhost:${redis_port}";
     ENVIRONMENT = "development";
+    SERVER_HOST = "0.0.0.0";
+    SERVER_PORT = toString config.processes.app.ports.http.value;
+    DOMAIN = "athena.localhost";
     LOG_LEVEL = "DEBUG";
     LOG_JSON_ENABLED = "true";
     LOG_JSON_PATH = "logs/athena.jsonl";
