@@ -2,7 +2,7 @@
 
 Design ref: write_packet component in bancho-protocol design.md
 Requirements: 4.3
-Logging requirements: 6.1, 6.2
+Logging requirements: 5.1-5.4 (structured-logging spec)
 """
 
 import struct

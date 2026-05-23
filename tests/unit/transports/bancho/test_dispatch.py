@@ -62,7 +62,6 @@ class TestRegister:
 class TestDispatch:
     """Req 5.2: Dispatch calls registered handler."""
 
-    @pytest.mark.asyncio
     async def test_dispatch_calls_handler(self) -> None:
         dp = PacketDispatcher()
         called_with: list[bytes] = []
@@ -74,7 +73,6 @@ class TestDispatch:
         await dp.dispatch(ClientPacketID.PONG, b"\x01\x02")
         assert called_with == [b"\x01\x02"]
 
-    @pytest.mark.asyncio
     async def test_dispatch_correct_handler_for_id(self) -> None:
         dp = PacketDispatcher()
         results: list[str] = []
@@ -94,13 +92,11 @@ class TestDispatch:
 class TestDispatchUnregistered:
     """Req 5.3: Unregistered ClientPacketID is silently ignored."""
 
-    @pytest.mark.asyncio
     async def test_unregistered_id_no_error(self) -> None:
         dp = PacketDispatcher()
         # Should not raise
         await dp.dispatch(ClientPacketID.PONG, b"")
 
-    @pytest.mark.asyncio
     async def test_unregistered_id_no_side_effects(self) -> None:
         dp = PacketDispatcher()
         called = False

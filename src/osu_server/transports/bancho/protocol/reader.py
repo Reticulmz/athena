@@ -1,6 +1,7 @@
 # pyright: reportAny=false, reportUnknownVariableType=false
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 # pyright: reportInvalidTypeForm=false
+# Caterpillar's metaclass/descriptor patterns require these file-level suppressions.
 """Packet reader — parse C2S packets from a byte stream using Caterpillar Greedy arrays.
 
 Design ref: RawPacket + read_packets component in bancho-protocol design.md
@@ -14,8 +15,7 @@ from caterpillar.model import struct, unpack
 
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.bancho.protocol.errors import PacketReadError
-
-HEADER_SIZE: int = 7
+from osu_server.transports.bancho.protocol.header import HEADER_SIZE
 
 
 @struct(order=LittleEndian)

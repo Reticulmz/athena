@@ -1,6 +1,7 @@
 # pyright: reportAny=false, reportUnknownVariableType=false
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 # pyright: reportInvalidTypeForm=false
+# Caterpillar's metaclass/descriptor patterns require these file-level suppressions.
 """S2C login packet builders.
 
 Each builder function returns a complete packet (7-byte header + payload)

@@ -1,4 +1,8 @@
-"""Protocol exception hierarchy for bancho binary protocol.
+"""Exception hierarchy for the bancho protocol subsystem.
+
+Covers both wire-level I/O errors and dispatcher registration errors.
+Co-located here to maintain a single ``PacketError`` base class hierarchy
+without introducing circular imports between ``protocol/`` and ``dispatch.py``.
 
 Design: Error Handling section
 - PacketError: base exception for all protocol errors

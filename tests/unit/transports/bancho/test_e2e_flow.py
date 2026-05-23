@@ -15,8 +15,6 @@ Requirements coverage:
 
 import struct as pystruct
 
-import pytest
-
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.bancho.protocol.reader import read_packets
@@ -30,7 +28,6 @@ def _build_packet(packet_id: int, payload: bytes = b"") -> bytes:
 class TestReadPacketsToDispatch:
     """End-to-end: byte stream → read_packets → dispatch → handler calls."""
 
-    @pytest.mark.asyncio
     async def test_single_packet_dispatches_to_correct_handler(self) -> None:
         """A single-packet stream calls only the matching handler."""
         dp = PacketDispatcher()
@@ -49,7 +46,6 @@ class TestReadPacketsToDispatch:
         assert len(called_with) == 1
         assert called_with[0] == (ClientPacketID.PONG, b"")
 
-    @pytest.mark.asyncio
     async def test_multiple_packets_dispatch_in_order(self) -> None:
         """Multiple concatenated packets dispatch to their respective handlers in order."""
         dp = PacketDispatcher()
@@ -83,7 +79,6 @@ class TestReadPacketsToDispatch:
         assert call_log[1] == (ClientPacketID.SEND_MESSAGE, msg_payload)
         assert call_log[2] == (ClientPacketID.EXIT, b"\x01")
 
-    @pytest.mark.asyncio
     async def test_unregistered_packet_id_silently_skipped(self) -> None:
         """Packets with no registered handler are silently skipped during dispatch."""
         dp = PacketDispatcher()
@@ -106,7 +101,6 @@ class TestReadPacketsToDispatch:
 
         assert called_ids == [ClientPacketID.PONG, ClientPacketID.PONG]
 
-    @pytest.mark.asyncio
     async def test_handler_receives_correct_payload(self) -> None:
         """Each handler receives exactly the payload bytes from its packet."""
         dp = PacketDispatcher()
@@ -136,7 +130,6 @@ class TestReadPacketsToDispatch:
         assert received_payloads[ClientPacketID.SEND_MESSAGE] == [payload_a]
         assert received_payloads[ClientPacketID.STATUS_CHANGE] == [payload_b]
 
-    @pytest.mark.asyncio
     async def test_unknown_packet_ids_filtered_before_dispatch(self) -> None:
         """Unknown packet IDs (not in ClientPacketID) are filtered by read_packets,
         so the dispatcher never sees them."""
@@ -160,7 +153,6 @@ class TestReadPacketsToDispatch:
 
         assert dispatched_ids == [ClientPacketID.PONG]
 
-    @pytest.mark.asyncio
     async def test_empty_stream_dispatches_nothing(self) -> None:
         """An empty byte stream produces no packets and no dispatch calls."""
         dp = PacketDispatcher()

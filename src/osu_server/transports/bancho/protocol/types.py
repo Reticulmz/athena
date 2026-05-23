@@ -1,6 +1,7 @@
 # pyright: reportAny=false, reportUnknownVariableType=false
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 # pyright: reportInvalidTypeForm=false
+# Caterpillar's metaclass/descriptor patterns require these file-level suppressions.
 """Wire types for the bancho binary protocol.
 
 BanchoString — osu! proprietary string encoding (Req 3.1, 3.6)
@@ -19,9 +20,19 @@ from caterpillar.exception import DynamicSizeError
 from caterpillar.fields import FieldStruct, int16, int32, uint8, uint16
 from caterpillar.model import struct
 
+from osu_server.transports.bancho.protocol.errors import PacketReadError
+
 _PRESENCE_EMPTY: int = 0x00
 _PRESENCE_STRING: int = 0x0B
-_ULEB128_CONTINUATION_MASK: int = 0x7F
+_ULEB128_VALUE_MASK: int = 0x7F
+
+
+def _read_byte(stream: BytesIO) -> int:
+    """Read a single byte from *stream*, raising on truncation."""
+    b = stream.read(1)
+    if not b:
+        raise PacketReadError("Unexpected end of stream")
+    return b[0]
 
 
 class _BanchoString(FieldStruct):  # type: ignore[type-arg]
@@ -55,10 +66,13 @@ class _BanchoString(FieldStruct):  # type: ignore[type-arg]
     @override
     def unpack_single(self, context: object) -> str:
         stream = cast("BytesIO", context[CTX_STREAM])  # pyright: ignore[reportIndexIssue]
-        presence: int = stream.read(1)[0]
+        presence = _read_byte(stream)
 
         if presence == _PRESENCE_EMPTY:
             return ""
+        if presence != _PRESENCE_STRING:
+            msg = f"Invalid BanchoString presence byte: 0x{presence:02x}"
+            raise PacketReadError(msg)
 
         length = _read_uleb128(stream)
         data: bytes = stream.read(length)
@@ -67,8 +81,8 @@ class _BanchoString(FieldStruct):  # type: ignore[type-arg]
 
 def _write_uleb128(stream: BytesIO, value: int) -> None:
     """Encode *value* as ULEB128 and write to *stream*."""
-    while value > _ULEB128_CONTINUATION_MASK:
-        _ = stream.write(bytes([value & _ULEB128_CONTINUATION_MASK | 0x80]))
+    while value > _ULEB128_VALUE_MASK:
+        _ = stream.write(bytes([value & _ULEB128_VALUE_MASK | 0x80]))
         value >>= 7
     _ = stream.write(bytes([value]))
 
@@ -78,8 +92,8 @@ def _read_uleb128(stream: BytesIO) -> int:
     result = 0
     shift = 0
     while True:
-        byte: int = stream.read(1)[0]
-        result |= (byte & _ULEB128_CONTINUATION_MASK) << shift
+        byte = _read_byte(stream)
+        result |= (byte & _ULEB128_VALUE_MASK) << shift
         if not (byte & 0x80):
             break
         shift += 7
