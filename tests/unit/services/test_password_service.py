@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from unittest.mock import AsyncMock
 
+from structlog.testing import capture_logs
+
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.services.password_service import PasswordService
 
@@ -199,3 +201,81 @@ class TestPasswordServiceBackwardCompatibility:
         """デフォルト構築時、is_password_banned は常に False。"""
         svc = PasswordService()
         assert await svc.is_password_banned("anything") is False
+
+
+class TestPasswordVerificationFailedLog:
+    """verify() 失敗時の password_verification_failed ログイベント検証。"""
+
+    async def test_mismatch_emits_log(self) -> None:
+        """パスワード不一致時に password_verification_failed イベントが出力される。"""
+        svc = PasswordService()
+        hashed = await svc.hash("correct_password")
+        with capture_logs() as cap_logs:
+            result = await svc.verify(hashed, "wrong_password")
+        assert result is False
+        events = [e for e in cap_logs if e["event"] == "password_verification_failed"]
+        assert len(events) == 1
+        assert events[0]["reason"] == "hash_mismatch"
+        assert events[0]["log_level"] == "warning"
+
+    async def test_success_does_not_emit_log(self) -> None:
+        """パスワード一致時に password_verification_failed イベントは出力されない。"""
+        svc = PasswordService()
+        password = "correct_password"
+        hashed = await svc.hash(password)
+        with capture_logs() as cap_logs:
+            result = await svc.verify(hashed, password)
+        assert result is True
+        events = [e for e in cap_logs if e["event"] == "password_verification_failed"]
+        assert len(events) == 0
+
+
+class TestPasswordBannedLog:
+    """is_password_banned() の password_banned ログイベント検証。"""
+
+    async def test_custom_list_emits_log_with_source(self) -> None:
+        """カスタム禁止リスト一致時に source=custom_list でログが出力される。"""
+        svc = PasswordService(hibp_client=None, banned_passwords=["forbidden"])
+        with capture_logs() as cap_logs:
+            result = await svc.is_password_banned("forbidden")
+        assert result is True
+        events = [e for e in cap_logs if e["event"] == "password_banned"]
+        assert len(events) == 1
+        assert events[0]["source"] == "custom_list"
+        assert events[0]["log_level"] == "warning"
+
+    async def test_hibp_emits_log_with_source(self) -> None:
+        """HIBP 漏洩判定時に source=hibp でログが出力される。"""
+        hibp = AsyncMock(spec=HIBPClient)
+        hibp.is_password_compromised.return_value = True
+        svc = PasswordService(hibp_client=hibp, banned_passwords=[])
+        with capture_logs() as cap_logs:
+            result = await svc.is_password_banned("leaked_password")
+        assert result is True
+        events = [e for e in cap_logs if e["event"] == "password_banned"]
+        assert len(events) == 1
+        assert events[0]["source"] == "hibp"
+        assert events[0]["log_level"] == "warning"
+
+    async def test_safe_password_does_not_emit_log(self) -> None:
+        """安全なパスワードでは password_banned イベントは出力されない。"""
+        hibp = AsyncMock(spec=HIBPClient)
+        hibp.is_password_compromised.return_value = False
+        svc = PasswordService(hibp_client=hibp, banned_passwords=["other"])
+        with capture_logs() as cap_logs:
+            result = await svc.is_password_banned("safe_password")
+        assert result is False
+        events = [e for e in cap_logs if e["event"] == "password_banned"]
+        assert len(events) == 0
+
+    async def test_custom_list_hit_does_not_call_hibp(self) -> None:
+        """カスタムリスト一致時は HIBP を呼ばず custom_list のみログ出力される。"""
+        hibp = AsyncMock(spec=HIBPClient)
+        svc = PasswordService(hibp_client=hibp, banned_passwords=["banned_pass"])
+        with capture_logs() as cap_logs:
+            result = await svc.is_password_banned("banned_pass")
+        assert result is True
+        hibp.is_password_compromised.assert_not_called()
+        events = [e for e in cap_logs if e["event"] == "password_banned"]
+        assert len(events) == 1
+        assert events[0]["source"] == "custom_list"

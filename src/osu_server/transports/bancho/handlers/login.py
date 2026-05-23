@@ -83,16 +83,9 @@ class LoginHandler:
         result = await self._auth_service.login(request, login_request)
 
         if isinstance(result, LoginResult):
-            logger.info("login_failed", username=login_request.username)
             return Response(content=login_reply(result))
 
         _ = structlog.contextvars.bind_contextvars(
-            user=result.user.username,
-            user_id=result.user.id,
-        )
-
-        logger.info(
-            "login_success",
             user=result.user.username,
             user_id=result.user.id,
         )

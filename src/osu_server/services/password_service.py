@@ -4,11 +4,14 @@ import asyncio
 import hashlib
 from typing import TYPE_CHECKING
 
+import structlog
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.security.hibp import HIBPClient
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 
 class PasswordService:
@@ -42,6 +45,7 @@ class PasswordService:
         try:
             return await loop.run_in_executor(None, self._hasher.verify, hashed, password)
         except VerifyMismatchError:
+            logger.warning("password_verification_failed", reason="hash_mismatch")
             return False
 
     async def prepare_password(self, plain_password: str) -> str:
@@ -77,5 +81,9 @@ class PasswordService:
             True ならパスワードは使用禁止。
         """
         if password.lower() in self._banned_passwords:
+            logger.warning("password_banned", source="custom_list")
             return True
-        return await self.check_hibp(password)
+        is_compromised = await self.check_hibp(password)
+        if is_compromised:
+            logger.warning("password_banned", source="hibp")
+        return is_compromised

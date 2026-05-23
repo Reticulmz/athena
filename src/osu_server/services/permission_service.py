@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import structlog
+
 from osu_server.domain.role import ClientPermissions, Privileges
 
 if TYPE_CHECKING:
     from osu_server.repositories.interfaces.role_repository import RoleRepository
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 
 class PermissionService:
@@ -27,6 +31,7 @@ class PermissionService:
         result = Privileges.NONE
         for role in roles:
             result |= role.permissions
+        logger.info("permissions_computed", user_id=user_id, privileges=result)
         return result
 
     @staticmethod

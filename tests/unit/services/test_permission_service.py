@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from structlog.testing import capture_logs
+
 from osu_server.domain.role import (
     ClientPermissions,
     Privileges,
@@ -182,3 +184,54 @@ class TestToClientFlagsCombinations:
             | ClientPermissions.DEVELOPER
         )
         assert result == expected
+
+
+# ── permissions_computed ログイベント ────────────────────────────────
+
+
+class TestPermissionsComputedLog:
+    """compute_permissions() の permissions_computed ログイベント検証。"""
+
+    async def test_emits_log_with_user_id_and_privileges(self) -> None:
+        """計算完了時に user_id と privileges を含むログが出力される。"""
+        svc, repo = _make_service()
+        await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
+
+        with capture_logs() as cap_logs:
+            result = await svc.compute_permissions(user_id=1)
+
+        assert result == ROLE_DEFAULT.permissions
+        events = [e for e in cap_logs if e["event"] == "permissions_computed"]
+        assert len(events) == 1
+        assert events[0]["user_id"] == 1
+        assert events[0]["privileges"] == ROLE_DEFAULT.permissions
+        assert events[0]["log_level"] == "info"
+
+    async def test_emits_log_with_combined_privileges(self) -> None:
+        """複数ロールの OR 結合結果がログに含まれる。"""
+        svc, repo = _make_service()
+        await repo.assign_role(user_id=2, role_id=ROLE_DEFAULT.id)
+        await repo.assign_role(user_id=2, role_id=ROLE_MODERATOR.id)
+
+        with capture_logs() as cap_logs:
+            result = await svc.compute_permissions(user_id=2)
+
+        expected = ROLE_DEFAULT.permissions | Privileges.MODERATOR
+        assert result == expected
+        events = [e for e in cap_logs if e["event"] == "permissions_computed"]
+        assert len(events) == 1
+        assert events[0]["user_id"] == 2  # noqa: PLR2004
+        assert events[0]["privileges"] == expected
+
+    async def test_emits_log_for_no_roles(self) -> None:
+        """ロールなしユーザーでも permissions_computed が出力される。"""
+        svc, _repo = _make_service()
+
+        with capture_logs() as cap_logs:
+            result = await svc.compute_permissions(user_id=999)
+
+        assert result == Privileges.NONE
+        events = [e for e in cap_logs if e["event"] == "permissions_computed"]
+        assert len(events) == 1
+        assert events[0]["user_id"] == 999  # noqa: PLR2004
+        assert events[0]["privileges"] == Privileges.NONE

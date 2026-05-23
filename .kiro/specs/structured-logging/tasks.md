@@ -51,7 +51,7 @@
   - _Requirements: 8.1, 8.2, 8.3_
   - _Boundary: AuthService_
 
-- [ ] 2.5 (P) PasswordService + PermissionService ビジネスロジックログ
+- [x] 2.5 (P) PasswordService + PermissionService ビジネスロジックログ
   - PasswordService に `password_verification_failed`（失敗理由）、`password_banned`（ブロック元）イベント追加
   - PermissionService に `permissions_computed`（ユーザー ID、権限フラグ）イベント追加
   - 各サービスの操作実行時に対応するイベントがコンソールに出力されること
