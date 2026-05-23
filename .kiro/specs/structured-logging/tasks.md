@@ -42,7 +42,7 @@
   - _Requirements: 7.1_
   - _Boundary: LoginHandler_
 
-- [ ] 2.4 (P) AuthService ログ移行 + ビジネスロジックログ
+- [x] 2.4 (P) AuthService ログ移行 + ビジネスロジックログ
   - auth_service.py の `logging.getLogger(__name__)` を `structlog.get_logger()` に移行
   - `login_success`（ユーザー名、ユーザー ID）、`login_failed`（ユーザー名、失敗理由）イベント追加
   - `registration_success`（ユーザー名、ユーザー ID）、`registration_failed`（ユーザー名、失敗理由）イベント追加

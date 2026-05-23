@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 from unittest.mock import AsyncMock, MagicMock
 
+from structlog.testing import capture_logs
+
 from osu_server.domain.auth import (
     ClientInfo,
     LoginRequest,
@@ -756,3 +758,132 @@ class TestLoginServerError:
             _login_request(username="ErrorUser"),
         )
         assert login_result is LoginResult.SERVER_ERROR
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Structured logging テスト (Req 8.1, 8.2, 8.3)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestRegistrationLogging:
+    """register() の structlog イベント検証。"""
+
+    async def test_registration_success_emits_log(self) -> None:
+        """成功時に registration_success イベントが出力される。"""
+        svc, *_ = _make_service()
+        with capture_logs() as cap_logs:
+            result = await svc.register(_valid_form(username="LogUser", email="log@example.com"))
+        assert result.success is True
+        events = [e for e in cap_logs if e["event"] == "registration_success"]
+        assert len(events) == 1
+        assert events[0]["username"] == "LogUser"
+        assert "user_id" in events[0]
+        assert events[0]["log_level"] == "info"
+
+    async def test_registration_failed_emits_log(self) -> None:
+        """バリデーション失敗時に registration_failed イベントが出力される。"""
+        svc, *_ = _make_service()
+        with capture_logs() as cap_logs:
+            result = await svc.register(_valid_form(username="!", email="bad", password="aaa"))
+        assert result.success is False
+        events = [e for e in cap_logs if e["event"] == "registration_failed"]
+        assert len(events) == 1
+        assert events[0]["username"] == "!"
+        assert "reason" in events[0]
+        assert events[0]["log_level"] == "warning"
+
+    async def test_registration_check_only_no_success_log(self) -> None:
+        """check_only=True では registration_success は出力されない。"""
+        svc, *_ = _make_service()
+        with capture_logs() as cap_logs:
+            result = await svc.register(_valid_form(), check_only=True)
+        assert result.success is True
+        events = [e for e in cap_logs if e["event"] == "registration_success"]
+        assert len(events) == 0
+
+
+class TestLoginLogging:
+    """login() の structlog イベント検証。"""
+
+    async def test_login_success_emits_log(self) -> None:
+        """成功時に login_success イベントが出力される。"""
+        svc, *_ = await _make_login_service()
+        with capture_logs() as cap_logs:
+            result = await svc.login(_fake_request(), _login_request())
+        assert isinstance(result, LoginResponse)
+        events = [e for e in cap_logs if e["event"] == "login_success"]
+        assert len(events) == 1
+        assert events[0]["username"] == "TestUser"
+        assert events[0]["user_id"] == result.user.id
+        assert events[0]["log_level"] == "info"
+
+    async def test_login_failed_user_not_found_emits_log(self) -> None:
+        """ユーザー不在時に login_failed イベントが出力される。"""
+        svc, *_ = await _make_login_service()
+        with capture_logs() as cap_logs:
+            result = await svc.login(
+                _fake_request(),
+                _login_request(username="Ghost"),
+            )
+        assert result is LoginResult.AUTHENTICATION_FAILED
+        events = [e for e in cap_logs if e["event"] == "login_failed"]
+        assert len(events) == 1
+        assert events[0]["username"] == "Ghost"
+        assert events[0]["reason"] == "authentication_failed"
+        assert events[0]["log_level"] == "warning"
+
+    async def test_login_failed_wrong_password_emits_log(self) -> None:
+        """パスワード不一致時に login_failed イベントが出力される。"""
+        svc, *_ = await _make_login_service()
+        with capture_logs() as cap_logs:
+            result = await svc.login(
+                _fake_request(),
+                _login_request(password_md5="0" * 32),
+            )
+        assert result is LoginResult.AUTHENTICATION_FAILED
+        events = [e for e in cap_logs if e["event"] == "login_failed"]
+        assert len(events) == 1
+        assert events[0]["username"] == "TestUser"
+        assert events[0]["reason"] == "authentication_failed"
+
+    async def test_login_server_error_emits_structured_log(self) -> None:
+        """予期しない例外時に login_error イベントが structlog 形式で出力される。"""
+        user_repo = InMemoryUserRepository()
+        role_repo = InMemoryRoleRepository(seed_roles=[ROLE_DEFAULT])
+        session_store = InMemorySessionStore()
+        password_service = PasswordService(hibp_client=None, banned_passwords=[])
+        permission_service = PermissionService(role_repo=role_repo)
+        country_resolver = _StubCountryResolver()
+
+        svc = AuthService(
+            user_repo=user_repo,
+            role_repo=role_repo,
+            password_service=password_service,
+            permission_service=permission_service,
+            session_store=session_store,
+            country_resolver=country_resolver,
+        )
+
+        result = await svc.register(
+            RegistrationForm(
+                username="ErrLogUser",
+                email="errlog@example.com",
+                password=_LOGIN_PASSWORD,
+            ),
+        )
+        assert result.success is True
+
+        user_repo.get_by_safe_username = AsyncMock(  # type: ignore[method-assign]
+            side_effect=RuntimeError("DB connection lost"),
+        )
+
+        with capture_logs() as cap_logs:
+            login_result = await svc.login(
+                _fake_request(),
+                _login_request(username="ErrLogUser"),
+            )
+        assert login_result is LoginResult.SERVER_ERROR
+        events = [e for e in cap_logs if e["event"] == "login_error"]
+        assert len(events) == 1
+        assert events[0]["username"] == "ErrLogUser"
+        assert events[0]["log_level"] == "error"

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 import re
 import secrets
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+import structlog
 
 from osu_server.domain.auth import (
     LoginResponse,
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
     from osu_server.services.password_service import PasswordService
     from osu_server.services.permission_service import PermissionService
 
-_log = logging.getLogger(__name__)
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 # ── Validation constants ─────────────────────────────────────────────
 
@@ -110,6 +111,12 @@ class AuthService:
 
         # Return early if any errors
         if errors:
+            failed_fields = ", ".join(sorted(errors))
+            logger.warning(
+                "registration_failed",
+                username=form_data.username,
+                reason=f"validation errors: {failed_fields}",
+            )
             return RegistrationResult(success=False, errors=errors)
 
         # check_only mode: validation passed, no account creation
@@ -136,6 +143,11 @@ class AuthService:
         default_role = await self._role_repo.get_default_role()
         await self._role_repo.assign_role(created_user.id, default_role.id)
 
+        logger.info(
+            "registration_success",
+            username=form_data.username,
+            user_id=created_user.id,
+        )
         return RegistrationResult(success=True)
 
     async def login(
@@ -156,7 +168,11 @@ class AuthService:
         try:
             return await self._do_login(request, login_request)
         except Exception:
-            _log.exception("Unexpected error during login")
+            logger.error(
+                "login_error",
+                username=login_request.username,
+                exc_info=True,
+            )
             return LoginResult.SERVER_ERROR
 
     async def _do_login(
@@ -173,6 +189,11 @@ class AuthService:
         safe_username = User.normalize_username(login_request.username)
         user = await self._user_repo.get_by_safe_username(safe_username)
         if user is None:
+            logger.warning(
+                "login_failed",
+                username=login_request.username,
+                reason="authentication_failed",
+            )
             return LoginResult.AUTHENTICATION_FAILED
 
         # 2. パスワード照合 (argon2id hash vs MD5 hex)
@@ -181,6 +202,11 @@ class AuthService:
             login_request.password_md5,
         )
         if not password_ok:
+            logger.warning(
+                "login_failed",
+                username=login_request.username,
+                reason="authentication_failed",
+            )
             return LoginResult.AUTHENTICATION_FAILED
 
         # 3. 権限計算
@@ -208,6 +234,12 @@ class AuthService:
 
         # 7. セッション作成(既存セッションは SessionStore.create() が自動置換)
         await self._session_store.create(user.id, token, asdict(session_data))
+
+        logger.info(
+            "login_success",
+            username=user.username,
+            user_id=user.id,
+        )
 
         # 8. LoginResponse 返却
         return LoginResponse(
