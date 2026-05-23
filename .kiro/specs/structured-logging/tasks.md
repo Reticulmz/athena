@@ -59,7 +59,7 @@
   - _Boundary: PasswordService, PermissionService_
 
 - [ ] 3. 統合: アプリケーション起動への組み込み
-- [ ] 3.1 RequestLoggingMiddleware + app.py 統合 + uvicorn 設定
+- [x] 3.1 RequestLoggingMiddleware + app.py 統合 + uvicorn 設定
   - app.py に `RequestLoggingMiddleware(BaseHTTPMiddleware)` を定義: リクエスト開始時に `clear_contextvars()`、完了時に method, path, status, duration_ms をログ
   - `lifespan()` 内の `load_config()` 直後に `setup_logging(config)` を呼び出し
   - `create_app()` で `RequestLoggingMiddleware` を Starlette アプリに登録

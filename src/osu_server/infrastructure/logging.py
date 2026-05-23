@@ -68,7 +68,7 @@ def setup_logging(config: AppConfig) -> None:
         ],
         wrapper_class=structlog.stdlib.BoundLogger,
         logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=True,
+        cache_logger_on_first_use=False,
     )
 
     # --- Console handler (always active) ---

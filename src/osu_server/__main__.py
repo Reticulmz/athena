@@ -13,6 +13,7 @@ def main() -> None:
         host=config.server_host,
         port=config.server_port,
         reload=config.environment == "development",
+        access_log=False,
     )
 
 

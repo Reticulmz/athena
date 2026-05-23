@@ -13,17 +13,24 @@ from __future__ import annotations
 
 import importlib.metadata
 import subprocess
+import time
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
+import structlog
+import structlog.contextvars
+import structlog.stdlib
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import PlainTextResponse
 from starlette.routing import Host, Mount, Route, Router
 
 from osu_server.config import AppConfig, load_config
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.di.providers import build_container
+from osu_server.infrastructure.logging import setup_logging
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.role_repository import RoleRepository
@@ -46,6 +53,38 @@ if TYPE_CHECKING:
     from starlette.responses import Response
 
     from osu_server.infrastructure.di.container import Container
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger()  # pyright: ignore[reportAny]
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log every HTTP request with method, path, status, and duration.
+
+    Clears ``structlog.contextvars`` at the start of each request so that
+    context bound during one request (e.g. ``user``, ``user_id``) does not
+    leak into subsequent requests.
+    """
+
+    async def dispatch(  # pyright: ignore[reportImplicitOverride]
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        """Record an ``http_request`` event after the response is produced."""
+        structlog.contextvars.clear_contextvars()
+
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        await logger.ainfo(
+            "http_request",
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+            duration_ms=round(duration_ms, 2),
+        )
+        return response
 
 
 def get_version_info() -> tuple[str, str]:
@@ -156,6 +195,7 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
            close httpx client, etc.
     """
     config = load_config()
+    setup_logging(config)
     container = await build_container(config)
     await _register_services(container, config)
     try:
@@ -241,6 +281,7 @@ def create_app() -> Starlette:
     return Starlette(
         routes=routes,
         lifespan=lifespan,
+        middleware=[Middleware(RequestLoggingMiddleware)],
     )
 
 
