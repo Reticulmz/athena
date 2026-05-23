@@ -71,7 +71,7 @@
   - _Boundary: RequestLoggingMiddleware, app.py, __main__.py_
 
 - [ ] 4. テスト
-- [ ] 4.1 ログ基盤ユニットテスト
+- [x] 4.1 ログ基盤ユニットテスト
   - `setup_logging()` が ConsoleRenderer ハンドラを設定すること
   - `setup_logging()` が `log_json_enabled=True` 時に FileHandler を追加すること
   - `setup_logging()` が `log_json_enabled=False` 時に FileHandler を追加しないこと
@@ -80,7 +80,7 @@
   - `structlog.testing.capture_logs()` を使用し、全テストが pass すること
   - _Requirements: 11.1, 11.2, 11.3_
 
-- [ ] 4.2 統合テスト
+- [x] 4.2 統合テスト
   - `RequestLoggingMiddleware` が HTTP リクエストの method, path, status, duration_ms をログすること
   - `PacketDispatcher.dispatch()` がノイジーパケットを DEBUG、通常パケットを INFO でログすること
   - contextvars にバインドされたユーザー情報がログエントリに含まれること
