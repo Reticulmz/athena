@@ -34,7 +34,7 @@
   - _Requirements: 6.1, 6.2_
   - _Boundary: write_packet_
 
-- [ ] 2.3 (P) LoginHandler ログ移行 + contextvars バインド
+- [x] 2.3 (P) LoginHandler ログ移行 + contextvars バインド
   - login.py の `logging.getLogger(__name__)` を `structlog.get_logger()` に移行
   - ログイン成功時に `structlog.contextvars.bind_contextvars(user=..., user_id=...)` を呼び出し
   - 既存の `_log.warning("Failed to parse login request body")` を structlog 形式に移行

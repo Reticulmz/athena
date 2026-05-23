@@ -7,9 +7,10 @@ Dispatches based on the ``osu-token`` header:
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
+import structlog
+import structlog.contextvars
 from starlette.responses import Response
 
 from osu_server.domain.auth import LoginResponse, LoginResult
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.session_store import SessionStore
     from osu_server.services.auth_service import AuthService
 
-_log = logging.getLogger(__name__)
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 _PROTOCOL_VERSION = 19
 
@@ -74,7 +75,7 @@ class LoginHandler:
         try:
             login_request = parse_login_request(body)
         except ValueError:
-            _log.warning("Failed to parse login request body")
+            logger.warning("login_parse_failed")
             return Response(
                 content=login_reply(LoginResult.AUTHENTICATION_FAILED),
             )
@@ -82,7 +83,19 @@ class LoginHandler:
         result = await self._auth_service.login(request, login_request)
 
         if isinstance(result, LoginResult):
+            logger.info("login_failed", username=login_request.username)
             return Response(content=login_reply(result))
+
+        _ = structlog.contextvars.bind_contextvars(
+            user=result.user.username,
+            user_id=result.user.id,
+        )
+
+        logger.info(
+            "login_success",
+            user=result.user.username,
+            user_id=result.user.id,
+        )
 
         stream = _build_login_response_stream(result)
         return Response(

@@ -2,6 +2,7 @@
 
 TDD RED -> GREEN -> REFACTOR.
 Tests: login success, auth failure, server error, polling success, polling with invalid token.
+Logging: structlog migration, contextvars binding on successful login.
 
 Uses Starlette TestClient with a minimal app that routes POST / to the handler.
 """
@@ -13,6 +14,8 @@ import struct
 from http import HTTPStatus
 from unittest.mock import AsyncMock
 
+import structlog.contextvars
+import structlog.testing
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
@@ -327,3 +330,97 @@ class TestLoginServerError:
             assert resp.status_code == _OK
             value = _extract_login_reply_value(resp.content)
             assert value == LoginResult.SERVER_ERROR
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Logging: structlog migration (Req 7.1)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestLoginHandlerStructlog:
+    """LoginHandler uses structlog instead of stdlib logging."""
+
+    async def test_parse_failure_logs_warning_via_structlog(self) -> None:
+        """Malformed body emits a structlog warning with event name."""
+        app, *_ = _make_app()
+
+        with structlog.testing.capture_logs() as logs, TestClient(app) as client:
+            client.post("/", content=b"malformed\x00garbage")
+
+        parse_logs = [log for log in logs if log["event"] == "login_parse_failed"]
+        assert len(parse_logs) == 1
+        assert parse_logs[0]["log_level"] == "warning"
+
+    async def test_login_success_logs_event(self) -> None:
+        """Successful login emits a structlog info event."""
+        app, *_ = await _setup_with_user()
+
+        with structlog.testing.capture_logs() as logs, TestClient(app) as client:
+            client.post("/", content=_build_login_body())
+
+        success_logs = [log for log in logs if log["event"] == "login_success"]
+        assert len(success_logs) == 1
+        assert success_logs[0]["log_level"] == "info"
+        assert success_logs[0]["user"] == "TestUser"
+        assert success_logs[0]["user_id"] > 0
+
+    async def test_login_failure_logs_event(self) -> None:
+        """Authentication failure emits a structlog info event."""
+        app, *_ = await _setup_with_user()
+
+        with structlog.testing.capture_logs() as logs, TestClient(app) as client:
+            client.post("/", content=_build_login_body(password_md5="0" * 32))
+
+        failure_logs = [log for log in logs if log["event"] == "login_failed"]
+        assert len(failure_logs) == 1
+        assert failure_logs[0]["log_level"] == "info"
+        assert failure_logs[0]["username"] == "TestUser"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Logging: contextvars binding (Req 7.1)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestLoginContextvarsBinding:
+    """Successful login binds user/user_id to structlog contextvars."""
+
+    async def test_contextvars_bound_after_login(self) -> None:
+        """bind_contextvars(user=..., user_id=...) called on success."""
+        app, *_ = await _setup_with_user()
+
+        structlog.contextvars.clear_contextvars()
+
+        with structlog.testing.capture_logs() as logs, TestClient(app) as client:
+            client.post("/", content=_build_login_body())
+
+        # The login_success event should have user context bound
+        success_logs = [log for log in logs if log["event"] == "login_success"]
+        assert len(success_logs) == 1
+        assert success_logs[0]["user"] == "TestUser"
+        assert success_logs[0]["user_id"] > 0
+
+    async def test_contextvars_not_bound_on_failure(self) -> None:
+        """No contextvars binding when authentication fails."""
+        app, *_ = await _setup_with_user()
+
+        structlog.contextvars.clear_contextvars()
+
+        with structlog.testing.capture_logs() as logs, TestClient(app) as client:
+            client.post("/", content=_build_login_body(password_md5="0" * 32))
+
+        # No login_success event should exist, meaning no bind happened
+        success_logs = [log for log in logs if log["event"] == "login_success"]
+        assert len(success_logs) == 0
+
+    async def test_contextvars_not_bound_on_parse_failure(self) -> None:
+        """No contextvars binding when request parsing fails."""
+        app, *_ = _make_app()
+
+        structlog.contextvars.clear_contextvars()
+
+        with structlog.testing.capture_logs() as logs, TestClient(app) as client:
+            client.post("/", content=b"garbage")
+
+        success_logs = [log for log in logs if log["event"] == "login_success"]
+        assert len(success_logs) == 0
