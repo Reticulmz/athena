@@ -50,6 +50,9 @@ in
     DATABASE_URL = "postgresql://localhost:${pg_port}/${db_name}";
     REDIS_URL = "redis://localhost:${redis_port}";
     ENVIRONMENT = "development";
+    LOG_LEVEL = "DEBUG";
+    LOG_JSON_ENABLED = "true";
+    LOG_JSON_PATH = "logs/athena.jsonl";
   };
 
   git-hooks.hooks = {
