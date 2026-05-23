@@ -68,6 +68,62 @@ class TestAppConfigValidation:
             AppConfig()  # pyright: ignore[reportCallIssue]
 
 
+class TestAppConfigLoggingDefaults:
+    """Requirement 1.1, 1.2, 1.3, 1.4: Logging config fields with defaults."""
+
+    def test_default_log_level(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+
+        config = load_config()
+        assert config.log_level == "INFO"
+
+    def test_default_log_json_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+
+        config = load_config()
+        assert config.log_json_enabled is False
+
+    def test_default_log_json_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+
+        config = load_config()
+        assert config.log_json_path == "logs/athena.jsonl"
+
+    def test_override_log_level_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+        monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+
+        config = load_config()
+        assert config.log_level == "DEBUG"
+
+    def test_override_log_json_enabled_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+        monkeypatch.setenv("LOG_JSON_ENABLED", "true")
+
+        config = load_config()
+        assert config.log_json_enabled is True
+
+    def test_override_log_json_path_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+        monkeypatch.setenv("LOG_JSON_PATH", "/var/log/athena.jsonl")
+
+        config = load_config()
+        assert config.log_json_path == "/var/log/athena.jsonl"
+
+    def test_log_json_enabled_is_bool(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+
+        config = load_config()
+        assert isinstance(config.log_json_enabled, bool)
+
+
 class TestAppConfigDefaults:
     """Requirement 2.3: Type-safe defaults for optional fields."""
 

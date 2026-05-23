@@ -22,6 +22,10 @@ class AppConfig(BaseSettings):
     domain: str = "athena.localhost"
     banned_passwords: list[str] = []
 
+    log_level: str = "INFO"
+    log_json_enabled: bool = False
+    log_json_path: str = "logs/athena.jsonl"
+
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="", env_file=".env")
 
 
