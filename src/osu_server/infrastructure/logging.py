@@ -108,6 +108,14 @@ def setup_logging(config: AppConfig) -> None:
     # --- Override uvicorn logger handlers ---
     _override_uvicorn_handlers(console_handler, json_handler)
 
+    # --- Log current configuration ---
+    structlog.get_logger().info(  # pyright: ignore[reportAny]
+        "logging_configured",
+        log_level=config.log_level.upper(),
+        json_enabled=config.log_json_enabled,
+        json_path=config.log_json_path if config.log_json_enabled else None,
+    )
+
 
 def _override_uvicorn_handlers(
     console_handler: logging.Handler,
