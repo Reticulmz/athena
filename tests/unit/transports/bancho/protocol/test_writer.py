@@ -3,12 +3,16 @@
 
 Validates:
 - Req 4.3: S2C packet construction (ServerPacketID + payload → header + payload bytes)
+- Logging Req 6.1: S2C packet logging with packet name and payload size
+- Logging Req 6.2: Noisy packets logged at DEBUG only
 """
 
 import struct as pystruct
 
+import structlog.testing
+
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.writer import write_packet
+from osu_server.transports.bancho.protocol.writer import QUIET_S2C_PACKETS, write_packet
 
 
 class TestWritePacketHeader:
@@ -77,3 +81,76 @@ class TestWritePacketDefaultPayload:
         assert len(result) == 7
         content_size = pystruct.unpack_from("<I", result, 3)[0]
         assert content_size == 0
+
+
+class TestQuietS2cPackets:
+    """QUIET_S2C_PACKETS definition validation."""
+
+    def test_contains_ping(self) -> None:
+        assert ServerPacketID.PING in QUIET_S2C_PACKETS
+
+    def test_contains_user_stats(self) -> None:
+        assert ServerPacketID.USER_STATS in QUIET_S2C_PACKETS
+
+    def test_contains_user_presence(self) -> None:
+        assert ServerPacketID.USER_PRESENCE in QUIET_S2C_PACKETS
+
+    def test_is_frozenset(self) -> None:
+        assert isinstance(QUIET_S2C_PACKETS, frozenset)
+
+
+class TestWritePacketLogging:
+    """Logging Req 6.1, 6.2: S2C packet logging."""
+
+    def test_normal_packet_logged_at_info(self) -> None:
+        """Req 6.1: Normal (non-quiet) packet logged at INFO with name and size."""
+        payload = b"\x01\x02\x03"
+        with structlog.testing.capture_logs() as logs:
+            write_packet(ServerPacketID.LOGIN_REPLY, payload)
+
+        s2c_logs = [log for log in logs if log["event"] == "s2c_packet"]
+        assert len(s2c_logs) == 1
+        assert s2c_logs[0]["log_level"] == "info"
+        assert s2c_logs[0]["packet"] == "LOGIN_REPLY"
+        assert s2c_logs[0]["size"] == 3
+
+    def test_quiet_packet_logged_at_debug(self) -> None:
+        """Req 6.2: Quiet packet logged at DEBUG only."""
+        with structlog.testing.capture_logs() as logs:
+            write_packet(ServerPacketID.PING, b"")
+
+        s2c_logs = [log for log in logs if log["event"] == "s2c_packet"]
+        assert len(s2c_logs) == 1
+        assert s2c_logs[0]["log_level"] == "debug"
+        assert s2c_logs[0]["packet"] == "PING"
+        assert s2c_logs[0]["size"] == 0
+
+    def test_all_quiet_packets_logged_at_debug(self) -> None:
+        """All packets in QUIET_S2C_PACKETS are logged at debug, not info."""
+        for packet_id in QUIET_S2C_PACKETS:
+            with structlog.testing.capture_logs() as logs:
+                write_packet(packet_id, b"\xaa")
+
+            s2c_logs = [log for log in logs if log["event"] == "s2c_packet"]
+            assert len(s2c_logs) == 1, f"{packet_id.name} should produce exactly 1 log"
+            assert s2c_logs[0]["log_level"] == "debug", (
+                f"{packet_id.name} should be logged at debug"
+            )
+
+    def test_size_reflects_payload_not_total(self) -> None:
+        """Logged size is the payload size, not the total packet size."""
+        payload = b"\x01\x02\x03\x04\x05"
+        with structlog.testing.capture_logs() as logs:
+            write_packet(ServerPacketID.SEND_MESSAGE, payload)
+
+        s2c_logs = [log for log in logs if log["event"] == "s2c_packet"]
+        assert s2c_logs[0]["size"] == 5  # payload size, not 7 + 5
+
+    def test_logging_does_not_alter_packet_bytes(self) -> None:
+        """Logging must not interfere with packet construction."""
+        payload = b"\xde\xad"
+        with structlog.testing.capture_logs():
+            result = write_packet(ServerPacketID.LOGIN_REPLY, payload)
+
+        expected = pystruct.pack("<HBI", ServerPacketID.LOGIN_REPLY, 0, 2) + payload
+        assert result == expected

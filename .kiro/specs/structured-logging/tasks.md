@@ -27,7 +27,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.4_
   - _Boundary: PacketDispatcher_
 
-- [ ] 2.2 (P) S2C パケットログ
+- [x] 2.2 (P) S2C パケットログ
   - writer.py に `QUIET_S2C_PACKETS: frozenset[ServerPacketID]` を定義（PONG, USER_STATS, USER_PRESENCE）
   - `write_packet()` 内でパケット構築をログ: 通常パケットは `logger.info("s2c_packet", packet=..., size=...)`、ノイジーパケットは `logger.debug()`
   - `write_packet()` 呼び出し時にパケット種別・サイズがコンソールに出力されること
