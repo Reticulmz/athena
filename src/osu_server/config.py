@@ -22,6 +22,10 @@ class AppConfig(BaseSettings):
     domain: str = "athena.localhost"
     banned_passwords: list[str] = []
 
+    session_ttl: int = 300
+    packet_queue_max_size: int = 4096
+    max_request_body_size: int = 1_048_576
+
     log_level: str = "INFO"
     log_json_enabled: bool = False
     log_json_path: str = "logs/athena.jsonl"
