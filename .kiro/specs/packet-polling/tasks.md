@@ -17,7 +17,7 @@
   - _Requirements: 1.1, 1.2, 4.1, 4.2, 4.3_
   - _Boundary: PacketQueue (infrastructure/state/)_
 
-- [ ] 2.2 RedisPacketQueue 実装（Lua スクリプト）+ 統合テスト
+- [x] 2.2 RedisPacketQueue 実装（Lua スクリプト）+ 統合テスト
   - `dequeue_all` Lua: `LRANGE 0 -1` + `DEL` を原子的に実行
   - `enqueue` Lua: `RPUSH` + `LTRIM` + `EXPIRE` を原子的に実行
   - 統合テスト: Redis 実環境での原子性動作、TTL 設定と期限切れ、並行 drain で二重配信なし
