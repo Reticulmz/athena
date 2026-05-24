@@ -12,13 +12,14 @@ from __future__ import annotations
 import re
 from http import HTTPStatus
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from osu_server.app import _health_endpoint, get_version_info
+from osu_server.app import _health_check_endpoint, _health_endpoint, get_version_info
 from osu_server.config import AppConfig
 
 if TYPE_CHECKING:
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
 # ── Constants ──────────────────────────────────────────────────────────
 
 _OK = HTTPStatus.OK
+_UNAVAILABLE = HTTPStatus.SERVICE_UNAVAILABLE
 _HEALTH_PATTERN = re.compile(r"^athena v[\d.]+ \(\w+\)\n$")
 
 
@@ -117,6 +119,111 @@ class TestHealthEndpoint:
         with TestClient(app) as client:
             resp = client.get("/")
             assert _HEALTH_PATTERN.match(resp.text)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Config domain default (Req 3.1)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# _health_check_endpoint (GET /health)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestHealthCheckEndpoint:
+    """GET /health returns infrastructure health with DB and Redis checks."""
+
+    @staticmethod
+    def _make_container(*, postgres_ok: bool = True, redis_ok: bool = True) -> MagicMock:
+        mock_conn = AsyncMock()
+        if not postgres_ok:
+            mock_conn.execute.side_effect = ConnectionError("pg down")
+
+        mock_engine = MagicMock()
+        cm = AsyncMock()
+        cm.__aenter__.return_value = mock_conn
+        cm.__aexit__.return_value = False
+        mock_engine.connect.return_value = cm
+
+        mock_redis = AsyncMock()
+        if not redis_ok:
+            mock_redis.ping.side_effect = ConnectionError("redis down")
+
+        async def resolve(type_: type) -> object:
+            if type_ is AsyncEngine:
+                return mock_engine
+            return mock_redis
+
+        container = MagicMock()
+        container.resolve = AsyncMock(side_effect=resolve)
+        return container
+
+    @classmethod
+    def _make_app(
+        cls,
+        version: str = "0.1.0",
+        commit: str = "abc1234",
+        *,
+        postgres_ok: bool = True,
+        redis_ok: bool = True,
+    ) -> Starlette:
+        app = Starlette(routes=[Route("/health", _health_check_endpoint, methods=["GET"])])
+        app.state.version_info = (version, commit)
+        app.state.container = cls._make_container(postgres_ok=postgres_ok, redis_ok=redis_ok)
+        return app
+
+    def test_healthy_returns_200(self) -> None:
+        app = self._make_app()
+        with TestClient(app) as client:
+            resp = client.get("/health")
+            assert resp.status_code == _OK
+
+    def test_healthy_response_body(self) -> None:
+        app = self._make_app(version="0.1.0", commit="abc1234")
+        with TestClient(app) as client:
+            data = client.get("/health").json()
+            assert data["status"] == "healthy"
+            assert data["version"] == "0.1.0"
+            assert data["commit"] == "abc1234"
+            assert data["checks"]["postgres"] == "ok"
+            assert data["checks"]["redis"] == "ok"
+
+    def test_content_type_is_json(self) -> None:
+        app = self._make_app()
+        with TestClient(app) as client:
+            resp = client.get("/health")
+            assert "application/json" in resp.headers["content-type"]
+
+    def test_postgres_down_returns_503(self) -> None:
+        app = self._make_app(postgres_ok=False)
+        with TestClient(app) as client:
+            resp = client.get("/health")
+            assert resp.status_code == _UNAVAILABLE
+            data = resp.json()
+            assert data["status"] == "unhealthy"
+            assert data["checks"]["postgres"] == "error"
+            assert data["checks"]["redis"] == "ok"
+
+    def test_redis_down_returns_503(self) -> None:
+        app = self._make_app(redis_ok=False)
+        with TestClient(app) as client:
+            resp = client.get("/health")
+            assert resp.status_code == _UNAVAILABLE
+            data = resp.json()
+            assert data["status"] == "unhealthy"
+            assert data["checks"]["postgres"] == "ok"
+            assert data["checks"]["redis"] == "error"
+
+    def test_both_down_returns_503(self) -> None:
+        app = self._make_app(postgres_ok=False, redis_ok=False)
+        with TestClient(app) as client:
+            resp = client.get("/health")
+            assert resp.status_code == _UNAVAILABLE
+            data = resp.json()
+            assert data["status"] == "unhealthy"
+            assert data["checks"]["postgres"] == "error"
+            assert data["checks"]["redis"] == "error"
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Host, Mount, Route, Router
 
 from osu_server.config import AppConfig, load_config
@@ -255,14 +255,52 @@ async def _health_endpoint(request: Request) -> PlainTextResponse:
     return PlainTextResponse(f"athena v{version} ({commit})\n")
 
 
+async def _health_check_endpoint(request: Request) -> JSONResponse:
+    """Return infrastructure health status with DB and Redis connectivity checks."""
+    version, commit = request.app.state.version_info  # pyright: ignore[reportAny]
+    container: Container = request.app.state.container  # pyright: ignore[reportAny]
+
+    checks: dict[str, str] = {}
+
+    try:
+        engine = await container.resolve(AsyncEngine)
+        async with engine.connect() as conn:
+            _ = await conn.execute(text("SELECT 1"))
+        checks["postgres"] = "ok"
+    except Exception:
+        checks["postgres"] = "error"
+
+    try:
+        redis = await container.resolve(Redis)
+        await redis.ping()  # pyright: ignore[reportUnknownMemberType]
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "error"
+
+    all_healthy = all(v == "ok" for v in checks.values())
+
+    return JSONResponse(
+        {
+            "status": "healthy" if all_healthy else "unhealthy",
+            "version": version,
+            "commit": commit,
+            "checks": checks,
+        },
+        status_code=200 if all_healthy else 503,
+    )
+
+
 def create_app() -> Starlette:
     """Create and return the Starlette root application.
 
     Routing:
-        - ``Host("c.{domain}")`` → bancho transport (POST / for login/polling)
-        - ``Host("osu.{domain}")`` → web_legacy transport (POST /users for registration)
+        - ``Host("c.{domain}")`` → bancho (POST /, GET /, GET /health)
+        - ``Host("osu.{domain}")`` → web_legacy (POST /users, GET /, GET /health)
+        - ``GET /health`` → DB/Redis health check (all routes)
         - Path-based fallbacks for local dev without DNS/subdomains:
             - ``POST /`` → bancho handler
+            - ``GET /`` → version info
+            - ``GET /health`` → health check
             - ``POST /web/users`` → registration handler
     """
     # bancho routes (c.$DOMAIN)
@@ -270,6 +308,7 @@ def create_app() -> Starlette:
         routes=[
             Route("/", endpoint=_bancho_endpoint, methods=["POST"]),
             Route("/", endpoint=_health_endpoint, methods=["GET"]),
+            Route("/health", endpoint=_health_check_endpoint, methods=["GET"]),
         ],
     )
 
@@ -277,6 +316,7 @@ def create_app() -> Starlette:
     web_routes = Router(
         routes=[
             Route("/", endpoint=_health_endpoint, methods=["GET"]),
+            Route("/health", endpoint=_health_check_endpoint, methods=["GET"]),
             Route("/users", endpoint=_registration_endpoint, methods=["POST"]),
         ],
     )
@@ -288,6 +328,7 @@ def create_app() -> Starlette:
         # Path-based fallbacks for local dev
         Route("/", endpoint=_bancho_endpoint, methods=["POST"]),
         Route("/", endpoint=_health_endpoint, methods=["GET"]),
+        Route("/health", endpoint=_health_check_endpoint, methods=["GET"]),
         Mount(
             "/web",
             routes=[
