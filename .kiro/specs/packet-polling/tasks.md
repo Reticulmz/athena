@@ -26,7 +26,7 @@
   - _Boundary: PacketQueue (infrastructure/state/redis/)_
 
 - [ ] 3. Core: EventBus + イベント基盤
-- [ ] 3.1 (P) EventBus Protocol + InMemoryEventBus 実装 + ユニットテスト
+- [x] 3.1 (P) EventBus Protocol + InMemoryEventBus 実装 + ユニットテスト
   - `EventBus` Protocol 定義: `fire(event)`, `subscribe(event_type, handler)`
   - `InMemoryEventBus` 実装（`dict[type, list[handler]]`、~40行）
   - テスト: fire/subscribe の基本動作、複数ハンドラの登録順逐次実行、ハンドラ例外の隔離（fire-and-forget）

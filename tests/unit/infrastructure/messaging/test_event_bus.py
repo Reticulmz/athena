@@ -1,0 +1,136 @@
+"""Tests for EventBus Protocol + InMemoryEventBus."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import pytest
+
+from osu_server.infrastructure.messaging.interfaces import EventBus
+from osu_server.infrastructure.messaging.memory import InMemoryEventBus
+
+
+@dataclass(slots=True)
+class _UserLoggedIn:
+    user_id: int
+
+
+@dataclass(slots=True)
+class _ChatMessageSent:
+    sender_id: int
+    text: str
+
+
+@pytest.fixture
+def bus() -> InMemoryEventBus:
+    return InMemoryEventBus()
+
+
+class TestProtocolCompliance:
+    def test_is_event_bus(self, bus: InMemoryEventBus) -> None:
+        assert isinstance(bus, EventBus)
+
+
+class TestFireAndSubscribe:
+    async def test_handler_receives_event(self, bus: InMemoryEventBus) -> None:
+        received: list[_UserLoggedIn] = []
+
+        async def on_login(event: _UserLoggedIn) -> None:
+            received.append(event)
+
+        bus.subscribe(_UserLoggedIn, on_login)
+        await bus.fire(_UserLoggedIn(user_id=1))
+
+        assert len(received) == 1
+        assert received[0].user_id == 1
+
+    async def test_fire_without_subscribers_is_noop(self, bus: InMemoryEventBus) -> None:
+        await bus.fire(_UserLoggedIn(user_id=1))
+
+    async def test_handler_only_receives_subscribed_type(self, bus: InMemoryEventBus) -> None:
+        received: list[object] = []
+
+        async def on_login(event: _UserLoggedIn) -> None:
+            received.append(event)
+
+        bus.subscribe(_UserLoggedIn, on_login)
+        await bus.fire(_ChatMessageSent(sender_id=1, text="hello"))
+
+        assert len(received) == 0
+
+
+class TestMultipleHandlers:
+    async def test_multiple_handlers_called_in_order(self, bus: InMemoryEventBus) -> None:
+        order: list[str] = []
+
+        async def first(_event: _UserLoggedIn) -> None:
+            order.append("first")
+
+        async def second(_event: _UserLoggedIn) -> None:
+            order.append("second")
+
+        async def third(_event: _UserLoggedIn) -> None:
+            order.append("third")
+
+        bus.subscribe(_UserLoggedIn, first)
+        bus.subscribe(_UserLoggedIn, second)
+        bus.subscribe(_UserLoggedIn, third)
+
+        await bus.fire(_UserLoggedIn(user_id=1))
+
+        assert order == ["first", "second", "third"]
+
+    async def test_multiple_event_types(self, bus: InMemoryEventBus) -> None:
+        logins: list[_UserLoggedIn] = []
+        chats: list[_ChatMessageSent] = []
+
+        async def on_login(event: _UserLoggedIn) -> None:
+            logins.append(event)
+
+        async def on_chat(event: _ChatMessageSent) -> None:
+            chats.append(event)
+
+        bus.subscribe(_UserLoggedIn, on_login)
+        bus.subscribe(_ChatMessageSent, on_chat)
+
+        await bus.fire(_UserLoggedIn(user_id=1))
+        await bus.fire(_ChatMessageSent(sender_id=2, text="hi"))
+
+        assert len(logins) == 1
+        assert len(chats) == 1
+
+
+class TestExceptionIsolation:
+    async def test_handler_exception_does_not_stop_others(self, bus: InMemoryEventBus) -> None:
+        results: list[str] = []
+
+        async def failing(_event: _UserLoggedIn) -> None:
+            msg = "handler error"
+            raise RuntimeError(msg)
+
+        async def succeeding(_event: _UserLoggedIn) -> None:
+            results.append("ok")
+
+        bus.subscribe(_UserLoggedIn, failing)
+        bus.subscribe(_UserLoggedIn, succeeding)
+
+        await bus.fire(_UserLoggedIn(user_id=1))
+
+        assert results == ["ok"]
+
+    async def test_handler_exception_is_logged(
+        self,
+        bus: InMemoryEventBus,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        async def failing(_event: _UserLoggedIn) -> None:
+            msg = "boom"
+            raise ValueError(msg)
+
+        bus.subscribe(_UserLoggedIn, failing)
+
+        with caplog.at_level("ERROR"):
+            await bus.fire(_UserLoggedIn(user_id=1))
+
+        assert any("failing" in record.message for record in caplog.records)
+        assert any(record.exc_info is not None for record in caplog.records)
