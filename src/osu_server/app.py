@@ -12,6 +12,7 @@ to ``osu_server.app`` because it sits outside the layer hierarchy.
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import subprocess
 import time
 from contextlib import asynccontextmanager
@@ -293,9 +294,9 @@ async def _health_check_endpoint(request: Request) -> JSONResponse:
 def create_app() -> Starlette:
     """Create and return the Starlette root application.
 
-    Routing:
-        - ``Host("c.{domain}")`` → bancho (POST /, GET /, GET /health)
-        - ``Host("osu.{domain}")`` → web_legacy (POST /users, GET /, GET /health)
+    Routing (domain from ``DOMAIN`` env var, default ``athena.localhost``):
+        - ``Host("c.$domain")`` → bancho (POST /, GET /, GET /health)
+        - ``Host("osu.$domain")`` → web_legacy (POST /users, GET /, GET /health)
         - ``GET /health`` → DB/Redis health check (all routes)
         - Path-based fallbacks for local dev without DNS/subdomains:
             - ``POST /`` → bancho handler
@@ -303,6 +304,8 @@ def create_app() -> Starlette:
             - ``GET /health`` → health check
             - ``POST /web/users`` → registration handler
     """
+    domain = os.environ.get("DOMAIN", "athena.localhost")
+
     # bancho routes (c.$DOMAIN)
     bancho_routes = Router(
         routes=[
@@ -323,8 +326,8 @@ def create_app() -> Starlette:
 
     routes: list[Route | Mount | Host] = [
         # Subdomain-based routing
-        Host("c.{domain}", app=bancho_routes),
-        Host("osu.{domain}", app=web_routes),
+        Host(f"c.{domain}", app=bancho_routes),
+        Host(f"osu.{domain}", app=web_routes),
         # Path-based fallbacks for local dev
         Route("/", endpoint=_bancho_endpoint, methods=["POST"]),
         Route("/", endpoint=_health_endpoint, methods=["GET"]),
