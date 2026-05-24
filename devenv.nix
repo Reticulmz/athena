@@ -2,7 +2,7 @@
 
 let
   db_name = "athena";
-  pg_port = toString config.services.postgres.port;
+  pg_port = toString config.processes.postgres.ports.listen.value;
   redis_port = toString config.services.redis.port;
 in
 {
@@ -21,6 +21,9 @@ in
     };
   };
 
+  # ポート自動割り当て（競合時にインクリメント）
+  processes.postgres.ports.listen.allocate = 5432;
+
   services.redis = {
     enable = true;
     port = 6379;
@@ -28,7 +31,7 @@ in
 
   services.postgres = {
     enable = true;
-    port = 5432;
+    port = config.processes.postgres.ports.listen.value;
     initialDatabases = [{ name = db_name; }];
     listen_addresses = "127.0.0.1";
   };
