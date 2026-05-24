@@ -42,14 +42,14 @@
   - _Requirements: 7.1_
 
 - [ ] 4. Core: ポーリングハンドラ拡張
-- [ ] 4.1 `_handle_polling` の C2S→S2C パイプライン実装
+- [x] 4.1 `_handle_polling` の C2S→S2C パイプライン実装
   - `LoginHandler.__init__` に `PacketQueue` と `PacketDispatcher` の依存を追加
   - 処理フロー: ボディサイズチェック → セッション検証 → TTL リフレッシュ → C2S パース（`read_packets`）→ 逐次ディスパッチ → S2C drain（`dequeue_all`）→ キュー TTL リフレッシュ → Response 返却
   - テスト: 有効トークン + C2S パケット → S2C レスポンス返却、空ボディ → drain のみ実行、未登録パケットのスキップと後続処理の継続、C2S 処理後に S2C drain が実行される順序保証
   - InMemoryPacketQueue を使用してテストが通ること
   - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3, 2.4, 5.1, 5.3, 6.1_
 
-- [ ] 4.2 エラーハンドリングと入力検証
+- [x] 4.2 エラーハンドリングと入力検証
   - ボディサイズ上限超過でパケット処理をスキップし空レスポンスを返却
   - `PacketReadError` を catch して残パケットの解析を中止、処理済み分 + S2C drain 結果を返却
   - ペイロードサイズ不一致で後続パケットの解析を中止
@@ -57,7 +57,7 @@
   - テスト: 各エラーケースで適切なレスポンスが返ること
   - _Requirements: 3.1, 3.2, 3.3, 3.4_
 
-- [ ] 4.3 構造化ログ（ポーリング統計 + エラー詳細）
+- [x] 4.3 構造化ログ（ポーリング統計 + エラー詳細）
   - `polling_complete` ログ: `c2s_count`, `s2c_count`, `elapsed_ms` を記録
   - `c2s_parse_error` ログ: `packet_id`（判明時）, `payload_size`, 例外情報を記録
   - `c2s_handler_error` ログ: `packet_id`, `payload_size`, `exc_info` を記録

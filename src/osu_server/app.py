@@ -35,7 +35,9 @@ from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.di.providers import build_container
 from osu_server.infrastructure.logging import setup_logging
 from osu_server.infrastructure.security.hibp import HIBPClient
+from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.session_store import SessionStore
+from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
@@ -169,10 +171,17 @@ async def _register_services(container: Container, config: AppConfig) -> None:
     container.register_singleton(AuthService, lambda: auth_service)
 
     # -- LoginHandler (singleton) ---------------------------------------------
+    packet_queue = InMemoryPacketQueue(max_size=config.packet_queue_max_size)
+    container.register_singleton(PacketQueue, lambda: packet_queue)
+
     login_handler = LoginHandler(
         auth_service=auth_service,
         session_store=session_store,
         country_resolver=country_resolver,
+        packet_queue=packet_queue,
+        packet_dispatcher=dispatcher,
+        session_ttl=config.session_ttl,
+        max_request_body_size=config.max_request_body_size,
     )
     container.register_singleton(LoginHandler, lambda: login_handler)
 

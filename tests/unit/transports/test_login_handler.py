@@ -22,12 +22,14 @@ from starlette.testclient import TestClient
 
 from osu_server.domain.auth import LoginResult, RegistrationForm
 from osu_server.domain.role import Privileges, Role
+from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
+from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.handlers.login import LoginHandler
 from osu_server.transports.bancho.protocol.s2c.login import login_reply
 
@@ -116,10 +118,15 @@ def _make_app(
         session_store=session_store,
     )
 
+    packet_queue = InMemoryPacketQueue()
+    packet_dispatcher = PacketDispatcher()
+
     handler = LoginHandler(
         auth_service=auth_service,
         session_store=session_store,
         country_resolver=country_resolver,
+        packet_queue=packet_queue,
+        packet_dispatcher=packet_dispatcher,
     )
 
     # Starlette treats callable objects as ASGI apps, but we need
