@@ -42,6 +42,23 @@ redis.call('SET', KEYS[2], ARGV[2], 'EX', tonumber(ARGV[3]))
 redis.call('SET', KEYS[1], ARGV[4], 'EX', tonumber(ARGV[3]))
 return 1"""
 
+    # Lua script: atomically refresh TTL on both session and user-mapping keys.
+    # KEYS[1] = session:{token}
+    # ARGV[1] = TTL, ARGV[2] = internal user ID field name, ARGV[3] = user key prefix
+    _REFRESH_SCRIPT: Final[str] = """\
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+    return 0
+end
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+local data = cjson.decode(raw)
+local user_id = data[ARGV[2]]
+if user_id ~= nil then
+    local user_key = ARGV[3] .. tostring(math.floor(user_id))
+    redis.call('EXPIRE', user_key, tonumber(ARGV[1]))
+end
+return 1"""
+
     # Lua script: atomically delete session and its user mapping (only if
     # the user mapping still points to this token — prevents racing with a
     # concurrent create that already overwrote the mapping).
@@ -145,22 +162,17 @@ return 1"""
         return bool(result)
 
     async def refresh(self, token: str) -> bool:
-        """Reset the TTL on both session and user-mapping keys.
+        """Atomically reset the TTL on both session and user-mapping keys.
 
         Returns ``True`` if the session exists and was refreshed.
+        Uses a Lua script for atomicity, consistent with ``create``/``delete``.
         """
-        session_key = self._session_key(token)
-        refreshed = await self._redis.expire(session_key, self._ttl)
-        if not refreshed:
-            return False
-        # Also refresh the user mapping key so it stays in sync.
-        raw = await self._redis.get(session_key)
-        if raw is not None:
-            payload: str = raw.decode() if isinstance(raw, bytes) else str(raw)
-            data: dict[str, object] = json.loads(payload)
-            user_id = data.get(self._INTERNAL_USER_ID_KEY)
-            if isinstance(user_id, int):
-                await self._redis.expire(self._user_key(user_id), self._ttl)
-            elif isinstance(user_id, float):
-                await self._redis.expire(self._user_key(int(user_id)), self._ttl)
-        return True
+        result = await self._redis.eval(  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
+            self._REFRESH_SCRIPT,
+            1,
+            self._session_key(token),
+            str(self._ttl),
+            self._INTERNAL_USER_ID_KEY,
+            f"{self._prefix}user_session:",
+        )
+        return bool(result)  # pyright: ignore[reportUnknownArgumentType]

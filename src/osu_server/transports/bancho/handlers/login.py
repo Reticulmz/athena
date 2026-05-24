@@ -33,6 +33,7 @@ from osu_server.transports.bancho.protocol.s2c.login import (
 if TYPE_CHECKING:
     from starlette.requests import Request
 
+    from osu_server.infrastructure.country.interfaces import CountryResolver
     from osu_server.infrastructure.state.interfaces.session_store import SessionStore
     from osu_server.services.auth_service import AuthService
 
@@ -50,15 +51,18 @@ class LoginHandler:
 
     _auth_service: AuthService
     _session_store: SessionStore
+    _country_resolver: CountryResolver
 
     def __init__(
         self,
         *,
         auth_service: AuthService,
         session_store: SessionStore,
+        country_resolver: CountryResolver,
     ) -> None:
         self._auth_service = auth_service
         self._session_store = session_store
+        self._country_resolver = country_resolver
 
     async def __call__(self, request: Request) -> Response:
         """Dispatch to login or polling based on ``osu-token`` header."""
@@ -80,7 +84,8 @@ class LoginHandler:
                 content=login_reply(LoginResult.AUTHENTICATION_FAILED),
             )
 
-        result = await self._auth_service.login(request, login_request)
+        country = self._country_resolver.resolve(request.headers)
+        result = await self._auth_service.login(login_request, country=country)
 
         if isinstance(result, LoginResult):
             return Response(content=login_reply(result))

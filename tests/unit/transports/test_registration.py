@@ -17,10 +17,12 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from osu_server.domain.role import Privileges, Role
+from osu_server.infrastructure.state.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
 from osu_server.services.password_service import PasswordService
+from osu_server.services.permission_service import PermissionService
 from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 # ── Seed data ────────────────────────────────────────────────────────
@@ -50,10 +52,15 @@ def _make_app() -> tuple[
     role_repo = InMemoryRoleRepository(seed_roles=[_ROLE_DEFAULT])
     password_service = PasswordService(hibp_client=None, banned_passwords=[])
 
+    session_store = InMemorySessionStore()
+    permission_service = PermissionService(role_repo=role_repo)
+
     auth_service = AuthService(
         user_repo=user_repo,
         role_repo=role_repo,
         password_service=password_service,
+        permission_service=permission_service,
+        session_store=session_store,
     )
 
     handler = RegistrationHandler(auth_service=auth_service)

@@ -15,6 +15,11 @@ from osu_server.domain.auth import ClientInfo, LoginRequest
 _EXPECTED_LINE_COUNT = 3
 _EXPECTED_FIELD_COUNT = 5
 
+# Valid UTC offsets: -12 to +14 in practice, but we allow the full
+# representable range after the +24 wire offset (uint8 0-255).
+_UTC_OFFSET_MIN = -24
+_UTC_OFFSET_MAX = 24
+
 
 def parse_login_request(body: bytes) -> LoginRequest:
     """Parse a raw login request body into a ``LoginRequest``.
@@ -81,7 +86,7 @@ def parse_client_info(raw: str) -> ClientInfo:
         raise ValueError(msg)
 
     osu_version = parts[0]
-    utc_offset = _parse_int(parts[1], "utc_offset")
+    utc_offset = max(_UTC_OFFSET_MIN, min(_UTC_OFFSET_MAX, _parse_int(parts[1], "utc_offset")))
     display_city = _parse_bool(parts[2], "display_city")
     client_hashes = parts[3]
     pm_private = _parse_bool(parts[4], "pm_private")

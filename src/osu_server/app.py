@@ -164,7 +164,6 @@ async def _register_services(container: Container, config: AppConfig) -> None:
         password_service=password_service,
         permission_service=permission_service,
         session_store=session_store,
-        country_resolver=country_resolver,
     )
     container.register_singleton(AuthService, lambda: auth_service)
 
@@ -172,6 +171,7 @@ async def _register_services(container: Container, config: AppConfig) -> None:
     login_handler = LoginHandler(
         auth_service=auth_service,
         session_store=session_store,
+        country_resolver=country_resolver,
     )
     container.register_singleton(LoginHandler, lambda: login_handler)
 

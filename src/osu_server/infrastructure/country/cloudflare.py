@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from starlette.requests import Request
+    from collections.abc import Mapping
 
 
 class CloudflareCountryResolver:
@@ -14,6 +14,6 @@ class CloudflareCountryResolver:
     ヘッダが存在しない場合は ``"XX"`` (不明) を返す。
     """
 
-    def resolve(self, request: Request) -> str:
-        """リクエストヘッダから2文字の国コードを返す。"""
-        return request.headers.get("CF-IPCountry", "XX")
+    def resolve(self, headers: Mapping[str, str]) -> str:
+        """ヘッダから2文字の国コードを返す。"""
+        return headers.get("CF-IPCountry", "XX")

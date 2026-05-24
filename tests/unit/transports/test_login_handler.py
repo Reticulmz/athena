@@ -52,7 +52,7 @@ class _StubCountryResolver:
     def __init__(self, country: str = "JP") -> None:
         self._country = country
 
-    def resolve(self, request: object) -> str:  # noqa: ARG002
+    def resolve(self, headers: object) -> str:  # noqa: ARG002
         return self._country
 
 
@@ -114,12 +114,12 @@ def _make_app(
         password_service=password_service,
         permission_service=permission_service,
         session_store=session_store,
-        country_resolver=country_resolver,
     )
 
     handler = LoginHandler(
         auth_service=auth_service,
         session_store=session_store,
+        country_resolver=country_resolver,
     )
 
     # Starlette treats callable objects as ASGI apps, but we need

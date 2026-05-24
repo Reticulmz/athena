@@ -8,7 +8,7 @@ PasswordService は実インスタンス(is_password_banned のみ mock する�
 from __future__ import annotations
 
 import hashlib
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from structlog.testing import capture_logs
 
@@ -28,6 +28,10 @@ from osu_server.repositories.memory.user_repository import InMemoryUserRepositor
 from osu_server.services.auth_service import AuthService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
+
+# ── Default country for login tests ──────────────────────────────────
+
+_DEFAULT_COUNTRY = "JP"
 
 # ── Seed data ────────────────────────────────────────────────────────
 
@@ -51,14 +55,18 @@ def _make_service(
     """テスト用の AuthService + リポジトリを構築する。"""
     user_repo = InMemoryUserRepository()
     role_repo = InMemoryRoleRepository(seed_roles=[ROLE_DEFAULT])
+    session_store = InMemorySessionStore()
     password_service = PasswordService(
         hibp_client=None,
         banned_passwords=banned_passwords or [],
     )
+    permission_service = PermissionService(role_repo=role_repo)
     svc = AuthService(
         user_repo=user_repo,
         role_repo=role_repo,
         password_service=password_service,
+        permission_service=permission_service,
+        session_store=session_store,
     )
     return svc, user_repo, role_repo
 
@@ -311,12 +319,16 @@ class TestPasswordBanned:
     async def test_password_banned_by_hibp(self) -> None:
         user_repo = InMemoryUserRepository()
         role_repo = InMemoryRoleRepository(seed_roles=[ROLE_DEFAULT])
+        session_store = InMemorySessionStore()
         pw_svc = PasswordService()
         pw_svc.is_password_banned = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        permission_service = PermissionService(role_repo=role_repo)
         svc = AuthService(
             user_repo=user_repo,
             role_repo=role_repo,
             password_service=pw_svc,
+            permission_service=permission_service,
+            session_store=session_store,
         )
         result = await svc.register(_valid_form())
         assert result.success is False
@@ -464,25 +476,6 @@ _LOGIN_PASSWORD_MD5 = _md5_hex(_LOGIN_PASSWORD)
 _LOGIN_UTC_OFFSET = 9
 
 
-class _StubCountryResolver:
-    """テスト用の CountryResolver — 常に固定国コードを返す。"""
-
-    _country: str
-
-    def __init__(self, country: str = "JP") -> None:
-        self._country = country
-
-    def resolve(self, request: object) -> str:  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-        return self._country
-
-
-def _fake_request() -> MagicMock:
-    """ログインテスト用の Request モック。"""
-    req = MagicMock()
-    req.headers = {"X-Forwarded-For": "127.0.0.1"}
-    return req
-
-
 def _login_request(
     *,
     username: str = "TestUser",
@@ -501,10 +494,7 @@ def _login_request(
     )
 
 
-async def _make_login_service(
-    *,
-    country: str = "JP",
-) -> tuple[
+async def _make_login_service() -> tuple[
     AuthService,
     InMemoryUserRepository,
     InMemoryRoleRepository,
@@ -517,7 +507,6 @@ async def _make_login_service(
     session_store = InMemorySessionStore()
     password_service = PasswordService(hibp_client=None, banned_passwords=[])
     permission_service = PermissionService(role_repo=role_repo)
-    country_resolver = _StubCountryResolver(country=country)
 
     svc = AuthService(
         user_repo=user_repo,
@@ -525,7 +514,6 @@ async def _make_login_service(
         password_service=password_service,
         permission_service=permission_service,
         session_store=session_store,
-        country_resolver=country_resolver,
     )
 
     # テストユーザーを register() で作成
@@ -549,19 +537,19 @@ class TestLoginSuccess:
 
     async def test_returns_login_response(self) -> None:
         svc, *_ = await _make_login_service()
-        result = await svc.login(_fake_request(), _login_request())
+        result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
 
     async def test_token_is_nonempty_string(self) -> None:
         svc, *_ = await _make_login_service()
-        result = await svc.login(_fake_request(), _login_request())
+        result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
         assert isinstance(result.token, str)
         assert len(result.token) > 0
 
     async def test_user_field_matches(self) -> None:
         svc, user_repo, *_ = await _make_login_service()
-        result = await svc.login(_fake_request(), _login_request())
+        result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
         user = await user_repo.get_by_safe_username("testuser")
         assert user is not None
@@ -571,20 +559,20 @@ class TestLoginSuccess:
     async def test_privileges_computed(self) -> None:
         """デフォルトロールの権限が正しく計算される。"""
         svc, *_ = await _make_login_service()
-        result = await svc.login(_fake_request(), _login_request())
+        result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
         expected = Privileges.NORMAL | Privileges.VERIFIED | Privileges.UNRESTRICTED
         assert result.privileges == expected
 
     async def test_country_resolved(self) -> None:
-        svc, *_ = await _make_login_service(country="JP")
-        result = await svc.login(_fake_request(), _login_request())
+        svc, *_ = await _make_login_service()
+        result = await svc.login(_login_request(), country="JP")
         assert isinstance(result, LoginResponse)
         assert result.country == "JP"
 
     async def test_session_data_populated(self) -> None:
         svc, user_repo, *_ = await _make_login_service()
-        result = await svc.login(_fake_request(), _login_request())
+        result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
         assert isinstance(result.session_data, SessionData)
         user = await user_repo.get_by_safe_username("testuser")
@@ -600,7 +588,7 @@ class TestLoginSuccess:
 
     async def test_session_stored_in_session_store(self) -> None:
         svc, user_repo, _, session_store, _ = await _make_login_service()
-        result = await svc.login(_fake_request(), _login_request())
+        result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
         user = await user_repo.get_by_safe_username("testuser")
         assert user is not None
@@ -609,7 +597,7 @@ class TestLoginSuccess:
 
     async def test_session_retrievable_by_token(self) -> None:
         svc, _, _, session_store, _ = await _make_login_service()
-        result = await svc.login(_fake_request(), _login_request())
+        result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
         stored = await session_store.get(result.token)
         assert stored is not None
@@ -624,8 +612,8 @@ class TestLoginUserNotFound:
     async def test_returns_authentication_failed(self) -> None:
         svc, *_ = await _make_login_service()
         result = await svc.login(
-            _fake_request(),
             _login_request(username="NonExistent"),
+            country=_DEFAULT_COUNTRY,
         )
         assert result is LoginResult.AUTHENTICATION_FAILED
 
@@ -633,12 +621,12 @@ class TestLoginUserNotFound:
         """ユーザー不在もパスワード不一致も同じ AUTHENTICATION_FAILED を返す (Req 5.3)。"""
         svc, *_ = await _make_login_service()
         not_found = await svc.login(
-            _fake_request(),
             _login_request(username="NoSuchUser"),
+            country=_DEFAULT_COUNTRY,
         )
         wrong_pass = await svc.login(
-            _fake_request(),
             _login_request(password_md5="0" * 32),
+            country=_DEFAULT_COUNTRY,
         )
         assert not_found == wrong_pass == LoginResult.AUTHENTICATION_FAILED
 
@@ -652,16 +640,16 @@ class TestLoginPasswordMismatch:
     async def test_returns_authentication_failed(self) -> None:
         svc, *_ = await _make_login_service()
         result = await svc.login(
-            _fake_request(),
             _login_request(password_md5="0" * 32),
+            country=_DEFAULT_COUNTRY,
         )
         assert result is LoginResult.AUTHENTICATION_FAILED
 
     async def test_no_session_created(self) -> None:
         svc, user_repo, _, session_store, _ = await _make_login_service()
         _ = await svc.login(
-            _fake_request(),
             _login_request(password_md5="0" * 32),
+            country=_DEFAULT_COUNTRY,
         )
         user = await user_repo.get_by_safe_username("testuser")
         assert user is not None
@@ -677,11 +665,11 @@ class TestLoginSessionReplacement:
 
     async def test_old_session_replaced_by_new(self) -> None:
         svc, _, _, session_store, _ = await _make_login_service()
-        first = await svc.login(_fake_request(), _login_request())
+        first = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(first, LoginResponse)
         first_token = first.token
 
-        second = await svc.login(_fake_request(), _login_request())
+        second = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(second, LoginResponse)
         second_token = second.token
 
@@ -701,7 +689,7 @@ class TestLoginSessionReplacement:
         # 3回ログイン
         last_result: LoginResponse | LoginResult | None = None
         for _ in range(3):
-            last_result = await svc.login(_fake_request(), _login_request())
+            last_result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
             assert isinstance(last_result, LoginResponse)
 
         # セッションは1つだけ
@@ -727,7 +715,6 @@ class TestLoginServerError:
         session_store = InMemorySessionStore()
         password_service = PasswordService(hibp_client=None, banned_passwords=[])
         permission_service = PermissionService(role_repo=role_repo)
-        country_resolver = _StubCountryResolver()
 
         svc = AuthService(
             user_repo=user_repo,
@@ -735,7 +722,6 @@ class TestLoginServerError:
             password_service=password_service,
             permission_service=permission_service,
             session_store=session_store,
-            country_resolver=country_resolver,
         )
 
         # register a user first
@@ -754,8 +740,8 @@ class TestLoginServerError:
         )
 
         login_result = await svc.login(
-            _fake_request(),
             _login_request(username="ErrorUser"),
+            country=_DEFAULT_COUNTRY,
         )
         assert login_result is LoginResult.SERVER_ERROR
 
@@ -809,7 +795,7 @@ class TestLoginLogging:
         """成功時に login_success イベントが出力される。"""
         svc, *_ = await _make_login_service()
         with capture_logs() as cap_logs:
-            result = await svc.login(_fake_request(), _login_request())
+            result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
         events = [e for e in cap_logs if e["event"] == "login_success"]
         assert len(events) == 1
@@ -822,8 +808,8 @@ class TestLoginLogging:
         svc, *_ = await _make_login_service()
         with capture_logs() as cap_logs:
             result = await svc.login(
-                _fake_request(),
                 _login_request(username="Ghost"),
+                country=_DEFAULT_COUNTRY,
             )
         assert result is LoginResult.AUTHENTICATION_FAILED
         events = [e for e in cap_logs if e["event"] == "login_failed"]
@@ -837,8 +823,8 @@ class TestLoginLogging:
         svc, *_ = await _make_login_service()
         with capture_logs() as cap_logs:
             result = await svc.login(
-                _fake_request(),
                 _login_request(password_md5="0" * 32),
+                country=_DEFAULT_COUNTRY,
             )
         assert result is LoginResult.AUTHENTICATION_FAILED
         events = [e for e in cap_logs if e["event"] == "login_failed"]
@@ -853,7 +839,6 @@ class TestLoginLogging:
         session_store = InMemorySessionStore()
         password_service = PasswordService(hibp_client=None, banned_passwords=[])
         permission_service = PermissionService(role_repo=role_repo)
-        country_resolver = _StubCountryResolver()
 
         svc = AuthService(
             user_repo=user_repo,
@@ -861,7 +846,6 @@ class TestLoginLogging:
             password_service=password_service,
             permission_service=permission_service,
             session_store=session_store,
-            country_resolver=country_resolver,
         )
 
         result = await svc.register(
@@ -879,8 +863,8 @@ class TestLoginLogging:
 
         with capture_logs() as cap_logs:
             login_result = await svc.login(
-                _fake_request(),
                 _login_request(username="ErrLogUser"),
+                country=_DEFAULT_COUNTRY,
             )
         assert login_result is LoginResult.SERVER_ERROR
         events = [e for e in cap_logs if e["event"] == "login_error"]

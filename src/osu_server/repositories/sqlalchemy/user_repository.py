@@ -37,8 +37,9 @@ class SQLAlchemyUserRepository:
                 msg = f"safe_username already exists: {user.safe_username}"
                 raise ValueError(msg)
 
-            # Check for duplicate email
-            stmt = select(UserModel).where(UserModel.email == user.email)
+            # Check for duplicate email (case-insensitive)
+            normalized_email = user.email.lower()
+            stmt = select(UserModel).where(UserModel.email == normalized_email)
             existing = (await session.execute(stmt)).scalar_one_or_none()
             if existing is not None:
                 msg = f"email already exists: {user.email}"
@@ -47,7 +48,7 @@ class SQLAlchemyUserRepository:
             model = UserModel(
                 username=user.username,
                 safe_username=user.safe_username,
-                email=user.email,
+                email=normalized_email,
                 password_hash=user.password_hash,
                 country=user.country,
             )

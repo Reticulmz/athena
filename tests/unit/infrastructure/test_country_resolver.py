@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import ClassVar
-from unittest.mock import MagicMock
 
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.codes import country_code_to_id
@@ -15,29 +14,26 @@ class TestCloudflareCountryResolver:
 
     def test_returns_country_code_from_cf_header(self) -> None:
         """CF-IPCountry ヘッダが存在する場合、その値を返す。"""
-        request = MagicMock(headers={"CF-IPCountry": "JP"})
         resolver = CloudflareCountryResolver()
 
-        result = resolver.resolve(request)
+        result = resolver.resolve({"CF-IPCountry": "JP"})
 
         assert result == "JP"
 
     def test_returns_xx_when_header_missing(self) -> None:
         """CF-IPCountry ヘッダが存在しない場合、"XX" を返す。"""
-        request = MagicMock(headers={})
         resolver = CloudflareCountryResolver()
 
-        result = resolver.resolve(request)
+        result = resolver.resolve({})
 
         assert result == "XX"
 
     def test_returns_various_country_codes(self) -> None:
         """様々な国コードを正しく返す。"""
         for code in ("US", "KR", "GB", "FR", "DE"):
-            request = MagicMock(headers={"CF-IPCountry": code})
             resolver = CloudflareCountryResolver()
 
-            result = resolver.resolve(request)
+            result = resolver.resolve({"CF-IPCountry": code})
 
             assert result == code
 
