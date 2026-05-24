@@ -7,8 +7,10 @@ Optional fields with defaults: ENVIRONMENT, SERVER_HOST, SERVER_PORT.
 
 from typing import ClassVar
 
-from pydantic import PostgresDsn, RedisDsn
+from pydantic import PostgresDsn, RedisDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_VALID_LOG_LEVELS: frozenset[str] = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 
 class AppConfig(BaseSettings):
@@ -29,6 +31,15 @@ class AppConfig(BaseSettings):
     log_level: str = "INFO"
     log_json_enabled: bool = False
     log_json_path: str = "logs/athena.jsonl"
+
+    @field_validator("log_level")
+    @classmethod
+    def _normalize_log_level(cls, v: str) -> str:
+        upper = v.upper()
+        if upper not in _VALID_LOG_LEVELS:
+            msg = f"Invalid log level: {v!r}. Valid: DEBUG, INFO, WARNING, ERROR, CRITICAL"
+            raise ValueError(msg)
+        return upper
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="", env_file=".env")
 

@@ -78,21 +78,28 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
-        """Record an ``http_request`` event after the response is produced."""
+        """Record an ``http_request`` event after the response is produced.
+
+        Uses ``try/finally`` so that unhandled exceptions are still logged
+        (with ``status=500``) before propagating.
+        """
         structlog.contextvars.clear_contextvars()
 
         start = time.perf_counter()
-        response = await call_next(request)
-        duration_ms = (time.perf_counter() - start) * 1000
-
-        await logger.ainfo(
-            "http_request",
-            host=request.url.hostname,
-            method=request.method,
-            path=request.url.path,
-            status=response.status_code,
-            duration_ms=round(duration_ms, 2),
-        )
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
+            await logger.ainfo(
+                "http_request",
+                host=request.url.hostname,
+                method=request.method,
+                path=request.url.path,
+                status=status,
+                duration_ms=round(duration_ms, 2),
+            )
         return response
 
 

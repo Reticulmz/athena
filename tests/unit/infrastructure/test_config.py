@@ -124,6 +124,43 @@ class TestAppConfigLoggingDefaults:
         assert isinstance(config.log_json_enabled, bool)
 
 
+class TestAppConfigLogLevelValidation:
+    """log_level field normalizes to uppercase and rejects invalid values."""
+
+    def test_normalizes_lowercase_to_uppercase(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+        monkeypatch.setenv("LOG_LEVEL", "debug")
+
+        config = load_config()
+        assert config.log_level == "DEBUG"
+
+    def test_rejects_invalid_level(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+        monkeypatch.setenv("LOG_LEVEL", "WARN")
+
+        with pytest.raises(ValidationError, match="Invalid log level"):
+            load_config()
+
+    def test_rejects_typo(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+        monkeypatch.setenv("LOG_LEVEL", "TRACE")
+
+        with pytest.raises(ValidationError, match="Invalid log level"):
+            load_config()
+
+    def test_accepts_all_valid_levels(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("REDIS_URL", _TEST_REDIS_URL)
+
+        for level in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            monkeypatch.setenv("LOG_LEVEL", level)
+            config = load_config()
+            assert config.log_level == level
+
+
 class TestAppConfigDefaults:
     """Requirement 2.3: Type-safe defaults for optional fields."""
 

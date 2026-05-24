@@ -13,7 +13,7 @@ type Factory[T] = Callable[..., T | Awaitable[T]]
 type ShutdownHook = Callable[[], Awaitable[None]]
 
 T = TypeVar("T")
-logger: structlog.stdlib.BoundLogger = structlog.get_logger()  # pyright: ignore[reportAny]
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 
 @final

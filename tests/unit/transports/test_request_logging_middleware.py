@@ -44,6 +44,12 @@ async def _error_endpoint(_request: Request) -> PlainTextResponse:
     return PlainTextResponse("error", status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
+async def _raise_endpoint(_request: Request) -> PlainTextResponse:
+    """Endpoint that raises an unhandled exception."""
+    msg = "unhandled"
+    raise RuntimeError(msg)
+
+
 async def _bind_user_endpoint(_request: Request) -> PlainTextResponse:
     """Endpoint that binds user info to structlog contextvars."""
     _ = structlog.contextvars.bind_contextvars(user="TestUser", user_id=42)
@@ -58,6 +64,7 @@ def _make_app(
         routes = [
             Route("/", endpoint=_ok_endpoint, methods=["GET", "POST"]),
             Route("/error", endpoint=_error_endpoint, methods=["GET"]),
+            Route("/raise", endpoint=_raise_endpoint, methods=["GET"]),
             Route("/bind", endpoint=_bind_user_endpoint, methods=["GET"]),
         ]
     return Starlette(
@@ -249,3 +256,28 @@ class TestRequestLoggingContextvars:
 
         assert captured_ctx["user"] == "TestUser"
         assert captured_ctx["user_id"] == 42  # noqa: PLR2004
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Unhandled exception logging
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestRequestLoggingOnException:
+    """Middleware logs the request even when the endpoint raises."""
+
+    def test_logs_with_status_500_on_unhandled_exception(self) -> None:
+        """Unhandled endpoint exception still produces an http_request log with status=500."""
+        app = _make_app()
+        with (
+            structlog.testing.capture_logs() as logs,
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            client.get("/raise")
+
+        http_logs = [log for log in logs if log["event"] == "http_request"]
+        assert len(http_logs) == 1
+        assert http_logs[0]["status"] == 500  # noqa: PLR2004
+        assert http_logs[0]["method"] == "GET"
+        assert http_logs[0]["path"] == "/raise"
+        assert http_logs[0]["duration_ms"] >= 0

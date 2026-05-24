@@ -57,7 +57,7 @@ def setup_logging(config: AppConfig) -> None:
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
+        structlog.processors.ExceptionRenderer(),
         structlog.processors.UnicodeDecoder(),
     ]
 
@@ -100,7 +100,7 @@ def setup_logging(config: AppConfig) -> None:
     # --- Root logger setup ---
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
-    root_logger.setLevel(config.log_level.upper())
+    root_logger.setLevel(config.log_level)
     root_logger.addHandler(console_handler)
     if json_handler is not None:
         root_logger.addHandler(json_handler)
@@ -111,7 +111,7 @@ def setup_logging(config: AppConfig) -> None:
     # --- Log current configuration ---
     structlog.get_logger().info(  # pyright: ignore[reportAny]
         "logging_configured",
-        log_level=config.log_level.upper(),
+        log_level=config.log_level,
         json_enabled=config.log_json_enabled,
         json_path=config.log_json_path if config.log_json_enabled else None,
     )

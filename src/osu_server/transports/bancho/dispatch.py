@@ -57,6 +57,9 @@ class PacketDispatcher:
     ) -> None:
         """Call the registered handler for *packet_id*, with structured logging.
 
+        The ``c2s_packet`` event is emitted **after** the handler completes so
+        that a successful log entry is never produced for a failed handler.
+
         Logging behaviour:
         - Registered + quiet packet → ``logger.debug("c2s_packet", ...)``
         - Registered + normal packet → ``logger.info("c2s_packet", ...)``
@@ -67,12 +70,12 @@ class PacketDispatcher:
             logger.debug("c2s_unhandled", packet=packet_id.name, size=len(payload))
             return
 
+        await handler(payload, *args, **kwargs)
+
         if packet_id in QUIET_C2S_PACKETS:
             logger.debug("c2s_packet", packet=packet_id.name, size=len(payload))
         else:
             logger.info("c2s_packet", packet=packet_id.name, size=len(payload))
-
-        await handler(payload, *args, **kwargs)
 
     def get_handlers(self) -> dict[ClientPacketID, PacketHandler]:
         """Return a read-only copy of all registered handlers."""
