@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
     from osu_server.infrastructure.country.interfaces import CountryResolver
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
-    from osu_server.infrastructure.state.interfaces.session_store import SessionStore
+    from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.auth_service import AuthService
     from osu_server.transports.bancho.dispatch import PacketDispatcher
 
@@ -150,7 +150,7 @@ class LoginHandler:
         if session is None:
             return Response(content=login_reply(LoginResult.AUTHENTICATION_FAILED))
 
-        user_id = int(session["user_id"])  # pyright: ignore[reportArgumentType]
+        user_id = session.user_id
 
         # 3. Session TTL refresh
         _ = await self._session_store.refresh(token)
@@ -167,6 +167,8 @@ class LoginHandler:
             for packet_id, payload in packets:
                 c2s_count += 1
                 try:
+                    # NOTE: c2s-handlers 実装時に user_id を渡すこと
+                    # dispatch は *args, **kwargs を handler に転送する
                     await self._packet_dispatcher.dispatch(packet_id, payload)
                 except Exception:
                     logger.error(

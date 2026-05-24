@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import secrets
-from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -21,8 +20,8 @@ from osu_server.domain.user import User
 
 if TYPE_CHECKING:
     from osu_server.domain.auth import LoginRequest
-    from osu_server.infrastructure.state.interfaces.session_store import SessionStore
     from osu_server.repositories.interfaces.role_repository import RoleRepository
+    from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.repositories.interfaces.user_repository import UserRepository
     from osu_server.services.password_service import PasswordService
     from osu_server.services.permission_service import PermissionService
@@ -237,7 +236,7 @@ class AuthService:
         )
 
         # 7. セッション作成(既存セッションは SessionStore.create() が自動置換)
-        await self._session_store.create(user.id, token, asdict(session_data))
+        await self._session_store.create(user.id, token, session_data)
 
         logger.info(
             "login_success",

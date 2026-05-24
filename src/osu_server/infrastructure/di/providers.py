@@ -24,11 +24,8 @@ from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
-from osu_server.infrastructure.state.interfaces.session_store import SessionStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
-from osu_server.infrastructure.state.memory.session_store import InMemorySessionStore
 from osu_server.infrastructure.state.redis.packet_queue import RedisPacketQueue
-from osu_server.infrastructure.state.redis.session_store import RedisSessionStore
 
 if TYPE_CHECKING:
     from osu_server.config import AppConfig
@@ -41,8 +38,9 @@ async def build_container(config: AppConfig) -> Container:
         - ``AsyncEngine`` (singleton) from ``config.database_url``
         - ``Redis`` (singleton) from ``config.redis_url``
         - ``async_sessionmaker[AsyncSession]`` (singleton) from the engine
-        - ``SessionStore`` (singleton): ``InMemorySessionStore`` when
-          ``config.environment == "test"``, otherwise ``RedisSessionStore``
+        - ``PacketQueue`` (singleton): ``InMemoryPacketQueue`` when
+          ``config.environment == "test"``, otherwise ``RedisPacketQueue``
+        - ``EventBus`` (singleton): ``InMemoryEventBus``
         - ``httpx.AsyncClient`` (singleton) with shutdown hook for ``aclose()``
         - ``HIBPClient`` (singleton) using the ``httpx.AsyncClient``
         - ``CountryResolver`` (singleton): ``CloudflareCountryResolver``
@@ -63,15 +61,6 @@ async def build_container(config: AppConfig) -> Container:
     # -- Session factory (singleton) ------------------------------------------
     session_factory = create_session_factory(engine)
     container.register_singleton(async_sessionmaker[AsyncSession], lambda: session_factory)
-
-    # -- SessionStore (singleton, environment-based switching) -----------------
-    if config.environment == "test":
-        container.register_singleton(SessionStore, InMemorySessionStore)
-    else:
-        container.register_singleton(
-            SessionStore,
-            lambda: RedisSessionStore(redis, ttl=config.session_ttl),
-        )
 
     # -- PacketQueue (singleton, environment-based switching) -----------------
     if config.environment == "test":

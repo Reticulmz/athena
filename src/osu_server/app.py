@@ -37,11 +37,13 @@ from osu_server.infrastructure.logging import setup_logging
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
-from osu_server.infrastructure.state.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.role_repository import RoleRepository
+from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.repositories.redis.session_store import RedisSessionStore
 from osu_server.repositories.sqlalchemy.role_repository import SQLAlchemyRoleRepository
 from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
 from osu_server.services.auth_service import AuthService
@@ -124,10 +126,24 @@ async def _register_services(container: Container, config: AppConfig) -> None:
     registrations are complete.  Kept separate from ``build_container`` to
     respect the import-linter layer contracts (infrastructure must not import
     from repositories / services / transports).
+
+    Also resolves ``EventBus`` and ``PacketQueue`` to wire domain event
+    listeners via ``setup_listeners()``.
     """
     session_factory = await container.resolve(async_sessionmaker[AsyncSession])
     hibp_client = await container.resolve(HIBPClient)
     country_resolver = await container.resolve(CountryResolver)
+    redis = await container.resolve(Redis)
+
+    # -- SessionStore (singleton, environment-based switching) -----------------
+    if config.environment == "test":
+        container.register_singleton(SessionStore, InMemorySessionStore)
+    else:
+        container.register_singleton(
+            SessionStore,
+            lambda: RedisSessionStore(redis, ttl=config.session_ttl),
+        )
+
     session_store = await container.resolve(SessionStore)
 
     # -- PasswordService (singleton) ------------------------------------------

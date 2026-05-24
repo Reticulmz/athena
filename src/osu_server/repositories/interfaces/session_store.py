@@ -4,25 +4,28 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from osu_server.domain.session import (
+    SessionData,  # noqa: TC001  # runtime_checkable needs runtime access
+)
+
 
 @runtime_checkable
 class SessionStore(Protocol):
     """Protocol for session CRUD operations.
 
-    Implementations must support create, get, get_by_user, delete, and exists.
-    The ``data`` parameter is ``dict[str, object]`` for now; a typed Session
-    dataclass will be introduced in the bancho-login spec.
+    Implementations must support create, get, get_by_user, delete, exists,
+    and refresh.  Session data is represented by the ``SessionData`` dataclass.
     """
 
-    async def create(self, user_id: int, token: str, data: dict[str, object]) -> None:
+    async def create(self, user_id: int, token: str, data: SessionData) -> None:
         """Store a session.  If the user already has a session, replace it."""
         ...
 
-    async def get(self, token: str) -> dict[str, object] | None:
+    async def get(self, token: str) -> SessionData | None:
         """Return session data for *token*, or ``None`` if not found."""
         ...
 
-    async def get_by_user(self, user_id: int) -> dict[str, object] | None:
+    async def get_by_user(self, user_id: int) -> SessionData | None:
         """Return session data for *user_id*, or ``None`` if not found."""
         ...
 

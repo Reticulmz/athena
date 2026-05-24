@@ -8,9 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from osu_server.config import AppConfig
 from osu_server.infrastructure.di.providers import build_container
-from osu_server.infrastructure.state.interfaces.session_store import SessionStore
-from osu_server.infrastructure.state.memory.session_store import InMemorySessionStore
-from osu_server.infrastructure.state.redis.session_store import RedisSessionStore
+from osu_server.repositories.interfaces.session_store import SessionStore
+from osu_server.repositories.memory.session_store import InMemorySessionStore
+from osu_server.repositories.redis.session_store import RedisSessionStore
 
 _EXPECTED_MIN_SHUTDOWN_HOOKS = 2
 

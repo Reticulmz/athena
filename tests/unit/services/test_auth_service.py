@@ -22,8 +22,8 @@ from osu_server.domain.auth import (
 )
 from osu_server.domain.role import Privileges, Role
 from osu_server.domain.session import SessionData
-from osu_server.infrastructure.state.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
 from osu_server.services.password_service import PasswordService

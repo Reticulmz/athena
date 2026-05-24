@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
-from osu_server.infrastructure.state.memory.session_store import InMemorySessionStore
+from osu_server.domain.session import SessionData
+from osu_server.repositories.memory.session_store import InMemorySessionStore
+
+_SESSION = SessionData(
+    user_id=1,
+    username="peppy",
+    privileges=1,
+    country="JP",
+    osu_version="20231111",
+    utc_offset=9,
+    display_city=True,
+    client_hashes="hash1:hash2",
+    pm_private=False,
+)
 
 
 @pytest.fixture
@@ -14,14 +29,13 @@ def store() -> InMemorySessionStore:
 
 async def test_create_and_get(store: InMemorySessionStore) -> None:
     """create stores session data; get retrieves it by token."""
-    data: dict[str, object] = {"username": "peppy", "privileges": 1}
-    await store.create(user_id=1, token="abc-123", data=data)
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     result = await store.get("abc-123")
 
     assert result is not None
-    assert result["username"] == "peppy"
-    assert result["privileges"] == 1
+    assert result.username == "peppy"
+    assert result.privileges == 1
 
 
 async def test_get_nonexistent_returns_none(store: InMemorySessionStore) -> None:
@@ -33,13 +47,12 @@ async def test_get_nonexistent_returns_none(store: InMemorySessionStore) -> None
 
 async def test_get_by_user(store: InMemorySessionStore) -> None:
     """get_by_user retrieves session data by user_id."""
-    data: dict[str, object] = {"username": "peppy", "privileges": 1}
-    await store.create(user_id=1, token="abc-123", data=data)
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     result = await store.get_by_user(user_id=1)
 
     assert result is not None
-    assert result["username"] == "peppy"
+    assert result.username == "peppy"
 
 
 async def test_get_by_user_nonexistent_returns_none(store: InMemorySessionStore) -> None:
@@ -51,8 +64,7 @@ async def test_get_by_user_nonexistent_returns_none(store: InMemorySessionStore)
 
 async def test_delete(store: InMemorySessionStore) -> None:
     """delete removes the session; subsequent get returns None."""
-    data: dict[str, object] = {"username": "peppy"}
-    await store.create(user_id=1, token="abc-123", data=data)
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     await store.delete("abc-123")
 
@@ -62,8 +74,7 @@ async def test_delete(store: InMemorySessionStore) -> None:
 
 async def test_exists_true(store: InMemorySessionStore) -> None:
     """exists returns True for a created session."""
-    data: dict[str, object] = {"username": "peppy"}
-    await store.create(user_id=1, token="abc-123", data=data)
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     assert await store.exists("abc-123") is True
 
@@ -75,8 +86,8 @@ async def test_exists_false(store: InMemorySessionStore) -> None:
 
 async def test_create_overwrites_previous_session(store: InMemorySessionStore) -> None:
     """Same user_id with a new token replaces the old session entirely."""
-    data_old: dict[str, object] = {"username": "peppy", "version": "old"}
-    data_new: dict[str, object] = {"username": "peppy", "version": "new"}
+    data_old = replace(_SESSION, country="US")
+    data_new = replace(_SESSION, country="JP")
 
     await store.create(user_id=1, token="old-token", data=data_old)
     await store.create(user_id=1, token="new-token", data=data_new)
@@ -88,18 +99,17 @@ async def test_create_overwrites_previous_session(store: InMemorySessionStore) -
     # New token should be active
     result = await store.get("new-token")
     assert result is not None
-    assert result["version"] == "new"
+    assert result.country == "JP"
 
     # get_by_user returns the new session
     result_by_user = await store.get_by_user(user_id=1)
     assert result_by_user is not None
-    assert result_by_user["version"] == "new"
+    assert result_by_user.country == "JP"
 
 
 async def test_refresh_existing_token(store: InMemorySessionStore) -> None:
     """refresh returns True for an existing session."""
-    data: dict[str, object] = {"username": "peppy"}
-    await store.create(user_id=1, token="abc-123", data=data)
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     result = await store.refresh("abc-123")
 

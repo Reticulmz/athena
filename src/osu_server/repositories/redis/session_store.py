@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Final
+
+from osu_server.domain.session import SessionData
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -14,21 +17,15 @@ class RedisSessionStore:
     """Redis implementation of the SessionStore Protocol.
 
     Key patterns:
-        - ``{prefix}session:{token}`` → JSON-encoded session data (with
-          internal ``_user_id`` field for reverse-lookup support)
+        - ``{prefix}session:{token}`` → JSON-encoded ``SessionData`` fields
         - ``{prefix}user_session:{user_id}`` → token string
 
     Both keys share the same TTL.  When a user creates a new session while
     an old one exists, the old session is deleted first.
 
-    The internal ``_user_id`` field is stripped from the data returned by
-    ``get`` and ``get_by_user`` so callers see exactly the dict they stored.
-
-    Atomicity: ``create`` and ``delete`` use Lua scripts to avoid TOCTOU
-    races between the session and user-mapping keys.
+    Atomicity: ``create``, ``delete``, and ``refresh`` use Lua scripts to
+    avoid TOCTOU races between the session and user-mapping keys.
     """
-
-    _INTERNAL_USER_ID_KEY: Final[str] = "_user_id"
 
     # Lua script: atomically evict old session (if any) and write new session.
     # KEYS[1] = user_session:{user_id}, KEYS[2] = session:{new_token}
@@ -44,7 +41,7 @@ return 1"""
 
     # Lua script: atomically refresh TTL on both session and user-mapping keys.
     # KEYS[1] = session:{token}
-    # ARGV[1] = TTL, ARGV[2] = internal user ID field name, ARGV[3] = user key prefix
+    # ARGV[1] = TTL, ARGV[2] = user_id JSON field name, ARGV[3] = user key prefix
     _REFRESH_SCRIPT: Final[str] = """\
 local raw = redis.call('GET', KEYS[1])
 if not raw then
@@ -63,7 +60,7 @@ return 1"""
     # the user mapping still points to this token — prevents racing with a
     # concurrent create that already overwrote the mapping).
     # KEYS[1] = session:{token}
-    # ARGV[1] = internal user ID field name, ARGV[2] = user key prefix, ARGV[3] = token
+    # ARGV[1] = user_id JSON field name, ARGV[2] = user key prefix, ARGV[3] = token
     _DELETE_SCRIPT: Final[str] = """\
 local raw = redis.call('GET', KEYS[1])
 if not raw then
@@ -100,39 +97,30 @@ return 1"""
     def _user_key(self, user_id: int) -> str:
         return f"{self._prefix}user_session:{user_id}"
 
-    # -- internal helpers -----------------------------------------------------
-
-    @staticmethod
-    def _strip_internal(data: dict[str, object]) -> dict[str, object]:
-        """Return a copy of *data* without internal bookkeeping fields."""
-        return {k: v for k, v in data.items() if k != RedisSessionStore._INTERNAL_USER_ID_KEY}
-
     # -- SessionStore Protocol methods ----------------------------------------
 
-    async def create(self, user_id: int, token: str, data: dict[str, object]) -> None:
+    async def create(self, user_id: int, token: str, data: SessionData) -> None:
         """Store a session.  If the user already has one, remove the old session first."""
-        stored = {**data, self._INTERNAL_USER_ID_KEY: user_id}
         _ = await self._redis.eval(  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
             self._CREATE_SCRIPT,
             2,
             self._user_key(user_id),
             self._session_key(token),
             f"{self._prefix}session:",
-            json.dumps(stored),
+            json.dumps(asdict(data)),
             str(self._ttl),
             token,
         )
 
-    async def get(self, token: str) -> dict[str, object] | None:
+    async def get(self, token: str) -> SessionData | None:
         """Return session data for *token*, or ``None`` if not found."""
         raw = await self._redis.get(self._session_key(token))
         if raw is None:
             return None
         payload: str = raw.decode() if isinstance(raw, bytes) else str(raw)
-        result: dict[str, object] = json.loads(payload)
-        return self._strip_internal(result)
+        return SessionData(**json.loads(payload))
 
-    async def get_by_user(self, user_id: int) -> dict[str, object] | None:
+    async def get_by_user(self, user_id: int) -> SessionData | None:
         """Return session data for *user_id*, or ``None`` if not found."""
         token_raw = await self._redis.get(self._user_key(user_id))
         if token_raw is None:
@@ -151,7 +139,7 @@ return 1"""
             self._DELETE_SCRIPT,
             1,
             self._session_key(token),
-            self._INTERNAL_USER_ID_KEY,
+            "user_id",
             f"{self._prefix}user_session:",
             token,
         )
@@ -172,7 +160,7 @@ return 1"""
             1,
             self._session_key(token),
             str(self._ttl),
-            self._INTERNAL_USER_ID_KEY,
+            "user_id",
             f"{self._prefix}user_session:",
         )
         return bool(result)  # pyright: ignore[reportUnknownArgumentType]

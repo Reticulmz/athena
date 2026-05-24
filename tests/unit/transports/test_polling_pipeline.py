@@ -17,8 +17,8 @@ from starlette.testclient import TestClient
 from osu_server.domain.auth import RegistrationForm
 from osu_server.domain.role import Privileges, Role
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
-from osu_server.infrastructure.state.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
 from osu_server.services.password_service import PasswordService
@@ -192,7 +192,7 @@ class TestS2CDrain:
             # Enqueue S2C
             session = await session_store.get(token)
             assert session is not None
-            user_id = int(session["user_id"])  # pyright: ignore[reportArgumentType]
+            user_id = session.user_id
             s2c_data = b"\xab\xcd\xef"
             await packet_queue.enqueue(user_id, s2c_data)
 
@@ -209,7 +209,7 @@ class TestS2CDrain:
 
             session = await session_store.get(token)
             assert session is not None
-            user_id = int(session["user_id"])  # pyright: ignore[reportArgumentType]
+            user_id = session.user_id
             await packet_queue.enqueue(user_id, b"\xff")
 
             resp = client.post("/", headers={"osu-token": token})
@@ -242,7 +242,7 @@ class TestC2SBeforeS2COrdering:
 
             session = await session_store.get(token)
             assert session is not None
-            user_id_holder.append(int(session["user_id"]))
+            user_id_holder.append(session.user_id)
 
             body = _build_c2s_packet(ClientPacketID.SEND_MESSAGE, b"\x00")
             resp = client.post("/", headers={"osu-token": token}, content=body)
@@ -289,7 +289,7 @@ class TestPacketReadError:
 
             session = await session_store.get(token)
             assert session is not None
-            user_id = int(session["user_id"])  # pyright: ignore[reportArgumentType]
+            user_id = session.user_id
             await packet_queue.enqueue(user_id, b"\xbe\xef")
 
             # Corrupt C2S body (too short for header)
