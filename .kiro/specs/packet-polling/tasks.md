@@ -34,7 +34,7 @@
   - _Requirements: 7.1_
   - _Boundary: EventBus (infrastructure/messaging/)_
 
-- [ ] 3.2 ドメインイベント基盤 + BanchoListener 登録パターン
+- [x] 3.2 ドメインイベント基盤 + BanchoListener 登録パターン
   - `domain/events/base.py`: `Event` 基底 dataclass 定義
   - `domain/events/__init__.py`: `Event`, `EventBus` の re-export
   - `transports/bancho/listeners/__init__.py`: `setup_listeners(eventbus, packet_queue)` 関数を定義（初期状態はリスナー登録なし、パターンの確立のみ）
