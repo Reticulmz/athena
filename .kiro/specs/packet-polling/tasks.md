@@ -66,7 +66,7 @@
   - _Requirements: 8.1, 8.2, 8.3_
 
 - [ ] 5. Integration: ワイヤリングと TTL 変更
-- [ ] 5.1 DI コンテナ登録 + セッション TTL 変更
+- [x] 5.1 DI コンテナ登録 + セッション TTL 変更
   - `providers.py`: PacketQueue の環境別登録（test → InMemoryPacketQueue, else → RedisPacketQueue）
   - `providers.py`: EventBus の登録（InMemoryEventBus）
   - `providers.py`: SessionStore の TTL を `config.session_ttl`（300秒）に変更
@@ -77,7 +77,7 @@
   - _Depends: 2.2, 3.2, 4.1_
 
 - [ ] 6. Validation: 統合テスト
-- [ ] 6.1 ポーリングパイプライン E2E テスト
+- [x] 6.1 ポーリングパイプライン E2E テスト
   - ログイン → ポーリング → C2S 処理 → S2C 返却の完全フロー
   - セッション TTL リフレッシュの確認（ポーリング後に TTL がリセットされること）
   - 無効トークンで `LoginResult.AUTHENTICATION_FAILED` が返却されること
@@ -87,7 +87,7 @@
   - _Requirements: 1.1, 2.1, 2.4, 5.1, 6.1, 6.2_
   - _Depends: 5.1_
 
-- [ ] 6.2 エッジケースと並行安全性テスト
+- [x] 6.2 エッジケースと並行安全性テスト
   - 並行ポーリング: 同一ユーザーへの同時リクエストで同一パケットが二重配信されないこと
   - ヘッダ破損パケット: 解析中止後も S2C drain が正常に動作すること
   - ハンドラ例外: 例外発生後も後続パケットの処理が継続し、正常なレスポンスが返ること

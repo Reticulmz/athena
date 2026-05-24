@@ -20,9 +20,14 @@ from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.infrastructure.di.container import Container
+from osu_server.infrastructure.messaging.interfaces import EventBus
+from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
+from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.session_store import SessionStore
+from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.session_store import InMemorySessionStore
+from osu_server.infrastructure.state.redis.packet_queue import RedisPacketQueue
 from osu_server.infrastructure.state.redis.session_store import RedisSessionStore
 
 if TYPE_CHECKING:
@@ -65,8 +70,27 @@ async def build_container(config: AppConfig) -> Container:
     else:
         container.register_singleton(
             SessionStore,
-            lambda: RedisSessionStore(redis),
+            lambda: RedisSessionStore(redis, ttl=config.session_ttl),
         )
+
+    # -- PacketQueue (singleton, environment-based switching) -----------------
+    if config.environment == "test":
+        container.register_singleton(
+            PacketQueue,
+            lambda: InMemoryPacketQueue(max_size=config.packet_queue_max_size),
+        )
+    else:
+        container.register_singleton(
+            PacketQueue,
+            lambda: RedisPacketQueue(
+                redis,
+                max_size=config.packet_queue_max_size,
+                ttl=config.session_ttl,
+            ),
+        )
+
+    # -- EventBus (singleton) ------------------------------------------------
+    container.register_singleton(EventBus, InMemoryEventBus)
 
     # -- httpx.AsyncClient (singleton) ----------------------------------------
     http_client = httpx.AsyncClient()

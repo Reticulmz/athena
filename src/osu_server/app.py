@@ -34,10 +34,10 @@ from osu_server.config import AppConfig, load_config
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.di.providers import build_container
 from osu_server.infrastructure.logging import setup_logging
+from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.session_store import SessionStore
-from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
@@ -49,6 +49,7 @@ from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.transports.bancho.dispatch import PacketDispatcher, dispatcher
 from osu_server.transports.bancho.handlers.login import LoginHandler
+from osu_server.transports.bancho.listeners import setup_listeners
 from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 if TYPE_CHECKING:
@@ -171,8 +172,10 @@ async def _register_services(container: Container, config: AppConfig) -> None:
     container.register_singleton(AuthService, lambda: auth_service)
 
     # -- LoginHandler (singleton) ---------------------------------------------
-    packet_queue = InMemoryPacketQueue(max_size=config.packet_queue_max_size)
-    container.register_singleton(PacketQueue, lambda: packet_queue)
+    packet_queue = await container.resolve(PacketQueue)
+    eventbus = await container.resolve(EventBus)
+
+    setup_listeners(eventbus, packet_queue)
 
     login_handler = LoginHandler(
         auth_service=auth_service,
