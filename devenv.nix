@@ -116,9 +116,19 @@ in
   ];
 
   enterShell = ''
+    # mkcert 証明書の自動生成（未作成時のみ）
+    if [ ! -f certs/_wildcard.athena.localhost.pem ]; then
+      echo "generating mkcert certificates..."
+      mkdir -p certs
+      mkcert -install 2>/dev/null
+      mkcert -cert-file certs/_wildcard.athena.localhost.pem \
+             -key-file certs/_wildcard.athena.localhost-key.pem \
+             "*.athena.localhost" 2>/dev/null
+    fi
+
     echo "athena dev environment ready"
     echo "  devenv up  - start services (postgres, redis) + app + nginx"
     echo "  uv run pytest  - run tests"
-    echo "  nginx listens on :80 → athena :8000"
+    echo "  nginx listens on :80/:443 → athena :8000"
   '';
 }

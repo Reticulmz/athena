@@ -27,7 +27,7 @@ devenv.local.yaml
 .idea
 
 # mkcert certificates
-*.pem
+certs/
 
 # Application logs
 logs/
