@@ -14,8 +14,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **API I/O**: Pydantic v2
 - **ドメインモデル**: 標準 `@dataclass(slots=True)`（Pydantic は使わない）
 - **ORM**: SQLAlchemy 2.0 async + Alembic
-- **キャッシュ / ステート / Pub/Sub**: Redis
-- **ジョブキュー**: ARQ（Redis ベース、async ネイティブ）
+- **キャッシュ / ステート / Pub/Sub**: Valkey（valkey-glide クライアント）
+- **ジョブキュー**: taskiq + taskiq-redis（Valkey ベース、async ネイティブ）
 - **DI**: 自前の軽量コンテナ（フレームワーク非依存）
 - **型チェック**: basedpyright（厳格モード）
 - **Lint / Format**: ruff
@@ -32,7 +32,7 @@ uv sync                                   # 依存インストール
 
 # 実行
 uvicorn osu_server.app:app --reload       # app プロセス（HTTP/WS）
-arq osu_server.worker.WorkerSettings      # worker プロセス（ジョブ実行）
+taskiq worker osu_server.worker:broker      # worker プロセス（ジョブ実行）
 python -m osu_server                      # __main__.py 経由の起動
 
 # 品質
@@ -65,24 +65,24 @@ Transports → Services → Domain → Repositories → Infrastructure → Share
 - **Services**: ビジネスロジック。両プロセス（app / worker）で共有
 - **Domain**: 純粋なドメインモデル（I/O 非依存）
 - **Repositories**: 永続化抽象（Protocol） + 実装（SQLAlchemy / memory）
-- **Infrastructure**: DB, Redis, EventBus, JobQueue, DI コンテナ
+- **Infrastructure**: DB, Valkey, EventBus, JobQueue, DI コンテナ
 - **Shared**: errors, types, constants
 
 ### 2プロセス構成
 
 - **app プロセス**（uvicorn）: 即時応答 — 認証、チャット配信、スコア受付
-- **worker プロセス**（arq）: 重い処理 — PP 計算、リーダーボード更新、メダル付与
+- **worker プロセス**（taskiq）: 重い処理 — PP 計算、リーダーボード更新、メダル付与
 
 ### 揮発的ステート
 
-セッション・プレゼンス・チャンネル状態・マッチ状態・パケットキューは全て Redis に集約。プロセス再起動でもセッション消失しない。
+セッション・プレゼンス・チャンネル状態・マッチ状態・パケットキューは全て Valkey に集約。プロセス再起動でもセッション消失しない。
 
 ### ディレクトリ構造（src/osu_server/）
 
 ```
 src/osu_server/
 ├── app.py              # Starlette ルートアプリ組み立て
-├── worker.py           # ARQ ワーカーエントリ
+├── worker.py           # taskiq ワーカーエントリ
 ├── config.py           # pydantic-settings
 ├── transports/
 │   ├── bancho/         # stable 用 bancho バイナリプロトコル
@@ -118,7 +118,7 @@ bancho バイナリプロトコルの仕様は **[Lekuruu/bancho-documentation W
 
 ## 詳細設計
 
-`bancho_server_design.md` に全セクションの詳細仕様あり（Redis ステート設計、SignalR 互換層、スコアパイプライン等）。
+`bancho_server_design.md` に全セクションの詳細仕様あり（Valkey ステート設計、SignalR 互換層、スコアパイプライン等）。
 
 
 # Agentic SDLC and Spec-Driven Development

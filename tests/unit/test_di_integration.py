@@ -41,7 +41,7 @@ def _make_config(*, environment: str = "test", **kwargs: object) -> AppConfig:
     """Create a minimal AppConfig for testing."""
     return AppConfig(
         database_url="postgresql://test:test@localhost:5432/test",
-        redis_url="redis://localhost:6379/0",
+        valkey_url="redis://localhost:6379/0",
         environment=environment,
         **kwargs,  # pyright: ignore[reportAny]
     )
@@ -169,7 +169,7 @@ class TestHttpxLifecycle:
     """httpx.AsyncClient shutdown hook is registered for aclose()."""
 
     async def test_shutdown_hook_registered_for_httpx(self) -> None:
-        """At least 3 shutdown hooks: engine.dispose, redis.aclose, httpx.aclose."""
+        """At least 3 shutdown hooks: engine.dispose, valkey.close, httpx.aclose."""
         config = _make_config()
         container = await build_container(config)
 
@@ -191,7 +191,7 @@ class TestConfigDomainField:
     def test_custom_domain(self) -> None:
         config = AppConfig(
             database_url="postgresql://test:test@localhost:5432/test",
-            redis_url="redis://localhost:6379/0",
+            valkey_url="redis://localhost:6379/0",
             domain="example.com",
         )
         assert config.domain == "example.com"

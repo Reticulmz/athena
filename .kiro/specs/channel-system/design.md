@@ -6,7 +6,7 @@
 
 **Users**: osu! stable クライアント（チャット利用）、サーバー管理者（チャンネル管理）、開発者（コマンド追加・将来のプロトコル拡張）。
 
-**Impact**: ハードコードされた `#osu` をDB 駆動のチャンネルシステムに置き換え、4つの新規サービス、4つの C2S ハンドラ、3つの S2C ビルダー、2つの DB テーブル、Redis ステートストアを追加する。
+**Impact**: ハードコードされた `#osu` をDB 駆動のチャンネルシステムに置き換え、4つの新規サービス、4つの C2S ハンドラ、3つの S2C ビルダー、2つの DB テーブル、Valkey ステートストアを追加する。
 
 ### Goals
 - ChatService をプロトコル非依存のオーケストレーターとして設計する
@@ -25,8 +25,8 @@
 ## Boundary Commitments
 
 ### This Spec Owns
-- `worker.py` — ARQ WorkerSettings + メッセージ永続化ジョブ定義
-- `pyproject.toml` — `arq` 依存追加
+- `worker.py` — taskiq WorkerSettings + メッセージ永続化ジョブ定義
+- `pyproject.toml` — `taskiq` + `taskiq-redis` 依存追加
 - `domain/channel.py` — Channel ドメインモデル、ChannelType enum
 - `domain/events/channels.py` — チャット関連ドメインイベント
 - `repositories/interfaces/channel_repository.py` — ChannelRepository Protocol
@@ -34,8 +34,8 @@
 - `repositories/memory/channel_repository.py` — InMemory 実装
 - `infrastructure/state/interfaces/channel_state_store.py` — ChannelStateStore Protocol
 - `infrastructure/state/interfaces/rate_limiter.py` — RateLimiter Protocol
-- `infrastructure/state/redis/channel_state_store.py` + `memory/channel_state_store.py` — ChannelStateStore 実装
-- `infrastructure/state/redis/rate_limiter.py` + `memory/rate_limiter.py` — RateLimiter 実装
+- `infrastructure/state/redis/channel_state_store.py` + `memory/channel_state_store.py` — ChannelStateStore 実装（Valkey、Redis プロトコル互換）
+- `infrastructure/state/redis/rate_limiter.py` + `memory/rate_limiter.py` — RateLimiter 実装（Valkey、Redis プロトコル互換）
 - `services/chat_service.py` — ChatService（オーケストレーター）
 - `services/channel_service.py` — ChannelService（チャンネル CRUD + メンバーシップ）
 - `services/private_message_service.py` — PrivateMessageService
@@ -65,9 +65,9 @@
 - `PermissionService`（既存）— ユーザー権限算出
 - `HandlerGroup` / `ListenerGroup`（既存）— 宣言的ハンドラ/リスナー登録
 - `Privileges`（既存）— ビットフラグ演算
-- `Redis`（既存）— ChannelStateStore、RateLimiter のインフラ実装で使用
+- `Valkey`（既存）— ChannelStateStore、RateLimiter のインフラ実装で使用
 - `RateLimiter`（**新規**）— Rate Limit 判定 Protocol
-- `ArqRedis`（**新規**）— ARQ ジョブ enqueue
+- `taskiq broker`（**新規**）— taskiq ジョブ enqueue
 - `async_sessionmaker`（既存）— DB 永続化（worker プロセスで使用）
 
 ### Revalidation Triggers
@@ -99,8 +99,8 @@
 - `app.py:_register_services()` — 全新規サービスの DI 配線
 - `repositories/sqlalchemy/models/__init__.py` — 新モデル import 追加
 
-**ARQ ワーカー導入:**
-CLAUDE.md / tech.md では ARQ を技術スタックとして記載しているが、実際には依存関係に未追加・worker.py も未作成。今回の spec で ARQ を導入し、grill-me で決定した「ARQ ワーカー経由の DB 永続化」（パターン C）をそのまま実装する。app プロセスは EventBus リスナーが `arq.enqueue()` で Redis キューにジョブ投入し、worker プロセスが DB に INSERT する。これによりリアルタイム配信が DB 書き込みに一切依存しない。
+**taskiq ワーカー導入:**
+CLAUDE.md / tech.md では taskiq を技術スタックとして記載しているが、実際には依存関係に未追加・worker.py も未作成。今回の spec で taskiq を導入し、grill-me で決定した「ワーカー経由の DB 永続化」（パターン C）をそのまま実装する。app プロセスは EventBus リスナーがジョブを Valkey キューに投入し、worker プロセスが DB に INSERT する。これによりリアルタイム配信が DB 書き込みに一切依存しない。
 
 ### Architecture Pattern & Boundary Map
 
@@ -135,9 +135,9 @@ graph TB
         EB[EventBus]
         PQ[PacketQueue]
         SS[SessionStore]
-        ARQ[ARQ Redis Queue]
+        ARQ[taskiq Valkey Queue]
         DB[(PostgreSQL)]
-        RD[(Redis)]
+        RD[(Valkey)]
     end
 
     subgraph Worker Process
@@ -173,9 +173,9 @@ graph TB
 |-------|--------|------|-------|
 | Services | Python async | ChatService, ChannelService, PrivateMessageService, CommandService | 既存パターン踏襲 |
 | Data / DB | SQLAlchemy 2.0 async + Alembic | channels, channel_messages, private_messages テーブル | 既存パターン踏襲 |
-| Data / State | Redis Set + INCR | メンバーシップ（Set）、Rate Limit（INCR+EXPIRE） | 新規、Lua 不要 |
+| Data / State | Valkey Set + INCR | メンバーシップ（Set）、Rate Limit（INCR+EXPIRE） | 新規、Lua 不要 |
 | Messaging | EventBus（InMemory） | メッセージ永続化トリガー、チャンネルイベント | 既存利用 |
-| Job Queue | ARQ（Redis ベース） | メッセージ永続化ジョブ | **新規導入** |
+| Job Queue | taskiq + taskiq-redis（Valkey ベース） | メッセージ永続化ジョブ | **新規導入** |
 | Transport | Caterpillar + write_packet | S2C ビルダー 3種 | 既存パターン踏襲 |
 
 ## File Structure Plan
@@ -240,14 +240,14 @@ tests/
 ```
 
 ### Modified Files
-- `pyproject.toml` — `arq` 依存追加
+- `pyproject.toml` — `taskiq` + `taskiq-redis` 依存追加
 - `domain/session.py` — `silence_end: int = 0` フィールド追加
 - `config.py` — `message_max_length`, `rate_limit_messages`, `rate_limit_window` 追加
 - `transports/bancho/handlers/login.py` — `_build_login_response_stream()` を動的チャンネルリストに変更
 - `transports/bancho/listeners/__init__.py` — `setup_listeners()` に ChatListeners 追加
 - `app.py` — `_register_services()` に全新規サービスの DI 配線追加
 - `repositories/sqlalchemy/models/__init__.py` — 新モデル import 追加
-- `infrastructure/di/providers.py` — ARQ Redis pool の登録追加
+- `infrastructure/di/providers.py` — taskiq broker の登録追加
 
 ## System Flows
 
@@ -264,15 +264,15 @@ sequenceDiagram
     participant PQ as PacketQueue
     participant EB as EventBus
     participant CL as ChatListeners
-    participant ARQ as ARQ Redis Queue
-    participant W as ARQ Worker
+    participant ARQ as taskiq Valkey Queue
+    participant W as taskiq Worker
     participant DB as PostgreSQL
 
     C->>PD: SEND_MESSAGE (payload, user_id)
     PD->>CH: handle_send_message(payload, user_id)
     CH->>CS: send_channel_message(sender_id, channel_name, content)
     CS->>CS: check silence (SessionStore)
-    CS->>CS: check rate limit (Redis INCR)
+    CS->>CS: check rate limit (Valkey INCR)
     CS->>CS: validate message (empty, length)
     CS->>CHS: deliver_message(sender_id, channel_name, content)
     CHS->>CHS: verify membership + write_privileges
@@ -338,15 +338,15 @@ sequenceDiagram
 | Channel | Domain | チャンネルエンティティ + ChannelType enum | 1, 2 | — | — |
 | ChannelMessageSent / PrivateMessageSent | Domain | 永続化トリガーイベント | 6 | Event base | Event |
 | ChannelRepository | Repository | チャンネル CRUD | 1 | async_sessionmaker (P0) | Service |
-| ChannelStateStore | Infrastructure | メンバーシップ管理 | 3, 12 | Redis (P0) | Service, State |
-| RateLimiter | Infrastructure | Rate Limit 判定 | 9 | Redis (P0) | Service, State |
+| ChannelStateStore | Infrastructure | メンバーシップ管理 | 3, 12 | Valkey (P0) | Service, State |
+| RateLimiter | Infrastructure | Rate Limit 判定 | 9 | Valkey (P0) | Service, State |
 | ChatService | Service | メッセージルーティング + バリデーション | 4, 5, 8, 9, 10, 13 | ChannelService (P0), PrivateMessageService (P0), CommandService (P1), EventBus (P0), SessionStore (P0), RateLimiter (P0) | Service |
 | ChannelService | Service | チャンネル CRUD + メンバーシップ + 配信 | 1, 2, 3, 11 | ChannelRepository (P0), ChannelStateStore (P0), PacketQueue (P0) | Service |
 | PrivateMessageService | Service | PM 配信 | 5 | UserRepository (P0), SessionStore (P0), PacketQueue (P0) | Service |
 | CommandService | Service | コマンド解析・実行 | 7, 8 | PacketQueue (P1) | Service |
 | ChatHandlers | Transport | C2S パケットハンドラ 4種 | 3, 4, 5 | ChatService (P0), ChannelService (P0) | — |
-| ChatListeners | Transport | 永続化ジョブ enqueue + 切断掃除リスナー | 6, 12 | ArqRedis (P0), ChannelStateStore (P0) | Event |
-| ARQ Worker | Infrastructure | メッセージ永続化ジョブ実行 | 6 | async_sessionmaker (P0), Redis (P0) | Batch |
+| ChatListeners | Transport | 永続化ジョブ enqueue + 切断掃除リスナー | 6, 12 | taskiq broker (P0), ChannelStateStore (P0) | Event |
+| taskiq Worker | Infrastructure | メッセージ永続化ジョブ実行 | 6 | async_sessionmaker (P0), Valkey (P0) | Batch |
 | S2C Chat Builders | Transport | send_message, join_success, revoked | 3, 4, 5 | write_packet (P0) | — |
 
 ### Domain Layer
@@ -477,10 +477,10 @@ class ChannelStateStore(Protocol):
 ```
 
 **State Management:**
-- Redis 実装: 双方向 Set インデックス
+- Valkey 実装: 双方向 Set インデックス
   - `channel:{name}:members` → `Set[user_id]` (SADD/SREM/SMEMBERS/SCARD)
   - `user:{user_id}:channels` → `Set[channel_name]` (SADD/SREM/SMEMBERS)
-  - `add_member` / `remove_member`: Redis pipeline（MULTI/EXEC）で両 Set を同時更新
+  - `add_member` / `remove_member`: Valkey pipeline（MULTI/EXEC）で両 Set を同時更新
   - `remove_user_from_all`: ユーザーの全チャンネルを取得 → pipeline で全 SREM + DEL
   - TTL なし（セッションライフサイクルに依存、切断時に明示的削除）
 - InMemory 実装: `dict[str, set[int]]` + `dict[int, set[str]]` 双方向
@@ -501,7 +501,7 @@ class RateLimiter(Protocol):
     # Returns True if allowed, False if rate limited
 ```
 
-- Redis 実装: `INCR rate_limit:user:{user_id}` → 1 なら `EXPIRE {window}` → 結果 > `limit` なら `False`
+- Valkey 実装: `INCR rate_limit:user:{user_id}` → 1 なら `EXPIRE {window}` → 結果 > `limit` なら `False`
 - InMemory 実装: `dict[int, list[float]]` でタイムスタンプリスト、window 内のカウントで判定
 
 ### Service Layer
@@ -540,7 +540,7 @@ class ChatService:
 
 **メッセージパイプライン（`send_channel_message` / `send_private_message` 共通部）:**
 1. `_check_silence(sender_id)` — SessionStore から silence_end 確認、期限内なら早期 return
-2. `_check_rate_limit(sender_id)` — Redis `INCR user:{id}:msg_count` + `EXPIRE {window}`、超過なら早期 return
+2. `_check_rate_limit(sender_id)` — Valkey `INCR user:{id}:msg_count` + `EXPIRE {window}`、超過なら早期 return
 3. `_validate_message(content)` — 空チェック + 最大文字数チェック
 4. ルーティング — チャンネル or PM の専用サービスに委譲
 5. `_detect_command(content)` — `!` プレフィックス検出 → CommandService.execute()
@@ -699,7 +699,7 @@ class ChatHandlers(HandlerGroup):
 
 | Field | Detail |
 |-------|--------|
-| Intent | メッセージ永続化ジョブの ARQ enqueue + 切断時チャンネル掃除 |
+| Intent | メッセージ永続化ジョブの taskiq enqueue + 切断時チャンネル掃除 |
 | Requirements | 6.1, 6.2, 6.5, 12.1, 12.2, 12.3 |
 
 **Contracts**: Event [x]
@@ -707,7 +707,7 @@ class ChatHandlers(HandlerGroup):
 ```python
 class ChatListeners(ListenerGroup):
     def __init__(
-        self, *, arq_redis: ArqRedis, channel_state: ChannelStateStore,
+        self, *, broker: AsyncBroker, channel_state: ChannelStateStore,
     ) -> None: ...
 
     @listens(ChannelMessageSent)
@@ -720,11 +720,11 @@ class ChatListeners(ListenerGroup):
     async def on_user_disconnected(self, event: UserDisconnected) -> None: ...
 ```
 
-- `on_channel_message_sent`: `await arq_redis.enqueue_job("persist_channel_message", sender_id=..., channel_name=..., content=...)`
-- `on_private_message_sent`: `await arq_redis.enqueue_job("persist_private_message", sender_id=..., target_id=..., content=...)`
+- `on_channel_message_sent`: persist_channel_message ジョブを Valkey キューに enqueue
+- `on_private_message_sent`: persist_private_message ジョブを Valkey キューに enqueue
 - `on_user_disconnected`: `channel_state.remove_user_from_all(event.user_id)` — 既存の LifecycleListeners の USER_QUIT 配信と共存（別リスナー、同じイベント）
 
-#### ARQ Worker
+#### taskiq Worker
 
 | Field | Detail |
 |-------|--------|
@@ -760,15 +760,15 @@ class WorkerSettings:
     functions = [persist_channel_message, persist_private_message]
     on_startup = startup
     on_shutdown = shutdown
-    redis_settings = RedisSettings(...)  # AppConfig.redis_url から生成
+    broker_url = ...  # AppConfig.valkey_url から生成
 ```
 
 ##### Batch / Job Contract
-- **Trigger**: EventBus リスナーが `arq_redis.enqueue_job()` で Redis キューに投入
+- **Trigger**: EventBus リスナーがジョブを Valkey キューに投入
 - **Input**: sender_id, channel_name/target_id, content, sender_name 等のプリミティブ値（シリアライズ容易）
 - **Output**: DB INSERT（成功/失敗をログ出力）
-- **Idempotency**: メッセージはログ性質のため冪等性は不要（重複 INSERT は許容）。ARQ のデフォルトリトライ（3回）で失敗時は再試行
-- **Recovery**: ワーカー再起動時、Redis キューに残ったジョブは自動的に処理再開
+- **Idempotency**: メッセージはログ性質のため冪等性は不要（重複 INSERT は許容）。taskiq のデフォルトリトライ（3回）で失敗時は再試行
+- **Recovery**: ワーカー再起動時、Valkey キューに残ったジョブは自動的に処理再開
 
 #### S2C Chat Builders
 
@@ -864,7 +864,7 @@ INSERT INTO channel_role_overrides (channel_id, role_id, can_read, can_write) VA
   (2, 2, TRUE, TRUE);
 ```
 
-### Redis State Model
+### Valkey State Model
 
 | Key Pattern | Type | Contents | TTL |
 |-------------|------|----------|-----|
@@ -888,15 +888,15 @@ INSERT INTO channel_role_overrides (channel_id, role_id, can_read, can_write) VA
 | 文字数超過 | len(content) > max | メッセージ棄却（silent） |
 | PM 宛先不存在 | ユーザーが DB に存在しない | エラー通知（BanchoBot PM） |
 | PM 宛先オフライン | ユーザーがオンラインでない | 永続化のみ、エラーなし |
-| ARQ enqueue 失敗 | Redis 接続エラー | ログ出力のみ（EventBus が例外隔離、メッセージは配信済み） |
-| Worker DB INSERT 失敗 | DB エラー | ARQ デフォルトリトライ（3回）、最終失敗はログ出力 |
+| taskiq enqueue 失敗 | Valkey 接続エラー | ログ出力のみ（EventBus が例外隔離、メッセージは配信済み） |
+| Worker DB INSERT 失敗 | DB エラー | taskiq デフォルトリトライ（3回）、最終失敗はログ出力 |
 | 未登録コマンド | `!unknown` | BanchoBot「Unknown command」返信 |
 
 ### Monitoring
 - 全メッセージ配信: `structlog.info("message_delivered", channel=..., sender_id=...)`
 - Rate Limit 超過: `structlog.warning("rate_limit_exceeded", user_id=...)`
 - Silence 拒否: `structlog.info("silence_rejected", user_id=...)`
-- ARQ enqueue 失敗: `structlog.error("arq_enqueue_failed", ...)` — EventBus の例外ハンドラ内
+- taskiq enqueue 失敗: `structlog.error("taskiq_enqueue_failed", ...)` — EventBus の例外ハンドラ内
 - Worker 永続化失敗: `structlog.error("message_persist_failed", ...)` — Worker プロセス内
 
 ## Testing Strategy
@@ -925,5 +925,5 @@ INSERT INTO channel_role_overrides (channel_id, role_id, can_read, can_write) VA
 
 - BanchoBot ユーザー（user_id=1）はパスワードハッシュを無効値（`!invalid`）に設定し、通常のログイン認証では使用不可にする
 - チャンネルアクセス制御はサービス層で強制し、トランスポート層をバイパスしてもアクセスできない設計にする
-- Rate Limit の Redis キーにはユーザー ID を使用し、IP ベースではないため NAT 環境でも公平に機能する
+- Rate Limit の Valkey キーにはユーザー ID を使用し、IP ベースではないため NAT 環境でも公平に機能する
 - メッセージ内容のサニタイズは現時点では行わない（bancho プロトコルは HTML を扱わないため XSS リスクなし）。将来 WebUI で履歴を表示する際はフロントエンド側でエスケープが必要

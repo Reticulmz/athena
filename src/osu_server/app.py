@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 import structlog
 import structlog.contextvars
 import structlog.stdlib
-from redis.asyncio import Redis
+from glide import GlideClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
@@ -43,9 +43,9 @@ from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
-from osu_server.repositories.redis.session_store import RedisSessionStore
 from osu_server.repositories.sqlalchemy.role_repository import SQLAlchemyRoleRepository
 from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
+from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
 from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
@@ -142,7 +142,7 @@ async def _register_services(container: Container, config: AppConfig) -> None:
     session_factory = await container.resolve(async_sessionmaker[AsyncSession])
     hibp_client = await container.resolve(HIBPClient)
     country_resolver = await container.resolve(CountryResolver)
-    redis = await container.resolve(Redis)
+    valkey = await container.resolve(GlideClient)
 
     # -- SessionStore (singleton, environment-based switching) -----------------
     if config.environment == "test":
@@ -150,7 +150,7 @@ async def _register_services(container: Container, config: AppConfig) -> None:
     else:
         container.register_singleton(
             SessionStore,
-            lambda: RedisSessionStore(redis, ttl=config.session_ttl),
+            lambda: ValkeySessionStore(valkey, ttl=config.session_ttl),
         )
 
     session_store = await container.resolve(SessionStore)
@@ -235,7 +235,7 @@ async def _register_services(container: Container, config: AppConfig) -> None:
 
 
 async def _check_infrastructure(container: Container) -> None:
-    """Verify PostgreSQL and Redis connectivity at startup.
+    """Verify PostgreSQL and Valkey connectivity at startup.
 
     Raises on failure so the server refuses to start with broken dependencies.
     """
@@ -244,9 +244,9 @@ async def _check_infrastructure(container: Container) -> None:
         _ = await conn.execute(text("SELECT 1"))
     logger.info("startup_health_check", service="postgresql", status="ok")
 
-    redis = await container.resolve(Redis)
-    await redis.ping()  # pyright: ignore[reportUnknownMemberType]
-    logger.info("startup_health_check", service="redis", status="ok")
+    valkey = await container.resolve(GlideClient)
+    _ = await valkey.ping()
+    logger.info("startup_health_check", service="valkey", status="ok")
 
 
 @asynccontextmanager
@@ -260,7 +260,7 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
         4. ``container.initialize()`` — eagerly resolve all singletons
 
     Shutdown:
-        1. ``container.shutdown()`` — dispose DB engine, close Redis,
+        1. ``container.shutdown()`` — dispose DB engine, close Valkey,
            close httpx client, etc.
     """
     config = load_config()
@@ -307,7 +307,7 @@ async def _health_endpoint(request: Request) -> PlainTextResponse:
 
 
 async def _health_check_endpoint(request: Request) -> JSONResponse:
-    """Return infrastructure health status with DB and Redis connectivity checks."""
+    """Return infrastructure health status with DB and Valkey connectivity checks."""
     version, commit = request.app.state.version_info  # pyright: ignore[reportAny]
     container: Container = request.app.state.container  # pyright: ignore[reportAny]
 
@@ -322,11 +322,11 @@ async def _health_check_endpoint(request: Request) -> JSONResponse:
         checks["postgres"] = "error"
 
     try:
-        redis = await container.resolve(Redis)
-        await redis.ping()  # pyright: ignore[reportUnknownMemberType]
-        checks["redis"] = "ok"
+        valkey = await container.resolve(GlideClient)
+        _ = await valkey.ping()
+        checks["valkey"] = "ok"
     except Exception:
-        checks["redis"] = "error"
+        checks["valkey"] = "error"
 
     all_healthy = all(v == "ok" for v in checks.values())
 

@@ -12,6 +12,10 @@ import hashlib
 import os
 import struct
 from http import HTTPStatus
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from glide_shared.constants import TEncodable
 
 import pytest
 from starlette.applications import Starlette
@@ -285,21 +289,21 @@ class TestConcurrentDrainRedis:
     """Concurrent drain with Redis — no duplicate delivery (Req 1.3)."""
 
     @pytest.mark.skipif(
-        not os.environ.get("REDIS_URL"),
-        reason="REDIS_URL not set",
+        not os.environ.get("VALKEY_URL"),
+        reason="VALKEY_URL not set",
     )
     async def test_concurrent_drain_no_duplicates(self) -> None:
-        from osu_server.infrastructure.cache.redis_client import (  # noqa: PLC0415
-            create_redis_client,
+        from osu_server.infrastructure.cache.valkey_client import (  # noqa: PLC0415
+            create_valkey_client,
         )
-        from osu_server.infrastructure.state.redis.packet_queue import (  # noqa: PLC0415
-            RedisPacketQueue,
+        from osu_server.infrastructure.state.valkey.packet_queue import (  # noqa: PLC0415
+            ValkeyPacketQueue,
         )
 
         prefix = "athena_e2e_test:"
-        redis = create_redis_client(os.environ["REDIS_URL"])
+        valkey = await create_valkey_client(os.environ["VALKEY_URL"])
         try:
-            queue = RedisPacketQueue(redis, max_size=4096, ttl=300, key_prefix=prefix)
+            queue = ValkeyPacketQueue(valkey, max_size=4096, ttl=300, key_prefix=prefix)
             await queue.refresh_ttl(user_id=1, ttl=300)
 
             packet_count = 100
@@ -317,7 +321,16 @@ class TestConcurrentDrainRedis:
             assert len(non_empty[0]) == packet_count
         finally:
             for pattern in (f"{prefix}packet_queue:*", f"{prefix}pq_meta:*"):
-                keys = await redis.keys(pattern)
-                if keys:
-                    await redis.delete(*keys)
-            await redis.aclose()
+                cursor: str = "0"
+                while True:
+                    next_cursor, keys = await valkey.scan(cursor, match=pattern, count=100)
+                    if keys:
+                        _ = await valkey.delete(cast("list[TEncodable]", keys))
+                    cursor = (
+                        next_cursor.decode()
+                        if isinstance(next_cursor, bytes)
+                        else str(next_cursor)
+                    )
+                    if cursor == "0":
+                        break
+            await valkey.close()

@@ -20,8 +20,8 @@ def _require_services() -> None:
     """Skip the test suite if DATABASE_URL or REDIS_URL are not set."""
     if not os.environ.get("DATABASE_URL"):
         pytest.skip("DATABASE_URL not set")
-    if not os.environ.get("REDIS_URL"):
-        pytest.skip("REDIS_URL not set")
+    if not os.environ.get("VALKEY_URL"):
+        pytest.skip("VALKEY_URL not set")
 
 
 class TestAppStartup:

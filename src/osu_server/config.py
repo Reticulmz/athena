@@ -1,7 +1,7 @@
 """Application configuration management via pydantic-settings.
 
 Reads configuration from environment variables with type-safe validation.
-Required fields: DATABASE_URL, REDIS_URL.
+Required fields: DATABASE_URL, VALKEY_URL.
 Optional fields with defaults: ENVIRONMENT, SERVER_HOST, SERVER_PORT.
 """
 
@@ -10,6 +10,9 @@ from typing import ClassVar
 from pydantic import PostgresDsn, RedisDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Valkey は redis:// スキーマを使用するため、RedisDsn のバリデーションをそのまま活用
+ValkeyDsn = RedisDsn
+
 _VALID_LOG_LEVELS: frozenset[str] = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 
@@ -17,7 +20,7 @@ class AppConfig(BaseSettings):
     """Type-safe application configuration loaded from environment variables."""
 
     database_url: PostgresDsn
-    redis_url: RedisDsn
+    valkey_url: ValkeyDsn
     environment: str = "development"
     server_host: str = "0.0.0.0"
     server_port: int = 8000

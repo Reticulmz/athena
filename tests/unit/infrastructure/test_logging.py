@@ -37,10 +37,10 @@ def _reset_logging() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
 
 
 def _make_config(**kwargs: object) -> AppConfig:
-    """Create AppConfig with test defaults (DATABASE_URL and REDIS_URL required)."""
+    """Create AppConfig with test defaults (DATABASE_URL and VALKEY_URL required)."""
     return AppConfig(
         database_url="postgresql+asyncpg://test:test@localhost/test",  # pyright: ignore[reportArgumentType]
-        redis_url="redis://localhost:6379/0",  # pyright: ignore[reportArgumentType]
+        valkey_url="redis://localhost:6379/0",  # pyright: ignore[reportArgumentType]
         **kwargs,  # pyright: ignore[reportArgumentType]
     )
 

@@ -1,4 +1,3 @@
-# pyright: reportAny=false
 """DI provider factory — assembles the Container with infrastructure components.
 
 Only registers components from the infrastructure layer and below.
@@ -11,10 +10,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import httpx
-from redis.asyncio import Redis
+from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from osu_server.infrastructure.cache.redis_client import create_redis_client
+from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.database.engine import create_engine
@@ -25,7 +24,7 @@ from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
-from osu_server.infrastructure.state.redis.packet_queue import RedisPacketQueue
+from osu_server.infrastructure.state.valkey.packet_queue import ValkeyPacketQueue
 
 if TYPE_CHECKING:
     from osu_server.config import AppConfig
@@ -36,16 +35,16 @@ async def build_container(config: AppConfig) -> Container:
 
     Registers:
         - ``AsyncEngine`` (singleton) from ``config.database_url``
-        - ``Redis`` (singleton) from ``config.redis_url``
+        - ``GlideClient`` (singleton) from ``config.valkey_url``
         - ``async_sessionmaker[AsyncSession]`` (singleton) from the engine
         - ``PacketQueue`` (singleton): ``InMemoryPacketQueue`` when
-          ``config.environment == "test"``, otherwise ``RedisPacketQueue``
+          ``config.environment == "test"``, otherwise ``ValkeyPacketQueue``
         - ``EventBus`` (singleton): ``InMemoryEventBus``
         - ``httpx.AsyncClient`` (singleton) with shutdown hook for ``aclose()``
         - ``HIBPClient`` (singleton) using the ``httpx.AsyncClient``
         - ``CountryResolver`` (singleton): ``CloudflareCountryResolver``
 
-    Shutdown hooks are registered for ``engine.dispose()``, ``redis.aclose()``,
+    Shutdown hooks are registered for ``engine.dispose()``, ``valkey.close()``,
     and ``http_client.aclose()``.
     """
     container = Container()
@@ -54,9 +53,9 @@ async def build_container(config: AppConfig) -> Container:
     engine = create_engine(str(config.database_url))
     container.register_singleton(AsyncEngine, lambda: engine)
 
-    # -- Redis client (singleton) ---------------------------------------------
-    redis = create_redis_client(str(config.redis_url))
-    container.register_singleton(Redis, lambda: redis)
+    # -- Valkey client (singleton) --------------------------------------------
+    valkey = await create_valkey_client(str(config.valkey_url))
+    container.register_singleton(GlideClient, lambda: valkey)
 
     # -- Session factory (singleton) ------------------------------------------
     session_factory = create_session_factory(engine)
@@ -71,8 +70,8 @@ async def build_container(config: AppConfig) -> Container:
     else:
         container.register_singleton(
             PacketQueue,
-            lambda: RedisPacketQueue(
-                redis,
+            lambda: ValkeyPacketQueue(
+                valkey,
                 max_size=config.packet_queue_max_size,
                 ttl=config.session_ttl,
             ),
@@ -95,7 +94,7 @@ async def build_container(config: AppConfig) -> Container:
 
     # -- Shutdown hooks -------------------------------------------------------
     container.register_shutdown_hook(engine.dispose)
-    container.register_shutdown_hook(redis.aclose)
+    container.register_shutdown_hook(valkey.close)
     container.register_shutdown_hook(http_client.aclose)
 
     return container

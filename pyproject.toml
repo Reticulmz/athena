@@ -11,13 +11,14 @@ dependencies = [
     "sqlalchemy[asyncio]",
     "asyncpg",
     "alembic",
-    "redis[hiredis]",
+    "valkey-glide>=2.1",
     "argon2-cffi",
     "caterpillar-py>=2.8.1",
     "httpx>=0.28.1",
     "python-multipart>=0.0.29",
     "structlog>=25.5.0",
-    "arq>=0.26",
+    "taskiq>=0.11",
+    "taskiq-redis>=1.0",
 ]
 
 [dependency-groups]

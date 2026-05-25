@@ -72,7 +72,7 @@ def _test_env() -> Generator[None]:
     old = os.environ.get("ENVIRONMENT")
     os.environ["ENVIRONMENT"] = "test"
     _ = os.environ.setdefault("DATABASE_URL", "postgresql://localhost:5432/athena")
-    _ = os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
+    _ = os.environ.setdefault("VALKEY_URL", "redis://localhost:6379")
     try:
         yield
     finally:

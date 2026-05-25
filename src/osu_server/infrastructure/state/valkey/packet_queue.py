@@ -1,37 +1,39 @@
-# pyright: reportAny=false
-"""RedisPacketQueue — Redis-backed S2C packet queue implementation."""
+"""ValkeyPacketQueue — Valkey-backed S2C packet queue implementation."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, ClassVar, cast
+
+from glide import Script
 
 if TYPE_CHECKING:
-    from redis.asyncio import Redis
+    from glide import GlideClient
+    from glide_shared.constants import TEncodable
 
 
-class RedisPacketQueue:
-    """Redis implementation of the PacketQueue Protocol.
+class ValkeyPacketQueue:
+    """Valkey implementation of the PacketQueue Protocol.
 
     Key patterns:
-        - ``{prefix}packet_queue:{user_id}`` → List of S2C packet bytes
-        - ``{prefix}pq_meta:{user_id}`` → activation flag (session-active marker)
+        - ``{prefix}packet_queue:{user_id}`` -> List of S2C packet bytes
+        - ``{prefix}pq_meta:{user_id}`` -> activation flag (session-active marker)
 
     Both keys share the same TTL.  ``refresh_ttl`` activates the queue by
     setting the meta key; ``enqueue`` checks its existence before pushing.
 
-    Atomicity: ``enqueue`` and ``dequeue_all`` use Lua scripts to avoid
-    TOCTOU races.
+    Atomicity: ``enqueue`` and ``dequeue_all`` use Lua scripts
+    (via Script objects / EVALSHA) to avoid TOCTOU races.
     """
 
     # Lua script: atomically drain all packets from the queue.
     # KEYS[1] = packet_queue:{user_id}
     # Returns: list of packet bytes (empty list if queue is empty)
-    _DEQUEUE_ALL_SCRIPT: Final[str] = """\
+    _DEQUEUE_ALL_SCRIPT: ClassVar[Script] = Script("""\
 local packets = redis.call('LRANGE', KEYS[1], 0, -1)
 if #packets > 0 then
     redis.call('DEL', KEYS[1])
 end
-return packets"""
+return packets""")
 
     # Lua script: atomically enqueue packets with size limit and TTL.
     # KEYS[1] = pq_meta:{user_id}  (activation flag)
@@ -39,7 +41,7 @@ return packets"""
     # ARGV[1..N-2] = packet bytes
     # ARGV[N-1] = max_size
     # ARGV[N] = ttl
-    _ENQUEUE_SCRIPT: Final[str] = """\
+    _ENQUEUE_SCRIPT: ClassVar[Script] = Script("""\
 if redis.call('EXISTS', KEYS[1]) == 0 then
     return 0
 end
@@ -49,28 +51,28 @@ end
 local max_size = tonumber(ARGV[#ARGV - 1])
 redis.call('LTRIM', KEYS[2], -max_size, -1)
 redis.call('EXPIRE', KEYS[2], tonumber(ARGV[#ARGV]))
-return 1"""
+return 1""")
 
     # Lua script: atomically refresh TTL on meta and queue keys.
     # KEYS[1] = pq_meta:{user_id}
     # KEYS[2] = packet_queue:{user_id}
     # ARGV[1] = ttl
-    _REFRESH_SCRIPT: Final[str] = """\
+    _REFRESH_SCRIPT: ClassVar[Script] = Script("""\
 redis.call('SET', KEYS[1], '1', 'EX', tonumber(ARGV[1]))
 if redis.call('EXISTS', KEYS[2]) == 1 then
     redis.call('EXPIRE', KEYS[2], tonumber(ARGV[1]))
 end
-return 1"""
+return 1""")
 
     def __init__(
         self,
-        redis: Redis,
+        client: GlideClient,
         *,
         max_size: int = 4096,
         ttl: int = 300,
         key_prefix: str = "",
     ) -> None:
-        self._redis: Redis = redis
+        self._client: GlideClient = client
         self._max_size: int = max_size
         self._ttl: int = ttl
         self._prefix: str = key_prefix
@@ -89,33 +91,28 @@ return 1"""
         """Append packets to the user's queue.  Discard if no active session."""
         if not data:
             return
-        _ = await self._redis.eval(  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
+        args: list[TEncodable] = [*data, str(self._max_size), str(self._ttl)]
+        _ = await self._client.invoke_script(
             self._ENQUEUE_SCRIPT,
-            2,
-            self._meta_key(user_id),
-            self._queue_key(user_id),
-            *data,  # pyright: ignore[reportArgumentType]
-            str(self._max_size),
-            str(self._ttl),
+            keys=[self._meta_key(user_id), self._queue_key(user_id)],
+            args=args,
         )
 
     async def dequeue_all(self, user_id: int) -> bytes:
         """Drain all packets and return concatenated bytes."""
-        packets = await self._redis.eval(  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
+        packets = await self._client.invoke_script(
             self._DEQUEUE_ALL_SCRIPT,
-            1,
-            self._queue_key(user_id),
+            keys=[self._queue_key(user_id)],
+            args=[],
         )
         if not packets:
             return b""
-        return b"".join(packets)  # pyright: ignore[reportArgumentType]
+        return b"".join(cast("list[bytes]", packets))
 
     async def refresh_ttl(self, user_id: int, ttl: int) -> None:
         """Activate the queue and refresh TTL on both meta and queue keys."""
-        _ = await self._redis.eval(  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
+        _ = await self._client.invoke_script(
             self._REFRESH_SCRIPT,
-            2,
-            self._meta_key(user_id),
-            self._queue_key(user_id),
-            str(ttl),
+            keys=[self._meta_key(user_id), self._queue_key(user_id)],
+            args=[str(ttl)],
         )

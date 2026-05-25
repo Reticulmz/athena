@@ -11,8 +11,8 @@
 | API I/O | Pydantic v2 | ドメイン層では使わない |
 | ドメインモデル | `@dataclass(slots=True)` | 標準ライブラリのみ |
 | ORM | SQLAlchemy 2.0 async + asyncpg | Alembic でマイグレーション |
-| ジョブキュー | ARQ | Redis ベース、async ネイティブ |
-| EventBus | 自前実装 (Redis Pub/Sub + in-memory) | ~40行の軽量実装 |
+| ジョブキュー | taskiq + taskiq-redis | Valkey ベース、async ネイティブ |
+| EventBus | 自前実装 (Valkey Pub/Sub + in-memory) | ~40行の軽量実装 |
 | DI | 自前軽量コンテナ | フレームワーク非依存 |
 | 型チェック | basedpyright (strict) | Pyright フォーク。conformance 95.7%、uv dev dependency でインストール |
 | Lint/Format | ruff | |
@@ -25,7 +25,7 @@
 | 項目 | 選定 | 理由 |
 |------|------|------|
 | パスワードハッシュ | argon2-cffi (argon2id) | stable は MD5 送信 → サーバーで argon2id(md5) 保存。passlib はメンテ停滞 |
-| Redis クライアント | redis-py (`redis[hiredis]`) | v5+ async ネイティブ (`redis.asyncio`)、ARQ と同一ライブラリ |
+| Valkey クライアント | valkey-glide | Valkey 公式クライアント、async ネイティブ、Redis プロトコル互換 |
 
 ## 開発方針
 

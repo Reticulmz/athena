@@ -1,52 +1,58 @@
 # pyright: reportAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false
-"""Integration tests for RedisPacketQueue against a real Redis instance.
+"""Integration tests for ValkeyPacketQueue against a real Valkey instance.
 
 Runs the same test matrix as InMemoryPacketQueue unit tests (Protocol
-compliance) plus Redis-specific tests for atomicity, TTL, and concurrency.
+compliance) plus Valkey-specific tests for atomicity, TTL, and concurrency.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
-    from redis.asyncio import Redis
+    from glide import GlideClient
+    from glide_shared.constants import TEncodable
 
-from osu_server.infrastructure.cache.redis_client import create_redis_client
+from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
-from osu_server.infrastructure.state.redis.packet_queue import RedisPacketQueue
+from osu_server.infrastructure.state.valkey.packet_queue import ValkeyPacketQueue
 
 _KEY_PREFIX = "athena_test:"
 
 
-def _get_redis_url() -> str:
-    url = os.environ.get("REDIS_URL")
+def _get_valkey_url() -> str:
+    url = os.environ.get("VALKEY_URL")
     if not url:
-        pytest.skip("REDIS_URL not set")
+        pytest.skip("VALKEY_URL not set")
     return url
 
 
 @pytest.fixture
-async def redis_client() -> AsyncGenerator[Redis]:
-    client = create_redis_client(_get_redis_url())
+async def valkey_client() -> AsyncGenerator[GlideClient]:
+    client = await create_valkey_client(_get_valkey_url())
     yield client
     for pattern in (f"{_KEY_PREFIX}packet_queue:*", f"{_KEY_PREFIX}pq_meta:*"):
-        keys = await client.keys(pattern)
-        if keys:
-            await client.delete(*keys)
-    await client.aclose()
+        cursor: str = "0"
+        while True:
+            next_cursor, keys = await client.scan(cursor, match=pattern, count=100)
+            if keys:
+                _ = await client.delete(cast("list[TEncodable]", keys))
+            cursor = next_cursor.decode() if isinstance(next_cursor, bytes) else str(next_cursor)
+            if cursor == "0":
+                break
+    await client.close()
 
 
 @pytest.fixture
-def redis_queue(redis_client: Redis) -> RedisPacketQueue:
-    return RedisPacketQueue(redis_client, max_size=4096, ttl=300, key_prefix=_KEY_PREFIX)
+def valkey_queue(valkey_client: GlideClient) -> ValkeyPacketQueue:
+    return ValkeyPacketQueue(valkey_client, max_size=4096, ttl=300, key_prefix=_KEY_PREFIX)
 
 
 @pytest.fixture
@@ -54,20 +60,20 @@ def memory_queue() -> InMemoryPacketQueue:
     return InMemoryPacketQueue(max_size=4096)
 
 
-@pytest.fixture(params=["redis", "memory"])
+@pytest.fixture(params=["valkey", "memory"])
 def queue(
     request: pytest.FixtureRequest,
-    redis_queue: RedisPacketQueue,
+    valkey_queue: ValkeyPacketQueue,
     memory_queue: InMemoryPacketQueue,
 ) -> PacketQueue:
-    if request.param == "redis":
-        return redis_queue
+    if request.param == "valkey":
+        return valkey_queue
     return memory_queue
 
 
 @pytest.fixture
-def redis_small_queue(redis_client: Redis) -> RedisPacketQueue:
-    return RedisPacketQueue(redis_client, max_size=3, ttl=300, key_prefix=_KEY_PREFIX)
+def valkey_small_queue(valkey_client: GlideClient) -> ValkeyPacketQueue:
+    return ValkeyPacketQueue(valkey_client, max_size=3, ttl=300, key_prefix=_KEY_PREFIX)
 
 
 @pytest.fixture
@@ -75,14 +81,14 @@ def memory_small_queue() -> InMemoryPacketQueue:
     return InMemoryPacketQueue(max_size=3)
 
 
-@pytest.fixture(params=["redis", "memory"])
+@pytest.fixture(params=["valkey", "memory"])
 def small_queue(
     request: pytest.FixtureRequest,
-    redis_small_queue: RedisPacketQueue,
+    valkey_small_queue: ValkeyPacketQueue,
     memory_small_queue: InMemoryPacketQueue,
 ) -> PacketQueue:
-    if request.param == "redis":
-        return redis_small_queue
+    if request.param == "valkey":
+        return valkey_small_queue
     return memory_small_queue
 
 
@@ -92,13 +98,13 @@ def small_queue(
 
 
 class TestProtocolCompliance:
-    """RedisPacketQueue satisfies the PacketQueue Protocol."""
+    """ValkeyPacketQueue satisfies the PacketQueue Protocol."""
 
-    def test_redis_packet_queue_is_packet_queue(
+    def test_valkey_packet_queue_is_packet_queue(
         self,
-        redis_queue: RedisPacketQueue,
+        valkey_queue: ValkeyPacketQueue,
     ) -> None:
-        assert isinstance(redis_queue, PacketQueue)
+        assert isinstance(valkey_queue, PacketQueue)
 
 
 class TestEnqueue:
@@ -221,15 +227,15 @@ class TestRefreshTTL:
 
 
 # ---------------------------------------------------------------------------
-# Redis-specific tests — atomicity, TTL, concurrency
+# Valkey-specific tests — atomicity, TTL, concurrency
 # ---------------------------------------------------------------------------
 
 
-class TestRedisTTLExpiry:
-    """Redis TTL causes automatic queue cleanup."""
+class TestValkeyTTLExpiry:
+    """Valkey TTL causes automatic queue cleanup."""
 
-    async def test_ttl_expiry_cleans_up_queue(self, redis_client: Redis) -> None:
-        queue = RedisPacketQueue(redis_client, max_size=4096, ttl=1, key_prefix=_KEY_PREFIX)
+    async def test_ttl_expiry_cleans_up_queue(self, valkey_client: GlideClient) -> None:
+        queue = ValkeyPacketQueue(valkey_client, max_size=4096, ttl=1, key_prefix=_KEY_PREFIX)
         await queue.refresh_ttl(user_id=1, ttl=1)
         await queue.enqueue(1, b"\x01\x02\x03")
 
@@ -238,8 +244,8 @@ class TestRedisTTLExpiry:
         result = await queue.dequeue_all(user_id=1)
         assert result == b""
 
-    async def test_refresh_ttl_extends_expiry(self, redis_client: Redis) -> None:
-        queue = RedisPacketQueue(redis_client, max_size=4096, ttl=2, key_prefix=_KEY_PREFIX)
+    async def test_refresh_ttl_extends_expiry(self, valkey_client: GlideClient) -> None:
+        queue = ValkeyPacketQueue(valkey_client, max_size=4096, ttl=2, key_prefix=_KEY_PREFIX)
         await queue.refresh_ttl(user_id=1, ttl=2)
         await queue.enqueue(1, b"\x01")
 
@@ -252,19 +258,19 @@ class TestRedisTTLExpiry:
         assert result == b"\x01"
 
 
-class TestRedisConcurrentDrain:
+class TestValkeyConcurrentDrain:
     """Concurrent dequeue_all does not produce duplicates."""
 
-    async def test_concurrent_drain_no_duplicates(self, redis_queue: RedisPacketQueue) -> None:
+    async def test_concurrent_drain_no_duplicates(self, valkey_queue: ValkeyPacketQueue) -> None:
         packet_count = 100
-        await redis_queue.refresh_ttl(user_id=1, ttl=300)
+        await valkey_queue.refresh_ttl(user_id=1, ttl=300)
         for i in range(packet_count):
-            await redis_queue.enqueue(1, bytes([i % 256]))
+            await valkey_queue.enqueue(1, bytes([i % 256]))
 
         results = await asyncio.gather(
-            redis_queue.dequeue_all(user_id=1),
-            redis_queue.dequeue_all(user_id=1),
-            redis_queue.dequeue_all(user_id=1),
+            valkey_queue.dequeue_all(user_id=1),
+            valkey_queue.dequeue_all(user_id=1),
+            valkey_queue.dequeue_all(user_id=1),
         )
 
         non_empty = [r for r in results if r != b""]

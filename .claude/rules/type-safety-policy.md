@@ -47,7 +47,7 @@ Pyright / Ruff / ruff-format のエラーに対して、その場しのぎの抑
 #    - typeshed (Python 公式): https://github.com/python/typeshed
 #      標準ライブラリ + 主要サードパーティの型スタブを公式配布
 #      basedpyright は typeshed を内蔵しているが、最新版との差分がある場合は直接参照
-#    - PyPI: `types-<package>` パッケージ（例: types-redis, types-requests）
+#    - PyPI: `types-<package>` パッケージ（例: types-requests）
 #      typeshed のサードパーティスタブが PyPI に個別公開されている
 #    - GitHub: `<package> py.typed stub` で検索（有志による非公式スタブ）
 #    - 見つかれば uv add --dev types-<package> で導入

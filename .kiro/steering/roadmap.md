@@ -5,14 +5,15 @@
 - **bancho-protocol** — パケット解析（read_packets）、ディスパッチャー、S2C パケット定義・ビルダー
 - **bancho-login** — ログイン・登録・セッション管理・RBAC・Host ベースルーティング
 - **dev-proxy** — nginx リバースプロキシ（HTTP/HTTPS）・mkcert・devenv 統合・ヘルスチェック
+- **valkey-migration** — Redis → Valkey 移行（redis-py → valkey-glide、ARQ → taskiq + taskiq-redis）
 
 ## 次のステップ（優先度順）
 
 ### Phase 1: クライアント基本動作
 
-1. **packet-polling** — ログイン後の POST `/`（osu-token あり）でキューに溜まった S2C パケットを返す。Redis のパケットキューから取り出して連結レスポンス
+1. **packet-polling** — ログイン後の POST `/`（osu-token あり）でキューに溜まった S2C パケットを返す。Valkey のパケットキューから取り出して連結レスポンス
 2. **c2s-handlers** — C2S パケットハンドラ群。ステータス変更、チャンネル参加/退出、チャット送信、ログアウト等。PacketDispatcher のデコレータ登録で実装
-3. **channel-system** — チャットチャンネル管理（#osu 等）。Redis でチャンネル状態・参加者リスト・メッセージ配信を管理
+3. **channel-system** — チャットチャンネル管理（#osu 等）。Valkey でチャンネル状態・参加者リスト・メッセージ配信を管理
 4. **presence-status** — ユーザーのオンライン状態・プレイ情報（Action/BeatmapID/Mods）の管理と他ユーザーへの配信
 
 ### Phase 2: ゲームプレイ

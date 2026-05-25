@@ -1,8 +1,8 @@
 # pyright: reportAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false
-"""Integration tests for RedisSessionStore against a real Redis instance.
+"""Integration tests for ValkeySessionStore against a real Valkey instance.
 
 These tests mirror the unit tests for InMemorySessionStore but run against
-real Redis.  They can also be parameterized to run both implementations
+real Valkey.  They can also be parameterized to run both implementations
 through the same test matrix.
 """
 
@@ -10,20 +10,21 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
-    from redis.asyncio import Redis
+    from glide import GlideClient
+    from glide_shared.constants import TEncodable
 
 from osu_server.domain.session import SessionData
-from osu_server.infrastructure.cache.redis_client import create_redis_client
+from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.repositories.redis.session_store import RedisSessionStore
+from osu_server.repositories.valkey.session_store import ValkeySessionStore
 
 _KEY_PREFIX = "athena_test:"
 
@@ -40,28 +41,33 @@ _SESSION = SessionData(
 )
 
 
-def _get_redis_url() -> str:
-    url = os.environ.get("REDIS_URL")
+def _get_valkey_url() -> str:
+    url = os.environ.get("VALKEY_URL")
     if not url:
-        pytest.skip("REDIS_URL not set")
+        pytest.skip("VALKEY_URL not set")
     return url
 
 
 @pytest.fixture
-async def redis_client() -> AsyncGenerator[Redis]:
-    client = create_redis_client(_get_redis_url())
+async def valkey_client() -> AsyncGenerator[GlideClient]:
+    client = await create_valkey_client(_get_valkey_url())
     yield client
     # Clean up all test keys
     for pattern in (f"{_KEY_PREFIX}session:*", f"{_KEY_PREFIX}user_session:*"):
-        keys = await client.keys(pattern)
-        if keys:
-            await client.delete(*keys)
-    await client.aclose()
+        cursor: str = "0"
+        while True:
+            next_cursor, keys = await client.scan(cursor, match=pattern, count=100)
+            if keys:
+                _ = await client.delete(cast("list[TEncodable]", keys))
+            cursor = next_cursor.decode() if isinstance(next_cursor, bytes) else str(next_cursor)
+            if cursor == "0":
+                break
+    await client.close()
 
 
 @pytest.fixture
-def redis_store(redis_client: Redis) -> RedisSessionStore:
-    return RedisSessionStore(redis_client, ttl=3600, key_prefix=_KEY_PREFIX)
+def valkey_store(valkey_client: GlideClient) -> ValkeySessionStore:
+    return ValkeySessionStore(valkey_client, ttl=3600, key_prefix=_KEY_PREFIX)
 
 
 @pytest.fixture
@@ -74,14 +80,14 @@ def memory_store() -> InMemorySessionStore:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(params=["redis", "memory"])
+@pytest.fixture(params=["valkey", "memory"])
 def store(
     request: pytest.FixtureRequest,
-    redis_store: RedisSessionStore,
+    valkey_store: ValkeySessionStore,
     memory_store: InMemorySessionStore,
 ) -> SessionStore:
-    if request.param == "redis":
-        return redis_store
+    if request.param == "valkey":
+        return valkey_store
     return memory_store
 
 
@@ -91,13 +97,13 @@ def store(
 
 
 class TestSessionStoreProtocolCompliance:
-    """RedisSessionStore satisfies the SessionStore Protocol."""
+    """ValkeySessionStore satisfies the SessionStore Protocol."""
 
-    def test_redis_session_store_is_session_store(
+    def test_valkey_session_store_is_session_store(
         self,
-        redis_store: RedisSessionStore,
+        valkey_store: ValkeySessionStore,
     ) -> None:
-        assert isinstance(redis_store, SessionStore)
+        assert isinstance(valkey_store, SessionStore)
 
 
 class TestCreateAndGet:

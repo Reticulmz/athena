@@ -3,7 +3,7 @@
 let
   db_name = "athena";
   pg_port = toString config.processes.postgres.ports.main.value;
-  redis_port = toString config.services.redis.port;
+  valkey_port = toString config.services.redis.port;
 in
 {
   process.manager.implementation = "process-compose";
@@ -21,8 +21,10 @@ in
     };
   };
 
+  # Valkey (Redis ドロップインリプレースメント) — services.redis の package を上書き
   services.redis = {
     enable = true;
+    package = pkgs.valkey;
     port = 6379;
   };
 
@@ -52,13 +54,13 @@ in
     after = [ "devenv:processes:app" ];
   };
   # processes.worker = {
-  #   exec = "uv run arq osu_server.worker.WorkerSettings";
+  #   exec = "uv run taskiq worker osu_server.worker:broker";
   #   after = [ "devenv:processes:redis" ];
   # };
 
   env = {
     DATABASE_URL = "postgresql://localhost:${pg_port}/${db_name}";
-    REDIS_URL = "redis://localhost:${redis_port}";
+    VALKEY_URL = "redis://localhost:${valkey_port}";
     ENVIRONMENT = "development";
     SERVER_HOST = "0.0.0.0";
     SERVER_PORT = toString config.processes.app.ports.http.value;
@@ -151,7 +153,7 @@ in
     fi
 
     echo "athena dev environment ready"
-    echo "  devenv up  - start services (postgres, redis) + app + nginx"
+    echo "  devenv up  - start services (postgres, valkey) + app + nginx"
     echo "  uv run pytest  - run tests"
     echo "  nginx listens on :80/:443 → athena :8000"
   '';

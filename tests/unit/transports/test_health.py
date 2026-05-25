@@ -132,10 +132,10 @@ class TestHealthEndpoint:
 
 
 class TestHealthCheckEndpoint:
-    """GET /health returns infrastructure health with DB and Redis checks."""
+    """GET /health returns infrastructure health with DB and Valkey checks."""
 
     @staticmethod
-    def _make_container(*, postgres_ok: bool = True, redis_ok: bool = True) -> MagicMock:
+    def _make_container(*, postgres_ok: bool = True, valkey_ok: bool = True) -> MagicMock:
         mock_conn = AsyncMock()
         if not postgres_ok:
             mock_conn.execute.side_effect = ConnectionError("pg down")
@@ -146,14 +146,14 @@ class TestHealthCheckEndpoint:
         cm.__aexit__.return_value = False
         mock_engine.connect.return_value = cm
 
-        mock_redis = AsyncMock()
-        if not redis_ok:
-            mock_redis.ping.side_effect = ConnectionError("redis down")
+        mock_valkey = AsyncMock()
+        if not valkey_ok:
+            mock_valkey.ping.side_effect = ConnectionError("valkey down")
 
         async def resolve(type_: type) -> object:
             if type_ is AsyncEngine:
                 return mock_engine
-            return mock_redis
+            return mock_valkey
 
         container = MagicMock()
         container.resolve = AsyncMock(side_effect=resolve)
@@ -166,11 +166,11 @@ class TestHealthCheckEndpoint:
         commit: str = "abc1234",
         *,
         postgres_ok: bool = True,
-        redis_ok: bool = True,
+        valkey_ok: bool = True,
     ) -> Starlette:
         app = Starlette(routes=[Route("/health", _health_check_endpoint, methods=["GET"])])
         app.state.version_info = (version, commit)
-        app.state.container = cls._make_container(postgres_ok=postgres_ok, redis_ok=redis_ok)
+        app.state.container = cls._make_container(postgres_ok=postgres_ok, valkey_ok=valkey_ok)
         return app
 
     def test_healthy_returns_200(self) -> None:
@@ -187,7 +187,7 @@ class TestHealthCheckEndpoint:
             assert data["version"] == "0.1.0"
             assert data["commit"] == "abc1234"
             assert data["checks"]["postgres"] == "ok"
-            assert data["checks"]["redis"] == "ok"
+            assert data["checks"]["valkey"] == "ok"
 
     def test_content_type_is_json(self) -> None:
         app = self._make_app()
@@ -203,27 +203,27 @@ class TestHealthCheckEndpoint:
             data = resp.json()
             assert data["status"] == "unhealthy"
             assert data["checks"]["postgres"] == "error"
-            assert data["checks"]["redis"] == "ok"
+            assert data["checks"]["valkey"] == "ok"
 
-    def test_redis_down_returns_503(self) -> None:
-        app = self._make_app(redis_ok=False)
+    def test_valkey_down_returns_503(self) -> None:
+        app = self._make_app(valkey_ok=False)
         with TestClient(app) as client:
             resp = client.get("/health")
             assert resp.status_code == _UNAVAILABLE
             data = resp.json()
             assert data["status"] == "unhealthy"
             assert data["checks"]["postgres"] == "ok"
-            assert data["checks"]["redis"] == "error"
+            assert data["checks"]["valkey"] == "error"
 
     def test_both_down_returns_503(self) -> None:
-        app = self._make_app(postgres_ok=False, redis_ok=False)
+        app = self._make_app(postgres_ok=False, valkey_ok=False)
         with TestClient(app) as client:
             resp = client.get("/health")
             assert resp.status_code == _UNAVAILABLE
             data = resp.json()
             assert data["status"] == "unhealthy"
             assert data["checks"]["postgres"] == "error"
-            assert data["checks"]["redis"] == "error"
+            assert data["checks"]["valkey"] == "error"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -236,7 +236,7 @@ class TestConfigDomainDefault:
 
     def test_domain_default_is_athena_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/osu")
-        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
 
         config = AppConfig()  # pyright: ignore[reportCallIssue]
         assert config.domain == "athena.localhost"

@@ -1,65 +1,54 @@
-# pyright: reportAny=false
-"""ARQ worker entry point — ``arq osu_server.worker.WorkerSettings``.
+"""Taskiq worker entry point.
 
 Runs as a separate process to execute background jobs (e.g. message
 persistence).  The ``startup`` hook initialises a SQLAlchemy async engine
 and session factory; ``shutdown`` disposes the engine.
+
+Start with: ``taskiq worker osu_server.worker:broker``
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import structlog
-from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from arq.typing import StartupShutdown
-    from arq.worker import Function
+from taskiq_redis import ListQueueBroker
 
 from osu_server.config import load_config
+
+if TYPE_CHECKING:
+    from taskiq import TaskiqState
+
+from taskiq import TaskiqEvents
+
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+
+_config = load_config()
+
+broker = ListQueueBroker(url=str(_config.valkey_url))
 
 
-def _redis_settings_from_url(redis_url: str) -> RedisSettings:
-    """Build ARQ ``RedisSettings`` from a ``redis://`` DSN string."""
-    return RedisSettings.from_dsn(redis_url)
-
-
-async def startup(ctx: dict[str, object]) -> None:
-    """Initialise DB engine and session factory, storing them in *ctx*."""
-    config = load_config()
-    engine: AsyncEngine = create_engine(str(config.database_url))
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def startup(state: TaskiqState) -> None:
+    """Initialise DB engine and session factory, storing them in *state*."""
+    engine: AsyncEngine = create_engine(str(_config.database_url))
     session_factory: async_sessionmaker[AsyncSession] = create_session_factory(engine)
 
-    ctx["engine"] = engine
-    ctx["session_factory"] = session_factory
+    state.engine = engine
+    state.session_factory = session_factory
 
     logger.info("worker_started")
 
 
-async def shutdown(ctx: dict[str, object]) -> None:
+@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
+async def shutdown(state: TaskiqState) -> None:
     """Dispose of the DB engine created during startup."""
-    engine = ctx.get("engine")
+    engine = getattr(state, "engine", None)
     if isinstance(engine, AsyncEngine):
         await engine.dispose()
 
     logger.info("worker_stopped")
-
-
-_config: Final = load_config()
-
-
-class WorkerSettings:
-    """ARQ worker configuration — consumed by ``arq`` CLI."""
-
-    functions: Sequence[Function] = []
-    on_startup: StartupShutdown = startup
-    on_shutdown: StartupShutdown = shutdown
-    redis_settings: RedisSettings = _redis_settings_from_url(str(_config.redis_url))

@@ -1,22 +1,15 @@
-# pyright: reportAny=false
-# pyright: reportUnknownVariableType=false
-# pyright: reportUnknownArgumentType=false
-# pyright: reportUnknownMemberType=false
-# pyright: reportGeneralTypeIssues=false
-# pyright: reportMissingTypeArgument=false
-# pyright: reportArgumentType=false
-"""RedisRateLimiter — Redis-backed rate limiter using INCR + EXPIRE."""
+"""ValkeyRateLimiter — Valkey-backed rate limiter using INCR + EXPIRE."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from redis.asyncio import Redis
+    from glide import GlideClient
 
 
-class RedisRateLimiter:
-    """Redis implementation of the RateLimiter Protocol.
+class ValkeyRateLimiter:
+    """Valkey implementation of the RateLimiter Protocol.
 
     Key pattern:
         - ``{prefix}rate_limit:user:{user_id}`` -> counter (String)
@@ -26,8 +19,8 @@ class RedisRateLimiter:
     False (rate limited).
     """
 
-    def __init__(self, redis: Redis, *, key_prefix: str = "") -> None:
-        self._redis: Redis = redis
+    def __init__(self, client: GlideClient, *, key_prefix: str = "") -> None:
+        self._client: GlideClient = client
         self._prefix: str = key_prefix
 
     # -- key helpers ----------------------------------------------------------
@@ -43,9 +36,9 @@ class RedisRateLimiter:
         Returns True if allowed, False if rate limited.
         """
         key = self._rate_key(user_id)
-        count = await self._redis.incr(key)
+        count: int = await self._client.incr(key)
 
         if count == 1:
-            _ = await self._redis.expire(key, window)
+            _ = await self._client.expire(key, window)
 
         return count <= limit
