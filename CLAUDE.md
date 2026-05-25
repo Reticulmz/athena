@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **ドメインモデル**: 標準 `@dataclass(slots=True)`（Pydantic は使わない）
 - **ORM**: SQLAlchemy 2.0 async + Alembic
 - **キャッシュ / ステート / Pub/Sub**: Valkey（valkey-glide クライアント）
-- **ジョブキュー**: taskiq + taskiq-redis（Valkey ベース、async ネイティブ）
+- **ジョブキュー**: taskiq + taskiq-redis（redis-py 経由で Valkey に接続、async ネイティブ）
 - **DI**: 自前の軽量コンテナ（フレームワーク非依存）
 - **型チェック**: basedpyright（厳格モード）
 - **Lint / Format**: ruff

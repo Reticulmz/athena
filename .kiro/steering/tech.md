@@ -11,7 +11,7 @@
 | API I/O | Pydantic v2 | ドメイン層では使わない |
 | ドメインモデル | `@dataclass(slots=True)` | 標準ライブラリのみ |
 | ORM | SQLAlchemy 2.0 async + asyncpg | Alembic でマイグレーション |
-| ジョブキュー | taskiq + taskiq-redis | Valkey ベース、async ネイティブ |
+| ジョブキュー | taskiq + taskiq-redis | redis-py 経由で Valkey に接続、async ネイティブ |
 | EventBus | 自前実装 (Valkey Pub/Sub + in-memory) | ~40行の軽量実装 |
 | DI | 自前軽量コンテナ | フレームワーク非依存 |
 | 型チェック | basedpyright (strict) | Pyright フォーク。conformance 95.7%、uv dev dependency でインストール |
