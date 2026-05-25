@@ -49,7 +49,7 @@
   - `rtk pytest tests/unit/test_lifecycle_handlers.py` が全テスト通過すること
   - _Requirements: 5.1, 5.2, 6.1, 6.2, 6.4, 6.5, 6.6, 9.1_
 
-- [ ] 3.2 (P) LifecycleListeners の実装（UserDisconnected → USER_QUIT 配信）
+- [x] 3.2 (P) LifecycleListeners の実装（UserDisconnected → USER_QUIT 配信）
   - `LifecycleListeners(ListenerGroup)` クラスを実装する。コンストラクタで `OnlineUsersService` と `PacketQueue` を受け取る
   - `@listens(UserDisconnected)` の `on_user_disconnected` メソッドを実装する。全オンラインユーザーの PacketQueue に USER_QUIT パケットを enqueue し、退出ユーザー自身は配信対象から除外する
   - ユニットテスト: 全オンラインユーザーに USER_QUIT が enqueue されること、退出ユーザー自身が除外されること、オンラインユーザーが0人の場合にエラーなく完了すること
