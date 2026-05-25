@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class Event:
     """Base class for all domain events.
 
     Concrete event types (e.g. ``ChatMessageSent``, ``UserPresenceUpdated``)
-    inherit from this and add their own fields.
+    inherit from this and add their own fields.  All events are immutable.
     """

@@ -29,7 +29,7 @@
   - `rtk basedpyright` が handlers/base.py と listeners/base.py に対して型エラーなしで通ること
   - _Requirements: 1.5, 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3_
 
-- [ ] 2.2 (P) UserDisconnected ドメインイベント + OnlineUsersService の実装
+- [x] 2.2 (P) UserDisconnected ドメインイベント + OnlineUsersService の実装
   - `domain/users/` ディレクトリを作成する（`__init__.py` 含む）
   - `domain/users/events.py` に `UserDisconnected(Event)` を定義する。`@dataclass(frozen=True, slots=True)` で不変、`user_id: int` フィールドを持つ
   - `services/online_users.py` に `OnlineUsersService` を実装する。コンストラクタで `SessionStore` を受け取り、`get_all_user_ids()` は SessionStore に委譲する
