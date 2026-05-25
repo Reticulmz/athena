@@ -7,7 +7,7 @@
 
 ### Serena
 
-- Activate "keebdb" with `activate_project` at conversation start.
+- Activate "athena" with `activate_project` at conversation start.
 - First choice for code reading: `get_symbols_overview` → `find_symbol` → `find_referencing_symbols` → `search_for_pattern`.
 - Read entire files only as last resort. Get symbol overview first, then read specific parts with `include_body=True`.
 - For edits: `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`.

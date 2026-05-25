@@ -48,7 +48,7 @@
   - _Boundary: devenv.nix check-added-large-files hook_
 
 - [ ] 3. Validation — 全 hook 統合検証
-- [ ] 3.1 全 hook の統合動作検証 _Blocked: devenv shell 再入が必要。Nix が hook 設定を再生成するため、現在のシェルでは新しい hook が反映されない。`exit` → `devenv shell` で再入後に手動検証が必要_
+- [x] 3.1 全 hook の統合動作検証
   - 正常なコミット (型チェック通過 + テスト通過 + 正しいメッセージ + フォーマット済み) が1回で成功することを確認する
   - 各 hook の拒否シナリオ (型エラー、テスト失敗、不正メッセージ、リントエラー、巨大ファイル) を個別に確認する
   - `devenv shell` 再入後も hook が正しく動作することを確認する

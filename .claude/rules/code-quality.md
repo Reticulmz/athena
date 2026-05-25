@@ -1,12 +1,11 @@
 ## Code Quality
 
-- **Follow the Rails Way**: Adhere to Rails' philosophy and conventions as the top priority. Before introducing custom implementations or patterns borrowed from other frameworks, always consider the standard Rails solution first.
-- Prefer idiomatic Rails conventions and design patterns.
-- Prefer Hotwire (Turbo + Stimulus) over heavy JavaScript frameworks.
+- **Follow established patterns**: 既存のコードベースの慣習とアーキテクチャパターンを最優先。独自実装を導入する前に、既存の解決策を確認する。
+- Prefer idiomatic Python and async-first patterns.
 - Make intent explicit: avoid magic numbers and opaque conditionals.
 - Understand root causes; avoid hacky workarounds.
 - Avoid designs that become tech debt; prioritize extensibility and readability.
-- NEVER hardcode credentials in source files. Use Rails credentials or environment variables.
+- NEVER hardcode credentials in source files. Use pydantic-settings (AppConfig) or environment variables.
 
 ### Design Principles
 - **SOLID**: Single responsibility, Open-closed, Liskov substitution, Interface segregation, Dependency inversion.
@@ -18,12 +17,12 @@
 
 #### Completion Criteria
 - Before reporting "done", critically review your own implementation for overlooked issues.
-- Run `bin/rubocop` and relevant tests (`bin/rails test`).
+- Run `basedpyright src/`, `ruff check src/`, `ruff format --check src/`, and relevant tests (`pytest tests/`).
 - Only report completion after all checks pass.
 
 #### Self-Review Loop
 - After writing code, always review it yourself as if performing a code review.
-- Check for: logic errors, edge cases, N+1 queries, security issues, Rails convention violations, readability, test coverage, and adherence to the design principles above.
+- Check for: logic errors, edge cases, security issues, layer violation (import-linter), type safety (basedpyright), readability, test coverage, and adherence to the design principles above.
 - If any issues are found, fix them and review again.
 - Repeat this review → fix → review loop until no issues remain.
 - Only then report the work as complete. Quality is not negotiable — do not stop at "it works".
