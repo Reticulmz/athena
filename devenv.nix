@@ -69,13 +69,8 @@ in
   };
 
   git-hooks.hooks = {
-    # Task 2.1: ruff — devenv デフォルト (--fix なし、チェックのみ)
     ruff.enable = true;
-    # Task 2.1: ruff-format — --check でチェックのみ、自動修正しない
-    ruff-format = {
-      enable = true;
-      entry = "ruff format --check";
-    };
+    ruff-format.enable = true;
     check-merge-conflict = {
       enable = true;
       entry = "${pkgs.python3Packages.pre-commit-hooks}/bin/check-merge-conflict";
