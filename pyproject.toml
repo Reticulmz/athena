@@ -24,9 +24,11 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-asyncio",
+    "pytest-timeout",
     "ruff",
     "basedpyright",
     "import-linter",
+    "gitlint-core",
 ]
 
 [tool.uv]
