@@ -69,8 +69,13 @@ in
   };
 
   git-hooks.hooks = {
+    # Task 2.1: ruff — devenv デフォルト (--fix なし、チェックのみ)
     ruff.enable = true;
-    ruff-format.enable = true;
+    # Task 2.1: ruff-format — --check でチェックのみ、自動修正しない
+    ruff-format = {
+      enable = true;
+      entry = "ruff format --check";
+    };
     check-merge-conflict = {
       enable = true;
       entry = "${pkgs.python3Packages.pre-commit-hooks}/bin/check-merge-conflict";
@@ -94,10 +99,11 @@ in
       entry = "${pkgs.gitleaks}/bin/gitleaks protect --staged --no-banner";
       pass_filenames = false;
     };
+    # Task 2.2: basedpyright — tests/ を型チェック対象に追加
     basedpyright = {
       enable = true;
       name = "basedpyright";
-      entry = "uv run basedpyright src/";
+      entry = "uv run basedpyright src/ tests/";
       files = "\\.py$";
       pass_filenames = false;
     };
@@ -107,6 +113,28 @@ in
       entry = "uv run lint-imports";
       files = "\\.py$";
       pass_filenames = false;
+    };
+    # Task 2.3: pytest — unit テスト実行ゲート
+    pytest = {
+      enable = true;
+      name = "pytest";
+      entry = "uv run pytest tests/unit/ -x -q --timeout=30";
+      files = "\\.py$";
+      pass_filenames = false;
+    };
+    # Task 2.4: gitlint — Conventional Commits バリデーション (commit-msg ステージ)
+    gitlint = {
+      enable = true;
+      name = "gitlint";
+      entry = "uv run gitlint --msg-filename";
+      stages = [ "commit-msg" ];
+    };
+    # Task 2.5: check-added-large-files — 500KB 超のファイル防止
+    check-added-large-files = {
+      enable = true;
+      name = "check-added-large-files";
+      entry = "${pkgs.python3Packages.pre-commit-hooks}/bin/check-added-large-files --maxkb=500";
+      types = [ "file" ];
     };
   };
 
