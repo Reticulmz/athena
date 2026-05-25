@@ -41,7 +41,7 @@
 
 - [ ] 3. Core: ハンドラとリスナー実装
 
-- [ ] 3.1 LifecycleHandlers の実装（PONG + EXIT）
+- [x] 3.1 LifecycleHandlers の実装（PONG + EXIT）
   - `LifecycleHandlers(HandlerGroup)` クラスを実装する。コンストラクタで `SessionStore` と `EventBus` を受け取る
   - `@handles(ClientPacketID.PONG)` の `handle_pong` メソッドを実装する（メソッド本体は `pass`）。ログは既存の PacketDispatcher の QUIET_C2S_PACKETS 機構で DEBUG レベル出力されることを確認する
   - `@handles(ClientPacketID.EXIT)` の `handle_exit` メソッドを実装する。try ブロックでイベント発火、finally ブロックでセッション削除を保証する。`delete_by_user` の冪等性により2回目の EXIT もエラーなし
