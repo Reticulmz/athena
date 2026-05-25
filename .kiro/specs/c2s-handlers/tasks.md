@@ -70,7 +70,7 @@
 
 - [ ] 5. Validation: 統合・E2E テスト
 
-- [ ] 5.1 統合テスト
+- [x] 5.1 統合テスト
   - EXIT パイプライン統合テスト: LifecycleHandlers.handle_exit → InMemoryEventBus → LifecycleListeners.on_user_disconnected → InMemoryPacketQueue に USER_QUIT が投入されること
   - HandlerGroup + PacketDispatcher 統合テスト: register_all 後に dispatch が正しいハンドラを呼ぶこと
   - ListenerGroup + EventBus 統合テスト: register_all 後に fire が正しいリスナーを呼ぶこと
