@@ -56,6 +56,18 @@ if user_id ~= nil then
 end
 return 1"""
 
+    # Lua script: atomically delete a session by user_id.
+    # KEYS[1] = user_session:{user_id}
+    # ARGV[1] = session key prefix
+    _DELETE_BY_USER_SCRIPT: Final[str] = """\
+local token = redis.call('GET', KEYS[1])
+if not token then
+    return 0
+end
+redis.call('DEL', ARGV[1] .. token)
+redis.call('DEL', KEYS[1])
+return 1"""
+
     # Lua script: atomically delete session and its user mapping (only if
     # the user mapping still points to this token — prevents racing with a
     # concurrent create that already overwrote the mapping).
@@ -164,3 +176,35 @@ return 1"""
             f"{self._prefix}user_session:",
         )
         return bool(result)  # pyright: ignore[reportUnknownArgumentType]
+
+    async def delete_by_user(self, user_id: int) -> None:
+        """Remove the session for *user_id*.  No-op if not found (idempotent).
+
+        Atomically reads the token from ``user_session:{user_id}``, then
+        deletes both the session and user-mapping keys.
+        """
+        _ = await self._redis.eval(  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
+            self._DELETE_BY_USER_SCRIPT,
+            1,
+            self._user_key(user_id),
+            f"{self._prefix}session:",
+        )
+
+    async def get_all_user_ids(self) -> list[int]:
+        """Return all active user IDs by scanning ``user_session:*`` keys."""
+        prefix = f"{self._prefix}user_session:"
+        user_ids: list[int] = []
+        cursor: int | str = 0
+        while True:
+            cursor, keys = await self._redis.scan(  # pyright: ignore[reportUnknownMemberType]
+                cursor=int(cursor),
+                match=f"{prefix}*",
+                count=100,
+            )
+            for key in keys:
+                raw: str = key.decode() if isinstance(key, bytes) else str(key)
+                user_id_str = raw.removeprefix(prefix)
+                user_ids.append(int(user_id_str))
+            if int(cursor) == 0:
+                break
+        return user_ids

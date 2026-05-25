@@ -61,3 +61,15 @@ class InMemorySessionStore:
         In-memory store has no TTL concept, so this is a pure existence check.
         """
         return token in self._by_token
+
+    async def delete_by_user(self, user_id: int) -> None:
+        """Remove the session for *user_id*.  No-op if not found (idempotent)."""
+        token = self._user_to_token.pop(user_id, None)
+        if token is None:
+            return
+        _ = self._by_token.pop(token, None)
+        _ = self._token_to_user.pop(token, None)
+
+    async def get_all_user_ids(self) -> list[int]:
+        """Return all active user IDs."""
+        return list(self._user_to_token.keys())

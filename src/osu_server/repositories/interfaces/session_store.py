@@ -40,3 +40,14 @@ class SessionStore(Protocol):
     async def refresh(self, token: str) -> bool:
         """Refresh the session TTL.  Return ``True`` if the session exists."""
         ...
+
+    async def delete_by_user(self, user_id: int) -> None:
+        """Remove the session for *user_id*.
+
+        If no session exists for the given user, this is a no-op (idempotent).
+        """
+        ...
+
+    async def get_all_user_ids(self) -> list[int]:
+        """Return a list of user IDs for all active sessions."""
+        ...

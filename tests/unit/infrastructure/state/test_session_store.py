@@ -121,3 +121,78 @@ async def test_refresh_nonexistent_token(store: InMemorySessionStore) -> None:
     result = await store.refresh("nonexistent-token")
 
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# delete_by_user
+# ---------------------------------------------------------------------------
+
+
+async def test_delete_by_user_removes_session(store: InMemorySessionStore) -> None:
+    """delete_by_user removes the session for the given user_id."""
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+    await store.delete_by_user(user_id=1)
+
+    assert await store.get("abc-123") is None
+    assert await store.get_by_user(user_id=1) is None
+    assert await store.exists("abc-123") is False
+
+
+async def test_delete_by_user_idempotent(store: InMemorySessionStore) -> None:
+    """delete_by_user on a non-existent user_id is a no-op (no error)."""
+    # Should not raise
+    await store.delete_by_user(user_id=9999)
+
+
+async def test_delete_by_user_does_not_affect_other_users(store: InMemorySessionStore) -> None:
+    """delete_by_user only removes the targeted user's session."""
+    other_session = replace(_SESSION, user_id=2, username="cookiezi")
+    await store.create(user_id=1, token="token-1", data=_SESSION)
+    await store.create(user_id=2, token="token-2", data=other_session)
+
+    await store.delete_by_user(user_id=1)
+
+    assert await store.get("token-1") is None
+    result = await store.get("token-2")
+    assert result is not None
+    assert result.username == "cookiezi"
+
+
+# ---------------------------------------------------------------------------
+# get_all_user_ids
+# ---------------------------------------------------------------------------
+
+
+async def test_get_all_user_ids_empty_store(store: InMemorySessionStore) -> None:
+    """get_all_user_ids returns an empty list when the store is empty."""
+    result = await store.get_all_user_ids()
+
+    assert result == []
+
+
+async def test_get_all_user_ids_returns_all(store: InMemorySessionStore) -> None:
+    """get_all_user_ids returns all active user_ids."""
+    session_2 = replace(_SESSION, user_id=2, username="cookiezi")
+    session_3 = replace(_SESSION, user_id=3, username="whitecat")
+
+    await store.create(user_id=1, token="t1", data=_SESSION)
+    await store.create(user_id=2, token="t2", data=session_2)
+    await store.create(user_id=3, token="t3", data=session_3)
+
+    result = await store.get_all_user_ids()
+
+    assert sorted(result) == [1, 2, 3]
+
+
+async def test_get_all_user_ids_excludes_deleted(store: InMemorySessionStore) -> None:
+    """get_all_user_ids does not include users whose sessions were deleted."""
+    session_2 = replace(_SESSION, user_id=2, username="cookiezi")
+    await store.create(user_id=1, token="t1", data=_SESSION)
+    await store.create(user_id=2, token="t2", data=session_2)
+
+    await store.delete_by_user(user_id=1)
+
+    result = await store.get_all_user_ids()
+
+    assert result == [2]

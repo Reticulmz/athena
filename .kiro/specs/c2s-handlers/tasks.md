@@ -10,7 +10,7 @@
   - `rtk basedpyright src/osu_server/transports/bancho/routing.py` が型エラーなしで通ること
   - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 1.2 (P) SessionStore インターフェース拡張
+- [x] 1.2 (P) SessionStore インターフェース拡張
   - `SessionStore` Protocol に `delete_by_user(user_id: int) -> None` と `get_all_user_ids() -> list[int]` を追加する
   - `InMemorySessionStore` に両メソッドを実装する。`delete_by_user` は存在しない user_id に対してエラーなし（冪等）
   - `RedisSessionStore` に両メソッドを実装する。`delete_by_user` は `user:{user_id}:session` キーから token を取得して両キーを削除、存在しない場合は no-op
