@@ -5,8 +5,11 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: TC002
 
-from osu_server.domain.channel import Channel, ChannelType
-from osu_server.repositories.sqlalchemy.models.channel import ChannelModel
+from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
+from osu_server.repositories.sqlalchemy.models.channel import (
+    ChannelModel,
+    ChannelRoleOverrideModel,
+)
 
 
 class SQLAlchemyChannelRepository:
@@ -101,6 +104,32 @@ class SQLAlchemyChannelRepository:
                 await session.delete(model)
                 await session.commit()
 
+    async def get_overrides_for_channel(self, channel_id: int) -> list[ChannelRoleOverride]:
+        """Return all role overrides for a single channel."""
+        async with self._session_factory() as session:
+            stmt = select(ChannelRoleOverrideModel).where(
+                ChannelRoleOverrideModel.channel_id == channel_id
+            )
+            models = (await session.execute(stmt)).scalars().all()
+            return [self._override_to_domain(m) for m in models]
+
+    async def get_overrides_for_channels(
+        self, channel_ids: list[int]
+    ) -> dict[int, list[ChannelRoleOverride]]:
+        """Return role overrides for multiple channels, keyed by channel_id."""
+        if not channel_ids:
+            return {}
+
+        result: dict[int, list[ChannelRoleOverride]] = {cid: [] for cid in channel_ids}
+        async with self._session_factory() as session:
+            stmt = select(ChannelRoleOverrideModel).where(
+                ChannelRoleOverrideModel.channel_id.in_(channel_ids)
+            )
+            models = (await session.execute(stmt)).scalars().all()
+            for m in models:
+                result[m.channel_id].append(self._override_to_domain(m))
+        return result
+
     @staticmethod
     def _to_domain(model: ChannelModel) -> Channel:
         """Map a SQLAlchemy ChannelModel to a domain Channel."""
@@ -114,4 +143,14 @@ class SQLAlchemyChannelRepository:
             rate_limit_window=model.rate_limit_window,
             created_at=model.created_at,
             updated_at=model.updated_at,
+        )
+
+    @staticmethod
+    def _override_to_domain(model: ChannelRoleOverrideModel) -> ChannelRoleOverride:
+        """Map a SQLAlchemy ChannelRoleOverrideModel to a domain ChannelRoleOverride."""
+        return ChannelRoleOverride(
+            channel_id=model.channel_id,
+            role_id=model.role_id,
+            can_read=model.can_read,
+            can_write=model.can_write,
         )

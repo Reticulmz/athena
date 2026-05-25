@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from osu_server.domain.channel import Channel
+    from osu_server.domain.channel import Channel, ChannelRoleOverride
 
 
 @runtime_checkable
@@ -50,5 +50,21 @@ class ChannelRepository(Protocol):
         """Delete the channel with *channel_id*.
 
         No-op if the channel does not exist.
+        """
+        ...
+
+    async def get_overrides_for_channel(self, channel_id: int) -> list[ChannelRoleOverride]:
+        """Return all role overrides for a single channel.
+
+        Returns an empty list if no overrides exist (fail-closed: no access).
+        """
+        ...
+
+    async def get_overrides_for_channels(
+        self, channel_ids: list[int]
+    ) -> dict[int, list[ChannelRoleOverride]]:
+        """Return role overrides for multiple channels, keyed by channel_id.
+
+        Channels with no overrides are included with an empty list.
         """
         ...

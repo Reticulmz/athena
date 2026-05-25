@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from osu_server.domain.channel import ChannelType
 
 if TYPE_CHECKING:
-    from osu_server.domain.channel import Channel
+    from osu_server.domain.channel import Channel, ChannelRoleOverride
 
 
 class InMemoryChannelRepository:
@@ -22,6 +22,7 @@ class InMemoryChannelRepository:
         self._channels_by_id: dict[int, Channel] = {}
         self._id_by_name: dict[str, int] = {}
         self._next_id: int = 1
+        self._overrides: dict[int, list[ChannelRoleOverride]] = {}
 
     async def create(self, channel: Channel) -> Channel:
         """Persist a new channel with an auto-generated id.
@@ -85,3 +86,20 @@ class InMemoryChannelRepository:
         channel = self._channels_by_id.pop(channel_id, None)
         if channel is not None:
             _ = self._id_by_name.pop(channel.name, None)
+            _ = self._overrides.pop(channel_id, None)
+
+    async def get_overrides_for_channel(self, channel_id: int) -> list[ChannelRoleOverride]:
+        """Return all role overrides for a single channel."""
+        return list(self._overrides.get(channel_id, []))
+
+    async def get_overrides_for_channels(
+        self, channel_ids: list[int]
+    ) -> dict[int, list[ChannelRoleOverride]]:
+        """Return role overrides for multiple channels, keyed by channel_id."""
+        return {cid: list(self._overrides.get(cid, [])) for cid in channel_ids}
+
+    # ── Test helpers (not part of Protocol) ──────────────────────────
+
+    def seed_override(self, override: ChannelRoleOverride) -> None:
+        """Add a role override for testing.  Not part of the Protocol."""
+        self._overrides.setdefault(override.channel_id, []).append(override)
