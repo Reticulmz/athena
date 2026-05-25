@@ -21,7 +21,7 @@
 
 - [ ] 2. Core: 基盤クラスとドメインモデル
 
-- [ ] 2.1 HandlerGroup + ListenerGroup 基盤クラスの実装
+- [x] 2.1 HandlerGroup + ListenerGroup 基盤クラスの実装
   - `HandlerGroup(RouteGroup)` を実装する。`handles = route` エイリアスと `register_all(dispatcher)` メソッド。内部で `dispatcher.register(packet_id)(handler)` のデコレータ呼び出しパターンを使用する
   - `ListenerGroup(RouteGroup)` を実装する。`listens = route` エイリアスと `register_all(event_bus)` メソッド。内部で `event_bus.subscribe(event_type, handler)` を呼び出す
   - 両クラスの `register_all` で登録完了時にグループ名と登録数を構造化ログに記録する。登録メソッドが0件の場合は警告ログを出力する
