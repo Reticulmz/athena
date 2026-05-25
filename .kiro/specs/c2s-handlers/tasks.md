@@ -60,7 +60,7 @@
 
 - [ ] 4. Integration: 統合配線
 
-- [ ] 4.1 PacketHandler 型厳格化 + user_id 伝達 + composition root 配線
+- [x] 4.1 PacketHandler 型厳格化 + user_id 伝達 + composition root 配線
   - `dispatch.py` の `PacketHandler` 型を `Callable[..., Awaitable[None]]` から `Callable[[bytes, int], Awaitable[None]]` に変更する
   - `login.py` の `_handle_polling` 内の dispatch 呼び出しに `user_id` 引数を追加する（1行変更）
   - `app.py` の `_register_services` に LifecycleHandlers / LifecycleListeners / OnlineUsersService の生成と登録を追加する

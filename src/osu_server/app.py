@@ -47,9 +47,11 @@ from osu_server.repositories.redis.session_store import RedisSessionStore
 from osu_server.repositories.sqlalchemy.role_repository import SQLAlchemyRoleRepository
 from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
 from osu_server.services.auth_service import AuthService
+from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
-from osu_server.transports.bancho.dispatch import PacketDispatcher, dispatcher
+from osu_server.transports.bancho.dispatch import PacketDispatcher
+from osu_server.transports.bancho.handlers.lifecycle import LifecycleHandlers
 from osu_server.transports.bancho.handlers.login import LoginHandler
 from osu_server.transports.bancho.listeners import setup_listeners
 from osu_server.transports.web_legacy.registration import RegistrationHandler
@@ -194,18 +196,34 @@ async def _register_services(container: Container, config: AppConfig) -> None:
     )
     container.register_singleton(AuthService, lambda: auth_service)
 
+    # -- OnlineUsersService (singleton) -----------------------------------------
+    online_users = OnlineUsersService(session_store=session_store)
+    container.register_singleton(OnlineUsersService, lambda: online_users)
+
     # -- LoginHandler (singleton) ---------------------------------------------
     packet_queue = await container.resolve(PacketQueue)
     eventbus = await container.resolve(EventBus)
 
-    setup_listeners(eventbus, packet_queue)
+    # -- PacketDispatcher (singleton) -----------------------------------------
+    packet_dispatcher = PacketDispatcher()
+    container.register_singleton(PacketDispatcher, lambda: packet_dispatcher)
+
+    # -- LifecycleHandlers → PacketDispatcher ---------------------------------
+    lifecycle_handlers = LifecycleHandlers(
+        session_store=session_store,
+        event_bus=eventbus,
+    )
+    lifecycle_handlers.register_all(packet_dispatcher)
+
+    # -- LifecycleListeners → EventBus ----------------------------------------
+    setup_listeners(eventbus, packet_queue, online_users)
 
     login_handler = LoginHandler(
         auth_service=auth_service,
         session_store=session_store,
         country_resolver=country_resolver,
         packet_queue=packet_queue,
-        packet_dispatcher=dispatcher,
+        packet_dispatcher=packet_dispatcher,
         session_ttl=config.session_ttl,
         max_request_body_size=config.max_request_body_size,
     )
@@ -214,9 +232,6 @@ async def _register_services(container: Container, config: AppConfig) -> None:
     # -- RegistrationHandler (singleton) --------------------------------------
     registration_handler = RegistrationHandler(auth_service=auth_service)
     container.register_singleton(RegistrationHandler, lambda: registration_handler)
-
-    # -- PacketDispatcher (singleton) -----------------------------------------
-    container.register_singleton(PacketDispatcher, lambda: dispatcher)
 
 
 async def _check_infrastructure(container: Container) -> None:

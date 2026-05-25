@@ -12,7 +12,7 @@ import structlog
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.bancho.protocol.errors import DuplicateHandlerError
 
-type PacketHandler = Callable[..., Awaitable[None]]
+type PacketHandler = Callable[[bytes, int], Awaitable[None]]
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -52,9 +52,7 @@ class PacketDispatcher:
 
         return decorator
 
-    async def dispatch(
-        self, packet_id: ClientPacketID, payload: bytes, *args: object, **kwargs: object
-    ) -> None:
+    async def dispatch(self, packet_id: ClientPacketID, payload: bytes, user_id: int) -> None:
         """Call the registered handler for *packet_id*, with structured logging.
 
         The ``c2s_packet`` event is emitted **after** the handler completes so
@@ -70,7 +68,7 @@ class PacketDispatcher:
             logger.debug("c2s_unhandled", packet=packet_id.name, size=len(payload))
             return
 
-        await handler(payload, *args, **kwargs)
+        await handler(payload, user_id)
 
         if packet_id in QUIET_C2S_PACKETS:
             logger.debug("c2s_packet", packet=packet_id.name, size=len(payload))

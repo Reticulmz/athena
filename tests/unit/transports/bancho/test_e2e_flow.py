@@ -34,14 +34,14 @@ class TestReadPacketsToDispatch:
         called_with: list[tuple[ClientPacketID, bytes]] = []
 
         @dp.register(ClientPacketID.PONG)
-        async def handle_pong(payload: bytes) -> None:
+        async def handle_pong(payload: bytes, _user_id: int) -> None:
             called_with.append((ClientPacketID.PONG, payload))
 
         data = _build_packet(ClientPacketID.PONG, b"")
         packets = read_packets(data)
 
         for pid, payload in packets:
-            await dp.dispatch(pid, payload)
+            await dp.dispatch(pid, payload, 1)
 
         assert len(called_with) == 1
         assert called_with[0] == (ClientPacketID.PONG, b"")
@@ -52,15 +52,15 @@ class TestReadPacketsToDispatch:
         call_log: list[tuple[ClientPacketID, bytes]] = []
 
         @dp.register(ClientPacketID.PONG)
-        async def handle_pong(payload: bytes) -> None:
+        async def handle_pong(payload: bytes, _user_id: int) -> None:
             call_log.append((ClientPacketID.PONG, payload))
 
         @dp.register(ClientPacketID.SEND_MESSAGE)
-        async def handle_msg(payload: bytes) -> None:
+        async def handle_msg(payload: bytes, _user_id: int) -> None:
             call_log.append((ClientPacketID.SEND_MESSAGE, payload))
 
         @dp.register(ClientPacketID.EXIT)
-        async def handle_exit(payload: bytes) -> None:
+        async def handle_exit(payload: bytes, _user_id: int) -> None:
             call_log.append((ClientPacketID.EXIT, payload))
 
         msg_payload = b"\xaa\xbb\xcc"
@@ -72,7 +72,7 @@ class TestReadPacketsToDispatch:
         packets = read_packets(data)
 
         for pid, payload in packets:
-            await dp.dispatch(pid, payload)
+            await dp.dispatch(pid, payload, 1)
 
         assert len(call_log) == 3
         assert call_log[0] == (ClientPacketID.PONG, b"")
@@ -85,7 +85,7 @@ class TestReadPacketsToDispatch:
         called_ids: list[ClientPacketID] = []
 
         @dp.register(ClientPacketID.PONG)
-        async def handle_pong(_payload: bytes) -> None:
+        async def handle_pong(_payload: bytes, _user_id: int) -> None:
             called_ids.append(ClientPacketID.PONG)
 
         # EXIT has no handler registered
@@ -97,7 +97,7 @@ class TestReadPacketsToDispatch:
         packets = read_packets(data)
 
         for pid, payload in packets:
-            await dp.dispatch(pid, payload)
+            await dp.dispatch(pid, payload, 1)
 
         assert called_ids == [ClientPacketID.PONG, ClientPacketID.PONG]
 
@@ -110,11 +110,11 @@ class TestReadPacketsToDispatch:
         }
 
         @dp.register(ClientPacketID.SEND_MESSAGE)
-        async def handle_msg(payload: bytes) -> None:
+        async def handle_msg(payload: bytes, _user_id: int) -> None:
             received_payloads[ClientPacketID.SEND_MESSAGE].append(payload)
 
         @dp.register(ClientPacketID.STATUS_CHANGE)
-        async def handle_status(payload: bytes) -> None:
+        async def handle_status(payload: bytes, _user_id: int) -> None:
             received_payloads[ClientPacketID.STATUS_CHANGE].append(payload)
 
         payload_a = b"\x01\x02\x03\x04\x05"
@@ -125,7 +125,7 @@ class TestReadPacketsToDispatch:
         packets = read_packets(data)
 
         for pid, payload in packets:
-            await dp.dispatch(pid, payload)
+            await dp.dispatch(pid, payload, 1)
 
         assert received_payloads[ClientPacketID.SEND_MESSAGE] == [payload_a]
         assert received_payloads[ClientPacketID.STATUS_CHANGE] == [payload_b]
@@ -137,7 +137,7 @@ class TestReadPacketsToDispatch:
         dispatched_ids: list[ClientPacketID] = []
 
         @dp.register(ClientPacketID.PONG)
-        async def handle_pong(_payload: bytes) -> None:
+        async def handle_pong(_payload: bytes, _user_id: int) -> None:
             dispatched_ids.append(ClientPacketID.PONG)
 
         # 999 is not a valid ClientPacketID
@@ -149,7 +149,7 @@ class TestReadPacketsToDispatch:
         packets = read_packets(data)
 
         for pid, payload in packets:
-            await dp.dispatch(pid, payload)
+            await dp.dispatch(pid, payload, 1)
 
         assert dispatched_ids == [ClientPacketID.PONG]
 
@@ -159,13 +159,13 @@ class TestReadPacketsToDispatch:
         called = False
 
         @dp.register(ClientPacketID.PONG)
-        async def handle_pong(_payload: bytes) -> None:
+        async def handle_pong(_payload: bytes, _user_id: int) -> None:
             nonlocal called
             called = True
 
         packets = read_packets(b"")
 
         for pid, payload in packets:
-            await dp.dispatch(pid, payload)
+            await dp.dispatch(pid, payload, 1)
 
         assert not called

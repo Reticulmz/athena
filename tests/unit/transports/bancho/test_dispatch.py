@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false, reportUnusedParameter=false
 # ruff: noqa: PLR2004
 """Tests for PacketDispatcher.
 
@@ -28,7 +29,7 @@ class TestRegister:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
-        async def handler(payload: bytes) -> None:
+        async def handler(_payload: bytes, _user_id: int) -> None:
             pass
 
         assert ClientPacketID.PONG in dp.get_handlers()
@@ -37,7 +38,7 @@ class TestRegister:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.EXIT)
-        async def my_handler(payload: bytes) -> None:
+        async def my_handler(_payload: bytes, _user_id: int) -> None:
             pass
 
         assert dp.get_handlers()[ClientPacketID.EXIT] is my_handler
@@ -46,11 +47,11 @@ class TestRegister:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
-        async def handler_a(payload: bytes) -> None:
+        async def handler_a(_payload: bytes, _user_id: int) -> None:
             pass
 
         @dp.register(ClientPacketID.EXIT)
-        async def handler_b(payload: bytes) -> None:
+        async def handler_b(_payload: bytes, _user_id: int) -> None:
             pass
 
         handlers = dp.get_handlers()
@@ -64,28 +65,28 @@ class TestDispatch:
 
     async def test_dispatch_calls_handler(self) -> None:
         dp = PacketDispatcher()
-        called_with: list[bytes] = []
+        called_with: list[tuple[bytes, int]] = []
 
         @dp.register(ClientPacketID.PONG)
-        async def handler(payload: bytes) -> None:
-            called_with.append(payload)
+        async def handler(payload: bytes, user_id: int) -> None:
+            called_with.append((payload, user_id))
 
-        await dp.dispatch(ClientPacketID.PONG, b"\x01\x02")
-        assert called_with == [b"\x01\x02"]
+        await dp.dispatch(ClientPacketID.PONG, b"\x01\x02", 1)
+        assert called_with == [(b"\x01\x02", 1)]
 
     async def test_dispatch_correct_handler_for_id(self) -> None:
         dp = PacketDispatcher()
         results: list[str] = []
 
         @dp.register(ClientPacketID.PONG)
-        async def pong_handler(_payload: bytes) -> None:
+        async def pong_handler(_payload: bytes, _user_id: int) -> None:
             results.append("pong")
 
         @dp.register(ClientPacketID.EXIT)
-        async def exit_handler(_payload: bytes) -> None:
+        async def exit_handler(_payload: bytes, _user_id: int) -> None:
             results.append("exit")
 
-        await dp.dispatch(ClientPacketID.EXIT, b"")
+        await dp.dispatch(ClientPacketID.EXIT, b"", 1)
         assert results == ["exit"]
 
 
@@ -95,18 +96,18 @@ class TestDispatchUnregistered:
     async def test_unregistered_id_no_error(self) -> None:
         dp = PacketDispatcher()
         # Should not raise
-        await dp.dispatch(ClientPacketID.PONG, b"")
+        await dp.dispatch(ClientPacketID.PONG, b"", 1)
 
     async def test_unregistered_id_no_side_effects(self) -> None:
         dp = PacketDispatcher()
         called = False
 
         @dp.register(ClientPacketID.EXIT)
-        async def handler(_payload: bytes) -> None:
+        async def handler(_payload: bytes, _user_id: int) -> None:
             nonlocal called
             called = True
 
-        await dp.dispatch(ClientPacketID.PONG, b"")
+        await dp.dispatch(ClientPacketID.PONG, b"", 1)
         assert not called
 
 
@@ -121,7 +122,7 @@ class TestGetHandlers:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
-        async def handler(payload: bytes) -> None:
+        async def handler(_payload: bytes, _user_id: int) -> None:
             pass
 
         handlers = dp.get_handlers()
@@ -141,26 +142,26 @@ class TestDuplicateRegistration:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
-        async def handler_a(payload: bytes) -> None:
+        async def handler_a(_payload: bytes, _user_id: int) -> None:
             pass
 
         with pytest.raises(DuplicateHandlerError):
 
             @dp.register(ClientPacketID.PONG)
-            async def handler_b(payload: bytes) -> None:
+            async def handler_b(_payload: bytes, _user_id: int) -> None:
                 pass
 
     def test_duplicate_error_message_contains_id(self) -> None:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
-        async def handler_a(payload: bytes) -> None:
+        async def handler_a(_payload: bytes, _user_id: int) -> None:
             pass
 
         with pytest.raises(DuplicateHandlerError, match="PONG"):
 
             @dp.register(ClientPacketID.PONG)
-            async def handler_b(payload: bytes) -> None:
+            async def handler_b(_payload: bytes, _user_id: int) -> None:
                 pass
 
 
@@ -188,12 +189,12 @@ class TestDispatchLogging:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.SEND_MESSAGE)
-        async def handler(payload: bytes) -> None:
+        async def handler(payload: bytes, user_id: int) -> None:
             pass
 
         payload = b"\x01\x02\x03"
         with structlog.testing.capture_logs() as logs:
-            await dp.dispatch(ClientPacketID.SEND_MESSAGE, payload)
+            await dp.dispatch(ClientPacketID.SEND_MESSAGE, payload, 1)
 
         c2s_logs = [log for log in logs if log["event"] == "c2s_packet"]
         assert len(c2s_logs) == 1
@@ -206,11 +207,11 @@ class TestDispatchLogging:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
-        async def handler(payload: bytes) -> None:
+        async def handler(payload: bytes, user_id: int) -> None:
             pass
 
         with structlog.testing.capture_logs() as logs:
-            await dp.dispatch(ClientPacketID.PONG, b"\x00")
+            await dp.dispatch(ClientPacketID.PONG, b"\x00", 1)
 
         c2s_logs = [log for log in logs if log["event"] == "c2s_packet"]
         assert len(c2s_logs) == 1
@@ -223,7 +224,7 @@ class TestDispatchLogging:
         dp = PacketDispatcher()
 
         with structlog.testing.capture_logs() as logs:
-            await dp.dispatch(ClientPacketID.SEND_MESSAGE, b"\xab\xcd")
+            await dp.dispatch(ClientPacketID.SEND_MESSAGE, b"\xab\xcd", 1)
 
         unhandled_logs = [log for log in logs if log["event"] == "c2s_unhandled"]
         assert len(unhandled_logs) == 1
@@ -238,12 +239,12 @@ class TestDispatchLogging:
         for packet_id in QUIET_C2S_PACKETS:
 
             @dp.register(packet_id)
-            async def handler(payload: bytes) -> None:
+            async def handler(payload: bytes, user_id: int) -> None:
                 pass
 
         for packet_id in QUIET_C2S_PACKETS:
             with structlog.testing.capture_logs() as logs:
-                await dp.dispatch(packet_id, b"")
+                await dp.dispatch(packet_id, b"", 1)
 
             c2s_logs = [log for log in logs if log["event"] == "c2s_packet"]
             assert len(c2s_logs) == 1, f"{packet_id.name} should produce exactly 1 log"
@@ -254,13 +255,13 @@ class TestDispatchLogging:
     async def test_dispatch_still_calls_handler_after_logging(self) -> None:
         """Logging must not interfere with handler invocation."""
         dp = PacketDispatcher()
-        called_with: list[bytes] = []
+        called_with: list[tuple[bytes, int]] = []
 
         @dp.register(ClientPacketID.EXIT)
-        async def handler(payload: bytes) -> None:
-            called_with.append(payload)
+        async def handler(payload: bytes, user_id: int) -> None:
+            called_with.append((payload, user_id))
 
         with structlog.testing.capture_logs():
-            await dp.dispatch(ClientPacketID.EXIT, b"\xff")
+            await dp.dispatch(ClientPacketID.EXIT, b"\xff", 42)
 
-        assert called_with == [b"\xff"]
+        assert called_with == [(b"\xff", 42)]

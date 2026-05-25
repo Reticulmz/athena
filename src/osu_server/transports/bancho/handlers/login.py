@@ -167,9 +167,7 @@ class LoginHandler:
             for packet_id, payload in packets:
                 c2s_count += 1
                 try:
-                    # NOTE: c2s-handlers 実装時に user_id を渡すこと
-                    # dispatch は *args, **kwargs を handler に転送する
-                    await self._packet_dispatcher.dispatch(packet_id, payload)
+                    await self._packet_dispatcher.dispatch(packet_id, payload, user_id)
                 except Exception:
                     logger.error(
                         "c2s_handler_error",
