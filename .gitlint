@@ -1,6 +1,7 @@
 [general]
 contrib = contrib-title-conventional-commits
 extra-path = gitlint_rules/
+ignore = B6
 
 [contrib-title-conventional-commits]
 types = feat,fix,docs,style,refactor,perf,test,chore,build,ci,revert
