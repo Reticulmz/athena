@@ -37,9 +37,6 @@ class SQLAlchemyChannelRepository:
                 name=channel.name,
                 topic=channel.topic,
                 channel_type=channel.channel_type.value,
-                read_privileges=channel.read_privileges,
-                write_privileges=channel.write_privileges,
-                manage_privileges=channel.manage_privileges,
                 auto_join=channel.auto_join,
                 rate_limit_messages=channel.rate_limit_messages,
                 rate_limit_window=channel.rate_limit_window,
@@ -87,9 +84,6 @@ class SQLAlchemyChannelRepository:
             model.name = channel.name
             model.topic = channel.topic
             model.channel_type = channel.channel_type.value
-            model.read_privileges = channel.read_privileges
-            model.write_privileges = channel.write_privileges
-            model.manage_privileges = channel.manage_privileges
             model.auto_join = channel.auto_join
             model.rate_limit_messages = channel.rate_limit_messages
             model.rate_limit_window = channel.rate_limit_window
@@ -115,9 +109,6 @@ class SQLAlchemyChannelRepository:
             name=model.name,
             topic=model.topic,
             channel_type=ChannelType(model.channel_type),
-            read_privileges=model.read_privileges,
-            write_privileges=model.write_privileges,
-            manage_privileges=model.manage_privileges,
             auto_join=model.auto_join,
             rate_limit_messages=model.rate_limit_messages,
             rate_limit_window=model.rate_limit_window,

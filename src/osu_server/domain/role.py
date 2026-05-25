@@ -14,6 +14,15 @@ class Privileges(IntFlag):
     DEVELOPER = 1 << 5
     TOURNAMENT = 1 << 6
     UNRESTRICTED = 1 << 7
+    EDIT_CHANNEL = 1 << 8
+    BYPASS_CHANNEL_ACL = 1 << 9
+
+
+def has_privilege(user_privileges: int, required: Privileges) -> bool:
+    """Check if user has the required privilege. ADMIN bypasses all checks."""
+    if user_privileges & Privileges.ADMIN:
+        return True
+    return bool(user_privileges & required)
 
 
 class ClientPermissions(IntFlag):

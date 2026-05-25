@@ -16,7 +16,7 @@ from enum import Enum
 
 import pytest
 
-from osu_server.domain.channel import Channel, ChannelType
+from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
 from osu_server.domain.events import Event
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 
@@ -33,9 +33,6 @@ def _make_channel(**overrides: object) -> Channel:
         "name": "#osu",
         "topic": "General discussion",
         "channel_type": ChannelType.PUBLIC,
-        "read_privileges": 1,
-        "write_privileges": 1,
-        "manage_privileges": 16,
         "auto_join": True,
         "rate_limit_messages": None,
         "rate_limit_window": None,
@@ -86,9 +83,6 @@ class TestChannelDataclass:
         assert ch.name == "#osu"
         assert ch.topic == "General discussion"
         assert ch.channel_type == ChannelType.PUBLIC
-        assert ch.read_privileges == 1
-        assert ch.write_privileges == 1
-        assert ch.manage_privileges == 16  # noqa: PLR2004
         assert ch.auto_join is True
         assert ch.rate_limit_messages is None
         assert ch.rate_limit_window is None
@@ -101,9 +95,6 @@ class TestChannelDataclass:
             "name",
             "topic",
             "channel_type",
-            "read_privileges",
-            "write_privileges",
-            "manage_privileges",
             "auto_join",
             "rate_limit_messages",
             "rate_limit_window",
@@ -307,3 +298,27 @@ class TestPrivateMessageSent:
             content="hi",
         )
         assert a != b
+
+
+# ===========================================================================
+# ChannelRoleOverride dataclass
+# ===========================================================================
+
+
+class TestChannelRoleOverride:
+    """Discord-style role-based ACL override."""
+
+    def test_slots_enabled(self) -> None:
+        assert hasattr(ChannelRoleOverride, "__slots__")
+
+    def test_creation(self) -> None:
+        ov = ChannelRoleOverride(channel_id=1, role_id=2, can_read=True, can_write=False)
+        assert ov.channel_id == 1
+        assert ov.role_id == 2  # noqa: PLR2004
+        assert ov.can_read is True
+        assert ov.can_write is False
+
+    def test_fields(self) -> None:
+        expected = {"channel_id", "role_id", "can_read", "can_write"}
+        actual = {f.name for f in fields(ChannelRoleOverride)}
+        assert actual == expected

@@ -17,9 +17,6 @@ def _make_channel(
     name: str = "#osu",
     topic: str = "General discussion",
     channel_type: ChannelType = ChannelType.PUBLIC,
-    read_privileges: int = 1,
-    write_privileges: int = 1,
-    manage_privileges: int = 16,
     auto_join: bool = False,
     rate_limit_messages: int | None = None,
     rate_limit_window: int | None = None,
@@ -31,9 +28,6 @@ def _make_channel(
         name=name,
         topic=topic,
         channel_type=channel_type,
-        read_privileges=read_privileges,
-        write_privileges=write_privileges,
-        manage_privileges=manage_privileges,
         auto_join=auto_join,
         rate_limit_messages=rate_limit_messages,
         rate_limit_window=rate_limit_window,
@@ -72,9 +66,6 @@ class TestCreate:
         channel = _make_channel(
             name="#staff",
             topic="Staff only",
-            read_privileges=8,
-            write_privileges=8,
-            manage_privileges=16,
             auto_join=True,
             rate_limit_messages=5,
             rate_limit_window=10,
@@ -85,9 +76,6 @@ class TestCreate:
         assert created.name == "#staff"
         assert created.topic == "Staff only"
         assert created.channel_type == ChannelType.PUBLIC
-        assert created.read_privileges == 8  # noqa: PLR2004
-        assert created.write_privileges == 8  # noqa: PLR2004
-        assert created.manage_privileges == 16  # noqa: PLR2004
         assert created.auto_join is True
         assert created.rate_limit_messages == 5  # noqa: PLR2004
         assert created.rate_limit_window == 10  # noqa: PLR2004
@@ -182,9 +170,6 @@ class TestUpdate:
             name=created.name,
             topic="New topic",
             channel_type=created.channel_type,
-            read_privileges=created.read_privileges,
-            write_privileges=created.write_privileges,
-            manage_privileges=created.manage_privileges,
             auto_join=True,
             rate_limit_messages=created.rate_limit_messages,
             rate_limit_window=created.rate_limit_window,
@@ -204,9 +189,6 @@ class TestUpdate:
             name="#general",
             topic=created.topic,
             channel_type=created.channel_type,
-            read_privileges=created.read_privileges,
-            write_privileges=created.write_privileges,
-            manage_privileges=created.manage_privileges,
             auto_join=created.auto_join,
             rate_limit_messages=created.rate_limit_messages,
             rate_limit_window=created.rate_limit_window,
@@ -228,9 +210,6 @@ class TestUpdate:
             name="#announce",
             topic=created.topic,
             channel_type=created.channel_type,
-            read_privileges=created.read_privileges,
-            write_privileges=created.write_privileges,
-            manage_privileges=created.manage_privileges,
             auto_join=created.auto_join,
             rate_limit_messages=created.rate_limit_messages,
             rate_limit_window=created.rate_limit_window,
@@ -248,9 +227,6 @@ class TestUpdate:
             name=channel.name,
             topic=channel.topic,
             channel_type=channel.channel_type,
-            read_privileges=channel.read_privileges,
-            write_privileges=channel.write_privileges,
-            manage_privileges=channel.manage_privileges,
             auto_join=channel.auto_join,
             rate_limit_messages=channel.rate_limit_messages,
             rate_limit_window=channel.rate_limit_window,

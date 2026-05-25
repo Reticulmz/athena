@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 — SQLAlchemy Mapped requires runtime import
 
-from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
@@ -15,9 +15,6 @@ class ChannelModel(Base):
     name: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     topic: Mapped[str] = mapped_column(String(256), nullable=False, server_default="")
     channel_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="public")
-    read_privileges: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
-    write_privileges: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
-    manage_privileges: Mapped[int] = mapped_column(Integer, nullable=False, server_default="16")
     auto_join: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     rate_limit_messages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rate_limit_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -30,3 +27,12 @@ class ChannelModel(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class ChannelRoleOverrideModel(Base):
+    __tablename__: str = "channel_role_overrides"
+
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), primary_key=True)
+    role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"), primary_key=True)
+    can_read: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    can_write: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
