@@ -77,7 +77,7 @@
   - `rtk pytest tests/integration/test_c2s_pipeline.py` が全テスト通過すること
   - _Requirements: 9.2_
 
-- [ ] 5.2 E2E テスト
+- [x] 5.2 E2E テスト
   - EXIT → USER_QUIT 配信: HTTP POST（EXIT パケット含む）送信後、他ユーザーの polling レスポンスに USER_QUIT バイトが含まれること
   - PONG 受理: HTTP POST（PONG パケット含む）がエラーなく空レスポンスを返すこと
   - 例外隔離の動作確認: 不正ペイロードのパケット + PONG の組み合わせで、既存の LoginHandler try/except が新しい2引数シグネチャで正しく機能し、PONG が正常に処理されること
