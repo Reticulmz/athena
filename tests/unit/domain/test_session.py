@@ -75,5 +75,6 @@ class TestSessionData:
             "display_city",
             "client_hashes",
             "pm_private",
+            "silence_end",
         }
         assert set(d.keys()) == expected_keys

@@ -14,3 +14,4 @@ class SessionData:
     display_city: bool
     client_hashes: str
     pm_private: bool
+    silence_end: int = 0

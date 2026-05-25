@@ -28,6 +28,10 @@ class AppConfig(BaseSettings):
     packet_queue_max_size: int = 4096
     max_request_body_size: int = 1_048_576
 
+    message_max_length: int = 450
+    rate_limit_messages: int = 10
+    rate_limit_window: int = 10
+
     log_level: str = "INFO"
     log_json_enabled: bool = False
     log_json_path: str = "logs/athena.jsonl"
