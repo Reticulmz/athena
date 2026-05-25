@@ -13,8 +13,9 @@ from osu_server.domain.session import (
 class SessionStore(Protocol):
     """Protocol for session CRUD operations.
 
-    Implementations must support create, get, get_by_user, delete, exists,
-    and refresh.  Session data is represented by the ``SessionData`` dataclass.
+    Implementations must support create, get, get_by_user, delete,
+    delete_by_user, exists, refresh, and get_all_user_ids.
+    Session data is represented by the ``SessionData`` dataclass.
     """
 
     async def create(self, user_id: int, token: str, data: SessionData) -> None:
