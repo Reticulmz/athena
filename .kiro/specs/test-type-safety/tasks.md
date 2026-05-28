@@ -40,7 +40,7 @@
   - _Requirements: 3.2, 3.3, 4.3, 6.1, 6.2_
   - _Boundary: Test Support Layer_
 
-- [ ] 2.3 (P) 型付きファクトリの実装 (`tests/factories/`)
+- [x] 2.3 (P) 型付きファクトリの実装 (`tests/factories/`)
   - ドメインモデル (`User`, `Channel` 等) と `AppConfig` の型付き生成関数を実装する
   - `**kwargs` による型崩れを防ぐため、主要な属性を明示的な引数として定義する
   - `dict[str, Any]` を介さずに、対象型のインスタンスが正しい型で返されることを確認する
