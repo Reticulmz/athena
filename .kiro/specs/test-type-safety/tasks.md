@@ -10,7 +10,7 @@
   - _Requirements: 1.1, 1.3, 7.1, 7.2, 7.3, 7.4, 7.5_
   - _Boundary: Tooling_
 
-- [ ] 1.2 GitHub Actions CI ワークフローの更新
+- [x] 1.2 GitHub Actions CI ワークフローの更新
   - `.github/workflows/ci.yml` を編集し、quality/test ジョブで `scripts/ci.sh` を呼び出すように変更する
   - basedpyright のチェック対象に `tests/` を追加し、CI 上でテストコードの型安全性が検証されるようにする
   - CI 上で `scripts/ci.sh quality` が実行され、既存の型エラーにより失敗することを確認する

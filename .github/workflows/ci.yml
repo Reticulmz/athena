@@ -35,21 +35,8 @@ jobs:
       - name: Create venv symlink for basedpyright
         run: mkdir -p .devenv/state && ln -s $(pwd)/.venv .devenv/state/venv
 
-      - name: Lint (ruff check)
-        if: success() || failure()
-        run: uv run ruff check src/ tests/
-
-      - name: Format (ruff format)
-        if: success() || failure()
-        run: uv run ruff format --check src/ tests/
-
-      - name: Type check (basedpyright)
-        if: success() || failure()
-        run: uv run basedpyright src/
-
-      - name: Import lint (import-linter)
-        if: success() || failure()
-        run: uv run lint-imports
+      - name: Quality check
+        run: ./scripts/ci.sh quality
 
       - name: Prune uv cache
         if: always()
@@ -105,7 +92,7 @@ jobs:
         run: uv sync --locked
 
       - name: Run tests
-        run: uv run pytest tests/ -v
+        run: ./scripts/ci.sh test
 
       - name: Prune uv cache
         if: always()
