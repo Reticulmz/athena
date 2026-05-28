@@ -51,9 +51,7 @@ class ValkeyChannelStateStore:
 
     async def is_member(self, channel_name: str, user_id: int) -> bool:
         """Return True if the user is a member of the channel."""
-        return await self._client.sismember(
-            self._channel_key(channel_name), str(user_id)
-        )
+        return await self._client.sismember(self._channel_key(channel_name), str(user_id))
 
     async def get_members(self, channel_name: str) -> set[int]:
         """Return the set of user IDs in the given channel."""

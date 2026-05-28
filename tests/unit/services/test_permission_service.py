@@ -28,7 +28,9 @@ ROLE_DEVELOPER = Role(id=5, name="Developer", permissions=Privileges.DEVELOPER, 
 ALL_ROLES = [ROLE_DEFAULT, ROLE_SUPPORTER, ROLE_MODERATOR, ROLE_ADMIN, ROLE_DEVELOPER]
 
 
-def _make_service(roles: list[Role] | None = None) -> PermissionService:
+def _make_service(
+    roles: list[Role] | None = None,
+) -> tuple[PermissionService, InMemoryRoleRepository]:
     repo = InMemoryRoleRepository(seed_roles=roles or ALL_ROLES)
     return PermissionService(role_repo=repo), repo
 

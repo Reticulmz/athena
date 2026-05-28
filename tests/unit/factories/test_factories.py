@@ -1,15 +1,17 @@
+# ruff: noqa: PLR2004
 from __future__ import annotations
 
-from datetime import datetime
-from pydantic import PostgresDsn, RedisDsn
+from datetime import UTC, datetime
 
-from osu_server.config import AppConfig
-from osu_server.domain.channel import Channel, ChannelType, ChannelRoleOverride
-from osu_server.domain.user import User
+from pydantic import PostgresDsn, RedisDsn
 
 # まだ作成していないモジュールからインポートして、わざとエラーにする (RED 状態を作るため)
 from tests.factories.config import make_app_config
 from tests.factories.domain import make_channel, make_channel_role_override, make_user
+
+from osu_server.config import AppConfig
+from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
+from osu_server.domain.user import User
 
 
 def test_make_channel_creates_with_defaults() -> None:
@@ -24,7 +26,7 @@ def test_make_channel_creates_with_defaults() -> None:
 
 
 def test_make_channel_allows_overrides() -> None:
-    custom_time = datetime.now()
+    custom_time = datetime.now(UTC)
     channel = make_channel(
         id=42,
         name="#announcements",
@@ -71,7 +73,7 @@ def test_make_user_creates_with_defaults() -> None:
 
 
 def test_make_user_allows_overrides() -> None:
-    custom_time = datetime.now()
+    custom_time = datetime.now(UTC)
     user = make_user(
         id=99,
         username="Cool Gamer",

@@ -8,6 +8,7 @@ Validates:
 - Req 6.2: PrivateMessageSent domain event
 """
 
+# ruff: noqa: A002
 from __future__ import annotations
 
 from dataclasses import fields
@@ -19,29 +20,39 @@ import pytest
 from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
 from osu_server.domain.events import Event
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
-from tests.support import assert_rejects_setattr
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+from tests.factories.domain import make_channel
+from tests.support import assert_rejects_setattr
 
 _NOW = datetime(2025, 1, 1, tzinfo=UTC)
 
 
-def _make_channel(**overrides: object) -> Channel:
-    defaults: dict[str, object] = {
-        "id": 1,
-        "name": "#osu",
-        "topic": "General discussion",
-        "channel_type": ChannelType.PUBLIC,
-        "auto_join": True,
-        "rate_limit_messages": None,
-        "rate_limit_window": None,
-        "created_at": _NOW,
-        "updated_at": _NOW,
-    }
-    defaults.update(overrides)
-    return Channel(**defaults)  # type: ignore[arg-type]
+def _make_channel(
+    *,
+    id: int = 1,
+    name: str = "#osu",
+    topic: str = "General discussion",
+    channel_type: ChannelType = ChannelType.PUBLIC,
+    auto_join: bool = True,
+    rate_limit_messages: int | None = None,
+    rate_limit_window: int | None = None,
+    created_at: datetime = _NOW,
+    updated_at: datetime = _NOW,
+) -> Channel:
+    return make_channel(
+        id=id,
+        name=name,
+        topic=topic,
+        channel_type=channel_type,
+        auto_join=auto_join,
+        rate_limit_messages=rate_limit_messages,
+        rate_limit_window=rate_limit_window,
+        created_at=created_at,
+        updated_at=updated_at,
+    )
 
 
 # ===========================================================================
@@ -126,24 +137,24 @@ class TestChannelNameValidation:
 
     def test_missing_hash_prefix(self) -> None:
         with pytest.raises(ValueError, match="must start with '#'"):
-            _make_channel(name="osu")
+            _ = _make_channel(name="osu")
 
     def test_empty_after_hash(self) -> None:
         with pytest.raises(ValueError, match="at least one character after '#'"):
-            _make_channel(name="#")
+            _ = _make_channel(name="#")
 
     def test_uppercase_rejected(self) -> None:
         with pytest.raises(ValueError, match="invalid characters"):
-            _make_channel(name="#OSU")
+            _ = _make_channel(name="#OSU")
 
     def test_space_rejected(self) -> None:
         with pytest.raises(ValueError, match="invalid characters"):
-            _make_channel(name="#osu chat")
+            _ = _make_channel(name="#osu chat")
 
     def test_special_chars_rejected(self) -> None:
         for name in ("#osu!", "#a@b", "#chan.el", "#ch/an"):
             with pytest.raises(ValueError, match="invalid characters"):
-                _make_channel(name=name)
+                _ = _make_channel(name=name)
 
     def test_hyphen_allowed(self) -> None:
         ch = _make_channel(name="#my-channel")
@@ -270,15 +281,20 @@ class TestPrivateMessageSent:
         assert event.content == "private hello"
 
     def test_equality(self) -> None:
-        kwargs = {
-            "sender_id": 1,
-            "sender_name": "A",
-            "target_id": 2,
-            "target_name": "B",
-            "content": "hi",
-        }
-        a = PrivateMessageSent(**kwargs)  # type: ignore[arg-type]
-        b = PrivateMessageSent(**kwargs)  # type: ignore[arg-type]
+        a = PrivateMessageSent(
+            sender_id=1,
+            sender_name="A",
+            target_id=2,
+            target_name="B",
+            content="hi",
+        )
+        b = PrivateMessageSent(
+            sender_id=1,
+            sender_name="A",
+            target_id=2,
+            target_name="B",
+            content="hi",
+        )
         assert a == b
 
     def test_inequality(self) -> None:

@@ -41,7 +41,8 @@ class TestSessionData:
             pm_private=True,
         )
         d = asdict(sd)
-        restored = SessionData(**d)
+        # dict[str, Any] unpacking triggers reportAny for constructor parameters
+        restored = SessionData(**d)  # pyright: ignore[reportAny]
         assert restored.user_id == sd.user_id
         assert restored.username == sd.username
         assert restored.privileges == sd.privileges

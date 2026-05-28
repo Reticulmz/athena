@@ -21,29 +21,35 @@ if TYPE_CHECKING:
 class FakeSessionStore:
     """テスト用の SessionStore 実装。"""
 
+    _user_ids: list[int]
+
     def __init__(self, user_ids: list[int] | None = None) -> None:
         self._user_ids = user_ids or []
 
-    async def create(self, _user_id: int, _token: str, _data: SessionData) -> None:
-        pass
+    async def create(self, user_id: int, token: str, data: SessionData) -> None:
+        _ = (user_id, token, data)
 
-    async def get(self, _token: str) -> SessionData | None:
+    async def get(self, token: str) -> SessionData | None:
+        _ = token
         return None
 
-    async def get_by_user(self, _user_id: int) -> SessionData | None:
+    async def get_by_user(self, user_id: int) -> SessionData | None:
+        _ = user_id
         return None
 
-    async def delete(self, _token: str) -> None:
-        pass
+    async def delete(self, token: str) -> None:
+        _ = token
 
-    async def exists(self, _token: str) -> bool:
+    async def exists(self, token: str) -> bool:
+        _ = token
         return False
 
-    async def refresh(self, _token: str) -> bool:
+    async def refresh(self, token: str) -> bool:
+        _ = token
         return False
 
-    async def delete_by_user(self, _user_id: int) -> None:
-        pass
+    async def delete_by_user(self, user_id: int) -> None:
+        _ = user_id
 
     async def get_all_user_ids(self) -> list[int]:
         return self._user_ids

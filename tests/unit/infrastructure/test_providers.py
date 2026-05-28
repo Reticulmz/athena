@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 import pytest
 from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from osu_server.config import AppConfig
 from osu_server.infrastructure.di.providers import build_container
 from tests.factories.config import make_app_config
+
+if TYPE_CHECKING:
+    from osu_server.config import AppConfig
 
 _EXPECTED_MIN_SHUTDOWN_HOOKS = 2
 

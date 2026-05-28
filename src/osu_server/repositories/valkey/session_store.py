@@ -108,7 +108,8 @@ return 1""")
 
     async def create(self, user_id: int, token: str, data: SessionData) -> None:
         """Store a session.  If the user already has one, remove the old session first."""
-        _ = await self._client.invoke_script(            self._CREATE_SCRIPT,
+        _ = await self._client.invoke_script(
+            self._CREATE_SCRIPT,
             keys=[self._user_key(user_id), self._session_key(token)],
             args=[
                 f"{self._prefix}session:",
@@ -140,7 +141,8 @@ return 1""")
         if it still points to this token (avoids destroying a newer session
         created by a concurrent login).
         """
-        _ = await self._client.invoke_script(            self._DELETE_SCRIPT,
+        _ = await self._client.invoke_script(
+            self._DELETE_SCRIPT,
             keys=[self._session_key(token)],
             args=[
                 "user_id",
@@ -159,7 +161,8 @@ return 1""")
 
         Returns ``True`` if the session exists and was refreshed.
         """
-        result = await self._client.invoke_script(            self._REFRESH_SCRIPT,
+        result = await self._client.invoke_script(
+            self._REFRESH_SCRIPT,
             keys=[self._session_key(token)],
             args=[
                 str(self._ttl),
@@ -168,9 +171,11 @@ return 1""")
             ],
         )
         return bool(result)
+
     async def delete_by_user(self, user_id: int) -> None:
         """Remove the session for *user_id*.  No-op if not found (idempotent)."""
-        _ = await self._client.invoke_script(            self._DELETE_BY_USER_SCRIPT,
+        _ = await self._client.invoke_script(
+            self._DELETE_BY_USER_SCRIPT,
             keys=[self._user_key(user_id)],
             args=[f"{self._prefix}session:"],
         )

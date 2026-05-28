@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pydantic import PostgresDsn, RedisDsn
+
 from osu_server.config import AppConfig
 
 _DEFAULT_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/osu"
@@ -34,7 +35,9 @@ def make_app_config(
         banned_passwords = []
 
     return AppConfig(
-        database_url=PostgresDsn(str(database_url)) if isinstance(database_url, str) else database_url,
+        database_url=PostgresDsn(str(database_url))
+        if isinstance(database_url, str)
+        else database_url,
         valkey_url=RedisDsn(str(valkey_url)) if isinstance(valkey_url, str) else valkey_url,
         environment=environment,
         server_host=server_host,

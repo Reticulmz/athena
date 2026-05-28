@@ -80,7 +80,7 @@ class Container:
             registration = self._registrations[interface]
         except KeyError:
             raise KeyError(f"{interface!r} is not registered in the container") from None
-        typed_registration = cast(_Registration[T], registration)
+        typed_registration = cast("_Registration[T]", registration)
         return await typed_registration.resolve()
 
     async def initialize(self) -> None:

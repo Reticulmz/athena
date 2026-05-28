@@ -1,7 +1,9 @@
+# ruff: noqa: A002
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from osu_server.domain.channel import Channel, ChannelType, ChannelRoleOverride
+
+from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
 from osu_server.domain.user import User
 
 
