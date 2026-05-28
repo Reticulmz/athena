@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections.abc import Awaitable, Callable
-from typing import TypeVar, final
+from collections.abc import Awaitable, Callable, Sequence
+from typing import TypeVar, cast, final
 
 import structlog
 
@@ -80,7 +80,8 @@ class Container:
             registration = self._registrations[interface]
         except KeyError:
             raise KeyError(f"{interface!r} is not registered in the container") from None
-        return await registration.resolve()  # pyright: ignore[reportReturnType]
+        typed_registration = cast(_Registration[T], registration)
+        return await typed_registration.resolve()
 
     async def initialize(self) -> None:
         """Eagerly create all singletons -- validates everything is resolvable at startup."""
@@ -90,6 +91,11 @@ class Container:
     def register_shutdown_hook(self, hook: ShutdownHook) -> None:
         """Register an async callable to be invoked on shutdown."""
         self._shutdown_hooks.append(hook)
+
+    @property
+    def shutdown_hooks(self) -> Sequence[ShutdownHook]:
+        """Return registered shutdown hooks (read-only)."""
+        return self._shutdown_hooks
 
     async def shutdown(self) -> None:
         """Invoke all registered shutdown hooks, ensuring all run even on failure."""

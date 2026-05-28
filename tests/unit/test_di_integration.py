@@ -173,7 +173,7 @@ class TestHttpxLifecycle:
         config = _make_config()
         container = await build_container(config)
 
-        assert len(container._shutdown_hooks) >= _EXPECTED_MIN_SHUTDOWN_HOOKS  # noqa: SLF001
+        assert len(container.shutdown_hooks) >= _EXPECTED_MIN_SHUTDOWN_HOOKS
 
 
 # ---------------------------------------------------------------------------

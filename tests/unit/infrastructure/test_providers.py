@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from osu_server.config import AppConfig
 from osu_server.infrastructure.di.providers import build_container
+from tests.factories.config import make_app_config
 
 _EXPECTED_MIN_SHUTDOWN_HOOKS = 2
 
@@ -21,9 +22,9 @@ _requires_valkey = pytest.mark.skipif(
 
 def _make_config(*, environment: str = "test") -> AppConfig:
     """Create a minimal AppConfig for testing."""
-    return AppConfig(
-        database_url="postgresql://test:test@localhost:5432/test",  # pyright: ignore[reportArgumentType]
-        valkey_url="redis://localhost:6379/0",  # pyright: ignore[reportArgumentType]
+    return make_app_config(
+        database_url="postgresql://test:test@localhost:5432/test",
+        valkey_url="redis://localhost:6379/0",
         environment=environment,
     )
 
@@ -61,7 +62,7 @@ async def test_build_container_shutdown_hooks() -> None:
     config = _make_config(environment="test")
     container = await build_container(config)
 
-    assert len(container._shutdown_hooks) >= _EXPECTED_MIN_SHUTDOWN_HOOKS, (  # noqa: SLF001
+    assert len(container.shutdown_hooks) >= _EXPECTED_MIN_SHUTDOWN_HOOKS, (
         "Expected at least 2 shutdown hooks (engine.dispose, valkey.close)"
     )
 
