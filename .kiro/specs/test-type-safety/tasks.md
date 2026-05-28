@@ -33,7 +33,7 @@
   - _Requirements: 2.3, 2.4, 5.1, 5.2, 5.3, 5.4_
   - _Boundary: External Typing Boundary_
 
-- [ ] 2.2 (P) コアテスト補助ヘルパーの実装 (`tests/support/`)
+- [x] 2.2 (P) コアテスト補助ヘルパーの実装 (`tests/support/`)
   - 実行時不変性を検証する `assert_rejects_setattr` などのヘルパーを作成する
   - HIBP や外部 API 境界の Protocol 準拠 typed fake を作成する
   - 既存の `AsyncMock` をこれらの typed fake で置換できる状態にすることを確認する

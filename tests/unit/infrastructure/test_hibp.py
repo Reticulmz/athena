@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from osu_server.infrastructure.security.hibp import HIBPClient
+from osu_server.infrastructure.security.hibp import HTTPHIBPClient
 
 
 def _make_response(status_code: int, text: str) -> httpx.Response:
@@ -19,15 +19,15 @@ def _make_response(status_code: int, text: str) -> httpx.Response:
 
 
 class TestIsPasswordCompromised:
-    """HIBPClient.is_password_compromised のテスト。"""
+    """HTTPHIBPClient.is_password_compromised のテスト。"""
 
     @pytest.fixture
     def mock_http_client(self) -> AsyncMock:
         return AsyncMock(spec=httpx.AsyncClient)
 
     @pytest.fixture
-    def client(self, mock_http_client: AsyncMock) -> HIBPClient:
-        return HIBPClient(http_client=mock_http_client)
+    def client(self, mock_http_client: AsyncMock) -> HTTPHIBPClient:
+        return HTTPHIBPClient(http_client=mock_http_client)
 
     def _build_hibp_response(self, password: str, *, include: bool) -> str:
         """HIBP API レスポンスボディを構築するヘルパー。
@@ -38,7 +38,7 @@ class TestIsPasswordCompromised:
         sha1 = hashlib.sha1(password.encode()).hexdigest().upper()
         suffix = sha1[5:]
 
-        lines = []
+        lines: list[str] = []
         if include:
             lines.append(f"{suffix}:42")
         # 無関係なエントリを追加
@@ -48,7 +48,7 @@ class TestIsPasswordCompromised:
 
     async def test_detects_compromised_password(
         self,
-        client: HIBPClient,
+        client: HTTPHIBPClient,
         mock_http_client: AsyncMock,
     ) -> None:
         """漏洩済みパスワードを検出する。"""
@@ -68,7 +68,7 @@ class TestIsPasswordCompromised:
 
     async def test_returns_false_for_safe_password(
         self,
-        client: HIBPClient,
+        client: HTTPHIBPClient,
         mock_http_client: AsyncMock,
     ) -> None:
         """漏洩していないパスワードは False を返す。"""
@@ -82,7 +82,7 @@ class TestIsPasswordCompromised:
 
     async def test_returns_false_on_timeout(
         self,
-        client: HIBPClient,
+        client: HTTPHIBPClient,
         mock_http_client: AsyncMock,
     ) -> None:
         """タイムアウト時は False を返す(フォールバック)。"""
@@ -94,7 +94,7 @@ class TestIsPasswordCompromised:
 
     async def test_returns_false_on_connection_error(
         self,
-        client: HIBPClient,
+        client: HTTPHIBPClient,
         mock_http_client: AsyncMock,
     ) -> None:
         """接続エラー時は False を返す(フォールバック)。"""
@@ -106,7 +106,7 @@ class TestIsPasswordCompromised:
 
     async def test_returns_false_on_http_error(
         self,
-        client: HIBPClient,
+        client: HTTPHIBPClient,
         mock_http_client: AsyncMock,
     ) -> None:
         """HTTP エラーステータス時は False を返す(フォールバック)。"""
@@ -118,7 +118,7 @@ class TestIsPasswordCompromised:
 
     async def test_sha1_prefix_is_5_characters(
         self,
-        client: HIBPClient,
+        client: HTTPHIBPClient,
         mock_http_client: AsyncMock,
     ) -> None:
         """k-Anonymity: SHA-1 の先頭5文字のみ送信される。"""
@@ -128,7 +128,7 @@ class TestIsPasswordCompromised:
             200, "0000000000000000000000000000000000A:1"
         )
 
-        await client.is_password_compromised(password)
+        _ = await client.is_password_compromised(password)
 
         sha1 = hashlib.sha1(password.encode()).hexdigest().upper()
         prefix = sha1[:expected_prefix_length]
@@ -138,7 +138,7 @@ class TestIsPasswordCompromised:
 
     async def test_case_insensitive_suffix_matching(
         self,
-        client: HIBPClient,
+        client: HTTPHIBPClient,
         mock_http_client: AsyncMock,
     ) -> None:
         """サフィックス照合は大文字小文字を区別しない。"""

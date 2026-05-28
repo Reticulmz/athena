@@ -8,12 +8,11 @@ Validates:
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, fields
-
-import pytest
+from dataclasses import fields
 
 from osu_server.domain.events import Event
 from osu_server.domain.users.events import UserDisconnected
+from tests.support import assert_rejects_setattr
 
 
 class TestUserDisconnectedInheritance:
@@ -32,8 +31,7 @@ class TestUserDisconnectedImmutability:
 
     def test_frozen_raises_on_attribute_set(self) -> None:
         event = UserDisconnected(user_id=1)
-        with pytest.raises(FrozenInstanceError):
-            event.user_id = 2  # type: ignore[misc]
+        assert_rejects_setattr(event, "user_id", 2)
 
     def test_slots_enabled(self) -> None:
         assert hasattr(UserDisconnected, "__slots__")

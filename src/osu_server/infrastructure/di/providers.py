@@ -21,7 +21,7 @@ from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.infrastructure.di.container import Container
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
-from osu_server.infrastructure.security.hibp import HIBPClient
+from osu_server.infrastructure.security.hibp import HIBPClient, HTTPHIBPClient
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.valkey.packet_queue import ValkeyPacketQueue
@@ -85,7 +85,7 @@ async def build_container(config: AppConfig) -> Container:
     container.register_singleton(httpx.AsyncClient, lambda: http_client)
 
     # -- HIBPClient (singleton) -----------------------------------------------
-    hibp_client = HIBPClient(http_client)
+    hibp_client = HTTPHIBPClient(http_client)
     container.register_singleton(HIBPClient, lambda: hibp_client)
 
     # -- CountryResolver (singleton) ------------------------------------------

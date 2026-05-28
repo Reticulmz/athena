@@ -10,7 +10,7 @@ Validates:
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, fields
+from dataclasses import fields
 from datetime import UTC, datetime
 from enum import Enum
 
@@ -19,6 +19,7 @@ import pytest
 from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
 from osu_server.domain.events import Event
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
+from tests.support import assert_rejects_setattr
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -184,8 +185,7 @@ class TestChannelMessageSent:
             channel_name="#osu",
             content="hello",
         )
-        with pytest.raises(FrozenInstanceError):
-            event.sender_id = 2  # type: ignore[misc]
+        assert_rejects_setattr(event, "sender_id", 2)
 
     def test_slots_enabled(self) -> None:
         assert hasattr(ChannelMessageSent, "__slots__")
@@ -246,8 +246,7 @@ class TestPrivateMessageSent:
             target_name="Target",
             content="hello",
         )
-        with pytest.raises(FrozenInstanceError):
-            event.sender_id = 2  # type: ignore[misc]
+        assert_rejects_setattr(event, "sender_id", 2)
 
     def test_slots_enabled(self) -> None:
         assert hasattr(PrivateMessageSent, "__slots__")
