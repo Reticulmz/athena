@@ -58,7 +58,7 @@
 
 ## 4. Core: テストスイートの段階的移行
 
-- [ ] 4.1 (P) ユニットテストの型安全化 (Domain/Services)
+- [x] 4.1 (P) ユニットテストの型安全化 (Domain/Services)
   - `tests/unit/` 配下のファイルレベル suppress を削除し、型エラーを個別に解決する
   - `AsyncMock` を in-memory 実装や typed fake へ、生データ生成を factory へ置換する
   - ファイルレベルの pyright 抑制なしで `basedpyright tests/unit/` が通ることを確認する
