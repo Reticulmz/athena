@@ -26,7 +26,7 @@
 
 ## 2. Infrastructure: テスト補助と外部型補完
 
-- [ ] 2.1 (P) 外部ライブラリの型スタブ補完 (`typings/`)
+- [x] 2.1 (P) 外部ライブラリの型スタブ補完 (`typings/`)
   - `httpx`, `valkey-glide`, `caterpillar`, `structlog` などの型不足を `typings/` 配下の `.pyi` で補完する
   - `TestClient` のレスポンス属性や Valkey の encodable keys などの `Unknown` を減らす
   - `tests/` の各ファイルで外部ライブラリ由来の型エラーがスタブ追加により解消されることを確認する
