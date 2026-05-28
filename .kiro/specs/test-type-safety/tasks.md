@@ -17,7 +17,7 @@
   - _Requirements: 1.2, 7.6_
   - _Boundary: CI Workflow_
 
-- [ ] 1.3 `devenv.nix` プリコミットフックの同期
+- [x] 1.3 `devenv.nix` プリコミットフックの同期
   - `devenv.nix` を編集し、pre-commit フックの対象パスと実行順序を `scripts/ci.sh quality` と整合させる
   - `tests/` が pre-commit の型チェック対象に含まれていることを確認する
   - `devenv shell` 内で pre-commit が CI と同じ基準で動作することを確認する
