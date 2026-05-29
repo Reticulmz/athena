@@ -24,6 +24,7 @@ from taskiq import TaskiqEvents
 
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
+from osu_server.infrastructure.logging import setup_logging
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -35,6 +36,7 @@ broker = ListQueueBroker(url=str(_config.valkey_url))
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def startup(state: TaskiqState) -> None:
     """Initialise DB engine and session factory, storing them in *state*."""
+    setup_logging(_config)
     engine: AsyncEngine = create_engine(str(_config.database_url))
     session_factory: async_sessionmaker[AsyncSession] = create_session_factory(engine)
 

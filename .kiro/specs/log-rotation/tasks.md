@@ -55,15 +55,15 @@
   - _Requirements: 5.2, 5.3_
   - _Boundary: rotate_logs_
 
-- [ ] 2.3 古いアーカイブの自動削除 (保持ポリシー) を実装する
+- [x] 2.3 古いアーカイブの自動削除 (保持ポリシー) を実装する
   - `*.jsonl.gz` を mtime でソートし、`max_files` を超える分を古い順に `Path.unlink()` で削除する
   - 個別ファイルの削除失敗は `warnings.warn` で警告して残りの処理を続行する
   - テスト: `max_files=3` で 5 個のアーカイブがある場合、古い 2 個が削除され 3 個が残る。削除エラー時は警告のみで例外が伝播しない
   - _Requirements: 3.1, 6.3_
   - _Boundary: rotate_logs_
 
-- [ ] 3. Integration: setup_logging 改修と worker 対応
-- [ ] 3.1 setup_logging にローテーション呼び出しと常時ファイルログを統合する
+- [x] 3. Integration: setup_logging 改修と worker 対応
+- [x] 3.1 setup_logging にローテーション呼び出しと常時ファイルログを統合する
   - `setup_logging` の冒頭で `rotate_logs(Path(config.log_dir), config.log_max_files)` を呼び出す
   - `log_json_enabled` のチェックを削除し、JSON file handler を常に作成する
   - FileHandler のパスを `Path(config.log_dir) / "latest.jsonl"` に変更する
@@ -74,7 +74,7 @@
   - _Depends: 1.1, 2.1, 2.2, 2.3_
   - _Boundary: setup_logging_
 
-- [ ] 3.2 worker プロセスに setup_logging 呼び出しを追加する
+- [x] 3.2 worker プロセスに setup_logging 呼び出しを追加する
   - `worker.py` の startup イベントハンドラ内で `setup_logging(config)` を呼び出す
   - app プロセスと同じ `latest.jsonl` にログが出力されることを確認する
   - テスト: worker の startup 後に structlog のカスタムプロセッサ (mask_sensitive_fields 等) が有効になっている
@@ -82,8 +82,8 @@
   - _Depends: 3.1_
   - _Boundary: worker.py_
 
-- [ ] 4. Validation: ユニットテスト
-- [ ] 4.1 rotate_logs のユニットテストを作成する
+- [x] 4. Validation: ユニットテスト
+- [x] 4.1 rotate_logs のユニットテストを作成する
   - `tests/unit/test_log_rotation.py` を新規作成する
   - 正常ローテーション: 非空 latest.jsonl がアーカイブされ gzip 圧縮される (1.1)
   - スキップ: latest.jsonl が不在/空でローテーションがスキップされる (1.3)
@@ -96,7 +96,7 @@
   - _Depends: 2.1, 2.2, 2.3_
   - _Boundary: rotate_logs_
 
-- [ ] 4.2 setup_logging 改修の統合テストを作成する
+- [x] 4.2 setup_logging 改修の統合テストを作成する
   - setup_logging がローテーションを呼び出し、latest.jsonl に FileHandler が設定されることを検証する (1.2, 4.1)
   - config の `log_dir` / `log_max_files` を設定して正しく動作することを検証する (7.1, 7.2)
   - 旧設定フィールドが存在しないことを検証する (7.3)

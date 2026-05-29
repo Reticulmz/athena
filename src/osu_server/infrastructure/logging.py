@@ -10,9 +10,14 @@ import gzip
 import logging
 import sys
 import warnings
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 import structlog
 import structlog.contextvars
@@ -44,6 +49,63 @@ def mask_sensitive_fields(
     return event_dict
 
 
+def _archive_latest_file(latest_path: Path, log_dir: Path) -> None:
+    """latest.jsonl を日付ベースのファイルに圧縮アーカイブし、元ファイルを削除する。"""
+    today_str = datetime.now().astimezone().date().isoformat()
+    max_n = 0
+    for p in log_dir.glob(f"{today_str}-*.jsonl.gz"):
+        name = p.name
+        if name.endswith(".jsonl.gz"):
+            stem = name[:-9]  # len(".jsonl.gz") == 9
+            try:
+                n_str = stem.split("-")[-1]
+                n = int(n_str)
+                max_n = max(max_n, n)
+            except (ValueError, IndexError):
+                pass
+
+    archive_name = f"{today_str}-{max_n + 1}.jsonl.gz"
+    archive_path = log_dir / archive_name
+
+    # 圧縮アーカイブの作成
+    with latest_path.open("rb") as f_in, gzip.open(archive_path, "wb") as f_out:
+        while chunk := f_in.read(65536):
+            _ = f_out.write(chunk)
+
+    # 元ファイルの削除
+    latest_path.unlink()
+
+
+def _cleanup_old_archives(log_dir: Path, max_files: int) -> None:
+    """古いアーカイブを削除する。"""
+    archives: list[tuple[float, Path]] = []
+    for p in log_dir.glob("*.jsonl.gz"):
+        try:
+            mtime = p.stat().st_mtime
+            archives.append((mtime, p))
+        except OSError as exc:
+            warnings.warn(
+                f"Failed to stat archive file {p}: {exc}",
+                category=UserWarning,
+                stacklevel=1,
+            )
+
+    # mtime でソート (古いもの = 小さい mtime が先頭)
+    archives.sort(key=lambda x: x[0])
+
+    if len(archives) > max_files:
+        to_delete = archives[: len(archives) - max_files]
+        for _, p in to_delete:
+            try:
+                _ = p.unlink()
+            except OSError as exc:
+                warnings.warn(
+                    f"Failed to delete old archive file {p}: {exc}",
+                    category=UserWarning,
+                    stacklevel=1,
+                )
+
+
 def rotate_logs(log_dir: Path, max_files: int) -> None:
     """起動時にログファイルをアーカイブし、古いアーカイブを削除する。
 
@@ -53,8 +115,6 @@ def rotate_logs(log_dir: Path, max_files: int) -> None:
     4. ロック取得失敗 or ファイル不在/空: スキップ
     5. 全ての OSError は warnings.warn で警告して続行
     """
-    import fcntl
-
     latest_path = log_dir / "latest.jsonl"
     try:
         if not latest_path.exists() or latest_path.stat().st_size == 0:
@@ -69,77 +129,51 @@ def rotate_logs(log_dir: Path, max_files: int) -> None:
 
     lock_path = log_dir / ".rotation.lock"
     try:
-        f_lock = open(lock_path, "a")
+        with lock_path.open("a") as f_lock:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(f_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return
+            except OSError as exc:
+                warnings.warn(
+                    f"Failed to acquire lock on {lock_path}: {exc}",
+                    category=UserWarning,
+                    stacklevel=1,
+                )
+                return
+
+            try:
+                _archive_latest_file(latest_path, log_dir)
+                _cleanup_old_archives(log_dir, max_files)
+            except OSError as exc:
+                warnings.warn(
+                    f"Failed to archive log file {latest_path}: {exc}",
+                    category=UserWarning,
+                    stacklevel=1,
+                )
     except OSError as exc:
         warnings.warn(
             f"Failed to open lock file {lock_path}: {exc}",
             category=UserWarning,
             stacklevel=1,
         )
-        return
 
-    try:
-        fcntl.flock(f_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        _ = f_lock.close()
-        return
-    except OSError as exc:
-        warnings.warn(
-            f"Failed to acquire lock on {lock_path}: {exc}",
-            category=UserWarning,
-            stacklevel=1,
-        )
-        _ = f_lock.close()
-        return
-
-    try:
-        # アーカイブ名の決定
-        today_str = date.today().isoformat()
-        max_n = 0
-        for p in log_dir.glob(f"{today_str}-*.jsonl.gz"):
-            name = p.name
-            if name.endswith(".jsonl.gz"):
-                stem = name[:-9]  # len(".jsonl.gz") == 9
-                try:
-                    n_str = stem.split("-")[-1]
-                    n = int(n_str)
-                    if n > max_n:
-                        max_n = n
-                except (ValueError, IndexError):
-                    pass
-
-        archive_name = f"{today_str}-{max_n + 1}.jsonl.gz"
-        archive_path = log_dir / archive_name
-
-        # 圧縮アーカイブの作成
-        with open(latest_path, "rb") as f_in, gzip.open(archive_path, "wb") as f_out:
-            while chunk := f_in.read(65536):
-                _ = f_out.write(chunk)
-
-        # 元ファイルの削除
-        latest_path.unlink()
-
-    except OSError as exc:
-        warnings.warn(
-            f"Failed to archive log file {latest_path}: {exc}",
-            category=UserWarning,
-            stacklevel=1,
-        )
-        return
-    finally:
-        _ = f_lock.close()
-    # TODO: Delete old archives if count > max_files (Task 2.3)
-    _ = max_files
 
 def setup_logging(config: AppConfig) -> None:
     """Initialize structlog with stdlib integration and configure output handlers.
 
+    - Calls rotate_logs(Path(config.log_dir), config.log_max_files) at startup.
     - Console output (ConsoleRenderer) is always enabled via StreamHandler(stderr).
-    - When config.log_json_enabled is True, a FileHandler with JSONRenderer is added.
+    - A FileHandler with JSONRenderer is always added to config.log_dir / "latest.jsonl".
     - config.log_level controls the root logger level.
     - uvicorn.error and uvicorn.access logger handlers are overridden with
       structlog ProcessorFormatter.
     """
+    # 起動時ローテーションの実行
+    log_dir_path = Path(config.log_dir)
+    rotate_logs(log_dir_path, config.log_max_files)
+
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         mask_sensitive_fields,
@@ -168,23 +202,22 @@ def setup_logging(config: AppConfig) -> None:
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setFormatter(console_formatter)
 
-    # --- JSON file handler (optional) ---
+    # --- JSON file handler (always active) ---
     json_handler: logging.FileHandler | None = None
-    if config.log_json_enabled:
-        json_formatter = structlog.stdlib.ProcessorFormatter(
-            processor=structlog.processors.JSONRenderer(),
-            foreign_pre_chain=shared_processors,
+    json_formatter = structlog.stdlib.ProcessorFormatter(
+        processor=structlog.processors.JSONRenderer(),
+        foreign_pre_chain=shared_processors,
+    )
+    log_path = log_dir_path / "latest.jsonl"
+    try:
+        log_dir_path.mkdir(parents=True, exist_ok=True)
+        json_handler = logging.FileHandler(str(log_path), mode="a", encoding="utf-8")
+        json_handler.setFormatter(json_formatter)
+    except OSError as exc:
+        warnings.warn(
+            f"Failed to open JSON log file {log_path}: {exc}",
+            stacklevel=1,
         )
-        try:
-            log_path = Path(config.log_json_path)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            json_handler = logging.FileHandler(str(log_path), mode="a", encoding="utf-8")
-            json_handler.setFormatter(json_formatter)
-        except OSError as exc:
-            warnings.warn(
-                f"Failed to open JSON log file {config.log_json_path!r}: {exc}",
-                stacklevel=1,
-            )
 
     # --- Root logger setup ---
     root_logger = logging.getLogger()
@@ -201,8 +234,8 @@ def setup_logging(config: AppConfig) -> None:
     structlog.get_logger().info(  # pyright: ignore[reportAny]
         "logging_configured",
         log_level=config.log_level,
-        json_enabled=config.log_json_enabled,
-        json_path=config.log_json_path if config.log_json_enabled else None,
+        log_dir=config.log_dir,
+        log_max_files=config.log_max_files,
     )
 
 
