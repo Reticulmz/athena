@@ -80,7 +80,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 14.1_
   - _Boundary: PrivateMessageService_
 
-- [ ] 3.3 (P) CommandService + BanchoBot コマンド
+- [x] 3.3 (P) CommandService + BanchoBot コマンド
   - CommandService クラスに register(name, handler) と execute(sender_id, sender_name, target, content) を実装する
   - BANCHO_BOT_ID=1, BANCHO_BOT_NAME="BanchoBot" を ClassVar で定義する
   - !roll [max]: random.randint(0, max) — デフォルト max=100、結果を BanchoBot として target に send_message
