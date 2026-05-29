@@ -1,4 +1,4 @@
-# ruff: noqa: PLR2004
+# pyright: reportPrivateUsage=false
 """Tests for write_packet function.
 
 Validates:
@@ -13,7 +13,11 @@ from typing import cast
 import structlog.testing
 
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.writer import QUIET_S2C_PACKETS, write_packet
+from osu_server.transports.bancho.protocol.writer import (
+    _HEADER_FMT,
+    QUIET_S2C_PACKETS,
+    write_packet,
+)
 
 
 class TestWritePacketHeader:
@@ -21,7 +25,7 @@ class TestWritePacketHeader:
 
     def test_header_size(self) -> None:
         result = write_packet(ServerPacketID.PING, b"")
-        assert len(result) == 7
+        assert len(result) == _HEADER_FMT.size
 
     def test_header_packet_id(self) -> None:
         result = write_packet(ServerPacketID.LOGIN_REPLY, b"\x00" * 4)
@@ -36,7 +40,7 @@ class TestWritePacketHeader:
         payload = b"\x01\x02\x03\x04"
         result = write_packet(ServerPacketID.PING, payload)
         content_size = cast("int", pystruct.unpack_from("<I", result, 3)[0])
-        assert content_size == 4
+        assert content_size == len(payload)
 
 
 class TestWritePacketPayload:
@@ -79,7 +83,7 @@ class TestWritePacketDefaultPayload:
 
     def test_default_payload_is_empty(self) -> None:
         result = write_packet(ServerPacketID.PING)
-        assert len(result) == 7
+        assert len(result) == _HEADER_FMT.size
         content_size = cast("int", pystruct.unpack_from("<I", result, 3)[0])
         assert content_size == 0
 
@@ -113,7 +117,7 @@ class TestWritePacketLogging:
         assert len(s2c_logs) == 1
         assert s2c_logs[0]["log_level"] == "info"
         assert s2c_logs[0]["packet"] == "LOGIN_REPLY"
-        assert s2c_logs[0]["size"] == 3
+        assert s2c_logs[0]["size"] == len(payload)
 
     def test_quiet_packet_logged_at_debug(self) -> None:
         """Req 6.2: Quiet packet logged at DEBUG only."""
@@ -145,7 +149,7 @@ class TestWritePacketLogging:
             _ = write_packet(ServerPacketID.SEND_MESSAGE, payload)
 
         s2c_logs = [log for log in logs if log["event"] == "s2c_packet"]
-        assert s2c_logs[0]["size"] == 5  # payload size, not 7 + 5
+        assert s2c_logs[0]["size"] == len(payload)  # payload size, not header + payload
 
     def test_logging_does_not_alter_packet_bytes(self) -> None:
         """Logging must not interfere with packet construction."""

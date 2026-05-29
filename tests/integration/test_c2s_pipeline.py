@@ -1,5 +1,3 @@
-# pyright: reportAny=false
-# ruff: noqa: PLR2004
 """Integration tests for C2S handler pipeline (Task 5.1, Req 9.2).
 
 Tests the full handler/listener integration with real (in-memory)
@@ -51,7 +49,8 @@ def _make_session_data(user_id: int) -> SessionData:
 
 def _parse_s2c_header(data: bytes) -> tuple[int, int]:
     """Parse S2C header -> (packet_id, payload_size). Skip compression byte."""
-    packet_id, _, size = _HEADER_FMT.unpack_from(data)
+    unpacked: tuple[int, bool, int] = _HEADER_FMT.unpack_from(data)
+    packet_id, _, size = unpacked
     return packet_id, size
 
 
@@ -100,7 +99,7 @@ class TestExitPipelineIntegration:
             assert payload_size == 4
 
             payload = data[_HEADER_FMT.size :]
-            (quit_user_id,) = _INT32_FMT.unpack(payload)
+            quit_user_id: int = _INT32_FMT.unpack(payload)[0]  # pyright: ignore[reportAny]
             assert quit_user_id == 1
 
         # User 1 should NOT receive their own USER_QUIT
@@ -222,7 +221,7 @@ class TestHandlerGroupDispatcherIntegration:
         registered = dispatcher.get_handlers()
         assert ClientPacketID.PONG in registered
         assert ClientPacketID.EXIT in registered
-        assert len(registered) == 2
+        assert len(registered) == ClientPacketID.EXIT.value
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -261,7 +260,7 @@ class TestListenerGroupEventBusIntegration:
         assert packet_id == ServerPacketID.USER_QUIT
 
         payload = data[_HEADER_FMT.size :]
-        (quit_user_id,) = _INT32_FMT.unpack(payload)
+        quit_user_id: int = _INT32_FMT.unpack(payload)[0]  # pyright: ignore[reportAny]
         assert quit_user_id == 99
 
     async def test_unsubscribed_event_type_is_ignored(self) -> None:

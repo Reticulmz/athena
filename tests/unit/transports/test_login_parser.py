@@ -43,7 +43,7 @@ class TestParseLoginRequest:
         result = parse_login_request(body)
 
         assert result.client_info.osu_version == "b20240101.1"
-        assert result.client_info.utc_offset == 9  # noqa: PLR2004
+        assert result.client_info.utc_offset == 9
         assert result.client_info.display_city is True
         assert result.client_info.client_hashes == "hashes"
         assert result.client_info.pm_private is False
@@ -95,7 +95,7 @@ class TestParseClientInfo:
 
         assert isinstance(result, ClientInfo)
         assert result.osu_version == "b20240101.1"
-        assert result.utc_offset == 9  # noqa: PLR2004
+        assert result.utc_offset == 9
         assert result.display_city is True
         assert result.client_hashes == "abc123:def456:ghi789:jkl012:mno345"
         assert result.pm_private is False
@@ -103,7 +103,7 @@ class TestParseClientInfo:
     def test_negative_utc_offset(self) -> None:
         raw = "b20240101|-5|0|hashes|0"
         result = parse_client_info(raw)
-        assert result.utc_offset == -5  # noqa: PLR2004
+        assert result.utc_offset == -5
 
     def test_zero_utc_offset(self) -> None:
         raw = "b20240101|0|0|hashes|0"
@@ -111,17 +111,26 @@ class TestParseClientInfo:
         assert result.utc_offset == 0
 
     def test_large_positive_utc_offset(self) -> None:
+        """Tests parsing a large valid positive offset.
+        The magic number '14' represents UTC+14, the maximum valid time zone offset.
+        """
         raw = "b20240101|14|0|hashes|0"
         result = parse_client_info(raw)
-        assert result.utc_offset == 14  # noqa: PLR2004
+        assert result.utc_offset == 14
 
     def test_large_negative_utc_offset(self) -> None:
+        """Tests parsing a large valid negative offset.
+        The magic number '-12' represents UTC-12, the minimum valid time zone offset.
+        """
         raw = "b20240101|-12|0|hashes|0"
         result = parse_client_info(raw)
-        assert result.utc_offset == -12  # noqa: PLR2004
+        assert result.utc_offset == -12
 
-    def test_display_city_true(self) -> None:
-        raw = "b20240101|0|1|hashes|0"
+    def test_parse_valid_client_info(self) -> None:
+        """Req 2.1: Parses standard pipelined client info string.
+        The magic number '9' below represents a valid UTC+9 (JST) time zone offset.
+        """
+        raw = "b20240101|9|1|hashes|0"
         result = parse_client_info(raw)
         assert result.display_city is True
 

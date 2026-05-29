@@ -12,7 +12,7 @@ StatusUpdate — player status with mods, mode, beatmap info (Req 3.5, 3.6)
 """
 
 from io import BytesIO
-from typing import cast, override
+from typing import Annotated, cast, override
 
 from caterpillar.byteorder import LittleEndian
 from caterpillar.context import CTX_STREAM, this
@@ -101,13 +101,14 @@ def _read_uleb128(stream: BytesIO) -> int:
 
 
 BanchoString: _BanchoString = _BanchoString()
+BanchoStringT = Annotated[str, BanchoString]
 """Singleton field type for use in Caterpillar struct annotations.
 
 Usage::
 
     @struct(order=LittleEndian)
     class SomePacket:
-        name: BanchoString
+        name: BanchoStringT
 """
 
 
@@ -121,10 +122,10 @@ class Message:
     Req 3.2: Message type definition.
     """
 
-    sender: BanchoString
-    content: BanchoString
-    target: BanchoString
-    sender_id: int32
+    sender: BanchoStringT
+    content: BanchoStringT
+    target: BanchoStringT
+    sender_id: Annotated[int, int32]
 
 
 @struct(order=LittleEndian)
@@ -134,8 +135,8 @@ class IntList:
     Req 3.3: uint16 count + int32[] dynamic array.
     """
 
-    count: uint16
-    values: int32[this.count]  # type: ignore[name-defined]
+    count: Annotated[int, uint16]
+    values: Annotated[list[int], int32[this.count]]
 
 
 @struct(order=LittleEndian)
@@ -145,9 +146,9 @@ class Channel:
     Req 3.4: Channel type definition.
     """
 
-    name: BanchoString
-    topic: BanchoString
-    user_count: int16
+    name: BanchoStringT
+    topic: BanchoStringT
+    user_count: Annotated[int, int16]
 
 
 @struct(order=LittleEndian)
@@ -158,9 +159,9 @@ class StatusUpdate:
     mods (int32), play_mode (uint8), beatmap_id (int32).
     """
 
-    status: uint8
-    status_text: BanchoString
-    beatmap_md5: BanchoString
-    mods: int32
-    play_mode: uint8
-    beatmap_id: int32
+    status: Annotated[int, uint8]
+    status_text: BanchoStringT
+    beatmap_md5: BanchoStringT
+    mods: Annotated[int, int32]
+    play_mode: Annotated[int, uint8]
+    beatmap_id: Annotated[int, int32]

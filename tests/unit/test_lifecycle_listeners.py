@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 # pyright: reportAny=false
 """Tests for LifecycleListeners (UserDisconnected → USER_QUIT broadcast).
 
@@ -11,41 +12,58 @@ Validates:
 from __future__ import annotations
 
 import struct
-from unittest.mock import AsyncMock, call
+import typing
 
 import pytest
 
 from osu_server.domain.users.events import UserDisconnected
+from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue  # noqa: TC001
+from osu_server.services.online_users import OnlineUsersService  # noqa: TC001
 from osu_server.transports.bancho.listeners.lifecycle import LifecycleListeners
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.writer import write_packet
+from osu_server.transports.bancho.protocol.writer import (
+    _HEADER_FMT,
+    write_packet,
+)
+
+
+class FakeOnlineUsersService:
+    def __init__(self) -> None:
+        self.user_ids: list[int] = []
+
+    async def get_all_user_ids(self) -> list[int]:
+        return self.user_ids
+
+
+class FakePacketQueue:
+    def __init__(self) -> None:
+        self.enqueued: list[tuple[int, bytes]] = []
+
+    async def enqueue(self, user_id: int, packet: bytes) -> None:
+        self.enqueued.append((user_id, packet))
 
 
 @pytest.fixture
-def online_users() -> AsyncMock:
-    """Mock OnlineUsersService."""
-    mock = AsyncMock()
-    mock.get_all_user_ids = AsyncMock(return_value=[])
-    return mock
+def online_users() -> FakeOnlineUsersService:
+    """Fake OnlineUsersService."""
+    return FakeOnlineUsersService()
 
 
 @pytest.fixture
-def packet_queue() -> AsyncMock:
-    """Mock PacketQueue."""
-    mock = AsyncMock()
-    mock.enqueue = AsyncMock(return_value=None)
-    return mock
+def packet_queue() -> FakePacketQueue:
+    """Fake PacketQueue."""
+    return FakePacketQueue()
 
 
 @pytest.fixture
 def listeners(
-    online_users: AsyncMock,
-    packet_queue: AsyncMock,
+    online_users: FakeOnlineUsersService,
+    packet_queue: FakePacketQueue,
 ) -> LifecycleListeners:
-    """LifecycleListeners instance with mocked dependencies."""
+    """LifecycleListeners instance with faked dependencies."""
     return LifecycleListeners(
-        online_users=online_users,
-        packet_queue=packet_queue,
+        online_users=typing.cast("OnlineUsersService", typing.cast("typing.Any", online_users)),
+        packet_queue=typing.cast("PacketQueue", typing.cast("typing.Any", packet_queue)),
     )
 
 
@@ -60,70 +78,71 @@ class TestUserQuitBroadcast:
     async def test_all_online_users_receive_user_quit(
         self,
         listeners: LifecycleListeners,
-        online_users: AsyncMock,
-        packet_queue: AsyncMock,
+        online_users: FakeOnlineUsersService,
+        packet_queue: FakePacketQueue,
     ) -> None:
         """Every online user (excluding the disconnecting one) gets USER_QUIT."""
         disconnecting_user_id = 100
-        online_users.get_all_user_ids.return_value = [1, 2, 3, 100]
+        online_users.user_ids = [1, 2, 3, 100]
 
         await listeners.on_user_disconnected(
             UserDisconnected(user_id=disconnecting_user_id),
         )
 
         expected_packet = _expected_user_quit_packet(disconnecting_user_id)
-        packet_queue.enqueue.assert_any_await(1, expected_packet)
-        packet_queue.enqueue.assert_any_await(2, expected_packet)
-        packet_queue.enqueue.assert_any_await(3, expected_packet)
-        assert packet_queue.enqueue.await_count == 3  # noqa: PLR2004
+        assert (1, expected_packet) in packet_queue.enqueued
+        assert (2, expected_packet) in packet_queue.enqueued
+        assert (3, expected_packet) in packet_queue.enqueued
+        assert len(packet_queue.enqueued) == 3
 
     async def test_disconnecting_user_excluded_from_broadcast(
         self,
         listeners: LifecycleListeners,
-        online_users: AsyncMock,
-        packet_queue: AsyncMock,
+        online_users: FakeOnlineUsersService,
+        packet_queue: FakePacketQueue,
     ) -> None:
         """The disconnecting user must NOT receive their own USER_QUIT."""
         disconnecting_user_id = 42
-        online_users.get_all_user_ids.return_value = [42, 99]
+        online_users.user_ids = [42, 99]
 
         await listeners.on_user_disconnected(
             UserDisconnected(user_id=disconnecting_user_id),
         )
 
         expected_packet = _expected_user_quit_packet(disconnecting_user_id)
-        # Only user 99 should receive the packet
-        packet_queue.enqueue.assert_awaited_once_with(99, expected_packet)
+        assert (42, expected_packet) not in packet_queue.enqueued
+        assert (99, expected_packet) in packet_queue.enqueued
+        assert len(packet_queue.enqueued) == 1
 
     async def test_no_online_users_completes_without_error(
         self,
         listeners: LifecycleListeners,
-        online_users: AsyncMock,
-        packet_queue: AsyncMock,
+        online_users: FakeOnlineUsersService,
+        packet_queue: FakePacketQueue,
     ) -> None:
         """Zero online users — handler completes without raising."""
-        online_users.get_all_user_ids.return_value = []
+        online_users.user_ids = []
 
         await listeners.on_user_disconnected(
             UserDisconnected(user_id=1),
         )
 
-        packet_queue.enqueue.assert_not_awaited()
+        assert len(packet_queue.enqueued) == 0
 
     async def test_only_disconnecting_user_online_no_enqueue(
         self,
         listeners: LifecycleListeners,
-        online_users: AsyncMock,
-        packet_queue: AsyncMock,
+        online_users: FakeOnlineUsersService,
+        packet_queue: FakePacketQueue,
     ) -> None:
         """When the only online user is the one disconnecting, no enqueue."""
-        online_users.get_all_user_ids.return_value = [50]
+        online_users.user_ids = [50]
 
         await listeners.on_user_disconnected(
             UserDisconnected(user_id=50),
         )
 
-        packet_queue.enqueue.assert_not_awaited()
+        assert len(packet_queue.enqueued) == 0
 
 
 class TestUserQuitPacketFormat:
@@ -132,42 +151,40 @@ class TestUserQuitPacketFormat:
     async def test_packet_contains_correct_user_id(
         self,
         listeners: LifecycleListeners,
-        online_users: AsyncMock,
-        packet_queue: AsyncMock,
+        online_users: FakeOnlineUsersService,
+        packet_queue: FakePacketQueue,
     ) -> None:
         """USER_QUIT payload is the disconnecting user's ID as int32 LE."""
         disconnecting_user_id = 12345
-        online_users.get_all_user_ids.return_value = [1]
+        online_users.user_ids = [1]
 
         await listeners.on_user_disconnected(
             UserDisconnected(user_id=disconnecting_user_id),
         )
 
         expected_packet = _expected_user_quit_packet(disconnecting_user_id)
-        packet_queue.enqueue.assert_awaited_once_with(1, expected_packet)
+        assert (1, expected_packet) in packet_queue.enqueued
 
-        # Verify the raw payload structure: 7-byte header + 4-byte int32
-        # Header: PacketID (u16) + Compression (u8) + ContentSize (u32)
-        assert len(expected_packet) == 11  # noqa: PLR2004
-        payload = expected_packet[7:]
+        # Verify the raw payload structure: header + 4-byte int32
+        payload = expected_packet[_HEADER_FMT.size :]
         assert struct.unpack("<i", payload)[0] == disconnecting_user_id
 
     async def test_enqueue_call_order_matches_online_list(
         self,
         listeners: LifecycleListeners,
-        online_users: AsyncMock,
-        packet_queue: AsyncMock,
+        online_users: FakeOnlineUsersService,
+        packet_queue: FakePacketQueue,
     ) -> None:
         """Enqueue calls follow the order of the online user list."""
-        online_users.get_all_user_ids.return_value = [10, 20, 30]
+        online_users.user_ids = [10, 20, 30]
 
         await listeners.on_user_disconnected(
             UserDisconnected(user_id=99),
         )
 
         expected_packet = _expected_user_quit_packet(99)
-        assert packet_queue.enqueue.await_args_list == [
-            call(10, expected_packet),
-            call(20, expected_packet),
-            call(30, expected_packet),
+        assert packet_queue.enqueued == [
+            (10, expected_packet),
+            (20, expected_packet),
+            (30, expected_packet),
         ]

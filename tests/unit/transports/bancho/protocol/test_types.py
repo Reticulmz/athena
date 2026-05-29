@@ -1,5 +1,3 @@
-# ruff: noqa: PLR2004
-# pyright: reportUnknownMemberType=false
 """Tests for bancho wire types.
 
 Validates:
@@ -12,7 +10,7 @@ Validates:
 """
 
 import struct as pystruct
-from typing import cast
+from typing import Annotated, cast
 
 from caterpillar.byteorder import LittleEndian
 from caterpillar.fields import uint8
@@ -20,6 +18,7 @@ from caterpillar.model import pack, struct, unpack
 
 from osu_server.transports.bancho.protocol.types import (
     BanchoString,
+    BanchoStringT,
     Channel,
     IntList,
     Message,
@@ -183,8 +182,8 @@ class TestBanchoStringInStruct:
     def test_struct_with_bancho_string_field(self) -> None:
         @struct(order=LittleEndian)
         class TestPacket:
-            value: uint8  # pyright: ignore[reportInvalidTypeForm]
-            name: BanchoString  # pyright: ignore[reportInvalidTypeForm]
+            value: Annotated[int, uint8]
+            name: BanchoStringT
 
         original = TestPacket(value=42, name="hello")
         data = pack(original)
@@ -195,8 +194,8 @@ class TestBanchoStringInStruct:
     def test_struct_with_empty_bancho_string(self) -> None:
         @struct(order=LittleEndian)
         class TestPacket:
-            value: uint8  # pyright: ignore[reportInvalidTypeForm]
-            name: BanchoString  # pyright: ignore[reportInvalidTypeForm]
+            value: Annotated[int, uint8]
+            name: BanchoStringT
 
         original = TestPacket(value=0, name="")
         data = pack(original)
@@ -207,8 +206,8 @@ class TestBanchoStringInStruct:
     def test_struct_with_multiple_bancho_strings(self) -> None:
         @struct(order=LittleEndian)
         class MultiString:
-            first: BanchoString  # pyright: ignore[reportInvalidTypeForm]
-            second: BanchoString  # pyright: ignore[reportInvalidTypeForm]
+            first: BanchoStringT
+            second: BanchoStringT
 
         original = MultiString(first="hello", second="world")
         data = pack(original)
@@ -317,7 +316,7 @@ class TestIntListUnpack:
         data = pack(il)
         restored = unpack(IntList, data)
         assert restored.count == 2
-        assert list(cast("list[int]", restored.values)) == [100, 200]
+        assert list(restored.values) == [100, 200]
 
 
 class TestIntListRoundTrip:
@@ -328,20 +327,20 @@ class TestIntListRoundTrip:
         data = pack(original)
         restored = unpack(IntList, data)
         assert restored.count == 4
-        assert list(cast("list[int]", restored.values)) == [10, 20, 30, 40]
+        assert list(restored.values) == [10, 20, 30, 40]
 
     def test_roundtrip_negative_values(self) -> None:
         original = IntList(count=2, values=[-1, -100])
         data = pack(original)
         restored = unpack(IntList, data)
-        assert list(cast("list[int]", restored.values)) == [-1, -100]
+        assert list(restored.values) == [-1, -100]
 
     def test_roundtrip_empty(self) -> None:
         original = IntList(count=0, values=[])
         data = pack(original)
         restored = unpack(IntList, data)
         assert restored.count == 0
-        assert list(cast("list[int]", restored.values)) == []
+        assert list(restored.values) == []
 
 
 # ── Channel (Req 3.4, 3.6) ──────────────────────────────────────────
