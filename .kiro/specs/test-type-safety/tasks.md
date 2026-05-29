@@ -72,7 +72,7 @@
   - _Requirements: 2.1, 2.2, 3.1, 9.1, 9.2, 9.3, 9.4_
   - _Boundary: Test Suite Migration_
 
-- [ ] 4.3 (P) E2Eテストの型安全化 (Transports/API)
+- [x] 4.3 (P) E2Eテストの型安全化 (Transports/API)
   - `tests/e2e/` 配下の型エラーを解決し、HTTP 通信境界の型安全性を確保する
   - `TestClient` のレスポンス型補完を活用し、`status_code` 等の参照を安全にする
   - 全ての E2E テストが型安全かつ正常にパスすることを確認する

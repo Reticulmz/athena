@@ -1,4 +1,3 @@
-# pyright: reportAny=false, reportPrivateUsage=false, reportUnusedFunction=false
 """E2E tests for C2S packet handlers: EXIT, PONG, and exception isolation.
 
 Tests the full HTTP POST → C2S dispatch → EventBus → S2C response pipeline
@@ -23,14 +22,13 @@ import os
 import struct
 from contextlib import contextmanager
 from http import HTTPStatus
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from starlette.testclient import TestClient
 
 from osu_server.app import create_app
 from osu_server.domain.role import Privileges, Role
 from osu_server.repositories.interfaces.role_repository import RoleRepository
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.protocol.enums import ClientPacketID, ServerPacketID
 
@@ -40,6 +38,7 @@ if TYPE_CHECKING:
     from starlette.applications import Starlette
 
     from osu_server.infrastructure.di.container import Container
+    from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 
 # ── Constants ────────────────────────────────────────────────────────────
 
@@ -83,12 +82,10 @@ def _test_env() -> Generator[None]:
 
 def _seed_default_role(app: Starlette) -> None:
     """Seed the Default role into the InMemoryRoleRepository."""
-    container: Container = app.state.container
-    registration = container._registrations[RoleRepository]  # noqa: SLF001
-    repo = registration.instance
-    assert isinstance(repo, InMemoryRoleRepository)
-    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001
-    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001
+    container = cast("Container", app.state.container)
+    repo = cast("InMemoryRoleRepository", container.get_singleton(RoleRepository))
+    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
+    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
 
 
 def _login_body(
@@ -143,8 +140,10 @@ def _parse_s2c_packets(body: bytes) -> list[tuple[int, bytes]]:
     packets: list[tuple[int, bytes]] = []
     offset = 0
     while offset + _PACKET_HEADER_SIZE <= len(body):
-        packet_id = struct.unpack_from("<H", body, offset)[0]
-        content_len = struct.unpack_from("<I", body, offset + 3)[0]
+        unpacked_id = struct.unpack_from("<H", body, offset)
+        packet_id = cast("int", unpacked_id[0])
+        unpacked_len = struct.unpack_from("<I", body, offset + 3)
+        content_len = cast("int", unpacked_len[0])
         content_start = offset + _PACKET_HEADER_SIZE
         content_end = content_start + content_len
         if content_end > len(body):
@@ -204,7 +203,8 @@ class TestExitUserQuitBroadcast:
                 )
 
                 # USER_QUIT payload is the disconnected user's ID as int32 LE
-                quit_user_id = struct.unpack("<i", quit_contents[0])[0]
+                unpacked_uid = struct.unpack("<i", quit_contents[0])
+                quit_user_id = cast("int", unpacked_uid[0])
                 assert quit_user_id > 0, "USER_QUIT should contain a positive user_id"
 
     def test_exit_does_not_enqueue_user_quit_for_self(self) -> None:
@@ -350,14 +350,15 @@ class TestExceptionIsolation:
 
                 # Register a handler that always raises for a specific packet ID.
                 # Use BEATMAP_INFO (68) — unlikely to have a real handler.
-                container: Container = app.state.container
-                dispatcher = container._registrations[PacketDispatcher].instance  # noqa: SLF001
-                assert isinstance(dispatcher, PacketDispatcher)
+                container = cast("Container", app.state.container)
+                dispatcher = container.get_singleton(PacketDispatcher)
 
                 @dispatcher.register(ClientPacketID.BEATMAP_INFO)
                 async def _boom(_payload: bytes, _user_id: int) -> None:
                     msg = "intentional test explosion"
                     raise RuntimeError(msg)
+
+                _ = _boom
 
                 # Send: BEATMAP_INFO (will raise) + EXIT (should still process)
                 bad_packet = _build_c2s_packet(ClientPacketID.BEATMAP_INFO, b"\x00")

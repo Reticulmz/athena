@@ -97,6 +97,21 @@ class Container:
         """Return registered shutdown hooks (read-only)."""
         return self._shutdown_hooks
 
+    def get_singleton(self, interface: type[T]) -> T:
+        """Get an eagerly resolved singleton instance.
+
+        Raises KeyError if not registered, or ValueError if not resolved yet.
+        """
+        try:
+            registration = self._registrations[interface]
+        except KeyError:
+            raise KeyError(f"{interface!r} is not registered in the container") from None
+        if not registration.singleton:
+            raise ValueError(f"{interface!r} is not registered as a singleton")
+        if registration.instance is None:
+            raise ValueError(f"{interface!r} is not resolved yet")
+        return cast("T", registration.instance)
+
     async def shutdown(self) -> None:
         """Invoke all registered shutdown hooks, ensuring all run even on failure."""
         for hook in self._shutdown_hooks:
