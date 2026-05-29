@@ -6,6 +6,15 @@ dist/
 wheels/
 *.egg-info
 
+# Test / lint / coverage caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+.coverage.*
+htmlcov/
+
 # Virtual environments
 .venv
 
@@ -24,10 +33,17 @@ devenv.local.yaml
 # pre-commit
 .pre-commit-config.yaml
 
-.idea
+# IDE / editor local settings
+.idea/
+.vscode/
+
+# Local agent/tool runtime state (configuration directories are not ignored)
+.rtk/
+.serena/
 
 # mkcert certificates
 certs/
 
 # Application logs
 logs/
+*.log

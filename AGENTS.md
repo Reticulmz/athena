@@ -149,6 +149,12 @@ Rule references:
 
 If a rule file conflicts with this file or higher-priority system/developer instructions, higher-priority instructions win.
 
+## Commit Attribution
+
+- When a coding agent creates a commit, include its own model identifier in the commit body or footer.
+- Required footer format: `Agent-Model: <agent product> (<model name>)`
+- Example for this agent: `Agent-Model: Codex (GPT-5)`
+
 ## Project Context
 
 ### Paths

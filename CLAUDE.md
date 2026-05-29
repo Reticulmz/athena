@@ -125,6 +125,12 @@ bancho バイナリプロトコルの仕様は **[Lekuruu/bancho-documentation W
 
 Kiro-style Spec-Driven Development on an agentic SDLC
 
+## Commit Attribution
+
+- When a coding agent creates a commit, include its own model identifier in the commit body or footer.
+- Required footer format: `Agent-Model: <agent product> (<model name>)`
+- Example: `Agent-Model: Claude Code (<model name>)`
+
 ## Project Context
 
 ### Paths
