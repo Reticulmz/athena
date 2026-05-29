@@ -150,6 +150,21 @@ class TestSetupLogging:
         assert parsed["event"] == "test_event"
         assert parsed["key"] == "value"
 
+    def test_second_setup_logging_does_not_rotate_active_session(self, tmp_path: Path) -> None:
+        """A later setup in the same process session does not archive the active latest.jsonl."""
+        config = make_app_config(log_dir=str(tmp_path))
+        latest_path = tmp_path / "latest.jsonl"
+        _ = latest_path.write_text('{"event": "previous_session"}\n')
+
+        setup_logging(config)
+        assert list(tmp_path.glob("*.jsonl.gz"))
+
+        active_session_content = latest_path.read_text()
+        setup_logging(config)
+
+        assert latest_path.read_text().startswith(active_session_content)
+        assert len(list(tmp_path.glob("*.jsonl.gz"))) == 1
+
     def test_json_write_failure_does_not_crash(self) -> None:
         """If JSON file path is not writable, setup_logging warns but continues."""
         config = make_app_config(

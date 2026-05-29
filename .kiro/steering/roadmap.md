@@ -32,12 +32,14 @@
 9. **admin-panel** — 管理画面フロントエンド（ユーザー管理・RBAC 管理）
 10. **api-v2** — lazer 互換 REST API + OAuth2
 11. **signalr** — lazer 互換 SignalR ハブ（リアルタイム通信）
+12. **log-writer-pipeline** — 専用ログ writer による統合ログ出力。起動直後は各プロセスがローカル `latest.jsonl` に直接書き込み、Valkey 接続確立後に writer 経由へ昇格する案を検証する。Valkey 未起動・writer 障害時はローカル直接書き込みへフォールバックする前提で設計する
 
 ## メモ
 
 - Phase 1 の 1→2→3 を順に進めればチャットが動くようになり、サーバーの基本動作が確認できる
 - Phase 2 はゲームプレイに必須だが、PP 計算（rosu-pp-py）やビートマップ取得の外部依存が増える
 - Phase 3 はプロダクション運用に向けた機能
+- ログ writer パイプラインは現行のファイルロック方式を置き換える可能性があるが、Valkey / writer の起動順・障害時にもログを失わないことを最優先の設計条件にする
 
 ## 将来 spec メモ（channel-system grill-me で洗い出し）
 

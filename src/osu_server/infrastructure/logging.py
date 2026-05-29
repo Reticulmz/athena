@@ -10,9 +10,10 @@ import gzip
 import logging
 import sys
 import warnings
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
 try:
     import fcntl
@@ -35,6 +36,15 @@ _SENSITIVE_KEYS: frozenset[str] = frozenset(
         "password_md5",
     }
 )
+
+
+@dataclass(slots=True)
+class _LoggingSessionLock:
+    file: TextIO | None = None
+    path: Path | None = None
+
+
+_SESSION_LOCK = _LoggingSessionLock()
 
 
 def mask_sensitive_fields(
@@ -106,6 +116,90 @@ def _cleanup_old_archives(log_dir: Path, max_files: int) -> None:
                 )
 
 
+def _open_logging_session_lock(log_dir: Path, lock_path: Path) -> TextIO | None:
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return lock_path.open("a")
+    except OSError as exc:
+        warnings.warn(
+            f"Failed to open logging session lock {lock_path}: {exc}",
+            category=UserWarning,
+            stacklevel=1,
+        )
+        return None
+
+
+def _acquire_existing_logging_session(lock_file: TextIO, lock_path: Path) -> bool:
+    if fcntl is None:
+        return False
+
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_SH)
+    except OSError as exc:
+        warnings.warn(
+            f"Failed to acquire logging session lock {lock_path}: {exc}",
+            category=UserWarning,
+            stacklevel=1,
+        )
+        return False
+    return True
+
+
+def _prepare_process_logging_session(log_dir: Path) -> bool:
+    """Return True only for the first active process using this log directory."""
+    lock_path = log_dir / ".session.lock"
+    if _SESSION_LOCK.path == lock_path and _SESSION_LOCK.file is not None:
+        return False
+
+    if _SESSION_LOCK.file is not None:
+        _SESSION_LOCK.file.close()
+        _SESSION_LOCK.file = None
+        _SESSION_LOCK.path = None
+
+    if fcntl is None:
+        return True
+
+    lock_file = _open_logging_session_lock(log_dir, lock_path)
+    if lock_file is None:
+        return False
+
+    should_rotate = True
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        should_rotate = False
+        if not _acquire_existing_logging_session(lock_file, lock_path):
+            lock_file.close()
+            return False
+    except OSError as exc:
+        lock_file.close()
+        warnings.warn(
+            f"Failed to acquire logging session lock {lock_path}: {exc}",
+            category=UserWarning,
+            stacklevel=1,
+        )
+        return False
+
+    _SESSION_LOCK.file = lock_file
+    _SESSION_LOCK.path = lock_path
+    return should_rotate
+
+
+def _downgrade_process_logging_session() -> None:
+    """Keep a shared lock so later processes know this log session is active."""
+    if fcntl is None or _SESSION_LOCK.file is None or _SESSION_LOCK.path is None:
+        return
+
+    try:
+        fcntl.flock(_SESSION_LOCK.file, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except OSError as exc:
+        warnings.warn(
+            f"Failed to downgrade logging session lock {_SESSION_LOCK.path}: {exc}",
+            category=UserWarning,
+            stacklevel=1,
+        )
+
+
 def rotate_logs(log_dir: Path, max_files: int) -> None:
     """起動時にログファイルをアーカイブし、古いアーカイブを削除する。
 
@@ -163,7 +257,8 @@ def rotate_logs(log_dir: Path, max_files: int) -> None:
 def setup_logging(config: AppConfig) -> None:
     """Initialize structlog with stdlib integration and configure output handlers.
 
-    - Calls rotate_logs(Path(config.log_dir), config.log_max_files) at startup.
+    - Calls rotate_logs(Path(config.log_dir), config.log_max_files) once per
+      active multi-process logging session.
     - Console output (ConsoleRenderer) is always enabled via StreamHandler(stderr).
     - A FileHandler with JSONRenderer is always added to config.log_dir / "latest.jsonl".
     - config.log_level controls the root logger level.
@@ -172,7 +267,11 @@ def setup_logging(config: AppConfig) -> None:
     """
     # 起動時ローテーションの実行
     log_dir_path = Path(config.log_dir)
-    rotate_logs(log_dir_path, config.log_max_files)
+    if _prepare_process_logging_session(log_dir_path):
+        try:
+            rotate_logs(log_dir_path, config.log_max_files)
+        finally:
+            _downgrade_process_logging_session()
 
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
