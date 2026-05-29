@@ -1,0 +1,22 @@
+{
+  "feature_name": "structured-logging",
+  "created_at": "2026-05-23T16:15:00+09:00",
+  "updated_at": "2026-05-23T17:20:00+09:00",
+  "language": "ja",
+  "phase": "implementation",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}

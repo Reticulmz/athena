@@ -40,6 +40,7 @@ devenv.local.yaml
 # Local agent/tool runtime state (configuration directories are not ignored)
 .rtk/
 .serena/
+.antigravitycli/
 
 # mkcert certificates
 certs/
