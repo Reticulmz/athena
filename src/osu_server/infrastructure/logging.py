@@ -6,9 +6,11 @@ All stdlib loggers (including uvicorn) are routed through structlog's ProcessorF
 
 from __future__ import annotations
 
+import gzip
 import logging
 import sys
 import warnings
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -40,6 +42,68 @@ def mask_sensitive_fields(
         if key in event_dict:
             event_dict[key] = "***"
     return event_dict
+
+
+def rotate_logs(log_dir: Path, max_files: int) -> None:
+    """起動時にログファイルをアーカイブし、古いアーカイブを削除する。
+
+    1. latest.jsonl が存在し非空なら、ファイルロック取得を試みる
+    2. ロック取得成功: latest.jsonl を {date}-{N}.jsonl.gz にアーカイブ
+    3. アーカイブ数が max_files を超えたら古い順に削除
+    4. ロック取得失敗 or ファイル不在/空: スキップ
+    5. 全ての OSError は warnings.warn で警告して続行
+    """
+    latest_path = log_dir / "latest.jsonl"
+    try:
+        if not latest_path.exists() or latest_path.stat().st_size == 0:
+            return
+    except OSError as exc:
+        warnings.warn(
+            f"Failed to check log file {latest_path}: {exc}",
+            category=UserWarning,
+            stacklevel=1,
+        )
+        return
+
+    # TODO: File locking (Task 2.2)
+    _ = max_files
+
+    try:
+        # アーカイブ名の決定
+        today_str = date.today().isoformat()
+        max_n = 0
+        for p in log_dir.glob(f"{today_str}-*.jsonl.gz"):
+            name = p.name
+            if name.endswith(".jsonl.gz"):
+                stem = name[:-9]  # len(".jsonl.gz") == 9
+                try:
+                    n_str = stem.split("-")[-1]
+                    n = int(n_str)
+                    if n > max_n:
+                        max_n = n
+                except (ValueError, IndexError):
+                    pass
+
+        archive_name = f"{today_str}-{max_n + 1}.jsonl.gz"
+        archive_path = log_dir / archive_name
+
+        # 圧縮アーカイブの作成
+        with open(latest_path, "rb") as f_in, gzip.open(archive_path, "wb") as f_out:
+            while chunk := f_in.read(65536):
+                _ = f_out.write(chunk)
+
+        # 元ファイルの削除
+        latest_path.unlink()
+
+    except OSError as exc:
+        warnings.warn(
+            f"Failed to archive log file {latest_path}: {exc}",
+            category=UserWarning,
+            stacklevel=1,
+        )
+        return
+
+    # TODO: Delete old archives if count > max_files (Task 2.3)
 
 
 def setup_logging(config: AppConfig) -> None:

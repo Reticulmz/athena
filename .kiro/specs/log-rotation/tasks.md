@@ -37,7 +37,7 @@
   - _Boundary: AppConfig_
 
 - [ ] 2. Core: rotate_logs 関数の実装
-- [ ] 2.1 ログファイルのアーカイブ・圧縮ロジックを実装する
+- [x] 2.1 ログファイルのアーカイブ・圧縮ロジックを実装する
   - `latest.jsonl` の存在・サイズチェックを行い、不在/空ならスキップする
   - 既存の `{today}-*.jsonl.gz` をスキャンして最大連番を取得し、`{YYYY-MM-DD}-{N+1}.jsonl.gz` で命名する
   - `latest.jsonl` を読み取り、`gzip.open()` で圧縮アーカイブを生成し、元ファイルを削除する
