@@ -12,7 +12,8 @@ from __future__ import annotations
 import hashlib
 import struct
 from typing import TYPE_CHECKING, cast, final
-from unittest.mock import AsyncMock
+
+from tests.support.fakes import ErrorRaisingUserRepository
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -332,12 +333,51 @@ class TestLoginServerError:
     """Unexpected exception during login returns login_reply(-5)."""
 
     async def test_server_error_returns_negative_five(self) -> None:
-        app, _, user_repo, _, _ = await _setup_with_user()
-
-        # Break the login by making user_repo raise
-        user_repo.get_by_safe_username = AsyncMock(  # type: ignore[method-assign]
-            side_effect=RuntimeError("DB down"),
+        # Build app with ErrorRaisingUserRepository
+        inner_repo = InMemoryUserRepository()
+        user_repo = ErrorRaisingUserRepository(
+            inner=inner_repo,
+            error=RuntimeError("DB down"),
         )
+        role_repo = InMemoryRoleRepository(seed_roles=[_ROLE_DEFAULT])
+        session_store = InMemorySessionStore()
+        password_service = PasswordService(hibp_client=None, banned_passwords=[])
+        permission_service = PermissionService(role_repo=role_repo)
+        country_resolver = _StubCountryResolver()
+
+        auth_service = AuthService(
+            user_repo=user_repo,
+            role_repo=role_repo,
+            password_service=password_service,
+            permission_service=permission_service,
+            session_store=session_store,
+        )
+
+        packet_queue = InMemoryPacketQueue()
+        packet_dispatcher = PacketDispatcher()
+
+        handler = LoginHandler(
+            auth_service=auth_service,
+            session_store=session_store,
+            country_resolver=country_resolver,
+            packet_queue=packet_queue,
+            packet_dispatcher=packet_dispatcher,
+        )
+
+        app = Starlette(routes=[Route("/", handler.__call__, methods=["POST"])])
+
+        # Register user before arming
+        reg = await auth_service.register(
+            RegistrationForm(
+                username="TestUser",
+                email="test@example.com",
+                password=_PASSWORD,
+            ),
+        )
+        assert reg.success is True
+
+        # Arm to raise on login's get_by_safe_username call
+        user_repo.arm()
 
         with TestClient(app) as client:
             resp = client.post("/", content=_build_login_body())

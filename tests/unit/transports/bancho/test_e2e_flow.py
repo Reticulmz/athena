@@ -1,4 +1,3 @@
-# pyright: reportUnusedFunction=false
 """End-to-end integration test: read_packets → PacketDispatcher.dispatch.
 
 Validates the full C2S packet reception flow described in design.md:

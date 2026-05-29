@@ -1,5 +1,3 @@
-# pyright: reportPrivateUsage=false
-# pyright: reportAny=false
 """Tests for LifecycleListeners (UserDisconnected → USER_QUIT broadcast).
 
 Validates:
@@ -22,7 +20,7 @@ from osu_server.services.online_users import OnlineUsersService  # noqa: TC001
 from osu_server.transports.bancho.listeners.lifecycle import LifecycleListeners
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.writer import (
-    _HEADER_FMT,
+    _HEADER_FMT,  # pyright: ignore[reportPrivateUsage]  # testing internal header format
     write_packet,
 )
 
@@ -39,8 +37,9 @@ class FakePacketQueue:
     def __init__(self) -> None:
         self.enqueued: list[tuple[int, bytes]] = []
 
-    async def enqueue(self, user_id: int, packet: bytes) -> None:
-        self.enqueued.append((user_id, packet))
+    async def enqueue(self, user_id: int, *data: bytes) -> None:
+        for packet in data:
+            self.enqueued.append((user_id, packet))
 
 
 @pytest.fixture
@@ -62,8 +61,12 @@ def listeners(
 ) -> LifecycleListeners:
     """LifecycleListeners instance with faked dependencies."""
     return LifecycleListeners(
-        online_users=typing.cast("OnlineUsersService", typing.cast("typing.Any", online_users)),
-        packet_queue=typing.cast("PacketQueue", typing.cast("typing.Any", packet_queue)),
+        online_users=typing.cast(
+            "OnlineUsersService", typing.cast("object", online_users)
+        ),  # FakeOnlineUsersService structurally compatible
+        packet_queue=typing.cast(
+            "PacketQueue", typing.cast("object", packet_queue)
+        ),  # FakePacketQueue structurally compatible
     )
 
 

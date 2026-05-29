@@ -1,4 +1,3 @@
-# pyright: reportUnknownMemberType=false, reportAny=false, reportPrivateUsage=false
 """E2E integration tests for the osu! stable account registration flow.
 
 Tests the full POST /web/users request -> response cycle through all layers
@@ -15,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import typing
 from contextlib import contextmanager
 from http import HTTPStatus
 from typing import TYPE_CHECKING
@@ -64,12 +64,12 @@ def _seed_default_role(app: Starlette) -> None:
 
     Must be called after TestClient enters (lifespan has run).
     """
-    container: Container = app.state.container
-    registration = container._registrations[RoleRepository]  # noqa: SLF001
+    container: Container = app.state.container  # pyright: ignore[reportAny]  # Starlette State returns Any
+    registration = container._registrations[RoleRepository]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only DI introspection
     repo = registration.instance
     assert isinstance(repo, InMemoryRoleRepository)
-    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001
-    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001
+    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
 
 
 def _registration_form(
@@ -170,7 +170,7 @@ class TestRegistrationErrors:
                 )
                 assert resp2.status_code == HTTPStatus.BAD_REQUEST
 
-                body = json.loads(resp2.content)
+                body: dict[str, typing.Any] = json.loads(resp2.content)  # pyright: ignore[reportAny]  # json.loads returns Any
                 assert "form_error" in body
                 assert "username" in body["form_error"]["user"]
 
@@ -186,7 +186,7 @@ class TestRegistrationErrors:
 
                 assert response.status_code == HTTPStatus.BAD_REQUEST
 
-                body = json.loads(response.content)
+                body: dict[str, typing.Any] = json.loads(response.content)  # pyright: ignore[reportAny]  # json.loads returns Any
                 assert "form_error" in body
                 assert "password" in body["form_error"]["user"]
 
@@ -202,7 +202,7 @@ class TestRegistrationErrors:
 
                 assert response.status_code == HTTPStatus.BAD_REQUEST
 
-                body = json.loads(response.content)
+                body: dict[str, typing.Any] = json.loads(response.content)  # pyright: ignore[reportAny]  # json.loads returns Any
                 assert "form_error" in body
                 assert "email" in body["form_error"]["user"]
 
@@ -225,6 +225,6 @@ class TestRegistrationErrors:
                 )
                 assert resp2.status_code == HTTPStatus.BAD_REQUEST
 
-                body = json.loads(resp2.content)
+                body: dict[str, typing.Any] = json.loads(resp2.content)  # pyright: ignore[reportAny]  # json.loads returns Any
                 assert "form_error" in body
                 assert "email" in body["form_error"]["user"]

@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Tests for write_packet function.
 
 Validates:
@@ -14,7 +13,7 @@ import structlog.testing
 
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.writer import (
-    _HEADER_FMT,
+    _HEADER_FMT,  # pyright: ignore[reportPrivateUsage]  # testing internal header format
     QUIET_S2C_PACKETS,
     write_packet,
 )

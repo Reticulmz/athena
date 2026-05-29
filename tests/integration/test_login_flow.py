@@ -1,4 +1,3 @@
-# pyright: reportUnknownMemberType=false, reportAny=false, reportPrivateUsage=false
 """E2E integration tests for the osu! stable bancho login and polling flow.
 
 Tests the full register -> login -> polling cycle through all layers
@@ -87,12 +86,12 @@ def _seed_default_role(app: Starlette) -> None:
 
     Must be called after TestClient enters (lifespan has run).
     """
-    container: Container = app.state.container
-    registration = container._registrations[RoleRepository]  # noqa: SLF001
+    container: Container = app.state.container  # pyright: ignore[reportAny]  # Starlette State returns Any
+    registration = container._registrations[RoleRepository]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only DI introspection
     repo = registration.instance
     assert isinstance(repo, InMemoryRoleRepository)
-    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001
-    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001
+    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
 
 
 def _registration_form(
@@ -131,10 +130,10 @@ def _parse_packets(body: bytes) -> list[tuple[int, bytes]]:
     packets: list[tuple[int, bytes]] = []
     offset = 0
     while offset + _PACKET_HEADER_SIZE <= len(body):
-        packet_id = struct.unpack_from("<H", body, offset)[0]
-        content_len = struct.unpack_from("<I", body, offset + 3)[0]
+        packet_id: int = struct.unpack_from("<H", body, offset)[0]  # pyright: ignore[reportAny]  # struct.unpack_from returns tuple[Any, ...]
+        content_len: int = struct.unpack_from("<I", body, offset + 3)[0]  # pyright: ignore[reportAny]  # struct.unpack_from returns tuple[Any, ...]
         content_start = offset + _PACKET_HEADER_SIZE
-        content_end = content_start + content_len
+        content_end: int = content_start + content_len
         if content_end > len(body):
             break
         content = body[content_start:content_end]
@@ -208,7 +207,7 @@ class TestLoginSuccessPackets:
                 assert len(packets) > 0
                 first_id, first_content = packets[0]
                 assert first_id == _LOGIN_REPLY_ID
-                user_id = struct.unpack("<i", first_content)[0]
+                user_id: int = struct.unpack("<i", first_content)[0]  # pyright: ignore[reportAny]  # struct.unpack returns tuple[Any, ...]
                 assert user_id > 0
 
     def test_packet_stream_contains_protocol_version(self) -> None:
@@ -224,7 +223,7 @@ class TestLoginSuccessPackets:
 
                 content = _find_packet(packets, _PROTOCOL_VERSION_ID)
                 assert content is not None, "protocol_version packet not found in stream"
-                version = struct.unpack("<i", content)[0]
+                version: int = struct.unpack("<i", content)[0]  # pyright: ignore[reportAny]  # struct.unpack returns tuple[Any, ...]
                 assert version > 0
 
     def test_packet_stream_contains_login_permissions(self) -> None:
@@ -323,7 +322,7 @@ class TestReLogin:
                 assert len(packets) > 0
                 first_id, first_content = packets[0]
                 assert first_id == _LOGIN_REPLY_ID
-                user_id = struct.unpack("<i", first_content)[0]
+                user_id: int = struct.unpack("<i", first_content)[0]  # pyright: ignore[reportAny]  # struct.unpack returns tuple[Any, ...]
                 assert user_id == _AUTH_FAILED_USER_ID
 
     def test_new_token_polling_succeeds_after_relogin(self) -> None:
@@ -367,7 +366,7 @@ class TestAuthenticationFailure:
                 assert len(packets) > 0
                 first_id, first_content = packets[0]
                 assert first_id == _LOGIN_REPLY_ID
-                user_id = struct.unpack("<i", first_content)[0]
+                user_id: int = struct.unpack("<i", first_content)[0]  # pyright: ignore[reportAny]  # struct.unpack returns tuple[Any, ...]
                 assert user_id == _AUTH_FAILED_USER_ID
 
     def test_wrong_password_returns_auth_failed(self) -> None:
@@ -390,5 +389,5 @@ class TestAuthenticationFailure:
                 assert len(packets) > 0
                 first_id, first_content = packets[0]
                 assert first_id == _LOGIN_REPLY_ID
-                user_id = struct.unpack("<i", first_content)[0]
+                user_id: int = struct.unpack("<i", first_content)[0]  # pyright: ignore[reportAny]  # struct.unpack returns tuple[Any, ...]
                 assert user_id == _AUTH_FAILED_USER_ID

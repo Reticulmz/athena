@@ -1,4 +1,3 @@
-# pyright: reportUnusedFunction=false, reportUnusedParameter=false
 """Tests for PacketDispatcher.
 
 Validates:
@@ -214,7 +213,7 @@ class TestDispatchLogging:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.SEND_MESSAGE)
-        async def handler(payload: bytes, user_id: int) -> None:
+        async def handler(_payload: bytes, _user_id: int) -> None:
             pass
 
         _ = handler
@@ -234,7 +233,7 @@ class TestDispatchLogging:
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
-        async def handler(payload: bytes, user_id: int) -> None:
+        async def handler(_payload: bytes, _user_id: int) -> None:
             pass
 
         _ = handler
@@ -268,7 +267,7 @@ class TestDispatchLogging:
         for packet_id in QUIET_C2S_PACKETS:
 
             @dp.register(packet_id)
-            async def handler(payload: bytes, user_id: int) -> None:
+            async def handler(_payload: bytes, _user_id: int) -> None:
                 pass
 
             _ = handler
