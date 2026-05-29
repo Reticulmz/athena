@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import hashlib
 import struct
-from http import HTTPStatus
 from typing import TYPE_CHECKING, cast, final
 from unittest.mock import AsyncMock
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+from http import HTTPStatus
 
 import structlog.contextvars
 import structlog.testing

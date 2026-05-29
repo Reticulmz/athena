@@ -51,7 +51,7 @@ class TestClientInfo:
             pm_private=False,
         )
         assert info.osu_version == "b20240101.1"
-        assert info.utc_offset == 9  # noqa: PLR2004
+        assert info.utc_offset == 9
         assert info.display_city is True
         assert info.client_hashes == "abc:def:ghi"
         assert info.pm_private is False

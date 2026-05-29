@@ -1,4 +1,3 @@
-# pyright: reportAny=false, reportUnknownMemberType=false, reportUnusedCallResult=false
 """Tests for RequestLoggingMiddleware.
 
 Validates:
@@ -88,7 +87,7 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.get("/")
+            _ = client.get("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert len(http_logs) == 1
@@ -100,7 +99,7 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.post("/")
+            _ = client.post("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert len(http_logs) == 1
@@ -112,7 +111,7 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.get("/")
+            _ = client.get("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert http_logs[0]["method"] == "GET"
@@ -124,7 +123,7 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.post("/")
+            _ = client.post("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert http_logs[0]["method"] == "POST"
@@ -136,7 +135,7 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.get("/")
+            _ = client.get("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert http_logs[0]["path"] == "/"
@@ -148,7 +147,7 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.get("/")
+            _ = client.get("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert http_logs[0]["status"] == HTTPStatus.OK
@@ -160,7 +159,7 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.get("/error")
+            _ = client.get("/error")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert http_logs[0]["status"] == HTTPStatus.INTERNAL_SERVER_ERROR
@@ -172,7 +171,7 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.get("/")
+            _ = client.get("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert "duration_ms" in http_logs[0]
@@ -186,7 +185,7 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.get("/")
+            _ = client.get("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert http_logs[0]["log_level"] == "info"
@@ -198,11 +197,11 @@ class TestRequestLoggingMiddleware:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.get("/")
-            client.post("/")
+            _ = client.get("/")
+            _ = client.post("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
-        assert len(http_logs) == 2  # noqa: PLR2004
+        assert len(http_logs) == 2
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -221,12 +220,12 @@ class TestRequestLoggingContextvars:
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             # First request binds user context
-            client.get("/bind")
+            _ = client.get("/bind")
             # Second request should NOT have user context
-            client.get("/")
+            _ = client.get("/")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
-        assert len(http_logs) == 2  # noqa: PLR2004
+        assert len(http_logs) == 2
 
         # The second request's log should not contain the user key
         # from the first request (contextvars cleared by middleware)
@@ -252,10 +251,10 @@ class TestRequestLoggingContextvars:
             routes=[Route("/ctx", endpoint=_capture_ctx_endpoint, methods=["GET"])],
         )
         with TestClient(app, raise_server_exceptions=False) as client:
-            client.get("/ctx")
+            _ = client.get("/ctx")
 
         assert captured_ctx["user"] == "TestUser"
-        assert captured_ctx["user_id"] == 42  # noqa: PLR2004
+        assert captured_ctx["user_id"] == 42
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -273,11 +272,11 @@ class TestRequestLoggingOnException:
             structlog.testing.capture_logs() as logs,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
-            client.get("/raise")
+            _ = client.get("/raise")
 
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert len(http_logs) == 1
-        assert http_logs[0]["status"] == 500  # noqa: PLR2004
+        assert http_logs[0]["status"] == 500
         assert http_logs[0]["method"] == "GET"
         assert http_logs[0]["path"] == "/raise"
         assert http_logs[0]["duration_ms"] >= 0

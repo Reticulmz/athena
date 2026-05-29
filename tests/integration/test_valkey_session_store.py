@@ -1,4 +1,3 @@
-# pyright: reportAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 """Integration tests for ValkeySessionStore against a real Valkey instance.
 
 These tests mirror the unit tests for InMemorySessionStore but run against
@@ -86,7 +85,8 @@ def store(
     valkey_store: ValkeySessionStore,
     memory_store: InMemorySessionStore,
 ) -> SessionStore:
-    if request.param == "valkey":
+    param: str = request.param  # pyright: ignore[reportAny]
+    if param == "valkey":
         return valkey_store
     return memory_store
 

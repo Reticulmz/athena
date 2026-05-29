@@ -72,7 +72,7 @@ class TestGetByName:
         result = await repo.get_by_name("Moderator")
 
         assert result is not None
-        assert result.id == 2  # noqa: PLR2004
+        assert result.id == 2
         assert result.name == "Moderator"
 
     async def test_not_found_returns_none(self, repo: InMemoryRoleRepository) -> None:
@@ -107,7 +107,7 @@ class TestGetRolesForUser:
 
         result = await repo.get_roles_for_user(user_id=1)
 
-        assert len(result) == 3  # noqa: PLR2004
+        assert len(result) == 3
         assert result[0].name == "Default"
         assert result[1].name == "Moderator"
         assert result[2].name == "Admin"
@@ -137,7 +137,7 @@ class TestAssignRole:
         roles = await repo.get_roles_for_user(user_id=1)
 
         assert len(roles) == 1
-        assert roles[0].id == 2  # noqa: PLR2004
+        assert roles[0].id == 2
 
     async def test_assign_duplicate_is_idempotent(self, repo: InMemoryRoleRepository) -> None:
         await repo.assign_role(user_id=1, role_id=1)

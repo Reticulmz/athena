@@ -71,7 +71,7 @@ class TestCreate:
         user_b = await repo.create(_make_user(username="PlayerB", email="b@test.com"))
 
         assert user_a.id == 1
-        assert user_b.id == 2  # noqa: PLR2004
+        assert user_b.id == 2
 
     async def test_duplicate_safe_username_raises(self, repo: InMemoryUserRepository) -> None:
         _ = await repo.create(_make_user(username="TestPlayer"))

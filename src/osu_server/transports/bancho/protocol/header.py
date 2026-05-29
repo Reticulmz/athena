@@ -9,6 +9,8 @@ Wire layout (Req 1.1, 1.2):
 Design ref: PacketHeader component in bancho-protocol design.md
 """
 
+from typing import Annotated
+
 from caterpillar.byteorder import LittleEndian
 from caterpillar.fields import boolean, uint16, uint32
 from caterpillar.model import struct
@@ -21,6 +23,6 @@ HEADER_SIZE: int = 7
 class PacketHeader:
     """Bancho packet header: PacketID + Compression + ContentSize."""
 
-    packet_id: uint16  # pyright: ignore[reportInvalidTypeForm]
-    compression: boolean  # pyright: ignore[reportInvalidTypeForm]
-    content_size: uint32  # pyright: ignore[reportInvalidTypeForm]
+    packet_id: Annotated[int, uint16]
+    compression: Annotated[bool, boolean]
+    content_size: Annotated[int, uint32]

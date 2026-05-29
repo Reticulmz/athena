@@ -1,5 +1,3 @@
-# ruff: noqa: PLR2004
-# pyright: reportUnknownMemberType=false
 """Tests for PacketHeader struct and HEADER_SIZE constant.
 
 Validates:

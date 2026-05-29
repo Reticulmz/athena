@@ -1,4 +1,3 @@
-# ruff: noqa: PLC0415
 """Tests for PacketDispatcher DI registration and bancho public API.
 
 Validates:

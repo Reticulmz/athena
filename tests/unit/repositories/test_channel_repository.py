@@ -77,15 +77,15 @@ class TestCreate:
         assert created.topic == "Staff only"
         assert created.channel_type == ChannelType.PUBLIC
         assert created.auto_join is True
-        assert created.rate_limit_messages == 5  # noqa: PLR2004
-        assert created.rate_limit_window == 10  # noqa: PLR2004
+        assert created.rate_limit_messages == 5
+        assert created.rate_limit_window == 10
 
     async def test_auto_increment_ids(self, repo: InMemoryChannelRepository) -> None:
         ch_a = await repo.create(_make_channel(name="#osu"))
         ch_b = await repo.create(_make_channel(name="#announce"))
 
         assert ch_a.id == 1
-        assert ch_b.id == 2  # noqa: PLR2004
+        assert ch_b.id == 2
 
     async def test_duplicate_name_raises(self, repo: InMemoryChannelRepository) -> None:
         _ = await repo.create(_make_channel(name="#osu"))
@@ -120,7 +120,7 @@ class TestGetAll:
 
         result = await repo.get_all()
 
-        assert len(result) == 2  # noqa: PLR2004
+        assert len(result) == 2
         names = {ch.name for ch in result}
         assert names == {"#osu", "#announce"}
 

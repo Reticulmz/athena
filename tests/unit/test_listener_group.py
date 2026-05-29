@@ -154,7 +154,7 @@ class TestRegisterAllLogging:
             group.register_all(event_bus)
 
         reg_logs = [entry for entry in logs if entry.get("event") == "listeners_registered"]
-        assert reg_logs[0]["count"] == 2  # noqa: PLR2004
+        assert reg_logs[0]["count"] == 2
 
     def test_register_all_warns_on_empty_group(self) -> None:
         """Empty group (0 listeners) emits a warning log."""

@@ -1,5 +1,3 @@
-# ruff: noqa: PLR2004
-# pyright: reportUnknownMemberType=false
 """Tests for S2C login packet builders.
 
 Validates:

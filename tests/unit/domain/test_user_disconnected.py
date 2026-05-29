@@ -55,7 +55,7 @@ class TestUserDisconnectedFields:
 
     def test_user_id_value(self) -> None:
         event = UserDisconnected(user_id=42)
-        assert event.user_id == 42  # noqa: PLR2004
+        assert event.user_id == 42
 
     def test_equality(self) -> None:
         """同じ user_id を持つインスタンスは等価。"""

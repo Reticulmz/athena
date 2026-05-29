@@ -1,5 +1,3 @@
-# ruff: noqa: PLR2004
-# pyright: reportUnknownMemberType=false
 """Tests for RawPacket struct and read_packets function.
 
 Validates:

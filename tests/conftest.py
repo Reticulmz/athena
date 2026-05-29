@@ -1,4 +1,3 @@
-# pyright: reportAny=false
 """Global test fixtures for structlog state management."""
 
 from __future__ import annotations

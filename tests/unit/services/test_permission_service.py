@@ -222,7 +222,7 @@ class TestPermissionsComputedLog:
         assert result == expected
         events = [e for e in cap_logs if e["event"] == "permissions_computed"]
         assert len(events) == 1
-        assert events[0]["user_id"] == 2  # noqa: PLR2004
+        assert events[0]["user_id"] == 2
         assert events[0]["privileges"] == expected
 
     async def test_emits_log_for_no_roles(self) -> None:
@@ -235,5 +235,5 @@ class TestPermissionsComputedLog:
         assert result == Privileges.NONE
         events = [e for e in cap_logs if e["event"] == "permissions_computed"]
         assert len(events) == 1
-        assert events[0]["user_id"] == 999  # noqa: PLR2004
+        assert events[0]["user_id"] == 999
         assert events[0]["privileges"] == Privileges.NONE

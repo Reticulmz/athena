@@ -1,7 +1,3 @@
-# pyright: reportAny=false, reportUnknownVariableType=false
-# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
-# pyright: reportInvalidTypeForm=false
-# Caterpillar's metaclass/descriptor patterns require these file-level suppressions.
 """S2C login packet builders.
 
 Each builder function returns a complete packet (7-byte header + payload)
@@ -12,6 +8,7 @@ Requirements: 6.1-6.12
 """
 
 import struct
+from typing import Annotated
 
 from caterpillar.byteorder import LittleEndian
 from caterpillar.fields import float32, int32, int64, uint8, uint16
@@ -19,7 +16,12 @@ from caterpillar.model import pack
 from caterpillar.model import struct as cpstruct
 
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.types import BanchoString, Channel, IntList
+from osu_server.transports.bancho.protocol.types import (
+    BanchoString,
+    BanchoStringT,
+    Channel,
+    IntList,
+)
 from osu_server.transports.bancho.protocol.writer import write_packet
 
 _INT32_FMT = struct.Struct("<i")
@@ -80,14 +82,14 @@ def user_presence_bundle(user_ids: list[int]) -> bytes:
 class _UserPresenceData:
     """Wire format for UserPresence payload (Req 6.5)."""
 
-    user_id: int32
-    username: BanchoString
-    timezone: uint8
-    country_id: uint8
-    permissions_mode: uint8  # permissions | (mode << 5)
-    longitude: float32
-    latitude: float32
-    rank: int32
+    user_id: Annotated[int, int32]
+    username: BanchoStringT
+    timezone: Annotated[int, uint8]
+    country_id: Annotated[int, uint8]
+    permissions_mode: Annotated[int, uint8]  # permissions | (mode << 5)
+    longitude: Annotated[float, float32]
+    latitude: Annotated[float, float32]
+    rank: Annotated[int, int32]
 
 
 def user_presence(
@@ -125,21 +127,21 @@ class _UserStatsData:
     since the wire format is a flat sequence.
     """
 
-    user_id: int32
+    user_id: Annotated[int, int32]
     # StatusUpdate fields (inline)
-    status: uint8
-    status_text: BanchoString
-    beatmap_md5: BanchoString
-    mods: int32
-    play_mode: uint8
-    beatmap_id: int32
+    status: Annotated[int, uint8]
+    status_text: Annotated[str, BanchoString]
+    beatmap_md5: Annotated[str, BanchoString]
+    mods: Annotated[int, int32]
+    play_mode: Annotated[int, uint8]
+    beatmap_id: Annotated[int, int32]
     # Stats fields
-    ranked_score: int64
-    accuracy: float32
-    play_count: int32
-    total_score: int64
-    rank: int32
-    pp: uint16
+    ranked_score: Annotated[int, int64]
+    accuracy: Annotated[float, float32]
+    play_count: Annotated[int, int32]
+    total_score: Annotated[int, int64]
+    rank: Annotated[int, int32]
+    pp: Annotated[int, uint16]
 
 
 def user_stats(

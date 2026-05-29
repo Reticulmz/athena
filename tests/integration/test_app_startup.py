@@ -1,4 +1,3 @@
-# pyright: reportUnknownMemberType=false, reportAny=false
 """E2E integration tests for Starlette application startup and lifecycle.
 
 Verifies that the app starts correctly via lifespan, responds to requests,
@@ -7,6 +6,7 @@ and shuts down cleanly.  Requires running PostgreSQL and Redis instances.
 
 import os
 from http import HTTPStatus
+from typing import cast
 
 import pytest
 from starlette.testclient import TestClient
@@ -42,8 +42,8 @@ class TestAppStartup:
         with TestClient(app, raise_server_exceptions=False):
             assert hasattr(app.state, "config")
             assert hasattr(app.state, "container")
-            assert isinstance(app.state.config, AppConfig)
-            assert isinstance(app.state.container, Container)
+            assert isinstance(cast("object", app.state.config), AppConfig)
+            assert isinstance(cast("object", app.state.container), Container)
 
     def test_get_root_returns_ok(self) -> None:
         """GET / returns 200 — bancho handler accepts GET for connectivity probes."""

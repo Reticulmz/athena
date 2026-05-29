@@ -1,4 +1,3 @@
-# pyright: reportAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 """Integration tests for ValkeyPacketQueue against a real Valkey instance.
 
 Runs the same test matrix as InMemoryPacketQueue unit tests (Protocol
@@ -66,7 +65,8 @@ def queue(
     valkey_queue: ValkeyPacketQueue,
     memory_queue: InMemoryPacketQueue,
 ) -> PacketQueue:
-    if request.param == "valkey":
+    param: str = request.param  # pyright: ignore[reportAny]
+    if param == "valkey":
         return valkey_queue
     return memory_queue
 
@@ -87,7 +87,8 @@ def small_queue(
     valkey_small_queue: ValkeyPacketQueue,
     memory_small_queue: InMemoryPacketQueue,
 ) -> PacketQueue:
-    if request.param == "valkey":
+    param: str = request.param  # pyright: ignore[reportAny]
+    if param == "valkey":
         return valkey_small_queue
     return memory_small_queue
 

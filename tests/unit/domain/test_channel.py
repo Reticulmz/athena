@@ -75,7 +75,7 @@ class TestChannelType:
         assert ChannelType.TEMPORARY.value == "temporary"
 
     def test_total_member_count(self) -> None:
-        assert len(ChannelType) == 4  # noqa: PLR2004
+        assert len(ChannelType) == 4
 
 
 # ===========================================================================
@@ -118,8 +118,8 @@ class TestChannelDataclass:
 
     def test_rate_limit_nullable(self) -> None:
         ch = _make_channel(rate_limit_messages=5, rate_limit_window=30)
-        assert ch.rate_limit_messages == 5  # noqa: PLR2004
-        assert ch.rate_limit_window == 30  # noqa: PLR2004
+        assert ch.rate_limit_messages == 5
+        assert ch.rate_limit_window == 30
 
 
 # ===========================================================================
@@ -212,7 +212,7 @@ class TestChannelMessageSent:
             channel_name="#osu",
             content="hello world",
         )
-        assert event.sender_id == 42  # noqa: PLR2004
+        assert event.sender_id == 42
         assert event.sender_name == "TestPlayer"
         assert event.channel_name == "#osu"
         assert event.content == "hello world"
@@ -274,9 +274,9 @@ class TestPrivateMessageSent:
             target_name="Bob",
             content="private hello",
         )
-        assert event.sender_id == 10  # noqa: PLR2004
+        assert event.sender_id == 10
         assert event.sender_name == "Alice"
-        assert event.target_id == 20  # noqa: PLR2004
+        assert event.target_id == 20
         assert event.target_name == "Bob"
         assert event.content == "private hello"
 
@@ -329,7 +329,7 @@ class TestChannelRoleOverride:
     def test_creation(self) -> None:
         ov = ChannelRoleOverride(channel_id=1, role_id=2, can_read=True, can_write=False)
         assert ov.channel_id == 1
-        assert ov.role_id == 2  # noqa: PLR2004
+        assert ov.role_id == 2
         assert ov.can_read is True
         assert ov.can_write is False
 

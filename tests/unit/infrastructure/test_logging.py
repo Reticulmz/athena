@@ -1,4 +1,3 @@
-# pyright: reportAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 """Tests for infrastructure/logging.py — structlog initialization and sensitive field masking."""
 
 from __future__ import annotations
@@ -6,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import typing
 from typing import TYPE_CHECKING
 
 import pytest
@@ -129,12 +129,12 @@ class TestSetupLogging:
         config = _make_config()
         setup_logging(config)
         root = logging.getLogger()
-        stream_handlers = [
+        stream_handlers: list[logging.StreamHandler[typing.Any]] = [
             h
             for h in root.handlers
-            if isinstance(h, logging.StreamHandler) and h.stream is sys.stderr  # type: ignore[union-attr]
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stderr  # pyright: ignore[reportUnknownMemberType]
         ]
-        assert len(stream_handlers) >= 1  # pyright: ignore[reportUnknownArgumentType]
+        assert len(stream_handlers) >= 1
 
     def test_no_file_handler_when_json_disabled(self) -> None:
         """No FileHandler is added when log_json_enabled=False."""
@@ -159,12 +159,12 @@ class TestSetupLogging:
         config = _make_config(log_json_enabled=True, log_json_path=str(json_path))
         setup_logging(config)
 
-        logger = structlog.get_logger()
-        logger.info("test_event", key="value")
+        logger: typing.Any = structlog.get_logger()  # pyright: ignore[reportAny]
+        logger.info("test_event", key="value")  # pyright: ignore[reportAny]
 
         content = json_path.read_text()
         assert content.strip() != ""
-        parsed = json.loads(content.strip().split("\n")[-1])
+        parsed: dict[str, typing.Any] = json.loads(content.strip().split("\n")[-1])  # pyright: ignore[reportAny]
         assert parsed["event"] == "test_event"
         assert parsed["key"] == "value"
 
@@ -179,19 +179,19 @@ class TestSetupLogging:
             setup_logging(config)
 
         # structlog should still work via console
-        logger = structlog.get_logger()
-        logger.info("still_works")
+        logger: typing.Any = structlog.get_logger()  # pyright: ignore[reportAny]
+        logger.info("still_works")  # pyright: ignore[reportAny]
 
     def test_structlog_get_logger_works_after_setup(self) -> None:
         """structlog.get_logger() returns a usable logger after setup."""
         config = _make_config()
         setup_logging(config)
-        logger = structlog.get_logger()
+        logger: typing.Any = structlog.get_logger()  # pyright: ignore[reportAny]
         assert logger is not None
 
         # Should be able to log without error
         with capture_logs() as cap_logs:
-            logger.info("hello", user="test")
+            logger.info("hello", user="test")  # pyright: ignore[reportAny]
 
         assert len(cap_logs) == 1
         assert cap_logs[0]["event"] == "hello"
@@ -225,12 +225,12 @@ class TestSetupLogging:
         config = _make_config(log_json_enabled=True, log_json_path=str(json_path))
         setup_logging(config)
 
-        logger = structlog.get_logger()
-        logger.info("login_attempt", password="secret", username="player1")
+        logger: typing.Any = structlog.get_logger()  # pyright: ignore[reportAny]
+        logger.info("login_attempt", password="secret", username="player1")  # pyright: ignore[reportAny]
 
         content = json_path.read_text().strip()
         assert content != ""
-        parsed = json.loads(content.split("\n")[-1])
+        parsed: dict[str, typing.Any] = json.loads(content.split("\n")[-1])  # pyright: ignore[reportAny]
         assert parsed["event"] == "login_attempt"
         assert parsed["password"] == "***"
         assert parsed["username"] == "player1"

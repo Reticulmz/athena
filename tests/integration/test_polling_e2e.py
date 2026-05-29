@@ -300,10 +300,10 @@ class TestConcurrentDrainRedis:
         reason="VALKEY_URL not set",
     )
     async def test_concurrent_drain_no_duplicates(self) -> None:
-        from osu_server.infrastructure.cache.valkey_client import (  # noqa: PLC0415
+        from osu_server.infrastructure.cache.valkey_client import (
             create_valkey_client,
         )
-        from osu_server.infrastructure.state.valkey.packet_queue import (  # noqa: PLC0415
+        from osu_server.infrastructure.state.valkey.packet_queue import (
             ValkeyPacketQueue,
         )
 

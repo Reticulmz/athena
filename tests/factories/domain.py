@@ -1,4 +1,3 @@
-# ruff: noqa: A002
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -9,7 +8,7 @@ from osu_server.domain.user import User
 
 def make_channel(
     *,
-    id: int = 1,
+    id: int = 1,  # noqa: A002
     name: str = "#osu",
     topic: str = "General discussion",
     channel_type: ChannelType = ChannelType.PUBLIC,
@@ -55,7 +54,7 @@ def make_channel_role_override(
 
 def make_user(
     *,
-    id: int = 1,
+    id: int = 1,  # noqa: A002
     username: str = "TestUser",
     safe_username: str | None = None,
     email: str = "test@example.com",

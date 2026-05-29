@@ -1,12 +1,10 @@
-# pyright: reportAny=false, reportUnknownVariableType=false
-# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
-# pyright: reportInvalidTypeForm=false
-# Caterpillar's metaclass/descriptor patterns require these file-level suppressions.
 """Packet reader — parse C2S packets from a byte stream using Caterpillar Greedy arrays.
 
 Design ref: RawPacket + read_packets component in bancho-protocol design.md
 Requirements: 4.1, 4.2, 4.4, 4.5
 """
+
+from typing import Annotated
 
 from caterpillar.byteorder import LittleEndian
 from caterpillar.context import this
@@ -26,10 +24,10 @@ class RawPacket:
     from an HTTP body in one ``unpack()`` call.
     """
 
-    packet_id: uint16
-    compression: boolean
-    content_size: uint32
-    payload: Bytes(this.content_size)  # type: ignore[name-defined]
+    packet_id: Annotated[int, uint16]
+    compression: Annotated[bool, boolean]
+    content_size: Annotated[int, uint32]
+    payload: Annotated[bytes, Bytes(this.content_size)]
 
 
 def read_packets(data: bytes | bytearray) -> list[tuple[ClientPacketID, bytes]]:

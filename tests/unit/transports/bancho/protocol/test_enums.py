@@ -1,4 +1,3 @@
-# ruff: noqa: PLR2004
 """Tests for ClientPacketID and ServerPacketID enums.
 
 Validates:

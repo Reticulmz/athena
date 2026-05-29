@@ -1,5 +1,3 @@
-# ruff: noqa: PLC0415
-# pyright: reportAny=false
 """Tests for Task 6.1: DI integration, route registration, and subdomain routing.
 
 Validates:
@@ -14,20 +12,18 @@ Validates:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import httpx
 from starlette.routing import Host, Mount, Route
 
-from osu_server.app import register_services
+from osu_server.app import app, create_app, register_services
 from osu_server.config import AppConfig
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.di.providers import build_container
 
 if TYPE_CHECKING:
-    from pydantic import PostgresDsn, RedisDsn
-
     from osu_server.infrastructure.di.container import Container
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.repositories.interfaces.role_repository import RoleRepository
@@ -46,12 +42,12 @@ _EXPECTED_MIN_HOST_ROUTES = 2
 
 def _make_config(*, environment: str = "test") -> AppConfig:
     """Create a minimal AppConfig for testing."""
-    return AppConfig(
-        database_url=cast(
-            "PostgresDsn", cast("object", "postgresql://test:test@localhost:5432/test")
-        ),
-        valkey_url=cast("RedisDsn", cast("object", "redis://localhost:6379/0")),
-        environment=environment,
+    return AppConfig.model_validate(
+        {
+            "database_url": "postgresql://test:test@localhost:5432/test",
+            "valkey_url": "redis://localhost:6379/0",
+            "environment": environment,
+        }
     )
 
 
@@ -197,12 +193,12 @@ class TestConfigDomainField:
         assert config.domain == "athena.localhost"
 
     def test_custom_domain(self) -> None:
-        config = AppConfig(
-            database_url=cast(
-                "PostgresDsn", cast("object", "postgresql://test:test@localhost:5432/test")
-            ),
-            valkey_url=cast("RedisDsn", cast("object", "redis://localhost:6379/0")),
-            domain="example.com",
+        config = AppConfig.model_validate(
+            {
+                "database_url": "postgresql://test:test@localhost:5432/test",
+                "valkey_url": "redis://localhost:6379/0",
+                "domain": "example.com",
+            }
         )
         assert config.domain == "example.com"
 
@@ -216,29 +212,23 @@ class TestAppRouting:
     """app.py has Host-based subdomain routing and path-based fallbacks."""
 
     def test_app_has_host_routes(self) -> None:
-        from osu_server.app import create_app
-
-        app = create_app()
-        host_routes = [r for r in app.routes if isinstance(r, Host)]
+        app_inst = create_app()
+        host_routes = [r for r in app_inst.routes if isinstance(r, Host)]
         assert len(host_routes) >= _EXPECTED_MIN_HOST_ROUTES, (
             "Expected at least 2 Host routes (bancho + web_legacy)"
         )
 
     def test_app_has_bancho_host_route(self) -> None:
-        from osu_server.app import create_app
-
-        app = create_app()
-        host_routes = [r for r in app.routes if isinstance(r, Host)]
+        app_inst = create_app()
+        host_routes = [r for r in app_inst.routes if isinstance(r, Host)]
         host_patterns = [r.host for r in host_routes]
         assert any("c." in h for h in host_patterns), (
             f"Expected a Host route containing 'c.' for bancho, got {host_patterns}"
         )
 
     def test_app_has_web_legacy_host_route(self) -> None:
-        from osu_server.app import create_app
-
-        app = create_app()
-        host_routes = [r for r in app.routes if isinstance(r, Host)]
+        app_inst = create_app()
+        host_routes = [r for r in app_inst.routes if isinstance(r, Host)]
         host_patterns = [r.host for r in host_routes]
         assert any("osu." in h for h in host_patterns), (
             f"Expected a Host route containing 'osu.' for web_legacy, got {host_patterns}"
@@ -246,24 +236,18 @@ class TestAppRouting:
 
     def test_app_has_fallback_post_root(self) -> None:
         """Path-based fallback: POST / exists for local dev without subdomains."""
-        from osu_server.app import create_app
-
-        app = create_app()
-        path_routes = [r for r in app.routes if isinstance(r, Route)]
+        app_inst = create_app()
+        path_routes = [r for r in app_inst.routes if isinstance(r, Route)]
         root_routes = [r for r in path_routes if r.path == "/"]
         assert len(root_routes) >= 1, "Expected a fallback Route for POST /"
 
     def test_app_has_fallback_web_mount(self) -> None:
         """Path-based fallback: Mount /web exists for local dev without subdomains."""
-        from osu_server.app import create_app
-
-        app = create_app()
-        mount_routes = [r for r in app.routes if isinstance(r, Mount)]
+        app_inst = create_app()
+        mount_routes = [r for r in app_inst.routes if isinstance(r, Mount)]
         web_mounts = [r for r in mount_routes if r.path == "/web"]
         assert len(web_mounts) >= 1, "Expected a fallback Mount for /web"
 
     def test_app_import_succeeds(self) -> None:
         """python -c 'from osu_server.app import app' should not raise."""
-        from osu_server.app import app
-
         _ = app

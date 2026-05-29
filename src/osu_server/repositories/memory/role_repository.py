@@ -27,6 +27,11 @@ class InMemoryRoleRepository:
                 self._roles_by_id[role.id] = role
                 self._roles_by_name[role.name] = role.id
 
+    def add_role(self, role: Role) -> None:
+        """Add a role to the in-memory repository for testing."""
+        self._roles_by_id[role.id] = role
+        self._roles_by_name[role.name] = role.id
+
     async def get_by_id(self, role_id: int) -> Role | None:
         """Return the role with *role_id*, or ``None`` if not found."""
         return self._roles_by_id.get(role_id)

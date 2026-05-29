@@ -57,7 +57,7 @@ class TestRouteDecorator:
             pass
 
         registry = get_route_registry()
-        assert registry[handler_int] == 42  # noqa: PLR2004
+        assert registry[handler_int] == 42
 
 
 class TestInitSubclass:

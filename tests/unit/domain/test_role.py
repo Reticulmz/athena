@@ -27,7 +27,7 @@ class TestPrivileges:
         assert Privileges.NORMAL in default_perms
         assert Privileges.VERIFIED in default_perms
         assert Privileges.UNRESTRICTED in default_perms
-        assert default_perms.bit_count() == 3  # noqa: PLR2004
+        assert default_perms.bit_count() == 3
 
     def test_all_flags_combined(self) -> None:
         all_flags = Privileges(0)

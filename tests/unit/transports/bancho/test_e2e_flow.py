@@ -1,4 +1,3 @@
-# ruff: noqa: PLR2004
 # pyright: reportUnusedFunction=false
 """End-to-end integration test: read_packets → PacketDispatcher.dispatch.
 
@@ -37,6 +36,8 @@ class TestReadPacketsToDispatch:
         async def handle_pong(payload: bytes, _user_id: int) -> None:
             called_with.append((ClientPacketID.PONG, payload))
 
+        _ = handle_pong
+
         data = _build_packet(ClientPacketID.PONG, b"")
         packets = read_packets(data)
 
@@ -55,13 +56,19 @@ class TestReadPacketsToDispatch:
         async def handle_pong(payload: bytes, _user_id: int) -> None:
             call_log.append((ClientPacketID.PONG, payload))
 
+        _ = handle_pong
+
         @dp.register(ClientPacketID.SEND_MESSAGE)
         async def handle_msg(payload: bytes, _user_id: int) -> None:
             call_log.append((ClientPacketID.SEND_MESSAGE, payload))
 
+        _ = handle_msg
+
         @dp.register(ClientPacketID.EXIT)
         async def handle_exit(payload: bytes, _user_id: int) -> None:
             call_log.append((ClientPacketID.EXIT, payload))
+
+        _ = handle_exit
 
         msg_payload = b"\xaa\xbb\xcc"
         data = (
@@ -88,6 +95,8 @@ class TestReadPacketsToDispatch:
         async def handle_pong(_payload: bytes, _user_id: int) -> None:
             called_ids.append(ClientPacketID.PONG)
 
+        _ = handle_pong
+
         # EXIT has no handler registered
         data = (
             _build_packet(ClientPacketID.PONG, b"")
@@ -113,9 +122,13 @@ class TestReadPacketsToDispatch:
         async def handle_msg(payload: bytes, _user_id: int) -> None:
             received_payloads[ClientPacketID.SEND_MESSAGE].append(payload)
 
+        _ = handle_msg
+
         @dp.register(ClientPacketID.STATUS_CHANGE)
         async def handle_status(payload: bytes, _user_id: int) -> None:
             received_payloads[ClientPacketID.STATUS_CHANGE].append(payload)
+
+        _ = handle_status
 
         payload_a = b"\x01\x02\x03\x04\x05"
         payload_b = b"\xff\xfe"
@@ -140,6 +153,8 @@ class TestReadPacketsToDispatch:
         async def handle_pong(_payload: bytes, _user_id: int) -> None:
             dispatched_ids.append(ClientPacketID.PONG)
 
+        _ = handle_pong
+
         # 999 is not a valid ClientPacketID
         data = (
             _build_packet(999, b"\x00\x00")
@@ -162,6 +177,8 @@ class TestReadPacketsToDispatch:
         async def handle_pong(_payload: bytes, _user_id: int) -> None:
             nonlocal called
             called = True
+
+        _ = handle_pong
 
         packets = read_packets(b"")
 

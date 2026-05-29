@@ -1,4 +1,3 @@
-# pyright: reportAny=false, reportUnknownMemberType=false, reportGeneralTypeIssues=false, reportUnknownVariableType=false
 """Integration tests for Valkey connection infrastructure.
 
 These tests require a running Valkey instance. The connection URL is read
