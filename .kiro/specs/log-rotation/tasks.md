@@ -46,7 +46,7 @@
   - _Requirements: 1.1, 1.3, 2.1, 2.2, 2.3, 6.2_
   - _Boundary: rotate_logs_
 
-- [ ] 2.2 ファイルロックによる排他制御を実装する
+- [x] 2.2 ファイルロックによる排他制御を実装する
   - `fcntl.flock(fd, LOCK_EX | LOCK_NB)` でロックファイル (`logs/.rotation.lock`) を使用した排他制御を追加する
   - `BlockingIOError` 発生時はローテーションをスキップする
   - ロック取得成功時のみアーカイブ・圧縮・クリーンアップを実行する

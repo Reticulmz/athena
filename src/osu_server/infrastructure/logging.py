@@ -53,6 +53,8 @@ def rotate_logs(log_dir: Path, max_files: int) -> None:
     4. ロック取得失敗 or ファイル不在/空: スキップ
     5. 全ての OSError は warnings.warn で警告して続行
     """
+    import fcntl
+
     latest_path = log_dir / "latest.jsonl"
     try:
         if not latest_path.exists() or latest_path.stat().st_size == 0:
@@ -65,8 +67,30 @@ def rotate_logs(log_dir: Path, max_files: int) -> None:
         )
         return
 
-    # TODO: File locking (Task 2.2)
-    _ = max_files
+    lock_path = log_dir / ".rotation.lock"
+    try:
+        f_lock = open(lock_path, "a")
+    except OSError as exc:
+        warnings.warn(
+            f"Failed to open lock file {lock_path}: {exc}",
+            category=UserWarning,
+            stacklevel=1,
+        )
+        return
+
+    try:
+        fcntl.flock(f_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        _ = f_lock.close()
+        return
+    except OSError as exc:
+        warnings.warn(
+            f"Failed to acquire lock on {lock_path}: {exc}",
+            category=UserWarning,
+            stacklevel=1,
+        )
+        _ = f_lock.close()
+        return
 
     try:
         # アーカイブ名の決定
@@ -102,9 +126,10 @@ def rotate_logs(log_dir: Path, max_files: int) -> None:
             stacklevel=1,
         )
         return
-
+    finally:
+        _ = f_lock.close()
     # TODO: Delete old archives if count > max_files (Task 2.3)
-
+    _ = max_files
 
 def setup_logging(config: AppConfig) -> None:
     """Initialize structlog with stdlib integration and configure output handlers.

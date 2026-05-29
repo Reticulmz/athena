@@ -99,3 +99,31 @@ def test_rotate_logs_os_error(tmp_path: Path) -> None:
     # 元ファイルが削除されずに残っていることを検証
     assert latest.exists()
     assert latest.read_bytes() == content
+
+
+def test_rotate_logs_lock_failure(tmp_path: Path) -> None:
+    """別のプロセスがロックを保持している場合、ローテーションをスキップして latest.jsonl を残す（警告は出ない）."""
+    latest = tmp_path / "latest.jsonl"
+    content = b'{"event": "lock test"}\n'
+    latest.write_bytes(content)
+    
+    # 実際にロックファイルをロックしておく
+    lock_path = tmp_path / ".rotation.lock"
+    # ロックファイルを開いて排他ロックをかける
+    with open(lock_path, "w") as f_lock:
+        import fcntl
+        fcntl.flock(f_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        
+        # この状態で rotate_logs を実行
+        # warnings.warn が呼ばれない（正常系スキップである）ことを確認する
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            rotate_logs(tmp_path, max_files=30)
+            
+            # 警告が発生していないことを検証
+            assert len(w) == 0
+            
+    # 元ファイルが削除されずに残っていることを検証
+    assert latest.exists()
+    assert latest.read_bytes() == content
+
