@@ -52,41 +52,38 @@ class OpenTelemetryTracesConfig:
     """Configuration for exporting OpenTelemetry traces."""
     def __init__(self, endpoint: str, sample_percentage: Optional[int] = ...) -> None:
         ...
-    
+
     def get_endpoint(self) -> str:
         ...
-    
+
     def get_sample_percentage(self) -> int:
         ...
-    
+
 
 
 class OpenTelemetryMetricsConfig:
     """Configuration for exporting OpenTelemetry metrics."""
     def __init__(self, endpoint: str) -> None:
         ...
-    
+
     def get_endpoint(self) -> str:
         ...
-    
+
 
 
 class OpenTelemetryConfig:
     """Configuration for OpenTelemetry integration."""
     def __init__(self, traces: Optional[OpenTelemetryTracesConfig] = ..., metrics: Optional[OpenTelemetryMetricsConfig] = ..., flush_interval_ms: Optional[int] = ...) -> None:
         ...
-    
+
     def get_traces(self) -> Optional[OpenTelemetryTracesConfig]:
         ...
-    
+
     def set_traces(self, traces: OpenTelemetryTracesConfig) -> None:
         ...
-    
+
     def get_metrics(self) -> Optional[OpenTelemetryMetricsConfig]:
         ...
-    
+
     def get_flush_interval_ms(self) -> Optional[int]:
         ...
-    
-
-

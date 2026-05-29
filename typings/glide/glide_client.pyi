@@ -24,22 +24,22 @@ class _CompatFuture:
     """anyio shim for asyncio.Future-like functionality"""
     def __init__(self) -> None:
         ...
-    
+
     def set_result(self, result: Any) -> None:
         ...
-    
+
     def set_exception(self, exception: Exception) -> None:
         ...
-    
+
     def done(self) -> bool:
         ...
-    
+
     def __await__(self) -> Generator[Any, None, None]:
         ...
-    
+
     def result(self) -> Any:
         ...
-    
+
 
 
 class BaseClient(CoreCommands):
@@ -48,7 +48,7 @@ class BaseClient(CoreCommands):
         To create a new client, use the `create` classmethod
         """
         ...
-    
+
     @classmethod
     async def create(cls, config: BaseClientConfiguration) -> Self:
         """Creates a Glide client.
@@ -120,13 +120,13 @@ class BaseClient(CoreCommands):
 
         """
         ...
-    
+
     async def close(self, err_message: Optional[str] = ...) -> None:
         """
         Forwards to `aclose`, the more common method for async resources.
         """
         ...
-    
+
     async def aclose(self, err_message: Optional[str] = ...) -> None:
         """
         Terminate the client by closing all associated resources, including the socket and any active futures.
@@ -138,19 +138,19 @@ class BaseClient(CoreCommands):
             Defaults to None.
         """
         ...
-    
+
     async def __aenter__(self) -> Self:
         ...
-    
+
     async def __aexit__(self, exc_type: Optional[type[BaseException]], exc: Optional[BaseException], tb: Optional[TracebackType]) -> None:
         ...
-    
+
     async def get_pubsub_message(self) -> PubSubMsg:
         ...
-    
+
     def try_get_pubsub_message(self) -> Optional[PubSubMsg]:
         ...
-    
+
     async def get_statistics(self) -> dict:
         """
         Get compression and connection statistics for this client.
@@ -169,7 +169,7 @@ class BaseClient(CoreCommands):
                 - subscription_last_sync_timestamp: Timestamp of last successful subscription sync (milliseconds since epoch)
         """
         ...
-    
+
 
 
 class GlideClusterClient(BaseClient, ClusterCommands):
@@ -218,7 +218,7 @@ class GlideClusterClient(BaseClient, ClusterCommands):
             >>>     print(f"Not yet subscribed to: {missing}")
         """
         ...
-    
+
 
 
 class GlideClient(BaseClient, StandaloneCommands):
@@ -267,7 +267,7 @@ class GlideClient(BaseClient, StandaloneCommands):
             >>>     print(f"Not yet subscribed to: {missing}")
         """
         ...
-    
+
 
 
 TGlideClient = Union[GlideClient, GlideClusterClient]

@@ -44,7 +44,7 @@ class FtSearchLimit:
             count (int): The total number of keys to be returned by FT.SEARCH command.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the arguments for the LIMIT option of FT.SEARCH.
@@ -53,7 +53,7 @@ class FtSearchLimit:
             List[TEncodable]: A list of LIMIT option arguments.
         """
         ...
-    
+
 
 
 class ReturnField:
@@ -70,7 +70,7 @@ class ReturnField:
             alias (Optional[TEncodable]): The alias to override the name of the field in the FT.SEARCH result.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the arguments for the RETURN option of FT.SEARCH.
@@ -79,7 +79,7 @@ class ReturnField:
             List[TEncodable]: A list of RETURN option arguments.
         """
         ...
-    
+
 
 
 class FtSearchOptions:
@@ -118,7 +118,7 @@ class FtSearchOptions:
             consistency (Optional[ConsistencyMode]): Controls consistency requirements in cluster mode. See `ConsistencyMode`.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the optional arguments for the FT.SEARCH command.
@@ -128,6 +128,3 @@ class FtSearchOptions:
                 List of FT.SEARCH optional arguments.
         """
         ...
-    
-
-

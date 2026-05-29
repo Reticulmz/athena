@@ -33,7 +33,7 @@ class FtProfileOptions:
             limited (Optional[bool]): To provide some brief version of the output, otherwise a full verbose output is provided.
         """
         ...
-    
+
     @classmethod
     def from_query_options(cls, query: TEncodable, query_options: Union[FtSearchOptions, FtAggregateOptions], limited: Optional[bool] = ...) -> Self:
         """
@@ -47,7 +47,7 @@ class FtProfileOptions:
             limited (Optional[bool]): To provide some brief version of the output, otherwise a full verbose output is provided.
         """
         ...
-    
+
     @classmethod
     def from_query_type(cls, query: TEncodable, query_type: QueryType, limited: Optional[bool] = ...) -> Self:
         """
@@ -60,7 +60,7 @@ class FtProfileOptions:
             limited (Optional[bool]): To provide some brief version of the output, otherwise a full verbose output is provided.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the remaining arguments for the FT.PROFILE command.
@@ -69,6 +69,3 @@ class FtProfileOptions:
             List[TEncodable]: A list of remaining arguments for the FT.PROFILE command.
         """
         ...
-    
-
-

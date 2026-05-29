@@ -7,13 +7,13 @@
 ## Directory Patterns
 
 ### [Pattern Name]
-**Location**: `/path/`  
-**Purpose**: [What belongs here]  
+**Location**: `/path/`
+**Purpose**: [What belongs here]
 **Example**: [Brief example]
 
 ### [Pattern Name]
-**Location**: `/path/`  
-**Purpose**: [What belongs here]  
+**Location**: `/path/`
+**Purpose**: [What belongs here]
 **Example**: [Brief example]
 
 ## Naming Conventions

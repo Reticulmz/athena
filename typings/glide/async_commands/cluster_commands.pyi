@@ -38,7 +38,7 @@ class ClusterCommands(CoreCommands):
             TClusterResponse[TResult]: The returning value depends on the executed command and the route.
         """
         ...
-    
+
     async def info(self, sections: Optional[List[InfoSection]] = ..., route: Optional[Route] = ...) -> TClusterResponse[bytes]:
         """
         Get information and statistics about the server.
@@ -59,7 +59,7 @@ class ClusterCommands(CoreCommands):
             the queried node and value containing the information regarding the requested sections.
         """
         ...
-    
+
     async def exec(self, batch: ClusterBatch, raise_on_error: bool, options: Optional[ClusterBatchOptions] = ...) -> Optional[List[TResult]]:
         """
         Executes a batch by processing the queued commands.
@@ -134,7 +134,7 @@ class ClusterCommands(CoreCommands):
             # Output: Non-Atomic Batch Result: [OK, OK, value1, value2]
         """
         ...
-    
+
     async def config_resetstat(self, route: Optional[Route] = ...) -> TOK:
         """
         Resets the statistics reported by the server using the INFO and LATENCY HISTOGRAM commands.
@@ -149,7 +149,7 @@ class ClusterCommands(CoreCommands):
             OK: Returns "OK" to confirm that the statistics were successfully reset.
         """
         ...
-    
+
     async def config_rewrite(self, route: Optional[Route] = ...) -> TOK:
         """
         Rewrite the configuration file with the current configuration.
@@ -168,7 +168,7 @@ class ClusterCommands(CoreCommands):
                 'OK'
         """
         ...
-    
+
     async def client_id(self, route: Optional[Route] = ...) -> TClusterResponse[int]:
         """
         Returns the current connection id.
@@ -188,7 +188,7 @@ class ClusterCommands(CoreCommands):
             the queried node and the value contains the client's id.
         """
         ...
-    
+
     async def ping(self, message: Optional[TEncodable] = ..., route: Optional[Route] = ...) -> bytes:
         """
         Ping the server.
@@ -211,7 +211,7 @@ class ClusterCommands(CoreCommands):
                 b"Hello"
         """
         ...
-    
+
     async def config_get(self, parameters: List[TEncodable], route: Optional[Route] = ...) -> TClusterResponse[Dict[bytes, bytes]]:
         """
         Get the values of configuration parameters.
@@ -240,7 +240,7 @@ class ClusterCommands(CoreCommands):
                 {b'timeout': b'1000', b"maxmemory": b"1GB"}
         """
         ...
-    
+
     async def config_set(self, parameters_map: Mapping[TEncodable, TEncodable], route: Optional[Route] = ...) -> TOK:
         """
         Set configuration parameters to the specified values.
@@ -262,7 +262,7 @@ class ClusterCommands(CoreCommands):
                 OK
         """
         ...
-    
+
     async def client_getname(self, route: Optional[Route] = ...) -> TClusterResponse[Optional[bytes]]:
         """
         Get the name of the connection to which the request is routed.
@@ -290,7 +290,7 @@ class ClusterCommands(CoreCommands):
                 {b'addr': b'Connection Name', b'addr2': b'Connection Name', b'addr3': b'Connection Name'}
         """
         ...
-    
+
     async def dbsize(self, route: Optional[Route] = ...) -> int:
         """
         Returns the number of keys in the database.
@@ -312,7 +312,7 @@ class ClusterCommands(CoreCommands):
                 10  # Indicates there are 10 keys in the cluster.
         """
         ...
-    
+
     async def echo(self, message: TEncodable, route: Optional[Route] = ...) -> TClusterResponse[bytes]:
         """
         Echoes the provided `message` back.
@@ -340,7 +340,7 @@ class ClusterCommands(CoreCommands):
                 {b'addr': b'Valkey GLIDE', b'addr2': b'Valkey GLIDE', b'addr3': b'Valkey GLIDE'}
         """
         ...
-    
+
     async def function_load(self, library_code: TEncodable, replace: bool = ..., route: Optional[Route] = ...) -> bytes:
         """
         Loads a library to Valkey.
@@ -365,7 +365,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_list(self, library_name_pattern: Optional[TEncodable] = ..., with_code: bool = ..., route: Optional[Route] = ...) -> TClusterResponse[TFunctionListResponse]:
         """
         Returns information about the functions and libraries.
@@ -400,7 +400,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_flush(self, mode: Optional[FlushMode] = ..., route: Optional[Route] = ...) -> TOK:
         """
         Deletes all function libraries.
@@ -422,7 +422,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_delete(self, library_name: TEncodable, route: Optional[Route] = ...) -> TOK:
         """
         Deletes a library and all its functions.
@@ -444,7 +444,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_kill(self, route: Optional[Route] = ...) -> TOK:
         """
         Kills a function that is currently executing.
@@ -466,7 +466,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def fcall_route(self, function: TEncodable, arguments: Optional[List[TEncodable]] = ..., route: Optional[Route] = ...) -> TClusterResponse[TResult]:
         """
         Invokes a previously loaded function.
@@ -498,7 +498,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def fcall_ro_route(self, function: TEncodable, arguments: Optional[List[TEncodable]] = ..., route: Optional[Route] = ...) -> TClusterResponse[TResult]:
         """
         Invokes a previously loaded read-only function.
@@ -522,7 +522,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def function_stats(self, route: Optional[Route] = ...) -> TClusterResponse[TFunctionStatsSingleNodeResponse]:
         """
         Returns information about the function that's currently running and information about the
@@ -561,7 +561,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def function_dump(self, route: Optional[Route] = ...) -> TClusterResponse[bytes]:
         """
         Returns the serialized payload of all loaded libraries.
@@ -586,7 +586,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_restore(self, payload: TEncodable, policy: Optional[FunctionRestorePolicy] = ..., route: Optional[Route] = ...) -> TOK:
         """
         Restores libraries from the serialized payload returned by the `function_dump` command.
@@ -615,7 +615,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def time(self, route: Optional[Route] = ...) -> TClusterResponse[List[bytes]]:
         """
         Returns the server time.
@@ -648,7 +648,7 @@ class ClusterCommands(CoreCommands):
                 }
         """
         ...
-    
+
     async def lastsave(self, route: Optional[Route] = ...) -> TClusterResponse[int]:
         """
         Returns the Unix time of the last DB save timestamp or startup timestamp if no save was made since then.
@@ -676,7 +676,7 @@ class ClusterCommands(CoreCommands):
                                                                                     # each node
         """
         ...
-    
+
     async def publish(self, message: TEncodable, channel: TEncodable, sharded: bool = ...) -> int:
         """
         Publish a message on pubsub channel.
@@ -702,7 +702,7 @@ class ClusterCommands(CoreCommands):
                 2  # Published 2 instances of "Hi to sharded channel1!" message on channel1 using sharded mode
         """
         ...
-    
+
     async def pubsub_shardchannels(self, pattern: Optional[TEncodable] = ...) -> List[bytes]:
         """
         Lists the currently active shard channels.
@@ -726,7 +726,7 @@ class ClusterCommands(CoreCommands):
                 [b'channel1', b'channel2']
         """
         ...
-    
+
     async def pubsub_shardnumsub(self, channels: Optional[List[TEncodable]] = ...) -> Mapping[bytes, int]:
         """
         Returns the number of subscribers (exclusive of clients subscribed to patterns) for the specified shard channels.
@@ -752,7 +752,7 @@ class ClusterCommands(CoreCommands):
                 {}
         """
         ...
-    
+
     async def flushall(self, flush_mode: Optional[FlushMode] = ..., route: Optional[Route] = ...) -> TOK:
         """
         Deletes all the keys of all the existing databases. This command never fails.
@@ -774,7 +774,7 @@ class ClusterCommands(CoreCommands):
                 OK  # This command never fails.
         """
         ...
-    
+
     async def flushdb(self, flush_mode: Optional[FlushMode] = ..., route: Optional[Route] = ...) -> TOK:
         """
         Deletes all the keys of the currently selected database. This command never fails.
@@ -798,7 +798,7 @@ class ClusterCommands(CoreCommands):
                 OK  # The keys of the currently selected database were deleted asynchronously on all nodes.
         """
         ...
-    
+
     async def copy(self, source: TEncodable, destination: TEncodable, replace: Optional[bool] = ..., destinationDB: Optional[int] = ...) -> bool:
         """
         Copies the value stored at the `source` to the `destination` key. If `destinationDB`
@@ -834,7 +834,7 @@ class ClusterCommands(CoreCommands):
                The destinationDB argument is available since Valkey 9.0.0
         """
         ...
-    
+
     async def lolwut(self, version: Optional[int] = ..., parameters: Optional[List[int]] = ..., route: Optional[Route] = ...) -> TClusterResponse[bytes]:
         """
         Displays a piece of generative computer art and the Valkey version.
@@ -865,7 +865,7 @@ class ClusterCommands(CoreCommands):
                 b"Redis ver. 7.2.3" # Indicates the current Valkey version
         """
         ...
-    
+
     async def random_key(self, route: Optional[Route] = ...) -> Optional[bytes]:
         """
         Returns a random existing key name.
@@ -884,7 +884,7 @@ class ClusterCommands(CoreCommands):
                 b"random_key_name"  # "random_key_name" is a random existing key name.
         """
         ...
-    
+
     async def wait(self, numreplicas: int, timeout: int, route: Optional[Route] = ...) -> int:
         """
         Blocks the current client until all the previous write commands are successfully transferred
@@ -908,7 +908,7 @@ class ClusterCommands(CoreCommands):
             # return 1 when a replica is reached or 0 if 1000ms is reached.
         """
         ...
-    
+
     async def unwatch(self, route: Optional[Route] = ...) -> TOK:
         """
         Flushes all the previously watched keys for a transaction. Executing a transaction will
@@ -928,7 +928,7 @@ class ClusterCommands(CoreCommands):
                 'OK'
         """
         ...
-    
+
     async def scan(self, cursor: ClusterScanCursor, match: Optional[TEncodable] = ..., count: Optional[int] = ..., type: Optional[ObjectType] = ..., allow_non_covered_slots: bool = ...) -> List[Union[ClusterScanCursor, List[bytes]]]:
         """
         Incrementally iterates over the keys in the cluster.
@@ -1001,7 +1001,7 @@ class ClusterCommands(CoreCommands):
             >>> print(all_keys)  # [b'key1', b'key2', b'key3']
         """
         ...
-    
+
     async def script_exists(self, sha1s: List[TEncodable], route: Optional[Route] = ...) -> TClusterResponse[List[bool]]:
         """
         Check existence of scripts in the script cache by their SHA1 digest.
@@ -1022,7 +1022,7 @@ class ClusterCommands(CoreCommands):
                 [True, False]
         """
         ...
-    
+
     async def script_flush(self, mode: Optional[FlushMode] = ..., route: Optional[Route] = ...) -> TOK:
         """
         Flush the Lua scripts cache.
@@ -1045,7 +1045,7 @@ class ClusterCommands(CoreCommands):
                 "OK"
         """
         ...
-    
+
     async def script_kill(self, route: Optional[Route] = ...) -> TOK:
         """
         Kill the currently executing Lua script, assuming no write operation was yet performed by the script.
@@ -1065,7 +1065,7 @@ class ClusterCommands(CoreCommands):
                 "OK"
         """
         ...
-    
+
     async def invoke_script(self, script: Script, keys: Optional[List[TEncodable]] = ..., args: Optional[List[TEncodable]] = ...) -> TClusterResponse[TResult]:
         """
         Invokes a Lua script with its keys and arguments.
@@ -1095,7 +1095,7 @@ class ClusterCommands(CoreCommands):
                 [b"foo", b"bar"]
         """
         ...
-    
+
     async def invoke_script_route(self, script: Script, args: Optional[List[TEncodable]] = ..., route: Optional[Route] = ...) -> TClusterResponse[TResult]:
         """
         Invokes a Lua script with its arguments and route.
@@ -1122,7 +1122,7 @@ class ClusterCommands(CoreCommands):
                 [b"bar"]
         """
         ...
-    
+
     async def ssubscribe_lazy(self, channels: Set[str]) -> None:
         """
         Subscribe to sharded channels (cluster mode only, non-blocking).
@@ -1149,7 +1149,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def ssubscribe(self, channels: Set[str], timeout_ms: int = ...) -> None:
         """
         Subscribe to sharded channels (cluster mode only, blocking).
@@ -1179,7 +1179,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def sunsubscribe_lazy(self, channels: Optional[Set[str]] = ...) -> None:
         """
         Unsubscribe from sharded channels (non-blocking).
@@ -1207,7 +1207,7 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def sunsubscribe(self, channels: Optional[Set[str]] = ..., timeout_ms: int = ...) -> None:
         """
         Unsubscribe from sharded channels (blocking).
@@ -1244,6 +1244,3 @@ class ClusterCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
-
-

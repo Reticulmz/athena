@@ -96,9 +96,9 @@
 - When extending an existing system, highlight deviations from the current stack and list new dependencies.
 
 ### System Flows
-- Add diagrams only when they clarify behavior:  
-  - **Sequence** for multi-step interactions  
-  - **Process/State** for branching rules or lifecycle  
+- Add diagrams only when they clarify behavior:
+  - **Sequence** for multi-step interactions
+  - **Process/State** for branching rules or lifecycle
   - **Data/Event** for pipelines or async patterns
 - Always use pure Mermaid. If no complex flow exists, omit the entire section.
 

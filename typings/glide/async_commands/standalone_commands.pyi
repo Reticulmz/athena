@@ -35,7 +35,7 @@ class StandaloneCommands(CoreCommands):
 
         """
         ...
-    
+
     async def info(self, sections: Optional[List[InfoSection]] = ...) -> bytes:
         """
         Get information and statistics about the server.
@@ -52,7 +52,7 @@ class StandaloneCommands(CoreCommands):
             bytes: Returns bytes containing the information for the sections requested.
         """
         ...
-    
+
     async def exec(self, batch: Batch, raise_on_error: bool, options: Optional[BatchOptions] = ...) -> Optional[List[TResult]]:
         """
         Executes a batch by processing the queued commands.
@@ -129,7 +129,7 @@ class StandaloneCommands(CoreCommands):
             # Expected Output: Pipeline Result: [OK, OK, b'value1', b'value2']
         """
         ...
-    
+
     async def config_resetstat(self) -> TOK:
         """
         Resets the statistics reported by the server using the INFO and LATENCY HISTOGRAM commands.
@@ -140,7 +140,7 @@ class StandaloneCommands(CoreCommands):
             OK: Returns "OK" to confirm that the statistics were successfully reset.
         """
         ...
-    
+
     async def config_rewrite(self) -> TOK:
         """
         Rewrite the configuration file with the current configuration.
@@ -153,7 +153,7 @@ class StandaloneCommands(CoreCommands):
             Otherwise, an error is raised.
         """
         ...
-    
+
     async def client_id(self) -> int:
         """
         Returns the current connection id.
@@ -164,7 +164,7 @@ class StandaloneCommands(CoreCommands):
             int: the id of the client.
         """
         ...
-    
+
     async def ping(self, message: Optional[TEncodable] = ...) -> bytes:
         """
         Ping the server.
@@ -187,7 +187,7 @@ class StandaloneCommands(CoreCommands):
                 b"Hello"
         """
         ...
-    
+
     async def config_get(self, parameters: List[TEncodable]) -> Dict[bytes, bytes]:
         """
         Get the values of configuration parameters.
@@ -208,7 +208,7 @@ class StandaloneCommands(CoreCommands):
                 {b'timeout': b'1000', b'maxmemory': b'1GB'}
         """
         ...
-    
+
     async def config_set(self, parameters_map: Mapping[TEncodable, TEncodable]) -> TOK:
         """
         Set configuration parameters to the specified values.
@@ -230,7 +230,7 @@ class StandaloneCommands(CoreCommands):
                 OK
         """
         ...
-    
+
     async def client_getname(self) -> Optional[bytes]:
         """
         Get the name of the primary's connection.
@@ -247,7 +247,7 @@ class StandaloneCommands(CoreCommands):
                 b'Connection Name'
         """
         ...
-    
+
     async def dbsize(self) -> int:
         """
         Returns the number of keys in the currently selected database.
@@ -262,7 +262,7 @@ class StandaloneCommands(CoreCommands):
                 10  # Indicates there are 10 keys in the current database.
         """
         ...
-    
+
     async def echo(self, message: TEncodable) -> bytes:
         """
         Echoes the provided `message` back.
@@ -280,7 +280,7 @@ class StandaloneCommands(CoreCommands):
                 b'Valkey GLIDE'
         """
         ...
-    
+
     async def function_load(self, library_code: TEncodable, replace: bool = ...) -> bytes:
         """
         Loads a library to Valkey.
@@ -303,7 +303,7 @@ class StandaloneCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_list(self, library_name_pattern: Optional[TEncodable] = ..., with_code: bool = ...) -> TFunctionListResponse:
         """
         Returns information about the functions and libraries.
@@ -335,7 +335,7 @@ class StandaloneCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_flush(self, mode: Optional[FlushMode] = ...) -> TOK:
         """
         Deletes all function libraries.
@@ -355,7 +355,7 @@ class StandaloneCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_delete(self, library_name: TEncodable) -> TOK:
         """
         Deletes a library and all its functions.
@@ -375,7 +375,7 @@ class StandaloneCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_kill(self) -> TOK:
         """
         Kills a function that is currently executing.
@@ -395,7 +395,7 @@ class StandaloneCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_stats(self) -> TFunctionStatsFullResponse:
         """
         Returns information about the function that's currently running and information about the
@@ -442,7 +442,7 @@ class StandaloneCommands(CoreCommands):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def function_dump(self) -> bytes:
         """
         Returns the serialized payload of all loaded libraries.
@@ -462,7 +462,7 @@ class StandaloneCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def function_restore(self, payload: TEncodable, policy: Optional[FunctionRestorePolicy] = ...) -> TOK:
         """
         Restores libraries from the serialized payload returned by the `function_dump` command.
@@ -488,7 +488,7 @@ class StandaloneCommands(CoreCommands):
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     async def time(self) -> List[bytes]:
         """
         Returns the server time.
@@ -505,7 +505,7 @@ class StandaloneCommands(CoreCommands):
                 [b'1710925775', b'913580']
         """
         ...
-    
+
     async def lastsave(self) -> int:
         """
         Returns the Unix time of the last DB save timestamp or startup timestamp if no save was made since then.
@@ -520,7 +520,7 @@ class StandaloneCommands(CoreCommands):
                 1710925775  # Unix time of the last DB save
         """
         ...
-    
+
     async def publish(self, message: TEncodable, channel: TEncodable) -> int:
         """
         Publish a message on pubsub channel.
@@ -541,7 +541,7 @@ class StandaloneCommands(CoreCommands):
                 1 # This message was posted to 1 subscription which is configured on primary node
         """
         ...
-    
+
     async def flushall(self, flush_mode: Optional[FlushMode] = ...) -> TOK:
         """
         Deletes all the keys of all the existing databases. This command never fails.
@@ -559,7 +559,7 @@ class StandaloneCommands(CoreCommands):
                 OK  # This command never fails.
         """
         ...
-    
+
     async def flushdb(self, flush_mode: Optional[FlushMode] = ...) -> TOK:
         """
         Deletes all the keys of the currently selected database. This command never fails.
@@ -579,7 +579,7 @@ class StandaloneCommands(CoreCommands):
                 OK  # The keys of the currently selected database were deleted asynchronously.
         """
         ...
-    
+
     async def copy(self, source: TEncodable, destination: TEncodable, destinationDB: Optional[int] = ..., replace: Optional[bool] = ...) -> bool:
         """
         Copies the value stored at the `source` to the `destination` key. If `destinationDB`
@@ -611,7 +611,7 @@ class StandaloneCommands(CoreCommands):
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     async def lolwut(self, version: Optional[int] = ..., parameters: Optional[List[int]] = ...) -> bytes:
         """
         Displays a piece of generative computer art and the Valkey version.
@@ -635,7 +635,7 @@ class StandaloneCommands(CoreCommands):
                 b"Redis ver. 7.2.3" # Indicates the current Valkey version
         """
         ...
-    
+
     async def random_key(self) -> Optional[bytes]:
         """
         Returns a random existing key name from the currently selected database.
@@ -650,7 +650,7 @@ class StandaloneCommands(CoreCommands):
                 b"random_key_name"  # "random_key_name" is a random existing key name from the currently selected database.
         """
         ...
-    
+
     async def wait(self, numreplicas: int, timeout: int) -> int:
         """
         Blocks the current client until all the previous write commands are successfully transferred
@@ -672,7 +672,7 @@ class StandaloneCommands(CoreCommands):
             # return 1 when a replica is reached or 0 if 1000ms is reached.
         """
         ...
-    
+
     async def unwatch(self) -> TOK:
         """
         Flushes all the previously watched keys for an atomic batch (Transaction). Executing a transaction will
@@ -688,7 +688,7 @@ class StandaloneCommands(CoreCommands):
                 'OK'
         """
         ...
-    
+
     async def scan(self, cursor: TEncodable, match: Optional[TEncodable] = ..., count: Optional[int] = ..., type: Optional[ObjectType] = ...) -> List[Union[bytes, List[bytes]]]:
         """
         Incrementally iterate over a collection of keys.
@@ -739,7 +739,7 @@ class StandaloneCommands(CoreCommands):
                 print(result) #[b'362', [b'set1', b'set2', b'set3']]
         """
         ...
-    
+
     async def script_exists(self, sha1s: List[TEncodable]) -> List[bool]:
         """
         Check existence of scripts in the script cache by their SHA1 digest.
@@ -757,7 +757,7 @@ class StandaloneCommands(CoreCommands):
                 [True, False]
         """
         ...
-    
+
     async def script_flush(self, mode: Optional[FlushMode] = ...) -> TOK:
         """
         Flush the Lua scripts cache.
@@ -778,7 +778,7 @@ class StandaloneCommands(CoreCommands):
                 "OK"
         """
         ...
-    
+
     async def script_kill(self) -> TOK:
         """
         Kill the currently executing Lua script, assuming no write operation was yet performed by the script.
@@ -793,7 +793,7 @@ class StandaloneCommands(CoreCommands):
                 "OK"
         """
         ...
-    
+
     async def invoke_script(self, script: Script, keys: Optional[List[TEncodable]] = ..., args: Optional[List[TEncodable]] = ...) -> TResult:
         """
         Invokes a Lua script with its keys and arguments.
@@ -819,6 +819,3 @@ class StandaloneCommands(CoreCommands):
                 [b"foo", b"bar"]
         """
         ...
-    
-
-

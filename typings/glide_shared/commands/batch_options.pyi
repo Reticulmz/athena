@@ -92,7 +92,7 @@ class BatchRetryStrategy:
 
         """
         ...
-    
+
 
 
 class BaseBatchOptions:
@@ -117,7 +117,7 @@ class BaseBatchOptions:
                 it will result in a timeout error. If not explicitly set, the client's default request timeout will be used.
         """
         ...
-    
+
 
 
 class BatchOptions(BaseBatchOptions):
@@ -141,7 +141,7 @@ class BatchOptions(BaseBatchOptions):
                 it will result in a timeout error. If not explicitly set, the client's default request timeout will be used.
         """
         ...
-    
+
 
 
 class ClusterBatchOptions(BaseBatchOptions):
@@ -240,6 +240,3 @@ class ClusterBatchOptions(BaseBatchOptions):
                 `False`.
         """
         ...
-    
-
-

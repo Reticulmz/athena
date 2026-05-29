@@ -5,5 +5,3 @@
 
 ## Requirements
 <!-- Will be generated in /kiro-spec-requirements phase -->
-
-

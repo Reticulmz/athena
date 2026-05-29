@@ -60,7 +60,7 @@ class Field(ABC):
             sortable (bool): If set, the field value can be used for sorting. Applies to TEXT, TAG, and NUMERIC fields.
         """
         ...
-    
+
     @abstractmethod
     def to_args(self) -> List[TEncodable]:
         """
@@ -70,7 +70,7 @@ class Field(ABC):
             List[TEncodable]: A list of field arguments.
         """
         ...
-    
+
 
 
 class TextField(Field):
@@ -94,10 +94,10 @@ class TextField(Field):
             sortable (bool): If set, the field value can be used for sorting.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         ...
-    
+
 
 
 class TagField(Field):
@@ -122,10 +122,10 @@ class TagField(Field):
             sortable (bool): If set, the field value can be used for sorting.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         ...
-    
+
 
 
 class NumericField(Field):
@@ -142,10 +142,10 @@ class NumericField(Field):
             sortable (bool): If set, the field value can be used for sorting.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         ...
-    
+
 
 
 class VectorFieldAttributes(ABC):
@@ -164,7 +164,7 @@ class VectorFieldAttributes(ABC):
             type (VectorType): Vector type. The only supported type is `FLOAT32`. Equivalent to `TYPE` on the module API.
         """
         ...
-    
+
     @abstractmethod
     def to_args(self) -> List[TEncodable]:
         """
@@ -174,7 +174,7 @@ class VectorFieldAttributes(ABC):
             List[TEncodable]: A list of arguments.
         """
         ...
-    
+
 
 
 class VectorFieldAttributesFlat(VectorFieldAttributes):
@@ -194,10 +194,10 @@ class VectorFieldAttributesFlat(VectorFieldAttributes):
                 Defaults to `1024`. Equivalent to `INITIAL_CAP` on the module API.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         ...
-    
+
 
 
 class VectorFieldAttributesHnsw(VectorFieldAttributes):
@@ -224,10 +224,10 @@ class VectorFieldAttributesHnsw(VectorFieldAttributes):
                 Default value is `10`, Maximum value is `4096`. Equivalent to `EF_RUNTIME` on the module API.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         ...
-    
+
 
 
 class VectorField(Field):
@@ -248,10 +248,10 @@ class VectorField(Field):
                 compatibility but has no effect on vector fields.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         ...
-    
+
 
 
 class DataType(Enum):
@@ -285,7 +285,7 @@ class FtCreateOptions:
             punctuation (Optional[TEncodable]): Custom punctuation characters to use during tokenization.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the optional arguments for the FT.CREATE command.
@@ -295,6 +295,3 @@ class FtCreateOptions:
                 List of FT.CREATE optional arguments.
         """
         ...
-    
-
-

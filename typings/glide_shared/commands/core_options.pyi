@@ -130,10 +130,10 @@ class ExpirySet:
     """
     def __init__(self, expiry_type: ExpiryType, value: Optional[Union[int, datetime, timedelta]]) -> None:
         ...
-    
+
     def __eq__(self, other: object) -> bool:
         ...
-    
+
     def set_expiry_type_and_value(self, expiry_type: ExpiryType, value: Optional[Union[int, datetime, timedelta]]) -> None:
         """
         Args:
@@ -148,10 +148,10 @@ class ExpirySet:
                     - KEEP_TTL: Type[None]
         """
         ...
-    
+
     def get_cmd_args(self) -> List[str]:
         ...
-    
+
 
 
 class ExpiryGetEx:
@@ -164,7 +164,7 @@ class ExpiryGetEx:
     """
     def __init__(self, expiry_type: ExpiryTypeGetEx, value: Optional[Union[int, datetime, timedelta]]) -> None:
         ...
-    
+
     def set_expiry_type_and_value(self, expiry_type: ExpiryTypeGetEx, value: Optional[Union[int, datetime, timedelta]]) -> None:
         """
         Args:
@@ -179,10 +179,10 @@ class ExpiryGetEx:
                     - PERSIST: Type[None]
         """
         ...
-    
+
     def get_cmd_args(self) -> List[str]:
         ...
-    
+
 
 
 class InsertPosition(Enum):
@@ -212,5 +212,3 @@ class FunctionRestorePolicy(Enum):
     APPEND = ...
     FLUSH = ...
     REPLACE = ...
-
-

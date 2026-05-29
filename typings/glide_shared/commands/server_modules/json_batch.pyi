@@ -621,4 +621,3 @@ def type(batch: TBatch, key: TEncodable, path: Optional[TEncodable] = ...) -> TB
             If `key` doesn't exist, None is returned.
     """
     ...
-

@@ -25,7 +25,7 @@ class Limit:
     """
     def __init__(self, offset: int, count: int) -> None:
         ...
-    
+
 
 
 class OrderBy(Enum):
@@ -61,5 +61,3 @@ class ObjectType(Enum):
     ZSET = ...
     HASH = ...
     STREAM = ...
-
-

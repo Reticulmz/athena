@@ -19,7 +19,7 @@ class JsonArrIndexOptions:
     """
     def __init__(self, start: int, end: Optional[int] = ...) -> None:
         ...
-    
+
     def to_args(self) -> List[str]:
         """
         Get the options as a list of arguments for the JSON.ARRINDEX command.
@@ -28,7 +28,7 @@ class JsonArrIndexOptions:
             List[str]: A list containing the start and end indices if specified.
         """
         ...
-    
+
 
 
 class JsonArrPopOptions:
@@ -42,7 +42,7 @@ class JsonArrPopOptions:
     """
     def __init__(self, path: TEncodable, index: Optional[int] = ...) -> None:
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the options as a list of arguments for the `JSON.ARRPOP` command.
@@ -51,7 +51,7 @@ class JsonArrPopOptions:
             List[TEncodable]: A list containing the path and, if specified, the index.
         """
         ...
-    
+
 
 
 class JsonGetOptions:
@@ -65,9 +65,6 @@ class JsonGetOptions:
     """
     def __init__(self, indent: Optional[str] = ..., newline: Optional[str] = ..., space: Optional[str] = ...) -> None:
         ...
-    
+
     def get_options(self) -> List[str]:
         ...
-    
-
-

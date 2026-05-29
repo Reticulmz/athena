@@ -45,13 +45,13 @@ class BaseBatch:
                 If `False`, the batch will be executed as a non-atomic pipeline.
         """
         ...
-    
+
     def append_command(self: TBatch, request_type: RequestType.ValueType, args: List[TEncodable]) -> TBatch:
         ...
-    
+
     def clear(self) -> None:
         ...
-    
+
     def get(self: TBatch, key: TEncodable) -> TBatch:
         """
         Get the value associated with the given key, or null if no such key exists.
@@ -67,7 +67,7 @@ class BaseBatch:
             Otherwise, return None.
         """
         ...
-    
+
     def getdel(self: TBatch, key: TEncodable) -> TBatch:
         """
         Gets a value associated with the given string `key` and deletes the key.
@@ -83,7 +83,7 @@ class BaseBatch:
             Otherwise, returns `None`.
         """
         ...
-    
+
     def getrange(self: TBatch, key: TEncodable, start: int, end: int) -> TBatch:
         """
         Returns the substring of the string value stored at `key`, determined by the offsets `start` and `end`
@@ -105,7 +105,7 @@ class BaseBatch:
             bytes: A substring extracted from the value stored at `key`.
         """
         ...
-    
+
     def set(self: TBatch, key: TEncodable, value: TEncodable, conditional_set: Union[ConditionalChange, None] = ..., expiry: Union[ExpirySet, None] = ..., return_old_value: bool = ...) -> TBatch:
         """
         Set the given key with the given value. Return value is dependent on the passed options.
@@ -138,7 +138,7 @@ class BaseBatch:
             ... expiry=Expiry(ExpiryType.SEC, 5))
         """
         ...
-    
+
     def strlen(self: TBatch, key: TEncodable) -> TBatch:
         """
         Get the length of the string value stored at `key`.
@@ -154,7 +154,7 @@ class BaseBatch:
             If `key` does not exist, it is treated as an empty string and 0 is returned.
         """
         ...
-    
+
     def rename(self: TBatch, key: TEncodable, new_key: TEncodable) -> TBatch:
         """
         Renames `key` to `new_key`.
@@ -175,7 +175,7 @@ class BaseBatch:
                 the command fails with an error.
         """
         ...
-    
+
     def renamenx(self: TBatch, key: TEncodable, new_key: TEncodable) -> TBatch:
         """
         Renames `key` to `new_key` if `new_key` does not yet exist.
@@ -192,7 +192,7 @@ class BaseBatch:
             False if `new_key` already exists.
         """
         ...
-    
+
     def custom_command(self: TBatch, command_args: List[TEncodable]) -> TBatch:
         """
         Executes a single command, without checking inputs.
@@ -219,7 +219,7 @@ class BaseBatch:
             >>> batch.customCommand(["CLIENT", "LIST","TYPE", "PUBSUB"])
         """
         ...
-    
+
     def append(self: TBatch, key: TEncodable, value: TEncodable) -> TBatch:
         """
         Appends a value to a key.
@@ -236,7 +236,7 @@ class BaseBatch:
             int: The length of the string after appending the value.
         """
         ...
-    
+
     def info(self: TBatch, sections: Optional[List[InfoSection]] = ...) -> TBatch:
         """
         Get information and statistics about the server.
@@ -253,7 +253,7 @@ class BaseBatch:
             bytes: Returns a bytes string containing the information for the sections requested.
         """
         ...
-    
+
     def delete(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Delete one or more keys from the database. A key is ignored if it does not exist.
@@ -267,7 +267,7 @@ class BaseBatch:
             int: The number of keys that were deleted.
         """
         ...
-    
+
     def config_get(self: TBatch, parameters: List[TEncodable]) -> TBatch:
         """
         Get the values of configuration parameters.
@@ -282,7 +282,7 @@ class BaseBatch:
             Dict[bytes, bytes]: A dictionary of values corresponding to the configuration parameters.
         """
         ...
-    
+
     def config_set(self: TBatch, parameters_map: Mapping[TEncodable, TEncodable]) -> TBatch:
         """
         Set configuration parameters to the specified values.
@@ -300,7 +300,7 @@ class BaseBatch:
             Otherwise, the command fails with an error.
         """
         ...
-    
+
     def config_resetstat(self: TBatch) -> TBatch:
         """
         Resets the statistics reported by the server using the INFO and LATENCY HISTOGRAM commands.
@@ -311,7 +311,7 @@ class BaseBatch:
             OK: a simple OK response.
         """
         ...
-    
+
     def move(self: TBatch, key: TEncodable, db_index: int) -> TBatch:
         """
         Move `key` from the currently selected database to the database specified by `db_index`.
@@ -332,7 +332,7 @@ class BaseBatch:
             or does not exist in the source database.
         """
         ...
-    
+
     def mset(self: TBatch, key_value_map: Mapping[TEncodable, TEncodable]) -> TBatch:
         """
         Set multiple keys to multiple values in a single atomic operation.
@@ -358,7 +358,7 @@ class BaseBatch:
 
         """
         ...
-    
+
     def msetnx(self: TBatch, key_value_map: Mapping[TEncodable, TEncodable]) -> TBatch:
         """
         Sets multiple keys to values if the key does not exist. The operation is atomic, and if one or
@@ -376,7 +376,7 @@ class BaseBatch:
             False if no key was set.
         """
         ...
-    
+
     def mget(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Retrieve the values of multiple keys.
@@ -403,7 +403,7 @@ class BaseBatch:
 
         """
         ...
-    
+
     def touch(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Updates the last access time of specified keys.
@@ -417,7 +417,7 @@ class BaseBatch:
             int: The number of keys that were updated, a key is ignored if it doesn't exist.
         """
         ...
-    
+
     def config_rewrite(self: TBatch) -> TBatch:
         """
         Rewrite the configuration file with the current configuration.
@@ -429,7 +429,7 @@ class BaseBatch:
             Otherwise, the command fails with an error.
         """
         ...
-    
+
     def client_id(self: TBatch) -> TBatch:
         """
         Returns the current connection id.
@@ -440,7 +440,7 @@ class BaseBatch:
             int: the id of the client.
         """
         ...
-    
+
     def incr(self: TBatch, key: TEncodable) -> TBatch:
         """
         Increments the number stored at `key` by one.
@@ -456,7 +456,7 @@ class BaseBatch:
             int: the value of `key` after the increment.
         """
         ...
-    
+
     def incrby(self: TBatch, key: TEncodable, amount: int) -> TBatch:
         """
         Increments the number stored at `key` by `amount`. If the key does not exist, it is set to 0 before performing
@@ -472,7 +472,7 @@ class BaseBatch:
             int: The value of `key` after the increment.
         """
         ...
-    
+
     def incrbyfloat(self: TBatch, key: TEncodable, amount: float) -> TBatch:
         """
         Increment the string representing a floating point number stored at `key` by `amount`.
@@ -489,7 +489,7 @@ class BaseBatch:
             float: The value of key after the increment.
         """
         ...
-    
+
     def ping(self: TBatch, message: Optional[TEncodable] = ...) -> TBatch:
         """
         Ping the server.
@@ -504,7 +504,7 @@ class BaseBatch:
            bytes: b"PONG" if `message` is not provided, otherwise return a copy of `message`.
         """
         ...
-    
+
     def decr(self: TBatch, key: TEncodable) -> TBatch:
         """
         Decrements the number stored at `key` by one. If the key does not exist, it is set to 0 before performing the
@@ -519,7 +519,7 @@ class BaseBatch:
             int: the value of `key` after the decrement.
         """
         ...
-    
+
     def decrby(self: TBatch, key: TEncodable, amount: int) -> TBatch:
         """
         Decrements the number stored at `key` by `amount`. If the key does not exist, it is set to 0 before performing
@@ -535,7 +535,7 @@ class BaseBatch:
             int: The value of `key` after the decrement.
         """
         ...
-    
+
     def setrange(self: TBatch, key: TEncodable, offset: int, value: TEncodable) -> TBatch:
         """
         Overwrites part of the string stored at `key`, starting at the specified
@@ -555,7 +555,7 @@ class BaseBatch:
             int: The length of the value stored at `key` after it was modified.
         """
         ...
-    
+
     def hset(self: TBatch, key: TEncodable, field_value_map: Mapping[TEncodable, TEncodable]) -> TBatch:
         """
         Sets the specified fields to their respective values in the hash stored at `key`.
@@ -571,7 +571,7 @@ class BaseBatch:
             int: The number of fields that were added to the hash.
         """
         ...
-    
+
     def hget(self: TBatch, key: TEncodable, field: TEncodable) -> TBatch:
         """
         Retrieves the value associated with `field` in the hash stored at `key`.
@@ -588,7 +588,7 @@ class BaseBatch:
             Returns None if `field` is not presented in the hash or `key` does not exist.
         """
         ...
-    
+
     def hsetnx(self: TBatch, key: TEncodable, field: TEncodable, value: TEncodable) -> TBatch:
         """
         Sets `field` in the hash stored at `key` to `value`, only if `field` does not yet exist.
@@ -608,7 +608,7 @@ class BaseBatch:
             False if the field already existed and was not set.
         """
         ...
-    
+
     def hincrby(self: TBatch, key: TEncodable, field: TEncodable, amount: int) -> TBatch:
         """
         Increment or decrement the value of a `field` in the hash stored at `key` by the specified amount.
@@ -627,7 +627,7 @@ class BaseBatch:
             int: The value of the specified field in the hash stored at `key` after the increment or decrement.
         """
         ...
-    
+
     def hincrbyfloat(self: TBatch, key: TEncodable, field: TEncodable, amount: float) -> TBatch:
         """
         Increment or decrement the floating-point value stored at `field` in the hash stored at `key` by the specified
@@ -647,7 +647,7 @@ class BaseBatch:
             float: The value of the specified field in the hash stored at `key` after the increment as a string.
         """
         ...
-    
+
     def hexists(self: TBatch, key: TEncodable, field: TEncodable) -> TBatch:
         """
         Check if a field exists in the hash stored at `key`.
@@ -664,7 +664,7 @@ class BaseBatch:
             Returns `False` if the key does not exist.
         """
         ...
-    
+
     def hlen(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the number of fields contained in the hash stored at `key`.
@@ -680,7 +680,7 @@ class BaseBatch:
             If `key` holds a value that is not a hash, the command fails with an error.
         """
         ...
-    
+
     def client_getname(self: TBatch) -> TBatch:
         """
         Get the name of the connection on which the batch is being executed.
@@ -692,7 +692,7 @@ class BaseBatch:
             Returns `None` if no name is assigned.
         """
         ...
-    
+
     def hgetall(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns all fields and values of the hash stored at `key`.
@@ -709,7 +709,7 @@ class BaseBatch:
             If `key` does not exist, it returns an empty dictionary.
         """
         ...
-    
+
     def hmget(self: TBatch, key: TEncodable, fields: List[TEncodable]) -> TBatch:
         """
         Retrieve the values associated with specified fields in the hash stored at `key`.
@@ -727,7 +727,7 @@ class BaseBatch:
             If `key` does not exist, it is treated as an empty hash, and the function returns a list of null values.
         """
         ...
-    
+
     def hdel(self: TBatch, key: TEncodable, fields: List[TEncodable]) -> TBatch:
         """
         Remove specified fields from the hash stored at `key`.
@@ -744,7 +744,7 @@ class BaseBatch:
             If `key` does not exist, it is treated as an empty hash, and the function returns 0.
         """
         ...
-    
+
     def hvals(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns all values in the hash stored at `key`.
@@ -760,7 +760,7 @@ class BaseBatch:
             An empty list when the key does not exist.
         """
         ...
-    
+
     def hkeys(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns all field names in the hash stored at `key`.
@@ -776,7 +776,7 @@ class BaseBatch:
             An empty list when the key does not exist.
         """
         ...
-    
+
     def hrandfield(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns a random field name from the hash value stored at `key`.
@@ -792,7 +792,7 @@ class BaseBatch:
             If the hash does not exist or is empty, None will be returned.
         """
         ...
-    
+
     def hrandfield_count(self: TBatch, key: TEncodable, count: int) -> TBatch:
         """
         Retrieves up to `count` random field names from the hash value stored at `key`.
@@ -812,7 +812,7 @@ class BaseBatch:
             If the hash does not exist or is empty, the response will be an empty list.
         """
         ...
-    
+
     def hrandfield_withvalues(self: TBatch, key: TEncodable, count: int) -> TBatch:
         """
         Retrieves up to `count` random field names along with their values from the hash value stored at `key`.
@@ -833,7 +833,7 @@ class BaseBatch:
             If the hash does not exist or is empty, the response will be an empty list.
         """
         ...
-    
+
     def hstrlen(self: TBatch, key: TEncodable, field: TEncodable) -> TBatch:
         """
         Returns the string length of the value associated with `field` in the hash stored at `key`.
@@ -850,7 +850,7 @@ class BaseBatch:
             Returns `0` if `field` or `key` does not exist.
         """
         ...
-    
+
     def httl(self: TBatch, key: TEncodable, fields: List[TEncodable]) -> TBatch:
         """
         Returns the remaining time to live (in seconds) of hash key's field(s) that have an associated expiration.
@@ -870,7 +870,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hpttl(self: TBatch, key: TEncodable, fields: List[TEncodable]) -> TBatch:
         """
         Returns the remaining time to live (in milliseconds) of hash key's field(s) that have an associated expiration.
@@ -890,7 +890,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hexpiretime(self: TBatch, key: TEncodable, fields: List[TEncodable]) -> TBatch:
         """
         Returns the expiration Unix timestamp (in seconds) of hash key's field(s) that have an associated expiration.
@@ -910,7 +910,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hpexpiretime(self: TBatch, key: TEncodable, fields: List[TEncodable]) -> TBatch:
         """
         Returns the expiration Unix timestamp (in milliseconds) of hash key's field(s) that have an associated expiration.
@@ -933,7 +933,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hsetex(self: TBatch, key: TEncodable, field_value_map: Mapping[TEncodable, TEncodable], field_conditional_change: Optional[HashFieldConditionalChange] = ..., expiry: Optional[ExpirySet] = ...) -> TBatch:
         """
         Sets the specified fields to their respective values in the hash stored at `key` with optional expiration.
@@ -960,7 +960,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hgetex(self: TBatch, key: TEncodable, fields: List[TEncodable], expiry: Optional[ExpiryGetEx] = ...) -> TBatch:
         """
         Retrieves the values of specified fields in the hash stored at `key` and optionally sets their expiration.
@@ -985,7 +985,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hexpire(self: TBatch, key: TEncodable, seconds: int, fields: List[TEncodable], option: Optional[ExpireOptions] = ...) -> TBatch:
         """
         Sets expiration time in seconds for one or more hash fields.
@@ -1012,7 +1012,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hpersist(self: TBatch, key: TEncodable, fields: List[TEncodable]) -> TBatch:
         """
         Removes the expiration from one or more hash fields, making them persistent.
@@ -1032,7 +1032,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hpexpire(self: TBatch, key: TEncodable, milliseconds: int, fields: List[TEncodable], option: Optional[ExpireOptions] = ...) -> TBatch:
         """
         Sets expiration time in milliseconds for one or more hash fields.
@@ -1059,7 +1059,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hexpireat(self: TBatch, key: TEncodable, unix_timestamp: int, fields: List[TEncodable], option: Optional[ExpireOptions] = ...) -> TBatch:
         """
         Sets expiration time at absolute Unix timestamp in seconds for one or more hash fields.
@@ -1086,7 +1086,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def hpexpireat(self: TBatch, key: TEncodable, unix_timestamp_ms: int, fields: List[TEncodable], option: Optional[ExpireOptions] = ...) -> TBatch:
         """
         Sets expiration time at absolute Unix timestamp in milliseconds for one or more hash fields.
@@ -1113,7 +1113,7 @@ class BaseBatch:
         Since: Valkey 9.0.0
         """
         ...
-    
+
     def lpush(self: TBatch, key: TEncodable, elements: List[TEncodable]) -> TBatch:
         """
         Insert all the specified values at the head of the list stored at `key`.
@@ -1130,7 +1130,7 @@ class BaseBatch:
             int: The length of the list after the push operations.
         """
         ...
-    
+
     def lpushx(self: TBatch, key: TEncodable, elements: List[TEncodable]) -> TBatch:
         """
         Inserts all the specified values at the head of the list stored at `key`, only if `key` exists and holds a list.
@@ -1146,7 +1146,7 @@ class BaseBatch:
             int: The length of the list after the push operation.
         """
         ...
-    
+
     def lpop(self: TBatch, key: TEncodable) -> TBatch:
         """
         Remove and return the first elements of the list stored at `key`.
@@ -1163,7 +1163,7 @@ class BaseBatch:
             If `key` does not exist, None will be returned.
         """
         ...
-    
+
     def lpop_count(self: TBatch, key: TEncodable, count: int) -> TBatch:
         """
         Remove and return up to `count` elements from the list stored at `key`, depending on the list's length.
@@ -1180,7 +1180,7 @@ class BaseBatch:
             If `key` does not exist, None will be returned.
         """
         ...
-    
+
     def blpop(self: TBatch, keys: List[TEncodable], timeout: float) -> TBatch:
         """
         Pops an element from the head of the first list that is non-empty, with the given keys being checked in the
@@ -1205,7 +1205,7 @@ class BaseBatch:
             If no element could be popped and the `timeout` expired, returns None.
         """
         ...
-    
+
     def lmpop(self: TBatch, keys: List[TEncodable], direction: ListDirection, count: Optional[int] = ...) -> TBatch:
         """
         Pops one or more elements from the first non-empty list from the provided `keys`.
@@ -1227,7 +1227,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def blmpop(self: TBatch, keys: List[TEncodable], direction: ListDirection, timeout: float, count: Optional[int] = ...) -> TBatch:
         """
         Blocks the connection until it pops one or more elements from the first non-empty list from the provided `keys`.
@@ -1253,7 +1253,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def lrange(self: TBatch, key: TEncodable, start: int, end: int) -> TBatch:
         """
         Retrieve the specified elements of the list stored at `key` within the given range.
@@ -1278,7 +1278,7 @@ class BaseBatch:
             If `key` does not exist an empty list will be returned.
         """
         ...
-    
+
     def lindex(self: TBatch, key: TEncodable, index: int) -> TBatch:
         """
         Returns the element at `index` in the list stored at `key`.
@@ -1299,7 +1299,7 @@ class BaseBatch:
             If `index` is out of range or if `key` does not exist, None is returned.
         """
         ...
-    
+
     def lset(self: TBatch, key: TEncodable, index: int, element: TEncodable) -> TBatch:
         """
         Sets the list element at `index` to `element`.
@@ -1319,7 +1319,7 @@ class BaseBatch:
             TOK: A simple `OK` response.
         """
         ...
-    
+
     def rpush(self: TBatch, key: TEncodable, elements: List[TEncodable]) -> TBatch:
         """
         Inserts all the specified values at the tail of the list stored at `key`.
@@ -1337,7 +1337,7 @@ class BaseBatch:
                 If `key` holds a value that is not a list, the batch fails.
         """
         ...
-    
+
     def rpushx(self: TBatch, key: TEncodable, elements: List[TEncodable]) -> TBatch:
         """
         Inserts all the specified values at the tail of the list stored at `key`, only if `key` exists and holds a list.
@@ -1353,7 +1353,7 @@ class BaseBatch:
             int: The length of the list after the push operation.
         """
         ...
-    
+
     def rpop(self: TBatch, key: TEncodable, count: Optional[int] = ...) -> TBatch:
         """
         Removes and returns the last elements of the list stored at `key`.
@@ -1370,7 +1370,7 @@ class BaseBatch:
             If `key` does not exist, None will be returned.
         """
         ...
-    
+
     def rpop_count(self: TBatch, key: TEncodable, count: int) -> TBatch:
         """
         Removes and returns up to `count` elements from the list stored at `key`, depending on the list's length.
@@ -1387,7 +1387,7 @@ class BaseBatch:
             If `key` does not exist, None will be returned.
         """
         ...
-    
+
     def brpop(self: TBatch, keys: List[TEncodable], timeout: float) -> TBatch:
         """
         Pops an element from the tail of the first list that is non-empty, with the given keys being checked in the
@@ -1412,7 +1412,7 @@ class BaseBatch:
             If no element could be popped and the `timeout` expired, returns None.
         """
         ...
-    
+
     def linsert(self: TBatch, key: TEncodable, position: InsertPosition, pivot: TEncodable, element: TEncodable) -> TBatch:
         """
         Inserts `element` in the list at `key` either before or after the `pivot`.
@@ -1434,7 +1434,7 @@ class BaseBatch:
             If the `pivot` wasn't found, returns `0`.
         """
         ...
-    
+
     def lmove(self: TBatch, source: TEncodable, destination: TEncodable, where_from: ListDirection, where_to: ListDirection) -> TBatch:
         """
         Atomically pops and removes the left/right-most element to the list stored at `source`
@@ -1459,7 +1459,7 @@ class BaseBatch:
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     def blmove(self: TBatch, source: TEncodable, destination: TEncodable, where_from: ListDirection, where_to: ListDirection, timeout: float) -> TBatch:
         """
         Blocks the connection until it pops atomically and removes the left/right-most element to the
@@ -1487,7 +1487,7 @@ class BaseBatch:
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     def sadd(self: TBatch, key: TEncodable, members: List[TEncodable]) -> TBatch:
         """
         Add specified members to the set stored at `key`.
@@ -1504,7 +1504,7 @@ class BaseBatch:
             int: The number of members that were added to the set, excluding members already present.
         """
         ...
-    
+
     def srem(self: TBatch, key: TEncodable, members: List[TEncodable]) -> TBatch:
         """
         Remove specified members from the set stored at `key`.
@@ -1522,7 +1522,7 @@ class BaseBatch:
             If `key` does not exist, it is treated as an empty set and this command returns 0.
         """
         ...
-    
+
     def smembers(self: TBatch, key: TEncodable) -> TBatch:
         """
         Retrieve all the members of the set value stored at `key`.
@@ -1538,7 +1538,7 @@ class BaseBatch:
             If `key` does not exist an empty list will be returned.
         """
         ...
-    
+
     def scard(self: TBatch, key: TEncodable) -> TBatch:
         """
         Retrieve the set cardinality (number of elements) of the set stored at `key`.
@@ -1554,7 +1554,7 @@ class BaseBatch:
             Returns `0` if the key does not exist.
         """
         ...
-    
+
     def spop(self: TBatch, key: TEncodable) -> TBatch:
         """
         Removes and returns one random member from the set stored at `key`.
@@ -1571,7 +1571,7 @@ class BaseBatch:
             If `key` does not exist, None will be returned.
         """
         ...
-    
+
     def spop_count(self: TBatch, key: TEncodable, count: int) -> TBatch:
         """
         Removes and returns up to `count` random members from the set stored at `key`, depending on the set's length.
@@ -1590,7 +1590,7 @@ class BaseBatch:
             If `key` does not exist, an empty set will be returned.
         """
         ...
-    
+
     def sismember(self: TBatch, key: TEncodable, member: TEncodable) -> TBatch:
         """
         Returns if `member` is a member of the set stored at `key`.
@@ -1607,7 +1607,7 @@ class BaseBatch:
             If `key` doesn't exist, it is treated as an empty set and the command returns False.
         """
         ...
-    
+
     def smove(self: TBatch, source: TEncodable, destination: TEncodable, member: TEncodable) -> TBatch:
         """
         Moves `member` from the set at `source` to the set at `destination`, removing it from the source set. Creates a
@@ -1626,7 +1626,7 @@ class BaseBatch:
             False if the `source` set does not exist or the element is not a member of the source set.
         """
         ...
-    
+
     def sunion(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Gets the union of all the given sets.
@@ -1642,7 +1642,7 @@ class BaseBatch:
             If none of the sets exist, an empty set will be returned.
         """
         ...
-    
+
     def sunionstore(self: TBatch, destination: TEncodable, keys: List[TEncodable]) -> TBatch:
         """
         Stores the members of the union of all given sets specified by `keys` into a new set at `destination`.
@@ -1657,7 +1657,7 @@ class BaseBatch:
             int: The number of elements in the resulting set.
         """
         ...
-    
+
     def sinter(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Gets the intersection of all the given sets.
@@ -1673,7 +1673,7 @@ class BaseBatch:
             If one or more sets do not exist, an empty set will be returned.
         """
         ...
-    
+
     def sinterstore(self: TBatch, destination: TEncodable, keys: List[TEncodable]) -> TBatch:
         """
         Stores the members of the intersection of all given sets specified by `keys` into a new set at `destination`.
@@ -1688,7 +1688,7 @@ class BaseBatch:
             int: The number of elements in the resulting set.
         """
         ...
-    
+
     def sintercard(self: TBatch, keys: List[TEncodable], limit: Optional[int] = ...) -> TBatch:
         """
         Gets the cardinality of the intersection of all the given sets.
@@ -1706,7 +1706,7 @@ class BaseBatch:
             int: The number of elements in the resulting set of the intersection.
         """
         ...
-    
+
     def sdiff(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Computes the difference between the first set and all the successive sets in `keys`.
@@ -1722,7 +1722,7 @@ class BaseBatch:
             If any of the keys in `keys` do not exist, they are treated as empty sets.
         """
         ...
-    
+
     def sdiffstore(self: TBatch, destination: TEncodable, keys: List[TEncodable]) -> TBatch:
         """
         Stores the difference between the first set and all the successive sets in `keys` into a new set at
@@ -1738,7 +1738,7 @@ class BaseBatch:
             int: The number of elements in the resulting set.
         """
         ...
-    
+
     def smismember(self: TBatch, key: TEncodable, members: List[TEncodable]) -> TBatch:
         """
         Checks whether each member is contained in the members of the set stored at `key`.
@@ -1753,7 +1753,7 @@ class BaseBatch:
             List[bool]: A list of bool values, each indicating if the respective member exists in the set.
         """
         ...
-    
+
     def ltrim(self: TBatch, key: TEncodable, start: int, end: int) -> TBatch:
         """
         Trim an existing list so that it will contain only the specified range of elements specified.
@@ -1780,7 +1780,7 @@ class BaseBatch:
             If `key` does not exist, the response will be "OK" without changes to the database.
         """
         ...
-    
+
     def lrem(self: TBatch, key: TEncodable, count: int, element: TEncodable) -> TBatch:
         """
         Removes the first `count` occurrences of elements equal to `element` from the list stored at `key`.
@@ -1804,7 +1804,7 @@ class BaseBatch:
             If `key` does not exist, 0 is returned.
         """
         ...
-    
+
     def llen(self: TBatch, key: TEncodable) -> TBatch:
         """
         Get the length of the list stored at `key`.
@@ -1820,7 +1820,7 @@ class BaseBatch:
             If `key` does not exist, it is interpreted as an empty list and 0 is returned.
         """
         ...
-    
+
     def exists(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Returns the number of keys in `keys` that exist in the database.
@@ -1835,7 +1835,7 @@ class BaseBatch:
             it will be counted multiple times.
         """
         ...
-    
+
     def unlink(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Unlink (delete) multiple keys from the database.
@@ -1852,7 +1852,7 @@ class BaseBatch:
             int: The number of keys that were unlinked.
         """
         ...
-    
+
     def expire(self: TBatch, key: TEncodable, seconds: int, option: Optional[ExpireOptions] = ...) -> TBatch:
         """
         Sets a timeout on `key` in seconds. After the timeout has expired, the key will automatically be deleted.
@@ -1874,7 +1874,7 @@ class BaseBatch:
             operation is skipped due to the provided arguments).
         """
         ...
-    
+
     def expireat(self: TBatch, key: TEncodable, unix_seconds: int, option: Optional[ExpireOptions] = ...) -> TBatch:
         """
         Sets a timeout on `key` using an absolute Unix timestamp (seconds since January 1, 1970) instead of specifying the
@@ -1898,7 +1898,7 @@ class BaseBatch:
             is skipped due to the provided arguments).
         """
         ...
-    
+
     def pexpire(self: TBatch, key: TEncodable, milliseconds: int, option: Optional[ExpireOptions] = ...) -> TBatch:
         """
         Sets a timeout on `key` in milliseconds. After the timeout has expired, the key will automatically be deleted.
@@ -1920,7 +1920,7 @@ class BaseBatch:
             is skipped due to the provided arguments).
         """
         ...
-    
+
     def pexpireat(self: TBatch, key: TEncodable, unix_milliseconds: int, option: Optional[ExpireOptions] = ...) -> TBatch:
         """
         Sets a timeout on `key` using an absolute Unix timestamp in milliseconds (milliseconds since January 1, 1970) instead
@@ -1944,7 +1944,7 @@ class BaseBatch:
             is skipped due to the provided arguments).
         """
         ...
-    
+
     def expiretime(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the absolute Unix timestamp (since January 1, 1970) at which
@@ -1966,7 +1966,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def pexpiretime(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the absolute Unix timestamp (since January 1, 1970) at which
@@ -1987,7 +1987,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def ttl(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the remaining time to live of `key` that has a timeout.
@@ -2005,7 +2005,7 @@ class BaseBatch:
             -1 if `key` exists but has no associated expire.
         """
         ...
-    
+
     def pttl(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the remaining time to live of `key` that has a timeout, in milliseconds.
@@ -2023,7 +2023,7 @@ class BaseBatch:
             -1 if `key` exists but has no associated expire.
         """
         ...
-    
+
     def persist(self: TBatch, key: TEncodable) -> TBatch:
         """
         Remove the existing timeout on `key`, turning the key from volatile (a key with an expire set) to
@@ -2040,7 +2040,7 @@ class BaseBatch:
             True if the timeout has been removed.
         """
         ...
-    
+
     def echo(self: TBatch, message: TEncodable) -> TBatch:
         """
         Echoes the provided `message` back.
@@ -2054,7 +2054,7 @@ class BaseBatch:
             bytes: The provided `message`.
         """
         ...
-    
+
     def lastsave(self: TBatch) -> TBatch:
         """
         Returns the Unix time of the last DB save timestamp or startup timestamp if no save was made since then.
@@ -2065,7 +2065,7 @@ class BaseBatch:
             int: The Unix time of the last successful DB save.
         """
         ...
-    
+
     def type(self: TBatch, key: TEncodable) -> TBatch:
         """
          Returns the string representation of the type of the value stored at `key`.
@@ -2081,7 +2081,7 @@ class BaseBatch:
             Otherwise, a "none" string is returned.
         """
         ...
-    
+
     def function_load(self: TBatch, library_code: TEncodable, replace: bool = ...) -> TBatch:
         """
         Loads a library to Valkey.
@@ -2099,7 +2099,7 @@ class BaseBatch:
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     def function_list(self: TBatch, library_name_pattern: Optional[TEncodable] = ..., with_code: bool = ...) -> TBatch:
         """
         Returns information about the functions and libraries.
@@ -2116,7 +2116,7 @@ class BaseBatch:
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     def function_flush(self: TBatch, mode: Optional[FlushMode] = ...) -> TBatch:
         """
         Deletes all function libraries.
@@ -2132,7 +2132,7 @@ class BaseBatch:
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     def function_delete(self: TBatch, library_name: TEncodable) -> TBatch:
         """
         Deletes a library and all its functions.
@@ -2148,7 +2148,7 @@ class BaseBatch:
         Since: Valkey 7.0.0.
         """
         ...
-    
+
     def fcall(self: TBatch, function: TEncodable, keys: Optional[List[TEncodable]] = ..., arguments: Optional[List[TEncodable]] = ...) -> TBatch:
         """
         Invokes a previously loaded function.
@@ -2169,7 +2169,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def fcall_ro(self: TBatch, function: TEncodable, keys: Optional[List[TEncodable]] = ..., arguments: Optional[List[TEncodable]] = ...) -> TBatch:
         """
         Invokes a previously loaded read-only function.
@@ -2190,7 +2190,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def function_stats(self: TBatch) -> TBatch:
         """
         Returns information about the function that's currently running and information about the
@@ -2207,7 +2207,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def function_dump(self: TBatch) -> TBatch:
         """
         Returns the serialized payload of all loaded libraries.
@@ -2220,7 +2220,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def function_restore(self: TBatch, payload: TEncodable, policy: Optional[FunctionRestorePolicy] = ...) -> TBatch:
         """
         Restores libraries from the serialized payload returned by the `function_dump` command.
@@ -2237,7 +2237,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def dump(self: TBatch, key: TEncodable) -> TBatch:
         """
         Serialize the value stored at `key` in a Valkey-specific format and return it to the user.
@@ -2253,7 +2253,7 @@ class BaseBatch:
             If `key` does not exist, `None` will be returned.
         """
         ...
-    
+
     def restore(self: TBatch, key: TEncodable, ttl: int, value: TEncodable, replace: bool = ..., absttl: bool = ..., idletime: Optional[int] = ..., frequency: Optional[int] = ...) -> TBatch:
         """
         Create a `key` associated with a `value` that is obtained by deserializing the provided
@@ -2278,7 +2278,7 @@ class BaseBatch:
             TOK: A simple "OK" response.
         """
         ...
-    
+
     def xadd(self: TBatch, key: TEncodable, values: List[Tuple[TEncodable, TEncodable]], options: StreamAddOptions = ...) -> TBatch:
         """
         Adds an entry to the specified stream stored at `key`. If the `key` doesn't exist, the stream is created.
@@ -2297,7 +2297,7 @@ class BaseBatch:
             None if `options.make_stream` is set to False and no stream with the matching `key` exists.
         """
         ...
-    
+
     def xdel(self: TBatch, key: TEncodable, ids: List[TEncodable]) -> TBatch:
         """
         Removes the specified entries by id from a stream, and returns the number of entries deleted.
@@ -2313,7 +2313,7 @@ class BaseBatch:
             `ids`, if the specified `ids` don't exist in the stream.
         """
         ...
-    
+
     def xtrim(self: TBatch, key: TEncodable, options: StreamTrimOptions) -> TBatch:
         """
         Trims the stream stored at `key` by evicting older entries.
@@ -2330,7 +2330,7 @@ class BaseBatch:
             If `key` doesn't exist, 0 is returned.
         """
         ...
-    
+
     def xlen(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the number of entries in the stream stored at `key`.
@@ -2346,7 +2346,7 @@ class BaseBatch:
             If `key` does not exist, returns 0.
         """
         ...
-    
+
     def xrange(self: TBatch, key: TEncodable, start: StreamRangeBound, end: StreamRangeBound, count: Optional[int] = ...) -> TBatch:
         """
         Returns stream entries matching a given range of IDs.
@@ -2377,7 +2377,7 @@ class BaseBatch:
             Returns None if the range arguments are not applicable. Or if count is non-positive.
         """
         ...
-    
+
     def xrevrange(self: TBatch, key: TEncodable, end: StreamRangeBound, start: StreamRangeBound, count: Optional[int] = ...) -> TBatch:
         """
         Returns stream entries matching a given range of IDs in reverse order. Equivalent to `XRANGE` but returns the
@@ -2409,7 +2409,7 @@ class BaseBatch:
             Returns None if the range arguments are not applicable. Or if count is non-positive.
         """
         ...
-    
+
     def xread(self: TBatch, keys_and_ids: Mapping[TEncodable, TEncodable], options: Optional[StreamReadOptions] = ...) -> TBatch:
         """
         Reads entries from the given streams.
@@ -2431,7 +2431,7 @@ class BaseBatch:
                 - The `BLOCK` option is specified and the timeout is hit.
         """
         ...
-    
+
     def xgroup_create(self: TBatch, key: TEncodable, group_name: TEncodable, group_id: TEncodable, options: Optional[StreamGroupOptions] = ...) -> TBatch:
         """
         Creates a new consumer group uniquely identified by `group_name` for the stream stored at `key`.
@@ -2449,7 +2449,7 @@ class BaseBatch:
             TOK: A simple "OK" response.
         """
         ...
-    
+
     def xgroup_destroy(self: TBatch, key: TEncodable, group_name: TEncodable) -> TBatch:
         """
         Destroys the consumer group `group_name` for the stream stored at `key`.
@@ -2466,7 +2466,7 @@ class BaseBatch:
             Otherwise, returns False.
         """
         ...
-    
+
     def xgroup_create_consumer(self: TBatch, key: TEncodable, group_name: TEncodable, consumer_name: TEncodable) -> TBatch:
         """
         Creates a consumer named `consumer_name` in the consumer group `group_name` for the stream stored at `key`.
@@ -2484,7 +2484,7 @@ class BaseBatch:
             Otherwise, returns False.
         """
         ...
-    
+
     def xgroup_del_consumer(self: TBatch, key: TEncodable, group_name: TEncodable, consumer_name: TEncodable) -> TBatch:
         """
         Deletes a consumer named `consumer_name` in the consumer group `group_name` for the stream stored at `key`.
@@ -2500,7 +2500,7 @@ class BaseBatch:
             int: The number of pending messages the `consumer` had before it was deleted.
         """
         ...
-    
+
     def xgroup_set_id(self: TBatch, key: TEncodable, group_name: TEncodable, stream_id: TEncodable, entries_read_id: Optional[str] = ...) -> TBatch:
         """
         Set the last delivered ID for a consumer group.
@@ -2519,7 +2519,7 @@ class BaseBatch:
             TOK: A simple "OK" response.
         """
         ...
-    
+
     def xreadgroup(self: TBatch, keys_and_ids: Mapping[TEncodable, TEncodable], group_name: TEncodable, consumer_name: TEncodable, options: Optional[StreamReadGroupOptions] = ...) -> TBatch:
         """
         Reads entries from the given streams owned by a consumer group.
@@ -2540,7 +2540,7 @@ class BaseBatch:
             Returns None if the BLOCK option is given and a timeout occurs, or if there is no stream that can be served.
         """
         ...
-    
+
     def xack(self: TBatch, key: TEncodable, group_name: TEncodable, ids: List[TEncodable]) -> TBatch:
         """
         Removes one or multiple messages from the Pending Entries List (PEL) of a stream consumer group.
@@ -2558,7 +2558,7 @@ class BaseBatch:
             int: The number of messages that were successfully acknowledged.
         """
         ...
-    
+
     def xpending(self: TBatch, key: TEncodable, group_name: TEncodable) -> TBatch:
         """
         Returns stream message summary information for pending messages for the given consumer group.
@@ -2582,7 +2582,7 @@ class BaseBatch:
             If there are no pending messages for the given consumer group, `[0, None, None, None]` will be returned.
         """
         ...
-    
+
     def xpending_range(self: TBatch, key: TEncodable, group_name: TEncodable, start: StreamRangeBound, end: StreamRangeBound, count: int, options: Optional[StreamPendingOptions] = ...) -> TBatch:
         """
         Returns an extended form of stream message information for pending messages matching a given range of IDs.
@@ -2619,7 +2619,7 @@ class BaseBatch:
                 - `num_delivered`: The number of times this message was delivered.
         """
         ...
-    
+
     def xautoclaim(self: TBatch, key: TEncodable, group_name: TEncodable, consumer_name: TEncodable, min_idle_time_ms: int, start: TEncodable, count: Optional[int] = ...) -> TBatch:
         """
         Transfers ownership of pending stream entries that match the specified criteria.
@@ -2650,7 +2650,7 @@ class BaseBatch:
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     def xautoclaim_just_id(self: TBatch, key: TEncodable, group_name: TEncodable, consumer_name: TEncodable, min_idle_time_ms: int, start: TEncodable, count: Optional[int] = ...) -> TBatch:
         """
         Transfers ownership of pending stream entries that match the specified criteria. This command uses the JUSTID
@@ -2682,7 +2682,7 @@ class BaseBatch:
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     def xinfo_groups(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the list of all consumer groups and their attributes for the stream stored at `key`.
@@ -2697,7 +2697,7 @@ class BaseBatch:
             attributes of a consumer group for the stream at `key`.
         """
         ...
-    
+
     def xinfo_consumers(self: TBatch, key: TEncodable, group_name: TEncodable) -> TBatch:
         """
         Returns the list of all consumers and their attributes for the given consumer group of the stream stored at
@@ -2714,7 +2714,7 @@ class BaseBatch:
             consumer for the given consumer group of the stream at `key`.
         """
         ...
-    
+
     def xinfo_stream(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns information about the stream stored at `key`. To get more detailed information, use `xinfo_stream_full`.
@@ -2728,7 +2728,7 @@ class BaseBatch:
             TXInfoStreamResponse: A mapping of stream information for the given `key`.
         """
         ...
-    
+
     def xinfo_stream_full(self: TBatch, key: TEncodable, count: Optional[int] = ...) -> TBatch:
         """
         Returns verbose information about the stream stored at `key`.
@@ -2744,7 +2744,7 @@ class BaseBatch:
             TXInfoStreamFullResponse: A mapping of detailed stream information for the given `key`.
         """
         ...
-    
+
     def geoadd(self: TBatch, key: TEncodable, members_geospatialdata: Mapping[TEncodable, GeospatialData], existing_options: Optional[ConditionalChange] = ..., changed: bool = ...) -> TBatch:
         """
         Adds geospatial members with their positions to the specified sorted set stored at `key`.
@@ -2771,7 +2771,7 @@ class BaseBatch:
             If `changed` is set, returns the number of elements updated in the sorted set.
         """
         ...
-    
+
     def geodist(self: TBatch, key: TEncodable, member1: TEncodable, member2: TEncodable, unit: Optional[GeoUnit] = ...) -> TBatch:
         """
         Returns the distance between two members in the geospatial index stored at `key`.
@@ -2791,7 +2791,7 @@ class BaseBatch:
             If one or both members do not exist, or if the key does not exist, returns None.
         """
         ...
-    
+
     def geohash(self: TBatch, key: TEncodable, members: List[TEncodable]) -> TBatch:
         """
         Returns the GeoHash bytes strings representing the positions of all the specified members in the sorted set stored at
@@ -2810,7 +2810,7 @@ class BaseBatch:
             If a member does not exist in the sorted set, a None value is returned for that member.
         """
         ...
-    
+
     def geopos(self: TBatch, key: TEncodable, members: List[TEncodable]) -> TBatch:
         """
         Returns the positions (longitude and latitude) of all the given members of a geospatial index in the sorted set stored
@@ -2828,7 +2828,7 @@ class BaseBatch:
             If a member does not exist, its position will be None.
         """
         ...
-    
+
     def geosearch(self: TBatch, key: TEncodable, search_from: Union[TEncodable, GeospatialData], search_by: Union[GeoSearchByRadius, GeoSearchByBox], order_by: Optional[OrderBy] = ..., count: Optional[GeoSearchCount] = ..., with_coord: bool = ..., with_dist: bool = ..., with_hash: bool = ...) -> TBatch:
         """
         Searches for members in a sorted set stored at `key` representing geospatial data within a circular or
@@ -2872,7 +2872,7 @@ class BaseBatch:
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     def geosearchstore(self: TBatch, destination: TEncodable, source: TEncodable, search_from: Union[TEncodable, GeospatialData], search_by: Union[GeoSearchByRadius, GeoSearchByBox], count: Optional[GeoSearchCount] = ..., store_dist: bool = ...) -> TBatch:
         """
         Searches for members in a sorted set stored at `key` representing geospatial data within a circular or rectangular
@@ -2905,7 +2905,7 @@ class BaseBatch:
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     def zadd(self: TBatch, key: TEncodable, members_scores: Mapping[TEncodable, float], existing_options: Optional[ConditionalChange] = ..., update_condition: Optional[UpdateOptions] = ..., changed: bool = ...) -> TBatch:
         """
         Adds members with their scores to the sorted set stored at `key`.
@@ -2935,7 +2935,7 @@ class BaseBatch:
             If `changed` is set, returns the number of elements updated in the sorted set.
         """
         ...
-    
+
     def zadd_incr(self: TBatch, key: TEncodable, member: TEncodable, increment: float, existing_options: Optional[ConditionalChange] = ..., update_condition: Optional[UpdateOptions] = ...) -> TBatch:
         """
         Increments the score of member in the sorted set stored at `key` by `increment`.
@@ -2965,7 +2965,7 @@ class BaseBatch:
             If there was a conflict with choosing the XX/NX/LT/GT options, the operation aborts and `None` is returned.
         """
         ...
-    
+
     def zcard(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the cardinality (number of elements) of the sorted set stored at `key`.
@@ -2981,7 +2981,7 @@ class BaseBatch:
             If `key` does not exist, it is treated as an empty sorted set, and the command returns 0.
         """
         ...
-    
+
     def zcount(self: TBatch, key: TEncodable, min_score: Union[InfBound, ScoreBoundary], max_score: Union[InfBound, ScoreBoundary]) -> TBatch:
         """
         Returns the number of members in the sorted set stored at `key` with scores between `min_score` and `max_score`.
@@ -3005,7 +3005,7 @@ class BaseBatch:
             If `max_score` < `min_score`, 0 is returned.
         """
         ...
-    
+
     def zincrby(self: TBatch, key: TEncodable, increment: float, member: TEncodable) -> TBatch:
         """
         Increments the score of `member` in the sorted set stored at `key` by `increment`.
@@ -3023,7 +3023,7 @@ class BaseBatch:
             float: The new score of `member`.
         """
         ...
-    
+
     def zpopmax(self: TBatch, key: TEncodable, count: Optional[int] = ...) -> TBatch:
         """
         Removes and returns the members with the highest scores from the sorted set stored at `key`.
@@ -3045,7 +3045,7 @@ class BaseBatch:
             If `key` doesn't exist, it will be treated as an emtpy sorted set and the command returns an empty map.
         """
         ...
-    
+
     def bzpopmax(self: TBatch, keys: List[TEncodable], timeout: float) -> TBatch:
         """
         Pops the member with the highest score from the first non-empty sorted set, with the given keys being checked in
@@ -3073,7 +3073,7 @@ class BaseBatch:
             If no member could be popped and the `timeout` expired, returns None.
         """
         ...
-    
+
     def zpopmin(self: TBatch, key: TEncodable, count: Optional[int] = ...) -> TBatch:
         """
         Removes and returns the members with the lowest scores from the sorted set stored at `key`.
@@ -3094,7 +3094,7 @@ class BaseBatch:
             If `key` doesn't exist, it will be treated as an empty sorted set and the command returns an empty map.
         """
         ...
-    
+
     def bzpopmin(self: TBatch, keys: List[TEncodable], timeout: float) -> TBatch:
         """
         Pops the member with the lowest score from the first non-empty sorted set, with the given keys being checked in
@@ -3122,7 +3122,7 @@ class BaseBatch:
             If no member could be popped and the `timeout` expired, returns None.
         """
         ...
-    
+
     def zrange(self: TBatch, key: TEncodable, range_query: Union[RangeByIndex, RangeByLex, RangeByScore], reverse: bool = ...) -> TBatch:
         """
         Returns the specified range of elements in the sorted set stored at `key`.
@@ -3148,7 +3148,7 @@ class BaseBatch:
             If `key` does not exist, it is treated as an empty sorted set, and the command returns an empty array.
         """
         ...
-    
+
     def zrange_withscores(self: TBatch, key: TEncodable, range_query: Union[RangeByIndex, RangeByScore], reverse: bool = ...) -> TBatch:
         """
         Returns the specified range of elements with their scores in the sorted set stored at `key`.
@@ -3172,7 +3172,7 @@ class BaseBatch:
             If `key` does not exist, it is treated as an empty sorted set, and the command returns an empty map.
         """
         ...
-    
+
     def zrangestore(self: TBatch, destination: TEncodable, source: TEncodable, range_query: Union[RangeByIndex, RangeByLex, RangeByScore], reverse: bool = ...) -> TBatch:
         """
         Stores a specified range of elements from the sorted set at `source`, into a new sorted set at `destination`. If
@@ -3199,7 +3199,7 @@ class BaseBatch:
             int: The number of elements in the resulting sorted set.
         """
         ...
-    
+
     def zrank(self: TBatch, key: TEncodable, member: TEncodable) -> TBatch:
         """
         Returns the rank of `member` in the sorted set stored at `key`, with scores ordered from low to high.
@@ -3218,7 +3218,7 @@ class BaseBatch:
             If `key` doesn't exist, or if `member` is not present in the set, None will be returned.
         """
         ...
-    
+
     def zrank_withscore(self: TBatch, key: TEncodable, member: TEncodable) -> TBatch:
         """
         Returns the rank of `member` in the sorted set stored at `key` with its score, where scores are ordered from the
@@ -3238,7 +3238,7 @@ class BaseBatch:
         Since: Valkey version 7.2.0.
         """
         ...
-    
+
     def zrevrank(self: TBatch, key: TEncodable, member: TEncodable) -> TBatch:
         """
         Returns the rank of `member` in the sorted set stored at `key`, where scores are ordered from the highest to
@@ -3258,7 +3258,7 @@ class BaseBatch:
             If `key` doesn't exist, or if `member` is not present in the set, `None` will be returned.
         """
         ...
-    
+
     def zrevrank_withscore(self: TBatch, key: TEncodable, member: TEncodable) -> TBatch:
         """
         Returns the rank of `member` in the sorted set stored at `key` with its score, where scores are ordered from the
@@ -3279,7 +3279,7 @@ class BaseBatch:
         Since: Valkey version 7.2.0.
         """
         ...
-    
+
     def zrem(self: TBatch, key: TEncodable, members: List[TEncodable]) -> TBatch:
         """
         Removes the specified members from the sorted set stored at `key`.
@@ -3297,7 +3297,7 @@ class BaseBatch:
             If `key` does not exist, it is treated as an empty sorted set, and the command returns 0.
         """
         ...
-    
+
     def zremrangebyscore(self: TBatch, key: TEncodable, min_score: Union[InfBound, ScoreBoundary], max_score: Union[InfBound, ScoreBoundary]) -> TBatch:
         """
         Removes all elements in the sorted set stored at `key` with a score between `min_score` and `max_score`.
@@ -3321,7 +3321,7 @@ class BaseBatch:
             If `min_score` is greater than `max_score`, 0 is returned.
         """
         ...
-    
+
     def zremrangebylex(self: TBatch, key: TEncodable, min_lex: Union[InfBound, LexBoundary], max_lex: Union[InfBound, LexBoundary]) -> TBatch:
         """
         Removes all elements in the sorted set stored at `key` with a lexicographical order between `min_lex` and
@@ -3346,7 +3346,7 @@ class BaseBatch:
             If `min_lex` is greater than `max_lex`, `0` is returned.
         """
         ...
-    
+
     def zremrangebyrank(self: TBatch, key: TEncodable, start: int, end: int) -> TBatch:
         """
         Removes all elements in the sorted set stored at `key` with rank between `start` and `end`.
@@ -3370,7 +3370,7 @@ class BaseBatch:
             If `key` does not exist, `0` is returned.
         """
         ...
-    
+
     def zlexcount(self: TBatch, key: TEncodable, min_lex: Union[InfBound, LexBoundary], max_lex: Union[InfBound, LexBoundary]) -> TBatch:
         """
         Returns the number of members in the sorted set stored at `key` with lexographical values between
@@ -3395,7 +3395,7 @@ class BaseBatch:
             If `max_lex < min_lex`, `0` is returned.
         """
         ...
-    
+
     def zscore(self: TBatch, key: TEncodable, member: TEncodable) -> TBatch:
         """
         Returns the score of `member` in the sorted set stored at `key`.
@@ -3414,7 +3414,7 @@ class BaseBatch:
             If `key` does not exist,  None is returned.
         """
         ...
-    
+
     def zmscore(self: TBatch, key: TEncodable, members: List[TEncodable]) -> TBatch:
         """
         Returns the scores associated with the specified `members` in the sorted set stored at `key`.
@@ -3431,7 +3431,7 @@ class BaseBatch:
             If a member does not exist in the sorted set, the corresponding value in the list will be None.
         """
         ...
-    
+
     def zdiff(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Returns the difference between the first sorted set and all the successive sorted sets.
@@ -3449,7 +3449,7 @@ class BaseBatch:
             empty list.
         """
         ...
-    
+
     def zdiff_withscores(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Returns the difference between the first sorted set and all the successive sorted sets, with the associated scores.
@@ -3466,7 +3466,7 @@ class BaseBatch:
             empty list.
         """
         ...
-    
+
     def zdiffstore(self: TBatch, destination: TEncodable, keys: List[TEncodable]) -> TBatch:
         """
         Calculates the difference between the first sorted set and all the successive sorted sets at `keys` and stores
@@ -3483,7 +3483,7 @@ class BaseBatch:
             int: The number of members in the resulting sorted set stored at `destination`.
         """
         ...
-    
+
     def zinter(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Computes the intersection of sorted sets given by the specified `keys` and returns a list of intersecting elements.
@@ -3497,7 +3497,7 @@ class BaseBatch:
             List[bytes]: The resulting array of intersecting elements.
         """
         ...
-    
+
     def zinter_withscores(self: TBatch, keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]], aggregation_type: Optional[AggregationType] = ...) -> TBatch:
         """
         Computes the intersection of sorted sets given by the specified `keys` and returns a sorted set of
@@ -3518,7 +3518,7 @@ class BaseBatch:
             Mapping[bytes, float]: The resulting sorted set with scores.
         """
         ...
-    
+
     def zinterstore(self: TBatch, destination: TEncodable, keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]], aggregation_type: Optional[AggregationType] = ...) -> TBatch:
         """
         Computes the intersection of sorted sets given by the specified `keys` and stores the result in `destination`.
@@ -3543,7 +3543,7 @@ class BaseBatch:
             int: The number of elements in the resulting sorted set stored at `destination`.
         """
         ...
-    
+
     def zunion(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Computes the union of sorted sets given by the specified `keys` and returns a list of union elements.
@@ -3557,7 +3557,7 @@ class BaseBatch:
             List[bytes]: The resulting array of union elements.
         """
         ...
-    
+
     def zunion_withscores(self: TBatch, keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]], aggregation_type: Optional[AggregationType] = ...) -> TBatch:
         """
         Computes the union of sorted sets given by the specified `keys` and returns a sorted set of union elements with scores.
@@ -3577,7 +3577,7 @@ class BaseBatch:
             Mapping[bytes, float]: The resulting sorted set with scores.
         """
         ...
-    
+
     def zunionstore(self: TBatch, destination: TEncodable, keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]], aggregation_type: Optional[Optional[AggregationType]] = ...) -> TBatch:
         """
         Computes the union of sorted sets given by the specified `keys` and stores the result in `destination`.
@@ -3602,7 +3602,7 @@ class BaseBatch:
             int: The number of elements in the resulting sorted set stored at `destination`.
         """
         ...
-    
+
     def zrandmember(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns a random member from the sorted set stored at 'key'.
@@ -3618,7 +3618,7 @@ class BaseBatch:
             If the sorted set does not exist or is empty, the response will be None.
         """
         ...
-    
+
     def zrandmember_count(self: TBatch, key: TEncodable, count: int) -> TBatch:
         """
         Retrieves up to the absolute value of `count` random members from the sorted set stored at 'key'.
@@ -3638,7 +3638,7 @@ class BaseBatch:
             If the sorted set does not exist or is empty, the response will be an empty list.
         """
         ...
-    
+
     def zrandmember_withscores(self: TBatch, key: TEncodable, count: int) -> TBatch:
         """
         Retrieves up to the absolute value of `count` random members along with their scores from the sorted set
@@ -3660,7 +3660,7 @@ class BaseBatch:
             If the sorted set does not exist or is empty, the response will be an empty list.
         """
         ...
-    
+
     def zmpop(self: TBatch, keys: List[TEncodable], filter: ScoreFilter, count: Optional[int] = ...) -> TBatch:
         """
         Pops a member-score pair from the first non-empty sorted set, with the given keys being checked in the order
@@ -3684,7 +3684,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def bzmpop(self: TBatch, keys: List[TEncodable], modifier: ScoreFilter, timeout: float, count: Optional[int] = ...) -> TBatch:
         """
         Pops a member-score pair from the first non-empty sorted set, with the given keys being checked in the order
@@ -3720,7 +3720,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def zintercard(self: TBatch, keys: List[TEncodable], limit: Optional[int] = ...) -> TBatch:
         """
         Returns the cardinality of the intersection of the sorted sets specified by `keys`. When provided with the
@@ -3740,7 +3740,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def dbsize(self: TBatch) -> TBatch:
         """
         Returns the number of keys in the currently selected database.
@@ -3751,7 +3751,7 @@ class BaseBatch:
             int: The number of keys in the database.
         """
         ...
-    
+
     def pfadd(self: TBatch, key: TEncodable, elements: List[TEncodable]) -> TBatch:
         """
         Adds all elements to the HyperLogLog data structure stored at the specified `key`.
@@ -3771,7 +3771,7 @@ class BaseBatch:
             Otherwise, returns `False`.
         """
         ...
-    
+
     def pfcount(self: TBatch, keys: List[TEncodable]) -> TBatch:
         """
         Estimates the cardinality of the data stored in a HyperLogLog structure for a single key or
@@ -3787,7 +3787,7 @@ class BaseBatch:
             The cardinality of a key that does not exist is 0.
         """
         ...
-    
+
     def pfmerge(self: TBatch, destination: TEncodable, source_keys: List[TEncodable]) -> TBatch:
         """
         Merges multiple HyperLogLog values into a unique value. If the destination variable exists, it is treated as one
@@ -3803,7 +3803,7 @@ class BaseBatch:
             OK: A simple OK response.
         """
         ...
-    
+
     def bitcount(self: TBatch, key: TEncodable, options: Optional[OffsetOptions] = ...) -> TBatch:
         """
         Counts the number of set bits (population counting) in a string stored at `key`. The `options` argument can
@@ -3823,7 +3823,7 @@ class BaseBatch:
             Otherwise, if `key` is missing, returns `0` as it is treated as an empty string.
         """
         ...
-    
+
     def setbit(self: TBatch, key: TEncodable, offset: int, value: int) -> TBatch:
         """
         Sets or clears the bit at `offset` in the string value stored at `key`. The `offset` is a zero-based index,
@@ -3842,7 +3842,7 @@ class BaseBatch:
             int: The bit value that was previously stored at `offset`.
         """
         ...
-    
+
     def getbit(self: TBatch, key: TEncodable, offset: int) -> TBatch:
         """
         Returns the bit value at `offset` in the string value stored at `key`.
@@ -3860,7 +3860,7 @@ class BaseBatch:
             Returns `0` if the key is empty or if the `offset` exceeds the length of the string.
         """
         ...
-    
+
     def bitpos(self: TBatch, key: TEncodable, bit: int, options: Optional[OffsetOptions] = ...) -> TBatch:
         """
         Returns the position of the first bit matching the given `bit` value. The optional starting offset
@@ -3881,7 +3881,7 @@ class BaseBatch:
             If `start` was provided, the search begins at the offset indicated by `start`.
         """
         ...
-    
+
     def bitop(self: TBatch, operation: BitwiseOperation, destination: TEncodable, keys: List[TEncodable]) -> TBatch:
         """
         Perform a bitwise operation between multiple keys (containing string values) and store the result in the
@@ -3898,7 +3898,7 @@ class BaseBatch:
             int: The size of the string stored in `destination`.
         """
         ...
-    
+
     def bitfield(self: TBatch, key: TEncodable, subcommands: List[BitFieldSubCommands]) -> TBatch:
         """
         Reads or modifies the array of bits representing the string that is held at `key` based on the specified
@@ -3927,7 +3927,7 @@ class BaseBatch:
                   response.
         """
         ...
-    
+
     def bitfield_read_only(self: TBatch, key: TEncodable, subcommands: List[BitFieldGet]) -> TBatch:
         """
         Reads the array of bits representing the string that is held at `key` based on the specified `subcommands`.
@@ -3944,7 +3944,7 @@ class BaseBatch:
         Since: Valkey version 6.0.0.
         """
         ...
-    
+
     def object_encoding(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the internal encoding for the Valkey object stored at `key`.
@@ -3961,7 +3961,7 @@ class BaseBatch:
             Otherwise, returns None.
         """
         ...
-    
+
     def object_freq(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the logarithmic access frequency counter of a Valkey object stored at `key`.
@@ -3978,7 +3978,7 @@ class BaseBatch:
             Otherwise, returns None.
         """
         ...
-    
+
     def object_idletime(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the time in seconds since the last access to the value stored at `key`.
@@ -3994,7 +3994,7 @@ class BaseBatch:
             Otherwise, returns None.
         """
         ...
-    
+
     def object_refcount(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns the reference count of the object stored at `key`.
@@ -4010,7 +4010,7 @@ class BaseBatch:
             Otherwise, returns None.
         """
         ...
-    
+
     def srandmember(self: TBatch, key: TEncodable) -> TBatch:
         """
         Returns a random element from the set value stored at 'key'.
@@ -4026,7 +4026,7 @@ class BaseBatch:
             `None` if 'key' does not exist.
         """
         ...
-    
+
     def srandmember_count(self: TBatch, key: TEncodable, count: int) -> TBatch:
         """
         Returns one or more random elements from the set value stored at 'key'.
@@ -4046,7 +4046,7 @@ class BaseBatch:
             If the set does not exist or is empty, the response will be an empty list.
         """
         ...
-    
+
     def flushall(self: TBatch, flush_mode: Optional[FlushMode] = ...) -> TBatch:
         """
         Deletes all the keys of all the existing databases. This command never fails.
@@ -4060,7 +4060,7 @@ class BaseBatch:
             TOK: OK.
         """
         ...
-    
+
     def flushdb(self: TBatch, flush_mode: Optional[FlushMode] = ...) -> TBatch:
         """
         Deletes all the keys of the currently selected database. This command never fails.
@@ -4074,7 +4074,7 @@ class BaseBatch:
             TOK: OK.
         """
         ...
-    
+
     def getex(self: TBatch, key: TEncodable, expiry: Optional[ExpiryGetEx] = ...) -> TBatch:
         """
         Get the value of `key` and optionally set its expiration. GETEX is similar to GET.
@@ -4094,7 +4094,7 @@ class BaseBatch:
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     def lolwut(self: TBatch, version: Optional[int] = ..., parameters: Optional[List[int]] = ...) -> TBatch:
         """
         Displays a piece of generative computer art and the Valkey version.
@@ -4112,7 +4112,7 @@ class BaseBatch:
             bytes: A piece of generative computer art along with the current Valkey version.
         """
         ...
-    
+
     def random_key(self: TBatch) -> TBatch:
         """
         Returns a random existing key name.
@@ -4123,7 +4123,7 @@ class BaseBatch:
             Optional[bytes]: A random existing key name.
         """
         ...
-    
+
     def sscan(self: TBatch, key: TEncodable, cursor: TEncodable, match: Optional[TEncodable] = ..., count: Optional[int] = ...) -> TBatch:
         """
         Iterates incrementally over a set.
@@ -4150,7 +4150,7 @@ class BaseBatch:
             set held in `key`.
         """
         ...
-    
+
     def zscan(self: TBatch, key: TEncodable, cursor: TEncodable, match: Optional[TEncodable] = ..., count: Optional[int] = ..., no_scores: bool = ...) -> TBatch:
         """
         Iterates incrementally over a sorted set.
@@ -4181,7 +4181,7 @@ class BaseBatch:
             If `no_scores` is set to`True`, the second element will only contain the members without scores.
         """
         ...
-    
+
     def hscan(self: TBatch, key: TEncodable, cursor: TEncodable, match: Optional[TEncodable] = ..., count: Optional[int] = ..., no_values: bool = ...) -> TBatch:
         """
         Iterates incrementally over a hash.
@@ -4212,7 +4212,7 @@ class BaseBatch:
             If `no_values` is set to `True`, the second element will only contain the fields without the values.
         """
         ...
-    
+
     def lcs(self: TBatch, key1: TEncodable, key2: TEncodable) -> TBatch:
         """
         Returns the longest common subsequence between strings stored at key1 and key2.
@@ -4238,7 +4238,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def lcs_len(self: TBatch, key1: TEncodable, key2: TEncodable) -> TBatch:
         """
         Returns the length of the longest common subsequence between strings stored at key1 and key2.
@@ -4262,7 +4262,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def lcs_idx(self: TBatch, key1: TEncodable, key2: TEncodable, min_match_len: Optional[int] = ..., with_match_len: Optional[bool] = ...) -> TBatch:
         """
         Returns the indices and length of the longest common subsequence between strings stored at key1 and key2.
@@ -4295,7 +4295,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def wait(self: TBatch, numreplicas: int, timeout: int) -> TBatch:
         """
         Returns the number of replicas that acknowledged the write commands sent by the current client
@@ -4312,7 +4312,7 @@ class BaseBatch:
             bytes: The number of replicas reached by all the writes performed in the context of the current connection.
         """
         ...
-    
+
     def lpos(self: TBatch, key: TEncodable, element: TEncodable, rank: Optional[int] = ..., count: Optional[int] = ..., max_len: Optional[int] = ...) -> TBatch:
         """
         Returns the index or indexes of element(s) matching `element` in the `key` list. If no match is found,
@@ -4338,7 +4338,7 @@ class BaseBatch:
         Since: Valkey version 6.0.6.
         """
         ...
-    
+
     def xclaim(self: TBatch, key: TEncodable, group: TEncodable, consumer: TEncodable, min_idle_time_ms: int, ids: List[TEncodable], options: Optional[StreamClaimOptions] = ...) -> TBatch:
         """
         Changes the ownership of a pending message.
@@ -4361,7 +4361,7 @@ class BaseBatch:
             that are claimed by the consumer.
         """
         ...
-    
+
     def xclaim_just_id(self: TBatch, key: TEncodable, group: TEncodable, consumer: TEncodable, min_idle_time_ms: int, ids: List[TEncodable], options: Optional[StreamClaimOptions] = ...) -> TBatch:
         """
         Changes the ownership of a pending message. This function returns a List with
@@ -4381,7 +4381,7 @@ class BaseBatch:
             A List of message ids claimed by the consumer.
         """
         ...
-    
+
     def pubsub_channels(self: TBatch, pattern: Optional[TEncodable] = ...) -> TBatch:
         """
         Lists the currently active channels.
@@ -4398,7 +4398,7 @@ class BaseBatch:
             If no pattern is specified, all active channels are returned.
         """
         ...
-    
+
     def pubsub_numpat(self: TBatch) -> TBatch:
         """
         Returns the number of unique patterns that are subscribed to by clients.
@@ -4413,7 +4413,7 @@ class BaseBatch:
             int: The number of unique patterns.
         """
         ...
-    
+
     def pubsub_numsub(self: TBatch, channels: Optional[List[TEncodable]] = ...) -> TBatch:
         """
         Returns the number of subscribers (exclusive of clients subscribed to patterns) for the specified channels.
@@ -4431,7 +4431,7 @@ class BaseBatch:
             Mapping[bytes, int]: A map where keys are the channel names and values are the number of subscribers.
         """
         ...
-    
+
     def sort(self: TBatch, key: TEncodable, by_pattern: Optional[TEncodable] = ..., limit: Optional[Limit] = ..., get_patterns: Optional[List[TEncodable]] = ..., order: Optional[OrderBy] = ..., alpha: Optional[bool] = ...) -> TBatch:
         """
         Sorts the elements in the list, set, or sorted set at `key` and returns the result.
@@ -4482,7 +4482,7 @@ class BaseBatch:
             List[Optional[bytes]]: Returns a list of sorted elements.
         """
         ...
-    
+
     def sort_ro(self: TBatch, key: TEncodable, by_pattern: Optional[TEncodable] = ..., limit: Optional[Limit] = ..., get_patterns: Optional[List[TEncodable]] = ..., order: Optional[OrderBy] = ..., alpha: Optional[bool] = ...) -> TBatch:
         """
         Sorts the elements in the list, set, or sorted set at `key` and returns the result.
@@ -4535,7 +4535,7 @@ class BaseBatch:
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     def sort_store(self: TBatch, key: TEncodable, destination: TEncodable, by_pattern: Optional[TEncodable] = ..., limit: Optional[Limit] = ..., get_patterns: Optional[List[TEncodable]] = ..., order: Optional[OrderBy] = ..., alpha: Optional[bool] = ...) -> TBatch:
         """
         Sorts the elements in the list, set, or sorted set at `key` and stores the result in `store`.
@@ -4587,7 +4587,7 @@ class BaseBatch:
             int: The number of elements in the sorted key stored at `store`.
         """
         ...
-    
+
 
 
 class Batch(BaseBatch):
@@ -4644,7 +4644,7 @@ class Batch(BaseBatch):
             A simple OK response.
         """
         ...
-    
+
     def copy(self, source: TEncodable, destination: TEncodable, destinationDB: Optional[int] = ..., replace: Optional[bool] = ...) -> Batch:
         """
         Copies the value stored at the `source` to the `destination` key. If `destinationDB`
@@ -4668,7 +4668,7 @@ class Batch(BaseBatch):
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     def publish(self, message: TEncodable, channel: TEncodable) -> Batch:
         """
         Publish a message on pubsub channel.
@@ -4684,7 +4684,7 @@ class Batch(BaseBatch):
 
         """
         ...
-    
+
 
 
 class ClusterBatch(BaseBatch):
@@ -4745,7 +4745,7 @@ class ClusterBatch(BaseBatch):
         Since: Valkey version 9.0.0.
         """
         ...
-    
+
     def publish(self, message: str, channel: str, sharded: bool = ...) -> ClusterBatch:
         """
         Publish a message on pubsub channel.
@@ -4764,7 +4764,7 @@ class ClusterBatch(BaseBatch):
             int: Number of subscriptions in that shard that received the message.
         """
         ...
-    
+
     def pubsub_shardchannels(self, pattern: Optional[TEncodable] = ...) -> ClusterBatch:
         """
         Lists the currently active shard channels.
@@ -4781,7 +4781,7 @@ class ClusterBatch(BaseBatch):
             If no pattern is specified, all active shard channels are returned.
         """
         ...
-    
+
     def pubsub_shardnumsub(self, channels: Optional[List[TEncodable]] = ...) -> ClusterBatch:
         """
         Returns the number of subscribers (exclusive of clients subscribed to patterns) for the specified shard channels.
@@ -4799,20 +4799,17 @@ class ClusterBatch(BaseBatch):
             Mapping[bytes, int]: A map where keys are the shard channel names and values are the number of subscribers.
         """
         ...
-    
+
 
 
 @deprecated("Use Batch(is_atomic=True) instead.")
 class Transaction(Batch):
     def __init__(self) -> None:
         ...
-    
+
 
 
 @deprecated("Use ClusterBatch(is_atomic=True) instead.")
 class ClusterTransaction(ClusterBatch):
     def __init__(self) -> None:
         ...
-    
-
-

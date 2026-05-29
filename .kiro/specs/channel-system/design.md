@@ -141,7 +141,7 @@ graph TB
     end
 
     subgraph Worker Process
-        W[ARQ Worker]
+        W[taskiq Worker]
     end
 
     LP --> PD
@@ -219,7 +219,7 @@ src/osu_server/
 │   │   └── chat.py                  # NEW: ChatListeners (persistence + cleanup)
 │   └── protocol/s2c/
 │       └── chat.py                  # NEW: send_message, channel_join_success, channel_revoked
-├── worker.py                        # NEW: ARQ WorkerSettings + message persistence jobs
+├── worker.py                        # NEW: taskiq worker + message persistence jobs
 └── config.py                        # MODIFIED: Rate Limit / message settings
 
 alembic/versions/

@@ -1,4 +1,4 @@
-strict_ports: true
+#strict_ports: true
 
 inputs:
   nixpkgs:

@@ -11,10 +11,10 @@ class GlideError(Exception):
     """
     def __init__(self, message: Optional[str] = ...) -> None:
         ...
-    
+
     def name(self) -> str:
         ...
-    
+
 
 
 class ClosingError(GlideError):
@@ -69,4 +69,3 @@ class LoggerError(GlideError):
 
 def get_request_error_class(error_type: Optional[RequestErrorType.ValueType]) -> Type[RequestError]:
     ...
-

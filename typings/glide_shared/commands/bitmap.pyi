@@ -34,10 +34,10 @@ class OffsetOptions:
     """
     def __init__(self, start: int, end: Optional[int] = ..., index_type: Optional[BitmapIndexType] = ...) -> None:
         ...
-    
+
     def to_args(self) -> List[str]:
         ...
-    
+
 
 
 class BitwiseOperation(Enum):
@@ -63,7 +63,7 @@ class BitEncoding(ABC):
         commands.
         """
         ...
-    
+
 
 
 class SignedEncoding(BitEncoding):
@@ -76,10 +76,10 @@ class SignedEncoding(BitEncoding):
     SIGNED_ENCODING_PREFIX = ...
     def __init__(self, encoding_length: int) -> None:
         ...
-    
+
     def to_arg(self) -> str:
         ...
-    
+
 
 
 class UnsignedEncoding(BitEncoding):
@@ -92,10 +92,10 @@ class UnsignedEncoding(BitEncoding):
     UNSIGNED_ENCODING_PREFIX = ...
     def __init__(self, encoding_length: int) -> None:
         ...
-    
+
     def to_arg(self) -> str:
         ...
-    
+
 
 
 class BitFieldOffset(ABC):
@@ -107,7 +107,7 @@ class BitFieldOffset(ABC):
         commands.
         """
         ...
-    
+
 
 
 class BitOffset(BitFieldOffset):
@@ -123,10 +123,10 @@ class BitOffset(BitFieldOffset):
     """
     def __init__(self, offset: int) -> None:
         ...
-    
+
     def to_arg(self) -> str:
         ...
-    
+
 
 
 class BitOffsetMultiplier(BitFieldOffset):
@@ -145,10 +145,10 @@ class BitOffsetMultiplier(BitFieldOffset):
     OFFSET_MULTIPLIER_PREFIX = ...
     def __init__(self, offset: int) -> None:
         ...
-    
+
     def to_arg(self) -> str:
         ...
-    
+
 
 
 class BitFieldSubCommands(ABC):
@@ -159,7 +159,7 @@ class BitFieldSubCommands(ABC):
         Returns the subcommand as a list of string arguments to be used in the `BITFIELD` or `BITFIELD_RO` commands.
         """
         ...
-    
+
 
 
 class BitFieldGet(BitFieldSubCommands):
@@ -173,10 +173,10 @@ class BitFieldGet(BitFieldSubCommands):
     GET_COMMAND_STRING = ...
     def __init__(self, encoding: BitEncoding, offset: BitFieldOffset) -> None:
         ...
-    
+
     def to_args(self) -> List[str]:
         ...
-    
+
 
 
 class BitFieldSet(BitFieldSubCommands):
@@ -191,10 +191,10 @@ class BitFieldSet(BitFieldSubCommands):
     SET_COMMAND_STRING = ...
     def __init__(self, encoding: BitEncoding, offset: BitFieldOffset, value: int) -> None:
         ...
-    
+
     def to_args(self) -> List[str]:
         ...
-    
+
 
 
 class BitFieldIncrBy(BitFieldSubCommands):
@@ -210,10 +210,10 @@ class BitFieldIncrBy(BitFieldSubCommands):
     INCRBY_COMMAND_STRING = ...
     def __init__(self, encoding: BitEncoding, offset: BitFieldOffset, increment: int) -> None:
         ...
-    
+
     def to_args(self) -> List[str]:
         ...
-    
+
 
 
 class BitOverflowControl(Enum):
@@ -236,9 +236,6 @@ class BitFieldOverflow(BitFieldSubCommands):
     OVERFLOW_COMMAND_STRING = ...
     def __init__(self, overflow_control: BitOverflowControl) -> None:
         ...
-    
+
     def to_args(self) -> List[str]:
         ...
-    
-
-

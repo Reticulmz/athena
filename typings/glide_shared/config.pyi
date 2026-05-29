@@ -18,7 +18,7 @@ class NodeAddress:
     """
     def __init__(self, host: str = ..., port: int = ...) -> None:
         ...
-    
+
 
 
 class AddressResolver(Protocol):
@@ -64,7 +64,7 @@ class AddressResolver(Protocol):
             Tuple[str, int]: A tuple of (resolved_host, resolved_port) to use for connection.
         """
         ...
-    
+
 
 
 class ReadFrom(Enum):
@@ -138,7 +138,7 @@ class CompressionConfiguration:
     def __post_init__(self) -> None:
         """Validate compression configuration parameters."""
         ...
-    
+
 
 
 class BackoffStrategy:
@@ -161,7 +161,7 @@ class BackoffStrategy:
     """
     def __init__(self, num_of_retries: int, factor: int, exponent_base: int, jitter_percent: Optional[int] = ...) -> None:
         ...
-    
+
 
 
 class ServiceType(Enum):
@@ -185,7 +185,7 @@ class IamAuthConfig:
     """
     def __init__(self, cluster_name: str, service: ServiceType, region: str, refresh_interval_seconds: Optional[int] = ...) -> None:
         ...
-    
+
 
 
 class ServerCredentials:
@@ -210,11 +210,11 @@ class ServerCredentials:
     """
     def __init__(self, password: Optional[str] = ..., username: Optional[str] = ..., iam_config: Optional[IamAuthConfig] = ...) -> None:
         ...
-    
+
     def is_iam_auth(self) -> bool:
         """Returns True if this credential is configured for IAM authentication."""
         ...
-    
+
 
 
 class PeriodicChecksManualInterval:
@@ -226,7 +226,7 @@ class PeriodicChecksManualInterval:
     """
     def __init__(self, duration_in_sec: int) -> None:
         ...
-    
+
 
 
 class PeriodicChecksStatus(Enum):
@@ -325,7 +325,7 @@ class TlsAdvancedConfiguration:
     """
     def __init__(self, use_insecure_tls: Optional[bool] = ..., root_pem_cacerts: Optional[bytes] = ..., client_cert_pem: Optional[bytes] = ..., client_key_pem: Optional[bytes] = ...) -> None:
         ...
-    
+
 
 
 class AdvancedBaseClientConfiguration:
@@ -350,7 +350,7 @@ class AdvancedBaseClientConfiguration:
     """
     def __init__(self, connection_timeout: Optional[int] = ..., tls_config: Optional[TlsAdvancedConfiguration] = ..., tcp_nodelay: Optional[bool] = ..., pubsub_reconciliation_interval: Optional[int] = ...) -> None:
         ...
-    
+
 
 
 class BaseClientConfiguration:
@@ -465,7 +465,7 @@ class BaseClientConfiguration:
     """
     def __init__(self, addresses: List[NodeAddress], use_tls: bool = ..., credentials: Optional[ServerCredentials] = ..., read_from: ReadFrom = ..., request_timeout: Optional[int] = ..., reconnect_strategy: Optional[BackoffStrategy] = ..., database_id: Optional[int] = ..., client_name: Optional[str] = ..., protocol: ProtocolVersion = ..., inflight_requests_limit: Optional[int] = ..., client_az: Optional[str] = ..., advanced_config: Optional[AdvancedBaseClientConfiguration] = ..., lazy_connect: Optional[bool] = ..., compression: Optional[CompressionConfiguration] = ..., client_side_cache: Optional[ClientSideCache] = ..., address_resolver: Optional[Callable[[str, int], Tuple[str, int]]] = ...) -> None:
         ...
-    
+
 
 
 class AdvancedGlideClientConfiguration(AdvancedBaseClientConfiguration):
@@ -474,7 +474,7 @@ class AdvancedGlideClientConfiguration(AdvancedBaseClientConfiguration):
     """
     def __init__(self, connection_timeout: Optional[int] = ..., tls_config: Optional[TlsAdvancedConfiguration] = ..., tcp_nodelay: Optional[bool] = ..., pubsub_reconciliation_interval: Optional[int] = ...) -> None:
         ...
-    
+
 
 
 class GlideClientConfiguration(BaseClientConfiguration):
@@ -558,8 +558,8 @@ class GlideClientConfiguration(BaseClientConfiguration):
         """
         Exact = ...
         Pattern = ...
-    
-    
+
+
     @dataclass
     class PubSubSubscriptions:
         """Describes pubsub configuration for standalone mode client.
@@ -576,18 +576,18 @@ class GlideClientConfiguration(BaseClientConfiguration):
         callback: Optional[Callable[[PubSubMsg, Any], None]]
         context: Any
         ...
-    
-    
+
+
     @dataclass
     class PubSubState:
         desired_subscriptions: Dict[GlideClientConfiguration.PubSubChannelModes, Set[str]]
         actual_subscriptions: Dict[GlideClientConfiguration.PubSubChannelModes, Set[str]]
         ...
-    
-    
+
+
     def __init__(self, addresses: List[NodeAddress], use_tls: bool = ..., credentials: Optional[ServerCredentials] = ..., read_from: ReadFrom = ..., request_timeout: Optional[int] = ..., reconnect_strategy: Optional[BackoffStrategy] = ..., database_id: Optional[int] = ..., client_name: Optional[str] = ..., protocol: ProtocolVersion = ..., pubsub_subscriptions: Optional[PubSubSubscriptions] = ..., inflight_requests_limit: Optional[int] = ..., client_az: Optional[str] = ..., advanced_config: Optional[AdvancedGlideClientConfiguration] = ..., lazy_connect: Optional[bool] = ..., compression: Optional[CompressionConfiguration] = ..., read_only: bool = ..., client_side_cache: Optional[ClientSideCache] = ..., node_discovery_mode: NodeDiscoveryMode = ..., address_resolver: Optional[Callable[[str, int], Tuple[str, int]]] = ...) -> None:
         ...
-    
+
 
 
 class AdvancedGlideClusterClientConfiguration(AdvancedBaseClientConfiguration):
@@ -611,7 +611,7 @@ class AdvancedGlideClusterClientConfiguration(AdvancedBaseClientConfiguration):
     """
     def __init__(self, connection_timeout: Optional[int] = ..., tls_config: Optional[TlsAdvancedConfiguration] = ..., refresh_topology_from_initial_nodes: bool = ..., tcp_nodelay: Optional[bool] = ..., pubsub_reconciliation_interval: Optional[int] = ...) -> None:
         ...
-    
+
 
 
 class GlideClusterClientConfiguration(BaseClientConfiguration):
@@ -690,8 +690,8 @@ class GlideClusterClientConfiguration(BaseClientConfiguration):
         Exact = ...
         Pattern = ...
         Sharded = ...
-    
-    
+
+
     @dataclass
     class PubSubSubscriptions:
         """Describes pubsub configuration for cluster mode client.
@@ -708,18 +708,18 @@ class GlideClusterClientConfiguration(BaseClientConfiguration):
         callback: Optional[Callable[[PubSubMsg, Any], None]]
         context: Any
         ...
-    
-    
+
+
     @dataclass
     class PubSubState:
         desired_subscriptions: Dict[GlideClusterClientConfiguration.PubSubChannelModes, Set[str]]
         actual_subscriptions: Dict[GlideClusterClientConfiguration.PubSubChannelModes, Set[str]]
         ...
-    
-    
+
+
     def __init__(self, addresses: List[NodeAddress], use_tls: bool = ..., credentials: Optional[ServerCredentials] = ..., read_from: ReadFrom = ..., request_timeout: Optional[int] = ..., reconnect_strategy: Optional[BackoffStrategy] = ..., database_id: Optional[int] = ..., client_name: Optional[str] = ..., protocol: ProtocolVersion = ..., periodic_checks: Union[PeriodicChecksStatus, PeriodicChecksManualInterval] = ..., pubsub_subscriptions: Optional[PubSubSubscriptions] = ..., inflight_requests_limit: Optional[int] = ..., client_az: Optional[str] = ..., advanced_config: Optional[AdvancedGlideClusterClientConfiguration] = ..., lazy_connect: Optional[bool] = ..., compression: Optional[CompressionConfiguration] = ..., client_side_cache: Optional[ClientSideCache] = ..., address_resolver: Optional[Callable[[str, int], Tuple[str, int]]] = ...) -> None:
         ...
-    
+
 
 
 def load_root_certificates_from_file(path: str) -> bytes:
@@ -824,4 +824,3 @@ def load_client_key_from_file(path: str) -> bytes:
         )
     """
     ...
-

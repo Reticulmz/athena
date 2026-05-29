@@ -13,7 +13,7 @@
 
 ### 最優先: 型安全基盤
 
-0. **test-type-safety** — basedpyright strict で検出されたテストコードの型エラー修正。AsyncMock → InMemory 置換、method-assign 排除、Protocol パラメータ名統一。pre-commit フック完全通過が目標
+0. **/.** — basedpyright strict で検出されたテストコードの型エラー修正。AsyncMock → InMemory 置換、method-assign 排除、Protocol パラメータ名統一。pre-commit フック完全通過が目標
 
 ### Phase 1: クライアント基本動作
 

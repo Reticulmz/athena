@@ -20,7 +20,7 @@ class FtAggregateClause(ABC):
             List[TEncodable]: A list of arguments for the clause of the FT.AGGREGATE command.
         """
         ...
-    
+
 
 
 class FtAggregateLimit(FtAggregateClause):
@@ -36,7 +36,7 @@ class FtAggregateLimit(FtAggregateClause):
             count (int): The total number of records to be retained.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the arguments for the Limit clause.
@@ -45,7 +45,7 @@ class FtAggregateLimit(FtAggregateClause):
             List[TEncodable]: A list of Limit clause arguments.
         """
         ...
-    
+
 
 
 class FtAggregateFilter(FtAggregateClause):
@@ -61,7 +61,7 @@ class FtAggregateFilter(FtAggregateClause):
             expression (TEncodable): The expression to filter the results.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the arguments for the Filter clause.
@@ -70,7 +70,7 @@ class FtAggregateFilter(FtAggregateClause):
             List[TEncodable]: A list arguments for the filter clause.
         """
         ...
-    
+
 
 
 class FtAggregateReducer:
@@ -88,7 +88,7 @@ class FtAggregateReducer:
             name (Optional[TEncodable]): User defined property name for the reducer.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the arguments for the Reducer.
@@ -97,7 +97,7 @@ class FtAggregateReducer:
             List[TEncodable]: A list of arguments for the reducer.
         """
         ...
-    
+
 
 
 class FtAggregateGroupBy(FtAggregateClause):
@@ -114,10 +114,10 @@ class FtAggregateGroupBy(FtAggregateClause):
                 aggregate operations.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         ...
-    
+
 
 
 class FtAggregateSortProperty:
@@ -133,7 +133,7 @@ class FtAggregateSortProperty:
             order (OrderBy): The order for the sorting. This option can be added for each property.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the arguments for the SortBy clause property.
@@ -142,7 +142,7 @@ class FtAggregateSortProperty:
             List[TEncodable]: A list of arguments for the SortBy clause property.
         """
         ...
-    
+
 
 
 class FtAggregateSortBy(FtAggregateClause):
@@ -158,7 +158,7 @@ class FtAggregateSortBy(FtAggregateClause):
             max: (Optional[int]): The MAX value for optimizing the sorting, by sorting only for the n-largest elements.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the arguments for the SortBy clause.
@@ -167,7 +167,7 @@ class FtAggregateSortBy(FtAggregateClause):
             List[TEncodable]: A list of arguments for the SortBy clause.
         """
         ...
-    
+
 
 
 class FtAggregateApply(FtAggregateClause):
@@ -185,7 +185,7 @@ class FtAggregateApply(FtAggregateClause):
                 APPLY/SORTBY/GROUPBY/REDUCE operations down the pipeline.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the arguments for the Apply clause.
@@ -194,7 +194,7 @@ class FtAggregateApply(FtAggregateClause):
             List[TEncodable]: A list of arguments for the Apply clause.
         """
         ...
-    
+
 
 
 class FtAggregateOptions:
@@ -220,7 +220,7 @@ class FtAggregateOptions:
             dialect (Optional[int]): The query dialect version to use. The only supported dialect is ``2``.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Get the optional arguments for the FT.AGGREGATE command.
@@ -229,6 +229,3 @@ class FtAggregateOptions:
             List[TEncodable]: A list of optional arguments for the FT.AGGREGATE command.
         """
         ...
-    
-
-

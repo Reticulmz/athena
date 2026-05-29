@@ -427,4 +427,3 @@ async def aliaslist(client: TGlideClient) -> Mapping[TEncodable, TEncodable]:
             {b'alias': b'index1', b'alias-bytes': b'index2'}
     """
     ...
-

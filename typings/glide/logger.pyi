@@ -28,7 +28,7 @@ class Logger:
     logger_level: internalLevel
     def __init__(self, level: Optional[Level] = ..., file_name: Optional[str] = ...) -> None:
         ...
-    
+
     @classmethod
     def init(cls, level: Optional[Level] = ..., file_name: Optional[str] = ...) -> None:
         """
@@ -46,7 +46,7 @@ class Logger:
                 Otherwise, logs will be printed to the console.
         """
         ...
-    
+
     @classmethod
     def log(cls, log_level: Level, log_identifier: str, message: str, err: Optional[Exception] = ...) -> None:
         """
@@ -59,7 +59,7 @@ class Logger:
             err (Optional[Exception]): The exception or error to log.
         """
         ...
-    
+
     @classmethod
     def set_logger_config(cls, level: Optional[Level] = ..., file_name: Optional[str] = ...) -> None:
         """
@@ -73,6 +73,3 @@ class Logger:
                 Otherwise, logs will be printed to the console.
         """
         ...
-    
-
-

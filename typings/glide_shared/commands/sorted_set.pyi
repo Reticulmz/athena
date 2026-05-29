@@ -45,7 +45,7 @@ class ScoreBoundary:
     """
     def __init__(self, value: float, is_inclusive: bool = ...) -> None:
         ...
-    
+
 
 
 class LexBoundary:
@@ -58,7 +58,7 @@ class LexBoundary:
     """
     def __init__(self, value: str, is_inclusive: bool = ...) -> None:
         ...
-    
+
 
 
 class RangeByIndex:
@@ -73,7 +73,7 @@ class RangeByIndex:
     """
     def __init__(self, start: int, end: int) -> None:
         ...
-    
+
 
 
 class RangeByScore:
@@ -90,7 +90,7 @@ class RangeByScore:
     """
     def __init__(self, start: Union[InfBound, ScoreBoundary], end: Union[InfBound, ScoreBoundary], limit: Optional[Limit] = ...) -> None:
         ...
-    
+
 
 
 class RangeByLex:
@@ -107,7 +107,7 @@ class RangeByLex:
     """
     def __init__(self, start: Union[InfBound, LexBoundary], end: Union[InfBound, LexBoundary], limit: Optional[Limit] = ...) -> None:
         ...
-    
+
 
 
 class GeospatialData:
@@ -125,7 +125,7 @@ class GeospatialData:
     """
     def __init__(self, longitude: float, latitude: float) -> None:
         ...
-    
+
 
 
 class GeoUnit(Enum):
@@ -151,7 +151,7 @@ class GeoSearchByRadius:
         Initialize the search criteria.
         """
         ...
-    
+
     def to_args(self) -> List[str]:
         """
         Convert the search criteria to the corresponding part of the command.
@@ -160,7 +160,7 @@ class GeoSearchByRadius:
             List[str]: List representation of the search criteria.
         """
         ...
-    
+
 
 
 class GeoSearchByBox:
@@ -177,7 +177,7 @@ class GeoSearchByBox:
         Initialize the search criteria.
         """
         ...
-    
+
     def to_args(self) -> List[str]:
         """
         Convert the search criteria to the corresponding part of the command.
@@ -186,7 +186,7 @@ class GeoSearchByBox:
             List[str]: List representation of the search criteria.
         """
         ...
-    
+
 
 
 class GeoSearchCount:
@@ -203,7 +203,7 @@ class GeoSearchCount:
         Initialize the count option.
         """
         ...
-    
+
     def to_args(self) -> List[str]:
         """
         Convert the count option to the corresponding part of the command.
@@ -212,7 +212,7 @@ class GeoSearchCount:
             List[str]: List representation of the count option.
         """
         ...
-    
+
 
 
 def separate_keys(keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]]) -> Tuple[List[TEncodable], List[TEncodable]]:
@@ -220,4 +220,3 @@ def separate_keys(keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]])
     Returns separate lists of keys and weights in case of weighted keys.
     """
     ...
-

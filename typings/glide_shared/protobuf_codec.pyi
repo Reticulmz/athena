@@ -13,14 +13,12 @@ class ProtobufCodec:
     @classmethod
     def decode_delimited(cls, read_bytes: bytearray, read_bytes_view: memoryview, offset: int, message_class: Type[message.Message]) -> Tuple[message.Message, int]:
         ...
-    
+
     @classmethod
     def encode_delimited(cls, b_arr: bytearray, message: message.Message) -> None:
         ...
-    
+
 
 
 class PartialMessageException(Exception):
     ...
-
-

@@ -53,7 +53,7 @@ class OpenTelemetry:
             Subsequent calls will be ignored and a warning will be logged.
         """
         ...
-    
+
     @classmethod
     def is_initialized(cls) -> bool:
         """
@@ -63,7 +63,7 @@ class OpenTelemetry:
             bool: True if the OpenTelemetry instance is initialized, False otherwise
         """
         ...
-    
+
     @classmethod
     def get_sample_percentage(cls) -> Optional[int]:
         """
@@ -74,7 +74,7 @@ class OpenTelemetry:
                 and the traces config is set, otherwise None.
         """
         ...
-    
+
     @classmethod
     def should_sample(cls) -> bool:
         """
@@ -85,7 +85,7 @@ class OpenTelemetry:
             bool: True if the request should be sampled, False otherwise
         """
         ...
-    
+
     @classmethod
     def set_sample_percentage(cls, percentage: int) -> None:
         """
@@ -103,6 +103,3 @@ class OpenTelemetry:
             without reinitializing OpenTelemetry.
         """
         ...
-    
-
-

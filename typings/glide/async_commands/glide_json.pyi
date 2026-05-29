@@ -1025,4 +1025,3 @@ async def type(client: TGlideClient, key: TEncodable, path: Optional[TEncodable]
             [b'integer',  b'object']  # Array of types in all top level elements.
     """
     ...
-

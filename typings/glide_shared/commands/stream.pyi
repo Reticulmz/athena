@@ -24,7 +24,7 @@ class StreamTrimOptions(ABC):
         Initialize stream trim options.
         """
         ...
-    
+
     def to_args(self) -> List[str]:
         """
         Convert options to arguments for the command.
@@ -33,7 +33,7 @@ class StreamTrimOptions(ABC):
             List[str]: List of arguments for the command.
         """
         ...
-    
+
 
 
 class TrimByMinId(StreamTrimOptions):
@@ -52,7 +52,7 @@ class TrimByMinId(StreamTrimOptions):
         Initialize trim option by minimum ID.
         """
         ...
-    
+
 
 
 class TrimByMaxLen(StreamTrimOptions):
@@ -71,7 +71,7 @@ class TrimByMaxLen(StreamTrimOptions):
         Initialize trim option by maximum length.
         """
         ...
-    
+
 
 
 class StreamAddOptions:
@@ -90,7 +90,7 @@ class StreamAddOptions:
         Initialize stream add options.
         """
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Convert options to arguments for the command.
@@ -99,7 +99,7 @@ class StreamAddOptions:
             List[str]: List of arguments for the command.
         """
         ...
-    
+
 
 
 class StreamRangeBound(ABC):
@@ -113,7 +113,7 @@ class StreamRangeBound(ABC):
         Returns the stream range bound as a string argument to be used in the `XRANGE` or `XREVRANGE` commands.
         """
         ...
-    
+
 
 
 class MinId(StreamRangeBound):
@@ -124,7 +124,7 @@ class MinId(StreamRangeBound):
     MIN_RANGE_VALKEY_API = ...
     def to_arg(self) -> str:
         ...
-    
+
 
 
 class MaxId(StreamRangeBound):
@@ -135,7 +135,7 @@ class MaxId(StreamRangeBound):
     MAX_RANGE_VALKEY_API = ...
     def to_arg(self) -> str:
         ...
-    
+
 
 
 class IdBound(StreamRangeBound):
@@ -156,16 +156,16 @@ class IdBound(StreamRangeBound):
             timestamp (int): The stream ID timestamp.
         """
         ...
-    
+
     def __init__(self, stream_id: TEncodable) -> None:
         """
         Creates a stream ID boundary for a range search.
         """
         ...
-    
+
     def to_arg(self) -> TEncodable:
         ...
-    
+
 
 
 class ExclusiveIdBound(StreamRangeBound):
@@ -189,16 +189,16 @@ class ExclusiveIdBound(StreamRangeBound):
             timestamp (int): The stream ID timestamp.
         """
         ...
-    
+
     def __init__(self, stream_id: TEncodable) -> None:
         """
         Creates a stream ID boundary for a range search.
         """
         ...
-    
+
     def to_arg(self) -> TEncodable:
         ...
-    
+
 
 
 class StreamReadOptions:
@@ -214,7 +214,7 @@ class StreamReadOptions:
     READ_BLOCK_VALKEY_API = ...
     def __init__(self, block_ms: Optional[int] = ..., count: Optional[int] = ...) -> None:
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Returns the options as a list of string arguments to be used in the `XREAD` command.
@@ -223,7 +223,7 @@ class StreamReadOptions:
             List[TEncodable]: The options as a list of arguments for the `XREAD` command.
         """
         ...
-    
+
 
 
 class StreamGroupOptions:
@@ -240,7 +240,7 @@ class StreamGroupOptions:
     ENTRIES_READ_VALKEY_API = ...
     def __init__(self, make_stream: bool = ..., entries_read: Optional[int] = ...) -> None:
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Returns the options as a list of string arguments to be used in the `XGROUP CREATE` command.
@@ -249,7 +249,7 @@ class StreamGroupOptions:
             List[TEncodable]: The options as a list of arguments for the `XGROUP CREATE` command.
         """
         ...
-    
+
 
 
 class StreamReadGroupOptions(StreamReadOptions):
@@ -267,7 +267,7 @@ class StreamReadGroupOptions(StreamReadOptions):
     READ_NOACK_VALKEY_API = ...
     def __init__(self, no_ack=..., block_ms: Optional[int] = ..., count: Optional[int] = ...) -> None:
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Returns the options as a list of string arguments to be used in the `XREADGROUP` command.
@@ -276,7 +276,7 @@ class StreamReadGroupOptions(StreamReadOptions):
             List[TEncodable]: The options as a list of arguments for the `XREADGROUP` command.
         """
         ...
-    
+
 
 
 class StreamPendingOptions:
@@ -291,7 +291,7 @@ class StreamPendingOptions:
     IDLE_TIME_VALKEY_API = ...
     def __init__(self, min_idle_time_ms: Optional[int] = ..., consumer_name: Optional[TEncodable] = ...) -> None:
         ...
-    
+
 
 
 class StreamClaimOptions:
@@ -320,7 +320,7 @@ class StreamClaimOptions:
     JUST_ID_VALKEY_API = ...
     def __init__(self, idle: Optional[int] = ..., idle_unix_time: Optional[int] = ..., retry_count: Optional[int] = ..., is_force: Optional[bool] = ...) -> None:
         ...
-    
+
     def to_args(self) -> List[TEncodable]:
         """
         Converts options for `XCLAIM` into a List.
@@ -329,6 +329,3 @@ class StreamClaimOptions:
             List[str]: The options as a list of arguments for the `XCLAIM` command.
         """
         ...
-    
-
-

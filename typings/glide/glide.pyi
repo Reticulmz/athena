@@ -18,67 +18,67 @@ class Level(Enum):
     Off = ...
     def is_lower(self, level: Level) -> bool:
         ...
-    
+
 
 
 class Script:
     def __init__(self, code: Union[str, bytes]) -> None:
         ...
-    
+
     def get_hash(self) -> str:
         ...
-    
+
     def __del__(self) -> None:
         ...
-    
+
 
 
 class ClusterScanCursor:
     def __init__(self, cursor: Optional[str] = ...) -> None:
         ...
-    
+
     def get_cursor(self) -> str:
         ...
-    
+
     def is_finished(self) -> bool:
         ...
-    
+
 
 
 class OpenTelemetryConfig:
     def __init__(self, traces: Optional[OpenTelemetryTracesConfig] = ..., metrics: Optional[OpenTelemetryMetricsConfig] = ..., flush_interval_ms: Optional[int] = ...) -> None:
         ...
-    
+
     def get_traces(self) -> Optional[OpenTelemetryTracesConfig]:
         ...
-    
+
     def set_traces(self, traces: OpenTelemetryTracesConfig) -> None:
         ...
-    
+
     def get_metrics(self) -> Optional[OpenTelemetryMetricsConfig]:
         ...
-    
+
 
 
 class OpenTelemetryTracesConfig:
     def __init__(self, endpoint: str, sample_percentage: Optional[int] = ...) -> None:
         ...
-    
+
     def get_endpoint(self) -> str:
         ...
-    
+
     def get_sample_percentage(self) -> Optional[int]:
         ...
-    
+
 
 
 class OpenTelemetryMetricsConfig:
     def __init__(self, endpoint: str) -> None:
         ...
-    
+
     def get_endpoint(self) -> str:
         ...
-    
+
 
 
 def start_socket_listener_external(init_callback: Callable) -> None:
@@ -122,4 +122,3 @@ def register_address_resolver(callback: Callable) -> str:
 
 def remove_address_resolver(key: str) -> None:
     ...
-

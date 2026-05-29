@@ -41,7 +41,7 @@ class CoreCommands(Protocol):
             'OK'
         """
         ...
-    
+
     async def refresh_iam_token(self) -> TOK:
         """
         Manually refresh the IAM token for the current connection.
@@ -60,7 +60,7 @@ class CoreCommands(Protocol):
             'OK'
         """
         ...
-    
+
     def get_cache_hit_rate(self) -> float:
         """
         Get the cache hit rate (hits / total requests).
@@ -77,7 +77,7 @@ class CoreCommands(Protocol):
             Cache hit rate: 85.50%
         """
         ...
-    
+
     def get_cache_miss_rate(self) -> float:
         """
         Get the cache miss rate (misses / total requests).
@@ -94,7 +94,7 @@ class CoreCommands(Protocol):
             Cache miss rate: 14.50%
         """
         ...
-    
+
     def get_cache_entry_count(self) -> int:
         """
         Get the current number of entries in the client-side cache.
@@ -111,7 +111,7 @@ class CoreCommands(Protocol):
             Cache entry count: 1500
         """
         ...
-    
+
     def get_cache_evictions(self) -> int:
         """
         Get the total number of entries evicted from the client-side cache due to memory constraints.
@@ -128,7 +128,7 @@ class CoreCommands(Protocol):
             Cache evictions: 100
         """
         ...
-    
+
     def get_cache_total_lookups(self) -> int:
         """
         Get the total number of cache lookups (hits + misses).
@@ -145,7 +145,7 @@ class CoreCommands(Protocol):
             Total cache lookups: 5000
         """
         ...
-    
+
     def get_cache_expirations(self) -> int:
         """
         Get the total number of entries removed from the client-side cache due to TTL expiration.
@@ -162,7 +162,7 @@ class CoreCommands(Protocol):
             Cache expirations: 250
         """
         ...
-    
+
     async def set(self, key: TEncodable, value: TEncodable, conditional_set: Optional[Union[ConditionalChange, OnlyIfEqual]] = ..., expiry: Optional[ExpirySet] = ..., return_old_value: bool = ...) -> Optional[bytes]:
         """
         Set the given key with the given value. Return value is dependent on the passed options.
@@ -222,7 +222,7 @@ class CoreCommands(Protocol):
                 b'newest_value" # Set "key" to "new_value" because the provided value was equal to the previous value of "key"
         """
         ...
-    
+
     async def get(self, key: TEncodable) -> Optional[bytes]:
         """
         Get the value associated with the given key, or null if no such key exists.
@@ -242,7 +242,7 @@ class CoreCommands(Protocol):
                 b'value'
         """
         ...
-    
+
     async def getdel(self, key: TEncodable) -> Optional[bytes]:
         """
         Gets a value associated with the given string `key` and deletes the key.
@@ -265,7 +265,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def getrange(self, key: TEncodable, start: int, end: int) -> bytes:
         """
         Returns the substring of the value stored at `key`, determined by the offsets `start` and `end` (both are inclusive).
@@ -297,7 +297,7 @@ class CoreCommands(Protocol):
                 b""
         """
         ...
-    
+
     async def append(self, key: TEncodable, value: TEncodable) -> int:
         """
         Appends a value to a key.
@@ -325,7 +325,7 @@ class CoreCommands(Protocol):
                 b"Hello world"  # Returns the value stored in "key", which is now "Hello world".
         """
         ...
-    
+
     async def strlen(self, key: TEncodable) -> int:
         """
         Get the length of the string value stored at `key`.
@@ -346,7 +346,7 @@ class CoreCommands(Protocol):
                 5  # Indicates that the length of the string value stored at `key` is 5.
         """
         ...
-    
+
     async def rename(self, key: TEncodable, new_key: TEncodable) -> TOK:
         """
         Renames `key` to `new_key`.
@@ -367,7 +367,7 @@ class CoreCommands(Protocol):
             If `key` does not exist, an error is thrown.
         """
         ...
-    
+
     async def renamenx(self, key: TEncodable, new_key: TEncodable) -> bool:
         """
         Renames `key` to `new_key` if `new_key` does not yet exist.
@@ -391,7 +391,7 @@ class CoreCommands(Protocol):
                 True  # "old_key" was renamed to "new_key"
         """
         ...
-    
+
     async def delete(self, keys: List[TEncodable]) -> int:
         """
         Delete one or more keys from the database. A key is ignored if it does not exist.
@@ -421,7 +421,7 @@ class CoreCommands(Protocol):
                 0 # No keys we're deleted since "key" doesn't exist.
         """
         ...
-    
+
     async def move(self, key: TEncodable, db_index: int) -> bool:
         """
         Move key from the currently selected database to the specified destination database.
@@ -446,7 +446,7 @@ class CoreCommands(Protocol):
                 False  # The key does not exist
         """
         ...
-    
+
     async def incr(self, key: TEncodable) -> int:
         """
         Increments the number stored at `key` by one. If the key does not exist, it is set to 0 before performing the
@@ -466,7 +466,7 @@ class CoreCommands(Protocol):
                 11
         """
         ...
-    
+
     async def incrby(self, key: TEncodable, amount: int) -> int:
         """
         Increments the number stored at `key` by `amount`. If the key does not exist, it is set to 0 before performing
@@ -487,7 +487,7 @@ class CoreCommands(Protocol):
                 15
         """
         ...
-    
+
     async def incrbyfloat(self, key: TEncodable, amount: float) -> float:
         """
         Increment the string representing a floating point number stored at `key` by `amount`.
@@ -509,7 +509,7 @@ class CoreCommands(Protocol):
                 15.55
         """
         ...
-    
+
     async def setrange(self, key: TEncodable, offset: int, value: TEncodable) -> int:
         """
         Overwrites part of the string stored at `key`, starting at the specified
@@ -534,7 +534,7 @@ class CoreCommands(Protocol):
                 11  # The length of the string stored at `key` after it was modified.
         """
         ...
-    
+
     async def mset(self, key_value_map: Mapping[TEncodable, TEncodable]) -> TOK:
         """
         Set multiple keys to multiple values in a single atomic operation.
@@ -561,7 +561,7 @@ class CoreCommands(Protocol):
                 'OK'
         """
         ...
-    
+
     async def msetnx(self, key_value_map: Mapping[TEncodable, TEncodable]) -> bool:
         """
         Sets multiple keys to values if the key does not exist. The operation is atomic, and if one or
@@ -586,7 +586,7 @@ class CoreCommands(Protocol):
                 False
         """
         ...
-    
+
     async def mget(self, keys: List[TEncodable]) -> List[Optional[bytes]]:
         """
         Retrieve the values of multiple keys.
@@ -616,7 +616,7 @@ class CoreCommands(Protocol):
                 [b'value1' , b'value2']
         """
         ...
-    
+
     async def decr(self, key: TEncodable) -> int:
         """
         Decrement the number stored at `key` by one. If the key does not exist, it is set to 0 before performing the
@@ -636,7 +636,7 @@ class CoreCommands(Protocol):
                 9
         """
         ...
-    
+
     async def decrby(self, key: TEncodable, amount: int) -> int:
         """
         Decrements the number stored at `key` by `amount`. If the key does not exist, it is set to 0 before performing
@@ -657,7 +657,7 @@ class CoreCommands(Protocol):
                 5
         """
         ...
-    
+
     async def touch(self, keys: List[TEncodable]) -> int:
         """
         Updates the last access time of specified keys.
@@ -686,7 +686,7 @@ class CoreCommands(Protocol):
                 2  # Last access time of 2 keys has been updated.
         """
         ...
-    
+
     async def hset(self, key: TEncodable, field_value_map: Mapping[TEncodable, TEncodable]) -> int:
         """
         Sets the specified fields to their respective values in the hash stored at `key`.
@@ -706,7 +706,7 @@ class CoreCommands(Protocol):
                 2 # Indicates that 2 fields were successfully set in the hash "my_hash".
         """
         ...
-    
+
     async def hget(self, key: TEncodable, field: TEncodable) -> Optional[bytes]:
         """
         Retrieves the value associated with `field` in the hash stored at `key`.
@@ -730,7 +730,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def hsetnx(self, key: TEncodable, field: TEncodable, value: TEncodable) -> bool:
         """
         Sets `field` in the hash stored at `key` to `value`, only if `field` does not yet exist.
@@ -756,7 +756,7 @@ class CoreCommands(Protocol):
                 False # Indicates that the field "field" already existed in the hash "my_hash" and was not set again.
         """
         ...
-    
+
     async def hincrby(self, key: TEncodable, field: TEncodable, amount: int) -> int:
         """
         Increment or decrement the value of a `field` in the hash stored at `key` by the specified amount.
@@ -779,7 +779,7 @@ class CoreCommands(Protocol):
                 5
         """
         ...
-    
+
     async def hincrbyfloat(self, key: TEncodable, field: TEncodable, amount: float) -> float:
         """
         Increment or decrement the floating-point value stored at `field` in the hash stored at `key` by the specified
@@ -803,7 +803,7 @@ class CoreCommands(Protocol):
                 "2.5"
         """
         ...
-    
+
     async def hexists(self, key: TEncodable, field: TEncodable) -> bool:
         """
         Check if a field exists in the hash stored at `key`.
@@ -826,7 +826,7 @@ class CoreCommands(Protocol):
                 False
         """
         ...
-    
+
     async def hgetall(self, key: TEncodable) -> Dict[bytes, bytes]:
         """
         Returns all fields and values of the hash stored at `key`.
@@ -847,7 +847,7 @@ class CoreCommands(Protocol):
                 {b"field1": b"value1", b"field2": b"value2"}
         """
         ...
-    
+
     async def hmget(self, key: TEncodable, fields: List[TEncodable]) -> List[Optional[bytes]]:
         """
         Retrieve the values associated with specified fields in the hash stored at `key`.
@@ -869,7 +869,7 @@ class CoreCommands(Protocol):
                 [b"value1", b"value2"]  # A list of values associated with the specified fields.
         """
         ...
-    
+
     async def hdel(self, key: TEncodable, fields: List[TEncodable]) -> int:
         """
         Remove specified fields from the hash stored at `key`.
@@ -890,7 +890,7 @@ class CoreCommands(Protocol):
                 2  # Indicates that two fields were successfully removed from the hash.
         """
         ...
-    
+
     async def hlen(self, key: TEncodable) -> int:
         """
         Returns the number of fields contained in the hash stored at `key`.
@@ -912,7 +912,7 @@ class CoreCommands(Protocol):
                 0
         """
         ...
-    
+
     async def hvals(self, key: TEncodable) -> List[bytes]:
         """
         Returns all values in the hash stored at `key`.
@@ -930,7 +930,7 @@ class CoreCommands(Protocol):
                [b"value1", b"value2", b"value3"]  # Returns all the values stored in the hash "my_hash".
         """
         ...
-    
+
     async def hkeys(self, key: TEncodable) -> List[bytes]:
         """
         Returns all field names in the hash stored at `key`.
@@ -948,7 +948,7 @@ class CoreCommands(Protocol):
                 [b"field1", b"field2", b"field3"]  # Returns all the field names stored in the hash "my_hash".
         """
         ...
-    
+
     async def hrandfield(self, key: TEncodable) -> Optional[bytes]:
         """
         Returns a random field name from the hash value stored at `key`.
@@ -968,7 +968,7 @@ class CoreCommands(Protocol):
                 b"field1"  # A random field name stored in the hash "my_hash".
         """
         ...
-    
+
     async def hrandfield_count(self, key: TEncodable, count: int) -> List[bytes]:
         """
         Retrieves up to `count` random field names from the hash value stored at `key`.
@@ -994,7 +994,7 @@ class CoreCommands(Protocol):
                 []  # Empty list
         """
         ...
-    
+
     async def hrandfield_withvalues(self, key: TEncodable, count: int) -> List[List[bytes]]:
         """
         Retrieves up to `count` random field names along with their values from the hash value stored at `key`.
@@ -1019,7 +1019,7 @@ class CoreCommands(Protocol):
                 [[b"field1", b"value1"], [b"field1", b"value1"], [b"field2", b"value2"]]
         """
         ...
-    
+
     async def hstrlen(self, key: TEncodable, field: TEncodable) -> int:
         """
         Returns the string length of the value associated with `field` in the hash stored at `key`.
@@ -1041,7 +1041,7 @@ class CoreCommands(Protocol):
                 5
         """
         ...
-    
+
     async def httl(self, key: TEncodable, fields: List[TEncodable]) -> List[int]:
         """
         Returns the remaining time to live (in seconds) of hash key's field(s) that have an associated expiration.
@@ -1066,7 +1066,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hpttl(self, key: TEncodable, fields: List[TEncodable]) -> List[int]:
         """
         Returns the remaining time to live (in milliseconds) of hash key's field(s) that have an associated expiration.
@@ -1091,7 +1091,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hexpiretime(self, key: TEncodable, fields: List[TEncodable]) -> List[int]:
         """
         Returns the expiration Unix timestamp (in seconds) of hash key's field(s) that have an associated expiration.
@@ -1118,7 +1118,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hpexpiretime(self, key: TEncodable, fields: List[TEncodable]) -> List[int]:
         """
         Returns the expiration Unix timestamp (in milliseconds) of hash key's field(s) that have an associated expiration.
@@ -1145,7 +1145,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hsetex(self, key: TEncodable, field_value_map: Mapping[TEncodable, TEncodable], field_conditional_change: Optional[HashFieldConditionalChange] = ..., expiry: Optional[ExpirySet] = ...) -> int:
         """
         Sets the specified fields to their respective values in the hash stored at `key` with optional expiration.
@@ -1180,7 +1180,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hgetex(self, key: TEncodable, fields: List[TEncodable], expiry: Optional[ExpiryGetEx] = ...) -> Optional[List[Optional[bytes]]]:
         """
         Retrieves the values of specified fields in the hash stored at `key` and optionally sets their expiration.
@@ -1214,7 +1214,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hexpire(self, key: TEncodable, seconds: int, fields: List[TEncodable], option: Optional[ExpireOptions] = ...) -> List[int]:
         """
         Sets expiration time in seconds for one or more hash fields.
@@ -1252,7 +1252,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hpersist(self, key: TEncodable, fields: List[TEncodable]) -> List[int]:
         """
         Removes the expiration from one or more hash fields, making them persistent.
@@ -1281,7 +1281,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hpexpire(self, key: TEncodable, milliseconds: int, fields: List[TEncodable], option: Optional[ExpireOptions] = ...) -> List[int]:
         """
         Sets expiration time in milliseconds for one or more hash fields.
@@ -1319,7 +1319,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hexpireat(self, key: TEncodable, unix_timestamp: int, fields: List[TEncodable], option: Optional[ExpireOptions] = ...) -> List[int]:
         """
         Sets expiration time at absolute Unix timestamp in seconds for one or more hash fields.
@@ -1358,7 +1358,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def hpexpireat(self, key: TEncodable, unix_timestamp_ms: int, fields: List[TEncodable], option: Optional[ExpireOptions] = ...) -> List[int]:
         """
         Sets expiration time at absolute Unix timestamp in milliseconds for one or more hash fields.
@@ -1397,7 +1397,7 @@ class CoreCommands(Protocol):
         Since: Valkey 9.0.0
         """
         ...
-    
+
     async def lpush(self, key: TEncodable, elements: List[TEncodable]) -> int:
         """
         Insert all the specified values at the head of the list stored at `key`.
@@ -1420,7 +1420,7 @@ class CoreCommands(Protocol):
                 1
         """
         ...
-    
+
     async def lpushx(self, key: TEncodable, elements: List[TEncodable]) -> int:
         """
         Inserts all the specified values at the head of the list stored at `key`, only if `key` exists and holds a list.
@@ -1442,7 +1442,7 @@ class CoreCommands(Protocol):
                 0 # Indicates that the list "nonexistent_list" does not exist, so "new_value" could not be pushed.
         """
         ...
-    
+
     async def lpop(self, key: TEncodable) -> Optional[bytes]:
         """
         Remove and return the first elements of the list stored at `key`.
@@ -1465,7 +1465,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def lpop_count(self, key: TEncodable, count: int) -> Optional[List[bytes]]:
         """
         Remove and return up to `count` elements from the list stored at `key`, depending on the list's length.
@@ -1488,7 +1488,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def blpop(self, keys: List[TEncodable], timeout: float) -> Optional[List[bytes]]:
         """
         Pops an element from the head of the first list that is non-empty, with the given keys being checked in the
@@ -1518,7 +1518,7 @@ class CoreCommands(Protocol):
                 [b"list1", b"element"]  # "element" was popped from the head of the list with key "list1"
         """
         ...
-    
+
     async def lmpop(self, keys: List[TEncodable], direction: ListDirection, count: Optional[int] = ...) -> Optional[Mapping[bytes, List[bytes]]]:
         """
         Pops one or more elements from the first non-empty list from the provided `keys`.
@@ -1547,7 +1547,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def blmpop(self, keys: List[TEncodable], direction: ListDirection, timeout: float, count: Optional[int] = ...) -> Optional[Mapping[bytes, List[bytes]]]:
         """
         Blocks the connection until it pops one or more elements from the first non-empty list from the provided `keys`.
@@ -1584,7 +1584,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def lrange(self, key: TEncodable, start: int, end: int) -> List[bytes]:
         """
         Retrieve the specified elements of the list stored at `key` within the given range.
@@ -1617,7 +1617,7 @@ class CoreCommands(Protocol):
                 []
         """
         ...
-    
+
     async def lindex(self, key: TEncodable, index: int) -> Optional[bytes]:
         """
         Returns the element at `index` in the list stored at `key`.
@@ -1644,7 +1644,7 @@ class CoreCommands(Protocol):
                 b'value3'  # Returns the last element in the list stored at 'my_list'.
         """
         ...
-    
+
     async def lset(self, key: TEncodable, index: int, element: TEncodable) -> TOK:
         """
         Sets the list element at `index` to `element`.
@@ -1668,7 +1668,7 @@ class CoreCommands(Protocol):
                 OK
         """
         ...
-    
+
     async def rpush(self, key: TEncodable, elements: List[TEncodable]) -> int:
         """
         Inserts all the specified values at the tail of the list stored at `key`.
@@ -1691,7 +1691,7 @@ class CoreCommands(Protocol):
                 1
         """
         ...
-    
+
     async def rpushx(self, key: TEncodable, elements: List[TEncodable]) -> int:
         """
         Inserts all the specified values at the tail of the list stored at `key`, only if `key` exists and holds a list.
@@ -1713,7 +1713,7 @@ class CoreCommands(Protocol):
                 0 # Indicates that the list "nonexistent_list" does not exist, so "new_value" could not be pushed.
         """
         ...
-    
+
     async def rpop(self, key: TEncodable) -> Optional[bytes]:
         """
         Removes and returns the last elements of the list stored at `key`.
@@ -1736,7 +1736,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def rpop_count(self, key: TEncodable, count: int) -> Optional[List[bytes]]:
         """
         Removes and returns up to `count` elements from the list stored at `key`, depending on the list's length.
@@ -1759,7 +1759,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def brpop(self, keys: List[TEncodable], timeout: float) -> Optional[List[bytes]]:
         """
         Pops an element from the tail of the first list that is non-empty, with the given keys being checked in the
@@ -1789,7 +1789,7 @@ class CoreCommands(Protocol):
                 [b"list1", b"element"]  # "element" was popped from the tail of the list with key "list1"
         """
         ...
-    
+
     async def linsert(self, key: TEncodable, position: InsertPosition, pivot: TEncodable, element: TEncodable) -> int:
         """
         Inserts `element` in the list at `key` either before or after the `pivot`.
@@ -1815,7 +1815,7 @@ class CoreCommands(Protocol):
                 3 # "There" was inserted before "World", and the new length of the list is 3.
         """
         ...
-    
+
     async def lmove(self, source: TEncodable, destination: TEncodable, where_from: ListDirection, where_to: ListDirection) -> Optional[bytes]:
         """
         Atomically pops and removes the left/right-most element to the list stored at `source`
@@ -1852,7 +1852,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     async def blmove(self, source: TEncodable, destination: TEncodable, where_from: ListDirection, where_to: ListDirection, timeout: float) -> Optional[bytes]:
         """
         Blocks the connection until it pops atomically and removes the left/right-most element to the
@@ -1896,7 +1896,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     async def sadd(self, key: TEncodable, members: List[TEncodable]) -> int:
         """
         Add specified members to the set stored at `key`.
@@ -1917,7 +1917,7 @@ class CoreCommands(Protocol):
                 2
         """
         ...
-    
+
     async def select(self, index: int) -> TOK:
         """
         Change the currently selected database.
@@ -1931,7 +1931,7 @@ class CoreCommands(Protocol):
             A simple OK response.
         """
         ...
-    
+
     async def srem(self, key: TEncodable, members: List[TEncodable]) -> int:
         """
         Remove specified members from the set stored at `key`.
@@ -1953,7 +1953,7 @@ class CoreCommands(Protocol):
                 2
         """
         ...
-    
+
     async def smembers(self, key: TEncodable) -> Set[bytes]:
         """
         Retrieve all the members of the set value stored at `key`.
@@ -1973,7 +1973,7 @@ class CoreCommands(Protocol):
                 {b"member1", b"member2", b"member3"}
         """
         ...
-    
+
     async def scard(self, key: TEncodable) -> int:
         """
         Retrieve the set cardinality (number of elements) of the set stored at `key`.
@@ -1993,7 +1993,7 @@ class CoreCommands(Protocol):
                 3
         """
         ...
-    
+
     async def spop(self, key: TEncodable) -> Optional[bytes]:
         """
         Removes and returns one random member from the set stored at `key`.
@@ -2017,7 +2017,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def spop_count(self, key: TEncodable, count: int) -> Set[bytes]:
         """
         Removes and returns up to `count` random members from the set stored at `key`, depending on the set's length.
@@ -2042,7 +2042,7 @@ class CoreCommands(Protocol):
                 Set()
         """
         ...
-    
+
     async def sismember(self, key: TEncodable, member: TEncodable) -> bool:
         """
         Returns if `member` is a member of the set stored at `key`.
@@ -2065,7 +2065,7 @@ class CoreCommands(Protocol):
                 False  # Indicates that "non_existing_member" does not exist in the set "my_set".
         """
         ...
-    
+
     async def smove(self, source: TEncodable, destination: TEncodable, member: TEncodable) -> bool:
         """
         Moves `member` from the set at `source` to the set at `destination`, removing it from the source set. Creates a
@@ -2091,7 +2091,7 @@ class CoreCommands(Protocol):
                 True  # "member1" was moved from "set1" to "set2".
         """
         ...
-    
+
     async def sunion(self, keys: List[TEncodable]) -> Set[bytes]:
         """
         Gets the union of all the given sets.
@@ -2118,7 +2118,7 @@ class CoreCommands(Protocol):
                 {b"member1", b"member2"}
         """
         ...
-    
+
     async def sunionstore(self, destination: TEncodable, keys: List[TEncodable]) -> int:
         """
         Stores the members of the union of all given sets specified by `keys` into a new set at `destination`.
@@ -2142,7 +2142,7 @@ class CoreCommands(Protocol):
                 2  # Two elements were stored in "my_set", and those two members are the union of "set1" and "set2".
         """
         ...
-    
+
     async def sdiffstore(self, destination: TEncodable, keys: List[TEncodable]) -> int:
         """
         Stores the difference between the first set and all the successive sets in `keys` into a new set at
@@ -2167,7 +2167,7 @@ class CoreCommands(Protocol):
                 1  # Indicates that one member was stored in "set3", and that member is the diff between "set1" and "set2".
         """
         ...
-    
+
     async def sinter(self, keys: List[TEncodable]) -> Set[bytes]:
         """
         Gets the intersection of all the given sets.
@@ -2194,7 +2194,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def sinterstore(self, destination: TEncodable, keys: List[TEncodable]) -> int:
         """
         Stores the members of the intersection of all given sets specified by `keys` into a new set at `destination`.
@@ -2218,7 +2218,7 @@ class CoreCommands(Protocol):
                 1  # One element was stored at "my_set3", and that element is the intersection of "my_set1" and "myset2".
         """
         ...
-    
+
     async def sintercard(self, keys: List[TEncodable], limit: Optional[int] = ...) -> int:
         """
         Gets the cardinality of the intersection of all the given sets.
@@ -2247,7 +2247,7 @@ class CoreCommands(Protocol):
             1  # The computation stops early as the intersection cardinality reaches the limit of 1.
         """
         ...
-    
+
     async def sdiff(self, keys: List[TEncodable]) -> Set[bytes]:
         """
         Computes the difference between the first set and all the successive sets in `keys`.
@@ -2272,7 +2272,7 @@ class CoreCommands(Protocol):
                 {b"member2"}  # "member2" is in "set1" but not "set2"
         """
         ...
-    
+
     async def smismember(self, key: TEncodable, members: List[TEncodable]) -> List[bool]:
         """
         Checks whether each member is contained in the members of the set stored at `key`.
@@ -2292,7 +2292,7 @@ class CoreCommands(Protocol):
                 [True, True, False]  # "b" and "c" are members of "set1", but "d" is not.
         """
         ...
-    
+
     async def ltrim(self, key: TEncodable, start: int, end: int) -> TOK:
         """
         Trim an existing list so that it will contain only the specified range of elements specified.
@@ -2323,7 +2323,7 @@ class CoreCommands(Protocol):
                 "OK"  # Indicates that the list has been trimmed to contain elements from 0 to 1.
         """
         ...
-    
+
     async def lrem(self, key: TEncodable, count: int, element: TEncodable) -> int:
         """
         Removes the first `count` occurrences of elements equal to `element` from the list stored at `key`.
@@ -2351,7 +2351,7 @@ class CoreCommands(Protocol):
                 2  # Removes the first 2 occurrences of "value" in the list.
         """
         ...
-    
+
     async def llen(self, key: TEncodable) -> int:
         """
         Get the length of the list stored at `key`.
@@ -2371,7 +2371,7 @@ class CoreCommands(Protocol):
                 3  # Indicates that there are 3 elements in the list.
         """
         ...
-    
+
     async def exists(self, keys: List[TEncodable]) -> int:
         """
         Returns the number of keys in `keys` that exist in the database.
@@ -2399,7 +2399,7 @@ class CoreCommands(Protocol):
                 3  # Indicates that all three keys exist in the database.
         """
         ...
-    
+
     async def unlink(self, keys: List[TEncodable]) -> int:
         """
         Unlink (delete) multiple keys from the database.
@@ -2429,7 +2429,7 @@ class CoreCommands(Protocol):
                 3  # Indicates that all three keys were unlinked from the database.
         """
         ...
-    
+
     async def expire(self, key: TEncodable, seconds: int, option: Optional[ExpireOptions] = ...) -> bool:
         """
         Sets a timeout on `key` in seconds. After the timeout has expired, the key will automatically be deleted.
@@ -2455,7 +2455,7 @@ class CoreCommands(Protocol):
                 True  # Indicates that a timeout of 60 seconds has been set for "my_key."
         """
         ...
-    
+
     async def expireat(self, key: TEncodable, unix_seconds: int, option: Optional[ExpireOptions] = ...) -> bool:
         """
         Sets a timeout on `key` using an absolute Unix timestamp (seconds since January 1, 1970) instead of specifying the
@@ -2483,7 +2483,7 @@ class CoreCommands(Protocol):
                 True
         """
         ...
-    
+
     async def pexpire(self, key: TEncodable, milliseconds: int, option: Optional[ExpireOptions] = ...) -> bool:
         """
         Sets a timeout on `key` in milliseconds. After the timeout has expired, the key will automatically be deleted.
@@ -2509,7 +2509,7 @@ class CoreCommands(Protocol):
                 True  # Indicates that a timeout of 60,000 milliseconds has been set for "my_key."
         """
         ...
-    
+
     async def pexpireat(self, key: TEncodable, unix_milliseconds: int, option: Optional[ExpireOptions] = ...) -> bool:
         """
         Sets a timeout on `key` using an absolute Unix timestamp in milliseconds (milliseconds since January 1, 1970) instead
@@ -2537,7 +2537,7 @@ class CoreCommands(Protocol):
                 True
         """
         ...
-    
+
     async def expiretime(self, key: TEncodable) -> int:
         """
         Returns the absolute Unix timestamp (since January 1, 1970) at which
@@ -2569,7 +2569,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def pexpiretime(self, key: TEncodable) -> int:
         """
         Returns the absolute Unix timestamp (since January 1, 1970) at which
@@ -2600,7 +2600,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def ttl(self, key: TEncodable) -> int:
         """
         Returns the remaining time to live of `key` that has a timeout.
@@ -2626,7 +2626,7 @@ class CoreCommands(Protocol):
                 -1  # Indicates that "key: has no has no associated expire.
         """
         ...
-    
+
     async def pttl(self, key: TEncodable) -> int:
         """
         Returns the remaining time to live of `key` that has a timeout, in milliseconds.
@@ -2650,7 +2650,7 @@ class CoreCommands(Protocol):
                 -2  # Indicates that the key "non_existing_key" does not exist.
         """
         ...
-    
+
     async def persist(self, key: TEncodable) -> bool:
         """
         Remove the existing timeout on `key`, turning the key from volatile (a key with an expire set) to
@@ -2671,7 +2671,7 @@ class CoreCommands(Protocol):
                 True  # Indicates that the timeout associated with the key "my_key" was successfully removed.
         """
         ...
-    
+
     async def type(self, key: TEncodable) -> bytes:
         """
         Returns the bytes string representation of the type of the value stored at `key`.
@@ -2695,7 +2695,7 @@ class CoreCommands(Protocol):
                 b'list'
         """
         ...
-    
+
     async def xadd(self, key: TEncodable, values: List[Tuple[TEncodable, TEncodable]], options: Optional[StreamAddOptions] = ...) -> Optional[bytes]:
         """
         Adds an entry to the specified stream stored at `key`. If the `key` doesn't exist, the stream is created.
@@ -2727,7 +2727,7 @@ class CoreCommands(Protocol):
                 b"0-1"  # Returns the stream id.
         """
         ...
-    
+
     async def xdel(self, key: TEncodable, ids: List[TEncodable]) -> int:
         """
         Removes the specified entries by id from a stream, and returns the number of entries deleted.
@@ -2747,7 +2747,7 @@ class CoreCommands(Protocol):
                 2  # Stream marked 2 entries as deleted.
         """
         ...
-    
+
     async def xtrim(self, key: TEncodable, options: StreamTrimOptions) -> int:
         """
         Trims the stream stored at `key` by evicting older entries.
@@ -2769,7 +2769,7 @@ class CoreCommands(Protocol):
                 1 # One entry was deleted from the stream.
         """
         ...
-    
+
     async def xlen(self, key: TEncodable) -> int:
         """
         Returns the number of entries in the stream stored at `key`.
@@ -2791,7 +2791,7 @@ class CoreCommands(Protocol):
                 2  # There are 2 entries in "mystream".
         """
         ...
-    
+
     async def xrange(self, key: TEncodable, start: StreamRangeBound, end: StreamRangeBound, count: Optional[int] = ...) -> Optional[Mapping[bytes, List[List[bytes]]]]:
         """
         Returns stream entries matching a given range of IDs.
@@ -2831,7 +2831,7 @@ class CoreCommands(Protocol):
                 }  # Indicates the stream IDs and their associated field-value pairs for all stream entries in "mystream".
         """
         ...
-    
+
     async def xrevrange(self, key: TEncodable, end: StreamRangeBound, start: StreamRangeBound, count: Optional[int] = ...) -> Optional[Mapping[bytes, List[List[bytes]]]]:
         """
         Returns stream entries matching a given range of IDs in reverse order. Equivalent to `XRANGE` but returns the
@@ -2872,7 +2872,7 @@ class CoreCommands(Protocol):
                 }  # Indicates the stream IDs and their associated field-value pairs for all stream entries in "mystream".
         """
         ...
-    
+
     async def xread(self, keys_and_ids: Mapping[TEncodable, TEncodable], options: Optional[StreamReadOptions] = ...) -> Optional[Mapping[bytes, Mapping[bytes, List[List[bytes]]]]]:
         """
         Reads entries from the given streams.
@@ -2910,7 +2910,7 @@ class CoreCommands(Protocol):
                 # 1000ms if there is no stream data.
         """
         ...
-    
+
     async def xgroup_create(self, key: TEncodable, group_name: TEncodable, group_id: TEncodable, options: Optional[StreamGroupOptions] = ...) -> TOK:
         """
         Creates a new consumer group uniquely identified by `group_name` for the stream stored at `key`.
@@ -2934,7 +2934,7 @@ class CoreCommands(Protocol):
                 # the most recent entry. The stream was created with length 0 if it did not already exist.
         """
         ...
-    
+
     async def xgroup_destroy(self, key: TEncodable, group_name: TEncodable) -> bool:
         """
         Destroys the consumer group `group_name` for the stream stored at `key`.
@@ -2955,7 +2955,7 @@ class CoreCommands(Protocol):
                 True  # The consumer group "mygroup" for stream "mystream" was destroyed.
         """
         ...
-    
+
     async def xgroup_create_consumer(self, key: TEncodable, group_name: TEncodable, consumer_name: TEncodable) -> bool:
         """
         Creates a consumer named `consumer_name` in the consumer group `group_name` for the stream stored at `key`.
@@ -2977,7 +2977,7 @@ class CoreCommands(Protocol):
                 True  # The consumer "myconsumer" was created in consumer group "mygroup" for the stream "mystream".
         """
         ...
-    
+
     async def xgroup_del_consumer(self, key: TEncodable, group_name: TEncodable, consumer_name: TEncodable) -> int:
         """
         Deletes a consumer named `consumer_name` in the consumer group `group_name` for the stream stored at `key`.
@@ -2997,7 +2997,7 @@ class CoreCommands(Protocol):
                 5  # Consumer "myconsumer" was deleted, and had 5 pending messages unclaimed.
         """
         ...
-    
+
     async def xgroup_set_id(self, key: TEncodable, group_name: TEncodable, stream_id: TEncodable, entries_read: Optional[int] = ...) -> TOK:
         """
         Set the last delivered ID for a consumer group.
@@ -3019,7 +3019,7 @@ class CoreCommands(Protocol):
                 OK  # The last delivered ID for consumer group "mygroup" was set to 0.
         """
         ...
-    
+
     async def xreadgroup(self, keys_and_ids: Mapping[TEncodable, TEncodable], group_name: TEncodable, consumer_name: TEncodable, options: Optional[StreamReadGroupOptions] = ...) -> Optional[Mapping[bytes, Mapping[bytes, Optional[List[List[bytes]]]]]]:
         """
         Reads entries from the given streams owned by a consumer group.
@@ -3053,7 +3053,7 @@ class CoreCommands(Protocol):
                 }  # Read one stream entry from "mystream" using "myconsumer" in the consumer group "mygroup".
         """
         ...
-    
+
     async def xack(self, key: TEncodable, group_name: TEncodable, ids: List[TEncodable]) -> int:
         """
         Removes one or multiple messages from the Pending Entries List (PEL) of a stream consumer group.
@@ -3083,7 +3083,7 @@ class CoreCommands(Protocol):
                 1  # 1 pending message was acknowledged and removed from the Pending Entries List for "mygroup".
         """
         ...
-    
+
     async def xpending(self, key: TEncodable, group_name: TEncodable) -> List[Union[int, bytes, List[List[bytes]], None]]:
         """
         Returns stream message summary information for pending messages for the given consumer group.
@@ -3111,7 +3111,7 @@ class CoreCommands(Protocol):
                 [4, "1-0", "1-3", [["my_consumer1", "3"], ["my_consumer2", "1"]]
         """
         ...
-    
+
     async def xpending_range(self, key: TEncodable, group_name: TEncodable, start: StreamRangeBound, end: StreamRangeBound, count: int, options: Optional[StreamPendingOptions] = ...) -> List[List[Union[bytes, int]]]:
         """
         Returns an extended form of stream message information for pending messages matching a given range of IDs.
@@ -3160,7 +3160,7 @@ class CoreCommands(Protocol):
                 # Extended stream entry information for the pending entries associated with "my_consumer".
         """
         ...
-    
+
     async def xclaim(self, key: TEncodable, group: TEncodable, consumer: TEncodable, min_idle_time_ms: int, ids: List[TEncodable], options: Optional[StreamClaimOptions] = ...) -> Mapping[bytes, List[List[bytes]]]:
         """
         Changes the ownership of a pending message.
@@ -3196,7 +3196,7 @@ class CoreCommands(Protocol):
                 {b"1-0": [[b"field1", b"value1"]]}
         """
         ...
-    
+
     async def xclaim_just_id(self, key: TEncodable, group: TEncodable, consumer: TEncodable, min_idle_time_ms: int, ids: List[TEncodable], options: Optional[StreamClaimOptions] = ...) -> List[bytes]:
         """
         Changes the ownership of a pending message. This function returns a List with
@@ -3229,7 +3229,7 @@ class CoreCommands(Protocol):
                 [b"1-0"]
         """
         ...
-    
+
     async def xautoclaim(self, key: TEncodable, group_name: TEncodable, consumer_name: TEncodable, min_idle_time_ms: int, start: TEncodable, count: Optional[int] = ...) -> List[Union[bytes, Mapping[bytes, List[List[bytes]]], List[bytes]]]:
         """
         Transfers ownership of pending stream entries that match the specified criteria.
@@ -3293,7 +3293,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     async def xautoclaim_just_id(self, key: TEncodable, group_name: TEncodable, consumer_name: TEncodable, min_idle_time_ms: int, start: TEncodable, count: Optional[int] = ...) -> List[Union[bytes, List[bytes]]]:
         """
         Transfers ownership of pending stream entries that match the specified criteria. This command uses the JUSTID
@@ -3341,7 +3341,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     async def xinfo_groups(self, key: TEncodable) -> List[Mapping[bytes, Union[bytes, int, None]]]:
         """
         Returns the list of all consumer groups and their attributes for the stream stored at `key`.
@@ -3378,7 +3378,7 @@ class CoreCommands(Protocol):
                 # The list of consumer groups and their attributes for stream "my_stream".
         """
         ...
-    
+
     async def xinfo_consumers(self, key: TEncodable, group_name: TEncodable) -> List[Mapping[bytes, Union[bytes, int]]]:
         """
         Returns the list of all consumers and their attributes for the given consumer group of the stream stored at
@@ -3413,7 +3413,7 @@ class CoreCommands(Protocol):
                 # The list of consumers and their attributes for consumer group "my_group" of stream "my_stream".
         """
         ...
-    
+
     async def xinfo_stream(self, key: TEncodable) -> TXInfoStreamResponse:
         """
         Returns information about the stream stored at `key`. To get more detailed information, use `xinfo_stream_full`.
@@ -3451,7 +3451,7 @@ class CoreCommands(Protocol):
                 # the stream is empty.
         """
         ...
-    
+
     async def xinfo_stream_full(self, key: TEncodable, count: Optional[int] = ...) -> TXInfoStreamFullResponse:
         """
         Returns verbose information about the stream stored at `key`.
@@ -3536,7 +3536,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.0.0.
         """
         ...
-    
+
     async def geoadd(self, key: TEncodable, members_geospatialdata: Mapping[TEncodable, GeospatialData], existing_options: Optional[ConditionalChange] = ..., changed: bool = ...) -> int:
         """
         Adds geospatial members with their positions to the specified sorted set stored at `key`.
@@ -3582,7 +3582,7 @@ class CoreCommands(Protocol):
                 1  # Updates the position of an existing member in the sorted set "my_sorted_set".
         """
         ...
-    
+
     async def geodist(self, key: TEncodable, member1: TEncodable, member2: TEncodable, unit: Optional[GeoUnit] = ...) -> Optional[float]:
         """
         Returns the distance between two members in the geospatial index stored at `key`.
@@ -3617,7 +3617,7 @@ class CoreCommands(Protocol):
                 None  # Returns None for non-existing member.
         """
         ...
-    
+
     async def geohash(self, key: TEncodable, members: List[TEncodable]) -> List[Optional[bytes]]:
         """
         Returns the GeoHash bytes strings representing the positions of all the specified members in the sorted set stored at
@@ -3647,7 +3647,7 @@ class CoreCommands(Protocol):
                 ["sqc8b49rny0", "sqdtr74hyu0", None]  # Indicates the GeoHash bytes strings for the specified members.
         """
         ...
-    
+
     async def geopos(self, key: TEncodable, members: List[TEncodable]) -> List[Optional[List[float]]]:
         """
         Returns the positions (longitude and latitude) of all the given members of a geospatial index in the sorted set stored
@@ -3676,7 +3676,7 @@ class CoreCommands(Protocol):
                 [[13.36138933897018433, 38.11555639549629859], [15.08726745843887329, 37.50266842333162032], None]
         """
         ...
-    
+
     async def geosearch(self, key: TEncodable, search_from: Union[str, bytes, GeospatialData], search_by: Union[GeoSearchByRadius, GeoSearchByBox], order_by: Optional[OrderBy] = ..., count: Optional[GeoSearchCount] = ..., with_coord: bool = ..., with_dist: bool = ..., with_hash: bool = ...) -> List[Union[bytes, List[Union[bytes, float, int, List[float]]]]]:
         """
         Searches for members in a sorted set stored at `key` representing geospatial data within a circular or rectangular
@@ -3767,7 +3767,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     async def geosearchstore(self, destination: TEncodable, source: TEncodable, search_from: Union[str, bytes, GeospatialData], search_by: Union[GeoSearchByRadius, GeoSearchByBox], count: Optional[GeoSearchCount] = ..., store_dist: bool = ...) -> int:
         """
         Searches for members in a sorted set stored at `key` representing geospatial data within a circular or rectangular
@@ -3832,7 +3832,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     async def zadd(self, key: TEncodable, members_scores: Mapping[TEncodable, float], existing_options: Optional[ConditionalChange] = ..., update_condition: Optional[UpdateOptions] = ..., changed: bool = ...) -> int:
         """
         Adds members with their scores to the sorted set stored at `key`.
@@ -3876,7 +3876,7 @@ class CoreCommands(Protocol):
                 2  # Updates the scores of two existing members in the sorted set "existing_sorted_set."
         """
         ...
-    
+
     async def zadd_incr(self, key: TEncodable, member: TEncodable, increment: float, existing_options: Optional[ConditionalChange] = ..., update_condition: Optional[UpdateOptions] = ...) -> Optional[float]:
         """
         Increments the score of member in the sorted set stored at `key` by `increment`.
@@ -3912,7 +3912,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def zcard(self, key: TEncodable) -> int:
         """
         Returns the cardinality (number of elements) of the sorted set stored at `key`.
@@ -3934,7 +3934,7 @@ class CoreCommands(Protocol):
                 0
         """
         ...
-    
+
     async def zcount(self, key: TEncodable, min_score: Union[InfBound, ScoreBoundary], max_score: Union[InfBound, ScoreBoundary]) -> int:
         """
         Returns the number of members in the sorted set stored at `key` with scores between `min_score` and `max_score`.
@@ -3969,7 +3969,7 @@ class CoreCommands(Protocol):
                 1  # Indicates that there is one ScoreBoundary with 5.0 < score <= 10.0 in the sorted set "my_sorted_set".
         """
         ...
-    
+
     async def zincrby(self, key: TEncodable, increment: float, member: TEncodable) -> float:
         """
         Increments the score of `member` in the sorted set stored at `key` by `increment`.
@@ -3996,7 +3996,7 @@ class CoreCommands(Protocol):
                 5.5  # A new member is added to the sorted set with the score being 5.5.
         """
         ...
-    
+
     async def zpopmax(self, key: TEncodable, count: Optional[int] = ...) -> Mapping[bytes, float]:
         """
         Removes and returns the members with the highest scores from the sorted set stored at `key`.
@@ -4025,7 +4025,7 @@ class CoreCommands(Protocol):
                                                     # of 7.5 have been removed from the sorted set.
         """
         ...
-    
+
     async def bzpopmax(self, keys: List[TEncodable], timeout: float) -> Optional[List[Union[bytes, float]]]:
         """
         Pops the member with the highest score from the first non-empty sorted set, with the given keys being checked in
@@ -4059,7 +4059,7 @@ class CoreCommands(Protocol):
                 [b'my_sorted_set1', b'member1', 10.0]  # "member1" with a score of 10.0 has been removed from "my_sorted_set1".
         """
         ...
-    
+
     async def zpopmin(self, key: TEncodable, count: Optional[int] = ...) -> Mapping[bytes, float]:
         """
         Removes and returns the members with the lowest scores from the sorted set stored at `key`.
@@ -4087,7 +4087,7 @@ class CoreCommands(Protocol):
                                                      # of 8.0 have been removed from the sorted set.
         """
         ...
-    
+
     async def bzpopmin(self, keys: List[TEncodable], timeout: float) -> Optional[List[Union[bytes, float]]]:
         """
         Pops the member with the lowest score from the first non-empty sorted set, with the given keys being checked in
@@ -4121,7 +4121,7 @@ class CoreCommands(Protocol):
                 [b'my_sorted_set1', b'member2', 5.0]  # "member2" with a score of 5.0 has been removed from "my_sorted_set1".
         """
         ...
-    
+
     async def zrange(self, key: TEncodable, range_query: Union[RangeByIndex, RangeByLex, RangeByScore], reverse: bool = ...) -> List[bytes]:
         """
         Returns the specified range of elements in the sorted set stored at `key`.
@@ -4156,7 +4156,7 @@ class CoreCommands(Protocol):
                                          # ascending order.
         """
         ...
-    
+
     async def zrange_withscores(self, key: TEncodable, range_query: Union[RangeByIndex, RangeByScore], reverse: bool = ...) -> Mapping[bytes, float]:
         """
         Returns the specified range of elements with their scores in the sorted set stored at `key`.
@@ -4187,7 +4187,7 @@ class CoreCommands(Protocol):
                                                     # to 3, with their scores.
         """
         ...
-    
+
     async def zrangestore(self, destination: TEncodable, source: TEncodable, range_query: Union[RangeByIndex, RangeByLex, RangeByScore], reverse: bool = ...) -> int:
         """
         Stores a specified range of elements from the sorted set at `source`, into a new sorted set at `destination`. If
@@ -4225,7 +4225,7 @@ class CoreCommands(Protocol):
                    # the sorted set at "destination_key".
         """
         ...
-    
+
     async def zrank(self, key: TEncodable, member: TEncodable) -> Optional[int]:
         """
         Returns the rank of `member` in the sorted set stored at `key`, with scores ordered from low to high.
@@ -4250,7 +4250,7 @@ class CoreCommands(Protocol):
                 None  # Indicates that "non_existing_member" is not present in the sorted set "my_sorted_set".
         """
         ...
-    
+
     async def zrank_withscore(self, key: TEncodable, member: TEncodable) -> Optional[List[Union[int, float]]]:
         """
         Returns the rank of `member` in the sorted set stored at `key` with its score, where scores are ordered from the
@@ -4277,7 +4277,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.2.0.
         """
         ...
-    
+
     async def zrevrank(self, key: TEncodable, member: TEncodable) -> Optional[int]:
         """
         Returns the rank of `member` in the sorted set stored at `key`, where scores are ordered from the highest to
@@ -4302,7 +4302,7 @@ class CoreCommands(Protocol):
                 2  # "member2" has the third-highest score in the sorted set "my_sorted_set"
         """
         ...
-    
+
     async def zrevrank_withscore(self, key: TEncodable, member: TEncodable) -> Optional[List[Union[int, float]]]:
         """
         Returns the rank of `member` in the sorted set stored at `key` with its score, where scores are ordered from the
@@ -4328,7 +4328,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.2.0.
         """
         ...
-    
+
     async def zrem(self, key: TEncodable, members: List[TEncodable]) -> int:
         """
         Removes the specified members from the sorted set stored at `key`.
@@ -4352,7 +4352,7 @@ class CoreCommands(Protocol):
                 0  # Indicates that no members were removed as the sorted set "non_existing_sorted_set" does not exist.
         """
         ...
-    
+
     async def zremrangebyscore(self, key: TEncodable, min_score: Union[InfBound, ScoreBoundary], max_score: Union[InfBound, ScoreBoundary]) -> int:
         """
         Removes all elements in the sorted set stored at `key` with a score between `min_score` and `max_score`.
@@ -4386,7 +4386,7 @@ class CoreCommands(Protocol):
                 0  # Indicates that no members were removed as the sorted set "non_existing_sorted_set" does not exist.
         """
         ...
-    
+
     async def zremrangebylex(self, key: TEncodable, min_lex: Union[InfBound, LexBoundary], max_lex: Union[InfBound, LexBoundary]) -> int:
         """
         Removes all elements in the sorted set stored at `key` with a lexicographical order between `min_lex` and
@@ -4418,7 +4418,7 @@ class CoreCommands(Protocol):
                 0  # Indicates that no members were removed as the sorted set "non_existing_sorted_set" does not exist.
         """
         ...
-    
+
     async def zremrangebyrank(self, key: TEncodable, start: int, end: int) -> int:
         """
         Removes all elements in the sorted set stored at `key` with rank between `start` and `end`.
@@ -4449,7 +4449,7 @@ class CoreCommands(Protocol):
                 0  # Indicates that nothing was removed.
         """
         ...
-    
+
     async def zlexcount(self, key: TEncodable, min_lex: Union[InfBound, LexBoundary], max_lex: Union[InfBound, LexBoundary]) -> int:
         """
         Returns the number of members in the sorted set stored at `key` with lexicographical values between `min_lex` and
@@ -4486,7 +4486,7 @@ class CoreCommands(Protocol):
                    # "my_sorted_set".
         """
         ...
-    
+
     async def zscore(self, key: TEncodable, member: TEncodable) -> Optional[float]:
         """
         Returns the score of `member` in the sorted set stored at `key`.
@@ -4511,7 +4511,7 @@ class CoreCommands(Protocol):
                 None
         """
         ...
-    
+
     async def zmscore(self, key: TEncodable, members: List[TEncodable]) -> List[Optional[float]]:
         """
         Returns the scores associated with the specified `members` in the sorted set stored at `key`.
@@ -4532,7 +4532,7 @@ class CoreCommands(Protocol):
                 [1.0, None, 3.0]
         """
         ...
-    
+
     async def zdiff(self, keys: List[TEncodable]) -> List[bytes]:
         """
         Returns the difference between the first sorted set and all the successive sorted sets.
@@ -4560,7 +4560,7 @@ class CoreCommands(Protocol):
                 [b"element1"]  # Indicates that "element1" is in "sorted_set1" but not "sorted_set2" or "sorted_set3".
         """
         ...
-    
+
     async def zdiff_withscores(self, keys: List[TEncodable]) -> Mapping[bytes, float]:
         """
         Returns the difference between the first sorted set and all the successive sorted sets, with the associated scores.
@@ -4588,7 +4588,7 @@ class CoreCommands(Protocol):
                 {b"element1": 1.0}  # Indicates that "element1" is in "sorted_set1" but not "sorted_set2" or "sorted_set3".
         """
         ...
-    
+
     async def zdiffstore(self, destination: TEncodable, keys: List[TEncodable]) -> int:
         """
         Calculates the difference between the first sorted set and all the successive sorted sets at `keys` and stores
@@ -4618,7 +4618,7 @@ class CoreCommands(Protocol):
                 ['member2']  # "member2" is now stored in "my_sorted_set"
         """
         ...
-    
+
     async def zinter(self, keys: List[TEncodable]) -> List[bytes]:
         """
         Computes the intersection of sorted sets given by the specified `keys` and returns a list of intersecting elements.
@@ -4643,7 +4643,7 @@ class CoreCommands(Protocol):
                 [b'member1']
         """
         ...
-    
+
     async def zinter_withscores(self, keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]], aggregation_type: Optional[AggregationType] = ...) -> Mapping[bytes, float]:
         """
         Computes the intersection of sorted sets given by the specified `keys` and returns a sorted set of intersecting
@@ -4677,7 +4677,7 @@ class CoreCommands(Protocol):
                 {b'member1': 10.5}  # "member1" with score of 10.5 is the result.
         """
         ...
-    
+
     async def zinterstore(self, destination: TEncodable, keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]], aggregation_type: Optional[AggregationType] = ...) -> int:
         """
         Computes the intersection of sorted sets given by the specified `keys` and stores the result in `destination`.
@@ -4716,7 +4716,7 @@ class CoreCommands(Protocol):
                 {b'member1': 10.5}  # "member1" is now stored in "my_sorted_set" with score of 10.5.
         """
         ...
-    
+
     async def zunion(self, keys: List[TEncodable]) -> List[bytes]:
         """
         Computes the union of sorted sets given by the specified `keys` and returns a list of union elements.
@@ -4741,7 +4741,7 @@ class CoreCommands(Protocol):
                 [b'member1', b'member2']
         """
         ...
-    
+
     async def zunion_withscores(self, keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]], aggregation_type: Optional[AggregationType] = ...) -> Mapping[bytes, float]:
         """
         Computes the union of sorted sets given by the specified `keys` and returns a sorted set of union elements with scores.
@@ -4774,7 +4774,7 @@ class CoreCommands(Protocol):
                 {b'member1': 10.5, b'member2': 8.2}
         """
         ...
-    
+
     async def zunionstore(self, destination: TEncodable, keys: Union[List[TEncodable], List[Tuple[TEncodable, float]]], aggregation_type: Optional[AggregationType] = ...) -> int:
         """
         Computes the union of sorted sets given by the specified `keys` and stores the result in `destination`.
@@ -4813,7 +4813,7 @@ class CoreCommands(Protocol):
                 {b'member1': 10.5, b'member2': 8.2}
         """
         ...
-    
+
     async def zrandmember(self, key: TEncodable) -> Optional[bytes]:
         """
         Returns a random member from the sorted set stored at 'key'.
@@ -4836,7 +4836,7 @@ class CoreCommands(Protocol):
                 None  # "non_existing_sorted_set" is not an existing key, so None was returned.
         """
         ...
-    
+
     async def zrandmember_count(self, key: TEncodable, count: int) -> List[bytes]:
         """
         Retrieves up to the absolute value of `count` random members from the sorted set stored at 'key'.
@@ -4863,7 +4863,7 @@ class CoreCommands(Protocol):
                 []  # "non_existing_sorted_set" is not an existing key, so an empty list was returned.
         """
         ...
-    
+
     async def zrandmember_withscores(self, key: TEncodable, count: int) -> List[List[Union[bytes, float]]]:
         """
         Retrieves up to the absolute value of `count` random members along with their scores from the sorted set
@@ -4894,7 +4894,7 @@ class CoreCommands(Protocol):
                 []  # "non_existing_sorted_set" is not an existing key, so an empty list was returned.
         """
         ...
-    
+
     async def zmpop(self, keys: List[TEncodable], filter: ScoreFilter, count: Optional[int] = ...) -> Optional[List[Union[bytes, Mapping[bytes, float]]]]:
         """
         Pops a member-score pair from the first non-empty sorted set, with the given keys being checked in the order
@@ -4932,7 +4932,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def bzmpop(self, keys: List[TEncodable], modifier: ScoreFilter, timeout: float, count: Optional[int] = ...) -> Optional[List[Union[bytes, Mapping[bytes, float]]]]:
         """
         Pops a member-score pair from the first non-empty sorted set, with the given keys being checked in the order
@@ -4976,7 +4976,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def zintercard(self, keys: List[TEncodable], limit: Optional[int] = ...) -> int:
         """
         Returns the cardinality of the intersection of the sorted sets specified by `keys`. When provided with the
@@ -5008,7 +5008,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def script_show(self, sha1: TEncodable) -> bytes:
         """
         Returns the original source code of a script in the script cache.
@@ -5030,7 +5030,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 8.0.0.
         """
         ...
-    
+
     async def pfadd(self, key: TEncodable, elements: List[TEncodable]) -> int:
         """
         Adds all elements to the HyperLogLog data structure stored at the specified `key`.
@@ -5056,7 +5056,7 @@ class CoreCommands(Protocol):
                 True # A new empty data structure was created
         """
         ...
-    
+
     async def pfcount(self, keys: List[TEncodable]) -> int:
         """
         Estimates the cardinality of the data stored in a HyperLogLog structure for a single key or
@@ -5080,7 +5080,7 @@ class CoreCommands(Protocol):
                 4  # The approximated cardinality of the union of "hll_1" and "hll_2" is 4.
         """
         ...
-    
+
     async def pfmerge(self, destination: TEncodable, source_keys: List[TEncodable]) -> TOK:
         """
         Merges multiple HyperLogLog values into a unique value. If the destination variable exists, it is treated as one
@@ -5107,7 +5107,7 @@ class CoreCommands(Protocol):
                 3  # The approximated cardinality of "new_hll" is 3.
         """
         ...
-    
+
     async def bitcount(self, key: TEncodable, options: Optional[OffsetOptions] = ...) -> int:
         """
         Counts the number of set bits (population counting) in the string stored at `key`. The `options` argument can
@@ -5139,7 +5139,7 @@ class CoreCommands(Protocol):
                 1  # Indicates that the last bit of the string stored at "my_key3" is set.
         """
         ...
-    
+
     async def setbit(self, key: TEncodable, offset: int, value: int) -> int:
         """
         Sets or clears the bit at `offset` in the string value stored at `key`. The `offset` is a zero-based index,
@@ -5162,7 +5162,7 @@ class CoreCommands(Protocol):
                 0  # The second bit value was 0 before setting to 1.
         """
         ...
-    
+
     async def getbit(self, key: TEncodable, offset: int) -> int:
         """
         Returns the bit value at `offset` in the string value stored at `key`.
@@ -5184,7 +5184,7 @@ class CoreCommands(Protocol):
                 1  # Indicates that the second bit of the string stored at "my_key" is set to 1.
         """
         ...
-    
+
     async def bitpos(self, key: TEncodable, bit: int, options: Optional[OffsetOptions] = ...) -> int:
         """
         Returns the position of the first bit matching the given `bit` value. The optional starting offset
@@ -5226,7 +5226,7 @@ class CoreCommands(Protocol):
                    # is at the eighth position.
         """
         ...
-    
+
     async def bitop(self, operation: BitwiseOperation, destination: TEncodable, keys: List[TEncodable]) -> int:
         """
         Perform a bitwise operation between multiple keys (containing string values) and store the result in the
@@ -5254,7 +5254,7 @@ class CoreCommands(Protocol):
                 "@"  # "@" has binary value 01000000
         """
         ...
-    
+
     async def bitfield(self, key: TEncodable, subcommands: List[BitFieldSubCommands]) -> List[Optional[int]]:
         """
         Reads or modifies the array of bits representing the string that is held at `key` based on the specified
@@ -5292,7 +5292,7 @@ class CoreCommands(Protocol):
                         # unsigned encoding of 2 is 3.
         """
         ...
-    
+
     async def bitfield_read_only(self, key: TEncodable, subcommands: List[BitFieldGet]) -> List[int]:
         """
         Reads the array of bits representing the string that is held at `key` based on the specified `subcommands`.
@@ -5314,7 +5314,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.0.0.
         """
         ...
-    
+
     async def object_encoding(self, key: TEncodable) -> Optional[bytes]:
         """
         Returns the internal encoding for the Valkey object stored at `key`.
@@ -5335,7 +5335,7 @@ class CoreCommands(Protocol):
                 b"listpack"  # The hash stored at "my_hash" has an internal encoding of "listpack".
         """
         ...
-    
+
     async def object_freq(self, key: TEncodable) -> Optional[int]:
         """
         Returns the logarithmic access frequency counter of a Valkey object stored at `key`.
@@ -5356,7 +5356,7 @@ class CoreCommands(Protocol):
                 2  # The logarithmic access frequency counter of "my_hash" has a value of 2.
         """
         ...
-    
+
     async def object_idletime(self, key: TEncodable) -> Optional[int]:
         """
         Returns the time in seconds since the last access to the value stored at `key`.
@@ -5376,7 +5376,7 @@ class CoreCommands(Protocol):
                 13  # "my_hash" was last accessed 13 seconds ago.
         """
         ...
-    
+
     async def object_refcount(self, key: TEncodable) -> Optional[int]:
         """
         Returns the reference count of the object stored at `key`.
@@ -5396,7 +5396,7 @@ class CoreCommands(Protocol):
                 2  # "my_hash" has a reference count of 2.
         """
         ...
-    
+
     async def srandmember(self, key: TEncodable) -> Optional[bytes]:
         """
         Returns a random element from the set value stored at 'key'.
@@ -5419,7 +5419,7 @@ class CoreCommands(Protocol):
                 None  # "non_existing_set" is not an existing key, so None was returned.
         """
         ...
-    
+
     async def srandmember_count(self, key: TEncodable, count: int) -> List[bytes]:
         """
         Returns one or more random elements from the set value stored at 'key'.
@@ -5446,7 +5446,7 @@ class CoreCommands(Protocol):
                 []  # "non_existing_set" is not an existing key, so an empty list was returned.
         """
         ...
-    
+
     async def getex(self, key: TEncodable, expiry: Optional[ExpiryGetEx] = ...) -> Optional[bytes]:
         """
         Get the value of `key` and optionally set its expiration. `GETEX` is similar to `GET`.
@@ -5477,7 +5477,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.2.0.
         """
         ...
-    
+
     async def dump(self, key: TEncodable) -> Optional[bytes]:
         """
         Serialize the value stored at `key` in a Valkey-specific format and return it to the user.
@@ -5499,7 +5499,7 @@ class CoreCommands(Protocol):
                 None # Non-existing key will return `None`.
         """
         ...
-    
+
     async def restore(self, key: TEncodable, ttl: int, value: TEncodable, replace: bool = ..., absttl: bool = ..., idletime: Optional[int] = ..., frequency: Optional[int] = ...) -> TOK:
         """
         Create a `key` associated with a `value` that is obtained by deserializing the provided
@@ -5536,7 +5536,7 @@ class CoreCommands(Protocol):
                 OK # Indicates restore `newKey` with `FREQ` option
         """
         ...
-    
+
     async def sscan(self, key: TEncodable, cursor: TEncodable, match: Optional[TEncodable] = ..., count: Optional[int] = ...) -> List[Union[bytes, List[bytes]]]:
         """
         Iterates incrementally over a set.
@@ -5582,7 +5582,7 @@ class CoreCommands(Protocol):
             Members: [b'47', b'122', b'1', b'53', b'10', b'14', b'80']
         """
         ...
-    
+
     async def zscan(self, key: TEncodable, cursor: TEncodable, match: Optional[TEncodable] = ..., count: Optional[int] = ..., no_scores: bool = ...) -> List[Union[bytes, List[bytes]]]:
         """
         Iterates incrementally over a sorted set.
@@ -5650,7 +5650,7 @@ class CoreCommands(Protocol):
             Members: [b'value 55', b'value 24', b'value 90', b'value 113']
         """
         ...
-    
+
     async def hscan(self, key: TEncodable, cursor: TEncodable, match: Optional[TEncodable] = ..., count: Optional[int] = ..., no_values: bool = ...) -> List[Union[bytes, List[bytes]]]:
         """
         Iterates incrementally over a hash.
@@ -5718,7 +5718,7 @@ class CoreCommands(Protocol):
             Members: [b'field 420', b'field 221']
         """
         ...
-    
+
     async def fcall(self, function: TEncodable, keys: Optional[List[TEncodable]] = ..., arguments: Optional[List[TEncodable]] = ...) -> TResult:
         """
         Invokes a previously loaded function.
@@ -5746,7 +5746,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def fcall_ro(self, function: TEncodable, keys: Optional[List[TEncodable]] = ..., arguments: Optional[List[TEncodable]] = ...) -> TResult:
         """
         Invokes a previously loaded read-only function.
@@ -5775,7 +5775,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def watch(self, keys: List[TEncodable]) -> TOK:
         """
         Marks the given keys to be watched for conditional execution of an atomic batch (Transaction).
@@ -5815,7 +5815,7 @@ class CoreCommands(Protocol):
                 None  # None is returned when the watched key is modified before transaction execution.
         """
         ...
-    
+
     async def get_pubsub_message(self) -> PubSubMsg:
         """
         Returns the next pubsub message.
@@ -5833,7 +5833,7 @@ class CoreCommands(Protocol):
             >>> pubsub_msg = await listening_client.get_pubsub_message()
         """
         ...
-    
+
     def try_get_pubsub_message(self) -> Optional[PubSubMsg]:
         """
         Tries to return the next pubsub message.
@@ -5851,7 +5851,7 @@ class CoreCommands(Protocol):
             >>> pubsub_msg = listening_client.try_get_pubsub_message()
         """
         ...
-    
+
     async def lcs(self, key1: TEncodable, key2: TEncodable) -> bytes:
         """
         Returns the longest common subsequence between strings stored at key1 and key2.
@@ -5883,7 +5883,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def lcs_len(self, key1: TEncodable, key2: TEncodable) -> int:
         """
         Returns the length of the longest common subsequence between strings stored at key1 and key2.
@@ -5913,7 +5913,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def lcs_idx(self, key1: TEncodable, key2: TEncodable, min_match_len: Optional[int] = ..., with_match_len: Optional[bool] = ...) -> Mapping[bytes, Union[List[List[Union[List[int], int]]], int]]:
         """
         Returns the indices and length of the longest common subsequence between strings stored at key1 and key2.
@@ -5991,7 +5991,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def lpos(self, key: TEncodable, element: TEncodable, rank: Optional[int] = ..., count: Optional[int] = ..., max_len: Optional[int] = ...) -> Union[int, List[int], None]:
         """
         Returns the index or indexes of element(s) matching `element` in the `key` list. If no match is found,
@@ -6030,7 +6030,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 6.0.6.
         """
         ...
-    
+
     async def pubsub_channels(self, pattern: Optional[TEncodable] = ...) -> List[bytes]:
         """
         Lists the currently active channels.
@@ -6055,7 +6055,7 @@ class CoreCommands(Protocol):
                 [b"news.sports", "news.weather"]
         """
         ...
-    
+
     async def pubsub_numpat(self) -> int:
         """
         Returns the number of unique patterns that are subscribed to by clients.
@@ -6076,7 +6076,7 @@ class CoreCommands(Protocol):
                 3
         """
         ...
-    
+
     async def pubsub_numsub(self, channels: Optional[List[TEncodable]] = ...) -> Mapping[bytes, int]:
         """
         Returns the number of subscribers (exclusive of clients subscribed to patterns) for the specified channels.
@@ -6104,7 +6104,7 @@ class CoreCommands(Protocol):
                 {}
         """
         ...
-    
+
     async def sort(self, key: TEncodable, by_pattern: Optional[TEncodable] = ..., limit: Optional[Limit] = ..., get_patterns: Optional[List[TEncodable]] = ..., order: Optional[OrderBy] = ..., alpha: Optional[bool] = ...) -> List[Optional[bytes]]:
         """
         Sorts the elements in the list, set, or sorted set at `key` and returns the result.
@@ -6171,7 +6171,7 @@ class CoreCommands(Protocol):
                 [b'Bob', b'Alice']
         """
         ...
-    
+
     async def sort_ro(self, key: TEncodable, by_pattern: Optional[TEncodable] = ..., limit: Optional[Limit] = ..., get_patterns: Optional[List[TEncodable]] = ..., order: Optional[OrderBy] = ..., alpha: Optional[bool] = ...) -> List[Optional[bytes]]:
         """
         Sorts the elements in the list, set, or sorted set at `key` and returns the result.
@@ -6239,7 +6239,7 @@ class CoreCommands(Protocol):
         Since: Valkey version 7.0.0.
         """
         ...
-    
+
     async def sort_store(self, key: TEncodable, destination: TEncodable, by_pattern: Optional[TEncodable] = ..., limit: Optional[Limit] = ..., get_patterns: Optional[List[TEncodable]] = ..., order: Optional[OrderBy] = ..., alpha: Optional[bool] = ...) -> int:
         """
         Sorts the elements in the list, set, or sorted set at `key` and stores the result in `store`.
@@ -6298,7 +6298,7 @@ class CoreCommands(Protocol):
                 [b'1', b'2', b'3']
         """
         ...
-    
+
     async def subscribe_lazy(self, channels: Set[str]) -> None:
         """
         Subscribe to exact channels (non-blocking).
@@ -6323,7 +6323,7 @@ class CoreCommands(Protocol):
             >>> await client.subscribe_lazy({"channel1", "channel2"})
         """
         ...
-    
+
     async def subscribe(self, channels: Set[str], timeout_ms: int = ...) -> None:
         """
         Subscribe to exact channels (blocking).
@@ -6351,7 +6351,7 @@ class CoreCommands(Protocol):
             >>> print("Subscribed successfully within 5 seconds")
         """
         ...
-    
+
     async def psubscribe_lazy(self, patterns: Set[str]) -> None:
         """
         Subscribe to channel patterns (non-blocking).
@@ -6376,7 +6376,7 @@ class CoreCommands(Protocol):
             >>> await client.psubscribe_lazy({"news.*", "updates.*"})
         """
         ...
-    
+
     async def psubscribe(self, patterns: Set[str], timeout_ms: int = ...) -> None:
         """
         Subscribe to channel patterns (blocking).
@@ -6404,7 +6404,7 @@ class CoreCommands(Protocol):
             >>> print("Subscribed to patterns successfully within 10 seconds")
         """
         ...
-    
+
     async def unsubscribe_lazy(self, channels: Optional[Set[str]] = ...) -> None:
         """
         Unsubscribe from exact channels (non-blocking).
@@ -6430,7 +6430,7 @@ class CoreCommands(Protocol):
             >>> await client.unsubscribe_lazy()
         """
         ...
-    
+
     async def unsubscribe(self, channels: Optional[Set[str]] = ..., timeout_ms: int = ...) -> None:
         """
         Unsubscribe from exact channels (blocking).
@@ -6468,7 +6468,7 @@ class CoreCommands(Protocol):
             >>> await client.unsubscribe(timeout=10.0)
         """
         ...
-    
+
     async def punsubscribe_lazy(self, patterns: Optional[Set[str]] = ...) -> None:
         """
         Unsubscribe from channel patterns (non-blocking).
@@ -6493,7 +6493,7 @@ class CoreCommands(Protocol):
             >>> await client.punsubscribe_lazy()
         """
         ...
-    
+
     async def punsubscribe(self, patterns: Optional[Set[str]] = ..., timeout_ms: int = ...) -> None:
         """
         Unsubscribe from channel patterns (blocking).
@@ -6527,6 +6527,3 @@ class CoreCommands(Protocol):
             >>> await client.punsubscribe(ALL_PATTERNS, timeout_ms=10000)
         """
         ...
-    
-
-

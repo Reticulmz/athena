@@ -14,7 +14,7 @@ class SlotType(Enum):
 class Route:
     def __init__(self) -> None:
         ...
-    
+
 
 
 class AllNodes(Route):
@@ -53,7 +53,7 @@ class SlotKeyRoute(Route):
     """
     def __init__(self, slot_type: SlotType, slot_key: str) -> None:
         ...
-    
+
 
 
 class SlotIdRoute(Route):
@@ -67,7 +67,7 @@ class SlotIdRoute(Route):
     """
     def __init__(self, slot_type: SlotType, slot_id: int) -> None:
         ...
-    
+
 
 
 class ByAddressRoute(Route):
@@ -81,7 +81,7 @@ class ByAddressRoute(Route):
     """
     def __init__(self, host: str, port: Optional[int] = ...) -> None:
         ...
-    
+
 
 
 def to_protobuf_slot_type(slot_type: SlotType) -> ProtoSlotTypes.ValueType:
@@ -92,4 +92,3 @@ def build_protobuf_route(route: Optional[Route]) -> Optional[Routes]:
 
 def set_protobuf_route(request: CommandRequest, route: Optional[Route]) -> None:
     ...
-
