@@ -15,6 +15,8 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from glide_shared.constants import TEncodable
 
 import pytest
@@ -53,7 +55,8 @@ _HEADER_SIZE = 7
 
 
 class _StubCountryResolver:
-    def resolve(self, _headers: object) -> str:
+    def resolve(self, headers: Mapping[str, str]) -> str:
+        _ = headers
         return "JP"
 
 
@@ -67,8 +70,8 @@ def _build_c2s_packet(packet_id: ClientPacketID, payload: bytes = b"") -> bytes:
 
 
 def _extract_login_reply(body: bytes) -> int:
-    (value,) = struct.unpack("<i", body[_HEADER_SIZE : _HEADER_SIZE + 4])
-    return value
+    unpacked = struct.unpack("<i", body[_HEADER_SIZE : _HEADER_SIZE + 4])
+    return cast("int", unpacked[0])
 
 
 def _make_e2e_app(
@@ -113,7 +116,7 @@ async def _login_and_get_token(
     auth_service: AuthService,
     client: TestClient,
 ) -> str:
-    await auth_service.register(
+    _ = await auth_service.register(
         RegistrationForm(username="TestUser", email="t@e.com", password=_PASSWORD),
     )
     resp = client.post("/", content=_build_login_body())
@@ -138,10 +141,12 @@ class TestPollingE2EFlow:
         async def handler(_payload: bytes, *_a: object, **_kw: object) -> None:
             await packet_queue.enqueue(user_id_ref[0], b"\xca\xfe")
 
+        _ = handler
+
         with TestClient(app) as client:
             token = await _login_and_get_token(auth_service, client)
             # First poll to activate queue
-            client.post("/", headers={"osu-token": token})
+            _ = client.post("/", headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None
@@ -161,7 +166,7 @@ class TestSessionTTLRefresh:
 
         with TestClient(app) as client:
             token = await _login_and_get_token(auth_service, client)
-            client.post("/", headers={"osu-token": token})
+            _ = client.post("/", headers={"osu-token": token})
             assert await session_store.exists(token) is True
 
 
@@ -182,7 +187,7 @@ class TestNoTokenFallsBackToLogin:
 
     async def test_no_token_triggers_login(self) -> None:
         app, auth_service, _, _, _ = _make_e2e_app()
-        await auth_service.register(
+        _ = await auth_service.register(
             RegistrationForm(username="TestUser", email="t@e.com", password=_PASSWORD),
         )
 
@@ -221,11 +226,11 @@ class TestCorruptPacketEdgeCase:
 
         with TestClient(app) as client:
             token = await _login_and_get_token(auth_service, client)
-            client.post("/", headers={"osu-token": token})
+            _ = client.post("/", headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None
-            user_id = int(session["user_id"])  # pyright: ignore[reportArgumentType]
+            user_id = session.user_id
             await packet_queue.enqueue(user_id, b"\xab")
 
             resp = client.post(
@@ -252,12 +257,14 @@ class TestHandlerExceptionEdgeCase:
         async def ok(_payload: bytes, *_a: object, **_kw: object) -> None:
             results.append("ok")
 
+        _ = (failing, ok)
+
         with TestClient(app) as client:
             token = await _login_and_get_token(auth_service, client)
             body = _build_c2s_packet(ClientPacketID.JOIN_CHANNEL, b"\x00") + _build_c2s_packet(
                 ClientPacketID.SEND_MESSAGE, b"\x00"
             )
-            client.post("/", headers={"osu-token": token}, content=body)
+            _ = client.post("/", headers={"osu-token": token}, content=body)
 
         assert results == ["ok"]
 
@@ -272,11 +279,11 @@ class TestQueueSizeLimit:
 
         with TestClient(app) as client:
             token = await _login_and_get_token(auth_service, client)
-            client.post("/", headers={"osu-token": token})
+            _ = client.post("/", headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None
-            user_id = int(session["user_id"])  # pyright: ignore[reportArgumentType]
+            user_id = session.user_id
 
             for i in range(5):
                 await packet_queue.enqueue(user_id, bytes([i]))

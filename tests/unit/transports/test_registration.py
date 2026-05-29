@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from http import HTTPStatus
+from typing import cast
 
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -105,7 +106,7 @@ class TestRegistrationSuccess:
     async def test_user_persisted_in_repository(self) -> None:
         app, _, user_repo, _ = _make_app()
         with TestClient(app) as client:
-            client.post("/users", data=_registration_form())
+            _ = client.post("/users", data=_registration_form())
         user = await user_repo.get_by_safe_username("testuser")
         assert user is not None
         assert user.username == "TestUser"
@@ -113,7 +114,7 @@ class TestRegistrationSuccess:
     async def test_default_role_assigned(self) -> None:
         app, _, _, role_repo = _make_app()
         with TestClient(app) as client:
-            client.post("/users", data=_registration_form())
+            _ = client.post("/users", data=_registration_form())
         # User id=1 (first created user)
         roles = await role_repo.get_roles_for_user(1)
         assert len(roles) == 1
@@ -144,11 +145,13 @@ class TestRegistrationValidationError:
                 "/users",
                 data=_registration_form(username="x"),
             )
-            body = json.loads(resp.content)
+            body = cast("dict[str, object]", json.loads(resp.content))
             assert "form_error" in body
-            assert "user" in body["form_error"]
-            assert "username" in body["form_error"]["user"]
-            assert isinstance(body["form_error"]["user"]["username"], list)
+            form_error = cast("dict[str, object]", body["form_error"])
+            assert "user" in form_error
+            user_err = cast("dict[str, object]", form_error["user"])
+            assert "username" in user_err
+            assert isinstance(user_err["username"], list)
 
     async def test_bad_password_returns_400(self) -> None:
         app, *_ = _make_app()
@@ -158,8 +161,10 @@ class TestRegistrationValidationError:
                 data=_registration_form(password="short"),  # too short
             )
             assert resp.status_code == _BAD_REQUEST
-            body = json.loads(resp.content)
-            assert "password" in body["form_error"]["user"]
+            body = cast("dict[str, object]", json.loads(resp.content))
+            form_error = cast("dict[str, object]", body["form_error"])
+            user_err = cast("dict[str, object]", form_error["user"])
+            assert "password" in user_err
 
     async def test_bad_email_returns_400(self) -> None:
         app, *_ = _make_app()
@@ -169,8 +174,10 @@ class TestRegistrationValidationError:
                 data=_registration_form(email="not-an-email"),
             )
             assert resp.status_code == _BAD_REQUEST
-            body = json.loads(resp.content)
-            assert "email" in body["form_error"]["user"]
+            body = cast("dict[str, object]", json.loads(resp.content))
+            form_error = cast("dict[str, object]", body["form_error"])
+            user_err = cast("dict[str, object]", form_error["user"])
+            assert "email" in user_err
 
     async def test_multiple_errors_accumulated(self) -> None:
         """All field errors returned in a single response."""
@@ -185,8 +192,9 @@ class TestRegistrationValidationError:
                 ),
             )
             assert resp.status_code == _BAD_REQUEST
-            body = json.loads(resp.content)
-            errors = body["form_error"]["user"]
+            body = cast("dict[str, object]", json.loads(resp.content))
+            form_error = cast("dict[str, object]", body["form_error"])
+            errors = cast("dict[str, object]", form_error["user"])
             assert "username" in errors
             assert "password" in errors
             assert "email" in errors
@@ -195,27 +203,31 @@ class TestRegistrationValidationError:
         app, *_ = _make_app()
         with TestClient(app) as client:
             # First registration succeeds
-            client.post("/users", data=_registration_form())
+            _ = client.post("/users", data=_registration_form())
             # Second with same username fails
             resp = client.post(
                 "/users",
                 data=_registration_form(email="other@example.com"),
             )
             assert resp.status_code == _BAD_REQUEST
-            body = json.loads(resp.content)
-            assert "username" in body["form_error"]["user"]
+            body = cast("dict[str, object]", json.loads(resp.content))
+            form_error = cast("dict[str, object]", body["form_error"])
+            user_err = cast("dict[str, object]", form_error["user"])
+            assert "username" in user_err
 
     async def test_duplicate_email_returns_400(self) -> None:
         app, *_ = _make_app()
         with TestClient(app) as client:
-            client.post("/users", data=_registration_form())
+            _ = client.post("/users", data=_registration_form())
             resp = client.post(
                 "/users",
                 data=_registration_form(username="OtherUser"),
             )
             assert resp.status_code == _BAD_REQUEST
-            body = json.loads(resp.content)
-            assert "email" in body["form_error"]["user"]
+            body = cast("dict[str, object]", json.loads(resp.content))
+            form_error = cast("dict[str, object]", body["form_error"])
+            user_err = cast("dict[str, object]", form_error["user"])
+            assert "email" in user_err
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -239,7 +251,7 @@ class TestRegistrationCheckOnly:
     async def test_check_only_does_not_create_user(self) -> None:
         app, _, user_repo, _ = _make_app()
         with TestClient(app) as client:
-            client.post(
+            _ = client.post(
                 "/users",
                 data=_registration_form(check="1"),
             )
@@ -254,5 +266,7 @@ class TestRegistrationCheckOnly:
                 data=_registration_form(username="x", check="1"),
             )
             assert resp.status_code == _BAD_REQUEST
-            body = json.loads(resp.content)
-            assert "username" in body["form_error"]["user"]
+            body = cast("dict[str, object]", json.loads(resp.content))
+            form_error = cast("dict[str, object]", body["form_error"])
+            user_err = cast("dict[str, object]", form_error["user"])
+            assert "username" in user_err

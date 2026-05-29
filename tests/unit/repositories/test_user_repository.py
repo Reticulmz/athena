@@ -74,16 +74,16 @@ class TestCreate:
         assert user_b.id == 2  # noqa: PLR2004
 
     async def test_duplicate_safe_username_raises(self, repo: InMemoryUserRepository) -> None:
-        await repo.create(_make_user(username="TestPlayer"))
+        _ = await repo.create(_make_user(username="TestPlayer"))
 
         with pytest.raises(ValueError, match="safe_username"):
-            await repo.create(_make_user(username="testplayer", email="other@test.com"))
+            _ = await repo.create(_make_user(username="testplayer", email="other@test.com"))
 
     async def test_duplicate_email_raises(self, repo: InMemoryUserRepository) -> None:
-        await repo.create(_make_user(email="taken@test.com"))
+        _ = await repo.create(_make_user(email="taken@test.com"))
 
         with pytest.raises(ValueError, match="email"):
-            await repo.create(_make_user(username="OtherPlayer", email="taken@test.com"))
+            _ = await repo.create(_make_user(username="OtherPlayer", email="taken@test.com"))
 
 
 class TestGetById:
@@ -108,7 +108,7 @@ class TestGetBySafeUsername:
     """get_by_safe_username() retrieves a user by normalized username."""
 
     async def test_found(self, repo: InMemoryUserRepository) -> None:
-        await repo.create(_make_user(username="Cool Player"))
+        _ = await repo.create(_make_user(username="Cool Player"))
 
         result = await repo.get_by_safe_username("cool_player")
 
@@ -117,7 +117,7 @@ class TestGetBySafeUsername:
 
     async def test_case_insensitive(self, repo: InMemoryUserRepository) -> None:
         """Lookup is case-insensitive since safe_username is already normalized."""
-        await repo.create(_make_user(username="TestPlayer"))
+        _ = await repo.create(_make_user(username="TestPlayer"))
 
         result = await repo.get_by_safe_username("TESTPLAYER")
 
@@ -134,7 +134,7 @@ class TestGetByEmail:
     """get_by_email() retrieves a user by email address."""
 
     async def test_found(self, repo: InMemoryUserRepository) -> None:
-        await repo.create(_make_user(email="peppy@ppy.sh"))
+        _ = await repo.create(_make_user(email="peppy@ppy.sh"))
 
         result = await repo.get_by_email("peppy@ppy.sh")
 
@@ -143,7 +143,7 @@ class TestGetByEmail:
 
     async def test_case_insensitive(self, repo: InMemoryUserRepository) -> None:
         """Email lookup should be case-insensitive."""
-        await repo.create(_make_user(email="Peppy@PPY.sh"))
+        _ = await repo.create(_make_user(email="Peppy@PPY.sh"))
 
         result = await repo.get_by_email("peppy@ppy.sh")
 

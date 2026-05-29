@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import httpx
 
 _HIBP_RANGE_URL = "https://api.pwnedpasswords.com/range/"
 
 
+@runtime_checkable
 class HIBPClient(Protocol):
     """HIBP k-Anonymity API クライアントの Protocol 抽象インターフェース。"""
 

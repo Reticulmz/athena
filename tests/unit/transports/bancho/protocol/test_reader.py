@@ -104,18 +104,18 @@ class TestReadPacketsErrors:
     def test_header_incomplete_raises(self) -> None:
         # Less than 7 bytes
         with pytest.raises(PacketReadError):
-            read_packets(b"\x04\x00\x00")
+            _ = read_packets(b"\x04\x00\x00")
 
     def test_payload_incomplete_raises(self) -> None:
         # Header says content_size=10 but only 3 bytes follow
         data = pystruct.pack("<HBI", ClientPacketID.PONG, 0, 10) + b"\x01\x02\x03"
         with pytest.raises(PacketReadError):
-            read_packets(data)
+            _ = read_packets(data)
 
     def test_single_byte_raises(self) -> None:
         with pytest.raises(PacketReadError):
-            read_packets(b"\x00")
+            _ = read_packets(b"\x00")
 
     def test_six_bytes_raises(self) -> None:
         with pytest.raises(PacketReadError):
-            read_packets(b"\x00\x00\x00\x00\x00\x00")
+            _ = read_packets(b"\x00\x00\x00\x00\x00\x00")

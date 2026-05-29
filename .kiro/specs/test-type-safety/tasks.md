@@ -65,7 +65,7 @@
   - _Requirements: 2.1, 2.2, 3.1, 6.3, 9.1, 9.2, 9.3, 9.4_
   - _Boundary: Test Suite Migration_
 
-- [ ] 4.2 (P) インテグレーションテストの型安全化 (Infrastructure/Repositories)
+- [x] 4.2 (P) インテグレーションテストの型安全化 (Infrastructure/Repositories)
   - `tests/integration/` 配下の型エラーを解決し、Valkey/DB 境界の型安全性を確保する
   - 既存の in-memory リポジトリを活用し、`Any` が漏れる mock を排除する
   - 全てのインテグレーションテストが型安全かつ正常にパスすることを確認する

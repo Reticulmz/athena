@@ -12,7 +12,11 @@ from __future__ import annotations
 import hashlib
 import struct
 from http import HTTPStatus
+from typing import TYPE_CHECKING, cast, final
 from unittest.mock import AsyncMock
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 import structlog.contextvars
 import structlog.testing
@@ -48,13 +52,15 @@ _ROLE_DEFAULT = Role(
 _OK = HTTPStatus.OK
 
 
+@final
 class _StubCountryResolver:
     """Always returns a fixed country code."""
 
     def __init__(self, country: str = "JP") -> None:
         self._country = country
 
-    def resolve(self, headers: object) -> str:  # noqa: ARG002
+    def resolve(self, headers: Mapping[str, str]) -> str:
+        _ = headers
         return self._country
 
 
@@ -85,7 +91,7 @@ def _extract_login_reply_value(body: bytes) -> int:
     """
     _header_size = 7
     payload = body[_header_size : _header_size + 4]
-    (value,) = struct.unpack("<i", payload)
+    value: int = cast("int", struct.unpack("<i", payload)[0])
     return value
 
 
@@ -352,7 +358,7 @@ class TestLoginHandlerStructlog:
         app, *_ = _make_app()
 
         with structlog.testing.capture_logs() as logs, TestClient(app) as client:
-            client.post("/", content=b"malformed\x00garbage")
+            _ = client.post("/", content=b"malformed\x00garbage")
 
         parse_logs = [log for log in logs if log["event"] == "login_parse_failed"]
         assert len(parse_logs) == 1
@@ -374,7 +380,7 @@ class TestLoginContextvarsBinding:
         structlog.contextvars.clear_contextvars()
 
         with structlog.testing.capture_logs() as logs, TestClient(app) as client:
-            client.post("/", content=_build_login_body())
+            _ = client.post("/", content=_build_login_body())
 
         # The login_success event from AuthService confirms login worked;
         # contextvars binding happens in LoginHandler before response
@@ -390,7 +396,7 @@ class TestLoginContextvarsBinding:
         structlog.contextvars.clear_contextvars()
 
         with structlog.testing.capture_logs() as logs, TestClient(app) as client:
-            client.post("/", content=_build_login_body(password_md5="0" * 32))
+            _ = client.post("/", content=_build_login_body(password_md5="0" * 32))
 
         # No login_success event should exist, meaning no bind happened
         success_logs = [log for log in logs if log["event"] == "login_success"]
@@ -403,7 +409,7 @@ class TestLoginContextvarsBinding:
         structlog.contextvars.clear_contextvars()
 
         with structlog.testing.capture_logs() as logs, TestClient(app) as client:
-            client.post("/", content=b"garbage")
+            _ = client.post("/", content=b"garbage")
 
         success_logs = [log for log in logs if log["event"] == "login_success"]
         assert len(success_logs) == 0

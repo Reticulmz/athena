@@ -29,6 +29,8 @@ _ASYNC_SERVICE_VALUE = 42
 class AsyncService:
     """Service created via async factory."""
 
+    value: int
+
     def __init__(self, value: int) -> None:
         self.value = value
 
@@ -65,7 +67,7 @@ async def test_register_singleton_same_instance(container: Container) -> None:
 async def test_resolve_unregistered_raises_key_error(container: Container) -> None:
     """resolve for an unknown type raises KeyError."""
     with pytest.raises(KeyError):
-        await container.resolve(Greeter)
+        _ = await container.resolve(Greeter)
 
 
 async def test_initialize_creates_singletons(container: Container) -> None:

@@ -47,7 +47,7 @@ class TestAppConfigValidation:
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
 
         with pytest.raises(ValidationError):
-            AppConfig()  # pyright: ignore[reportCallIssue]
+            _ = AppConfig()  # pyright: ignore[reportCallIssue]
 
     def test_missing_valkey_url_raises_validation_error(
         self, monkeypatch: pytest.MonkeyPatch
@@ -56,7 +56,7 @@ class TestAppConfigValidation:
         monkeypatch.delenv("VALKEY_URL", raising=False)
 
         with pytest.raises(ValidationError):
-            AppConfig()  # pyright: ignore[reportCallIssue]
+            _ = AppConfig()  # pyright: ignore[reportCallIssue]
 
     def test_missing_all_required_fields_raises_validation_error(
         self, monkeypatch: pytest.MonkeyPatch
@@ -65,7 +65,7 @@ class TestAppConfigValidation:
         monkeypatch.delenv("VALKEY_URL", raising=False)
 
         with pytest.raises(ValidationError):
-            AppConfig()  # pyright: ignore[reportCallIssue]
+            _ = AppConfig()  # pyright: ignore[reportCallIssue]
 
 
 class TestAppConfigLoggingDefaults:
@@ -74,6 +74,7 @@ class TestAppConfigLoggingDefaults:
     def test_default_log_level(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
+        monkeypatch.delenv("LOG_LEVEL", raising=False)
 
         config = load_config()
         assert config.log_level == "INFO"
@@ -81,6 +82,7 @@ class TestAppConfigLoggingDefaults:
     def test_default_log_json_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
+        monkeypatch.delenv("LOG_JSON_ENABLED", raising=False)
 
         config = load_config()
         assert config.log_json_enabled is False
@@ -88,6 +90,7 @@ class TestAppConfigLoggingDefaults:
     def test_default_log_json_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
+        monkeypatch.delenv("LOG_JSON_PATH", raising=False)
 
         config = load_config()
         assert config.log_json_path == "logs/athena.jsonl"
@@ -141,7 +144,7 @@ class TestAppConfigLogLevelValidation:
         monkeypatch.setenv("LOG_LEVEL", "WARN")
 
         with pytest.raises(ValidationError, match="Invalid log level"):
-            load_config()
+            _ = load_config()
 
     def test_rejects_typo(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
@@ -149,7 +152,7 @@ class TestAppConfigLogLevelValidation:
         monkeypatch.setenv("LOG_LEVEL", "TRACE")
 
         with pytest.raises(ValidationError, match="Invalid log level"):
-            load_config()
+            _ = load_config()
 
     def test_accepts_all_valid_levels(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
@@ -167,6 +170,7 @@ class TestAppConfigDefaults:
     def test_default_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
 
         config = load_config()
         assert config.environment == _DEFAULT_ENVIRONMENT
@@ -174,6 +178,7 @@ class TestAppConfigDefaults:
     def test_default_server_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
+        monkeypatch.delenv("SERVER_HOST", raising=False)
 
         config = load_config()
         assert config.server_host == _DEFAULT_HOST
@@ -181,6 +186,7 @@ class TestAppConfigDefaults:
     def test_default_server_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
+        monkeypatch.delenv("SERVER_PORT", raising=False)
 
         config = load_config()
         assert config.server_port == _DEFAULT_PORT

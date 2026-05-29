@@ -18,6 +18,7 @@ Validates:
 """
 
 import struct as pystruct
+from typing import cast
 
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.s2c.login import (
@@ -38,7 +39,7 @@ from osu_server.transports.bancho.protocol.s2c.login import (
 
 def _extract_packet_id(data: bytes) -> int:
     """Extract the ServerPacketID from the first 2 bytes of a packet."""
-    return pystruct.unpack_from("<H", data, 0)[0]
+    return cast("int", pystruct.unpack_from("<H", data, 0)[0])
 
 
 def _extract_payload(data: bytes) -> bytes:
@@ -144,14 +145,14 @@ class TestFriendsList:
 
     def test_friend_ids(self) -> None:
         payload = _extract_payload(friends_list([10, 20]))
-        count = pystruct.unpack_from("<H", payload, 0)[0]
+        count: int = cast("int", pystruct.unpack_from("<H", payload, 0)[0])
         assert count == 2
         vals = pystruct.unpack_from("<2i", payload, 2)
         assert vals == (10, 20)
 
     def test_empty_friends(self) -> None:
         payload = _extract_payload(friends_list([]))
-        count = pystruct.unpack_from("<H", payload, 0)[0]
+        count: int = cast("int", pystruct.unpack_from("<H", payload, 0)[0])
         assert count == 0
 
 
@@ -166,7 +167,7 @@ class TestUserPresenceBundle:
 
     def test_user_ids(self) -> None:
         payload = _extract_payload(user_presence_bundle([100, 200, 300]))
-        count = pystruct.unpack_from("<H", payload, 0)[0]
+        count: int = cast("int", pystruct.unpack_from("<H", payload, 0)[0])
         assert count == 3
 
 
@@ -203,7 +204,7 @@ class TestUserPresence:
             rank=100,
         )
         payload = _extract_payload(result)
-        uid = pystruct.unpack_from("<i", payload, 0)[0]
+        uid: int = cast("int", pystruct.unpack_from("<i", payload, 0)[0])
         assert uid == 42
 
     def test_permissions_mode_packed(self) -> None:
@@ -265,7 +266,7 @@ class TestUserStats:
             pp=300,
         )
         payload = _extract_payload(result)
-        uid = pystruct.unpack_from("<i", payload, 0)[0]
+        uid: int = cast("int", pystruct.unpack_from("<i", payload, 0)[0])
         assert uid == 99
 
 

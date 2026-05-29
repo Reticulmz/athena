@@ -10,6 +10,7 @@ Validates:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import final
 
 import structlog
 import structlog.testing
@@ -95,6 +96,7 @@ class TestRegisterAll:
         """Listener receives events through the bound method with correct self."""
         results: list[int] = []
 
+        @final
         class MyListeners(ListenerGroup):
             def __init__(self, multiplier: int) -> None:
                 self.multiplier = multiplier
@@ -120,7 +122,7 @@ class TestRegisterAllLogging:
         class MyListeners(ListenerGroup):
             @listens(FakeEvent)
             async def on_fake(self, event: FakeEvent) -> None:
-                pass
+                _ = event
 
         event_bus = InMemoryEventBus()
         group = MyListeners()
@@ -139,11 +141,11 @@ class TestRegisterAllLogging:
         class MultiListeners(ListenerGroup):
             @listens(FakeEvent)
             async def on_fake(self, event: FakeEvent) -> None:
-                pass
+                _ = event
 
             @listens(AnotherEvent)
             async def on_another(self, event: AnotherEvent) -> None:
-                pass
+                _ = event
 
         event_bus = InMemoryEventBus()
         group = MultiListeners()

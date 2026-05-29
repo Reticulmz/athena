@@ -9,6 +9,7 @@ Validates:
 """
 
 import struct as pystruct
+from typing import cast
 
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.s2c.chat import (
@@ -20,7 +21,7 @@ from osu_server.transports.bancho.protocol.s2c.chat import (
 
 def _extract_packet_id(data: bytes) -> int:
     """Extract the ServerPacketID from the first 2 bytes of a packet."""
-    return pystruct.unpack_from("<H", data, 0)[0]
+    return cast("int", pystruct.unpack_from("<H", data, 0)[0])
 
 
 def _extract_payload(data: bytes) -> bytes:
@@ -30,7 +31,7 @@ def _extract_payload(data: bytes) -> bytes:
 
 def _extract_payload_size(data: bytes) -> int:
     """Extract the payload size from header bytes 3-6."""
-    return pystruct.unpack_from("<I", data, 3)[0]
+    return cast("int", pystruct.unpack_from("<I", data, 3)[0])
 
 
 class TestSendMessage:
@@ -59,7 +60,7 @@ class TestSendMessage:
         pkt = send_message(sender="TestUser", content="hello", target="#osu", sender_id=42)
         payload = _extract_payload(pkt)
         # sender_id is the last 4 bytes as int32
-        sender_id = pystruct.unpack_from("<i", payload, len(payload) - 4)[0]
+        sender_id = cast("int", pystruct.unpack_from("<i", payload, len(payload) - 4)[0])
         assert sender_id == 42
 
     def test_payload_size_matches_header(self) -> None:

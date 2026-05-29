@@ -11,16 +11,18 @@ from __future__ import annotations
 
 import re
 from http import HTTPStatus
-from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import TYPE_CHECKING, TypeVar, cast, final, override
+from unittest.mock import patch
 
+from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from osu_server.app import _health_check_endpoint, _health_endpoint, get_version_info
+from osu_server.app import get_version_info, health_check_endpoint, health_endpoint
 from osu_server.config import AppConfig
+from osu_server.infrastructure.di.container import Container
 
 if TYPE_CHECKING:
     import pytest
@@ -30,6 +32,67 @@ if TYPE_CHECKING:
 _OK = HTTPStatus.OK
 _UNAVAILABLE = HTTPStatus.SERVICE_UNAVAILABLE
 _HEALTH_PATTERN = re.compile(r"^athena v[\d.]+ \(\w+\)\n$")
+
+U = TypeVar("U")
+
+
+@final
+class FakeConnection:
+    def __init__(self, should_fail: bool) -> None:
+        self._should_fail = should_fail
+
+    async def execute(self, _statement: object, *_args: object, **_kwargs: object) -> object:
+        if self._should_fail:
+            raise ConnectionError("pg down")
+        return None
+
+
+@final
+class FakeConnectionContext:
+    def __init__(self, conn: FakeConnection) -> None:
+        self._conn = conn
+
+    async def __aenter__(self) -> FakeConnection:
+        return self._conn
+
+    async def __aexit__(self, exc_type: object, exc_val: object, exc_tb: object) -> bool:
+        return False
+
+
+@final
+class FakeEngine:
+    def __init__(self, should_fail: bool) -> None:
+        self._should_fail = should_fail
+
+    def connect(self) -> FakeConnectionContext:
+        return FakeConnectionContext(FakeConnection(self._should_fail))
+
+
+@final
+class FakeValkey:
+    def __init__(self, should_fail: bool) -> None:
+        self._should_fail = should_fail
+
+    async def ping(self) -> str:
+        if self._should_fail:
+            raise ConnectionError("valkey down")
+        return "PONG"
+
+
+@final
+class FakeContainer(Container):
+    def __init__(self, engine: FakeEngine, valkey: FakeValkey) -> None:
+        super().__init__()
+        self._engine = engine
+        self._valkey = valkey
+
+    @override
+    async def resolve(self, interface: type[U]) -> U:
+        if interface is AsyncEngine:
+            return cast("U", self._engine)
+        if interface is GlideClient:
+            return cast("U", self._valkey)
+        raise KeyError(f"{interface!r} is not registered")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -74,7 +137,7 @@ class TestHealthEndpoint:
     @staticmethod
     def _make_app(version: str = "0.1.0", commit: str = "abc1234") -> Starlette:
         """Build a minimal app with _health_endpoint and version_info on state."""
-        app = Starlette(routes=[Route("/", _health_endpoint, methods=["GET"])])
+        app = Starlette(routes=[Route("/", health_endpoint, methods=["GET"])])
         app.state.version_info = (version, commit)
         return app
 
@@ -135,29 +198,10 @@ class TestHealthCheckEndpoint:
     """GET /health returns infrastructure health with DB and Valkey checks."""
 
     @staticmethod
-    def _make_container(*, postgres_ok: bool = True, valkey_ok: bool = True) -> MagicMock:
-        mock_conn = AsyncMock()
-        if not postgres_ok:
-            mock_conn.execute.side_effect = ConnectionError("pg down")
-
-        mock_engine = MagicMock()
-        cm = AsyncMock()
-        cm.__aenter__.return_value = mock_conn
-        cm.__aexit__.return_value = False
-        mock_engine.connect.return_value = cm
-
-        mock_valkey = AsyncMock()
-        if not valkey_ok:
-            mock_valkey.ping.side_effect = ConnectionError("valkey down")
-
-        async def resolve(type_: type) -> object:
-            if type_ is AsyncEngine:
-                return mock_engine
-            return mock_valkey
-
-        container = MagicMock()
-        container.resolve = AsyncMock(side_effect=resolve)
-        return container
+    def _make_container(*, postgres_ok: bool = True, valkey_ok: bool = True) -> Container:
+        engine = FakeEngine(should_fail=not postgres_ok)
+        valkey = FakeValkey(should_fail=not valkey_ok)
+        return FakeContainer(engine, valkey)
 
     @classmethod
     def _make_app(
@@ -168,7 +212,7 @@ class TestHealthCheckEndpoint:
         postgres_ok: bool = True,
         valkey_ok: bool = True,
     ) -> Starlette:
-        app = Starlette(routes=[Route("/health", _health_check_endpoint, methods=["GET"])])
+        app = Starlette(routes=[Route("/health", health_check_endpoint, methods=["GET"])])
         app.state.version_info = (version, commit)
         app.state.container = cls._make_container(postgres_ok=postgres_ok, valkey_ok=valkey_ok)
         return app
@@ -182,12 +226,13 @@ class TestHealthCheckEndpoint:
     def test_healthy_response_body(self) -> None:
         app = self._make_app(version="0.1.0", commit="abc1234")
         with TestClient(app) as client:
-            data = client.get("/health").json()
+            data = cast("dict[str, object]", client.get("/health").json())
             assert data["status"] == "healthy"
             assert data["version"] == "0.1.0"
             assert data["commit"] == "abc1234"
-            assert data["checks"]["postgres"] == "ok"
-            assert data["checks"]["valkey"] == "ok"
+            checks = cast("dict[str, object]", data["checks"])
+            assert checks["postgres"] == "ok"
+            assert checks["valkey"] == "ok"
 
     def test_content_type_is_json(self) -> None:
         app = self._make_app()
@@ -200,30 +245,33 @@ class TestHealthCheckEndpoint:
         with TestClient(app) as client:
             resp = client.get("/health")
             assert resp.status_code == _UNAVAILABLE
-            data = resp.json()
+            data = cast("dict[str, object]", resp.json())
             assert data["status"] == "unhealthy"
-            assert data["checks"]["postgres"] == "error"
-            assert data["checks"]["valkey"] == "ok"
+            checks = cast("dict[str, object]", data["checks"])
+            assert checks["postgres"] == "error"
+            assert checks["valkey"] == "ok"
 
     def test_valkey_down_returns_503(self) -> None:
         app = self._make_app(valkey_ok=False)
         with TestClient(app) as client:
             resp = client.get("/health")
             assert resp.status_code == _UNAVAILABLE
-            data = resp.json()
+            data = cast("dict[str, object]", resp.json())
             assert data["status"] == "unhealthy"
-            assert data["checks"]["postgres"] == "ok"
-            assert data["checks"]["valkey"] == "error"
+            checks = cast("dict[str, object]", data["checks"])
+            assert checks["postgres"] == "ok"
+            assert checks["valkey"] == "error"
 
     def test_both_down_returns_503(self) -> None:
         app = self._make_app(postgres_ok=False, valkey_ok=False)
         with TestClient(app) as client:
             resp = client.get("/health")
             assert resp.status_code == _UNAVAILABLE
-            data = resp.json()
+            data = cast("dict[str, object]", resp.json())
             assert data["status"] == "unhealthy"
-            assert data["checks"]["postgres"] == "error"
-            assert data["checks"]["valkey"] == "error"
+            checks = cast("dict[str, object]", data["checks"])
+            assert checks["postgres"] == "error"
+            assert checks["valkey"] == "error"
 
 
 # ═══════════════════════════════════════════════════════════════════════

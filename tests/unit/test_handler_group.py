@@ -41,7 +41,8 @@ class TestRegisterAll:
         class MyHandlers(HandlerGroup):
             @handles(ClientPacketID.PONG)
             async def handle_pong(self, payload: bytes, user_id: int) -> None:
-                pass
+                _ = payload
+                _ = user_id
 
         dispatcher = PacketDispatcher()
         group = MyHandlers()
@@ -56,11 +57,13 @@ class TestRegisterAll:
         class MyHandlers(HandlerGroup):
             @handles(ClientPacketID.PONG)
             async def handle_pong(self, payload: bytes, user_id: int) -> None:
-                pass
+                _ = payload
+                _ = user_id
 
             @handles(ClientPacketID.EXIT)
             async def handle_exit(self, payload: bytes, user_id: int) -> None:
-                pass
+                _ = payload
+                _ = user_id
 
         dispatcher = PacketDispatcher()
         group = MyHandlers()
@@ -97,7 +100,8 @@ class TestRegisterAllLogging:
         class MyHandlers(HandlerGroup):
             @handles(ClientPacketID.PONG)
             async def handle_pong(self, payload: bytes, user_id: int) -> None:
-                pass
+                _ = payload
+                _ = user_id
 
         dispatcher = PacketDispatcher()
         group = MyHandlers()
@@ -116,11 +120,13 @@ class TestRegisterAllLogging:
         class MultiHandlers(HandlerGroup):
             @handles(ClientPacketID.PONG)
             async def handle_pong(self, payload: bytes, user_id: int) -> None:
-                pass
+                _ = payload
+                _ = user_id
 
             @handles(ClientPacketID.EXIT)
             async def handle_exit(self, payload: bytes, user_id: int) -> None:
-                pass
+                _ = payload
+                _ = user_id
 
         dispatcher = PacketDispatcher()
         group = MultiHandlers()
@@ -157,12 +163,14 @@ class TestDuplicateHandlerError:
         class GroupA(HandlerGroup):
             @handles(ClientPacketID.PONG)
             async def handle_pong(self, payload: bytes, user_id: int) -> None:
-                pass
+                _ = payload
+                _ = user_id
 
         class GroupB(HandlerGroup):
             @handles(ClientPacketID.PONG)
             async def handle_pong(self, payload: bytes, user_id: int) -> None:
-                pass
+                _ = payload
+                _ = user_id
 
         dispatcher = PacketDispatcher()
         group_a = GroupA()

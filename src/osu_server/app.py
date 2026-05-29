@@ -128,7 +128,7 @@ def get_version_info() -> tuple[str, str]:
     return version, commit
 
 
-async def _register_services(container: Container, config: AppConfig) -> None:
+async def register_services(container: Container, config: AppConfig) -> None:
     """Register repository, service, and transport-layer components.
 
     Called from the composition root (lifespan) after infrastructure-layer
@@ -266,7 +266,7 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
     config = load_config()
     setup_logging(config)
     container = await build_container(config)
-    await _register_services(container, config)
+    await register_services(container, config)
     try:
         await container.initialize()
 
@@ -300,13 +300,13 @@ async def _registration_endpoint(request: Request) -> Response:
     return await handler(request)
 
 
-async def _health_endpoint(request: Request) -> PlainTextResponse:
+async def health_endpoint(request: Request) -> PlainTextResponse:
     """Return a plain-text health response with version and commit hash."""
     version, commit = request.app.state.version_info  # pyright: ignore[reportAny]
     return PlainTextResponse(f"athena v{version} ({commit})\n")
 
 
-async def _health_check_endpoint(request: Request) -> JSONResponse:
+async def health_check_endpoint(request: Request) -> JSONResponse:
     """Return infrastructure health status with DB and Valkey connectivity checks."""
     version, commit = request.app.state.version_info  # pyright: ignore[reportAny]
     container: Container = request.app.state.container  # pyright: ignore[reportAny]
@@ -360,16 +360,16 @@ def create_app() -> Starlette:
     bancho_routes = Router(
         routes=[
             Route("/", endpoint=_bancho_endpoint, methods=["POST"]),
-            Route("/", endpoint=_health_endpoint, methods=["GET"]),
-            Route("/health", endpoint=_health_check_endpoint, methods=["GET"]),
+            Route("/", endpoint=health_endpoint, methods=["GET"]),
+            Route("/health", endpoint=health_check_endpoint, methods=["GET"]),
         ],
     )
 
     # web_legacy routes (osu.$DOMAIN)
     web_routes = Router(
         routes=[
-            Route("/", endpoint=_health_endpoint, methods=["GET"]),
-            Route("/health", endpoint=_health_check_endpoint, methods=["GET"]),
+            Route("/", endpoint=health_endpoint, methods=["GET"]),
+            Route("/health", endpoint=health_check_endpoint, methods=["GET"]),
             Route("/users", endpoint=_registration_endpoint, methods=["POST"]),
         ],
     )
@@ -380,8 +380,8 @@ def create_app() -> Starlette:
         Host(f"osu.{domain}", app=web_routes),
         # Path-based fallbacks for local dev
         Route("/", endpoint=_bancho_endpoint, methods=["POST"]),
-        Route("/", endpoint=_health_endpoint, methods=["GET"]),
-        Route("/health", endpoint=_health_check_endpoint, methods=["GET"]),
+        Route("/", endpoint=health_endpoint, methods=["GET"]),
+        Route("/health", endpoint=health_check_endpoint, methods=["GET"]),
         Mount(
             "/web",
             routes=[

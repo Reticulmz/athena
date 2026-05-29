@@ -12,6 +12,7 @@ Validates:
 """
 
 import struct as pystruct
+from typing import cast
 
 from caterpillar.byteorder import LittleEndian
 from caterpillar.fields import uint8
@@ -88,11 +89,11 @@ class TestBanchoStringUnpackEmpty:
     """Req 3.1: presence byte 0x00 unpacks to empty string."""
 
     def test_unpack_empty_string(self) -> None:
-        result = unpack(BanchoString, b"\x00")
+        result = cast("str", unpack(BanchoString, b"\x00"))
         assert result == ""
 
     def test_unpack_empty_string_type(self) -> None:
-        result = unpack(BanchoString, b"\x00")
+        result = cast("str", unpack(BanchoString, b"\x00"))
         assert isinstance(result, str)
 
 
@@ -101,11 +102,11 @@ class TestBanchoStringUnpackASCII:
 
     def test_unpack_short_ascii(self) -> None:
         """0x0b 0x02 0x68 0x69 → 'hi'."""
-        result = unpack(BanchoString, b"\x0b\x02\x68\x69")
+        result = cast("str", unpack(BanchoString, b"\x0b\x02\x68\x69"))
         assert result == "hi"
 
     def test_unpack_single_char(self) -> None:
-        result = unpack(BanchoString, b"\x0b\x01\x41")
+        result = cast("str", unpack(BanchoString, b"\x0b\x01\x41"))
         assert result == "A"
 
 
@@ -116,14 +117,14 @@ class TestBanchoStringUnpackMultibyte:
         text = "こんにちは"
         utf8_bytes = text.encode("utf-8")
         wire = b"\x0b" + bytes([len(utf8_bytes)]) + utf8_bytes
-        result = unpack(BanchoString, wire)
+        result = cast("str", unpack(BanchoString, wire))
         assert result == text
 
     def test_unpack_emoji(self) -> None:
         text = "🎵"
         utf8_bytes = text.encode("utf-8")
         wire = b"\x0b" + bytes([len(utf8_bytes)]) + utf8_bytes
-        result = unpack(BanchoString, wire)
+        result = cast("str", unpack(BanchoString, wire))
         assert result == text
 
 
@@ -133,46 +134,46 @@ class TestBanchoStringRoundTrip:
     def test_roundtrip_empty(self) -> None:
         original = ""
         data = pack(original, LittleEndian + BanchoString)
-        restored = unpack(BanchoString, data)
+        restored = cast("str", unpack(BanchoString, data))
         assert restored == original
 
     def test_roundtrip_ascii(self) -> None:
         original = "hello world"
         data = pack(original, LittleEndian + BanchoString)
-        restored = unpack(BanchoString, data)
+        restored = cast("str", unpack(BanchoString, data))
         assert restored == original
 
     def test_roundtrip_multibyte_utf8(self) -> None:
         original = "こんにちは世界"
         data = pack(original, LittleEndian + BanchoString)
-        restored = unpack(BanchoString, data)
+        restored = cast("str", unpack(BanchoString, data))
         assert restored == original
 
     def test_roundtrip_mixed_content(self) -> None:
         original = "user123 — テスト 🎮"
         data = pack(original, LittleEndian + BanchoString)
-        restored = unpack(BanchoString, data)
+        restored = cast("str", unpack(BanchoString, data))
         assert restored == original
 
     def test_roundtrip_long_string(self) -> None:
         """String longer than 127 bytes exercises multi-byte ULEB128."""
         original = "x" * 300
         data = pack(original, LittleEndian + BanchoString)
-        restored = unpack(BanchoString, data)
+        restored = cast("str", unpack(BanchoString, data))
         assert restored == original
 
     def test_roundtrip_uleb128_boundary(self) -> None:
         """Exactly 127 bytes — single-byte ULEB128 boundary."""
         original = "a" * 127
         data = pack(original, LittleEndian + BanchoString)
-        restored = unpack(BanchoString, data)
+        restored = cast("str", unpack(BanchoString, data))
         assert restored == original
 
     def test_roundtrip_uleb128_two_byte(self) -> None:
         """Exactly 128 bytes — first two-byte ULEB128 value."""
         original = "b" * 128
         data = pack(original, LittleEndian + BanchoString)
-        restored = unpack(BanchoString, data)
+        restored = cast("str", unpack(BanchoString, data))
         assert restored == original
 
 
@@ -316,7 +317,7 @@ class TestIntListUnpack:
         data = pack(il)
         restored = unpack(IntList, data)
         assert restored.count == 2
-        assert list(restored.values) == [100, 200]
+        assert list(cast("list[int]", restored.values)) == [100, 200]
 
 
 class TestIntListRoundTrip:
@@ -327,20 +328,20 @@ class TestIntListRoundTrip:
         data = pack(original)
         restored = unpack(IntList, data)
         assert restored.count == 4
-        assert list(restored.values) == [10, 20, 30, 40]
+        assert list(cast("list[int]", restored.values)) == [10, 20, 30, 40]
 
     def test_roundtrip_negative_values(self) -> None:
         original = IntList(count=2, values=[-1, -100])
         data = pack(original)
         restored = unpack(IntList, data)
-        assert list(restored.values) == [-1, -100]
+        assert list(cast("list[int]", restored.values)) == [-1, -100]
 
     def test_roundtrip_empty(self) -> None:
         original = IntList(count=0, values=[])
         data = pack(original)
         restored = unpack(IntList, data)
         assert restored.count == 0
-        assert list(restored.values) == []
+        assert list(cast("list[int]", restored.values)) == []
 
 
 # ── Channel (Req 3.4, 3.6) ──────────────────────────────────────────

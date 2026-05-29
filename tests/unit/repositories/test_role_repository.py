@@ -159,4 +159,4 @@ class TestGetDefaultRole:
 
     async def test_raises_when_no_default_role(self, empty_repo: InMemoryRoleRepository) -> None:
         with pytest.raises(LookupError, match="Default"):
-            await empty_repo.get_default_role()
+            _ = await empty_repo.get_default_role()

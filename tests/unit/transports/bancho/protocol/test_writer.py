@@ -8,6 +8,7 @@ Validates:
 """
 
 import struct as pystruct
+from typing import cast
 
 import structlog.testing
 
@@ -24,7 +25,7 @@ class TestWritePacketHeader:
 
     def test_header_packet_id(self) -> None:
         result = write_packet(ServerPacketID.LOGIN_REPLY, b"\x00" * 4)
-        packet_id = pystruct.unpack_from("<H", result, 0)[0]
+        packet_id = cast("int", pystruct.unpack_from("<H", result, 0)[0])
         assert packet_id == ServerPacketID.LOGIN_REPLY
 
     def test_header_compression_always_false(self) -> None:
@@ -34,7 +35,7 @@ class TestWritePacketHeader:
     def test_header_content_size(self) -> None:
         payload = b"\x01\x02\x03\x04"
         result = write_packet(ServerPacketID.PING, payload)
-        content_size = pystruct.unpack_from("<I", result, 3)[0]
+        content_size = cast("int", pystruct.unpack_from("<I", result, 3)[0])
         assert content_size == 4
 
 
@@ -79,7 +80,7 @@ class TestWritePacketDefaultPayload:
     def test_default_payload_is_empty(self) -> None:
         result = write_packet(ServerPacketID.PING)
         assert len(result) == 7
-        content_size = pystruct.unpack_from("<I", result, 3)[0]
+        content_size = cast("int", pystruct.unpack_from("<I", result, 3)[0])
         assert content_size == 0
 
 
@@ -106,7 +107,7 @@ class TestWritePacketLogging:
         """Req 6.1: Normal (non-quiet) packet logged at INFO with name and size."""
         payload = b"\x01\x02\x03"
         with structlog.testing.capture_logs() as logs:
-            write_packet(ServerPacketID.LOGIN_REPLY, payload)
+            _ = write_packet(ServerPacketID.LOGIN_REPLY, payload)
 
         s2c_logs = [log for log in logs if log["event"] == "s2c_packet"]
         assert len(s2c_logs) == 1
@@ -117,7 +118,7 @@ class TestWritePacketLogging:
     def test_quiet_packet_logged_at_debug(self) -> None:
         """Req 6.2: Quiet packet logged at DEBUG only."""
         with structlog.testing.capture_logs() as logs:
-            write_packet(ServerPacketID.PING, b"")
+            _ = write_packet(ServerPacketID.PING, b"")
 
         s2c_logs = [log for log in logs if log["event"] == "s2c_packet"]
         assert len(s2c_logs) == 1
@@ -129,7 +130,7 @@ class TestWritePacketLogging:
         """All packets in QUIET_S2C_PACKETS are logged at debug, not info."""
         for packet_id in QUIET_S2C_PACKETS:
             with structlog.testing.capture_logs() as logs:
-                write_packet(packet_id, b"\xaa")
+                _ = write_packet(packet_id, b"\xaa")
 
             s2c_logs = [log for log in logs if log["event"] == "s2c_packet"]
             assert len(s2c_logs) == 1, f"{packet_id.name} should produce exactly 1 log"
@@ -141,7 +142,7 @@ class TestWritePacketLogging:
         """Logged size is the payload size, not the total packet size."""
         payload = b"\x01\x02\x03\x04\x05"
         with structlog.testing.capture_logs() as logs:
-            write_packet(ServerPacketID.SEND_MESSAGE, payload)
+            _ = write_packet(ServerPacketID.SEND_MESSAGE, payload)
 
         s2c_logs = [log for log in logs if log["event"] == "s2c_packet"]
         assert s2c_logs[0]["size"] == 5  # payload size, not 7 + 5

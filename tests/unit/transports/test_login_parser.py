@@ -65,19 +65,19 @@ class TestParseLoginRequest:
 
     def test_empty_body_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="login request body"):
-            parse_login_request(b"")
+            _ = parse_login_request(b"")
 
     def test_one_line_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="login request body"):
-            parse_login_request(b"username_only\n")
+            _ = parse_login_request(b"username_only\n")
 
     def test_two_lines_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="login request body"):
-            parse_login_request(b"user\npasshash\n")
+            _ = parse_login_request(b"user\npasshash\n")
 
     def test_whitespace_only_body_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="login request body"):
-            parse_login_request(b"  \n  \n")
+            _ = parse_login_request(b"  \n  \n")
 
     def test_username_preserved_as_is(self) -> None:
         """Username should not be normalized — that is the domain layer's job."""
@@ -142,27 +142,27 @@ class TestParseClientInfo:
 
     def test_insufficient_fields_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="client_info"):
-            parse_client_info("b20240101|9|1")
+            _ = parse_client_info("b20240101|9|1")
 
     def test_empty_string_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="client_info"):
-            parse_client_info("")
+            _ = parse_client_info("")
 
     def test_four_fields_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="client_info"):
-            parse_client_info("b20240101|9|1|hashes")
+            _ = parse_client_info("b20240101|9|1|hashes")
 
     def test_non_integer_utc_offset_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="utc_offset"):
-            parse_client_info("b20240101|abc|1|hashes|0")
+            _ = parse_client_info("b20240101|abc|1|hashes|0")
 
     def test_non_boolean_display_city_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="display_city"):
-            parse_client_info("b20240101|0|yes|hashes|0")
+            _ = parse_client_info("b20240101|0|yes|hashes|0")
 
     def test_non_boolean_pm_private_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="pm_private"):
-            parse_client_info("b20240101|0|0|hashes|yes")
+            _ = parse_client_info("b20240101|0|0|hashes|yes")
 
     def test_client_hashes_with_colons_preserved(self) -> None:
         """Client hashes are colon-separated and should be preserved as-is."""

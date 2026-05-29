@@ -14,14 +14,21 @@ Validates:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import httpx
 from starlette.routing import Host, Mount, Route
 
-from osu_server.app import _register_services
+from osu_server.app import register_services
 from osu_server.config import AppConfig
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.di.providers import build_container
+
+if TYPE_CHECKING:
+    from pydantic import PostgresDsn, RedisDsn
+
+    from osu_server.infrastructure.di.container import Container
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.user_repository import UserRepository
@@ -37,24 +44,25 @@ _EXPECTED_MIN_SHUTDOWN_HOOKS = 3
 _EXPECTED_MIN_HOST_ROUTES = 2
 
 
-def _make_config(*, environment: str = "test", **kwargs: object) -> AppConfig:
+def _make_config(*, environment: str = "test") -> AppConfig:
     """Create a minimal AppConfig for testing."""
     return AppConfig(
-        database_url="postgresql://test:test@localhost:5432/test",
-        valkey_url="redis://localhost:6379/0",
+        database_url=cast(
+            "PostgresDsn", cast("object", "postgresql://test:test@localhost:5432/test")
+        ),
+        valkey_url=cast("RedisDsn", cast("object", "redis://localhost:6379/0")),
         environment=environment,
-        **kwargs,  # pyright: ignore[reportAny]
     )
 
 
 async def _build_full_container(
     config: AppConfig | None = None,
-) -> tuple[AppConfig, object]:
+) -> tuple[AppConfig, Container]:
     """Build container with both infrastructure and service registrations."""
     if config is None:
         config = _make_config()
     container = await build_container(config)
-    await _register_services(container, config)
+    await register_services(container, config)
     return config, container
 
 
@@ -99,43 +107,43 @@ class TestDIAuthRegistrations:
     async def test_resolves_password_service(self) -> None:
         _, container = await _build_full_container()
 
-        svc = await container.resolve(PasswordService)  # pyright: ignore[reportUnknownMemberType]
+        svc = await container.resolve(PasswordService)
         assert isinstance(svc, PasswordService)
 
     async def test_resolves_user_repository(self) -> None:
         _, container = await _build_full_container()
 
-        repo = await container.resolve(UserRepository)  # pyright: ignore[reportUnknownMemberType]
+        repo = await container.resolve(UserRepository)
         assert repo is not None
 
     async def test_resolves_role_repository(self) -> None:
         _, container = await _build_full_container()
 
-        repo = await container.resolve(RoleRepository)  # pyright: ignore[reportUnknownMemberType]
+        repo = await container.resolve(RoleRepository)
         assert repo is not None
 
     async def test_resolves_permission_service(self) -> None:
         _, container = await _build_full_container()
 
-        svc = await container.resolve(PermissionService)  # pyright: ignore[reportUnknownMemberType]
+        svc = await container.resolve(PermissionService)
         assert isinstance(svc, PermissionService)
 
     async def test_resolves_auth_service(self) -> None:
         _, container = await _build_full_container()
 
-        svc = await container.resolve(AuthService)  # pyright: ignore[reportUnknownMemberType]
+        svc = await container.resolve(AuthService)
         assert isinstance(svc, AuthService)
 
     async def test_resolves_login_handler(self) -> None:
         _, container = await _build_full_container()
 
-        handler = await container.resolve(LoginHandler)  # pyright: ignore[reportUnknownMemberType]
+        handler = await container.resolve(LoginHandler)
         assert isinstance(handler, LoginHandler)
 
     async def test_resolves_registration_handler(self) -> None:
         _, container = await _build_full_container()
 
-        handler = await container.resolve(RegistrationHandler)  # pyright: ignore[reportUnknownMemberType]
+        handler = await container.resolve(RegistrationHandler)
         assert isinstance(handler, RegistrationHandler)
 
 
@@ -150,13 +158,13 @@ class TestEnvironmentBasedRepositories:
     async def test_test_env_uses_in_memory_user_repository(self) -> None:
         _, container = await _build_full_container(_make_config(environment="test"))
 
-        repo = await container.resolve(UserRepository)  # pyright: ignore[reportUnknownMemberType]
+        repo = await container.resolve(UserRepository)
         assert isinstance(repo, InMemoryUserRepository)
 
     async def test_test_env_uses_in_memory_role_repository(self) -> None:
         _, container = await _build_full_container(_make_config(environment="test"))
 
-        repo = await container.resolve(RoleRepository)  # pyright: ignore[reportUnknownMemberType]
+        repo = await container.resolve(RoleRepository)
         assert isinstance(repo, InMemoryRoleRepository)
 
 
@@ -190,8 +198,10 @@ class TestConfigDomainField:
 
     def test_custom_domain(self) -> None:
         config = AppConfig(
-            database_url="postgresql://test:test@localhost:5432/test",
-            valkey_url="redis://localhost:6379/0",
+            database_url=cast(
+                "PostgresDsn", cast("object", "postgresql://test:test@localhost:5432/test")
+            ),
+            valkey_url=cast("RedisDsn", cast("object", "redis://localhost:6379/0")),
             domain="example.com",
         )
         assert config.domain == "example.com"
@@ -254,4 +264,6 @@ class TestAppRouting:
 
     def test_app_import_succeeds(self) -> None:
         """python -c 'from osu_server.app import app' should not raise."""
-        from osu_server.app import app  # noqa: F401
+        from osu_server.app import app
+
+        _ = app

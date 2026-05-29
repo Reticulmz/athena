@@ -43,7 +43,8 @@ _OK = HTTPStatus.OK
 
 
 class _StubCountryResolver:
-    def resolve(self, headers: object) -> str:  # noqa: ARG002
+    def resolve(self, headers: object) -> str:
+        _ = headers
         return "JP"
 
 
@@ -130,10 +131,12 @@ class TestC2SDispatch:
         async def handler(payload: bytes, *_a: object, **_kw: object) -> None:
             called_with.append(payload)
 
+        _ = handler
+
         with TestClient(app) as client:
             token = await _login(auth_service, client)
             body = _build_c2s_packet(ClientPacketID.SEND_MESSAGE, b"\x01\x02")
-            client.post("/", headers={"osu-token": token}, content=body)
+            _ = client.post("/", headers={"osu-token": token}, content=body)
 
         assert len(called_with) == 1
         assert called_with[0] == b"\x01\x02"
@@ -150,12 +153,14 @@ class TestC2SDispatch:
         async def on_join(_payload: bytes, *_a: object, **_kw: object) -> None:
             order.append("join")
 
+        _ = (on_msg, on_join)
+
         with TestClient(app) as client:
             token = await _login(auth_service, client)
             body = _build_c2s_packet(ClientPacketID.JOIN_CHANNEL, b"\x00") + _build_c2s_packet(
                 ClientPacketID.SEND_MESSAGE, b"\x00"
             )
-            client.post("/", headers={"osu-token": token}, content=body)
+            _ = client.post("/", headers={"osu-token": token}, content=body)
 
         assert order == ["join", "msg"]
 
@@ -167,12 +172,14 @@ class TestC2SDispatch:
         async def handler(_payload: bytes, *_a: object, **_kw: object) -> None:
             called.append("msg")
 
+        _ = handler
+
         with TestClient(app) as client:
             token = await _login(auth_service, client)
             body = _build_c2s_packet(ClientPacketID.PONG) + _build_c2s_packet(
                 ClientPacketID.SEND_MESSAGE, b"\x00"
             )
-            client.post("/", headers={"osu-token": token}, content=body)
+            _ = client.post("/", headers={"osu-token": token}, content=body)
 
         assert called == ["msg"]
 
@@ -187,7 +194,7 @@ class TestS2CDrain:
             token = await _login(auth_service, client)
 
             # First poll activates queue
-            client.post("/", headers={"osu-token": token})
+            _ = client.post("/", headers={"osu-token": token})
 
             # Enqueue S2C
             session = await session_store.get(token)
@@ -205,7 +212,7 @@ class TestS2CDrain:
 
         with TestClient(app) as client:
             token = await _login(auth_service, client)
-            client.post("/", headers={"osu-token": token})
+            _ = client.post("/", headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None
@@ -235,10 +242,12 @@ class TestC2SBeforeS2COrdering:
         async def handler(_payload: bytes, *_a: object, **_kw: object) -> None:
             await packet_queue.enqueue(user_id_holder[0], b"\xde\xad")
 
+        _ = handler
+
         with TestClient(app) as client:
             token = await _login(auth_service, client)
             # First poll to activate queue
-            client.post("/", headers={"osu-token": token})
+            _ = client.post("/", headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None
@@ -285,7 +294,7 @@ class TestPacketReadError:
 
         with TestClient(app) as client:
             token = await _login(auth_service, client)
-            client.post("/", headers={"osu-token": token})
+            _ = client.post("/", headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None
@@ -313,12 +322,14 @@ class TestHandlerException:
         async def succeeding(_payload: bytes, *_a: object, **_kw: object) -> None:
             results.append("ok")
 
+        _ = (failing, succeeding)
+
         with TestClient(app) as client:
             token = await _login(auth_service, client)
             body = _build_c2s_packet(ClientPacketID.JOIN_CHANNEL, b"\x00") + _build_c2s_packet(
                 ClientPacketID.SEND_MESSAGE, b"\x00"
             )
-            client.post("/", headers={"osu-token": token}, content=body)
+            _ = client.post("/", headers={"osu-token": token}, content=body)
 
         assert results == ["ok"]
 
@@ -337,7 +348,7 @@ class TestPollingCompleteLog:
         with structlog.testing.capture_logs() as logs, TestClient(app) as client:
             token = await _login(auth_service, client)
             body = _build_c2s_packet(ClientPacketID.PONG)
-            client.post("/", headers={"osu-token": token}, content=body)
+            _ = client.post("/", headers={"osu-token": token}, content=body)
 
         poll_logs = [log for log in logs if log["event"] == "polling_complete"]
         assert len(poll_logs) >= 1
@@ -357,7 +368,7 @@ class TestParseErrorLog:
 
         with structlog.testing.capture_logs() as logs, TestClient(app) as client:
             token = await _login(auth_service, client)
-            client.post("/", headers={"osu-token": token}, content=b"\x01\x02")
+            _ = client.post("/", headers={"osu-token": token}, content=b"\x01\x02")
 
         parse_logs = [log for log in logs if log["event"] == "c2s_parse_error"]
         assert len(parse_logs) == 1
@@ -375,10 +386,12 @@ class TestHandlerErrorLog:
             msg = "boom"
             raise RuntimeError(msg)
 
+        _ = failing
+
         with structlog.testing.capture_logs() as logs, TestClient(app) as client:
             token = await _login(auth_service, client)
             body = _build_c2s_packet(ClientPacketID.SEND_MESSAGE, b"\x00")
-            client.post("/", headers={"osu-token": token}, content=body)
+            _ = client.post("/", headers={"osu-token": token}, content=body)
 
         error_logs = [log for log in logs if log["event"] == "c2s_handler_error"]
         assert len(error_logs) == 1
