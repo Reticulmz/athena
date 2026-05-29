@@ -34,8 +34,8 @@
 - `repositories/memory/channel_repository.py` — InMemory 実装
 - `infrastructure/state/interfaces/channel_state_store.py` — ChannelStateStore Protocol
 - `infrastructure/state/interfaces/rate_limiter.py` — RateLimiter Protocol
-- `infrastructure/state/redis/channel_state_store.py` + `memory/channel_state_store.py` — ChannelStateStore 実装（Valkey、Redis プロトコル互換）
-- `infrastructure/state/redis/rate_limiter.py` + `memory/rate_limiter.py` — RateLimiter 実装（Valkey、Redis プロトコル互換）
+- `infrastructure/state/valkey/channel_state_store.py` + `memory/channel_state_store.py` — ChannelStateStore 実装（Valkey）
+- `infrastructure/state/valkey/rate_limiter.py` + `memory/rate_limiter.py` — RateLimiter 実装（Valkey）
 - `services/chat_service.py` — ChatService（オーケストレーター）
 - `services/channel_service.py` — ChannelService（チャンネル CRUD + メンバーシップ）
 - `services/private_message_service.py` — PrivateMessageService
@@ -201,9 +201,9 @@ src/osu_server/
 │       ├── interfaces/
 │       │   ├── channel_state_store.py  # NEW: ChannelStateStore Protocol
 │       │   └── rate_limiter.py         # NEW: RateLimiter Protocol
-│       ├── redis/
-│       │   ├── channel_state_store.py  # NEW: RedisChannelStateStore
-│       │   └── rate_limiter.py         # NEW: RedisRateLimiter
+│       ├── valkey/
+│       │   ├── channel_state_store.py  # NEW: ValkeyChannelStateStore
+│       │   └── rate_limiter.py         # NEW: ValkeyRateLimiter
 │       └── memory/
 │           ├── channel_state_store.py  # NEW: InMemoryChannelStateStore
 │           └── rate_limiter.py         # NEW: InMemoryRateLimiter

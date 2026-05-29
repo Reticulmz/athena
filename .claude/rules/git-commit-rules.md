@@ -19,3 +19,4 @@
 ### Prohibited
 - Emoji, slang, vague wording (`update`, `fix`, `change`, `modify`, `更新`, `修正`, `変更`, `対応`, `wip`)
 - One commit per change; propose splitting if spanning multiple types.
+- **Pre-commitフックの回避禁止**: `--no-verify`、`--no-gpg-sign`、`-n`フラグは使用しない。フックが失敗した場合、エラーを分析して根本原因を修正すること。

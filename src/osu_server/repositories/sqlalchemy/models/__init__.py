@@ -4,8 +4,10 @@ Import all models here so that Alembic can discover them via Base.metadata.
 """
 
 from osu_server.repositories.sqlalchemy.models.channel import (
+    ChannelMessageModel,
     ChannelModel,
     ChannelRoleOverrideModel,
+    PrivateMessageModel,
 )
 from osu_server.repositories.sqlalchemy.models.role import RoleModel, UserRoleModel
 from osu_server.repositories.sqlalchemy.models.user import (
@@ -14,9 +16,11 @@ from osu_server.repositories.sqlalchemy.models.user import (
 )
 
 __all__ = [
+    "ChannelMessageModel",
     "ChannelModel",
     "ChannelRoleOverrideModel",
     "DisallowedUsernameModel",
+    "PrivateMessageModel",
     "RoleModel",
     "UserModel",
     "UserRoleModel",

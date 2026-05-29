@@ -36,20 +36,33 @@ from osu_server.infrastructure.di.providers import build_container
 from osu_server.infrastructure.logging import setup_logging
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
+from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
+from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
+from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.infrastructure.state.valkey.channel_state_store import ValkeyChannelStateStore
+from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimiter
+from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository
+from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
 from osu_server.repositories.sqlalchemy.role_repository import SQLAlchemyRoleRepository
 from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
+from osu_server.services.channel_service import ChannelService
+from osu_server.services.chat_service import ChatService
+from osu_server.services.command_service import CommandService
 from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
+from osu_server.services.private_message_service import PrivateMessageService
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.handlers.lifecycle import LifecycleHandlers
 from osu_server.transports.bancho.handlers.login import LoginHandler
@@ -128,7 +141,7 @@ def get_version_info() -> tuple[str, str]:
     return version, commit
 
 
-async def register_services(container: Container, config: AppConfig) -> None:
+async def register_services(container: Container, config: AppConfig) -> None:  # noqa: PLR0915
     """Register repository, service, and transport-layer components.
 
     Called from the composition root (lifespan) after infrastructure-layer
@@ -200,9 +213,69 @@ async def register_services(container: Container, config: AppConfig) -> None:
     online_users = OnlineUsersService(session_store=session_store)
     container.register_singleton(OnlineUsersService, lambda: online_users)
 
+    # -- ChannelRepository (singleton, environment-based switching) -----------
+    if config.environment == "test":
+        container.register_singleton(ChannelRepository, InMemoryChannelRepository)
+    else:
+        container.register_singleton(
+            ChannelRepository,
+            lambda: SQLAlchemyChannelRepository(session_factory),
+        )
+
+    # -- ChannelStateStore (singleton, environment-based switching) -----------
+    if config.environment == "test":
+        container.register_singleton(ChannelStateStore, InMemoryChannelStateStore)
+    else:
+        container.register_singleton(
+            ChannelStateStore,
+            lambda: ValkeyChannelStateStore(valkey),
+        )
+
+    # -- RateLimiter (singleton, environment-based switching) ----------------
+    if config.environment == "test":
+        container.register_singleton(RateLimiter, InMemoryRateLimiter)
+    else:
+        container.register_singleton(
+            RateLimiter,
+            lambda: ValkeyRateLimiter(valkey),
+        )
+
+    # -- ChannelService (singleton) --------------------------------------------
+    channel_repo = await container.resolve(ChannelRepository)
+    channel_state = await container.resolve(ChannelStateStore)
+    channel_service = ChannelService(
+        channel_repo=channel_repo,
+        channel_state=channel_state,
+    )
+    container.register_singleton(ChannelService, lambda: channel_service)
+
+    # -- PrivateMessageService (singleton) -------------------------------------
+    pm_service = PrivateMessageService(
+        user_repo=user_repo,
+        session_store=session_store,
+    )
+    container.register_singleton(PrivateMessageService, lambda: pm_service)
+
+    # -- CommandService (singleton) -------------------------------------------
+    command_service = CommandService()
+    container.register_singleton(CommandService, lambda: command_service)
+
     # -- LoginHandler (singleton) ---------------------------------------------
     packet_queue = await container.resolve(PacketQueue)
     eventbus = await container.resolve(EventBus)
+
+    # -- ChatService (singleton, requires EventBus) ---------------------------
+    rate_limiter = await container.resolve(RateLimiter)
+    chat_service = ChatService(
+        channel_service=channel_service,
+        private_message_service=pm_service,
+        command_service=command_service,
+        session_store=session_store,
+        event_bus=eventbus,
+        rate_limiter=rate_limiter,
+        config=config,
+    )
+    container.register_singleton(ChatService, lambda: chat_service)
 
     # -- PacketDispatcher (singleton) -----------------------------------------
     packet_dispatcher = PacketDispatcher()
