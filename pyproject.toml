@@ -84,6 +84,13 @@ ignore = [
     "PLR0913",  # too many arguments (common in DI)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["PLR2004"]  # Magic numbers are common/expected in test assertions
+"tests/unit/transports/bancho/test_di_registration.py" = ["PLC0415"]  # Requires local import to test laziness
+"tests/integration/test_login_flow.py" = ["PLC0415"]
+"tests/integration/test_polling_e2e.py" = ["PLC0415"]
+"tests/integration/test_registration_flow.py" = ["PLC0415"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["osu_server"]
 
