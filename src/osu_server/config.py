@@ -36,8 +36,16 @@ class AppConfig(BaseSettings):
     rate_limit_window: int = 10
 
     log_level: str = "INFO"
-    log_json_enabled: bool = False
-    log_json_path: str = "logs/athena.jsonl"
+    log_dir: str = "logs"
+    log_max_files: int = 30
+
+    @field_validator("log_max_files")
+    @classmethod
+    def _validate_log_max_files(cls, v: int) -> int:
+        if v < 0:
+            msg = f"log_max_files must be greater than or equal to 0, got {v}"
+            raise ValueError(msg)
+        return v
 
     @field_validator("log_level")
     @classmethod

@@ -24,8 +24,8 @@ def make_app_config(
     rate_limit_messages: int = 10,
     rate_limit_window: int = 10,
     log_level: str = "INFO",
-    log_json_enabled: bool = False,
-    log_json_path: str = "logs/athena.jsonl",
+    log_dir: str = "logs",
+    log_max_files: int = 30,
 ) -> AppConfig:
     """Type-safe factory for AppConfig.
 
@@ -51,6 +51,6 @@ def make_app_config(
         rate_limit_messages=rate_limit_messages,
         rate_limit_window=rate_limit_window,
         log_level=log_level,
-        log_json_enabled=log_json_enabled,
-        log_json_path=log_json_path,
+        log_dir=log_dir,
+        log_max_files=log_max_files,
     )

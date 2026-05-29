@@ -79,21 +79,21 @@ class TestAppConfigLoggingDefaults:
         config = load_config()
         assert config.log_level == "INFO"
 
-    def test_default_log_json_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_log_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
-        monkeypatch.delenv("LOG_JSON_ENABLED", raising=False)
+        monkeypatch.delenv("LOG_DIR", raising=False)
 
         config = load_config()
-        assert config.log_json_enabled is False
+        assert config.log_dir == "logs"
 
-    def test_default_log_json_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_log_max_files(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
-        monkeypatch.delenv("LOG_JSON_PATH", raising=False)
+        monkeypatch.delenv("LOG_MAX_FILES", raising=False)
 
         config = load_config()
-        assert config.log_json_path == "logs/athena.jsonl"
+        assert config.log_max_files == 30
 
     def test_override_log_level_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
@@ -103,28 +103,30 @@ class TestAppConfigLoggingDefaults:
         config = load_config()
         assert config.log_level == "DEBUG"
 
-    def test_override_log_json_enabled_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_override_log_dir_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
-        monkeypatch.setenv("LOG_JSON_ENABLED", "true")
+        monkeypatch.setenv("LOG_DIR", "/var/log/athena")
 
         config = load_config()
-        assert config.log_json_enabled is True
+        assert config.log_dir == "/var/log/athena"
 
-    def test_override_log_json_path_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_override_log_max_files_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
-        monkeypatch.setenv("LOG_JSON_PATH", "/var/log/athena.jsonl")
+        monkeypatch.setenv("LOG_MAX_FILES", "50")
 
         config = load_config()
-        assert config.log_json_path == "/var/log/athena.jsonl"
+        assert config.log_max_files == 50
 
-    def test_log_json_enabled_is_bool(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_log_max_files_validation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
 
-        config = load_config()
-        assert isinstance(config.log_json_enabled, bool)
+        # log_max_files must be greater than or equal to 0
+        monkeypatch.setenv("LOG_MAX_FILES", "-1")
+        with pytest.raises(ValidationError, match="log_max_files"):
+            _ = load_config()
 
 
 class TestAppConfigLogLevelValidation:
