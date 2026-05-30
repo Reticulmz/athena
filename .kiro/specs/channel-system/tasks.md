@@ -101,7 +101,7 @@
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 8.1, 8.2, 9.1, 9.2, 9.3, 9.4, 9.5, 10.1, 10.2, 10.3, 13.1, 13.2, 13.3, 14.1_
 
 - [ ] 4. Transport & Integration
-- [ ] 4.1 ChatHandlers（C2S ハンドラ 4種）
+- [x] 4.1 ChatHandlers（C2S ハンドラ 4種）
   - ChatHandlers(HandlerGroup) に handle_send_message, handle_send_private_message, handle_join_channel, handle_leave_channel を @handles デコレータで実装する
   - 各ハンドラ: Caterpillar でペイロードをパース → SessionStore から username/privileges 取得 → ChatService or ChannelService に委譲
   - handle_send_message: Message struct パース → chat_service.send_channel_message()
