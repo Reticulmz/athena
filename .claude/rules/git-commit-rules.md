@@ -19,7 +19,18 @@
 ### Prohibited
 - Emoji, slang, vague wording (`update`, `fix`, `change`, `modify`, `更新`, `修正`, `変更`, `対応`, `wip`)
 - One commit per change; propose splitting if spanning multiple types.
-- **Pre-commitフックの回避禁止**: `--no-verify`、`--no-gpg-sign`、`-n`フラグは使用しない。フックが失敗した場合:
-  1. ruff format 等の自動修正が走っている可能性があるため、まず `git add` で修正されたファイルを再ステージングする
-  2. 再コミットを試行する
-  3. それでも失敗する場合はエラーを分析して根本原因を修正する
+- **Pre-commitフックの回避禁止**: `--no-verify`、`--no-gpg-sign`、`-n`フラグは使用しない。
+
+### Commit Workflow
+
+コミット前に `prek run` を実行し、フックの出力をエージェントが取得できるようにすること。
+`git commit` 経由ではフックのエラーログが取得できない場合があるため、事前確認が必須。
+
+```bash
+prek run --files <staged-files>
+```
+
+フックが失敗した場合:
+1. ruff format 等の自動修正が走っている可能性があるため、まず `git add` で修正されたファイルを再ステージングする
+2. 再コミットを試行する
+3. それでも失敗する場合はエラーを分析して根本原因を修正する
