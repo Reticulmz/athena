@@ -90,7 +90,7 @@
   - _Requirements: 7.1, 7.2, 7.3, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 14.1_
   - _Boundary: CommandService_
 
-- [ ] 3.4 ChatService オーケストレーター
+- [x] 3.4 ChatService オーケストレーター
   - send_channel_message / send_private_message メソッドを実装する
   - 共通パイプライン: _check_silence(SessionStore) → _check_rate_limit(RateLimiter) → _validate_message(空/文字数) → ルーティング → _detect_command(! プレフィックス) → EventBus.fire(永続化イベント)
   - send_channel_message: ChannelService.deliver_message に委譲、コマンド検出時は CommandService.execute も呼び出し
