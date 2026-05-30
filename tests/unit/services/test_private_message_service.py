@@ -18,7 +18,7 @@ from osu_server.domain.session import SessionData
 from osu_server.domain.user import User
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
-from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.private_message_service import PMDeliveryResult, PrivateMessageService
 
 # ── Constants ────────────────────────────────────────────────────────
 
@@ -53,10 +53,20 @@ def _make_session(*, user_id: int, username: str) -> SessionData:
     )
 
 
-def _make_service() -> tuple[PrivateMessageService, InMemoryUserRepository, InMemorySessionStore]:
+_ServiceDeps = tuple[
+    PrivateMessageService,
+    InMemoryUserRepository,
+    InMemorySessionStore,
+]
+
+
+def _make_service() -> _ServiceDeps:
     user_repo = InMemoryUserRepository()
     session_store = InMemorySessionStore()
-    svc = PrivateMessageService(user_repo=user_repo, session_store=session_store)
+    svc = PrivateMessageService(
+        user_repo=user_repo,
+        session_store=session_store,
+    )
     return svc, user_repo, session_store
 
 
@@ -138,3 +148,57 @@ class TestUsernameNormalization:
 
         assert exists is True
         assert user_id == created.id
+
+
+# ===========================================================================
+# deliver_message
+# ===========================================================================
+
+
+class TestDeliverMessageOnline:
+    """オンラインユーザー宛: success=True, is_online=True を返す"""
+
+    async def test_returns_success_and_online(self) -> None:
+        svc, user_repo, session_store = _make_service()
+        target = _make_user(user_id=0, username="TargetUser")
+        target_created = await user_repo.create(target)
+        await session_store.create(
+            target_created.id,
+            "token-online",
+            _make_session(user_id=target_created.id, username="TargetUser"),
+        )
+
+        result: PMDeliveryResult = await svc.deliver_message(target_name="TargetUser")
+
+        assert result.success is True
+        assert result.target_id == target_created.id
+        assert result.is_online is True
+
+
+class TestDeliverMessageOffline:
+    """オフラインユーザー宛: success=True, is_online=False を返す"""
+
+    async def test_returns_success_and_offline(self) -> None:
+        svc, user_repo, _session_store = _make_service()
+        target = _make_user(user_id=0, username="OfflineUser")
+        target_created = await user_repo.create(target)
+        # No session → offline
+
+        result: PMDeliveryResult = await svc.deliver_message(target_name="OfflineUser")
+
+        assert result.success is True
+        assert result.target_id == target_created.id
+        assert result.is_online is False
+
+
+class TestDeliverMessageNotFound:
+    """存在しないユーザー宛: success=False を返す"""
+
+    async def test_returns_failure_for_nonexistent_user(self) -> None:
+        svc, _user_repo, _session_store = _make_service()
+
+        result: PMDeliveryResult = await svc.deliver_message(target_name="NoSuchUser")
+
+        assert result.success is False
+        assert result.target_id is None
+        assert result.is_online is False

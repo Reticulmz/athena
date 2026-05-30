@@ -331,7 +331,7 @@ async def test_empty_message_rejected(
 
 
 @pytest.mark.asyncio
-async def test_long_message_truncated(
+async def test_long_message_rejected(
     chat_service: ChatService,
     captured_events: list[object],
 ) -> None:
@@ -344,13 +344,8 @@ async def test_long_message_truncated(
         user_privileges=_BYPASS_ACL,
     )
 
-    assert res is not None
-    assert res.content == "a" * 50
-
-    assert len(captured_events) == 1
-    event = captured_events[0]
-    assert isinstance(event, ChannelMessageSent)
-    assert event.content == "a" * 50
+    assert res is None
+    assert len(captured_events) == 0
 
 
 @pytest.mark.asyncio
@@ -373,9 +368,15 @@ async def test_command_execution(
     )
 
     assert res is not None
-    assert res.delivered_to is None
+    assert res.delivered_to == {2, 3}
     assert res.command_response is not None
     assert res.command_response.target == "#osu"
     assert res.command_response.content == "sender rolls 50 point(s)"
 
-    assert len(captured_events) == 0
+    # Command messages are also delivered to channel members (Req 8.2)
+    assert len(captured_events) == 1
+    event = captured_events[0]
+    assert isinstance(event, ChannelMessageSent)
+    assert event.content == "!roll 100"
+    assert event.sender_id == 1
+    assert event.channel_name == "#osu"

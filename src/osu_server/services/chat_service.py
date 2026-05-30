@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.channel_service import ChannelService
     from osu_server.services.command_service import CommandService
-    from osu_server.services.private_message_service import PrivateMessageService
+    from osu_server.services.private_message_service import PMDeliveryResult, PrivateMessageService
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -76,7 +76,7 @@ class ChatService:
         if not content:
             return None
         if len(content) > self._config.message_max_length:
-            return content[: self._config.message_max_length]
+            return None
         return content
 
     async def send_channel_message(
@@ -109,22 +109,10 @@ class ChatService:
         if not valid_content:
             return None
 
-        command_res = await self._command_service.execute(
-            sender_id, sender_name, channel_name, valid_content
-        )
-        command_response = None
-        if command_res:
-            command_response = ChatCommandResponse(target=command_res[0], content=command_res[1])
-            # Do not persist commands, just return targets = None
-            return ChannelMessageResult(
-                delivered_to=None,
-                content=valid_content,
-                command_response=command_response,
-            )
-
         if user_role_ids is None:
             user_role_ids = []
 
+        # Routing — resolve delivery targets
         targets = await self._channel_service.get_delivery_targets(
             sender_id=sender_id,
             user_privileges=user_privileges,
@@ -132,6 +120,15 @@ class ChatService:
             channel_name=channel_name,
         )
 
+        # Command detection (after routing per design pipeline)
+        command_res = await self._command_service.execute(
+            sender_id, sender_name, channel_name, valid_content
+        )
+        command_response = None
+        if command_res:
+            command_response = ChatCommandResponse(target=command_res[0], content=command_res[1])
+
+        # Fire persistence event — commands are also delivered to members
         await self._event_bus.fire(
             ChannelMessageSent(
                 sender_id=sender_id,
@@ -144,7 +141,7 @@ class ChatService:
         return ChannelMessageResult(
             delivered_to=targets,
             content=valid_content,
-            command_response=None,
+            command_response=command_response,
         )
 
     async def send_private_message(
@@ -168,36 +165,44 @@ class ChatService:
         if not valid_content:
             return None
 
+        # Command detection
         command_res = await self._command_service.execute(
             sender_id, sender_name, target_name, valid_content
         )
         command_response = None
         if command_res:
             command_response = ChatCommandResponse(target=command_res[0], content=command_res[1])
+
+        # Routing — resolve PM target
+        pm_result: PMDeliveryResult = await self._private_message_service.deliver_message(
+            target_name=target_name,
+        )
+
+        if not pm_result.success:
+            # Target user does not exist — return error indicator.
+            # Transport layer sends error notification via BanchoBot PM.
             return PrivateMessageResult(
                 target_id=None,
                 is_online=False,
                 content=valid_content,
-                command_response=command_response,
+                command_response=None,
             )
 
-        target_info = await self._private_message_service.resolve_target(target_name)
-        exists, target_id, is_online = target_info
-
-        if exists and target_id is not None:
-            await self._event_bus.fire(
-                PrivateMessageSent(
-                    sender_id=sender_id,
-                    sender_name=sender_name,
-                    target_id=target_id,
-                    target_name=target_name,
-                    content=valid_content,
-                )
+        # Fire persistence event
+        assert pm_result.target_id is not None  # success=True guarantees target_id
+        await self._event_bus.fire(
+            PrivateMessageSent(
+                sender_id=sender_id,
+                sender_name=sender_name,
+                target_id=pm_result.target_id,
+                target_name=target_name,
+                content=valid_content,
             )
+        )
 
         return PrivateMessageResult(
-            target_id=target_id if exists else None,
-            is_online=is_online,
+            target_id=pm_result.target_id,
+            is_online=pm_result.is_online,
             content=valid_content,
-            command_response=None,
+            command_response=command_response,
         )
