@@ -112,7 +112,7 @@
   - _Depends: 3.4_
   - _Requirements: 3.1, 3.3, 4.1, 5.1_
 
-- [ ] 4.2 (P) ChatListeners（taskiq enqueue + 切断クリーンアップ）
+- [x] 4.2 (P) ChatListeners（taskiq enqueue + 切断クリーンアップ）
   - ChatListeners(ListenerGroup) に on_channel_message_sent, on_private_message_sent, on_user_disconnected を @listens デコレータで実装する
   - on_channel_message_sent: persist_channel_message ジョブを Valkey キューに enqueue する
   - on_private_message_sent: persist_private_message ジョブを Valkey キューに enqueue する
