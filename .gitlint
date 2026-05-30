@@ -7,4 +7,4 @@ ignore = B6
 types = feat,fix,docs,style,refactor,perf,test,chore,build,ci,revert
 
 [title-max-length]
-line-length = 50
+line-length = 70
