@@ -8,7 +8,7 @@
 ```
 
 - **Type** (English): `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `build`, `ci`, `revert`
-- **Description**: Max 50 chars, no trailing period, in Japanese.
+- **Description**: Max 70 chars, no trailing period, in Japanese.
 - **Body** (optional): Blank line before body; describe reason, context, and impact.
 - **Breaking changes**: Append `!` after type (e.g., `feat!:`).
 
@@ -23,11 +23,12 @@
 
 ### Commit Workflow
 
-コミット前に `prek run` を実行し、フックの出力をエージェントが取得できるようにすること。
+コミット前に `prek run --all-files` を実行し、フックの出力をエージェントが取得できるようにすること。
 `git commit` 経由ではフックのエラーログが取得できない場合があるため、事前確認が必須。
+`--all-files` 必須。`--files` ではステージされていない変更がテストに反映されず、誤った結果になる。
 
 ```bash
-prek run --files <staged-files>
+prek run --all-files
 ```
 
 フックが失敗した場合:
