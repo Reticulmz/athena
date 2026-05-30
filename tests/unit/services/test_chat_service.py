@@ -1,44 +1,56 @@
+import random
 import time
-from unittest.mock import AsyncMock
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import PostgresDsn, RedisDsn
 
 from osu_server.config import AppConfig
+from osu_server.domain.channel import Channel, ChannelType
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.session import SessionData
+from osu_server.domain.user import User
+from osu_server.infrastructure.messaging.memory import InMemoryEventBus
+from osu_server.infrastructure.state.memory.channel_state_store import (
+    InMemoryChannelStateStore,
+)
+from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
+from osu_server.repositories.memory.session_store import InMemorySessionStore
+from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
+from osu_server.services.command_service import CommandService
+from osu_server.services.private_message_service import PrivateMessageService
+
+_NOW = datetime.now(UTC)
+_BYPASS_ACL = 1 << 9  # Privileges.BYPASS_CHANNEL_ACL
 
 
 @pytest.fixture
-def channel_service() -> AsyncMock:
-    srv = AsyncMock()
-    srv.get_channel = AsyncMock(return_value=None)
-    srv.get_delivery_targets = AsyncMock(return_value={2, 3})
-    return srv
+def channel_repo() -> InMemoryChannelRepository:
+    return InMemoryChannelRepository()
 
 
 @pytest.fixture
-def private_message_service() -> AsyncMock:
-    srv = AsyncMock()
-    srv.resolve_target = AsyncMock(return_value=(True, 2, True))
-    return srv
+def channel_state() -> InMemoryChannelStateStore:
+    return InMemoryChannelStateStore()
 
 
 @pytest.fixture
-def command_service() -> AsyncMock:
-    srv = AsyncMock()
-    srv.execute = AsyncMock(return_value=None)
-    return srv
+def user_repo() -> InMemoryUserRepository:
+    return InMemoryUserRepository()
 
 
 @pytest.fixture
-def session_store() -> AsyncMock:
-    store = AsyncMock()
-    store.get_by_user = AsyncMock(
-        return_value=SessionData(
+async def session_store() -> InMemorySessionStore:
+    store = InMemorySessionStore()
+    await store.create(
+        user_id=1,
+        token="sender_session",
+        data=SessionData(
             user_id=1,
-            username="test",
+            username="sender",
             privileges=0,
             country="JP",
             osu_version="test",
@@ -47,23 +59,31 @@ def session_store() -> AsyncMock:
             client_hashes="",
             pm_private=False,
             silence_end=0,
-        )
+        ),
     )
     return store
 
 
 @pytest.fixture
-def event_bus() -> AsyncMock:
-    bus = AsyncMock()
-    bus.fire = AsyncMock()
+def captured_events() -> list[object]:
+    return []
+
+
+@pytest.fixture
+def event_bus(captured_events: list[object]) -> InMemoryEventBus:
+    bus = InMemoryEventBus()
+
+    async def capture(event: object) -> None:
+        captured_events.append(event)
+
+    bus.subscribe(ChannelMessageSent, capture)
+    bus.subscribe(PrivateMessageSent, capture)
     return bus
 
 
 @pytest.fixture
-def rate_limiter() -> AsyncMock:
-    limiter = AsyncMock()
-    limiter.check = AsyncMock(return_value=True)
-    return limiter
+def rate_limiter() -> InMemoryRateLimiter:
+    return InMemoryRateLimiter(time_func=lambda: 0.0)
 
 
 @pytest.fixture
@@ -78,13 +98,52 @@ def config() -> AppConfig:
 
 
 @pytest.fixture
+async def channel_service(
+    channel_repo: InMemoryChannelRepository,
+    channel_state: InMemoryChannelStateStore,
+) -> ChannelService:
+    channel = Channel(
+        id=0,  # auto-assigned by repository
+        name="#osu",
+        topic="",
+        channel_type=ChannelType.PUBLIC,
+        auto_join=False,
+        rate_limit_messages=None,
+        rate_limit_window=None,
+        created_at=_NOW,
+        updated_at=_NOW,
+    )
+    _ = await channel_repo.create(channel)
+
+    # Sender (1) + delivery targets (2, 3) as channel members
+    await channel_state.add_member("#osu", 1)
+    await channel_state.add_member("#osu", 2)
+    await channel_state.add_member("#osu", 3)
+
+    return ChannelService(channel_repo=channel_repo, channel_state=channel_state)
+
+
+@pytest.fixture
+def private_message_service(
+    user_repo: InMemoryUserRepository,
+    session_store: InMemorySessionStore,
+) -> PrivateMessageService:
+    return PrivateMessageService(user_repo=user_repo, session_store=session_store)
+
+
+@pytest.fixture
+def command_service() -> CommandService:
+    return CommandService()
+
+
+@pytest.fixture
 def chat_service(
-    channel_service: AsyncMock,
-    private_message_service: AsyncMock,
-    command_service: AsyncMock,
-    session_store: AsyncMock,
-    event_bus: AsyncMock,
-    rate_limiter: AsyncMock,
+    channel_service: ChannelService,
+    private_message_service: PrivateMessageService,
+    command_service: CommandService,
+    session_store: InMemorySessionStore,
+    event_bus: InMemoryEventBus,
+    rate_limiter: InMemoryRateLimiter,
     config: AppConfig,
 ) -> ChatService:
     return ChatService(
@@ -100,14 +159,15 @@ def chat_service(
 
 @pytest.mark.asyncio
 async def test_send_channel_message_success(
-    chat_service: ChatService, event_bus: AsyncMock
+    chat_service: ChatService,
+    captured_events: list[object],
 ) -> None:
     res = await chat_service.send_channel_message(
         sender_id=1,
         sender_name="sender",
         channel_name="#osu",
         content="hello",
-        user_privileges=0,
+        user_privileges=_BYPASS_ACL,
         user_role_ids=[],
     )
 
@@ -116,8 +176,8 @@ async def test_send_channel_message_success(
     assert res.content == "hello"
     assert res.command_response is None
 
-    event_bus.fire.assert_called_once()  # pyright: ignore[reportAny]
-    event = event_bus.fire.call_args[0][0]  # pyright: ignore[reportAny]
+    assert len(captured_events) == 1
+    event = captured_events[0]
     assert isinstance(event, ChannelMessageSent)
     assert event.content == "hello"
     assert event.sender_id == 1
@@ -126,8 +186,54 @@ async def test_send_channel_message_success(
 
 @pytest.mark.asyncio
 async def test_send_private_message_success(
-    chat_service: ChatService, event_bus: AsyncMock
+    chat_service: ChatService,
+    user_repo: InMemoryUserRepository,
+    session_store: InMemorySessionStore,
+    captured_events: list[object],
 ) -> None:
+    # Seed sender user (consumes id=1) then target user (id=2)
+    sender = User(
+        id=0,
+        username="sender",
+        safe_username="sender",
+        email="sender@test.local",
+        password_hash="hash",
+        country="JP",
+        created_at=_NOW,
+        updated_at=_NOW,
+    )
+    _ = await user_repo.create(sender)
+
+    target = User(
+        id=0,
+        username="target",
+        safe_username="target",
+        email="target@test.local",
+        password_hash="hash",
+        country="JP",
+        created_at=_NOW,
+        updated_at=_NOW,
+    )
+    created_target = await user_repo.create(target)
+
+    # Create session for target so is_online=True
+    await session_store.create(
+        user_id=created_target.id,
+        token="target_session",
+        data=SessionData(
+            user_id=created_target.id,
+            username="target",
+            privileges=0,
+            country="JP",
+            osu_version="test",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="",
+            pm_private=False,
+            silence_end=0,
+        ),
+    )
+
     res = await chat_service.send_private_message(
         sender_id=1,
         sender_name="sender",
@@ -136,75 +242,140 @@ async def test_send_private_message_success(
     )
 
     assert res is not None
-    assert res.target_id == 2
+    assert res.target_id == created_target.id
     assert res.is_online is True
     assert res.content == "hello PM"
     assert res.command_response is None
 
-    event_bus.fire.assert_called_once()  # pyright: ignore[reportAny]
-    event = event_bus.fire.call_args[0][0]  # pyright: ignore[reportAny]
+    assert len(captured_events) == 1
+    event = captured_events[0]
     assert isinstance(event, PrivateMessageSent)
     assert event.content == "hello PM"
     assert event.sender_id == 1
-    assert event.target_id == 2
+    assert event.target_id == created_target.id
 
 
 @pytest.mark.asyncio
 async def test_silenced_user_rejected(
-    chat_service: ChatService, session_store: AsyncMock, event_bus: AsyncMock
+    chat_service: ChatService,
+    session_store: InMemorySessionStore,
+    captured_events: list[object],
 ) -> None:
-    session_store.get_by_user.return_value.silence_end = (  # pyright: ignore[reportAny]
-        int(time.time()) + 3600
+    # Overwrite sender session with silenced status
+    await session_store.create(
+        user_id=1,
+        token="silenced_session",
+        data=SessionData(
+            user_id=1,
+            username="sender",
+            privileges=0,
+            country="JP",
+            osu_version="test",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="",
+            pm_private=False,
+            silence_end=int(time.time()) + 3600,
+        ),
     )
 
-    res = await chat_service.send_channel_message(1, "sender", "#osu", "hello")
+    res = await chat_service.send_channel_message(
+        sender_id=1,
+        sender_name="sender",
+        channel_name="#osu",
+        content="hello",
+        user_privileges=_BYPASS_ACL,
+    )
     assert res is None
-    event_bus.fire.assert_not_called()  # pyright: ignore[reportAny]
+    assert len(captured_events) == 0
 
 
 @pytest.mark.asyncio
 async def test_rate_limited_rejected(
-    chat_service: ChatService, rate_limiter: AsyncMock, event_bus: AsyncMock
+    chat_service: ChatService,
+    rate_limiter: InMemoryRateLimiter,
+    config: AppConfig,
+    captured_events: list[object],
 ) -> None:
-    rate_limiter.check.return_value = False  # pyright: ignore[reportAny]
+    # Pre-fill rate limiter to exhaust the limit
+    limit = config.rate_limit_messages  # 10
+    window = config.rate_limit_window  # 10
+    for _ in range(limit):
+        _ = await rate_limiter.check(user_id=1, limit=limit, window=window)
 
-    res = await chat_service.send_channel_message(1, "sender", "#osu", "hello")
+    res = await chat_service.send_channel_message(
+        sender_id=1,
+        sender_name="sender",
+        channel_name="#osu",
+        content="hello",
+        user_privileges=_BYPASS_ACL,
+    )
     assert res is None
-    event_bus.fire.assert_not_called()  # pyright: ignore[reportAny]
+    assert len(captured_events) == 0
 
 
 @pytest.mark.asyncio
-async def test_empty_message_rejected(chat_service: ChatService, event_bus: AsyncMock) -> None:
-    res = await chat_service.send_channel_message(1, "sender", "#osu", "")
+async def test_empty_message_rejected(
+    chat_service: ChatService,
+    captured_events: list[object],
+) -> None:
+    res = await chat_service.send_channel_message(
+        sender_id=1,
+        sender_name="sender",
+        channel_name="#osu",
+        content="",
+        user_privileges=_BYPASS_ACL,
+    )
     assert res is None
-    event_bus.fire.assert_not_called()  # pyright: ignore[reportAny]
+    assert len(captured_events) == 0
 
 
 @pytest.mark.asyncio
-async def test_long_message_truncated(chat_service: ChatService, event_bus: AsyncMock) -> None:
+async def test_long_message_truncated(
+    chat_service: ChatService,
+    captured_events: list[object],
+) -> None:
     long_msg = "a" * 100
-    res = await chat_service.send_channel_message(1, "sender", "#osu", long_msg)
+    res = await chat_service.send_channel_message(
+        sender_id=1,
+        sender_name="sender",
+        channel_name="#osu",
+        content=long_msg,
+        user_privileges=_BYPASS_ACL,
+    )
 
     assert res is not None
     assert res.content == "a" * 50
 
-    event = event_bus.fire.call_args[0][0]  # pyright: ignore[reportAny]
+    assert len(captured_events) == 1
+    event = captured_events[0]
     assert isinstance(event, ChannelMessageSent)
     assert event.content == "a" * 50
 
 
 @pytest.mark.asyncio
 async def test_command_execution(
-    chat_service: ChatService, command_service: AsyncMock, event_bus: AsyncMock
+    chat_service: ChatService,
+    captured_events: list[object],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    command_service.execute.return_value = ("#osu", "BanchoBot response")  # pyright: ignore[reportAny]
+    def mock_randint(_a: int, _b: int) -> int:
+        return 50
 
-    res = await chat_service.send_channel_message(1, "sender", "#osu", "!roll")
+    monkeypatch.setattr(random, "randint", mock_randint)
+
+    res = await chat_service.send_channel_message(
+        sender_id=1,
+        sender_name="sender",
+        channel_name="#osu",
+        content="!roll 100",
+        user_privileges=_BYPASS_ACL,
+    )
 
     assert res is not None
     assert res.delivered_to is None
     assert res.command_response is not None
     assert res.command_response.target == "#osu"
-    assert res.command_response.content == "BanchoBot response"
+    assert res.command_response.content == "sender rolls 50 point(s)"
 
-    event_bus.fire.assert_not_called()  # pyright: ignore[reportAny]
+    assert len(captured_events) == 0
