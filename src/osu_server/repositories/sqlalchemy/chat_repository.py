@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
+from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -18,15 +20,33 @@ from osu_server.repositories.sqlalchemy.models.channel import (
 )
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from sqlalchemy.sql.base import Executable
+
+
+class _ChannelIdResult(Protocol):
+    def scalar_one_or_none(self) -> int | None: ...
+
+
+class _ChatPersistenceSession(Protocol):
+    def execute(self, statement: Executable) -> Awaitable[_ChannelIdResult]: ...
+
+    def add(self, instance: object) -> None: ...
+
+    def commit(self) -> Awaitable[None]: ...
+
+
+type _ChatSessionFactory = Callable[
+    [],
+    AbstractAsyncContextManager[_ChatPersistenceSession],
+]
 
 
 class SQLAlchemyChatRepository:
     """SQLAlchemy implementation of the ChatRepository Protocol."""
 
-    _session_factory: async_sessionmaker[AsyncSession]
+    _session_factory: _ChatSessionFactory
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, session_factory: _ChatSessionFactory) -> None:
         self._session_factory = session_factory
 
     async def save_channel_message(
@@ -82,7 +102,10 @@ class SQLAlchemyChatRepository:
         return ChatPersistenceResult.success_result()
 
     @staticmethod
-    async def _resolve_channel_id(session: AsyncSession, channel_name: str) -> int | None:
+    async def _resolve_channel_id(
+        session: _ChatPersistenceSession,
+        channel_name: str,
+    ) -> int | None:
         """Return channel id for *channel_name*, or ``None`` if unresolved."""
         stmt = select(ChannelModel.id).where(ChannelModel.name == channel_name)
         return (await session.execute(stmt)).scalar_one_or_none()
