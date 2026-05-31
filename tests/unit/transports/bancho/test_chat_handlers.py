@@ -12,8 +12,8 @@ from __future__ import annotations
 import pytest
 from caterpillar.model import pack
 
+from osu_server.domain.chat import ChannelMessageResult, PrivateMessageResult
 from osu_server.domain.session import SessionData
-from osu_server.services.chat_service import ChannelMessageResult, PrivateMessageResult
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.bancho.protocol.types import BanchoString, Message
 

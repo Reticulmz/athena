@@ -21,7 +21,7 @@
   - _Boundary: SQLAlchemyChatRepository_
 
 - [ ] 3. ChatService を Chat lifecycle の中心にする
-- [ ] 3.1 ChatService に chat history 永続化 use-case を追加する
+- [x] 3.1 ChatService に chat history 永続化 use-case を追加する
   - public/private を宛先種別として扱い、ChatRepository に履歴化を委譲する
   - repository failure を成功として扱わず、運用者が原因を追跡できる結果または log を残す
   - service tests で channel/private persistence と失敗結果を検証できる

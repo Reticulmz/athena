@@ -1,44 +1,32 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import structlog
 
+from osu_server.domain.chat import (
+    ChannelMessageResult,
+    ChatCommandResponse,
+    PrivateMessageResult,
+)
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
+from osu_server.repositories.interfaces.chat_repository import (
+    ChatPersistenceFailureReason,
+    ChatPersistenceResult,
+)
 
 if TYPE_CHECKING:
     from osu_server.config import AppConfig
     from osu_server.infrastructure.messaging.interfaces import EventBus
     from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+    from osu_server.repositories.interfaces.chat_repository import ChatRepository
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.channel_service import ChannelService
     from osu_server.services.command_service import CommandService
     from osu_server.services.private_message_service import PMDeliveryResult, PrivateMessageService
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
-
-
-@dataclass(slots=True)
-class ChatCommandResponse:
-    target: str
-    content: str
-
-
-@dataclass(slots=True)
-class ChannelMessageResult:
-    delivered_to: set[int] | None
-    content: str
-    command_response: ChatCommandResponse | None = None
-
-
-@dataclass(slots=True)
-class PrivateMessageResult:
-    target_id: int | None
-    is_online: bool
-    content: str
-    command_response: ChatCommandResponse | None = None
 
 
 class ChatService:
@@ -54,6 +42,7 @@ class ChatService:
         event_bus: EventBus,
         rate_limiter: RateLimiter,
         config: AppConfig,
+        chat_repository: ChatRepository | None = None,
     ) -> None:
         self._channel_service: ChannelService = channel_service
         self._private_message_service: PrivateMessageService = private_message_service
@@ -62,6 +51,7 @@ class ChatService:
         self._event_bus: EventBus = event_bus
         self._rate_limiter: RateLimiter = rate_limiter
         self._config: AppConfig = config
+        self._chat_repository: ChatRepository | None = chat_repository
 
     async def _check_silence(self, sender_id: int) -> bool:
         session = await self._session_store.get_by_user(sender_id)
@@ -143,6 +133,75 @@ class ChatService:
             content=valid_content,
             command_response=command_response,
         )
+
+    async def persist_channel_message(
+        self,
+        *,
+        sender_id: int,
+        channel_name: str,
+        content: str,
+    ) -> ChatPersistenceResult:
+        if self._chat_repository is None:
+            result = ChatPersistenceResult.failure(
+                ChatPersistenceFailureReason.RUNTIME_UNAVAILABLE
+            )
+            logger.warning(
+                "chat_persistence_failed",
+                sender_id=sender_id,
+                channel_name=channel_name,
+                reason=ChatPersistenceFailureReason.RUNTIME_UNAVAILABLE.value,
+            )
+            return result
+
+        result = await self._chat_repository.save_channel_message(
+            sender_id=sender_id,
+            channel_name=channel_name,
+            content=content,
+        )
+        if not result.success:
+            event_name = "chat_persistence_failed"
+            if result.reason is ChatPersistenceFailureReason.CHANNEL_NOT_FOUND:
+                event_name = "chat_persistence_channel_not_found"
+            logger.warning(
+                event_name,
+                sender_id=sender_id,
+                channel_name=channel_name,
+                reason=result.reason.value if result.reason is not None else None,
+            )
+        return result
+
+    async def persist_private_message(
+        self,
+        *,
+        sender_id: int,
+        target_id: int,
+        content: str,
+    ) -> ChatPersistenceResult:
+        if self._chat_repository is None:
+            result = ChatPersistenceResult.failure(
+                ChatPersistenceFailureReason.RUNTIME_UNAVAILABLE
+            )
+            logger.warning(
+                "chat_persistence_failed",
+                sender_id=sender_id,
+                target_id=target_id,
+                reason=ChatPersistenceFailureReason.RUNTIME_UNAVAILABLE.value,
+            )
+            return result
+
+        result = await self._chat_repository.save_private_message(
+            sender_id=sender_id,
+            target_id=target_id,
+            content=content,
+        )
+        if not result.success:
+            logger.warning(
+                "chat_persistence_failed",
+                sender_id=sender_id,
+                target_id=target_id,
+                reason=result.reason.value if result.reason is not None else None,
+            )
+        return result
 
     async def send_private_message(
         self,

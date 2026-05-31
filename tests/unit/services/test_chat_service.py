@@ -15,6 +15,10 @@ from osu_server.infrastructure.state.memory.channel_state_store import (
     InMemoryChannelStateStore,
 )
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.repositories.interfaces.chat_repository import (
+    ChatPersistenceFailureReason,
+    ChatPersistenceResult,
+)
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
@@ -25,6 +29,41 @@ from osu_server.services.private_message_service import PrivateMessageService
 
 _NOW = datetime.now(UTC)
 _BYPASS_ACL = 1 << 9  # Privileges.BYPASS_CHANNEL_ACL
+
+
+class CapturingChatRepository:
+    """ChatRepository test double that records persistence calls."""
+
+    channel_result: ChatPersistenceResult
+    private_result: ChatPersistenceResult
+    channel_calls: list[tuple[int, str, str]]
+    private_calls: list[tuple[int, int, str]]
+
+    def __init__(self) -> None:
+        self.channel_result = ChatPersistenceResult.success_result()
+        self.private_result = ChatPersistenceResult.success_result()
+        self.channel_calls = []
+        self.private_calls = []
+
+    async def save_channel_message(
+        self,
+        *,
+        sender_id: int,
+        channel_name: str,
+        content: str,
+    ) -> ChatPersistenceResult:
+        self.channel_calls.append((sender_id, channel_name, content))
+        return self.channel_result
+
+    async def save_private_message(
+        self,
+        *,
+        sender_id: int,
+        target_id: int,
+        content: str,
+    ) -> ChatPersistenceResult:
+        self.private_calls.append((sender_id, target_id, content))
+        return self.private_result
 
 
 @pytest.fixture
@@ -137,6 +176,11 @@ def command_service() -> CommandService:
 
 
 @pytest.fixture
+def chat_repository() -> CapturingChatRepository:
+    return CapturingChatRepository()
+
+
+@pytest.fixture
 def chat_service(
     channel_service: ChannelService,
     private_message_service: PrivateMessageService,
@@ -145,6 +189,7 @@ def chat_service(
     event_bus: InMemoryEventBus,
     rate_limiter: InMemoryRateLimiter,
     config: AppConfig,
+    chat_repository: CapturingChatRepository,
 ) -> ChatService:
     return ChatService(
         channel_service=channel_service,
@@ -154,7 +199,80 @@ def chat_service(
         event_bus=event_bus,
         rate_limiter=rate_limiter,
         config=config,
+        chat_repository=chat_repository,
     )
+
+
+@pytest.mark.asyncio
+async def test_persist_channel_message_delegates_to_repository(
+    chat_service: ChatService,
+    chat_repository: CapturingChatRepository,
+) -> None:
+    result = await chat_service.persist_channel_message(
+        sender_id=1,
+        channel_name="#osu",
+        content="hello",
+    )
+
+    assert result.success is True
+    assert result.reason is None
+    assert chat_repository.channel_calls == [(1, "#osu", "hello")]
+
+
+@pytest.mark.asyncio
+async def test_persist_channel_message_returns_repository_failure(
+    chat_service: ChatService,
+    chat_repository: CapturingChatRepository,
+) -> None:
+    chat_repository.channel_result = ChatPersistenceResult.failure(
+        ChatPersistenceFailureReason.CHANNEL_NOT_FOUND
+    )
+
+    result = await chat_service.persist_channel_message(
+        sender_id=1,
+        channel_name="#missing",
+        content="hello",
+    )
+
+    assert result.success is False
+    assert result.reason is ChatPersistenceFailureReason.CHANNEL_NOT_FOUND
+    assert chat_repository.channel_calls == [(1, "#missing", "hello")]
+
+
+@pytest.mark.asyncio
+async def test_persist_private_message_delegates_to_repository(
+    chat_service: ChatService,
+    chat_repository: CapturingChatRepository,
+) -> None:
+    result = await chat_service.persist_private_message(
+        sender_id=1,
+        target_id=2,
+        content="secret",
+    )
+
+    assert result.success is True
+    assert result.reason is None
+    assert chat_repository.private_calls == [(1, 2, "secret")]
+
+
+@pytest.mark.asyncio
+async def test_persist_private_message_returns_repository_failure(
+    chat_service: ChatService,
+    chat_repository: CapturingChatRepository,
+) -> None:
+    chat_repository.private_result = ChatPersistenceResult.failure(
+        ChatPersistenceFailureReason.STORAGE_ERROR
+    )
+
+    result = await chat_service.persist_private_message(
+        sender_id=1,
+        target_id=2,
+        content="secret",
+    )
+
+    assert result.success is False
+    assert result.reason is ChatPersistenceFailureReason.STORAGE_ERROR
+    assert chat_repository.private_calls == [(1, 2, "secret")]
 
 
 @pytest.mark.asyncio
