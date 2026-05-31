@@ -43,7 +43,7 @@
   - _Requirements: 3.2, 3.5, 4.1, 4.2, 4.3, 4.4, 6.1, 6.5_
   - _Boundary: ChatPersistenceJob_
   - _Depends: 3.1_
-- [ ] 4.2 worker entrypoint と job registration を top-level jobs layer に接続する
+- [x] 4.2 worker entrypoint と job registration を top-level jobs layer に接続する
   - worker.py は broker lifecycle に集中し、register_all_jobs は app 固有 job を jobs layer から登録する
   - broker に `persist_channel_message` と `persist_private_message` が登録されることを smoke test で確認できる
   - `infrastructure/jobs/message_persistence.py` と temporary `composition/jobs` が残っていないことを確認できる

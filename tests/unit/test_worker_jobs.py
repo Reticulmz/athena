@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import inspect
+import subprocess
+import sys
 
 import structlog.testing
 from taskiq import Context, InMemoryBroker, TaskiqMessage
 
-from osu_server.jobs import chat_persistence
+from osu_server.jobs import chat_persistence, register_all_jobs
 from osu_server.jobs.chat_persistence import (
     persist_channel_message,
     persist_private_message,
@@ -137,6 +139,36 @@ class TestPersistPrivateMessage:
         assert entries[0]["sender_id"] == 1
         assert entries[0]["target_id"] == 2
         assert entries[0]["log_level"] == "error"
+
+
+def test_register_all_jobs_attaches_loaded_chat_persistence_tasks_to_broker() -> None:
+    broker = InMemoryBroker()
+
+    register_all_jobs(broker)
+
+    assert broker.find_task("persist_channel_message") is not None
+    assert broker.find_task("persist_private_message") is not None
+
+
+def test_register_all_jobs_loads_chat_persistence_tasks_in_fresh_process() -> None:
+    code = """
+from taskiq import InMemoryBroker
+from osu_server.jobs import register_all_jobs
+
+broker = InMemoryBroker()
+register_all_jobs(broker)
+assert broker.find_task("persist_channel_message") is not None
+assert broker.find_task("persist_private_message") is not None
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_chat_persistence_job_stays_queue_adapter_only() -> None:

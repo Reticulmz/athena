@@ -91,3 +91,22 @@ def test_top_level_jobs_exports_application_registration_only() -> None:
     assert hasattr(application_jobs, "register_all_jobs")
     assert not hasattr(application_jobs, "persist_channel_message")
     assert not hasattr(application_jobs, "persist_private_message")
+
+
+def test_legacy_chat_persistence_job_modules_are_absent_or_inert() -> None:
+    legacy_paths = [
+        PROJECT_ROOT / "src/osu_server/infrastructure/jobs/message_persistence.py",
+        PROJECT_ROOT / "src/osu_server/composition/jobs/__init__.py",
+        PROJECT_ROOT / "src/osu_server/composition/jobs/message_persistence.py",
+    ]
+
+    for path in legacy_paths:
+        if not path.exists():
+            continue
+        source = path.read_text(encoding="utf-8")
+        assert "@jobs.register" not in source
+        assert "sqlalchemy" not in source
+        assert "ChannelMessageModel" not in source
+        assert "PrivateMessageModel" not in source
+        assert "persist_channel_message" not in source
+        assert "persist_private_message" not in source
