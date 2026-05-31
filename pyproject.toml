@@ -26,6 +26,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-timeout",
+    "aiosqlite",
     "ruff",
     "basedpyright",
     "import-linter",

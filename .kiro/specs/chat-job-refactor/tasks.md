@@ -13,7 +13,7 @@
   - 契約と result type が SQLAlchemy model を公開しないことを確認できる
   - _Requirements: 1.1, 1.2, 5.1, 5.2, 5.3, 5.4, 5.5_
   - _Boundary: ChatRepository_
-- [ ] 2.2 SQLAlchemyChatRepository を実装する
+- [x] 2.2 SQLAlchemyChatRepository を実装する
   - 既存 `channels`, `channel_messages`, `private_messages` を使って chat history を保存する
   - channel name を解決できない場合は失敗結果として返す
   - repository tests で channel/private の保存結果と unresolved channel の失敗結果を確認できる
