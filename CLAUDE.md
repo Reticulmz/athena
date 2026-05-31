@@ -103,6 +103,7 @@ src/osu_server/
 - **C2S / S2C パケット ID は方向別に名前空間を分離** — `ClientPacketID` と `ServerPacketID` は別 enum
 - **パケットハンドラ追加は3点セット**: パケット定義 + ハンドラ関数 + デコレータ登録
 - **ドメイン層に Pydantic を使わない** — バリデーションオーバーヘッド回避、不変条件はメソッドで表現
+- **Service の public use-case method は入力モデルを優先**。sender / destination / authorization / payload など複数概念を受け取る場合や primitive 引数が増える場合は、`domain` 層の `@dataclass(slots=True, frozen=True)` input/value object にまとめる。`ChannelService.get_delivery_targets()` のような collaborator query や小さく凝集した内部境界 method は無理に dataclass 化しない
 - **EventBus**（fire-and-forget）と **JobQueue**（配信保証あり）を使い分ける
 - **import-linter でレイヤー違反を CI で機械的に検出**する
 

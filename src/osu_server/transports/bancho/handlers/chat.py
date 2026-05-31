@@ -14,6 +14,14 @@ from typing import TYPE_CHECKING, cast
 import structlog
 from caterpillar.model import unpack
 
+from osu_server.domain.chat import (
+    ChannelChatAuthorization,
+    ChannelChatDestination,
+    ChatSender,
+    PrivateChatDestination,
+    SendChannelMessageInput,
+    SendPrivateMessageInput,
+)
 from osu_server.transports.bancho.handlers.base import HandlerGroup, handles
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.bancho.protocol.types import BanchoString, Message
@@ -57,12 +65,15 @@ class ChatHandlers(HandlerGroup):
             return
 
         _ = await self._chat_service.send_channel_message(
-            sender_id=user_id,
-            sender_name=session.username,
-            channel_name=msg.target,
-            content=msg.content,
-            user_privileges=session.privileges,
-            user_role_ids=[],
+            SendChannelMessageInput(
+                sender=ChatSender(user_id=user_id, username=session.username),
+                destination=ChannelChatDestination(name=msg.target),
+                content=msg.content,
+                authorization=ChannelChatAuthorization(
+                    privileges=session.privileges,
+                    role_ids=(),
+                ),
+            )
         )
 
     @handles(ClientPacketID.SEND_PRIVATE_MESSAGE)
@@ -74,10 +85,11 @@ class ChatHandlers(HandlerGroup):
             return
 
         _ = await self._chat_service.send_private_message(
-            sender_id=user_id,
-            sender_name=session.username,
-            target_name=msg.target,
-            content=msg.content,
+            SendPrivateMessageInput(
+                sender=ChatSender(user_id=user_id, username=session.username),
+                destination=PrivateChatDestination(username=msg.target),
+                content=msg.content,
+            )
         )
 
     @handles(ClientPacketID.JOIN_CHANNEL)

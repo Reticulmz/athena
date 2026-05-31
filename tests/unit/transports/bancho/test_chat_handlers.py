@@ -12,7 +12,12 @@ from __future__ import annotations
 import pytest
 from caterpillar.model import pack
 
-from osu_server.domain.chat import ChannelMessageResult, PrivateMessageResult
+from osu_server.domain.chat import (
+    ChannelMessageResult,
+    PrivateMessageResult,
+    SendChannelMessageInput,
+    SendPrivateMessageInput,
+)
 from osu_server.domain.session import SessionData
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.bancho.protocol.types import BanchoString, Message
@@ -34,40 +39,32 @@ class StubChatService:
 
     async def send_channel_message(
         self,
-        sender_id: int,
-        sender_name: str,
-        channel_name: str,
-        content: str,
-        user_privileges: int = 0,
-        user_role_ids: list[int] | None = None,
+        message: SendChannelMessageInput,
     ) -> ChannelMessageResult | None:
         self.calls.append(
             {
                 "method": "send_channel_message",
-                "sender_id": sender_id,
-                "sender_name": sender_name,
-                "channel_name": channel_name,
-                "content": content,
-                "user_privileges": user_privileges,
-                "user_role_ids": user_role_ids,
+                "sender_id": message.sender.user_id,
+                "sender_name": message.sender.username,
+                "channel_name": message.destination.name,
+                "content": message.content,
+                "user_privileges": message.authorization.privileges,
+                "user_role_ids": message.authorization.role_ids,
             }
         )
         return self.channel_result
 
     async def send_private_message(
         self,
-        sender_id: int,
-        sender_name: str,
-        target_name: str,
-        content: str,
+        message: SendPrivateMessageInput,
     ) -> PrivateMessageResult | None:
         self.calls.append(
             {
                 "method": "send_private_message",
-                "sender_id": sender_id,
-                "sender_name": sender_name,
-                "target_name": target_name,
-                "content": content,
+                "sender_id": message.sender.user_id,
+                "sender_name": message.sender.username,
+                "target_name": message.destination.username,
+                "content": message.content,
             }
         )
         return self.private_result
@@ -207,7 +204,7 @@ class TestSendMessage:
         assert call["channel_name"] == "#osu"
         assert call["content"] == "hello"
         assert call["user_privileges"] == 0
-        assert call["user_role_ids"] == []
+        assert call["user_role_ids"] == ()
 
     async def test_passes_privileges_from_session(
         self,

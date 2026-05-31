@@ -1,8 +1,45 @@
-"""Domain models for chat use-case results."""
+"""Domain models for chat use-cases."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass(slots=True, frozen=True)
+class ChatSender:
+    user_id: int
+    username: str
+
+
+@dataclass(slots=True, frozen=True)
+class ChannelChatDestination:
+    name: str
+
+
+@dataclass(slots=True, frozen=True)
+class PrivateChatDestination:
+    username: str
+
+
+@dataclass(slots=True, frozen=True)
+class ChannelChatAuthorization:
+    privileges: int = 0
+    role_ids: tuple[int, ...] = ()
+
+
+@dataclass(slots=True, frozen=True)
+class SendChannelMessageInput:
+    sender: ChatSender
+    destination: ChannelChatDestination
+    content: str
+    authorization: ChannelChatAuthorization = field(default_factory=ChannelChatAuthorization)
+
+
+@dataclass(slots=True, frozen=True)
+class SendPrivateMessageInput:
+    sender: ChatSender
+    destination: PrivateChatDestination
+    content: str
 
 
 @dataclass(slots=True)

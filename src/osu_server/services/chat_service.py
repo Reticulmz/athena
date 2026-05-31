@@ -9,6 +9,8 @@ from osu_server.domain.chat import (
     ChannelMessageResult,
     ChatCommandResponse,
     PrivateMessageResult,
+    SendChannelMessageInput,
+    SendPrivateMessageInput,
 )
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.repositories.interfaces.chat_repository import (
@@ -71,18 +73,17 @@ class ChatService:
 
     async def send_channel_message(
         self,
-        sender_id: int,
-        sender_name: str,
-        channel_name: str,
-        content: str,
-        user_privileges: int = 0,
-        user_role_ids: list[int] | None = None,
+        message: SendChannelMessageInput,
     ) -> ChannelMessageResult | None:
-        if not await self._check_silence(sender_id):
+        sender = message.sender
+        destination = message.destination
+        authorization = message.authorization
+
+        if not await self._check_silence(sender.user_id):
             return None
 
         # Check rate limit
-        channel = await self._channel_service.get_channel(channel_name)
+        channel = await self._channel_service.get_channel(destination.name)
         limit = self._config.rate_limit_messages
         window = self._config.rate_limit_window
         if channel:
@@ -91,28 +92,25 @@ class ChatService:
             if channel.rate_limit_window is not None:
                 window = channel.rate_limit_window
 
-        if not await self._rate_limiter.check(sender_id, limit, window):
-            logger.info("rate_limit_exceeded", sender_id=sender_id)
+        if not await self._rate_limiter.check(sender.user_id, limit, window):
+            logger.info("rate_limit_exceeded", sender_id=sender.user_id)
             return None
 
-        valid_content = await self._validate_message(content)
+        valid_content = await self._validate_message(message.content)
         if not valid_content:
             return None
 
-        if user_role_ids is None:
-            user_role_ids = []
-
         # Routing — resolve delivery targets
         targets = await self._channel_service.get_delivery_targets(
-            sender_id=sender_id,
-            user_privileges=user_privileges,
-            user_role_ids=user_role_ids,
-            channel_name=channel_name,
+            sender_id=sender.user_id,
+            user_privileges=authorization.privileges,
+            user_role_ids=list(authorization.role_ids),
+            channel_name=destination.name,
         )
 
         # Command detection (after routing per design pipeline)
         command_res = await self._command_service.execute(
-            sender_id, sender_name, channel_name, valid_content
+            sender.user_id, sender.username, destination.name, valid_content
         )
         command_response = None
         if command_res:
@@ -121,9 +119,9 @@ class ChatService:
         # Fire persistence event — commands are also delivered to members
         await self._event_bus.fire(
             ChannelMessageSent(
-                sender_id=sender_id,
-                sender_name=sender_name,
-                channel_name=channel_name,
+                sender_id=sender.user_id,
+                sender_name=sender.username,
+                channel_name=destination.name,
                 content=valid_content,
             )
         )
@@ -205,28 +203,28 @@ class ChatService:
 
     async def send_private_message(
         self,
-        sender_id: int,
-        sender_name: str,
-        target_name: str,
-        content: str,
+        message: SendPrivateMessageInput,
     ) -> PrivateMessageResult | None:
-        if not await self._check_silence(sender_id):
+        sender = message.sender
+        destination = message.destination
+
+        if not await self._check_silence(sender.user_id):
             return None
 
         # Check rate limit
         if not await self._rate_limiter.check(
-            sender_id, self._config.rate_limit_messages, self._config.rate_limit_window
+            sender.user_id, self._config.rate_limit_messages, self._config.rate_limit_window
         ):
-            logger.info("rate_limit_exceeded", sender_id=sender_id)
+            logger.info("rate_limit_exceeded", sender_id=sender.user_id)
             return None
 
-        valid_content = await self._validate_message(content)
+        valid_content = await self._validate_message(message.content)
         if not valid_content:
             return None
 
         # Command detection
         command_res = await self._command_service.execute(
-            sender_id, sender_name, target_name, valid_content
+            sender.user_id, sender.username, destination.username, valid_content
         )
         command_response = None
         if command_res:
@@ -234,7 +232,7 @@ class ChatService:
 
         # Routing — resolve PM target
         pm_result: PMDeliveryResult = await self._private_message_service.deliver_message(
-            target_name=target_name,
+            target_name=destination.username,
         )
 
         if not pm_result.success:
@@ -251,10 +249,10 @@ class ChatService:
         assert pm_result.target_id is not None  # success=True guarantees target_id
         await self._event_bus.fire(
             PrivateMessageSent(
-                sender_id=sender_id,
-                sender_name=sender_name,
+                sender_id=sender.user_id,
+                sender_name=sender.username,
                 target_id=pm_result.target_id,
-                target_name=target_name,
+                target_name=destination.username,
                 content=valid_content,
             )
         )

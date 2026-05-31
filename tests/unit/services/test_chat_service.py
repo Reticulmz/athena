@@ -7,6 +7,14 @@ from pydantic import PostgresDsn, RedisDsn
 
 from osu_server.config import AppConfig
 from osu_server.domain.channel import Channel, ChannelType
+from osu_server.domain.chat import (
+    ChannelChatAuthorization,
+    ChannelChatDestination,
+    ChatSender,
+    PrivateChatDestination,
+    SendChannelMessageInput,
+    SendPrivateMessageInput,
+)
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.session import SessionData
 from osu_server.domain.user import User
@@ -29,6 +37,40 @@ from osu_server.services.private_message_service import PrivateMessageService
 
 _NOW = datetime.now(UTC)
 _BYPASS_ACL = 1 << 9  # Privileges.BYPASS_CHANNEL_ACL
+
+
+def _channel_message_input(
+    *,
+    sender_id: int = 1,
+    sender_name: str = "sender",
+    channel_name: str = "#osu",
+    content: str = "hello",
+    user_privileges: int = _BYPASS_ACL,
+    user_role_ids: tuple[int, ...] = (),
+) -> SendChannelMessageInput:
+    return SendChannelMessageInput(
+        sender=ChatSender(user_id=sender_id, username=sender_name),
+        destination=ChannelChatDestination(name=channel_name),
+        content=content,
+        authorization=ChannelChatAuthorization(
+            privileges=user_privileges,
+            role_ids=user_role_ids,
+        ),
+    )
+
+
+def _private_message_input(
+    *,
+    sender_id: int = 1,
+    sender_name: str = "sender",
+    target_name: str = "target",
+    content: str = "hello PM",
+) -> SendPrivateMessageInput:
+    return SendPrivateMessageInput(
+        sender=ChatSender(user_id=sender_id, username=sender_name),
+        destination=PrivateChatDestination(username=target_name),
+        content=content,
+    )
 
 
 class CapturingChatRepository:
@@ -280,14 +322,7 @@ async def test_send_channel_message_success(
     chat_service: ChatService,
     captured_events: list[object],
 ) -> None:
-    res = await chat_service.send_channel_message(
-        sender_id=1,
-        sender_name="sender",
-        channel_name="#osu",
-        content="hello",
-        user_privileges=_BYPASS_ACL,
-        user_role_ids=[],
-    )
+    res = await chat_service.send_channel_message(_channel_message_input())
 
     assert res is not None
     assert res.delivered_to == {2, 3}
@@ -352,12 +387,7 @@ async def test_send_private_message_success(
         ),
     )
 
-    res = await chat_service.send_private_message(
-        sender_id=1,
-        sender_name="sender",
-        target_name="target",
-        content="hello PM",
-    )
+    res = await chat_service.send_private_message(_private_message_input())
 
     assert res is not None
     assert res.target_id == created_target.id
@@ -397,13 +427,7 @@ async def test_silenced_user_rejected(
         ),
     )
 
-    res = await chat_service.send_channel_message(
-        sender_id=1,
-        sender_name="sender",
-        channel_name="#osu",
-        content="hello",
-        user_privileges=_BYPASS_ACL,
-    )
+    res = await chat_service.send_channel_message(_channel_message_input())
     assert res is None
     assert len(captured_events) == 0
 
@@ -421,13 +445,7 @@ async def test_rate_limited_rejected(
     for _ in range(limit):
         _ = await rate_limiter.check(user_id=1, limit=limit, window=window)
 
-    res = await chat_service.send_channel_message(
-        sender_id=1,
-        sender_name="sender",
-        channel_name="#osu",
-        content="hello",
-        user_privileges=_BYPASS_ACL,
-    )
+    res = await chat_service.send_channel_message(_channel_message_input())
     assert res is None
     assert len(captured_events) == 0
 
@@ -437,13 +455,7 @@ async def test_empty_message_rejected(
     chat_service: ChatService,
     captured_events: list[object],
 ) -> None:
-    res = await chat_service.send_channel_message(
-        sender_id=1,
-        sender_name="sender",
-        channel_name="#osu",
-        content="",
-        user_privileges=_BYPASS_ACL,
-    )
+    res = await chat_service.send_channel_message(_channel_message_input(content=""))
     assert res is None
     assert len(captured_events) == 0
 
@@ -454,13 +466,7 @@ async def test_long_message_rejected(
     captured_events: list[object],
 ) -> None:
     long_msg = "a" * 100
-    res = await chat_service.send_channel_message(
-        sender_id=1,
-        sender_name="sender",
-        channel_name="#osu",
-        content=long_msg,
-        user_privileges=_BYPASS_ACL,
-    )
+    res = await chat_service.send_channel_message(_channel_message_input(content=long_msg))
 
     assert res is None
     assert len(captured_events) == 0
@@ -477,13 +483,7 @@ async def test_command_execution(
 
     monkeypatch.setattr(random, "randint", mock_randint)
 
-    res = await chat_service.send_channel_message(
-        sender_id=1,
-        sender_name="sender",
-        channel_name="#osu",
-        content="!roll 100",
-        user_privileges=_BYPASS_ACL,
-    )
+    res = await chat_service.send_channel_message(_channel_message_input(content="!roll 100"))
 
     assert res is not None
     assert res.delivered_to == {2, 3}
