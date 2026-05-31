@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import structlog
+
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.users.events import UserDisconnected
 from osu_server.transports.bancho.listeners.base import ListenerGroup, listens
@@ -21,6 +23,8 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.channel_state_store import (
         ChannelStateStore,
     )
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 
 class ChatListeners(ListenerGroup):
@@ -47,15 +51,42 @@ class ChatListeners(ListenerGroup):
     async def on_channel_message_sent(self, event: ChannelMessageSent) -> None:
         """persist_channel_message ジョブを Valkey キューに enqueue。"""
         task = self._broker.find_task("persist_channel_message")
-        if task is not None:
-            _ = await task.kiq(event.channel_name, event.sender_name, event.content)
+        if task is None:
+            logger.error(
+                "chat_persistence_task_not_registered",
+                task_name="persist_channel_message",
+                sender_id=event.sender_id,
+                channel_name=event.channel_name,
+            )
+            return
+
+        _ = await task.kiq(
+            event.sender_id,
+            event.channel_name,
+            event.sender_name,
+            event.content,
+        )
 
     @listens(PrivateMessageSent)
     async def on_private_message_sent(self, event: PrivateMessageSent) -> None:
         """persist_private_message ジョブを Valkey キューに enqueue。"""
         task = self._broker.find_task("persist_private_message")
-        if task is not None:
-            _ = await task.kiq(event.sender_id, event.target_id, event.content)
+        if task is None:
+            logger.error(
+                "chat_persistence_task_not_registered",
+                task_name="persist_private_message",
+                sender_id=event.sender_id,
+                target_id=event.target_id,
+            )
+            return
+
+        _ = await task.kiq(
+            event.sender_id,
+            event.target_id,
+            event.sender_name,
+            event.target_name,
+            event.content,
+        )
 
     @listens(UserDisconnected)
     async def on_user_disconnected(self, event: UserDisconnected) -> None:

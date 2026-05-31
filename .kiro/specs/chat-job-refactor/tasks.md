@@ -51,7 +51,7 @@
   - _Boundary: WorkerEntry, JobRegistry, ChatPersistenceJob_
   - _Depends: 4.1_
 
-- [ ] 5. missing task registration を運用上観測可能にする
+- [x] 5. missing task registration を運用上観測可能にする
   - ChatListeners が task 未登録を silent no-op にせず structured log として残す
   - listener tests で task missing 時の log と task present 時の enqueue payload を確認できる
   - transports は jobs layer を import しない状態を維持する
