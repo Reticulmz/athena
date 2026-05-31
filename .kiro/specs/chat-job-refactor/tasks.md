@@ -1,0 +1,81 @@
+# Implementation Plan
+
+- [x] 1. worker job 境界の基盤を整える
+  - `jobs` を queue adapter layer として扱えるようにし、`transports` と相互依存しない境界を品質ゲートで検知できるようにする
+  - `infrastructure.jobs.registry` は framework utility のまま残り、app 固有 job を持たない状態になる
+  - `uv run lint-imports` が jobs layer 境界を含む構成を検証できる
+  - _Requirements: 4.5, 6.1, 6.2, 6.3, 6.4, 6.5_
+
+- [ ] 2. Chat history 永続化境界を作る
+- [x] 2.1 ChatRepository 契約を定義する
+  - public chat と private chat の履歴化を同じ chat history 契約として表現する
+  - unresolved channel や storage failure を silent success にしない結果を返せる
+  - 契約と result type が SQLAlchemy model を公開しないことを確認できる
+  - _Requirements: 1.1, 1.2, 5.1, 5.2, 5.3, 5.4, 5.5_
+  - _Boundary: ChatRepository_
+- [ ] 2.2 SQLAlchemyChatRepository を実装する
+  - 既存 `channels`, `channel_messages`, `private_messages` を使って chat history を保存する
+  - channel name を解決できない場合は失敗結果として返す
+  - repository tests で channel/private の保存結果と unresolved channel の失敗結果を確認できる
+  - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
+  - _Boundary: SQLAlchemyChatRepository_
+
+- [ ] 3. ChatService を Chat lifecycle の中心にする
+- [ ] 3.1 ChatService に chat history 永続化 use-case を追加する
+  - public/private を宛先種別として扱い、ChatRepository に履歴化を委譲する
+  - repository failure を成功として扱わず、運用者が原因を追跡できる結果または log を残す
+  - service tests で channel/private persistence と失敗結果を検証できる
+  - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 3.3, 3.4, 3.5, 5.1, 5.2, 5.3, 5.4_
+  - _Boundary: ChatService_
+  - _Depends: 2.1_
+- [ ] 3.2 ChatService の sent event 発火条件を成功済み chat に限定する
+  - invalid、silence、rate limit、権限不足、未参加、宛先不存在、通常 chat として配送されない command 入力では sent event が発火しない
+  - ChannelService と CommandService は隣接 collaborator のまま維持される
+  - service tests で拒否ケースが persistence enqueue へ進まないことを確認できる
+  - _Requirements: 1.4, 1.5, 2.3, 2.4, 2.5_
+  - _Boundary: ChatService_
+
+- [ ] 4. Queue adapter と worker wiring を整理する
+- [ ] 4.1 chat persistence job を queue adapter に縮小する
+  - taskiq payload を ChatService persistence use-case に変換するだけにする
+  - job は SQLAlchemy model、delivery policy、ChannelService、CommandService を直接扱わない
+  - adapter unit tests では stub ChatService を使い、ChatService delegate と runtime state 欠落 log を確認できる
+  - _Requirements: 3.2, 3.5, 4.1, 4.2, 4.3, 4.4, 6.1, 6.5_
+  - _Boundary: ChatPersistenceJob_
+  - _Depends: 3.1_
+- [ ] 4.2 worker entrypoint と job registration を top-level jobs layer に接続する
+  - worker.py は broker lifecycle に集中し、register_all_jobs は app 固有 job を jobs layer から登録する
+  - broker に `persist_channel_message` と `persist_private_message` が登録されることを smoke test で確認できる
+  - `infrastructure/jobs/message_persistence.py` と temporary `composition/jobs` が残っていないことを確認できる
+  - _Requirements: 4.5, 6.1, 6.2, 6.3, 6.4, 6.5_
+  - _Boundary: WorkerEntry, JobRegistry, ChatPersistenceJob_
+  - _Depends: 4.1_
+
+- [ ] 5. missing task registration を運用上観測可能にする
+  - ChatListeners が task 未登録を silent no-op にせず structured log として残す
+  - listener tests で task missing 時の log と task present 時の enqueue payload を確認できる
+  - transports は jobs layer を import しない状態を維持する
+  - _Requirements: 2.1, 2.2, 3.1, 6.2_
+
+- [ ] 6. DI と統合検証を完成させる
+- [ ] 6.1 app composition に ChatRepository を接続する
+  - app 側 ChatService が ChatRepository を通じて履歴化できる
+  - test environment では型安全な stub または in-memory 実装で ChatService を構築できる
+  - DI integration tests で ChatService が必要依存を解決できることを確認できる
+  - _Requirements: 1.1, 1.2, 5.1, 5.2, 6.1_
+  - _Boundary: Composition, ChatService, ChatRepository_
+  - _Depends: 3.1_
+- [ ] 6.2 worker runtime で ChatService persistence を解決できるようにする
+  - worker 側 runtime state から ChatService persistence use-case を実行できる
+  - worker integration tests で runtime state からの解決と task execution path を確認できる
+  - app composition と worker composition の責務差分が明確に分かれる
+  - _Requirements: 3.2, 4.1, 4.4, 6.1, 6.3_
+  - _Boundary: WorkerComposition, ChatPersistenceJob_
+  - _Depends: 4.1, 6.1_
+- [ ] 6.3 import-linter と regression tests を通す
+  - `uv run lint-imports` が layer architecture、services/transports 禁止、domain I/O 禁止、jobs/transports 相互依存禁止を通過する
+  - focused unit tests、worker job tests、repository tests、chat listener tests が通過する
+  - `uv run ruff check src/osu_server tests` と `uv run basedpyright src/osu_server tests` が通過する
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 4.4, 4.5, 5.5, 6.4, 6.5_
+  - _Boundary: Validation_
+  - _Depends: 6.2_
