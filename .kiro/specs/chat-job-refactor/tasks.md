@@ -36,7 +36,7 @@
   - _Boundary: ChatService_
 
 - [ ] 4. Queue adapter と worker wiring を整理する
-- [ ] 4.1 chat persistence job を queue adapter に縮小する
+- [x] 4.1 chat persistence job を queue adapter に縮小する
   - taskiq payload を ChatService persistence use-case に変換するだけにする
   - job は SQLAlchemy model、delivery policy、ChannelService、CommandService を直接扱わない
   - adapter unit tests では stub ChatService を使い、ChatService delegate と runtime state 欠落 log を確認できる
