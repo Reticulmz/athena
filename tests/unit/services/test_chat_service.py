@@ -451,6 +451,29 @@ async def test_rate_limited_rejected(
 
 
 @pytest.mark.asyncio
+async def test_channel_delivery_rejected_does_not_fire_event(
+    chat_service: ChatService,
+    captured_events: list[object],
+) -> None:
+    res = await chat_service.send_channel_message(_channel_message_input(user_privileges=0))
+
+    assert res is None
+    assert len(captured_events) == 0
+
+
+@pytest.mark.asyncio
+async def test_private_target_not_found_does_not_fire_event(
+    chat_service: ChatService,
+    captured_events: list[object],
+) -> None:
+    res = await chat_service.send_private_message(_private_message_input(target_name="missing"))
+
+    assert res is not None
+    assert res.target_id is None
+    assert len(captured_events) == 0
+
+
+@pytest.mark.asyncio
 async def test_empty_message_rejected(
     chat_service: ChatService,
     captured_events: list[object],

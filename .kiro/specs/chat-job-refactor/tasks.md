@@ -28,7 +28,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 3.3, 3.4, 3.5, 5.1, 5.2, 5.3, 5.4_
   - _Boundary: ChatService_
   - _Depends: 2.1_
-- [ ] 3.2 ChatService の sent event 発火条件を成功済み chat に限定する
+- [x] 3.2 ChatService の sent event 発火条件を成功済み chat に限定する
   - invalid、silence、rate limit、権限不足、未参加、宛先不存在、通常 chat として配送されない command 入力では sent event が発火しない
   - ChannelService と CommandService は隣接 collaborator のまま維持される
   - service tests で拒否ケースが persistence enqueue へ進まないことを確認できる

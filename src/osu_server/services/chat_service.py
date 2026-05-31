@@ -107,6 +107,8 @@ class ChatService:
             user_role_ids=list(authorization.role_ids),
             channel_name=destination.name,
         )
+        if targets is None:
+            return None
 
         # Command detection (after routing per design pipeline)
         command_res = await self._command_service.execute(
