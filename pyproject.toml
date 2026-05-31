@@ -120,6 +120,7 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "osu_server.transports",
+    "osu_server.jobs",
     "osu_server.services",
     "osu_server.repositories",
     "osu_server.domain",
@@ -132,6 +133,23 @@ name = "Services don't depend on transports"
 type = "forbidden"
 source_modules = ["osu_server.services"]
 forbidden_modules = ["osu_server.transports"]
+
+[[tool.importlinter.contracts]]
+name = "Jobs only depend on approved layers"
+type = "forbidden"
+source_modules = ["osu_server.jobs"]
+forbidden_modules = [
+    "osu_server.transports",
+    "osu_server.composition",
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.infrastructure.database",
+]
+
+[[tool.importlinter.contracts]]
+name = "Transports don't depend on jobs"
+type = "forbidden"
+source_modules = ["osu_server.transports"]
+forbidden_modules = ["osu_server.jobs"]
 
 [[tool.importlinter.contracts]]
 name = "Domain has no I/O dependencies"
