@@ -43,6 +43,7 @@ class LoginResponse:
     token: str
     user: User
     privileges: Privileges
+    role_ids: tuple[int, ...]
     country: str
     session_data: SessionData
 

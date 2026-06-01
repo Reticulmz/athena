@@ -26,11 +26,14 @@ from starlette.testclient import TestClient
 
 from osu_server.domain.auth import LoginResult, RegistrationForm
 from osu_server.domain.role import Privileges, Role
+from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
+from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
+from osu_server.services.channel_service import ChannelService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.transports.bancho.dispatch import PacketDispatcher
@@ -58,6 +61,13 @@ class _StubCountryResolver:
     def resolve(self, headers: Mapping[str, str]) -> str:
         _ = headers
         return "JP"
+
+
+def _make_empty_channel_service() -> ChannelService:
+    return ChannelService(
+        channel_repo=InMemoryChannelRepository(),
+        channel_state=InMemoryChannelStateStore(),
+    )
 
 
 def _build_login_body() -> bytes:
@@ -103,6 +113,7 @@ def _make_e2e_app(
         auth_service=auth_service,
         session_store=session_store,
         country_resolver=_StubCountryResolver(),
+        channel_service=_make_empty_channel_service(),
         packet_queue=packet_queue,
         packet_dispatcher=packet_dispatcher,
         max_request_body_size=max_request_body_size,

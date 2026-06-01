@@ -28,16 +28,21 @@ from starlette.testclient import TestClient
 
 from osu_server.domain.auth import LoginResult, RegistrationForm
 from osu_server.domain.role import Privileges, Role
+from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
+from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
+from osu_server.services.channel_service import ChannelService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.handlers.login import LoginHandler
+from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.s2c.login import login_reply
+from tests.factories.domain import make_channel, make_channel_role_override
 
 # ── Seed data ────────────────────────────────────────────────────────
 
@@ -53,6 +58,15 @@ _ROLE_DEFAULT = Role(
 
 _OK = HTTPStatus.OK
 
+_PACKET_HEADER_SIZE = 7
+_PACKET_ID = struct.Struct("<H")
+_PAYLOAD_SIZE = struct.Struct("<I")
+_CHANNEL_USER_COUNT = struct.Struct("<h")
+_BANCHO_STRING_EMPTY = 0x00
+_BANCHO_STRING_PRESENT = 0x0B
+_ULEB128_CONTINUATION = 0x80
+_ULEB128_VALUE_MASK = 0x7F
+
 
 @final
 class _StubCountryResolver:
@@ -64,6 +78,33 @@ class _StubCountryResolver:
     def resolve(self, headers: Mapping[str, str]) -> str:
         _ = headers
         return self._country
+
+
+async def _make_channel_service() -> ChannelService:
+    channel_repo = InMemoryChannelRepository()
+    channel_state = InMemoryChannelStateStore()
+    osu_channel = await channel_repo.create(make_channel(name="#osu"))
+    announce_channel = await channel_repo.create(
+        make_channel(
+            name="#announce",
+            topic="Announcements",
+            auto_join=True,
+        )
+    )
+    channel_repo.seed_override(
+        make_channel_role_override(channel_id=osu_channel.id, role_id=_ROLE_DEFAULT.id)
+    )
+    channel_repo.seed_override(
+        make_channel_role_override(
+            channel_id=announce_channel.id,
+            role_id=_ROLE_DEFAULT.id,
+            can_read=True,
+            can_write=False,
+        )
+    )
+    await channel_state.add_member("#osu", 42)
+    await channel_state.add_member("#osu", 43)
+    return ChannelService(channel_repo=channel_repo, channel_state=channel_state)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -91,13 +132,60 @@ def _extract_login_reply_value(body: bytes) -> int:
     Packet format: PacketID(u16) + Compression(u8) + ContentSize(u32) + Content.
     login_reply payload is a single int32.
     """
-    _header_size = 7
-    payload = body[_header_size : _header_size + 4]
+    payload = body[_PACKET_HEADER_SIZE : _PACKET_HEADER_SIZE + 4]
     value: int = cast("int", struct.unpack("<i", payload)[0])
     return value
 
 
-def _make_app(
+def _parse_s2c_packets(body: bytes) -> list[tuple[int, bytes]]:
+    """Parse a concatenated S2C stream into packet id and payload pairs."""
+    packets: list[tuple[int, bytes]] = []
+    offset = 0
+    while offset + _PACKET_HEADER_SIZE <= len(body):
+        packet_id = cast("int", _PACKET_ID.unpack_from(body, offset)[0])
+        payload_size = cast("int", _PAYLOAD_SIZE.unpack_from(body, offset + 3)[0])
+        payload_start = offset + _PACKET_HEADER_SIZE
+        payload_end = payload_start + payload_size
+        if payload_end > len(body):
+            break
+        packets.append((packet_id, body[payload_start:payload_end]))
+        offset = payload_end
+    return packets
+
+
+def _read_uleb128(data: bytes, offset: int) -> tuple[int, int]:
+    value = 0
+    shift = 0
+    while True:
+        byte = data[offset]
+        offset += 1
+        value |= (byte & _ULEB128_VALUE_MASK) << shift
+        if not byte & _ULEB128_CONTINUATION:
+            return value, offset
+        shift += 7
+
+
+def _read_bancho_string(data: bytes, offset: int) -> tuple[str, int]:
+    presence = data[offset]
+    offset += 1
+    if presence == _BANCHO_STRING_EMPTY:
+        return "", offset
+    if presence != _BANCHO_STRING_PRESENT:
+        msg = f"invalid BanchoString presence: {presence}"
+        raise AssertionError(msg)
+    length, offset = _read_uleb128(data, offset)
+    end = offset + length
+    return data[offset:end].decode("utf-8"), end
+
+
+def _parse_channel_payload(payload: bytes) -> tuple[str, str, int]:
+    name, offset = _read_bancho_string(payload, 0)
+    topic, offset = _read_bancho_string(payload, offset)
+    user_count = cast("int", _CHANNEL_USER_COUNT.unpack_from(payload, offset)[0])
+    return name, topic, user_count
+
+
+async def _make_app(
     *,
     country: str = "JP",
 ) -> tuple[
@@ -126,6 +214,8 @@ def _make_app(
         session_store=session_store,
     )
 
+    channel_service = await _make_channel_service()
+
     packet_queue = InMemoryPacketQueue()
     packet_dispatcher = PacketDispatcher()
 
@@ -133,6 +223,7 @@ def _make_app(
         auth_service=auth_service,
         session_store=session_store,
         country_resolver=country_resolver,
+        channel_service=channel_service,
         packet_queue=packet_queue,
         packet_dispatcher=packet_dispatcher,
     )
@@ -154,7 +245,7 @@ async def _setup_with_user(
     InMemorySessionStore,
 ]:
     """Build app and register a test user."""
-    result = _make_app(country=country)
+    result = await _make_app(country=country)
     _, auth_service, *_ = result
     reg = await auth_service.register(
         RegistrationForm(
@@ -213,6 +304,32 @@ class TestLoginSuccess:
             single_packet_len = len(login_reply(user_id))
             assert len(resp.content) > single_packet_len
 
+    async def test_body_contains_dynamic_visible_and_autojoin_channels(self) -> None:
+        """Login stream uses ChannelService channel lists instead of hardcoded #osu."""
+        app, *_ = await _setup_with_user()
+        with TestClient(app) as client:
+            resp = client.post("/", content=_build_login_body())
+
+        packets = _parse_s2c_packets(resp.content)
+        available = [
+            _parse_channel_payload(payload)
+            for packet_id, payload in packets
+            if packet_id == int(ServerPacketID.CHANNEL_AVAILABLE)
+        ]
+        autojoin = [
+            _parse_channel_payload(payload)
+            for packet_id, payload in packets
+            if packet_id == int(ServerPacketID.CHANNEL_AVAILABLE_AUTOJOIN)
+        ]
+
+        assert ("#osu", "General discussion", 2) in available
+        assert ("#announce", "Announcements", 0) in available
+        assert ("#osu", "General discussion", 2) in autojoin
+        assert ("#announce", "Announcements", 0) in autojoin
+        assert any(
+            packet_id == int(ServerPacketID.CHANNEL_INFO_COMPLETE) for packet_id, _ in packets
+        )
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Login failure (Req 5.4)
@@ -243,7 +360,7 @@ class TestLoginFailure:
             assert "cho-token" not in resp.headers
 
     async def test_nonexistent_user_returns_negative_one(self) -> None:
-        app, *_ = _make_app()
+        app, *_ = await _make_app()
         with TestClient(app) as client:
             resp = client.post(
                 "/",
@@ -255,7 +372,7 @@ class TestLoginFailure:
 
     async def test_failure_body_is_login_reply_packet_only(self) -> None:
         """On auth failure, body is exactly one login_reply(-1) packet."""
-        app, *_ = _make_app()
+        app, *_ = await _make_app()
         with TestClient(app) as client:
             resp = client.post(
                 "/",
@@ -303,7 +420,7 @@ class TestPollingInvalidToken:
     """Invalid/expired osu-token: body contains login_reply(-1)."""
 
     async def test_invalid_token_returns_login_reply_negative_one(self) -> None:
-        app, *_ = _make_app()
+        app, *_ = await _make_app()
         with TestClient(app) as client:
             resp = client.post(
                 "/",
@@ -314,7 +431,7 @@ class TestPollingInvalidToken:
             assert value == LoginResult.AUTHENTICATION_FAILED
 
     async def test_invalid_token_body_is_exact_packet(self) -> None:
-        app, *_ = _make_app()
+        app, *_ = await _make_app()
         with TestClient(app) as client:
             resp = client.post(
                 "/",
@@ -360,6 +477,7 @@ class TestLoginServerError:
             auth_service=auth_service,
             session_store=session_store,
             country_resolver=country_resolver,
+            channel_service=await _make_channel_service(),
             packet_queue=packet_queue,
             packet_dispatcher=packet_dispatcher,
         )
@@ -396,7 +514,7 @@ class TestLoginHandlerStructlog:
 
     async def test_parse_failure_logs_warning_via_structlog(self) -> None:
         """Malformed body emits a structlog warning with event name."""
-        app, *_ = _make_app()
+        app, *_ = await _make_app()
 
         with structlog.testing.capture_logs() as logs, TestClient(app) as client:
             _ = client.post("/", content=b"malformed\x00garbage")
@@ -445,7 +563,7 @@ class TestLoginContextvarsBinding:
 
     async def test_contextvars_not_bound_on_parse_failure(self) -> None:
         """No contextvars binding when request parsing fails."""
-        app, *_ = _make_app()
+        app, *_ = await _make_app()
 
         structlog.contextvars.clear_contextvars()
 

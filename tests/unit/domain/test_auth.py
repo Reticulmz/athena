@@ -112,7 +112,7 @@ class TestLoginResponse:
 
     def test_fields(self) -> None:
         field_names = {f.name for f in fields(LoginResponse)}
-        expected = {"token", "user", "privileges", "country", "session_data"}
+        expected = {"token", "user", "privileges", "role_ids", "country", "session_data"}
         assert field_names == expected
 
 

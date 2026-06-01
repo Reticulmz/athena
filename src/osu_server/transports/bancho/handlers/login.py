@@ -22,6 +22,7 @@ from osu_server.transports.bancho.protocol.errors import PacketReadError
 from osu_server.transports.bancho.protocol.reader import read_packets
 from osu_server.transports.bancho.protocol.s2c.login import (
     channel_available,
+    channel_available_autojoin,
     channel_info_complete,
     friends_list,
     login_permissions,
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.auth_service import AuthService
+    from osu_server.services.channel_service import ChannelService
     from osu_server.transports.bancho.dispatch import PacketDispatcher
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -57,6 +59,7 @@ class LoginHandler:
     _auth_service: AuthService
     _session_store: SessionStore
     _country_resolver: CountryResolver
+    _channel_service: ChannelService
     _packet_queue: PacketQueue
     _packet_dispatcher: PacketDispatcher
     _session_ttl: int
@@ -68,6 +71,7 @@ class LoginHandler:
         auth_service: AuthService,
         session_store: SessionStore,
         country_resolver: CountryResolver,
+        channel_service: ChannelService,
         packet_queue: PacketQueue,
         packet_dispatcher: PacketDispatcher,
         session_ttl: int = 300,
@@ -76,6 +80,7 @@ class LoginHandler:
         self._auth_service = auth_service
         self._session_store = session_store
         self._country_resolver = country_resolver
+        self._channel_service = channel_service
         self._packet_queue = packet_queue
         self._packet_dispatcher = packet_dispatcher
         self._session_ttl = session_ttl
@@ -112,7 +117,7 @@ class LoginHandler:
             user_id=result.user.id,
         )
 
-        stream = _build_login_response_stream(result)
+        stream = await _build_login_response_stream(result, self._channel_service)
         return Response(
             content=stream,
             headers={"cho-token": result.token},
@@ -197,26 +202,30 @@ class LoginHandler:
 # ── Packet stream builder ────────────────────────────────────────────
 
 
-def _build_login_response_stream(
+async def _build_login_response_stream(
     login_response: LoginResponse,
+    channel_service: ChannelService,
 ) -> bytes:
-    """Assemble the S2C packet stream for a successful login.
-
-    Calls 10 S2C builder functions and concatenates their output.
-    """
+    """Assemble the S2C packet stream for a successful login."""
     user = login_response.user
     session = login_response.session_data
     client_flags = PermissionService.to_client_flags(login_response.privileges)
     country_id = country_code_to_id(login_response.country)
+    role_ids = list(login_response.role_ids)
+
+    visible_channels = await channel_service.get_visible_channels(
+        user_privileges=int(login_response.privileges),
+        user_role_ids=role_ids,
+    )
+    autojoin_channels = await channel_service.get_autojoin_channels(
+        user_privileges=int(login_response.privileges),
+        user_role_ids=role_ids,
+    )
 
     packets: list[bytes] = [
-        # 1. login_reply with positive user_id
         login_reply(user.id),
-        # 2. protocol_version
         protocol_version(_PROTOCOL_VERSION),
-        # 3. login_permissions (client flags)
         login_permissions(int(client_flags)),
-        # 4. user_presence
         user_presence(
             user_id=user.id,
             username=user.username,
@@ -228,7 +237,6 @@ def _build_login_response_stream(
             latitude=0.0,
             rank=0,
         ),
-        # 5. user_stats (initial values)
         user_stats(
             user_id=user.id,
             status=0,
@@ -244,16 +252,27 @@ def _build_login_response_stream(
             rank=0,
             pp=0,
         ),
-        # 6. channel_available
-        channel_available(name="#osu", topic="", user_count=0),
-        # 7. channel_info_complete
-        channel_info_complete(),
-        # 8. friends_list (empty)
-        friends_list([]),
-        # 9. silence_info (0 seconds)
-        silence_info(0),
-        # 10. user_presence_bundle
-        user_presence_bundle([user.id]),
     ]
+
+    packets.extend(
+        channel_available(name=channel.name, topic=channel.topic, user_count=user_count)
+        for channel, user_count in visible_channels
+    )
+    packets.extend(
+        channel_available_autojoin(
+            name=channel.name,
+            topic=channel.topic,
+            user_count=user_count,
+        )
+        for channel, user_count in autojoin_channels
+    )
+    packets.extend(
+        [
+            channel_info_complete(),
+            friends_list([]),
+            silence_info(0),
+            user_presence_bundle([user.id]),
+        ]
+    )
 
     return b"".join(packets)

@@ -1,0 +1,22 @@
+{
+  "feature_name": "chat-job-refactor",
+  "created_at": "2026-05-31T14:26:51+09:00",
+  "updated_at": "2026-05-31T14:41:04+09:00",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}

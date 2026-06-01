@@ -4,18 +4,141 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from contextlib import AbstractAsyncContextManager
+from typing import TYPE_CHECKING, cast, override
 from unittest.mock import patch
 
 import pytest
 import structlog
-from taskiq import TaskiqState
+from taskiq import Context, InMemoryBroker, TaskiqMessage, TaskiqState
 
-from osu_server.worker import startup
+from osu_server.config import AppConfig
+from osu_server.jobs.chat_persistence import persist_private_message
+from osu_server.repositories.sqlalchemy.models.channel import PrivateMessageModel
+from osu_server.worker import shutdown, startup
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+    from types import TracebackType
+
+
+class FakeEngine:
+    """AsyncEngine test double that records dispose calls."""
+
+    dispose_calls: int
+
+    def __init__(self) -> None:
+        self.dispose_calls = 0
+
+    async def dispose(self) -> None:
+        """Record engine disposal."""
+        self.dispose_calls += 1
+
+
+class FakeValkeyClient:
+    """GlideClient test double that records close calls."""
+
+    close_calls: int
+
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    async def close(self) -> None:
+        """Record client shutdown."""
+        self.close_calls += 1
+
+
+class FakeSession(AbstractAsyncContextManager["FakeSession"]):
+    """Session fake for worker runtime persistence tests."""
+
+    added: list[object]
+    commits: int
+
+    def __init__(self) -> None:
+        self.added = []
+        self.commits = 0
+
+    @override
+    async def __aenter__(self) -> FakeSession:
+        return self
+
+    @override
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        _ = exc_type
+        _ = exc
+        _ = traceback
+
+    def add(self, instance: object) -> None:
+        """Record the object added by the repository."""
+        self.added.append(instance)
+
+    async def commit(self) -> None:
+        """Record commit calls."""
+        self.commits += 1
+
+
+class FakeSessionFactory:
+    """Callable fake compatible with worker repository construction."""
+
+    _session: FakeSession
+
+    def __init__(self, session: FakeSession) -> None:
+        self._session = session
+
+    def __call__(self) -> FakeSession:
+        return self._session
+
+
+def _make_config(tmp_path: Path) -> AppConfig:
+    """Create worker config for unit tests."""
+    return AppConfig.model_validate(
+        {
+            "database_url": "postgresql://test:test@localhost:5432/test",
+            "valkey_url": "redis://localhost:6379/0",
+            "environment": "test",
+            "log_dir": str(tmp_path),
+        }
+    )
+
+
+def _make_task_context(chat_service: object) -> Context:
+    """Create a taskiq context carrying worker runtime state."""
+    broker = InMemoryBroker()
+    broker.state.chat_service = chat_service
+    message = TaskiqMessage(
+        task_id="worker-test-id",
+        task_name="persist_private_message",
+        labels={},
+        args=[],
+        kwargs={},
+    )
+    return Context(message, broker)
+
+
+def _state_engine(state: TaskiqState) -> FakeEngine | None:
+    """Return typed worker engine state for assertions."""
+    return cast("FakeEngine | None", getattr(state, "engine", None))
+
+
+def _state_session_factory(state: TaskiqState) -> FakeSessionFactory | None:
+    """Return typed worker session factory state for assertions."""
+    return cast("FakeSessionFactory | None", getattr(state, "session_factory", None))
+
+
+def _state_valkey(state: TaskiqState) -> FakeValkeyClient | None:
+    """Return typed worker Valkey state for assertions."""
+    return cast("FakeValkeyClient | None", getattr(state, "valkey", None))
+
+
+def _state_chat_service(state: TaskiqState) -> object | None:
+    """Return typed worker ChatService state for assertions."""
+    return cast("object | None", getattr(state, "chat_service", None))
 
 
 @pytest.fixture(autouse=True)
@@ -37,15 +160,21 @@ async def test_worker_startup_configures_logging(tmp_path: Path) -> None:
     """ワーカー起動時に setup_logging が実行され、カスタムプロセッサ (マスク処理) が有効になる."""
     state = TaskiqState()
 
+    async def create_valkey_client(_: str) -> FakeValkeyClient:
+        return FakeValkeyClient()
+
     # DB接続処理などをモック化して、logging の動作確認に専念する
     with (
         patch("osu_server.worker.create_engine"),
         patch("osu_server.worker.create_session_factory"),
+        patch("osu_server.worker.create_valkey_client", new=create_valkey_client, create=True),
+        patch("osu_server.worker.create_worker_chat_service", return_value=object(), create=True),
         patch("osu_server.worker._config") as mock_config,
     ):
         mock_config.log_dir = str(tmp_path)
         mock_config.log_max_files = 30
         mock_config.log_level = "INFO"
+        mock_config.valkey_url = "redis://localhost:6379/0"
 
         _ = await startup(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
 
@@ -60,3 +189,94 @@ async def test_worker_startup_configures_logging(tmp_path: Path) -> None:
     assert parsed["event"] == "worker_test_event"
     # mask_sensitive_fields が適用されていることの確認
     assert parsed["password"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_worker_startup_sets_chat_service_runtime_state(tmp_path: Path) -> None:
+    """Worker startup exposes ChatService persistence use-case through taskiq state."""
+    state = TaskiqState()
+    engine = FakeEngine()
+    session = FakeSession()
+    session_factory = FakeSessionFactory(session)
+    valkey = FakeValkeyClient()
+
+    async def create_valkey_client(_: str) -> FakeValkeyClient:
+        return valkey
+
+    with (
+        patch("osu_server.worker.create_engine", return_value=engine),
+        patch("osu_server.worker.create_session_factory", return_value=session_factory),
+        patch("osu_server.worker.create_valkey_client", new=create_valkey_client, create=True),
+        patch("osu_server.worker._config", _make_config(tmp_path)),
+    ):
+        _ = await startup(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
+
+    assert _state_engine(state) is engine
+    assert _state_session_factory(state) is session_factory
+    assert _state_valkey(state) is valkey
+    assert _state_chat_service(state) is not None
+
+
+@pytest.mark.asyncio
+async def test_worker_runtime_chat_service_executes_persistence_task(tmp_path: Path) -> None:
+    """Persistence task resolves the startup ChatService from worker runtime state."""
+    state = TaskiqState()
+    engine = FakeEngine()
+    session = FakeSession()
+    session_factory = FakeSessionFactory(session)
+    valkey = FakeValkeyClient()
+
+    async def create_valkey_client(_: str) -> FakeValkeyClient:
+        return valkey
+
+    with (
+        patch("osu_server.worker.create_engine", return_value=engine),
+        patch("osu_server.worker.create_session_factory", return_value=session_factory),
+        patch("osu_server.worker.create_valkey_client", new=create_valkey_client, create=True),
+        patch("osu_server.worker._config", _make_config(tmp_path)),
+    ):
+        _ = await startup(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
+
+    chat_service = _state_chat_service(state)
+    assert chat_service is not None
+    context = _make_task_context(chat_service)
+    await persist_private_message(
+        sender_id=1,
+        target_id=2,
+        sender_name="sender",
+        target_name="target",
+        content="secret",
+        context=context,
+    )
+
+    assert session.commits == 1
+    assert len(session.added) == 1
+    message = session.added[0]
+    assert isinstance(message, PrivateMessageModel)
+    assert message.sender_id == 1
+    assert message.target_user_id == 2
+    assert message.content == "secret"
+
+
+@pytest.mark.asyncio
+async def test_worker_shutdown_clears_chat_runtime_state() -> None:
+    """Worker shutdown clears and closes runtime state owned by startup."""
+    state = TaskiqState()
+    engine = FakeEngine()
+    valkey = FakeValkeyClient()
+    chat_service = object()
+    session_factory = object()
+
+    state.engine = engine
+    state.valkey = valkey
+    state.chat_service = chat_service
+    state.session_factory = session_factory
+
+    _ = await shutdown(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
+
+    assert _state_engine(state) is None
+    assert _state_session_factory(state) is None
+    assert _state_chat_service(state) is None
+    assert _state_valkey(state) is None
+    assert engine.dispose_calls == 1
+    assert valkey.close_calls == 1

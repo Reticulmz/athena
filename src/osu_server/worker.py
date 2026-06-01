@@ -15,13 +15,16 @@ import structlog
 from taskiq import TaskiqEvents
 from taskiq_redis import ListQueueBroker
 
+from osu_server.composition.worker_runtime import create_worker_chat_service
 from osu_server.config import load_config
+from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.infrastructure.logging import setup_logging
 from osu_server.jobs import register_all_jobs
 
 if TYPE_CHECKING:
+    from glide import GlideClient
     from sqlalchemy.ext.asyncio import AsyncEngine
     from taskiq import TaskiqState
 
@@ -38,27 +41,45 @@ def _get_engine(state: TaskiqState) -> AsyncEngine | None:
     return cast("AsyncEngine | None", getattr(state, "engine", None))
 
 
+def _get_valkey(state: TaskiqState) -> GlideClient | None:
+    """Return the Valkey client stored in taskiq state."""
+    return cast("GlideClient | None", getattr(state, "valkey", None))
+
+
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def startup(state: TaskiqState) -> None:
-    """Initialise DB engine and session factory."""
+    """Initialise worker runtime state for task execution."""
     setup_logging(_config)
     engine = create_engine(str(_config.database_url))
+    session_factory = create_session_factory(engine)
+    valkey = await create_valkey_client(str(_config.valkey_url))
 
     state.engine = engine
-    state.session_factory = create_session_factory(engine)
+    state.session_factory = session_factory
+    state.valkey = valkey
+    state.chat_service = create_worker_chat_service(
+        session_factory=session_factory,
+        valkey=valkey,
+        config=_config,
+    )
 
     logger.info("worker_started")
 
 
 @broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
 async def shutdown(state: TaskiqState) -> None:
-    """Dispose of the DB engine created during startup."""
+    """Dispose of worker runtime state created during startup."""
     engine = _get_engine(state)
+    valkey = _get_valkey(state)
 
     state.engine = None
     state.session_factory = None
+    state.valkey = None
+    state.chat_service = None
 
     if engine is not None:
         await engine.dispose()
+    if valkey is not None:
+        await valkey.close()
 
     logger.info("worker_stopped")

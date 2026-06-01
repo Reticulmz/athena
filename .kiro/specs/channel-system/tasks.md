@@ -121,7 +121,7 @@
   - _Requirements: 6.1, 6.2, 6.5, 12.1, 12.2, 12.3_
   - _Boundary: ChatListeners_
 
-- [ ] 4.3 (P) taskiq ワーカージョブ（メッセージ永続化）
+- [x] 4.3 (P) taskiq ワーカージョブ（メッセージ永続化）
   - persist_channel_message ジョブ: channel_name → ChannelRepository で channel_id 解決 → channel_messages に INSERT
   - persist_private_message ジョブ: private_messages に INSERT
   - WorkerSettings.functions に両ジョブを登録する
@@ -131,7 +131,7 @@
   - _Requirements: 6.1, 6.2, 6.4, 6.5_
   - _Boundary: taskiq Worker_
 
-- [ ] 4.4 ログインフロー動的チャンネルリスト
+- [x] 4.4 ログインフロー動的チャンネルリスト
   - LoginHandler に ChannelService 依存を追加する（コンストラクタパラメータ）
   - _build_login_response_stream で ChannelService.get_visible_channels / get_autojoin_channels を呼び出し、ハードコード #osu を置き換える
   - 可視チャンネルは CHANNEL_AVAILABLE、auto_join チャンネルは CHANNEL_AVAILABLE_AUTOJOIN で送信する

@@ -26,11 +26,14 @@ from osu_server.infrastructure.di.providers import build_container
 if TYPE_CHECKING:
     from osu_server.infrastructure.di.container import Container
 from osu_server.infrastructure.security.hibp import HIBPClient
+from osu_server.repositories.interfaces.chat_repository import ChatRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.user_repository import UserRepository
+from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
+from osu_server.services.chat_service import ChatService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.transports.bancho.handlers.login import LoginHandler
@@ -148,6 +151,38 @@ class TestDIAuthRegistrations:
 # ---------------------------------------------------------------------------
 
 
+class TestDIChatRegistrations:
+    """_register_services wires ChatRepository into ChatService."""
+
+    async def test_resolves_chat_repository(self) -> None:
+        _, container = await _build_full_container()
+
+        repo = await container.resolve(ChatRepository)
+        assert isinstance(repo, InMemoryChatRepository)
+
+    async def test_chat_service_persistence_uses_registered_chat_repository(self) -> None:
+        _, container = await _build_full_container()
+        repo = await container.resolve(ChatRepository)
+        assert isinstance(repo, InMemoryChatRepository)
+
+        service = await container.resolve(ChatService)
+        channel_result = await service.persist_channel_message(
+            sender_id=1,
+            channel_name="#osu",
+            content="hello",
+        )
+        private_result = await service.persist_private_message(
+            sender_id=1,
+            target_id=2,
+            content="secret",
+        )
+
+        assert channel_result.success is True
+        assert private_result.success is True
+        assert repo.channel_messages == ((1, "#osu", "hello"),)
+        assert repo.private_messages == ((1, 2, "secret"),)
+
+
 class TestEnvironmentBasedRepositories:
     """Test environment selects InMemory repos, others select SQLAlchemy."""
 
@@ -162,6 +197,12 @@ class TestEnvironmentBasedRepositories:
 
         repo = await container.resolve(RoleRepository)
         assert isinstance(repo, InMemoryRoleRepository)
+
+    async def test_test_env_uses_in_memory_chat_repository(self) -> None:
+        _, container = await _build_full_container(_make_config(environment="test"))
+
+        repo = await container.resolve(ChatRepository)
+        assert isinstance(repo, InMemoryChatRepository)
 
 
 # ---------------------------------------------------------------------------

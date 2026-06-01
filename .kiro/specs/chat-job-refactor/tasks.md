@@ -6,7 +6,7 @@
   - `uv run lint-imports` が jobs layer 境界を含む構成を検証できる
   - _Requirements: 4.5, 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 2. Chat history 永続化境界を作る
+- [x] 2. Chat history 永続化境界を作る
 - [x] 2.1 ChatRepository 契約を定義する
   - public chat と private chat の履歴化を同じ chat history 契約として表現する
   - unresolved channel や storage failure を silent success にしない結果を返せる
@@ -20,7 +20,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
   - _Boundary: SQLAlchemyChatRepository_
 
-- [ ] 3. ChatService を Chat lifecycle の中心にする
+- [x] 3. ChatService を Chat lifecycle の中心にする
 - [x] 3.1 ChatService に chat history 永続化 use-case を追加する
   - public/private を宛先種別として扱い、ChatRepository に履歴化を委譲する
   - repository failure を成功として扱わず、運用者が原因を追跡できる結果または log を残す
@@ -35,7 +35,7 @@
   - _Requirements: 1.4, 1.5, 2.3, 2.4, 2.5_
   - _Boundary: ChatService_
 
-- [ ] 4. Queue adapter と worker wiring を整理する
+- [x] 4. Queue adapter と worker wiring を整理する
 - [x] 4.1 chat persistence job を queue adapter に縮小する
   - taskiq payload を ChatService persistence use-case に変換するだけにする
   - job は SQLAlchemy model、delivery policy、ChannelService、CommandService を直接扱わない
@@ -57,22 +57,22 @@
   - transports は jobs layer を import しない状態を維持する
   - _Requirements: 2.1, 2.2, 3.1, 6.2_
 
-- [ ] 6. DI と統合検証を完成させる
-- [ ] 6.1 app composition に ChatRepository を接続する
+- [x] 6. DI と統合検証を完成させる
+- [x] 6.1 app composition に ChatRepository を接続する
   - app 側 ChatService が ChatRepository を通じて履歴化できる
   - test environment では型安全な stub または in-memory 実装で ChatService を構築できる
   - DI integration tests で ChatService が必要依存を解決できることを確認できる
   - _Requirements: 1.1, 1.2, 5.1, 5.2, 6.1_
   - _Boundary: Composition, ChatService, ChatRepository_
   - _Depends: 3.1_
-- [ ] 6.2 worker runtime で ChatService persistence を解決できるようにする
+- [x] 6.2 worker runtime で ChatService persistence を解決できるようにする
   - worker 側 runtime state から ChatService persistence use-case を実行できる
   - worker integration tests で runtime state からの解決と task execution path を確認できる
   - app composition と worker composition の責務差分が明確に分かれる
   - _Requirements: 3.2, 4.1, 4.4, 6.1, 6.3_
   - _Boundary: WorkerComposition, ChatPersistenceJob_
   - _Depends: 4.1, 6.1_
-- [ ] 6.3 import-linter と regression tests を通す
+- [x] 6.3 import-linter と regression tests を通す
   - `uv run lint-imports` が layer architecture、services/transports 禁止、domain I/O 禁止、jobs/transports 相互依存禁止を通過する
   - focused unit tests、worker job tests、repository tests、chat listener tests が通過する
   - `uv run ruff check src/osu_server tests` と `uv run basedpyright src/osu_server tests` が通過する

@@ -104,6 +104,10 @@ src/osu_server/
 - **パケットハンドラ追加は3点セット**: パケット定義 + ハンドラ関数 + デコレータ登録
 - **ドメイン層に Pydantic を使わない** — バリデーションオーバーヘッド回避、不変条件はメソッドで表現
 - **Service の public use-case method は入力モデルを優先**。sender / destination / authorization / payload など複数概念を受け取る場合や primitive 引数が増える場合は、`domain` 層の `@dataclass(slots=True, frozen=True)` input/value object にまとめる。`ChannelService.get_delivery_targets()` のような collaborator query や小さく凝集した内部境界 method は無理に dataclass 化しない
+- **DB アクセスは SQLAlchemy 2.0 async + Repository パターンに統一** — Protocol は `repositories/interfaces`、SQLAlchemy 実装は `repositories/sqlalchemy` に置く
+- **services / transports / jobs は SQLAlchemy model、DB session、raw SQL を直接扱わない** — 永続化は Repository に委譲する
+- **現行 production target は PostgreSQL + asyncpg** — MySQL 等の別 dialect は spec で明示し、driver / migration / model compatibility を検証して導入する
+- **unit test のためだけに SQLite / aiosqlite 等の別 DB driver を暗黙導入しない** — DB 不要な範囲は typed fake / stub / in-memory 実装で検証する
 - **EventBus**（fire-and-forget）と **JobQueue**（配信保証あり）を使い分ける
 - **import-linter でレイヤー違反を CI で機械的に検出**する
 

@@ -53,10 +53,10 @@ in
     exec = "mkdir -p .devenv/state/nginx && sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1; nginx -p ${toString ./.}/ -c ${toString ./.}/nginx.dev.conf -g 'daemon off;'";
     after = [ "devenv:processes:app" ];
   };
-  # processes.worker = {
-  #   exec = "uv run taskiq worker osu_server.worker:broker";
-  #   after = [ "devenv:processes:redis" ];
-  # };
+  processes.worker = {
+    exec = "uv run taskiq worker osu_server.worker:broker";
+    after = [ "devenv:processes:postgres" "devenv:processes:redis" ];
+  };
 
   env = {
     DATABASE_URL = "postgresql://localhost:${pg_port}/${db_name}";
@@ -153,7 +153,7 @@ in
     fi
 
     echo "athena dev environment ready"
-    echo "  devenv up  - start services (postgres, valkey) + app + nginx"
+    echo "  devenv up  - start services (postgres, valkey) + app + worker + nginx"
     echo "  uv run pytest  - run tests"
     echo "  nginx listens on :80/:443 → athena :8000"
   '';

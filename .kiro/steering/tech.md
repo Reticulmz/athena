@@ -27,6 +27,21 @@
 | パスワードハッシュ | argon2-cffi (argon2id) | stable は MD5 送信 → サーバーで argon2id(md5) 保存。passlib はメンテ停滞 |
 | Valkey クライアント | valkey-glide | Valkey 公式クライアント、async ネイティブ、Redis プロトコル互換 |
 
+## データベース・永続化方針
+
+- 現行の production target は **PostgreSQL + asyncpg** とする
+- DB dialect は **SQLAlchemy 2.0 async + Repository パターン** でアプリケーション層から隔離する
+- MySQL など別 dialect を導入する場合は spec で明示し、driver、migration、model compatibility を検証する
+- データベース読み書きは **SQLAlchemy 2.0 async** 経由に統一する
+- アプリケーションの永続化処理は **Repository パターン** で実装する
+  - `repositories/interfaces` に Protocol を定義する
+  - SQLAlchemy 実装は `repositories/sqlalchemy` に閉じ込める
+  - test double は `repositories/memory`、typed fake、または stub を使う
+- `services`、`transports`、`jobs` は SQLAlchemy model、DB session、raw SQL を直接扱わない
+- migration は Alembic に集約する。schema 変更を通常コードや unit test fixture に埋め込まない
+- DB-backed 検証が必要な場合は、`DATABASE_URL` で明示された test DB を使う。現行既定は PostgreSQL test DB とする
+- unit test のためだけに SQLite / aiosqlite などの別 DB driver を暗黙導入しない。DB が不要な範囲は typed fake / stub / in-memory 実装で検証する
+
 ## 開発方針
 
 - **TDD (テスト駆動開発)**: Red → Green → Refactor サイクルで進める

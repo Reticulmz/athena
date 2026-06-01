@@ -214,7 +214,9 @@ class AuthService:
             return LoginResult.AUTHENTICATION_FAILED
 
         # 3. 権限計算
+        roles = await self._role_repo.get_roles_for_user(user.id)
         privileges = await self._permission_service.compute_permissions(user.id)
+        role_ids = tuple(role.id for role in roles)
 
         # 4. 国コード (Transport 層で解決済み)
 
@@ -249,6 +251,7 @@ class AuthService:
             token=token,
             user=user,
             privileges=privileges,
+            role_ids=role_ids,
             country=country,
             session_data=session_data,
         )

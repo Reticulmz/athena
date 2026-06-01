@@ -25,9 +25,12 @@ from starlette.testclient import TestClient
 
 from osu_server.app import create_app
 from osu_server.domain.role import Privileges, Role
+from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
+from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
+from tests.factories.domain import make_channel, make_channel_role_override
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -92,6 +95,31 @@ def _seed_default_role(app: Starlette) -> None:
     assert isinstance(repo, InMemoryRoleRepository)
     repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
     repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+
+
+def _seed_default_channels(app: Starlette) -> None:
+    """Seed login-visible channels into the InMemoryChannelRepository."""
+    container: Container = app.state.container  # pyright: ignore[reportAny]  # Starlette State returns Any
+    registration = container._registrations[ChannelRepository]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only DI introspection
+    repo = registration.instance
+    assert isinstance(repo, InMemoryChannelRepository)
+
+    channel = make_channel(id=repo._next_id)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+    repo._next_id += 1  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+    repo._channels_by_id[channel.id] = channel  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+    repo._id_by_name[channel.name] = channel.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+    repo.seed_override(
+        make_channel_role_override(
+            channel_id=channel.id,
+            role_id=_DEFAULT_ROLE.id,
+        )
+    )
+
+
+def _seed_test_data(app: Starlette) -> None:
+    """Seed default role and channels required by successful login tests."""
+    _seed_default_role(app)
+    _seed_default_channels(app)
 
 
 def _registration_form(
@@ -164,7 +192,7 @@ class TestRegisterAndLoginFlow:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 response = client.post("/", content=_login_body())
@@ -178,7 +206,7 @@ class TestRegisterAndLoginFlow:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 response = client.post("/", content=_login_body())
@@ -198,7 +226,7 @@ class TestLoginSuccessPackets:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 response = client.post("/", content=_login_body())
@@ -215,7 +243,7 @@ class TestLoginSuccessPackets:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 response = client.post("/", content=_login_body())
@@ -231,7 +259,7 @@ class TestLoginSuccessPackets:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 response = client.post("/", content=_login_body())
@@ -245,7 +273,7 @@ class TestLoginSuccessPackets:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 response = client.post("/", content=_login_body())
@@ -267,7 +295,7 @@ class TestPollingStub:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 login_resp = client.post("/", content=_login_body())
@@ -290,7 +318,7 @@ class TestReLogin:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 resp1 = client.post("/", content=_login_body())
@@ -306,7 +334,7 @@ class TestReLogin:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 resp1 = client.post("/", content=_login_body())
@@ -330,7 +358,7 @@ class TestReLogin:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 _ = client.post("/", content=_login_body())
@@ -374,7 +402,7 @@ class TestAuthenticationFailure:
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
-                _seed_default_role(app)
+                _seed_test_data(app)
                 _register_user(client)
 
                 wrong_md5 = hashlib.md5(b"wrongpassword").hexdigest()
