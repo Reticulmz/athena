@@ -22,7 +22,7 @@
   - _Requirements: 1.1, 1.3, 1.4, 1.5, 4.1, 6.4_
   - _Boundary: LoginWorkflow_
 
-- [ ] 2.3 (P) Extract polling workflow pipeline
+- [x] 2.3 (P) Extract polling workflow pipeline
   - Preserve polling order: body-size rejection, session lookup, session TTL refresh, C2S parse/dispatch, S2C queue drain, queue TTL refresh, and completion logging.
   - Preserve invalid-token, oversized-body, C2S parse-error, and per-handler failure behavior without introducing HTTP request or response dependencies.
   - Preserve polling diagnostic categories for `polling_body_too_large`, `c2s_parse_error`, `c2s_handler_error`, and `polling_complete`.

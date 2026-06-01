@@ -7,6 +7,7 @@ from osu_server.transports.bancho.workflows.login import (
 )
 from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
 from osu_server.transports.bancho.workflows.polling import (
+    PollingWorkflow,
     PollingWorkflowInput,
     PollingWorkflowResult,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "LoginWorkflow",
     "LoginWorkflowInput",
     "LoginWorkflowResult",
+    "PollingWorkflow",
     "PollingWorkflowInput",
     "PollingWorkflowResult",
 ]
