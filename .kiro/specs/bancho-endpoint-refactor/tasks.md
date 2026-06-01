@@ -7,14 +7,14 @@
   - _Requirements: 4.1, 4.2, 4.6_
 
 - [ ] 2. Core workflows: login response and polling behavior
-- [ ] 2.1 (P) Extract successful login response construction
+- [x] 2.1 (P) Extract successful login response construction
   - Move successful login S2C stream construction into a dedicated response construction boundary.
   - Preserve login reply, protocol version, permissions, user presence, user stats, visible channel packets, autojoin channel packets, and completion packets in the existing order.
   - The completed state is that successful login response bytes can be built independently from login authentication and polling behavior.
   - _Requirements: 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 4.4_
   - _Boundary: LoginResponseBuilder_
 
-- [ ] 2.2 Complete login workflow orchestration
+- [x] 2.2 Complete login workflow orchestration
   - Parse raw login bytes, resolve request country, call authentication, and map parse/auth failures to the same login result packet bytes as before.
   - Delegate successful initial S2C stream construction to the response construction boundary and expose the issued token only on successful authentication.
   - Preserve success-only structlog context binding and the `login_parse_failed` diagnostic category.
