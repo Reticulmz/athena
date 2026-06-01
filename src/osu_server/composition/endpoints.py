@@ -8,13 +8,13 @@ if TYPE_CHECKING:
     from starlette.requests import Request
     from starlette.responses import Response
 
-    from osu_server.transports.bancho.handlers.login import LoginHandler
+    from osu_server.transports.bancho.endpoint import BanchoEndpoint
     from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 
 async def bancho_endpoint(request: Request) -> Response:
-    """Delegate to LoginHandler resolved from DI."""
-    handler: LoginHandler = request.app.state.login_handler  # pyright: ignore[reportAny]
+    """Delegate to BanchoEndpoint resolved from DI."""
+    handler: BanchoEndpoint = request.app.state.bancho_endpoint  # pyright: ignore[reportAny]
     return await handler(request)
 
 

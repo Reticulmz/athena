@@ -43,10 +43,13 @@ from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
 from osu_server.transports.bancho.dispatch import PacketDispatcher
+from osu_server.transports.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.bancho.handlers.lifecycle import LifecycleHandlers
-from osu_server.transports.bancho.handlers.login import LoginHandler
 from osu_server.transports.bancho.listeners import setup_listeners
+from osu_server.transports.bancho.workflows.login import LoginWorkflow
+from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
+from osu_server.transports.bancho.workflows.polling import PollingWorkflow
 from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 if TYPE_CHECKING:
@@ -180,11 +183,39 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     command_service = CommandService()
     container.register_singleton(CommandService, lambda: command_service)
 
-    # -- LoginHandler (singleton) ---------------------------------------------
+    # -- BanchoEndpoint & Workflows (singletons) ------------------------------
     packet_queue = await container.resolve(PacketQueue)
     eventbus = await container.resolve(EventBus)
     broker = await container.resolve(AsyncBroker)
     register_all_jobs(broker)
+
+    login_response_builder = LoginResponseBuilder(channel_service=channel_service)
+    container.register_singleton(LoginResponseBuilder, lambda: login_response_builder)
+
+    login_workflow = LoginWorkflow(
+        auth_service=auth_service,
+        country_resolver=country_resolver,
+        response_builder=login_response_builder,
+    )
+    container.register_singleton(LoginWorkflow, lambda: login_workflow)
+
+    packet_dispatcher = PacketDispatcher()
+    container.register_singleton(PacketDispatcher, lambda: packet_dispatcher)
+
+    polling_workflow = PollingWorkflow(
+        session_store=session_store,
+        packet_queue=packet_queue,
+        packet_dispatcher=packet_dispatcher,
+        session_ttl=config.session_ttl,
+        max_request_body_size=config.max_request_body_size,
+    )
+    container.register_singleton(PollingWorkflow, lambda: polling_workflow)
+
+    bancho_endpoint = BanchoEndpoint(
+        login_workflow=login_workflow,
+        polling_workflow=polling_workflow,
+    )
+    container.register_singleton(BanchoEndpoint, lambda: bancho_endpoint)
 
     # -- ChatService (singleton, requires EventBus) ---------------------------
     rate_limiter = await container.resolve(RateLimiter)
@@ -200,10 +231,6 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         chat_repository=chat_repo,
     )
     container.register_singleton(ChatService, lambda: chat_service)
-
-    # -- PacketDispatcher (singleton) -----------------------------------------
-    packet_dispatcher = PacketDispatcher()
-    container.register_singleton(PacketDispatcher, lambda: packet_dispatcher)
 
     # -- Handlers → PacketDispatcher ------------------------------------------
     lifecycle_handlers = LifecycleHandlers(
@@ -221,18 +248,6 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
 
     # -- Listeners → EventBus --------------------------------------------------
     setup_listeners(eventbus, packet_queue, online_users, broker, channel_state)
-
-    login_handler = LoginHandler(
-        auth_service=auth_service,
-        session_store=session_store,
-        country_resolver=country_resolver,
-        channel_service=channel_service,
-        packet_queue=packet_queue,
-        packet_dispatcher=packet_dispatcher,
-        session_ttl=config.session_ttl,
-        max_request_body_size=config.max_request_body_size,
-    )
-    container.register_singleton(LoginHandler, lambda: login_handler)
 
     # -- RegistrationHandler (singleton) --------------------------------------
     registration_handler = RegistrationHandler(auth_service=auth_service)

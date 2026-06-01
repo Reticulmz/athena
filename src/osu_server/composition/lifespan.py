@@ -10,7 +10,7 @@ from osu_server.composition.service_registry import register_services
 from osu_server.config import load_config
 from osu_server.infrastructure.di.providers import build_container
 from osu_server.infrastructure.logging import setup_logging
-from osu_server.transports.bancho.handlers.login import LoginHandler
+from osu_server.transports.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 if TYPE_CHECKING:
@@ -44,13 +44,13 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
             await check_infrastructure(container)
 
         # Resolve handlers from DI container
-        login_handler = await container.resolve(LoginHandler)
+        bancho_endpoint = await container.resolve(BanchoEndpoint)
         registration_handler = await container.resolve(RegistrationHandler)
 
         # Store on app.state for route endpoint access
         app.state.config = config
         app.state.container = container
-        app.state.login_handler = login_handler
+        app.state.bancho_endpoint = bancho_endpoint
         app.state.registration_handler = registration_handler
         app.state.version_info = get_version_info()
         yield

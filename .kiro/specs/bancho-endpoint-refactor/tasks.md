@@ -33,7 +33,7 @@
   - _Boundary: PollingWorkflow_
 
 - [ ] 3. Integration: HTTP endpoint and composition wiring
-- [ ] 3.1 Create HTTP endpoint behavior over workflow results
+- [x] 3.1 Create HTTP endpoint behavior over workflow results
   - Preserve login vs polling selection by `osu-token` header presence.
   - Map login workflow tokens to `cho-token` only when present and map polling workflow content directly to the HTTP response body.
   - Keep the public `POST /` route behavior, status semantics, and header names stable while keeping auth, packet construction, C2S parsing, and queue draining in workflows.
@@ -41,7 +41,7 @@
   - _Depends: 2.2, 2.3_
   - _Requirements: 1.1, 1.2, 1.5, 1.6, 4.3, 5.1_
 
-- [ ] 3.2 Register the refactored endpoint graph in composition
+- [x] 3.2 Register the refactored endpoint graph in composition
   - Register the response construction boundary, login workflow, polling workflow, and HTTP endpoint in the application container.
   - Preserve C2S handler registration and pass the populated dispatcher to the polling workflow.
   - Store the resolved endpoint under the new application state key while keeping the route target stable.

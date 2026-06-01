@@ -50,7 +50,7 @@ from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
 from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.handlers.login import LoginHandler
+from osu_server.transports.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.web_legacy.registration import RegistrationHandler
 
@@ -155,11 +155,11 @@ class TestDIAuthRegistrations:
         svc = await container.resolve(AuthService)
         assert isinstance(svc, AuthService)
 
-    async def test_resolves_login_handler(self) -> None:
+    async def test_resolves_bancho_endpoint(self) -> None:
         _, container = await _build_full_container()
 
-        handler = await container.resolve(LoginHandler)
-        assert isinstance(handler, LoginHandler)
+        handler = await container.resolve(BanchoEndpoint)
+        assert isinstance(handler, BanchoEndpoint)
 
     async def test_resolves_registration_handler(self) -> None:
         _, container = await _build_full_container()
