@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 import httpx
 from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from taskiq import AsyncBroker
+from taskiq_redis import ListQueueBroker
 
 from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
@@ -36,6 +38,7 @@ async def build_container(config: AppConfig) -> Container:
     Registers:
         - ``AsyncEngine`` (singleton) from ``config.database_url``
         - ``GlideClient`` (singleton) from ``config.valkey_url``
+        - taskiq ``AsyncBroker`` (singleton) from ``config.valkey_url``
         - ``async_sessionmaker[AsyncSession]`` (singleton) from the engine
         - ``PacketQueue`` (singleton): ``InMemoryPacketQueue`` when
           ``config.environment == "test"``, otherwise ``ValkeyPacketQueue``
@@ -56,6 +59,10 @@ async def build_container(config: AppConfig) -> Container:
     # -- Valkey client (singleton) --------------------------------------------
     valkey = await create_valkey_client(str(config.valkey_url))
     container.register_singleton(GlideClient, lambda: valkey)
+
+    # -- Taskiq broker (singleton) --------------------------------------------
+    broker: AsyncBroker = ListQueueBroker(url=str(config.valkey_url))
+    container.register_singleton(AsyncBroker, lambda: broker)
 
     # -- Session factory (singleton) ------------------------------------------
     session_factory = create_session_factory(engine)

@@ -19,6 +19,7 @@ from osu_server.domain.chat import (
     SendPrivateMessageInput,
 )
 from osu_server.domain.session import SessionData
+from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.bancho.protocol.types import BanchoString, Message
 
@@ -168,15 +169,22 @@ def session_store() -> StubSessionStore:
 
 
 @pytest.fixture
+def packet_queue() -> InMemoryPacketQueue:
+    return InMemoryPacketQueue()
+
+
+@pytest.fixture
 def handlers(
     chat_service: StubChatService,
     channel_service: StubChannelService,
     session_store: StubSessionStore,
+    packet_queue: InMemoryPacketQueue,
 ) -> ChatHandlers:
     return ChatHandlers(
         chat_service=chat_service,  # pyright: ignore[reportArgumentType]
         channel_service=channel_service,  # pyright: ignore[reportArgumentType]
         session_store=session_store,  # pyright: ignore[reportArgumentType]
+        packet_queue=packet_queue,
     )
 
 
@@ -234,12 +242,14 @@ class TestSendMessage:
         chat_service: StubChatService,
         channel_service: StubChannelService,
         session_store: StubSessionStore,
+        packet_queue: InMemoryPacketQueue,
     ) -> None:
         session_store.session = None
         handlers = ChatHandlers(
             chat_service=chat_service,  # pyright: ignore[reportArgumentType]
             channel_service=channel_service,  # pyright: ignore[reportArgumentType]
             session_store=session_store,  # pyright: ignore[reportArgumentType]
+            packet_queue=packet_queue,
         )
 
         payload = _build_message_payload()

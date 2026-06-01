@@ -8,10 +8,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from osu_server.transports.bancho.listeners.chat import ChatListeners
 from osu_server.transports.bancho.listeners.lifecycle import LifecycleListeners
 
 if TYPE_CHECKING:
+    from taskiq import AsyncBroker
+
     from osu_server.infrastructure.messaging.interfaces import EventBus
+    from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
     from osu_server.services.online_users import OnlineUsersService
 
@@ -20,6 +24,8 @@ def setup_listeners(
     eventbus: EventBus,
     packet_queue: PacketQueue,
     online_users: OnlineUsersService,
+    broker: AsyncBroker,
+    channel_state: ChannelStateStore,
 ) -> None:
     """Register all Bancho event listeners with the EventBus.
 
@@ -30,4 +36,10 @@ def setup_listeners(
         online_users=online_users,
         packet_queue=packet_queue,
     )
+    chat = ChatListeners(
+        broker=broker,
+        channel_state=channel_state,
+    )
+
     lifecycle.register_all(eventbus)
+    chat.register_all(eventbus)

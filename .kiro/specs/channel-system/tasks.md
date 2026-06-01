@@ -140,7 +140,7 @@
   - _Depends: 3.1_
   - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
 
-- [ ] 4.5 Composition Root 配線
+- [x] 4.5 Composition Root 配線
   - app.py の _register_services() に ChannelRepository, ChannelStateStore, RateLimiter, ChannelService, PrivateMessageService, CommandService, ChatService, taskiq broker の DI 配線を追加する
   - ChatHandlers を PacketDispatcher に register_all する
   - listeners/__init__.py の setup_listeners() に ChatListeners を追加する
@@ -151,14 +151,14 @@
   - _Requirements: 1.1, 3.1, 4.1, 5.1_
 
 - [ ] 5. Validation
-- [ ] 5.1 統合テスト
+- [x] 5.1 統合テスト
   - チャンネルメッセージパイプライン: join → send_message → 他メンバーの PacketQueue に S2C SEND_MESSAGE 到達 → EventBus 経由で永続化イベント発火を検証
   - PM パイプライン: send_private_message → オンラインユーザーの PacketQueue 到達 → オフラインユーザーは PacketQueue 未到達 + 永続化イベント発火を検証
   - コマンドパイプライン: !roll 送信 → メッセージ配信 + BanchoBot 応答が PacketQueue に到達を検証
   - 切断クリーンアップ: UserDisconnected 発火 → 全チャンネルからメンバーシップ削除を検証
   - _Requirements: 14.2, 14.3, 14.4_
 
-- [ ] 5.2 E2E テスト
+- [x] 5.2 E2E テスト
   - チャンネルライフサイクル: HTTP POST で JOIN_CHANNEL → SEND_MESSAGE → S2C レスポンスバイト列にチャンネルメッセージパケットが含まれることを検証
   - PM ライフサイクル: HTTP POST で SEND_PRIVATE_MESSAGE → S2C レスポンスバイト列を検証
   - ログインチャンネルリスト: ログインレスポンスに CHANNEL_AVAILABLE / CHANNEL_AVAILABLE_AUTOJOIN / CHANNEL_INFO_COMPLETE が DB のチャンネル情報で含まれることを検証

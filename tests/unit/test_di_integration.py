@@ -16,27 +16,42 @@ from typing import TYPE_CHECKING
 
 import httpx
 from starlette.routing import Host, Mount, Route
+from taskiq import AsyncBroker
+from taskiq_redis import ListQueueBroker
 
 from osu_server.app import app, create_app, register_services
 from osu_server.config import AppConfig
+from osu_server.domain.users.events import UserDisconnected
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.di.providers import build_container
+from osu_server.infrastructure.messaging.interfaces import EventBus
+from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
+from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
+from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.di.container import Container
 from osu_server.infrastructure.security.hibp import HIBPClient
+from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.chat_repository import ChatRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.user_repository import UserRepository
+from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
+from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
+from osu_server.services.command_service import CommandService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
+from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.handlers.login import LoginHandler
+from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 _EXPECTED_MIN_SHUTDOWN_HOOKS = 3
@@ -93,6 +108,13 @@ class TestDIInfraRegistrations:
 
         resolver = await container.resolve(CountryResolver)
         assert isinstance(resolver, CloudflareCountryResolver)
+
+    async def test_resolves_taskiq_broker(self) -> None:
+        config = _make_config()
+        container = await build_container(config)
+
+        broker = await container.resolve(AsyncBroker)
+        assert isinstance(broker, ListQueueBroker)
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +203,56 @@ class TestDIChatRegistrations:
         assert private_result.success is True
         assert repo.channel_messages == ((1, "#osu", "hello"),)
         assert repo.private_messages == ((1, 2, "secret"),)
+
+
+class TestDIChannelSystemRegistrations:
+    """_register_services wires channel/chat transport composition."""
+
+    async def test_resolves_channel_system_services(self) -> None:
+        _, container = await _build_full_container()
+
+        channel_repo = await container.resolve(ChannelRepository)
+        channel_state = await container.resolve(ChannelStateStore)
+        rate_limiter = await container.resolve(RateLimiter)
+        channel_service = await container.resolve(ChannelService)
+        private_message_service = await container.resolve(PrivateMessageService)
+        command_service = await container.resolve(CommandService)
+
+        assert isinstance(channel_repo, InMemoryChannelRepository)
+        assert isinstance(channel_state, InMemoryChannelStateStore)
+        assert isinstance(rate_limiter, InMemoryRateLimiter)
+        assert isinstance(channel_service, ChannelService)
+        assert isinstance(private_message_service, PrivateMessageService)
+        assert isinstance(command_service, CommandService)
+
+    async def test_registers_chat_handlers_with_packet_dispatcher(self) -> None:
+        _, container = await _build_full_container()
+
+        dispatcher = await container.resolve(PacketDispatcher)
+        handlers = dispatcher.get_handlers()
+
+        assert ClientPacketID.SEND_MESSAGE in handlers
+        assert ClientPacketID.SEND_PRIVATE_MESSAGE in handlers
+        assert ClientPacketID.JOIN_CHANNEL in handlers
+        assert ClientPacketID.LEAVE_CHANNEL in handlers
+
+    async def test_registers_chat_listeners_with_event_bus(self) -> None:
+        _, container = await _build_full_container()
+        event_bus = await container.resolve(EventBus)
+        channel_state = await container.resolve(ChannelStateStore)
+
+        await channel_state.add_member("#osu", 42)
+        await event_bus.fire(UserDisconnected(user_id=42))
+
+        assert await channel_state.get_user_channels(42) == set()
+
+    async def test_registers_chat_persistence_jobs_with_broker(self) -> None:
+        _, container = await _build_full_container()
+
+        broker = await container.resolve(AsyncBroker)
+
+        assert broker.find_task("persist_channel_message") is not None
+        assert broker.find_task("persist_private_message") is not None
 
 
 class TestEnvironmentBasedRepositories:

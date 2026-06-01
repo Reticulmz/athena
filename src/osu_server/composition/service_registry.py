@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from taskiq import AsyncBroker
 
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.interfaces import EventBus
@@ -17,6 +18,7 @@ from osu_server.infrastructure.state.memory.channel_state_store import InMemoryC
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
 from osu_server.infrastructure.state.valkey.channel_state_store import ValkeyChannelStateStore
 from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimiter
+from osu_server.jobs import register_all_jobs
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.chat_repository import ChatRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
@@ -41,6 +43,7 @@ from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
 from osu_server.transports.bancho.dispatch import PacketDispatcher
+from osu_server.transports.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.bancho.handlers.lifecycle import LifecycleHandlers
 from osu_server.transports.bancho.handlers.login import LoginHandler
 from osu_server.transports.bancho.listeners import setup_listeners
@@ -180,6 +183,8 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     # -- LoginHandler (singleton) ---------------------------------------------
     packet_queue = await container.resolve(PacketQueue)
     eventbus = await container.resolve(EventBus)
+    broker = await container.resolve(AsyncBroker)
+    register_all_jobs(broker)
 
     # -- ChatService (singleton, requires EventBus) ---------------------------
     rate_limiter = await container.resolve(RateLimiter)
@@ -200,15 +205,22 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     packet_dispatcher = PacketDispatcher()
     container.register_singleton(PacketDispatcher, lambda: packet_dispatcher)
 
-    # -- LifecycleHandlers → PacketDispatcher ---------------------------------
+    # -- Handlers → PacketDispatcher ------------------------------------------
     lifecycle_handlers = LifecycleHandlers(
         session_store=session_store,
         event_bus=eventbus,
     )
+    chat_handlers = ChatHandlers(
+        chat_service=chat_service,
+        channel_service=channel_service,
+        session_store=session_store,
+        packet_queue=packet_queue,
+    )
     lifecycle_handlers.register_all(packet_dispatcher)
+    chat_handlers.register_all(packet_dispatcher)
 
-    # -- LifecycleListeners → EventBus ----------------------------------------
-    setup_listeners(eventbus, packet_queue, online_users)
+    # -- Listeners → EventBus --------------------------------------------------
+    setup_listeners(eventbus, packet_queue, online_users, broker, channel_state)
 
     login_handler = LoginHandler(
         auth_service=auth_service,
