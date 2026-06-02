@@ -1,5 +1,8 @@
 # athena development reverse proxy
 # Usage: nginx -c /path/to/nginx.dev.conf -g 'daemon off;'
+#
+# This is a template. Copy to nginx.dev.conf and replace example.com with your domain.
+# nginx.dev.conf is gitignored.
 
 worker_processes 1;
 pid .devenv/state/nginx/nginx.pid;
@@ -23,16 +26,16 @@ http {
     server {
         listen 80;
         server_name
-            c.athena.localhost
-            c1.athena.localhost
-            ce.athena.localhost
-            c4.athena.localhost
-            c5.athena.localhost
-            c6.athena.localhost
-            osu.athena.localhost
-            a.athena.localhost
-            b.athena.localhost
-            api.athena.localhost;
+            c.example.com
+            c1.example.com
+            ce.example.com
+            c4.example.com
+            c5.example.com
+            c6.example.com
+            osu.example.com
+            a.example.com
+            b.example.com
+            api.example.com;
 
         location / {
             proxy_pass http://127.0.0.1:8000;
@@ -53,19 +56,19 @@ http {
     server {
         listen 443 ssl;
         server_name
-            c.athena.localhost
-            c1.athena.localhost
-            ce.athena.localhost
-            c4.athena.localhost
-            c5.athena.localhost
-            c6.athena.localhost
-            osu.athena.localhost
-            a.athena.localhost
-            b.athena.localhost
-            api.athena.localhost;
+            c.example.com
+            c1.example.com
+            ce.example.com
+            c4.example.com
+            c5.example.com
+            c6.example.com
+            osu.example.com
+            a.example.com
+            b.example.com
+            api.example.com;
 
-        ssl_certificate     certs/_wildcard.athena.localhost.pem;
-        ssl_certificate_key certs/_wildcard.athena.localhost-key.pem;
+        ssl_certificate     certs/_wildcard.example.com.pem;
+        ssl_certificate_key certs/_wildcard.example.com-key.pem;
 
         location / {
             proxy_pass http://127.0.0.1:8000;

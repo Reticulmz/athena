@@ -1,0 +1,19 @@
+# Cloudflare Tunnel configuration for athena development
+#
+# Copy to cloudflared/config.yml and customize:
+#   1. Replace YOUR_TUNNEL_UUID with the UUID from `cloudflared tunnel create <name>`
+#   2. Replace example.com with your domain
+#   3. Replace /home/user with your home directory path
+#
+# First-time setup:
+#   cloudflared tunnel login
+#   cloudflared tunnel create <name>
+#   cloudflared tunnel route dns <name> '*.example.com'
+
+tunnel: YOUR_TUNNEL_NAME
+credentials-file: /home/user/.cloudflared/YOUR_TUNNEL_UUID.json
+
+ingress:
+  - hostname: "*.example.com"
+    service: http://localhost:80
+  - service: http_status:404

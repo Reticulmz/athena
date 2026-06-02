@@ -23,6 +23,12 @@ htmlcov/
 devenv.local.nix
 devenv.local.yaml
 
+# Local nginx config (copy from nginx.dev.conf.example and customize)
+nginx.dev.conf
+
+# Local cloudflared config
+cloudflared/config.yml
+
 # Environment variables
 .env
 .env.*

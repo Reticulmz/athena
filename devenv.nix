@@ -45,12 +45,16 @@ in
         path = "/health";
       };
       initial_delay = 2;
-      period = 5;
+      period = 60;
     };
   };
   processes.nginx = {
     exec = "mkdir -p .devenv/state/nginx && sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1; nginx -p ${toString ./.}/ -c ${toString ./.}/nginx.dev.conf -g 'daemon off;'";
     after = [ "devenv:processes:app" ];
+  };
+  processes.cloudflared = {
+    exec = "cloudflared tunnel --config cloudflared/config.yml --no-autoupdate run";
+    after = [ "devenv:processes:nginx" ];
   };
   processes.worker = {
     exec = "uv run taskiq worker osu_server.worker:broker";
@@ -63,7 +67,7 @@ in
     ENVIRONMENT = "development";
     SERVER_HOST = "0.0.0.0";
     SERVER_PORT = "8000";
-    DOMAIN = "athena.localhost";
+    DOMAIN = "example.com";
     LOG_LEVEL = "DEBUG";
     LOG_JSON_ENABLED = "true";
     LOG_JSON_PATH = "logs/athena.jsonl";
@@ -138,6 +142,7 @@ in
     git
     nginx
     mkcert
+    cloudflared
   ];
 
   enterShell = ''
@@ -152,8 +157,14 @@ in
     fi
 
     echo "athena dev environment ready"
-    echo "  devenv up  - start services (postgres, valkey) + app + worker + nginx"
+    echo "  devenv up  - start services (postgres, valkey) + app + worker + nginx + cloudflared"
     echo "  uv run pytest  - run tests"
     echo "  nginx listens on :80/:443 → athena :8000"
+    echo "  cloudflared tunnel → *.example.com :80"
+    echo ""
+    echo "  First-time tunnel setup:"
+    echo "    cloudflared tunnel login"
+    echo "    cloudflared tunnel create athena-dev"
+    echo "    cloudflared tunnel route dns athena-dev '*.example.com'"
   '';
 }
