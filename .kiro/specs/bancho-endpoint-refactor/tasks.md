@@ -80,7 +80,7 @@
   - _Requirements: 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 4.4, 6.1_
   - _Boundary: LoginResponseBuilder tests_
 
-- [ ] 4.4 (P) Verify polling workflow behavior
+- [x] 4.4 (P) Verify polling workflow behavior
   - Cover C2S dispatch order, empty-body S2C drain, invalid token failure bytes, oversized-body empty response before session lookup, parse-error drain, handler-exception continuation, session TTL refresh, queue TTL refresh, and completion logging.
   - Cover diagnostic categories for oversized body, C2S parse failure, C2S handler failure, and polling completion so observability stays distinguishable.
   - Use direct workflow invocation and typed test doubles for session, queue, and dispatcher behavior.
