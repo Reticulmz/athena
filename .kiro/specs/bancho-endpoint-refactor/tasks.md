@@ -64,7 +64,7 @@
   - _Requirements: 1.1, 1.2, 1.5, 1.6, 4.3, 6.1_
   - _Boundary: BanchoEndpoint tests_
 
-- [ ] 4.2 (P) Verify login workflow behavior
+- [x] 4.2 (P) Verify login workflow behavior
   - Cover login parse failure bytes/logging, authentication failure bytes without token, successful bytes/token, and success-only context binding.
   - Use typed fakes or in-memory implementations instead of untyped async mocks where practical.
   - The completed state is that login workflow tests invoke the workflow directly and distinguish parse, auth rejection, and success cases.
