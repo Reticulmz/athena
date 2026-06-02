@@ -2,6 +2,7 @@ import random
 
 import pytest
 
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.services.command_service import CommandService
 
 
@@ -56,6 +57,25 @@ async def test_execute_unknown_command(command_service: CommandService) -> None:
     assert result is not None
     assert result[0] == "#osu"
     assert result[1] == "Unknown command. Type !help for available commands."
+
+
+class TestBanchoBotIdentityAlignment:
+    """Req 2.1, 2.2: CommandService の BanchoBot sender identity は
+    BANCHO_BOT_IDENTITY と一致しなければならない。
+    """
+
+    def test_banchobot_id_matches_identity(self) -> None:
+        """CommandService.BANCHO_BOT_ID は BANCHO_BOT_IDENTITY.user_id と等しい。"""
+        assert BANCHO_BOT_IDENTITY.user_id == CommandService.BANCHO_BOT_ID
+
+    def test_banchobot_name_matches_identity(self) -> None:
+        """CommandService.BANCHO_BOT_NAME は BANCHO_BOT_IDENTITY.username と等しい。"""
+        assert BANCHO_BOT_IDENTITY.username == CommandService.BANCHO_BOT_NAME
+
+    def test_identity_values_are_banchobot(self) -> None:
+        """BANCHO_BOT_IDENTITY が正しい BanchoBot の値を保持している。"""
+        assert BANCHO_BOT_IDENTITY.user_id == 1
+        assert BANCHO_BOT_IDENTITY.username == "BanchoBot"
 
 
 @pytest.mark.asyncio
