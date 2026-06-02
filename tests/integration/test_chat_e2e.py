@@ -1,41 +1,34 @@
+"""E2E chat + C2S regression tests (Task 5.3).
+
+Tests the full login -> poll -> C2S dispatch -> S2C drain flow through
+the refactored BanchoEndpoint + DI container, preserving all existing
+packet behavior assertions for channel lifecycle, private messages,
+and login channel list.
+
+Uses the DI-registered ChatHandlers — no manual handler construction.
+"""
+
 from __future__ import annotations
 
 import hashlib
+import os
 import struct
-from dataclasses import dataclass
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from caterpillar.model import pack
-from pydantic import PostgresDsn, RedisDsn
-from starlette.applications import Starlette
-from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from osu_server.config import AppConfig
+from osu_server.composition.application import create_app
 from osu_server.domain.auth import RegistrationForm
 from osu_server.domain.role import Privileges, Role
-from osu_server.infrastructure.messaging.memory import InMemoryEventBus
-from osu_server.infrastructure.state.memory.channel_state_store import (
-    InMemoryChannelStateStore,
-)
-from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
-from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
+from osu_server.repositories.interfaces.channel_repository import ChannelRepository
+from osu_server.repositories.interfaces.role_repository import RoleRepository
+from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
-from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
-from osu_server.services.channel_service import ChannelService
-from osu_server.services.chat_service import ChatService
-from osu_server.services.command_service import CommandService
-from osu_server.services.password_service import PasswordService
-from osu_server.services.permission_service import PermissionService
-from osu_server.services.private_message_service import PrivateMessageService
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.handlers.chat import ChatHandlers
-from osu_server.transports.bancho.handlers.login import LoginHandler
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.bancho.protocol.s2c.chat import channel_join_success, send_message
 from osu_server.transports.bancho.protocol.s2c.login import (
@@ -47,12 +40,13 @@ from osu_server.transports.bancho.protocol.types import BanchoString, Message
 from tests.factories.domain import make_channel, make_channel_role_override
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from starlette.applications import Starlette
+
+    from osu_server.infrastructure.di.container import Container
 
 _PASSWORD = "SecurePass1234"
 _PASSWORD_MD5 = hashlib.md5(_PASSWORD.encode()).hexdigest()
 _CLIENT_INFO = "20231111|9|1|hash1:hash2:hash3|0"
-_PACKET_QUEUE_TTL = 300
 
 _DEFAULT_ROLE = Role(
     id=1,
@@ -66,104 +60,68 @@ _DEFAULT_ROLE = Role(
     position=0,
 )
 
-
-class _StubCountryResolver:
-    def resolve(self, headers: Mapping[str, str]) -> str:
-        _ = headers
-        return "JP"
+# Module-level env defaults for test DI container
+_ = os.environ.setdefault("DATABASE_URL", "postgresql://localhost:5432/athena")
+_ = os.environ.setdefault("VALKEY_URL", "redis://localhost:6379")
 
 
-@dataclass(slots=True)
-class ChatE2EApp:
-    app: Starlette
-    auth_service: AuthService
-    channel_state: InMemoryChannelStateStore
-    session_store: InMemorySessionStore
+# -- App / DI helpers --------------------------------------------------------
 
 
-async def _make_chat_e2e_app() -> ChatE2EApp:
-    user_repo = InMemoryUserRepository()
-    role_repo = InMemoryRoleRepository(seed_roles=[_DEFAULT_ROLE])
-    session_store = InMemorySessionStore()
-    channel_repo = InMemoryChannelRepository()
-    channel_state = InMemoryChannelStateStore()
-    packet_queue = InMemoryPacketQueue()
-    event_bus = InMemoryEventBus()
-    dispatcher = PacketDispatcher()
+def _make_test_app() -> Starlette:
+    """Create the Starlette app with full DI container and BanchoEndpoint."""
+    os.environ["ENVIRONMENT"] = "test"
+    return create_app()
 
-    osu_channel = await channel_repo.create(
-        make_channel(name="#osu", topic="General discussion", auto_join=True)
+
+def _seed_default_role(container: Container) -> None:
+    """Seed the Default role into InMemoryRoleRepository after lifespan."""
+    registration = container._registrations[RoleRepository]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    repo = registration.instance
+    assert isinstance(repo, InMemoryRoleRepository)
+    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+
+
+async def _seed_channels(container: Container) -> None:
+    """Seed channels and role overrides into InMemoryChannelRepository."""
+    repo = await container.resolve(ChannelRepository)
+    assert isinstance(repo, InMemoryChannelRepository)
+
+    osu_channel = await repo.create(
+        make_channel(name="#osu", topic="General discussion", auto_join=True),
     )
-    announce_channel = await channel_repo.create(
-        make_channel(name="#announce", topic="Announcements", auto_join=False)
+    announce_channel = await repo.create(
+        make_channel(name="#announce", topic="Announcements", auto_join=False),
     )
-    channel_repo.seed_override(
-        make_channel_role_override(channel_id=osu_channel.id, role_id=_DEFAULT_ROLE.id)
+    repo.seed_override(
+        make_channel_role_override(channel_id=osu_channel.id, role_id=_DEFAULT_ROLE.id),
     )
-    channel_repo.seed_override(
+    repo.seed_override(
         make_channel_role_override(
             channel_id=announce_channel.id,
             role_id=_DEFAULT_ROLE.id,
             can_read=True,
             can_write=False,
-        )
+        ),
     )
 
-    permission_service = PermissionService(role_repo=role_repo)
-    auth_service = AuthService(
-        user_repo=user_repo,
-        role_repo=role_repo,
-        password_service=PasswordService(hibp_client=None, banned_passwords=[]),
-        permission_service=permission_service,
-        session_store=session_store,
-    )
-    channel_service = ChannelService(
-        channel_repo=channel_repo,
-        channel_state=channel_state,
-    )
-    chat_service = ChatService(
-        channel_service=channel_service,
-        private_message_service=PrivateMessageService(
-            user_repo=user_repo,
-            session_store=session_store,
-        ),
-        command_service=CommandService(),
-        session_store=session_store,
-        event_bus=event_bus,
-        rate_limiter=InMemoryRateLimiter(time_func=lambda: 0.0),
-        config=AppConfig(
-            database_url=PostgresDsn("postgresql+asyncpg://test"),
-            valkey_url=RedisDsn("redis://test"),
-            message_max_length=450,
-            rate_limit_messages=10,
-            rate_limit_window=10,
-        ),
-        chat_repository=InMemoryChatRepository(),
-    )
-    chat_handlers = ChatHandlers(
-        chat_service=chat_service,
-        channel_service=channel_service,
-        session_store=session_store,
-        packet_queue=packet_queue,
-    )
-    chat_handlers.register_all(dispatcher)
 
-    login_handler = LoginHandler(
-        auth_service=auth_service,
-        session_store=session_store,
-        country_resolver=_StubCountryResolver(),
-        channel_service=channel_service,
-        packet_queue=packet_queue,
-        packet_dispatcher=dispatcher,
-        session_ttl=_PACKET_QUEUE_TTL,
+async def _resolve_services(
+    app: Starlette,
+) -> tuple[AuthService, SessionStore, ChannelStateStore]:
+    """Resolve test-facing services from the container after lifespan."""
+    container: Container = app.state.container  # pyright: ignore[reportAny]
+    _seed_default_role(container)
+    await _seed_channels(container)
+    return (
+        await container.resolve(AuthService),
+        await container.resolve(SessionStore),
+        await container.resolve(ChannelStateStore),
     )
-    app = Starlette(routes=[Route("/", login_handler.__call__, methods=["POST"])])
-    return ChatE2EApp(
-        app=app,
-        auth_service=auth_service,
-        channel_state=channel_state,
-        session_store=session_store,
-    )
+
+
+# -- Protocol helpers --------------------------------------------------------
 
 
 def _login_body(username: str) -> bytes:
@@ -184,7 +142,7 @@ def _message_payload(*, sender: str, content: str, target: str, sender_id: int) 
 
 async def _register_user(auth_service: AuthService, username: str, email: str) -> None:
     result = await auth_service.register(
-        RegistrationForm(username=username, email=email, password=_PASSWORD)
+        RegistrationForm(username=username, email=email, password=_PASSWORD),
     )
     assert result.success is True
 
@@ -201,24 +159,33 @@ def _poll(client: TestClient, token: str, content: bytes = b"") -> bytes:
     return response.content
 
 
-async def _user_id_for_token(app: ChatE2EApp, token: str) -> int:
-    session = await app.session_store.get(token)
+async def _user_id_for_token(session_store: SessionStore, token: str) -> int:
+    session = await session_store.get(token)
     assert session is not None
     return session.user_id
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Channel Lifecycle
+# ═══════════════════════════════════════════════════════════════════════════
+
+
 class TestChannelLifecycleE2E:
+    """JOIN_CHANNEL then SEND_MESSAGE reaches target via S2C drain (Req 5.1, 6.2)."""
+
     async def test_http_join_then_channel_message_reaches_target_poll_response(
         self,
     ) -> None:
-        e2e = await _make_chat_e2e_app()
-        await _register_user(e2e.auth_service, "Sender", "sender@example.com")
-        await _register_user(e2e.auth_service, "Target", "target@example.com")
+        app = _make_test_app()
 
-        with TestClient(e2e.app) as client:
+        with TestClient(app) as client:
+            auth_service, session_store, _ = await _resolve_services(app)
+            await _register_user(auth_service, "Sender", "sender@example.com")
+            await _register_user(auth_service, "Target", "target@example.com")
+
             sender_token = _login(client, "Sender")
             target_token = _login(client, "Target")
-            sender_id = await _user_id_for_token(e2e, sender_token)
+            sender_id = await _user_id_for_token(session_store, sender_token)
 
             assert _poll(client, sender_token) == b""
             assert _poll(client, target_token) == b""
@@ -261,16 +228,25 @@ class TestChannelLifecycleE2E:
             )
 
 
-class TestPrivateMessageE2E:
-    async def test_http_private_message_reaches_target_poll_response(self) -> None:
-        e2e = await _make_chat_e2e_app()
-        await _register_user(e2e.auth_service, "Sender", "sender@example.com")
-        await _register_user(e2e.auth_service, "Target", "target@example.com")
+# ═══════════════════════════════════════════════════════════════════════════
+# Private Messages
+# ═══════════════════════════════════════════════════════════════════════════
 
-        with TestClient(e2e.app) as client:
+
+class TestPrivateMessageE2E:
+    """SEND_PRIVATE_MESSAGE reaches target via S2C drain (Req 5.1, 6.2)."""
+
+    async def test_http_private_message_reaches_target_poll_response(self) -> None:
+        app = _make_test_app()
+
+        with TestClient(app) as client:
+            auth_service, session_store, _ = await _resolve_services(app)
+            await _register_user(auth_service, "Sender", "sender@example.com")
+            await _register_user(auth_service, "Target", "target@example.com")
+
             sender_token = _login(client, "Sender")
             target_token = _login(client, "Target")
-            sender_id = await _user_id_for_token(e2e, sender_token)
+            sender_id = await _user_id_for_token(session_store, sender_token)
 
             assert _poll(client, sender_token) == b""
             assert _poll(client, target_token) == b""
@@ -299,14 +275,23 @@ class TestPrivateMessageE2E:
             )
 
 
-class TestLoginChannelListE2E:
-    async def test_login_response_contains_db_backed_channel_list(self) -> None:
-        e2e = await _make_chat_e2e_app()
-        await _register_user(e2e.auth_service, "Sender", "sender@example.com")
-        await e2e.channel_state.add_member("#osu", 101)
-        await e2e.channel_state.add_member("#announce", 202)
+# ═══════════════════════════════════════════════════════════════════════════
+# Login Channel List
+# ═══════════════════════════════════════════════════════════════════════════
 
-        with TestClient(e2e.app) as client:
+
+class TestLoginChannelListE2E:
+    """Login response contains DB-backed channel list (Req 1.5, 2.1, 2.2, 2.4)."""
+
+    async def test_login_response_contains_db_backed_channel_list(self) -> None:
+        app = _make_test_app()
+
+        with TestClient(app) as client:
+            auth_service, _, channel_state = await _resolve_services(app)
+            await _register_user(auth_service, "Sender", "sender@example.com")
+            await channel_state.add_member("#osu", 101)
+            await channel_state.add_member("#announce", 202)
+
             response = client.post("/", content=_login_body("Sender"))
 
         assert response.status_code == HTTPStatus.OK

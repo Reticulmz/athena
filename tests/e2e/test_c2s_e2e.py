@@ -304,7 +304,7 @@ class TestExceptionIsolation:
 
         The unregistered packet is silently skipped by the dispatcher,
         and PONG is still processed normally.
-        This validates the try/except in LoginHandler._handle_polling (Req 8.1, 8.3).
+        This validates the try/except in PollingWorkflow (Req 8.1, 8.3).
         """
         with _test_env():
             app = create_app()
@@ -335,7 +335,7 @@ class TestExceptionIsolation:
     def test_exception_in_handler_does_not_break_subsequent_packets(self) -> None:
         """Register a handler that raises, send it + PONG, verify PONG still works.
 
-        This directly tests the LoginHandler's try/except per-packet isolation
+        This directly tests the PollingWorkflow's try/except per-packet isolation
         with the real two-argument handler signature (Req 8.1, 8.2, 8.3).
         """
         with _test_env():

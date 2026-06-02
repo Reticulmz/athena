@@ -37,6 +37,7 @@ _SESSION = SessionData(
     display_city=True,
     client_hashes="hash1:hash2",
     pm_private=False,
+    role_ids=(1, 2),
 )
 
 
@@ -117,6 +118,7 @@ class TestCreateAndGet:
         assert result is not None
         assert result.username == "peppy"
         assert result.privileges == 1
+        assert result.role_ids == (1, 2)
 
     async def test_get_nonexistent_returns_none(self, store: SessionStore) -> None:
         result = await store.get("nonexistent-token")

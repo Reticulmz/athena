@@ -115,28 +115,13 @@ def upgrade() -> None:
         ["sender_id", "created_at"],
     )
 
-    # Seed BanchoBot user (id=1)
-    users_table = sa.table(
-        "users",
-        sa.column("id", sa.Integer),
-        sa.column("username", sa.String),
-        sa.column("safe_username", sa.String),
-        sa.column("email", sa.String),
-        sa.column("password_hash", sa.String),
-        sa.column("country", sa.String),
-    )
-    op.bulk_insert(
-        users_table,
-        [
-            {
-                "id": 1,
-                "username": "BanchoBot",
-                "safe_username": "banchobot",
-                "email": "bot@internal",
-                "password_hash": "!invalid",
-                "country": "XX",
-            },
-        ],
+    # Seed BanchoBot user without assuming a fixed user id.
+    op.execute(
+        """
+        INSERT INTO users (username, safe_username, email, password_hash, country)
+        VALUES ('BanchoBot', 'banchobot', 'bot@internal', '!invalid', 'XX')
+        ON CONFLICT DO NOTHING
+        """
     )
 
     # Seed default channels
@@ -185,7 +170,7 @@ def downgrade() -> None:
     # Remove seeded data (overrides first due to FK)
     op.execute("DELETE FROM channel_role_overrides")
     op.execute("DELETE FROM channels WHERE name IN ('#osu', '#announce')")
-    op.execute("DELETE FROM users WHERE id = 1")
+    op.execute("DELETE FROM users WHERE safe_username = 'banchobot' AND email = 'bot@internal'")
 
     op.drop_table("channel_role_overrides")
     op.drop_table("channels")

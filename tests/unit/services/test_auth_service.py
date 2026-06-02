@@ -585,6 +585,7 @@ class TestLoginSuccess:
         assert result.session_data.display_city is True
         assert result.session_data.client_hashes == "hash1:hash2:hash3"
         assert result.session_data.pm_private is False
+        assert result.session_data.role_ids == (ROLE_DEFAULT.id,)
 
     async def test_session_stored_in_session_store(self) -> None:
         svc, user_repo, _, session_store, _ = await _make_login_service()
@@ -594,6 +595,7 @@ class TestLoginSuccess:
         assert user is not None
         stored = await session_store.get_by_user(user.id)
         assert stored is not None
+        assert stored.role_ids == result.role_ids
 
     async def test_session_retrievable_by_token(self) -> None:
         svc, _, _, session_store, _ = await _make_login_service()

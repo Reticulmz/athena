@@ -235,6 +235,7 @@ class AuthService:
             display_city=client.display_city,
             client_hashes=client.client_hashes,
             pm_private=client.pm_private,
+            role_ids=role_ids,
         )
 
         # 7. セッション作成(既存セッションは SessionStore.create() が自動置換)

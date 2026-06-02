@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 import structlog
@@ -37,18 +38,22 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         structlog.contextvars.clear_contextvars()
 
         start = time.perf_counter()
-        status = 500
+        status = int(HTTPStatus.INTERNAL_SERVER_ERROR)
         try:
             response = await call_next(request)
             status = response.status_code
         finally:
             duration_ms = (time.perf_counter() - start) * 1000
-            await logger.ainfo(
-                "http_request",
-                host=request.url.hostname,
-                method=request.method,
-                path=request.url.path,
-                status=status,
-                duration_ms=round(duration_ms, 2),
-            )
+            if not (
+                request.url.path == "/health"
+                and HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES
+            ):
+                await logger.ainfo(
+                    "http_request",
+                    host=request.url.hostname,
+                    method=request.method,
+                    path=request.url.path,
+                    status=status,
+                    duration_ms=round(duration_ms, 2),
+                )
         return response

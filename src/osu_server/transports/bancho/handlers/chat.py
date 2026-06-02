@@ -82,7 +82,7 @@ class ChatHandlers(HandlerGroup):
                 content=msg.content,
                 authorization=ChannelChatAuthorization(
                     privileges=session.privileges,
-                    role_ids=(),
+                    role_ids=session.role_ids,
                 ),
             )
         )
@@ -164,7 +164,7 @@ class ChatHandlers(HandlerGroup):
         joined = await self._channel_service.join(
             user_id=user_id,
             user_privileges=session.privileges,
-            user_role_ids=[],
+            user_role_ids=list(session.role_ids),
             channel_name=channel_name,
         )
         if joined:

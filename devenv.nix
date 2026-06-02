@@ -3,7 +3,7 @@
 let
   db_name = "athena";
   pg_port = toString config.processes.postgres.ports.main.value;
-  valkey_port = toString config.services.redis.port;
+  valkey_port = toString config.processes.redis.ports.main.value;
 in
 {
   process.manager.implementation = "process-compose";
@@ -25,7 +25,7 @@ in
   services.redis = {
     enable = true;
     package = pkgs.valkey;
-    port = 6379;
+#    port = 6379;
   };
 
   services.postgres = {
@@ -37,12 +37,11 @@ in
   };
 
   processes.app = {
-    exec = "uv run uvicorn osu_server.app:app --reload --reload-dir src --host $SERVER_HOST --port $SERVER_PORT";
+    exec = "uv run uvicorn osu_server.app:app --reload --reload-dir src --host $SERVER_HOST --port $SERVER_PORT --no-access-log";
     after = [ "devenv:processes:postgres" "devenv:processes:redis" ];
-    ports.http.allocate = 8000;
     ready = {
       http.get = {
-        port = config.processes.app.ports.http.value;
+          port = 8000;
         path = "/health";
       };
       initial_delay = 2;
@@ -63,7 +62,7 @@ in
     VALKEY_URL = "redis://localhost:${valkey_port}";
     ENVIRONMENT = "development";
     SERVER_HOST = "0.0.0.0";
-    SERVER_PORT = toString config.processes.app.ports.http.value;
+    SERVER_PORT = "8000";
     DOMAIN = "athena.localhost";
     LOG_LEVEL = "DEBUG";
     LOG_JSON_ENABLED = "true";

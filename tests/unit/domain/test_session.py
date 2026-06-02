@@ -27,6 +27,7 @@ class TestSessionData:
         assert sd.username == "TestPlayer"
         assert sd.privileges == SAMPLE_PRIVILEGES
         assert sd.country == "JP"
+        assert sd.role_ids == ()
 
     def test_asdict_roundtrip(self) -> None:
         sd = SessionData(
@@ -52,6 +53,7 @@ class TestSessionData:
         assert restored.display_city == sd.display_city
         assert restored.client_hashes == sd.client_hashes
         assert restored.pm_private == sd.pm_private
+        assert restored.role_ids == sd.role_ids
 
     def test_all_fields_in_dict(self) -> None:
         sd = SessionData(
@@ -76,6 +78,7 @@ class TestSessionData:
             "display_city",
             "client_hashes",
             "pm_private",
+            "role_ids",
             "silence_end",
         }
         assert set(d.keys()) == expected_keys

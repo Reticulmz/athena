@@ -52,6 +52,9 @@ from osu_server.services.private_message_service import PrivateMessageService
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.bancho.workflows.login import LoginWorkflow
+from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
+from osu_server.transports.bancho.workflows.polling import PollingWorkflow
 from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 _EXPECTED_MIN_SHUTDOWN_HOOKS = 3
@@ -166,6 +169,54 @@ class TestDIAuthRegistrations:
 
         handler = await container.resolve(RegistrationHandler)
         assert isinstance(handler, RegistrationHandler)
+
+
+# ---------------------------------------------------------------------------
+# Bancho endpoint graph resolution
+# ---------------------------------------------------------------------------
+
+
+class TestDIBanchoEndpointGraph:
+    """_register_services registers LoginWorkflow, PollingWorkflow,
+    LoginResponseBuilder, and PacketDispatcher as singletons."""
+
+    async def test_resolves_login_response_builder(self) -> None:
+        _, container = await _build_full_container()
+
+        builder = await container.resolve(LoginResponseBuilder)
+        assert isinstance(builder, LoginResponseBuilder)
+
+    async def test_resolves_login_workflow(self) -> None:
+        _, container = await _build_full_container()
+
+        workflow = await container.resolve(LoginWorkflow)
+        assert isinstance(workflow, LoginWorkflow)
+
+    async def test_resolves_polling_workflow(self) -> None:
+        _, container = await _build_full_container()
+
+        workflow = await container.resolve(PollingWorkflow)
+        assert isinstance(workflow, PollingWorkflow)
+
+    async def test_resolves_packet_dispatcher(self) -> None:
+        _, container = await _build_full_container()
+
+        dispatcher = await container.resolve(PacketDispatcher)
+        assert isinstance(dispatcher, PacketDispatcher)
+
+    async def test_polling_workflow_uses_container_dispatcher_with_handlers(self) -> None:
+        """PollingWorkflow._packet_dispatcher is the same instance resolved
+        from the container, and C2S handlers are registered on it."""
+        _, container = await _build_full_container()
+
+        polling = await container.resolve(PollingWorkflow)
+        dispatcher = await container.resolve(PacketDispatcher)
+
+        assert polling._packet_dispatcher is dispatcher  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        assert ClientPacketID.SEND_MESSAGE in dispatcher.get_handlers()
+        assert ClientPacketID.SEND_PRIVATE_MESSAGE in dispatcher.get_handlers()
+        assert ClientPacketID.JOIN_CHANNEL in dispatcher.get_handlers()
+        assert ClientPacketID.LEAVE_CHANNEL in dispatcher.get_handlers()
 
 
 # ---------------------------------------------------------------------------

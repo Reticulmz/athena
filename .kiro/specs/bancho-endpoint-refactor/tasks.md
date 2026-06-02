@@ -6,7 +6,7 @@
   - The completed state is that login and polling workflow contracts are importable from the bancho transport boundary, workflow modules do not import Starlette, and no legacy handler alias is introduced.
   - _Requirements: 4.1, 4.2, 4.6_
 
-- [ ] 2. Core workflows: login response and polling behavior
+- [x] 2. Core workflows: login response and polling behavior
 - [x] 2.1 (P) Extract successful login response construction
   - Move successful login S2C stream construction into a dedicated response construction boundary.
   - Preserve login reply, protocol version, permissions, user presence, user stats, visible channel packets, autojoin channel packets, and completion packets in the existing order.
@@ -32,7 +32,7 @@
   - _Requirements: 1.2, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.2, 4.5, 5.3, 6.4_
   - _Boundary: PollingWorkflow_
 
-- [ ] 3. Integration: HTTP endpoint and composition wiring
+- [x] 3. Integration: HTTP endpoint and composition wiring
 - [x] 3.1 Create HTTP endpoint behavior over workflow results
   - Preserve login vs polling selection by `osu-token` header presence.
   - Map login workflow tokens to `cho-token` only when present and map polling workflow content directly to the HTTP response body.
@@ -48,14 +48,14 @@
   - The completed state is that application startup resolves the refactored endpoint graph without manual test-only wiring.
   - _Requirements: 1.6, 5.1, 5.2, 5.4, 6.3_
 
-- [ ] 3.3 Remove legacy handler dependency paths
+- [x] 3.3 Remove legacy handler dependency paths
   - Remove the old multi-responsibility login handler and update production/test imports to the refactored endpoint graph.
   - Do not keep a compatibility alias for the removed handler.
   - Keep packet dispatcher, login parser, S2C builders, and service/state public contracts unchanged.
   - The completed state is that production code no longer imports the old handler name and behavior is reachable only through the refactored endpoint graph.
   - _Requirements: 4.6, 5.1, 6.5_
 
-- [ ] 4. Unit verification: direct workflow and endpoint coverage
+- [x] 4. Unit verification: direct workflow and endpoint coverage
 - [x] 4.1 (P) Verify endpoint routing and response mapping
   - Cover login branch selection without `osu-token` and polling branch selection with `osu-token`.
   - Cover `cho-token` emission only when the login workflow result includes a token.
@@ -89,26 +89,26 @@
   - _Requirements: 1.2, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.2, 4.5, 6.1, 6.4_
   - _Boundary: PollingWorkflow tests_
 
-- [ ] 5. Integration and final validation
-- [ ] 5.1 Verify DI, route adapter, and dispatcher composition
+- [x] 5. Integration and final validation
+- [x] 5.1 Verify DI, route adapter, and dispatcher composition
   - Update DI integration coverage so the container resolves the endpoint, login workflow, polling workflow, and response construction boundary.
   - Verify registered C2S handlers continue to be dispatched through the same dispatcher contract used by polling.
   - The completed state is that composition tests prove the endpoint graph can be built by the application container and no manual test-only wiring is required.
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 6.3_
 
-- [ ] 5.2 Verify login and polling wire compatibility through integration tests
+- [x] 5.2 Verify login and polling wire compatibility through integration tests
   - Preserve existing login integration assertions for `cho-token`, login reply, protocol version, permissions, re-login, and invalid credentials.
   - Preserve existing polling integration assertions for valid token, no body, invalid token, no-token login fallback, oversized body, corrupt packet drain, handler exception continuation, and queue lifetime behavior.
   - The completed state is that integration tests prove stable clients observe the same login and polling wire behavior after the refactor.
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 6.2, 6.5_
 
-- [ ] 5.3 Verify chat and C2S regression paths
+- [x] 5.3 Verify chat and C2S regression paths
   - Update chat and C2S test fixtures to use the refactored endpoint graph while preserving existing packet behavior assertions.
   - Prove future C2S handlers still flow through the existing dispatcher contract during polling.
   - The completed state is that chat pipeline and C2S E2E tests pass without weakening behavior checks.
   - _Requirements: 1.6, 5.1, 5.3, 6.2, 6.5_
 
-- [ ] 5.4 Run static, architecture, and regression checks
+- [x] 5.4 Run static, architecture, and regression checks
   - Run lint, format-check, strict type checking, import-linter, and the relevant unit/integration/E2E test suites.
   - If a check fails, return to the task that owns the failing boundary and fix the root cause there instead of adding broad type suppressions, skipped tests, or compatibility shims.
   - The completed state is that all required quality gates pass and stable bancho login/polling coverage is not reduced.

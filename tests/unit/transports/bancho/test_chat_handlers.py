@@ -214,7 +214,7 @@ class TestSendMessage:
         assert call["user_privileges"] == 0
         assert call["user_role_ids"] == ()
 
-    async def test_passes_privileges_from_session(
+    async def test_passes_authorization_from_session(
         self,
         handlers: ChatHandlers,
         chat_service: StubChatService,
@@ -230,12 +230,14 @@ class TestSendMessage:
             display_city=False,
             client_hashes="",
             pm_private=False,
+            role_ids=(1, 2),
         )
         payload = _build_message_payload()
 
         await handlers.handle_send_message(payload, user_id=1)
 
         assert chat_service.calls[0]["user_privileges"] == 8
+        assert chat_service.calls[0]["user_role_ids"] == (1, 2)
 
     async def test_session_not_found_does_nothing(
         self,
@@ -306,8 +308,20 @@ class TestJoinChannel:
         self,
         handlers: ChatHandlers,
         channel_service: StubChannelService,
-        session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
+        session_store: StubSessionStore,
     ) -> None:
+        session_store.session = SessionData(
+            user_id=1,
+            username="test_user",
+            privileges=8,
+            country="JP",
+            osu_version="b20260101",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="",
+            pm_private=False,
+            role_ids=(1, 2),
+        )
         payload = _build_banchostring_payload("#osu")
 
         await handlers.handle_join_channel(payload, user_id=1)
@@ -317,8 +331,8 @@ class TestJoinChannel:
         assert call["method"] == "join"
         assert call["user_id"] == 1
         assert call["channel_name"] == "#osu"
-        assert call["user_privileges"] == 0
-        assert call["user_role_ids"] == []
+        assert call["user_privileges"] == 8
+        assert call["user_role_ids"] == [1, 2]
 
     async def test_session_not_found_does_nothing(
         self,

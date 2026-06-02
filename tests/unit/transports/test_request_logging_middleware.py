@@ -203,6 +203,32 @@ class TestRequestLoggingMiddleware:
         http_logs = [log for log in logs if log["event"] == "http_request"]
         assert len(http_logs) == 2
 
+    def test_health_2xx_request_is_not_logged(self) -> None:
+        """Successful health probes do not produce access log noise."""
+        app = _make_app(routes=[Route("/health", endpoint=_ok_endpoint, methods=["GET"])])
+        with (
+            structlog.testing.capture_logs() as logs,
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            _ = client.get("/health")
+
+        http_logs = [log for log in logs if log["event"] == "http_request"]
+        assert http_logs == []
+
+    def test_health_error_request_is_logged(self) -> None:
+        """Failed health probes remain visible in request logs."""
+        app = _make_app(routes=[Route("/health", endpoint=_error_endpoint, methods=["GET"])])
+        with (
+            structlog.testing.capture_logs() as logs,
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            _ = client.get("/health")
+
+        http_logs = [log for log in logs if log["event"] == "http_request"]
+        assert len(http_logs) == 1
+        assert http_logs[0]["path"] == "/health"
+        assert http_logs[0]["status"] == HTTPStatus.INTERNAL_SERVER_ERROR
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Req 5.3 / 7.1: contextvars cleared between requests
