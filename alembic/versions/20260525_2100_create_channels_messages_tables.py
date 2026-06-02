@@ -115,11 +115,12 @@ def upgrade() -> None:
         ["sender_id", "created_at"],
     )
 
-    # Seed BanchoBot user without assuming a fixed user id.
+    # Seed BanchoBot user with reserved user id=1.
+    # id=1 is the protocol-level BanchoBot identity (osu! client convention).
     op.execute(
         """
-        INSERT INTO users (username, safe_username, email, password_hash, country)
-        VALUES ('BanchoBot', 'banchobot', 'bot@internal', '!invalid', 'XX')
+        INSERT INTO users (id, username, safe_username, email, password_hash, country)
+        VALUES (1, 'BanchoBot', 'banchobot', 'bot@internal', '!invalid', 'XX')
         ON CONFLICT DO NOTHING
         """
     )
