@@ -1,13 +1,13 @@
 # Implementation Plan
 
 - [ ] 1. Foundation: identity and active-session boundaries
-- [ ] 1.1 Define BanchoBot as a system identity
+- [x] 1.1 Define BanchoBot as a system identity
   - Establish a single immutable identity for BanchoBot that can be shared by login roster construction and command responses.
   - Preserve the existing BanchoBot user ID and display name values through that identity.
   - Completed state is observable when identity tests prove the ID, display name, and immutability, and no session data is created for BanchoBot.
   - _Requirements: 2.1, 2.2, 3.4_
 
-- [ ] 1.2 Codify active human session list semantics
+- [x] 1.2 Codify active human session list semantics
   - Keep the online-user service contract focused on active human sessions rather than roster-visible system users.
   - Add regression coverage that BanchoBot is not implicitly appended to active session IDs.
   - Completed state is observable when lifecycle and online-user tests show human disconnect fan-out never targets BanchoBot.

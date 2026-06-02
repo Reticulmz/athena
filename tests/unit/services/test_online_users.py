@@ -2,6 +2,7 @@
 
 Validates:
 - Req 6.3: OnlineUsersService delegates get_all_user_ids() to SessionStore
+- Req 3.3, 3.4: Only active session IDs returned; BanchoBot never implicitly added
 - Constructor accepts SessionStore dependency
 """
 
@@ -9,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.services.online_users import OnlineUsersService
 
@@ -96,3 +98,57 @@ class TestGetAllUserIds:
         result = await svc.get_all_user_ids()
 
         assert result is expected
+
+
+class TestBanchoBotNotInActiveSessions:
+    """Req 3.3, 3.4: get_all_user_ids() は active session IDs のみ返し、BanchoBot を含まない。
+
+    OnlineUsersService は SessionStore に委譲するだけであり、BanchoBot を暗黙追加しない。
+    BanchoBot は SessionData を持たず、active session ではないため、返却値に現れない。
+    """
+
+    async def test_banchobot_id_not_in_empty_result(self) -> None:
+        """session store が空でも BanchoBot ID は追加されない。"""
+        store = FakeSessionStore(user_ids=[])
+        svc = OnlineUsersService(session_store=store)
+
+        result = await svc.get_all_user_ids()
+
+        assert result == []
+        assert BANCHO_BOT_IDENTITY.user_id not in result
+
+    async def test_banchobot_id_not_in_populated_result(self) -> None:
+        """他のユーザーが online でも BanchoBot ID は返却値に含まれない。"""
+        store = FakeSessionStore(user_ids=[2, 3, 42])
+        svc = OnlineUsersService(session_store=store)
+
+        result = await svc.get_all_user_ids()
+
+        assert result == [2, 3, 42]
+        assert BANCHO_BOT_IDENTITY.user_id not in result
+        # BanchoBot が暗黙追加されていないことを長さでも検証
+        assert len(result) == 3
+
+    async def test_result_is_exact_pass_through_no_banchobot_appended(self) -> None:
+        """get_all_user_ids() は SessionStore の結果をそのまま返し、BanchoBot を追記しない。"""
+        session_ids = [100, 200, 300]
+        store = FakeSessionStore(user_ids=session_ids)
+        svc = OnlineUsersService(session_store=store)
+
+        result = await svc.get_all_user_ids()
+
+        assert BANCHO_BOT_IDENTITY.user_id not in result
+        assert result == session_ids
+        # pass-through: 厳密に SessionStore の返却値と同一オブジェクトであること
+        assert result is session_ids
+
+    async def test_banchobot_not_in_single_user_result(self) -> None:
+        """1 ユーザーのみ online の場合も BanchoBot は追加されない。"""
+        store = FakeSessionStore(user_ids=[55])
+        svc = OnlineUsersService(session_store=store)
+
+        result = await svc.get_all_user_ids()
+
+        assert result == [55]
+        assert BANCHO_BOT_IDENTITY.user_id not in result
+        assert len(result) == 1
