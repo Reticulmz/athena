@@ -22,6 +22,7 @@ from starlette.testclient import TestClient
 from osu_server.composition.application import create_app
 from osu_server.domain.auth import RegistrationForm
 from osu_server.domain.role import Privileges, Role
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
@@ -35,6 +36,8 @@ from osu_server.transports.bancho.protocol.s2c.login import (
     channel_available,
     channel_available_autojoin,
     channel_info_complete,
+    user_presence,
+    user_presence_bundle,
 )
 from osu_server.transports.bancho.protocol.types import BanchoString, Message
 from tests.factories.domain import make_channel, make_channel_role_override
@@ -320,3 +323,150 @@ class TestLoginChannelListE2E:
             in response.content
         )
         assert channel_info_complete() in response.content
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BanchoBot Identity E2E (Req 1.1, 1.2, 2.1, 2.2, 2.3, 3.1, 3.2)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestBanchoBotIdentityE2E:
+    """Login-to-command BanchoBot identity consistency (Req 1.1-2.3, 3.1-3.2)."""
+
+    async def test_login_response_contains_banchobot_presence(self) -> None:
+        """Login response has BanchoBot USER_PRESENCE with correct identity."""
+        app = _make_test_app()
+
+        with TestClient(app) as client:
+            auth_service, _, _ = await _resolve_services(app)
+            await _register_user(auth_service, "Sender", "sender@example.com")
+
+            response = client.post("/", content=_login_body("Sender"))
+
+        assert response.status_code == HTTPStatus.OK
+        banchobot_presence = user_presence(
+            user_id=BANCHO_BOT_IDENTITY.user_id,
+            username=BANCHO_BOT_IDENTITY.username,
+            timezone=24,
+            country_id=0,
+            permissions=0,
+            mode=0,
+            longitude=0.0,
+            latitude=0.0,
+            rank=0,
+        )
+        assert banchobot_presence in response.content
+
+    async def test_login_response_contains_banchobot_bundle(self) -> None:
+        """USER_PRESENCE_BUNDLE includes BanchoBot ID and the connecting user,
+        with no duplicate entries."""
+        app = _make_test_app()
+
+        with TestClient(app) as client:
+            auth_service, session_store, _ = await _resolve_services(app)
+            await _register_user(auth_service, "Sender", "sender@example.com")
+
+            response = client.post("/", content=_login_body("Sender"))
+            user_id = await _user_id_for_token(session_store, response.headers["cho-token"])
+
+        assert response.status_code == HTTPStatus.OK
+        roster_ids = list(dict.fromkeys([BANCHO_BOT_IDENTITY.user_id, user_id]))
+        expected_bundle = user_presence_bundle(roster_ids)
+        assert expected_bundle in response.content
+
+    async def test_banchobot_presence_before_bundle(self) -> None:
+        """BanchoBot USER_PRESENCE appears before USER_PRESENCE_BUNDLE
+        so the client knows BanchoBot identity before processing roster."""
+        app = _make_test_app()
+
+        with TestClient(app) as client:
+            auth_service, _, _ = await _resolve_services(app)
+            await _register_user(auth_service, "Sender", "sender@example.com")
+
+            response = client.post("/", content=_login_body("Sender"))
+
+        assert response.status_code == HTTPStatus.OK
+        banchobot_presence = user_presence(
+            user_id=BANCHO_BOT_IDENTITY.user_id,
+            username=BANCHO_BOT_IDENTITY.username,
+            timezone=24,
+            country_id=0,
+            permissions=0,
+            mode=0,
+            longitude=0.0,
+            latitude=0.0,
+            rank=0,
+        )
+        bundle_marker = user_presence_bundle([BANCHO_BOT_IDENTITY.user_id])
+        presence_pos = response.content.index(banchobot_presence)
+        bundle_pos = response.content.index(bundle_marker)
+        assert presence_pos < bundle_pos, (
+            "BanchoBot USER_PRESENCE must precede USER_PRESENCE_BUNDLE"
+        )
+
+    async def test_human_user_in_roster_with_banchobot(self) -> None:
+        """Human user is present in roster alongside BanchoBot (Req 3.1, 3.2).
+        The USER_PRESENCE_BUNDLE contains both IDs without duplicates."""
+        app = _make_test_app()
+
+        with TestClient(app) as client:
+            auth_service, session_store, _ = await _resolve_services(app)
+            await _register_user(auth_service, "Sender", "sender@example.com")
+
+            response = client.post("/", content=_login_body("Sender"))
+            user_id = await _user_id_for_token(session_store, response.headers["cho-token"])
+
+        assert response.status_code == HTTPStatus.OK
+        roster_ids = list(dict.fromkeys([BANCHO_BOT_IDENTITY.user_id, user_id]))
+        expected_bundle = user_presence_bundle(roster_ids)
+        assert expected_bundle in response.content
+        # BanchoBot is always present
+        assert BANCHO_BOT_IDENTITY.user_id in roster_ids
+        # Human user is never hidden or replaced by BanchoBot
+        assert user_id in roster_ids
+        if user_id != BANCHO_BOT_IDENTITY.user_id:
+            assert len(roster_ids) == 2
+
+    async def test_command_response_uses_banchobot_identity(self) -> None:
+        """After login, !help command response uses the same BanchoBot identity
+        exposed in the login roster (Req 2.1, 2.2, 2.3, 4.1, 4.3)."""
+        app = _make_test_app()
+
+        with TestClient(app) as client:
+            auth_service, _, _ = await _resolve_services(app)
+            await _register_user(auth_service, "Sender", "sender@example.com")
+
+            token = _login(client, "Sender")
+            assert _poll(client, token) == b""
+
+            join_resp = _poll(
+                client,
+                token,
+                _c2s_packet(
+                    ClientPacketID.JOIN_CHANNEL,
+                    _channel_payload("#osu"),
+                ),
+            )
+            assert join_resp == channel_join_success(channel_name="#osu")
+
+            poll_resp = _poll(
+                client,
+                token,
+                _c2s_packet(
+                    ClientPacketID.SEND_MESSAGE,
+                    _message_payload(
+                        sender="Sender",
+                        content="!help",
+                        target="#osu",
+                        sender_id=0,
+                    ),
+                ),
+            )
+            # The poll response contains BanchoBot's response
+            banchobot_message = send_message(
+                sender=BANCHO_BOT_IDENTITY.username,
+                content="Available commands: !roll, !help",
+                target="#osu",
+                sender_id=BANCHO_BOT_IDENTITY.user_id,
+            )
+            assert banchobot_message in poll_resp
