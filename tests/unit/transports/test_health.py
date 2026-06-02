@@ -285,6 +285,7 @@ class TestConfigDomainDefault:
     def test_domain_default_is_athena_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/osu")
         monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
+        monkeypatch.delenv("DOMAIN", raising=False)
 
         config = AppConfig()  # pyright: ignore[reportCallIssue]
         assert config.domain == "athena.localhost"

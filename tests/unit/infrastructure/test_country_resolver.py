@@ -47,14 +47,14 @@ class TestCloudflareCountryResolver:
 class TestCountryCodeToId:
     """country_code_to_id 変換のテスト。"""
 
-    # 数値は ppy/osu CountryCode.cs の公式定義に準拠
+    # 数値は osuAkatsuki/bancho.py の stable bancho プロトコル準拠
     _EXPECTED: ClassVar[dict[str, int]] = {
-        "JP": 120,
-        "US": 239,
-        "KR": 128,
-        "GB": 83,
-        "FR": 80,
-        "DE": 61,
+        "JP": 111,
+        "US": 225,
+        "KR": 119,
+        "GB": 77,
+        "FR": 74,
+        "DE": 56,
     }
 
     def test_known_codes(self) -> None:
@@ -64,9 +64,12 @@ class TestCountryCodeToId:
 
     def test_unknown_code_returns_zero(self) -> None:
         """不明な国コードは 0 を返す。"""
-        assert country_code_to_id("XX") == 0
         assert country_code_to_id("ZZ") == 0
         assert country_code_to_id("??") == 0
+
+    def test_xx_returns_244(self) -> None:
+        """'XX' (不明国) は stable bancho の XX コード 244 を返す。"""
+        assert country_code_to_id("XX") == 244
 
     def test_empty_string_returns_zero(self) -> None:
         """空文字列は 0 を返す。"""

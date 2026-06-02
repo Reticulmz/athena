@@ -12,9 +12,13 @@ Validates:
 
 from __future__ import annotations
 
+import os
+import socket
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import httpx
+import pytest
 from starlette.routing import Host, Mount, Route
 from taskiq import AsyncBroker
 from taskiq_redis import ListQueueBroker
@@ -61,6 +65,25 @@ _EXPECTED_MIN_SHUTDOWN_HOOKS = 3
 _EXPECTED_MIN_HOST_ROUTES = 2
 
 
+def _is_port_open(host: str, port: int, *, timeout: float = 1.0) -> bool:
+    """Check if a TCP port is open and accepting connections."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _require_valkey() -> None:
+    """Skip if VALKEY_URL is not set or Valkey is unreachable."""
+    url = os.environ.get("VALKEY_URL")
+    if not url:
+        pytest.skip("VALKEY_URL not set")
+    parsed = urlparse(url)
+    if parsed.hostname and parsed.port and not _is_port_open(parsed.hostname, parsed.port):
+        pytest.skip(f"Valkey not reachable at {parsed.hostname}:{parsed.port}")
+
+
 def _make_config(*, environment: str = "test") -> AppConfig:
     """Create a minimal AppConfig for testing."""
     return AppConfig.model_validate(
@@ -76,6 +99,7 @@ async def _build_full_container(
     config: AppConfig | None = None,
 ) -> tuple[AppConfig, Container]:
     """Build container with both infrastructure and service registrations."""
+    _require_valkey()
     if config is None:
         config = _make_config()
     container = await build_container(config)
@@ -92,6 +116,7 @@ class TestDIInfraRegistrations:
     """build_container registers infrastructure-layer services."""
 
     async def test_resolves_httpx_async_client(self) -> None:
+        _require_valkey()
         config = _make_config()
         container = await build_container(config)
 
@@ -99,6 +124,7 @@ class TestDIInfraRegistrations:
         assert isinstance(client, httpx.AsyncClient)
 
     async def test_resolves_hibp_client(self) -> None:
+        _require_valkey()
         config = _make_config()
         container = await build_container(config)
 
@@ -106,6 +132,7 @@ class TestDIInfraRegistrations:
         assert isinstance(hibp, HIBPClient)
 
     async def test_resolves_country_resolver(self) -> None:
+        _require_valkey()
         config = _make_config()
         container = await build_container(config)
 
@@ -113,6 +140,7 @@ class TestDIInfraRegistrations:
         assert isinstance(resolver, CloudflareCountryResolver)
 
     async def test_resolves_taskiq_broker(self) -> None:
+        _require_valkey()
         config = _make_config()
         container = await build_container(config)
 
@@ -338,6 +366,7 @@ class TestHttpxLifecycle:
 
     async def test_shutdown_hook_registered_for_httpx(self) -> None:
         """At least 3 shutdown hooks: engine.dispose, valkey.close, httpx.aclose."""
+        _require_valkey()
         config = _make_config()
         container = await build_container(config)
 
@@ -352,7 +381,9 @@ class TestHttpxLifecycle:
 class TestConfigDomainField:
     """AppConfig includes a domain field with default 'athena.localhost'."""
 
-    def test_default_domain(self) -> None:
+    def test_default_domain(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DOMAIN", raising=False)
+
         config = _make_config()
         assert config.domain == "athena.localhost"
 
