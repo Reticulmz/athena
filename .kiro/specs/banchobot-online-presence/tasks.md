@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Foundation: identity and active-session boundaries
+- [x] 1. Foundation: identity and active-session boundaries
 - [x] 1.1 Define BanchoBot as a system identity
   - Establish a single immutable identity for BanchoBot that can be shared by login roster construction and command responses.
   - Preserve the existing BanchoBot user ID and display name values through that identity.
@@ -13,7 +13,7 @@
   - Completed state is observable when lifecycle and online-user tests show human disconnect fan-out never targets BanchoBot.
   - _Requirements: 3.3, 3.4_
 
-- [ ] 2. Core online roster and sender behavior
+- [x] 2. Core online roster and sender behavior
 - [x] 2.1 Add BanchoBot to the successful login roster
   - Build the initial roster from BanchoBot plus the relevant active human users without duplicate IDs.
   - Emit BanchoBot presence before the roster bundle and before any BanchoBot command response can be displayed by the client.
@@ -28,7 +28,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 4.1, 4.2, 4.3, 4.4_
   - _Boundary: CommandService_
 
-- [ ] 3. Integration and validation
+- [x] 3. Integration and validation
 - [x] 3.1 Verify login-to-command identity consistency end to end
   - Add protocol-level integration coverage for a successful login followed by channel and private command responses.
   - Verify the client receives BanchoBot presence before observing a BanchoBot-authored message.
@@ -36,7 +36,7 @@
   - Completed state is observable when integration tests show the roster identity and command sender identity match for BanchoBot.
   - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3, 3.1, 3.2, 4.1, 4.2, 4.3_
 
-- [ ] 3.2 Run final quality and regression checks
+- [x] 3.2 Run final quality and regression checks
   - Run the targeted unit and integration tests that cover identity, login roster, lifecycle fan-out, and command response behavior.
   - Run the project quality checks required for Python source changes.
   - Completed state is observable when all targeted tests and quality checks pass with no skipped required coverage.
