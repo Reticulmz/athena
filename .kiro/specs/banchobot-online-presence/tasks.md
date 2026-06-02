@@ -21,7 +21,7 @@
   - Completed state is observable when login response tests decode BanchoBot presence and the roster bundle contains BanchoBot exactly once alongside the human roster.
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.4, 3.1, 3.2_
 
-- [ ] 2.2 (P) Align command responses with the shared BanchoBot identity
+- [x] 2.2 (P) Align command responses with the shared BanchoBot identity
   - Make channel command responses and private command responses use the same BanchoBot identity that the login roster exposes.
   - Preserve existing command names, command parsing, response content, response target selection, and delivery behavior.
   - Completed state is observable when command-service and chat-handler tests prove every BanchoBot response uses the shared sender ID and display name.
