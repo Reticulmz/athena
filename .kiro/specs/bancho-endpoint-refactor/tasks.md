@@ -56,7 +56,7 @@
   - _Requirements: 4.6, 5.1, 6.5_
 
 - [ ] 4. Unit verification: direct workflow and endpoint coverage
-- [ ] 4.1 (P) Verify endpoint routing and response mapping
+- [x] 4.1 (P) Verify endpoint routing and response mapping
   - Cover login branch selection without `osu-token` and polling branch selection with `osu-token`.
   - Cover `cho-token` emission only when the login workflow result includes a token.
   - The completed state is that endpoint unit tests prove HTTP extraction and response mapping without testing auth, packet construction, or polling internals through Starlette.
