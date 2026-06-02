@@ -29,7 +29,7 @@
   - _Boundary: CommandService_
 
 - [ ] 3. Integration and validation
-- [ ] 3.1 Verify login-to-command identity consistency end to end
+- [x] 3.1 Verify login-to-command identity consistency end to end
   - Add protocol-level integration coverage for a successful login followed by channel and private command responses.
   - Verify the client receives BanchoBot presence before observing a BanchoBot-authored message.
   - Verify normal human users remain visible in the roster when BanchoBot is present and are not hidden or replaced.
