@@ -183,11 +183,13 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     command_service = CommandService()
     container.register_singleton(CommandService, lambda: command_service)
 
+    # -- Job Queue (broker registration) --------------------------------------
+    broker = await container.resolve(AsyncBroker)
+    register_all_jobs(broker)
+
     # -- BanchoEndpoint & Workflows (singletons) ------------------------------
     packet_queue = await container.resolve(PacketQueue)
     eventbus = await container.resolve(EventBus)
-    broker = await container.resolve(AsyncBroker)
-    register_all_jobs(broker)
 
     login_response_builder = LoginResponseBuilder(channel_service=channel_service)
     container.register_singleton(LoginResponseBuilder, lambda: login_response_builder)

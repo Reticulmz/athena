@@ -5,7 +5,7 @@ Validates:
 - app.py _register_services wires repositories, services, handlers
 - httpx.AsyncClient lifecycle (shutdown hook registered)
 - Environment-based repository switching (InMemory vs SQLAlchemy)
-- LoginHandler and RegistrationHandler are resolvable
+- BanchoEndpoint and RegistrationHandler are resolvable
 - app.py subdomain routing (Host-based) and path-based fallbacks
 - Config domain field
 """
