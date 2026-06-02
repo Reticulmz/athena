@@ -10,8 +10,13 @@ from osu_server.domain.auth import LoginResponse
 from osu_server.domain.channel import Channel, ChannelType
 from osu_server.domain.role import Privileges
 from osu_server.domain.session import SessionData
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.domain.user import User
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.bancho.protocol.s2c.login import (
+    user_presence,
+    user_presence_bundle,
+)
 from osu_server.transports.bancho.workflows.login_response_builder import (
     LoginResponseBuilder,
 )
@@ -147,8 +152,9 @@ _INITIAL_PACKETS = [
     ServerPacketID.LOGIN_REPLY,
     ServerPacketID.PROTOCOL_VERSION,
     ServerPacketID.LOGIN_PERMISSIONS,
-    ServerPacketID.USER_PRESENCE,
+    ServerPacketID.USER_PRESENCE,  # connecting user
     ServerPacketID.USER_STATS,
+    ServerPacketID.USER_PRESENCE,  # BanchoBot
 ]
 
 _COMPLETION_PACKETS = [
@@ -165,8 +171,82 @@ _COMPLETION_PACKETS = [
 class TestLoginResponseBuilder:
     """Verify LoginResponseBuilder.build() produces correct S2C packet order.
 
-    Requirements: 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 4.4, 6.1
+    Requirements: 1.1, 1.2, 1.4, 2.4, 3.1, 3.2
     """
+
+    # -- BanchoBot presence & roster tests ---------------------------------
+
+    async def test_banchobot_presence_packet_content(self) -> None:
+        """BanchoBot USER_PRESENCE uses deterministic defaults and
+        BANCHO_BOT_IDENTITY fields."""
+        builder = _make_builder()
+        result = await builder.build(_login_response())
+
+        expected = user_presence(
+            user_id=BANCHO_BOT_IDENTITY.user_id,
+            username=BANCHO_BOT_IDENTITY.username,
+            timezone=24,
+            country_id=0,
+            permissions=0,
+            mode=0,
+            longitude=0.0,
+            latitude=0.0,
+            rank=0,
+        )
+        assert expected in result
+
+    async def test_banchobot_presence_before_bundle(self) -> None:
+        """BanchoBot USER_PRESENCE appears earlier in the stream than
+        USER_PRESENCE_BUNDLE."""
+        builder = _make_builder()
+        result = await builder.build(_login_response())
+
+        ids = _extract_packet_ids(result)
+
+        # Find last USER_PRESENCE (BanchoBot) position
+        presence_positions = [
+            i for i, pid in enumerate(ids) if pid == ServerPacketID.USER_PRESENCE
+        ]
+        assert len(presence_positions) >= 2, (
+            f"Expected at least 2 USER_PRESENCE packets, got {len(presence_positions)}"
+        )
+        banchobot_presence_pos = presence_positions[-1]
+
+        # Find USER_PRESENCE_BUNDLE position (should be last packet)
+        try:
+            bundle_pos = ids.index(ServerPacketID.USER_PRESENCE_BUNDLE)
+        except ValueError:
+            bundle_pos = -1
+
+        assert bundle_pos > banchobot_presence_pos, (
+            f"USER_PRESENCE_BUNDLE (pos {bundle_pos}) must appear after "
+            f"BanchoBot USER_PRESENCE (pos {banchobot_presence_pos})"
+        )
+
+    async def test_presence_bundle_includes_banchobot_and_user(self) -> None:
+        """USER_PRESENCE_BUNDLE contains BANCHO_BOT_IDENTITY.user_id and
+        connecting user ID, duplicate-free."""
+        user_id = 42
+        builder = _make_builder()
+        result = await builder.build(_login_response(user_id=user_id))
+
+        expected = user_presence_bundle([BANCHO_BOT_IDENTITY.user_id, user_id])
+        assert expected in result
+
+    async def test_presence_bundle_no_duplicate_when_user_is_banchobot_id(
+        self,
+    ) -> None:
+        """When connecting user has the same ID as BanchoBot, the bundle
+        contains that ID only once."""
+        bot_id = BANCHO_BOT_IDENTITY.user_id
+        builder = _make_builder()
+        result = await builder.build(_login_response(user_id=bot_id))
+
+        # Bundle must contain bot_id exactly once
+        expected = user_presence_bundle([bot_id])
+        assert expected in result
+
+    # -- existing packet order tests ---------------------------------------
 
     async def test_packet_order_without_channels(self) -> None:
         """Initial and completion packets in exact order when no channels exist."""

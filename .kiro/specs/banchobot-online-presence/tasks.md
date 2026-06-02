@@ -14,7 +14,7 @@
   - _Requirements: 3.3, 3.4_
 
 - [ ] 2. Core online roster and sender behavior
-- [ ] 2.1 Add BanchoBot to the successful login roster
+- [x] 2.1 Add BanchoBot to the successful login roster
   - Build the initial roster from BanchoBot plus the relevant active human users without duplicate IDs.
   - Emit BanchoBot presence before the roster bundle and before any BanchoBot command response can be displayed by the client.
   - Preserve the existing connecting-user presence, stats packet, channel packets, friends packet, and silence packet behavior.

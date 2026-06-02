@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.services.permission_service import PermissionService
 from osu_server.transports.bancho.protocol.s2c.login import (
@@ -84,6 +85,20 @@ class LoginResponseBuilder:
             ),
         ]
 
+        packets.append(
+            user_presence(
+                user_id=BANCHO_BOT_IDENTITY.user_id,
+                username=BANCHO_BOT_IDENTITY.username,
+                timezone=24,
+                country_id=0,
+                permissions=0,
+                mode=0,
+                longitude=0.0,
+                latitude=0.0,
+                rank=0,
+            )
+        )
+
         packets.extend(
             channel_available(name=channel.name, topic=channel.topic, user_count=user_count)
             for channel, user_count in visible_channels
@@ -96,12 +111,15 @@ class LoginResponseBuilder:
             )
             for channel, user_count in autojoin_channels
         )
+
+        roster_ids = list(dict.fromkeys([BANCHO_BOT_IDENTITY.user_id, user.id]))
+
         packets.extend(
             [
                 channel_info_complete(),
                 friends_list([]),
                 silence_info(0),
-                user_presence_bundle([user.id]),
+                user_presence_bundle(roster_ids),
             ]
         )
 
