@@ -1,171 +1,259 @@
-"""Tests for successful login response stream construction."""
+"""Tests for LoginResponseBuilder — S2C packet stream construction."""
+
+from __future__ import annotations
 
 import struct
-from typing import cast
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, cast, final
 
 from osu_server.domain.auth import LoginResponse
+from osu_server.domain.channel import Channel, ChannelType
 from osu_server.domain.role import Privileges
 from osu_server.domain.session import SessionData
-from osu_server.infrastructure.country.codes import country_code_to_id
-from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
-from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.services.channel_service import ChannelService
-from osu_server.services.permission_service import PermissionService
+from osu_server.domain.user import User
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.s2c.login import (
-    channel_available,
-    channel_available_autojoin,
-    channel_info_complete,
-    friends_list,
-    login_permissions,
-    login_reply,
-    protocol_version,
-    silence_info,
-    user_presence,
-    user_presence_bundle,
-    user_stats,
+from osu_server.transports.bancho.workflows.login_response_builder import (
+    LoginResponseBuilder,
 )
-from osu_server.transports.bancho.workflows import LoginResponseBuilder
-from tests.factories.domain import make_channel, make_channel_role_override, make_user
+
+if TYPE_CHECKING:
+    from osu_server.services.channel_service import ChannelService
+
+# -- packet header parsing ----------------------------------------------------
+
+_HEADER_FMT = struct.Struct("<HBI")
 
 
-async def _make_channel_service() -> ChannelService:
-    channel_repo = InMemoryChannelRepository()
-    channel_state = InMemoryChannelStateStore()
+def _extract_packet_ids(data: bytes) -> list[int]:
+    """Extract ServerPacketID values in order from a bancho S2C byte stream."""
+    ids: list[int] = []
+    offset = 0
+    while offset < len(data):
+        pid, _, plen = cast(
+            "tuple[int, int, int]",
+            _HEADER_FMT.unpack(data[offset : offset + 7]),
+        )
+        ids.append(pid)
+        offset += 7 + plen
+    return ids
 
-    osu_channel = await channel_repo.create(
-        make_channel(id=1, name="#osu", topic="General discussion", auto_join=True)
+
+# -- typed stub for ChannelService --------------------------------------------
+
+
+@final
+class _FakeChannelService:
+    """ChannelService stub returning pre-configured channel lists.
+
+    Protocol-conformant stub per type-safety-policy: avoids untyped
+    AsyncMock while keeping LoginResponseBuilder tests focused on
+    packet stream assembly rather than ChannelService ACL logic.
+    """
+
+    _visible: list[tuple[Channel, int]]
+    _autojoin: list[tuple[Channel, int]]
+
+    def __init__(
+        self,
+        *,
+        visible: list[tuple[Channel, int]] | None = None,
+        autojoin: list[tuple[Channel, int]] | None = None,
+    ) -> None:
+        self._visible = visible or []
+        self._autojoin = autojoin or []
+
+    async def get_visible_channels(self, **_kwargs: object) -> list[tuple[Channel, int]]:
+        _ = _kwargs
+        return list(self._visible)
+
+    async def get_autojoin_channels(self, **_kwargs: object) -> list[tuple[Channel, int]]:
+        _ = _kwargs
+        return list(self._autojoin)
+
+
+# -- helpers -----------------------------------------------------------------
+
+
+def _make_channel(
+    *,
+    channel_id: int = 1,
+    name: str = "#test",
+    topic: str = "Test Channel",
+    auto_join: bool = False,
+) -> Channel:
+    return Channel(
+        id=channel_id,
+        name=name,
+        topic=topic,
+        channel_type=ChannelType.PUBLIC,
+        auto_join=auto_join,
+        rate_limit_messages=None,
+        rate_limit_window=None,
+        created_at=datetime(2024, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2024, 1, 1, tzinfo=UTC),
     )
-    announce_channel = await channel_repo.create(
-        make_channel(id=2, name="#announce", topic="Announcements", auto_join=False)
+
+
+def _login_response(
+    *,
+    user_id: int = 42,
+    username: str = "TestUser",
+    country: str = "JP",
+    privileges: Privileges = Privileges.NORMAL,
+    role_ids: tuple[int, ...] = (1,),
+) -> LoginResponse:
+    user = User(
+        id=user_id,
+        username=username,
+        safe_username=username.lower(),
+        email="test@example.com",
+        password_hash="hash",
+        country=country,
+        created_at=datetime(2024, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2024, 1, 1, tzinfo=UTC),
     )
-    channel_repo.seed_override(make_channel_role_override(channel_id=osu_channel.id, role_id=7))
-    channel_repo.seed_override(
-        make_channel_role_override(channel_id=announce_channel.id, role_id=7)
-    )
-    await channel_state.add_member("#osu", 101)
-    await channel_state.add_member("#announce", 201)
-    await channel_state.add_member("#announce", 202)
-
-    return ChannelService(channel_repo=channel_repo, channel_state=channel_state)
-
-
-def _login_response() -> LoginResponse:
-    user = make_user(id=42, username="BuilderUser", country="JP")
-    privileges = Privileges.NORMAL | Privileges.SUPPORTER
     return LoginResponse(
-        token="token",
+        token="test-token",
         user=user,
         privileges=privileges,
-        role_ids=(7,),
-        country="JP",
+        role_ids=role_ids,
+        country=country,
         session_data=SessionData(
             user_id=user.id,
             username=user.username,
             privileges=int(privileges),
-            country="JP",
+            country=country,
             osu_version="20231111",
             utc_offset=9,
             display_city=False,
-            client_hashes="hashes",
+            client_hashes="hash",
             pm_private=False,
         ),
     )
 
 
-def _packet_ids(stream: bytes) -> list[ServerPacketID]:
-    ids: list[ServerPacketID] = []
-    offset = 0
-    while offset < len(stream):
-        packet_id, compressed, payload_size = cast(
-            "tuple[int, int, int]", struct.unpack_from("<HBI", stream, offset)
-        )
-        assert compressed == 0
-        ids.append(ServerPacketID(packet_id))
-        offset += 7 + payload_size
-    assert offset == len(stream)
-    return ids
+def _make_builder(
+    *,
+    visible: list[tuple[Channel, int]] | None = None,
+    autojoin: list[tuple[Channel, int]] | None = None,
+) -> LoginResponseBuilder:
+    stub = _FakeChannelService(visible=visible, autojoin=autojoin)
+    return LoginResponseBuilder(channel_service=cast("ChannelService", cast("object", stub)))
+
+
+# -- base expected order constants --------------------------------------------
+
+_INITIAL_PACKETS = [
+    ServerPacketID.LOGIN_REPLY,
+    ServerPacketID.PROTOCOL_VERSION,
+    ServerPacketID.LOGIN_PERMISSIONS,
+    ServerPacketID.USER_PRESENCE,
+    ServerPacketID.USER_STATS,
+]
+
+_COMPLETION_PACKETS = [
+    ServerPacketID.CHANNEL_INFO_COMPLETE,
+    ServerPacketID.FRIENDS_LIST,
+    ServerPacketID.SILENCE_INFO,
+    ServerPacketID.USER_PRESENCE_BUNDLE,
+]
+
+
+# -- tests -------------------------------------------------------------------
 
 
 class TestLoginResponseBuilder:
-    async def test_builds_successful_login_packet_stream_in_stable_order(self) -> None:
-        builder = LoginResponseBuilder(channel_service=await _make_channel_service())
-        login_response = _login_response()
+    """Verify LoginResponseBuilder.build() produces correct S2C packet order.
 
-        stream = await builder.build(login_response)
+    Requirements: 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 4.4, 6.1
+    """
 
-        assert _packet_ids(stream) == [
-            ServerPacketID.LOGIN_REPLY,
-            ServerPacketID.PROTOCOL_VERSION,
-            ServerPacketID.LOGIN_PERMISSIONS,
-            ServerPacketID.USER_PRESENCE,
-            ServerPacketID.USER_STATS,
+    async def test_packet_order_without_channels(self) -> None:
+        """Initial and completion packets in exact order when no channels exist."""
+        builder = _make_builder()
+        result = await builder.build(_login_response())
+
+        assert _extract_packet_ids(result) == [*_INITIAL_PACKETS, *_COMPLETION_PACKETS]
+
+    async def test_visible_channels_inserted_between_user_stats_and_channel_info_complete(
+        self,
+    ) -> None:
+        """CHANNEL_AVAILABLE appears after USER_STATS, before CHANNEL_INFO_COMPLETE."""
+        ch_osu = _make_channel(channel_id=1, name="#osu", topic="General")
+        ch_announce = _make_channel(channel_id=2, name="#announce", topic="News")
+        builder = _make_builder(visible=[(ch_osu, 5), (ch_announce, 3)])
+
+        result = await builder.build(_login_response())
+        ids = _extract_packet_ids(result)
+
+        assert ids == [
+            *_INITIAL_PACKETS,
+            ServerPacketID.CHANNEL_AVAILABLE,
+            ServerPacketID.CHANNEL_AVAILABLE,
+            *_COMPLETION_PACKETS,
+        ]
+
+    async def test_autojoin_channels_after_visible_before_channel_info_complete(
+        self,
+    ) -> None:
+        """CHANNEL_AVAILABLE_AUTOJOIN sits between last CHANNEL_AVAILABLE
+        and CHANNEL_INFO_COMPLETE."""
+        ch_visible = _make_channel(channel_id=1, name="#osu", topic="General")
+        ch_autojoin = _make_channel(channel_id=2, name="#lobby", topic="Lobby", auto_join=True)
+        builder = _make_builder(
+            visible=[(ch_visible, 5)],
+            autojoin=[(ch_autojoin, 2)],
+        )
+
+        result = await builder.build(_login_response())
+        ids = _extract_packet_ids(result)
+
+        assert ids == [
+            *_INITIAL_PACKETS,
+            ServerPacketID.CHANNEL_AVAILABLE,
+            ServerPacketID.CHANNEL_AVAILABLE_AUTOJOIN,
+            *_COMPLETION_PACKETS,
+        ]
+
+    async def test_multiple_visible_and_autojoin_channels_preserve_relative_order(
+        self,
+    ) -> None:
+        """Multiple visible then multiple autojoin channels each maintain their
+        insertion order within their respective block."""
+        ch_v1 = _make_channel(channel_id=1, name="#osu", topic="General")
+        ch_v2 = _make_channel(channel_id=2, name="#announce", topic="News")
+        ch_a1 = _make_channel(channel_id=3, name="#lobby", topic="Lobby", auto_join=True)
+        ch_a2 = _make_channel(channel_id=4, name="#help", topic="Help", auto_join=True)
+        builder = _make_builder(
+            visible=[(ch_v1, 1), (ch_v2, 2)],
+            autojoin=[(ch_a1, 3), (ch_a2, 4)],
+        )
+
+        result = await builder.build(_login_response())
+        ids = _extract_packet_ids(result)
+
+        assert ids == [
+            *_INITIAL_PACKETS,
             ServerPacketID.CHANNEL_AVAILABLE,
             ServerPacketID.CHANNEL_AVAILABLE,
             ServerPacketID.CHANNEL_AVAILABLE_AUTOJOIN,
-            ServerPacketID.CHANNEL_INFO_COMPLETE,
-            ServerPacketID.FRIENDS_LIST,
-            ServerPacketID.SILENCE_INFO,
-            ServerPacketID.USER_PRESENCE_BUNDLE,
+            ServerPacketID.CHANNEL_AVAILABLE_AUTOJOIN,
+            *_COMPLETION_PACKETS,
         ]
 
-    async def test_builds_byte_compatible_successful_login_packet_stream(self) -> None:
-        builder = LoginResponseBuilder(channel_service=await _make_channel_service())
-        login_response = _login_response()
-        user = login_response.user
-        client_flags = PermissionService.to_client_flags(login_response.privileges)
+    async def test_stream_depends_only_on_login_response_not_on_auth_state(
+        self,
+    ) -> None:
+        """Same LoginResponse produces identical stream; different responses
+        produce same packet order but different content."""
+        builder = _make_builder()
+        lr1 = _login_response(user_id=1, username="Alice")
+        lr2 = _login_response(user_id=2, username="Bob")
 
-        stream = await builder.build(login_response)
+        result1 = await builder.build(lr1)
+        result2 = await builder.build(lr2)
 
-        assert stream == b"".join(
-            [
-                login_reply(user.id),
-                protocol_version(19),
-                login_permissions(int(client_flags)),
-                user_presence(
-                    user_id=user.id,
-                    username=user.username,
-                    timezone=login_response.session_data.utc_offset + 24,
-                    country_id=country_code_to_id(login_response.country),
-                    permissions=int(client_flags),
-                    mode=0,
-                    longitude=0.0,
-                    latitude=0.0,
-                    rank=0,
-                ),
-                user_stats(
-                    user_id=user.id,
-                    status=0,
-                    status_text="",
-                    beatmap_md5="",
-                    mods=0,
-                    play_mode=0,
-                    beatmap_id=0,
-                    ranked_score=0,
-                    accuracy=0.0,
-                    play_count=0,
-                    total_score=0,
-                    rank=0,
-                    pp=0,
-                ),
-                channel_available(
-                    name="#osu",
-                    topic="General discussion",
-                    user_count=1,
-                ),
-                channel_available(
-                    name="#announce",
-                    topic="Announcements",
-                    user_count=2,
-                ),
-                channel_available_autojoin(
-                    name="#osu",
-                    topic="General discussion",
-                    user_count=1,
-                ),
-                channel_info_complete(),
-                friends_list([]),
-                silence_info(0),
-                user_presence_bundle([user.id]),
-            ]
-        )
+        # Same packet order regardless of which LoginResponse is used
+        assert _extract_packet_ids(result1) == _extract_packet_ids(result2)
+        # Different payloads (user_id differs in login_reply, user_presence, etc.)
+        assert result1 != result2

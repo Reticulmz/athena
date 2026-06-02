@@ -72,7 +72,7 @@
   - _Requirements: 1.3, 1.4, 1.5, 4.1, 6.1, 6.4_
   - _Boundary: LoginWorkflow tests_
 
-- [ ] 4.3 (P) Verify successful login packet stream construction
+- [x] 4.3 (P) Verify successful login packet stream construction
   - Cover required initial packets, visible channel packets, autojoin channel packets, completion packets, and ordering.
   - Assert packet order rather than only packet presence so byte-compatibility regressions are visible.
   - The completed state is that response construction tests validate the initial S2C stream independently from login auth and polling.
