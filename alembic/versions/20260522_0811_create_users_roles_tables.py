@@ -96,6 +96,18 @@ def upgrade() -> None:
         ],
     )
 
+    # Seed BanchoBot with reserved user id=1.
+    # id=1 is the protocol-level BanchoBot identity (osu! client convention).
+    # Must be seeded here (the first migration that creates the users table)
+    # so no other user can claim id=1 before BanchoBot.
+    op.execute(
+        """
+        INSERT INTO users (id, username, safe_username, email, password_hash, country)
+        VALUES (1, 'BanchoBot', 'banchobot', 'bot@internal', '!invalid', 'XX')
+        ON CONFLICT DO NOTHING
+        """
+    )
+
 
 def downgrade() -> None:
     op.drop_table("user_roles")

@@ -115,16 +115,6 @@ def upgrade() -> None:
         ["sender_id", "created_at"],
     )
 
-    # Seed BanchoBot user with reserved user id=1.
-    # id=1 is the protocol-level BanchoBot identity (osu! client convention).
-    op.execute(
-        """
-        INSERT INTO users (id, username, safe_username, email, password_hash, country)
-        VALUES (1, 'BanchoBot', 'banchobot', 'bot@internal', '!invalid', 'XX')
-        ON CONFLICT DO NOTHING
-        """
-    )
-
     # Seed default channels
     channels_table = sa.table(
         "channels",
@@ -171,7 +161,6 @@ def downgrade() -> None:
     # Remove seeded data (overrides first due to FK)
     op.execute("DELETE FROM channel_role_overrides")
     op.execute("DELETE FROM channels WHERE name IN ('#osu', '#announce')")
-    op.execute("DELETE FROM users WHERE safe_username = 'banchobot' AND email = 'bot@internal'")
 
     op.drop_table("channel_role_overrides")
     op.drop_table("channels")
