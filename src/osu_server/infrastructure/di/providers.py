@@ -102,6 +102,7 @@ async def build_container(config: AppConfig) -> Container:
     # -- Shutdown hooks -------------------------------------------------------
     container.register_shutdown_hook(engine.dispose)
     container.register_shutdown_hook(valkey.close)
+    container.register_shutdown_hook(broker.shutdown)
     container.register_shutdown_hook(http_client.aclose)
 
     return container

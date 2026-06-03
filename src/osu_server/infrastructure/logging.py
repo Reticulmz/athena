@@ -279,7 +279,6 @@ def setup_logging(config: AppConfig) -> None:
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
-        structlog.processors.ExceptionRenderer(),
         structlog.processors.UnicodeDecoder(),
     ]
 
@@ -320,6 +319,9 @@ def setup_logging(config: AppConfig) -> None:
 
     # --- Root logger setup ---
     root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        if hasattr(handler, "close"):
+            handler.close()
     root_logger.handlers.clear()
     root_logger.setLevel(config.log_level)
     root_logger.addHandler(console_handler)
@@ -345,6 +347,9 @@ def _override_uvicorn_handlers(
     """Replace uvicorn logger handlers so their output goes through structlog."""
     for logger_name in ("uvicorn.error", "uvicorn.access"):
         uvicorn_logger = logging.getLogger(logger_name)
+        for handler in uvicorn_logger.handlers:
+            if hasattr(handler, "close"):
+                handler.close()
         uvicorn_logger.handlers.clear()
         uvicorn_logger.addHandler(console_handler)
         if json_handler is not None:

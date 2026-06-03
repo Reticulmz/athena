@@ -150,6 +150,15 @@ def _reset_logging() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
 
     yield
 
+    # Close handlers added by setup_logging
+    # (including uvicorn handlers via _override_uvicorn_handlers)
+    for handler in root.handlers:
+        if hasattr(handler, "close"):
+            handler.close()
+    for logger_name in ("uvicorn.error", "uvicorn.access"):
+        for handler in logging.getLogger(logger_name).handlers:
+            if hasattr(handler, "close"):
+                handler.close()
     root.handlers = original_handlers
     root.level = original_level
     structlog.reset_defaults()

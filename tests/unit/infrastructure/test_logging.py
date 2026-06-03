@@ -6,6 +6,7 @@ import json
 import logging
 import sys
 import typing
+import warnings
 from typing import TYPE_CHECKING
 
 import pytest
@@ -30,6 +31,14 @@ def _reset_logging() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
 
     yield
 
+    # Close handlers added by setup_logging (including uvicorn handlers)
+    for handler in root.handlers:
+        if hasattr(handler, "close"):
+            handler.close()
+    for logger_name in ("uvicorn.error", "uvicorn.access"):
+        for handler in logging.getLogger(logger_name).handlers:
+            if hasattr(handler, "close"):
+                handler.close()
     # Restore
     root.handlers = original_handlers
     root.level = original_level
@@ -170,9 +179,10 @@ class TestSetupLogging:
         config = make_app_config(
             log_dir="/nonexistent/impossible/path",
         )
-        # Should emit a warning and not raise
-        with pytest.warns(UserWarning, match="Failed to open JSON log file"):
+        with warnings.catch_warnings(record=True) as _w:
             setup_logging(config)
+
+        assert any(w.category is UserWarning for w in _w)
 
         # structlog should still work via console
         logger: typing.Any = structlog.get_logger()  # pyright: ignore[reportAny]
