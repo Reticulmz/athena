@@ -36,9 +36,10 @@ from osu_server.repositories.sqlalchemy.role_repository import SQLAlchemyRoleRep
 from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
+from osu_server.services.bancho_bot.command_service import CommandService
+from osu_server.services.bancho_bot.commands import create_builtin_registry
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
-from osu_server.services.command_service import CommandService
 from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
@@ -196,7 +197,8 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(PrivateMessageService, lambda: pm_service)
 
     # -- CommandService (singleton) -------------------------------------------
-    command_service = CommandService(bot_identity=identity)
+    builtin_registry = create_builtin_registry()
+    command_service = CommandService(builtin_registry)
     container.register_singleton(CommandService, lambda: command_service)
 
     # -- Job Queue (broker registration) --------------------------------------
@@ -263,7 +265,6 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         channel_service=channel_service,
         session_store=session_store,
         packet_queue=packet_queue,
-        command_service=command_service,
     )
     lifecycle_handlers.register_all(packet_dispatcher)
     chat_handlers.register_all(packet_dispatcher)

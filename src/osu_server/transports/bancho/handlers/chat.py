@@ -22,6 +22,7 @@ from osu_server.domain.chat import (
     SendChannelMessageInput,
     SendPrivateMessageInput,
 )
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.transports.bancho.handlers.base import HandlerGroup, handles
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.bancho.protocol.s2c.chat import (
@@ -39,7 +40,6 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.channel_service import ChannelService
     from osu_server.services.chat_service import ChatService
-    from osu_server.services.command_service import CommandService
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -56,7 +56,6 @@ class ChatHandlers(HandlerGroup):
     _channel_service: ChannelService
     _session_store: SessionStore
     _packet_queue: PacketQueue
-    _command_service: CommandService
 
     def __init__(
         self,
@@ -65,13 +64,11 @@ class ChatHandlers(HandlerGroup):
         channel_service: ChannelService,
         session_store: SessionStore,
         packet_queue: PacketQueue,
-        command_service: CommandService,
     ) -> None:
         self._chat_service = chat_service
         self._channel_service = channel_service
         self._session_store = session_store
         self._packet_queue = packet_queue
-        self._command_service = command_service
 
     @handles(ClientPacketID.SEND_MESSAGE)
     async def handle_send_message(self, payload: bytes, user_id: int) -> None:
@@ -111,7 +108,7 @@ class ChatHandlers(HandlerGroup):
         )
         command_packet = None
         if result.command_response is not None:
-            bot = self._command_service.bot_identity
+            bot = BANCHO_BOT_IDENTITY
             command_packet = send_message(
                 sender=bot.username,
                 content=result.command_response.content,
@@ -166,7 +163,7 @@ class ChatHandlers(HandlerGroup):
             )
 
         if result.command_response is not None:
-            bot = self._command_service.bot_identity
+            bot = BANCHO_BOT_IDENTITY
             await self._packet_queue.enqueue(
                 user_id,
                 send_message(

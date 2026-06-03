@@ -47,9 +47,9 @@ from osu_server.repositories.memory.chat_repository import InMemoryChatRepositor
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
+from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
-from osu_server.services.command_service import CommandService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService

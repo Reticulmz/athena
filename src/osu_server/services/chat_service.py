@@ -7,7 +7,6 @@ import structlog
 
 from osu_server.domain.chat import (
     ChannelMessageResult,
-    ChatCommandResponse,
     PrivateMessageResult,
     SendChannelMessageInput,
     SendPrivateMessageInput,
@@ -24,8 +23,8 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
     from osu_server.repositories.interfaces.chat_repository import ChatRepository
     from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.services.bancho_bot.command_service import CommandService
     from osu_server.services.channel_service import ChannelService
-    from osu_server.services.command_service import CommandService
     from osu_server.services.private_message_service import PMDeliveryResult, PrivateMessageService
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -111,12 +110,9 @@ class ChatService:
             return None
 
         # Command detection (after routing per design pipeline)
-        command_res = await self._command_service.execute(
+        command_response = await self._command_service.execute(
             sender.user_id, sender.username, destination.name, valid_content
         )
-        command_response = None
-        if command_res:
-            command_response = ChatCommandResponse(target=command_res[0], content=command_res[1])
 
         # Fire persistence event — commands are also delivered to members
         await self._event_bus.fire(
@@ -225,12 +221,9 @@ class ChatService:
             return None
 
         # Command detection
-        command_res = await self._command_service.execute(
+        command_response = await self._command_service.execute(
             sender.user_id, sender.username, destination.username, valid_content
         )
-        command_response = None
-        if command_res:
-            command_response = ChatCommandResponse(target=command_res[0], content=command_res[1])
 
         # Routing — resolve PM target
         pm_result: PMDeliveryResult = await self._private_message_service.deliver_message(

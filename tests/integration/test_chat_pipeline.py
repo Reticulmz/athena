@@ -21,9 +21,10 @@ from osu_server.repositories.memory.channel_repository import InMemoryChannelRep
 from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.services.bancho_bot.command_service import CommandService
+from osu_server.services.bancho_bot.commands import create_builtin_registry
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
-from osu_server.services.command_service import CommandService
 from osu_server.services.private_message_service import PrivateMessageService
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
@@ -136,7 +137,7 @@ async def _setup_pipeline() -> ChatPipeline:
             user_repo=user_repo,
             session_store=session_store,
         ),
-        command_service=CommandService(),
+        command_service=CommandService(create_builtin_registry()),
         session_store=session_store,
         event_bus=event_bus,
         rate_limiter=InMemoryRateLimiter(time_func=lambda: 0.0),
@@ -156,7 +157,6 @@ async def _setup_pipeline() -> ChatPipeline:
         channel_service=channel_service,
         session_store=session_store,
         packet_queue=packet_queue,
-        command_service=CommandService(),
     )
     handlers.register_all(dispatcher)
 
@@ -304,10 +304,10 @@ class TestCommandPipeline:
         )
 
         bot_response = send_message(
-            sender=CommandService.BANCHO_BOT_NAME,
+            sender=BANCHO_BOT_IDENTITY.username,
             content="Sender rolls 50 point(s)",
             target="#osu",
-            sender_id=CommandService.BANCHO_BOT_ID,
+            sender_id=BANCHO_BOT_IDENTITY.user_id,
         )
         target_packets = await pipeline.packet_queue.dequeue_all(pipeline.target_id)
         assert (

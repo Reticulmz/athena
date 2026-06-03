@@ -11,9 +11,10 @@ from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChan
 from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
 from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
+from osu_server.services.bancho_bot.command_service import CommandService
+from osu_server.services.bancho_bot.commands import create_builtin_registry
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
-from osu_server.services.command_service import CommandService
 from osu_server.services.private_message_service import PrivateMessageService
 
 if TYPE_CHECKING:
@@ -42,7 +43,7 @@ def create_worker_chat_service(
         user_repo=user_repo,
         session_store=session_store,
     )
-    command_service = CommandService()
+    command_service = CommandService(create_builtin_registry())
     event_bus = InMemoryEventBus()
     rate_limiter = ValkeyRateLimiter(valkey)
     chat_repository = SQLAlchemyChatRepository(session_factory)

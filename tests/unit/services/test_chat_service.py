@@ -30,9 +30,10 @@ from osu_server.repositories.interfaces.chat_repository import (
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.services.bancho_bot.command_service import CommandService
+from osu_server.services.bancho_bot.commands import create_builtin_registry
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
-from osu_server.services.command_service import CommandService
 from osu_server.services.private_message_service import PrivateMessageService
 
 _NOW = datetime.now(UTC)
@@ -214,7 +215,7 @@ def private_message_service(
 
 @pytest.fixture
 def command_service() -> CommandService:
-    return CommandService()
+    return CommandService(create_builtin_registry())
 
 
 @pytest.fixture

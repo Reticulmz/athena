@@ -52,14 +52,14 @@
   - _Boundary: CommandService tests_
 
 - [ ] 4. Chat pipeline and Bancho integration を移行する
-- [ ] 4.1 Chat service と composition roots を新しい command service に接続する
+- [x] 4.1 Chat service と composition roots を新しい command service に接続する
   - ChatService が registry-backed command service を constructor injection で使い、既存の channel / PM command detection point を維持する。
   - app runtime と worker runtime が builtin command catalog から command service を構築する。
   - channel command response と PM command response が既存 result objects に残ることを integration-level tests で確認する。
   - _Requirements: 1.1, 1.2, 5.2, 5.3_
   - _Boundary: ChatService integration, CompositionRoot_
   - _Depends: 3.1_
-- [ ] 4.2 BanchoBot packet author identity を system user identity に移す
+- [x] 4.2 BanchoBot packet author identity を system user identity に移す
   - command response packet が existing BanchoBot user id と username で build されることを handler tests で確認する。
   - transport handler が command execution service に identity constants を求めなくなることを確認する。
   - channel と PM の enqueue behavior が既存 expectations と一致することを確認する。
