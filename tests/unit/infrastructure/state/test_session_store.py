@@ -6,7 +6,9 @@ from dataclasses import replace
 
 import pytest
 
+from osu_server.domain.role import Privileges
 from osu_server.domain.session import SessionData
+from osu_server.domain.session_authorization import SessionAuthorization
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 
@@ -197,6 +199,171 @@ async def test_get_all_user_ids_excludes_deleted(store: InMemorySessionStore) ->
     result = await store.get_all_user_ids()
 
     assert result == [2]
+
+
+# ---------------------------------------------------------------------------
+# update_authorization (Feature Flag Protocol — RED phase with flag OFF)
+# ---------------------------------------------------------------------------
+
+
+async def test_update_authorization_updates_privileges_and_role_ids(
+    store: InMemorySessionStore,
+) -> None:
+    """update_authorization updates privileges and role_ids on the active session."""
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+    new_auth = SessionAuthorization(
+        privileges=Privileges.NORMAL | Privileges.MODERATOR,
+        role_ids=(1, 2),
+    )
+    result = await store.update_authorization(user_id=1, authorization=new_auth)
+
+    assert result is True
+    session = await store.get("abc-123")
+    assert session is not None
+    assert session.privileges == int(Privileges.NORMAL | Privileges.MODERATOR)
+    assert session.role_ids == (1, 2)
+
+
+async def test_update_authorization_preserves_other_fields(
+    store: InMemorySessionStore,
+) -> None:
+    """update_authorization preserves all non-authorization session fields."""
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+    new_auth = SessionAuthorization(
+        privileges=Privileges.MODERATOR,
+        role_ids=(3,),
+    )
+    _ = await store.update_authorization(user_id=1, authorization=new_auth)
+
+    session = await store.get("abc-123")
+    assert session is not None
+    assert session.user_id == 1
+    assert session.username == "peppy"
+    assert session.country == "JP"
+    assert session.osu_version == "20231111"
+    assert session.utc_offset == 9
+    assert session.display_city is True
+    assert session.client_hashes == "hash1:hash2"
+    assert session.pm_private is False
+    assert session.silence_end == 0
+
+
+async def test_update_authorization_preserves_token_lookup(
+    store: InMemorySessionStore,
+) -> None:
+    """After update_authorization, get(token) returns the updated session."""
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+    new_auth = SessionAuthorization(
+        privileges=Privileges.NORMAL,
+        role_ids=(),
+    )
+    _ = await store.update_authorization(user_id=1, authorization=new_auth)
+
+    session = await store.get("abc-123")
+    assert session is not None
+    assert session.privileges == int(Privileges.NORMAL)
+    assert session.role_ids == ()
+
+
+async def test_update_authorization_preserves_user_lookup(
+    store: InMemorySessionStore,
+) -> None:
+    """After update_authorization, get_by_user(user_id) returns the updated session."""
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+    new_auth = SessionAuthorization(
+        privileges=Privileges.VERIFIED,
+        role_ids=(5,),
+    )
+    _ = await store.update_authorization(user_id=1, authorization=new_auth)
+
+    session = await store.get_by_user(user_id=1)
+    assert session is not None
+    assert session.privileges == int(Privileges.VERIFIED)
+    assert session.role_ids == (5,)
+
+
+async def test_update_authorization_returns_false_for_offline_user(
+    store: InMemorySessionStore,
+) -> None:
+    """update_authorization returns False for a user without an active session."""
+    new_auth = SessionAuthorization(
+        privileges=Privileges.NORMAL,
+        role_ids=(),
+    )
+    result = await store.update_authorization(user_id=9999, authorization=new_auth)
+
+    assert result is False
+    assert await store.get_by_user(user_id=9999) is None
+    assert await store.get_all_user_ids() == []
+
+
+async def test_update_authorization_does_not_affect_other_users(
+    store: InMemorySessionStore,
+) -> None:
+    """update_authorization only modifies the targeted user's session."""
+    other_session = replace(_SESSION, user_id=2, username="cookiezi")
+    await store.create(user_id=1, token="token-1", data=_SESSION)
+    await store.create(user_id=2, token="token-2", data=other_session)
+
+    new_auth = SessionAuthorization(
+        privileges=Privileges.MODERATOR,
+        role_ids=(1,),
+    )
+    _ = await store.update_authorization(user_id=1, authorization=new_auth)
+
+    session1 = await store.get("token-1")
+    assert session1 is not None
+    assert session1.privileges == int(Privileges.MODERATOR)
+
+    session2 = await store.get("token-2")
+    assert session2 is not None
+    assert session2.privileges == 1  # original _SESSION value unchanged
+
+
+async def test_update_authorization_idempotent(
+    store: InMemorySessionStore,
+) -> None:
+    """Repeated update_authorization with the same authorization has the same result."""
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+    new_auth = SessionAuthorization(
+        privileges=Privileges.SUPPORTER | Privileges.VERIFIED,
+        role_ids=(1, 2),
+    )
+    result1 = await store.update_authorization(user_id=1, authorization=new_auth)
+    result2 = await store.update_authorization(user_id=1, authorization=new_auth)
+
+    assert result1 is True
+    assert result2 is True
+    session = await store.get("abc-123")
+    assert session is not None
+    assert session.privileges == int(Privileges.SUPPORTER | Privileges.VERIFIED)
+    assert session.role_ids == (1, 2)
+
+
+async def test_update_authorization_token_mapping_unchanged(
+    store: InMemorySessionStore,
+) -> None:
+    """update_authorization does not change token-to-user or user-to-token mappings."""
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+    new_auth = SessionAuthorization(
+        privileges=Privileges.NONE,
+        role_ids=(),
+    )
+    _ = await store.update_authorization(user_id=1, authorization=new_auth)
+
+    session_by_user = await store.get_by_user(user_id=1)
+    assert session_by_user is not None
+    assert session_by_user.user_id == 1
+
+    session_by_token = await store.get("abc-123")
+    assert session_by_token is not None
+    assert session_by_token.user_id == 1
 
 
 # ---------------------------------------------------------------------------

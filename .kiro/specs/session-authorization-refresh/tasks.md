@@ -15,7 +15,7 @@
   - _Requirements: 1.4, 4.1, 4.2, 5.3, 5.5, 6.3, 6.4_
   - _Boundary: SessionStore_
 
-- [ ] 1.3 role 更新で影響を受ける user discovery contract を定義する
+- [x] 1.3 role 更新で影響を受ける user discovery contract を定義する
   - role permissions update 後に、その role を持つ users を列挙できる contract を追加する。
   - role mutation workflow 自体は追加せず、refresh service が使う read boundary として定義する。
   - completed state は、assigned users が deterministic に返る contract と、未割り当て role が空結果になる behavior が検証可能になっていること。

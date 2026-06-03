@@ -78,8 +78,23 @@ class InMemorySessionStore:
         user_id: int,
         authorization: SessionAuthorization,
     ) -> bool:
-        _ = (user_id, authorization)
-        raise NotImplementedError
+        """Update only privileges and role_ids of an active session.
+
+        Returns ``True`` if the session was updated, ``False`` if no active
+        session exists for *user_id*.  Does not create a new session, delete
+        the session, or change any non-authorization fields.
+        """
+        token = self._user_to_token.get(user_id)
+        if token is None:
+            return False
+
+        session = self._by_token[token]
+        self._by_token[token] = replace(
+            session,
+            privileges=int(authorization.privileges),
+            role_ids=authorization.role_ids,
+        )
+        return True
 
     async def get_all_user_ids(self) -> list[int]:
         """Return all active user IDs."""
