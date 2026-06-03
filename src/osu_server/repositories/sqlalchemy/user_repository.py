@@ -101,6 +101,14 @@ class SQLAlchemyUserRepository:
             session.add(model)
             await session.commit()
 
+    async def update_country(self, user_id: int, country: str) -> None:
+        """Update the country code for *user_id*."""
+        async with self._session_factory() as session:
+            user = await session.get(UserModel, user_id)
+            if user is not None:
+                user.country = country
+                await session.commit()
+
     @staticmethod
     def _to_domain(model: UserModel) -> User:
         """Map a SQLAlchemy UserModel to a domain User."""

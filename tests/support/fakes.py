@@ -64,3 +64,6 @@ class ErrorRaisingUserRepository:
 
     async def add_disallowed_username(self, safe_username: str) -> None:
         await self._inner.add_disallowed_username(safe_username)
+
+    async def update_country(self, user_id: int, country: str) -> None:
+        await self._inner.update_country(user_id, country)

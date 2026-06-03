@@ -219,6 +219,8 @@ class AuthService:
         role_ids = tuple(role.id for role in roles)
 
         # 4. 国コード (Transport 層で解決済み)
+        if country not in ("XX", user.country):
+            await self._user_repo.update_country(user.id, country)
 
         # 5. トークン生成
         token = secrets.token_urlsafe(32)

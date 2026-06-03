@@ -45,3 +45,7 @@ class UserRepository(Protocol):
     async def add_disallowed_username(self, safe_username: str) -> None:
         """Add *safe_username* to the disallowed list.  Idempotent."""
         ...
+
+    async def update_country(self, user_id: int, country: str) -> None:
+        """Update the country code for *user_id*."""
+        ...
