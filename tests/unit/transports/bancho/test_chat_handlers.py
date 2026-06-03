@@ -349,6 +349,65 @@ class TestJoinChannel:
         assert len(channel_service.calls) == 0
 
 
+# ── authorization refresh observation ──────────────────────────────────────
+
+
+class TestAuthorizationRefreshObservation:
+    """handler は login-time のキャッシュ値ではなく action-time の session 認可を読む。"""
+
+    async def test_updated_session_authorization_reflected_in_next_action(
+        self,
+        chat_service: StubChatService,
+        channel_service: StubChannelService,
+        packet_queue: InMemoryPacketQueue,
+    ) -> None:
+        """session 認可が更新された後、次の C2S action で新しい値が観測される。"""
+        store = StubSessionStore(
+            session=SessionData(
+                user_id=1,
+                username="test_user",
+                privileges=4,  # initial
+                country="JP",
+                osu_version="b20260101",
+                utc_offset=9,
+                display_city=False,
+                client_hashes="",
+                pm_private=False,
+                role_ids=(1,),
+            )
+        )
+        handlers = ChatHandlers(
+            chat_service=chat_service,  # pyright: ignore[reportArgumentType]
+            channel_service=channel_service,  # pyright: ignore[reportArgumentType]
+            session_store=store,  # pyright: ignore[reportArgumentType]
+            packet_queue=packet_queue,
+        )
+
+        # First action: initial authorization
+        await handlers.handle_send_message(_build_message_payload(), user_id=1)
+        assert chat_service.calls[0]["user_privileges"] == 4
+        assert chat_service.calls[0]["user_role_ids"] == (1,)
+
+        # Simulate authorization refresh: role grant adds ADMIN privilege + new role
+        store.session = SessionData(
+            user_id=1,
+            username="test_user",
+            privileges=260,  # updated (e.g. NORMAL | ADMIN)
+            country="JP",
+            osu_version="b20260101",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="",
+            pm_private=False,
+            role_ids=(1, 4),
+        )
+
+        # Second action: sees updated authorization without re-login
+        await handlers.handle_send_message(_build_message_payload(), user_id=1)
+        assert chat_service.calls[1]["user_privileges"] == 260
+        assert chat_service.calls[1]["user_role_ids"] == (1, 4)
+
+
 # ── handle_leave_channel ─────────────────────────────────────────────────
 
 

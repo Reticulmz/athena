@@ -23,7 +23,7 @@
   - _Boundary: RoleRepository_
 
 - [ ] 2. Core implementations: state と role lookup の実装
-- [ ] 2.1 (P) InMemory session store で authorization-only update を実装する
+- [x] 2.1 (P) InMemory session store で authorization-only update を実装する
   - active user の session では `privileges` と `role_ids` だけを更新する。
   - offline user では session を作らず `no active session` として扱える結果を返す。
   - completed state は、同じ token で取得した session が更新後の認可情報を持ち、他の session fields と他 user の session が変わらないこと。
@@ -99,7 +99,7 @@
   - _Depends: 3.4_
 
 - [ ] 4. Bancho-facing integration behavior
-- [ ] 4.1 Bancho C2S handler が action-time authorization を読むことを保護する
+- [x] 4.1 Bancho C2S handler が action-time authorization を読むことを保護する
   - handler が login-time cached authorization ではなく、action ごとの session authorization を downstream service へ渡すことを検証する。
   - refreshed `privileges` と `role_ids` が channel message / join flow の authorization input に反映されることを検証する。
   - completed state は、transport unit tests が updated session authorization を次の C2S action で観測できること。
