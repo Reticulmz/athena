@@ -96,7 +96,8 @@ class TestBanchoEndpoint:
         response = client.post("/", content=b"raw-login", headers={"x-test": "1"})
 
         assert response.content == b"login-bytes"
-        assert "cho-token" not in response.headers
+        assert "cho-token" in response.headers
+        assert "cho-protocol" in response.headers
         assert _calls(login_workflow, polling_workflow) == _WorkflowCalls(
             login_count=1,
             polling_count=0,
@@ -117,6 +118,7 @@ class TestBanchoEndpoint:
 
         assert response.content == b"successful-login"
         assert response.headers["cho-token"] == "issued-token"
+        assert response.headers["cho-protocol"] == "19"
         assert _calls(login_workflow, polling_workflow) == _WorkflowCalls(
             login_count=1,
             polling_count=0,

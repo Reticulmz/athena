@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import secrets
 from typing import TYPE_CHECKING, Protocol
 
 from starlette.responses import Response
 
+from osu_server.transports.bancho.protocol import PROTOCOL_VERSION
 from osu_server.transports.bancho.workflows import (
     LoginWorkflowInput,
     LoginWorkflowResult,
@@ -67,9 +69,11 @@ class BanchoEndpoint:
                 headers=request.headers,
             )
         )
-        if result.cho_token is None:
-            return Response(content=result.content)
+        cho_token = result.cho_token if result.cho_token is not None else secrets.token_urlsafe(32)
         return Response(
             content=result.content,
-            headers={"cho-token": result.cho_token},
+            headers={
+                "cho-token": cho_token,
+                "cho-protocol": str(PROTOCOL_VERSION),
+            },
         )

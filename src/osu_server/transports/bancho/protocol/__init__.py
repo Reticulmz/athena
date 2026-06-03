@@ -23,8 +23,11 @@ from osu_server.transports.bancho.protocol.types import (
 )
 from osu_server.transports.bancho.protocol.writer import write_packet
 
+PROTOCOL_VERSION = 19
+
 __all__ = [
     "HEADER_SIZE",
+    "PROTOCOL_VERSION",
     "BanchoString",
     "Channel",
     "ClientPacketID",

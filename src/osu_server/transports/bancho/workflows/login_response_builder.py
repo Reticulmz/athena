@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY, SystemUserIdentity
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.services.permission_service import PermissionService
+from osu_server.transports.bancho.protocol import PROTOCOL_VERSION
 from osu_server.transports.bancho.protocol.s2c.login import (
     channel_available,
     channel_available_autojoin,
@@ -25,16 +26,21 @@ if TYPE_CHECKING:
     from osu_server.domain.auth import LoginResponse
     from osu_server.services.channel_service import ChannelService
 
-_PROTOCOL_VERSION = 19
-
 
 class LoginResponseBuilder:
     """Build the initial S2C packet stream for successful login."""
 
     _channel_service: ChannelService
+    _bot_identity: SystemUserIdentity
 
-    def __init__(self, *, channel_service: ChannelService) -> None:
+    def __init__(
+        self,
+        *,
+        channel_service: ChannelService,
+        bot_identity: SystemUserIdentity | None = None,
+    ) -> None:
         self._channel_service = channel_service
+        self._bot_identity = bot_identity or BANCHO_BOT_IDENTITY
 
     async def build(self, login_response: LoginResponse) -> bytes:
         """Assemble the S2C packet stream for a successful login."""
@@ -55,7 +61,7 @@ class LoginResponseBuilder:
 
         packets: list[bytes] = [
             login_reply(user.id),
-            protocol_version(_PROTOCOL_VERSION),
+            protocol_version(PROTOCOL_VERSION),
             login_permissions(int(client_flags)),
             user_presence(
                 user_id=user.id,
@@ -87,8 +93,8 @@ class LoginResponseBuilder:
 
         packets.append(
             user_presence(
-                user_id=BANCHO_BOT_IDENTITY.user_id,
-                username=BANCHO_BOT_IDENTITY.username,
+                user_id=self._bot_identity.user_id,
+                username=self._bot_identity.username,
                 timezone=24,
                 country_id=0,
                 permissions=0,
@@ -112,7 +118,7 @@ class LoginResponseBuilder:
             for channel, user_count in autojoin_channels
         )
 
-        roster_ids = list(dict.fromkeys([BANCHO_BOT_IDENTITY.user_id, user.id]))
+        roster_ids = list(dict.fromkeys([self._bot_identity.user_id, user.id]))
 
         packets.extend(
             [
