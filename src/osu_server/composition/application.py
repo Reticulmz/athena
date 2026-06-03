@@ -12,6 +12,7 @@ from osu_server.composition.endpoints import bancho_endpoint, registration_endpo
 from osu_server.composition.health import health_check_endpoint, health_endpoint
 from osu_server.composition.lifespan import lifespan
 from osu_server.composition.middleware import RequestLoggingMiddleware
+from osu_server.transports.web_legacy.bancho_connect import bancho_connect_endpoint
 
 
 def create_app() -> Starlette:
@@ -44,6 +45,11 @@ def create_app() -> Starlette:
             Route("/", endpoint=health_endpoint, methods=["GET"]),
             Route("/health", endpoint=health_check_endpoint, methods=["GET"]),
             Route("/users", endpoint=registration_endpoint, methods=["POST"]),
+            Route(
+                "/web/bancho_connect.php",
+                endpoint=bancho_connect_endpoint,
+                methods=["GET"],
+            ),
         ],
     )
 
@@ -59,6 +65,11 @@ def create_app() -> Starlette:
             "/web",
             routes=[
                 Route("/users", endpoint=registration_endpoint, methods=["POST"]),
+                Route(
+                    "/bancho_connect.php",
+                    endpoint=bancho_connect_endpoint,
+                    methods=["GET"],
+                ),
             ],
         ),
         # Future sub-app mount points
