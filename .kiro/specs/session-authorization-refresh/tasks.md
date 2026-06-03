@@ -90,7 +90,7 @@
   - _Boundary: SessionAuthorizationService_
   - _Depends: 2.3, 3.3_
 
-- [ ] 3.5 refresh service を composition へ登録する
+- [x] 3.5 refresh service を composition へ登録する
   - application composition が refresh service と必要な collaborators を解決できるようにする。
   - test environment と non-test environment の既存 registration pattern を維持する。
   - completed state は、DI integration tests が refresh service を manual test-only wiring なしで resolve できること。

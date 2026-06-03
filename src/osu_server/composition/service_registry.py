@@ -44,6 +44,9 @@ from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.session_authorization_service import (
+    SessionAuthorizationService,
+)
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
@@ -157,6 +160,17 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         system_user_id=BANCHO_BOT_USER_ID,
     )
     container.register_singleton(AuthService, lambda: auth_service)
+
+    # -- SessionAuthorizationService (singleton) ---------------------------------
+    session_auth_service = SessionAuthorizationService(
+        permission_service=permission_service,
+        session_store=session_store,
+        role_repository=role_repo,
+    )
+    container.register_singleton(
+        SessionAuthorizationService,
+        lambda: session_auth_service,
+    )
 
     # -- OnlineUsersService (singleton) -----------------------------------------
     online_users = OnlineUsersService(session_store=session_store)

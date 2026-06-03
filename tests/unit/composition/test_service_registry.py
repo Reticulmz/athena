@@ -7,6 +7,9 @@ import pytest
 from osu_server.composition.service_registry import register_services
 from osu_server.config import AppConfig
 from osu_server.infrastructure.di.providers import build_container
+from osu_server.services.session_authorization_service import (
+    SessionAuthorizationService,
+)
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
@@ -60,3 +63,15 @@ async def test_register_services_binds_bancho_endpoint_graph() -> None:
     assert polling_workflow._packet_dispatcher is dispatcher  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     assert ClientPacketID.SEND_MESSAGE in dispatcher.get_handlers()
     assert ClientPacketID.JOIN_CHANNEL in dispatcher.get_handlers()
+
+
+@pytest.mark.asyncio
+async def test_register_services_resolves_session_authorization_service() -> None:
+    """SessionAuthorizationService is resolvable from the container after registration."""
+    config = _make_config()
+    container = await build_container(config)
+    await register_services(container, config)
+
+    svc = await container.resolve(SessionAuthorizationService)
+
+    assert isinstance(svc, SessionAuthorizationService)
