@@ -31,7 +31,7 @@
   - _Boundary: SessionStore InMemory_
   - _Depends: 1.1, 1.2_
 
-- [ ] 2.2 (P) Valkey session store で atomic authorization update を実装する
+- [x] 2.2 (P) Valkey session store で atomic authorization update を実装する
   - current user-token mapping から active session を特定し、保存済み session の認可 fields だけを atomic に更新する。
   - token mapping、既存 TTL、非認可 fields を保持し、session が消えている場合は session を再作成しない。
   - completed state は、Valkey integration tests が token preservation、field preservation、offline user の no-op、連続 refresh の latest result を検証していること。

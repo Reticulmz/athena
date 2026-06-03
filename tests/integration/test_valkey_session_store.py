@@ -19,7 +19,9 @@ if TYPE_CHECKING:
     from glide import GlideClient
     from glide_shared.constants import TEncodable
 
+from osu_server.domain.role import Privileges
 from osu_server.domain.session import SessionData
+from osu_server.domain.session_authorization import SessionAuthorization
 from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.session_store import InMemorySessionStore
@@ -194,3 +196,159 @@ class TestOverwrite:
         result_by_user = await store.get_by_user(user_id=1)
         assert result_by_user is not None
         assert result_by_user.country == "JP"
+
+
+# ---------------------------------------------------------------------------
+# Tests — update_authorization
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateAuthorization:
+    """update_authorization patches privileges and role_ids while preserving
+    all other fields and the user-to-token mapping."""
+
+    async def test_update_authorization_patches_session(
+        self,
+        store: SessionStore,
+    ) -> None:
+        """privileges and role_ids are updated to the new values."""
+        await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+        new_auth = SessionAuthorization(
+            privileges=Privileges.ADMIN,
+            role_ids=(5, 6),
+        )
+        result = await store.update_authorization(user_id=1, authorization=new_auth)
+
+        assert result is True
+
+        session = await store.get_by_user(user_id=1)
+        assert session is not None
+        assert session.privileges == int(Privileges.ADMIN)
+        assert session.role_ids == (5, 6)
+
+    async def test_update_authorization_preserves_token_mapping(
+        self,
+        store: SessionStore,
+    ) -> None:
+        """user-to-token mapping still references the same token."""
+        await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+        _ = await store.update_authorization(
+            user_id=1,
+            authorization=SessionAuthorization(
+                privileges=Privileges.MODERATOR,
+                role_ids=(3,),
+            ),
+        )
+
+        # Same token still retrievable
+        result = await store.get("abc-123")
+        assert result is not None
+        assert result.user_id == 1
+
+        # get_by_user still works
+        by_user = await store.get_by_user(user_id=1)
+        assert by_user is not None
+        assert by_user.privileges == int(Privileges.MODERATOR)
+
+    async def test_update_authorization_preserves_non_auth_fields(
+        self,
+        store: SessionStore,
+    ) -> None:
+        """username, country, osu_version, and other fields are unchanged."""
+        await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+        _ = await store.update_authorization(
+            user_id=1,
+            authorization=SessionAuthorization(
+                privileges=Privileges.SUPPORTER,
+                role_ids=(2,),
+            ),
+        )
+
+        result = await store.get_by_user(user_id=1)
+        assert result is not None
+        assert result.username == _SESSION.username
+        assert result.country == _SESSION.country
+        assert result.osu_version == _SESSION.osu_version
+        assert result.utc_offset == _SESSION.utc_offset
+        assert result.display_city == _SESSION.display_city
+        assert result.client_hashes == _SESSION.client_hashes
+        assert result.pm_private == _SESSION.pm_private
+
+    async def test_update_authorization_returns_false_when_no_session(
+        self,
+        store: SessionStore,
+    ) -> None:
+        """Returns False when the user has no active session."""
+        result = await store.update_authorization(
+            user_id=9999,
+            authorization=SessionAuthorization(
+                privileges=Privileges.NORMAL,
+                role_ids=(),
+            ),
+        )
+
+        assert result is False
+
+        # No session was created
+        assert await store.get_by_user(user_id=9999) is None
+
+    async def test_update_authorization_idempotent(
+        self,
+        store: SessionStore,
+    ) -> None:
+        """Repeated calls with the same authorization produce the same result."""
+        await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+        auth = SessionAuthorization(
+            privileges=Privileges.DEVELOPER,
+            role_ids=(7,),
+        )
+        first = await store.update_authorization(user_id=1, authorization=auth)
+        second = await store.update_authorization(user_id=1, authorization=auth)
+
+        assert first is True
+        assert second is True
+
+        result = await store.get_by_user(user_id=1)
+        assert result is not None
+        assert result.privileges == int(Privileges.DEVELOPER)
+        assert result.role_ids == (7,)
+
+    async def test_update_authorization_preserves_ttl(
+        self,
+        valkey_client: GlideClient,
+        valkey_store: ValkeySessionStore,
+    ) -> None:
+        """TTL is not reset after update_authorization.
+
+        Valkey-specific test because the in-memory store has no TTL concept.
+        """
+        await valkey_store.create(
+            user_id=1,
+            token="abc-123",
+            data=_SESSION,
+        )
+
+        # Reduce TTL so we can detect a difference
+        _ = await valkey_client.expire(f"{_KEY_PREFIX}session:abc-123", 1800)
+        _ = await valkey_client.expire(f"{_KEY_PREFIX}user_session:1", 1800)
+
+        _ = await valkey_store.update_authorization(
+            user_id=1,
+            authorization=SessionAuthorization(
+                privileges=Privileges.MODERATOR,
+                role_ids=(3,),
+            ),
+        )
+
+        # TTL should still be around 1800 (not reset to the constructor default 3600)
+        session_ttl = await valkey_client.ttl(f"{_KEY_PREFIX}session:abc-123")
+        user_ttl = await valkey_client.ttl(f"{_KEY_PREFIX}user_session:1")
+
+        assert session_ttl > 0
+        assert session_ttl <= 1800
+        assert user_ttl > 0
+        assert user_ttl <= 1800

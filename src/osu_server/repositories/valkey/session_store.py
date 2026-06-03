@@ -10,7 +10,7 @@ from glide import Script
 
 from osu_server.domain.session import SessionData
 from osu_server.domain.session_authorization import (
-    SessionAuthorization,  # noqa: TC001  # stub — will be used at runtime in task 2.2
+    SessionAuthorization,  # noqa: TC001  # runtime use via invoke_script args
 )
 
 if TYPE_CHECKING:
@@ -67,6 +67,30 @@ if not token then
 end
 redis.call('DEL', ARGV[1] .. token)
 redis.call('DEL', KEYS[1])
+return 1""")
+
+    # KEYS[1] = user_session:{user_id}
+    # ARGV[1] = session key prefix
+    # ARGV[2] = new privileges (int as string)
+    # ARGV[3] = new role_ids (JSON array string)
+    _UPDATE_AUTHORIZATION_SCRIPT: ClassVar[Script] = Script("""\
+local token = redis.call('GET', KEYS[1])
+if not token then
+    return 0
+end
+local session_key = ARGV[1] .. token
+local raw = redis.call('GET', session_key)
+if not raw then
+    return 0
+end
+local ttl = redis.call('TTL', session_key)
+if ttl <= 0 then
+    ttl = 3600
+end
+local data = cjson.decode(raw)
+data['privileges'] = tonumber(ARGV[2])
+data['role_ids'] = cjson.decode(ARGV[3])
+redis.call('SET', session_key, cjson.encode(data), 'EX', ttl)
 return 1""")
 
     # KEYS[1] = session:{token}
@@ -188,8 +212,22 @@ return 1""")
         user_id: int,
         authorization: SessionAuthorization,
     ) -> bool:
-        _ = (user_id, authorization)
-        raise NotImplementedError  # stub — implemented in task 2.2
+        """Atomically patch ``privileges`` and ``role_ids`` in the active session.
+
+        Preserves all other fields, the user-to-token mapping, and the
+        remaining TTL on the session key.  Returns ``False`` when no active
+        session exists for *user_id*.
+        """
+        result = await self._client.invoke_script(
+            self._UPDATE_AUTHORIZATION_SCRIPT,
+            keys=[self._user_key(user_id)],
+            args=[
+                f"{self._prefix}session:",
+                str(int(authorization.privileges)),
+                json.dumps(list(authorization.role_ids)),
+            ],
+        )
+        return bool(result)
 
     async def get_all_user_ids(self) -> list[int]:
         """Return all active user IDs by scanning ``user_session:*`` keys."""
