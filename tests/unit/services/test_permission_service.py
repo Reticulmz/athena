@@ -7,6 +7,7 @@ from osu_server.domain.role import (
     Privileges,
     Role,
 )
+from osu_server.domain.session_authorization import SessionAuthorization
 from osu_server.repositories.memory.role_repository import (
     InMemoryRoleRepository,
 )
@@ -237,3 +238,106 @@ class TestPermissionsComputedLog:
         assert len(events) == 1
         assert events[0]["user_id"] == 999
         assert events[0]["privileges"] == Privileges.NONE
+
+
+# ── compute_session_authorization ──────────────────────────────────────
+
+
+class TestComputeSessionAuthorizationNoRole:
+    """ロールなしユーザーは NONE 権限と空 role_ids の snapshot を返す。"""
+
+    async def test_no_roles_returns_empty_snapshot(self) -> None:
+        svc, _repo = _make_service()
+
+        result = await svc.compute_session_authorization(user_id=999)
+
+        assert result.privileges == Privileges.NONE
+        assert result.role_ids == ()
+
+
+class TestComputeSessionAuthorizationSingleRole:
+    """単一ロールの権限と role_id が snapshot に反映される。"""
+
+    async def test_single_default_role(self) -> None:
+        svc, repo = _make_service()
+        await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
+
+        result = await svc.compute_session_authorization(user_id=1)
+
+        assert result.privileges == ROLE_DEFAULT.permissions
+        assert result.role_ids == (ROLE_DEFAULT.id,)
+
+    async def test_single_moderator_role(self) -> None:
+        svc, repo = _make_service()
+        await repo.assign_role(user_id=2, role_id=ROLE_MODERATOR.id)
+
+        result = await svc.compute_session_authorization(user_id=2)
+
+        assert result.privileges == Privileges.MODERATOR
+        assert result.role_ids == (ROLE_MODERATOR.id,)
+
+
+class TestComputeSessionAuthorizationMultipleRoles:
+    """複数ロールで permission OR と全 role_id を含む snapshot。"""
+
+    async def test_default_plus_supporter(self) -> None:
+        svc, repo = _make_service()
+        await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
+        await repo.assign_role(user_id=1, role_id=ROLE_SUPPORTER.id)
+
+        result = await svc.compute_session_authorization(user_id=1)
+
+        expected_privs = ROLE_DEFAULT.permissions | Privileges.SUPPORTER
+        assert result.privileges == expected_privs
+        assert set(result.role_ids) == {ROLE_DEFAULT.id, ROLE_SUPPORTER.id}
+
+    async def test_all_roles_combined(self) -> None:
+        svc, repo = _make_service()
+        for role in ALL_ROLES:
+            await repo.assign_role(user_id=1, role_id=role.id)
+
+        result = await svc.compute_session_authorization(user_id=1)
+
+        expected_privs = Privileges.NONE
+        for role in ALL_ROLES:
+            expected_privs |= role.permissions
+        assert result.privileges == expected_privs
+        assert set(result.role_ids) == {r.id for r in ALL_ROLES}
+
+    async def test_moderator_plus_admin(self) -> None:
+        svc, repo = _make_service()
+        await repo.assign_role(user_id=3, role_id=ROLE_MODERATOR.id)
+        await repo.assign_role(user_id=3, role_id=ROLE_ADMIN.id)
+
+        result = await svc.compute_session_authorization(user_id=3)
+
+        assert result.privileges == (Privileges.MODERATOR | Privileges.ADMIN)
+        assert set(result.role_ids) == {ROLE_MODERATOR.id, ROLE_ADMIN.id}
+
+
+class TestComputeSessionAuthorizationRoleOrdering:
+    """role_ids は get_roles_for_user の返す位置順を保持する。"""
+
+    async def test_role_ids_in_position_order(self) -> None:
+        svc, repo = _make_service()
+        # Assign in reverse position order
+        await repo.assign_role(user_id=1, role_id=ROLE_ADMIN.id)  # position=3
+        await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)  # position=0
+        await repo.assign_role(user_id=1, role_id=ROLE_MODERATOR.id)  # position=2
+
+        result = await svc.compute_session_authorization(user_id=1)
+
+        # get_roles_for_user returns sorted by position ascending
+        assert result.role_ids == (ROLE_DEFAULT.id, ROLE_MODERATOR.id, ROLE_ADMIN.id)
+
+
+class TestComputeSessionAuthorizationSnapshotType:
+    """戻り値は SessionAuthorization の frozen dataclass。"""
+
+    async def test_returns_session_authorization_instance(self) -> None:
+        svc, repo = _make_service()
+        await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
+
+        result = await svc.compute_session_authorization(user_id=1)
+
+        assert isinstance(result, SessionAuthorization)

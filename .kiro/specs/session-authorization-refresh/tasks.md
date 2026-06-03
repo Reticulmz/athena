@@ -47,7 +47,7 @@
   - _Boundary: RoleRepository_
   - _Depends: 1.3_
 
-- [ ] 2.4 (P) current role state から session authorization snapshot を計算する
+- [x] 2.4 (P) current role state から session authorization snapshot を計算する
   - role list から permission OR と role ID list を同じ snapshot として生成する。
   - login と refresh が同じ認可 snapshot を使えるよう、既存 permission behavior と client flag conversion を維持する。
   - completed state は、permission service tests が no-role、single-role、multi-role、role ordering、permission OR を snapshot として検証していること。

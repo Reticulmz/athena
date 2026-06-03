@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from osu_server.domain.role import ClientPermissions, Privileges
+from osu_server.domain.session_authorization import SessionAuthorization
 
 if TYPE_CHECKING:
     from osu_server.repositories.interfaces.role_repository import RoleRepository
@@ -33,6 +34,27 @@ class PermissionService:
             result |= role.permissions
         logger.info("permissions_computed", user_id=user_id, privileges=result)
         return result
+
+    async def compute_session_authorization(
+        self,
+        user_id: int,
+    ) -> SessionAuthorization:
+        """*user_id* の全ロールから認可 snapshot を計算して返す。
+
+        ``compute_permissions()`` と同じロールリストから privileges の OR と
+        role_ids を単一の ``SessionAuthorization`` として返す。
+        login と refresh の両方がこのメソッドを共有の認可計算元として使う。
+        """
+        roles = await self._role_repo.get_roles_for_user(user_id)
+        privileges = Privileges.NONE
+        role_ids: list[int] = []
+        for role in roles:
+            privileges |= role.permissions
+            role_ids.append(role.id)
+        return SessionAuthorization(
+            privileges=privileges,
+            role_ids=tuple(role_ids),
+        )
 
     @staticmethod
     def to_client_flags(privileges: Privileges) -> ClientPermissions:
