@@ -1,0 +1,1 @@
+"""BanchoBot registered command handlers."""

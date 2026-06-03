@@ -7,7 +7,7 @@
   - 新しい BanchoBot command namespace から必要な contract を import できることを確認する。
   - _Requirements: 2.2, 3.1, 3.2, 4.3_
   - _Boundary: CommandContext, CommandMetadata, CommandDefinition_
-- [ ] 1.2 Deterministic command registry と decorator contract を実装する
+- [x] 1.2 Deterministic command registry と decorator contract を実装する
   - command name を canonical lower-case name として登録・解決できるようにする。
   - visible command metadata が registration order を保持して列挙されるようにする。
   - duplicate command name が登録時に検出され、test setup や startup で明確に失敗するようにする。
@@ -16,13 +16,13 @@
   - _Boundary: CommandRegistry_
 
 - [ ] 2. Builtin command behavior を分離する
-- [ ] 2.1 (P) `roll` command の既存挙動を registered command として実装する
+- [x] 2.1 (P) `roll` command の既存挙動を registered command として実装する
   - 既存の default max、numeric first argument、lower bound、response format を維持する test を先に追加する。
   - `roll` command が invocation context だけを使って response content を返すようにする。
   - `!roll` と `!roll 50` の observable response が既存 expectations と一致することを unit test で確認する。
   - _Requirements: 1.1, 1.2, 2.2, 3.3_
   - _Boundary: roll command_
-- [ ] 2.2 (P) `help` command を visible command metadata から生成する
+- [x] 2.2 (P) `help` command を visible command metadata から生成する
   - visible commands の order と names から help output を生成する test を先に追加する。
   - `help` command が invocation context の available command metadata だけを使って response content を返すようにする。
   - sample metadata を使った help output が expected command names と registration order を反映することを unit test で確認する。
