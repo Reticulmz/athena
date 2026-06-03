@@ -8,7 +8,7 @@
   - _Requirements: 5.1, 5.5, 6.1_
   - _Boundary: SessionAuthorization_
 
-- [ ] 1.2 active session の authorization-only update contract を定義する
+- [x] 1.2 active session の authorization-only update contract を定義する
   - session lifecycle contract とは別に、active session の認可情報だけを更新する contract を追加する。
   - token、user mapping、client metadata、logged-in state を保持する postcondition を contract test で表現する。
   - completed state は、session store protocol と既存 test doubles が authorization-only update を必須 contract として扱っていること。
