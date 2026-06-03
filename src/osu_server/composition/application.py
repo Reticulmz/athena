@@ -65,11 +65,6 @@ def create_app() -> Starlette:
             "/web",
             routes=[
                 Route("/users", endpoint=registration_endpoint, methods=["POST"]),
-                Route(
-                    "/bancho_connect.php",
-                    endpoint=bancho_connect_endpoint,
-                    methods=["GET"],
-                ),
             ],
         ),
         # Future sub-app mount points

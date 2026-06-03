@@ -54,3 +54,5 @@ certs/
 # Application logs
 logs/
 *.log
+
+.playwright-mcp/
