@@ -64,7 +64,7 @@
   - _Boundary: AuthService_
   - _Depends: 2.4_
 
-- [ ] 3.2 user 単位の authorization refresh を実装する
+- [x] 3.2 user 単位の authorization refresh を実装する
   - active session がある user では現在の role-derived snapshot を session store へ適用する。
   - active session がない user では session を作らず、呼び出し元へ no active session outcome を返す。
   - role grant / revoke 後の状態を test setup で表現し、refresh 後の session authorization が最新状態になることを検証する。
