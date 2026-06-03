@@ -107,7 +107,7 @@
   - _Boundary: BanchoHandlers_
   - _Depends: 3.5_
 
-- [ ] 4.2 refreshed authorization を stable bancho の後続操作で検証する
+- [x] 4.2 refreshed authorization を stable bancho の後続操作で検証する
   - 同じ session token のまま、role grant refresh 後に許可される channel action を検証する。
   - role permission removal refresh 後に拒否される channel action を検証する。
   - completed state は、chat / polling integration tests が再ログインなしの deny → allow → deny または同等の ACL transition を示していること。
@@ -115,7 +115,7 @@
   - _Boundary: Bancho integration tests_
   - _Depends: 4.1_
 
-- [ ] 4.3 session invalidation と authorization refresh の分離を検証する
+- [x] 4.3 session invalidation と authorization refresh の分離を検証する
   - refresh path が session deletion を呼ばず、logout / invalidation path が引き続き session deletion を担うことを検証する。
   - role assignment change や role permissions change を authentication failure として扱わないことを検証する。
   - completed state は、refresh 後も polling token が有効であり、EXIT / invalidation regression tests は既存どおり session を削除すること。
