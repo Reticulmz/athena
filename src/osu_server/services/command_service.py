@@ -1,19 +1,25 @@
 import random
 from collections.abc import Awaitable, Callable
-from typing import ClassVar
 
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY, SystemUserIdentity
 
 CommandHandler = Callable[[int, str, list[str]], Awaitable[str | None]]
 
 
 class CommandService:
-    BANCHO_BOT_ID: ClassVar[int] = BANCHO_BOT_IDENTITY.user_id
-    BANCHO_BOT_NAME: ClassVar[str] = BANCHO_BOT_IDENTITY.username
+    BANCHO_BOT_ID: int = BANCHO_BOT_IDENTITY.user_id
+    BANCHO_BOT_NAME: str = BANCHO_BOT_IDENTITY.username
 
-    def __init__(self) -> None:
+    _bot_identity: SystemUserIdentity
+
+    def __init__(self, *, bot_identity: SystemUserIdentity | None = None) -> None:
+        self._bot_identity = bot_identity or BANCHO_BOT_IDENTITY
         self._commands: dict[str, CommandHandler] = {}
         self._register_defaults()
+
+    @property
+    def bot_identity(self) -> SystemUserIdentity:
+        return self._bot_identity
 
     def register(self, name: str, handler: CommandHandler) -> None:
         self._commands[name] = handler

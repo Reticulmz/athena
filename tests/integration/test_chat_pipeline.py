@@ -11,6 +11,7 @@ from osu_server.config import AppConfig
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.role import Privileges
 from osu_server.domain.session import SessionData
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.domain.users.events import UserDisconnected
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
@@ -100,11 +101,10 @@ async def _setup_pipeline() -> ChatPipeline:
     broker = SpyBroker()
     captured_events: list[object] = []
 
-    bot = await user_repo.create(make_user(username="BanchoBot", email="bot@example.com"))
+    await user_repo.sync_system_user(BANCHO_BOT_IDENTITY)
     sender = await user_repo.create(make_user(username="Sender", email="sender@example.com"))
     target = await user_repo.create(make_user(username="Target", email="target@example.com"))
     offline = await user_repo.create(make_user(username="Offline", email="offline@example.com"))
-    assert bot.id == CommandService.BANCHO_BOT_ID
 
     await session_store.create(sender.id, "sender-token", _session(sender.id, sender.username))
     await session_store.create(target.id, "target-token", _session(target.id, target.username))
@@ -156,6 +156,7 @@ async def _setup_pipeline() -> ChatPipeline:
         channel_service=channel_service,
         session_store=session_store,
         packet_queue=packet_queue,
+        command_service=CommandService(),
     )
     handlers.register_all(dispatcher)
 

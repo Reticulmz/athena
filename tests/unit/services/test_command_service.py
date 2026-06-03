@@ -68,9 +68,10 @@ class TestBanchoBotIdentityAlignment:
         """CommandService.BANCHO_BOT_ID は BANCHO_BOT_IDENTITY.user_id と等しい。"""
         assert BANCHO_BOT_IDENTITY.user_id == CommandService.BANCHO_BOT_ID
 
-    def test_banchobot_name_matches_identity(self) -> None:
-        """CommandService.BANCHO_BOT_NAME は BANCHO_BOT_IDENTITY.username と等しい。"""
-        assert BANCHO_BOT_IDENTITY.username == CommandService.BANCHO_BOT_NAME
+    def test_banchobot_identity_provides_default_name(self) -> None:
+        """デフォルトの bot_identity は BANCHO_BOT_IDENTITY と等しい。"""
+        svc = CommandService()
+        assert svc.bot_identity == BANCHO_BOT_IDENTITY
 
     def test_identity_values_are_banchobot(self) -> None:
         """BANCHO_BOT_IDENTITY が正しい BanchoBot の値を保持している。"""

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, final
 
 if TYPE_CHECKING:
+    from osu_server.domain.system_user import SystemUserIdentity
     from osu_server.domain.user import User
     from osu_server.infrastructure.security.hibp import HIBPClient
     from osu_server.repositories.memory.user_repository import InMemoryUserRepository
@@ -67,3 +68,6 @@ class ErrorRaisingUserRepository:
 
     async def update_country(self, user_id: int, country: str) -> None:
         await self._inner.update_country(user_id, country)
+
+    async def sync_system_user(self, identity: SystemUserIdentity) -> None:
+        await self._inner.sync_system_user(identity)

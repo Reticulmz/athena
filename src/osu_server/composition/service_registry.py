@@ -8,6 +8,7 @@ from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from taskiq import AsyncBroker
 
+from osu_server.domain.system_user import BANCHO_BOT_USER_ID, create_bancho_bot_identity
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
@@ -125,19 +126,34 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     # -- Repositories (singleton, environment-based switching) ----------------
     _register_repositories(container, config, session_factory)
 
+    # -- SystemUserIdentity (singleton) ---------------------------------------
+    identity = create_bancho_bot_identity(config.bancho_bot_username)
+    container.register_singleton(
+        type(identity),
+        lambda: identity,
+    )
+
+    # -- BanchoBot system user sync (startup validation) ----------------------
+    user_repo = await container.resolve(UserRepository)
+    try:
+        await user_repo.sync_system_user(identity)
+    except ValueError as exc:
+        msg = f"BanchoBot system user sync failed: {exc}"
+        raise RuntimeError(msg) from exc
+
     # -- PermissionService (singleton) ----------------------------------------
     role_repo = await container.resolve(RoleRepository)
     permission_service = PermissionService(role_repo=role_repo)
     container.register_singleton(PermissionService, lambda: permission_service)
 
     # -- AuthService (singleton) ----------------------------------------------
-    user_repo = await container.resolve(UserRepository)
     auth_service = AuthService(
         user_repo=user_repo,
         role_repo=role_repo,
         password_service=password_service,
         permission_service=permission_service,
         session_store=session_store,
+        system_user_id=BANCHO_BOT_USER_ID,
     )
     container.register_singleton(AuthService, lambda: auth_service)
 
@@ -180,7 +196,7 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(PrivateMessageService, lambda: pm_service)
 
     # -- CommandService (singleton) -------------------------------------------
-    command_service = CommandService()
+    command_service = CommandService(bot_identity=identity)
     container.register_singleton(CommandService, lambda: command_service)
 
     # -- Job Queue (broker registration) --------------------------------------
@@ -191,7 +207,10 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     packet_queue = await container.resolve(PacketQueue)
     eventbus = await container.resolve(EventBus)
 
-    login_response_builder = LoginResponseBuilder(channel_service=channel_service)
+    login_response_builder = LoginResponseBuilder(
+        channel_service=channel_service,
+        bot_identity=identity,
+    )
     container.register_singleton(LoginResponseBuilder, lambda: login_response_builder)
 
     login_workflow = LoginWorkflow(
@@ -244,6 +263,7 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         channel_service=channel_service,
         session_store=session_store,
         packet_queue=packet_queue,
+        command_service=command_service,
     )
     lifecycle_handlers.register_all(packet_dispatcher)
     chat_handlers.register_all(packet_dispatcher)

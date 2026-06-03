@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from osu_server.domain.system_user import SystemUserIdentity
     from osu_server.domain.user import User
 
 
@@ -48,4 +49,18 @@ class UserRepository(Protocol):
 
     async def update_country(self, user_id: int, country: str) -> None:
         """Update the country code for *user_id*."""
+        ...
+
+    async def sync_system_user(self, identity: SystemUserIdentity) -> None:
+        """Ensure the BanchoBot system user record is consistent with *identity*.
+
+        Postconditions:
+            - ``users.id=1`` exists as the BanchoBot system user record.
+            - ``users.id=1.username`` and ``safe_username`` match *identity*.
+            - ``banchobot`` and the configured safe username are reserved.
+
+        Raises ``ValueError`` if a normal user already owns the configured
+        ``safe_username`` or if ``users.id=1`` cannot be treated as the
+        BanchoBot system user record.
+        """
         ...

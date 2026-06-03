@@ -112,11 +112,13 @@ class TestRegistrationSuccess:
         assert user.username == "TestUser"
 
     async def test_default_role_assigned(self) -> None:
-        app, _, _, role_repo = _make_app()
+        app, _, user_repo, role_repo = _make_app()
         with TestClient(app) as client:
             _ = client.post("/users", data=_registration_form())
-        # User id=1 (first created user)
-        roles = await role_repo.get_roles_for_user(1)
+        # First created user gets id > 1 (id=1 reserved for BanchoBot system user)
+        user = await user_repo.get_by_safe_username("testuser")
+        assert user is not None
+        roles = await role_repo.get_roles_for_user(user.id)
         assert len(roles) == 1
         assert roles[0].name == "Default"
 

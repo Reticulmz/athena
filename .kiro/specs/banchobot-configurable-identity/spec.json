@@ -1,0 +1,22 @@
+{
+  "feature_name": "banchobot-configurable-identity",
+  "created_at": "2026-06-03T02:30:00Z",
+  "updated_at": "2026-06-03T01:35:50Z",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": false
+}

@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from osu_server.domain.user import User
+
 if TYPE_CHECKING:
-    from osu_server.domain.user import User
+    from osu_server.domain.system_user import SystemUserIdentity
+
+
+_BANCHO_BOT_USER_ID = 1
 
 
 class InMemoryUserRepository:
@@ -35,6 +41,10 @@ class InMemoryUserRepository:
         if user.email.lower() in self._id_by_email:
             msg = f"email already exists: {user.email}"
             raise ValueError(msg)
+
+        # Skip the reserved BanchoBot system user ID.
+        if self._next_id == _BANCHO_BOT_USER_ID:
+            self._next_id += 1
 
         created = replace(user, id=self._next_id)
         self._next_id += 1
@@ -76,3 +86,26 @@ class InMemoryUserRepository:
         if user_id in self._users_by_id:
             user = self._users_by_id[user_id]
             self._users_by_id[user_id] = replace(user, country=country)
+
+    async def sync_system_user(self, identity: SystemUserIdentity) -> None:
+        safe = identity.username.lower().replace(" ", "_")
+        conflict_id = self._id_by_safe_username.get(safe)
+        if conflict_id is not None and conflict_id != _BANCHO_BOT_USER_ID:
+            msg = f"configured BanchoBot safe username conflicts with existing user: {safe}"
+            raise ValueError(msg)
+        now = datetime.now(UTC)
+        system_user = User(
+            id=_BANCHO_BOT_USER_ID,
+            username=identity.username,
+            safe_username=safe,
+            email="bot@internal",
+            password_hash="!invalid",
+            country="XX",
+            created_at=now,
+            updated_at=now,
+        )
+        self._users_by_id[_BANCHO_BOT_USER_ID] = system_user
+        self._id_by_safe_username[safe] = _BANCHO_BOT_USER_ID
+        self._id_by_email[system_user.email] = _BANCHO_BOT_USER_ID
+        self._disallowed_usernames.add("banchobot")
+        self._disallowed_usernames.add(safe)

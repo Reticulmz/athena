@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: TC002
 
 from osu_server.domain.user import User
@@ -10,6 +13,11 @@ from osu_server.repositories.sqlalchemy.models.user import (
     DisallowedUsernameModel,
     UserModel,
 )
+
+if TYPE_CHECKING:
+    from osu_server.domain.system_user import SystemUserIdentity
+
+_BANCHO_BOT_USER_ID = 1
 
 
 class SQLAlchemyUserRepository:
@@ -108,6 +116,49 @@ class SQLAlchemyUserRepository:
             if user is not None:
                 user.country = country
                 await session.commit()
+
+    async def sync_system_user(self, identity: SystemUserIdentity) -> None:
+        safe = identity.username.lower().replace(" ", "_")
+        async with self._session_factory() as session:
+            stmt = select(UserModel).where(
+                UserModel.safe_username == safe,
+                UserModel.id != _BANCHO_BOT_USER_ID,
+            )
+            conflict = (await session.execute(stmt)).scalar_one_or_none()
+            if conflict is not None:
+                msg = f"configured BanchoBot safe username conflicts with existing user: {safe}"
+                raise ValueError(msg)
+            stmt = (
+                pg_insert(UserModel)
+                .values(
+                    id=_BANCHO_BOT_USER_ID,
+                    username=identity.username,
+                    safe_username=safe,
+                    email="bot@internal",
+                    password_hash="!invalid",
+                    country="XX",
+                )
+                .on_conflict_do_update(
+                    index_elements=[UserModel.id],
+                    set_={
+                        "username": identity.username,
+                        "safe_username": safe,
+                    },
+                )
+            )
+            _ = await session.execute(stmt)
+            for name in ("banchobot", safe):
+                stmt = (
+                    pg_insert(DisallowedUsernameModel)
+                    .values(
+                        safe_username=name,
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=[DisallowedUsernameModel.safe_username],
+                    )
+                )
+                _ = await session.execute(stmt)
+            await session.commit()
 
     @staticmethod
     def _to_domain(model: UserModel) -> User:

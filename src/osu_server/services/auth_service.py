@@ -60,6 +60,7 @@ class AuthService:
     _password_service: PasswordService
     _permission_service: PermissionService
     _session_store: SessionStore
+    _system_user_id: int
 
     def __init__(
         self,
@@ -68,12 +69,15 @@ class AuthService:
         password_service: PasswordService,
         permission_service: PermissionService,
         session_store: SessionStore,
+        *,
+        system_user_id: int = 1,
     ) -> None:
         self._user_repo = user_repo
         self._role_repo = role_repo
         self._password_service = password_service
         self._permission_service = permission_service
         self._session_store = session_store
+        self._system_user_id = system_user_id
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -197,6 +201,15 @@ class AuthService:
                 "login_failed",
                 username=login_request.username,
                 reason="authentication_failed",
+            )
+            return LoginResult.AUTHENTICATION_FAILED
+
+        # 1.5. System user login guard
+        if user.id == self._system_user_id:
+            logger.warning(
+                "login_failed",
+                username=login_request.username,
+                reason="system_user_auth_denied",
             )
             return LoginResult.AUTHENTICATION_FAILED
 

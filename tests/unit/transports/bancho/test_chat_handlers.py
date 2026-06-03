@@ -20,6 +20,7 @@ from osu_server.domain.chat import (
 )
 from osu_server.domain.session import SessionData
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
+from osu_server.services.command_service import CommandService
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.bancho.protocol.types import BanchoString, Message
 
@@ -174,17 +175,24 @@ def packet_queue() -> InMemoryPacketQueue:
 
 
 @pytest.fixture
+def command_service() -> CommandService:
+    return CommandService()
+
+
+@pytest.fixture
 def handlers(
     chat_service: StubChatService,
     channel_service: StubChannelService,
     session_store: StubSessionStore,
     packet_queue: InMemoryPacketQueue,
+    command_service: CommandService,
 ) -> ChatHandlers:
     return ChatHandlers(
         chat_service=chat_service,  # pyright: ignore[reportArgumentType]
         channel_service=channel_service,  # pyright: ignore[reportArgumentType]
         session_store=session_store,  # pyright: ignore[reportArgumentType]
         packet_queue=packet_queue,
+        command_service=command_service,
     )
 
 
@@ -252,6 +260,7 @@ class TestSendMessage:
             channel_service=channel_service,  # pyright: ignore[reportArgumentType]
             session_store=session_store,  # pyright: ignore[reportArgumentType]
             packet_queue=packet_queue,
+            command_service=CommandService(),
         )
 
         payload = _build_message_payload()

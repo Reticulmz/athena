@@ -397,7 +397,7 @@ class TestBanchoBotIdentityE2E:
             latitude=0.0,
             rank=0,
         )
-        bundle_marker = user_presence_bundle([BANCHO_BOT_IDENTITY.user_id])
+        bundle_marker = user_presence_bundle([BANCHO_BOT_IDENTITY.user_id, 2])
         presence_pos = response.content.index(banchobot_presence)
         bundle_pos = response.content.index(bundle_marker)
         assert presence_pos < bundle_pos, (
