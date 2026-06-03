@@ -124,7 +124,7 @@
   - _Depends: 4.2_
 
 - [ ] 5. Validation and regression gates
-- [ ] 5.1 service / store / repository の focused validation を実行する
+- [x] 5.1 service / store / repository の focused validation を実行する
   - domain、session store、role repository、permission service、refresh service の unit / integration tests を実行する。
   - failure が出た場合は owning boundary の task へ戻り、test skip や broad suppression ではなく root cause を直す。
   - completed state は、direct grant / revoke、role permissions update、offline user、login-state preservation の focused tests が通過していること。
@@ -132,7 +132,7 @@
   - _Boundary: Focused validation_
   - _Depends: 4.3_
 
-- [ ] 5.2 stable bancho と login / polling の regression validation を実行する
+- [x] 5.2 stable bancho と login / polling の regression validation を実行する
   - chat E2E、polling E2E、login flow、transport handler regression を実行する。
   - existing login、session storage、polling、channel authorization coverage を弱めずに通過させる。
   - completed state は、refreshed authorization の bancho-facing tests と既存 login / polling regression tests が同時に通過していること。
@@ -140,7 +140,7 @@
   - _Boundary: Bancho regression validation_
   - _Depends: 5.1_
 
-- [ ] 5.3 static, format, architecture checks を通過させる
+- [x] 5.3 static, format, architecture checks を通過させる
   - ruff、ruff format check、basedpyright strict、import-linter を実行する。
   - 型エラーや lint failure は design boundary に沿って修正し、file-level suppression や test weakening は行わない。
   - completed state は、required quality gates が通過し、追加した refresh contracts が architecture rule に違反していないこと。
