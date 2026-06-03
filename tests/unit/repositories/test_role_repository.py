@@ -170,3 +170,45 @@ class TestGetUserIdsForRoleProtocol:
 
     def test_memory_impl_satisfies_protocol(self, repo: InMemoryRoleRepository) -> None:
         assert isinstance(repo, RoleRepository)
+
+
+class TestGetUserIdsForRole:
+    """get_user_ids_for_role() returns assigned user IDs sorted ascending."""
+
+    async def test_returns_user_ids_for_role(self, repo: InMemoryRoleRepository) -> None:
+        await repo.assign_role(user_id=1, role_id=2)
+        await repo.assign_role(user_id=3, role_id=2)
+        await repo.assign_role(user_id=2, role_id=2)
+
+        result = await repo.get_user_ids_for_role(role_id=2)
+
+        assert result == [1, 2, 3]
+
+    async def test_returns_empty_for_unassigned_role(self, repo: InMemoryRoleRepository) -> None:
+        result = await repo.get_user_ids_for_role(role_id=9999)
+
+        assert result == []
+
+    async def test_excludes_users_with_other_roles(self, repo: InMemoryRoleRepository) -> None:
+        await repo.assign_role(user_id=1, role_id=1)  # Default
+        await repo.assign_role(user_id=2, role_id=2)  # Moderator
+        await repo.assign_role(user_id=3, role_id=1)  # Default
+
+        result = await repo.get_user_ids_for_role(role_id=2)
+
+        assert result == [2]  # Only user 2 has Moderator
+
+    async def test_returns_sorted_ascending(self, repo: InMemoryRoleRepository) -> None:
+        # Assign in non-sorted order
+        await repo.assign_role(user_id=100, role_id=1)
+        await repo.assign_role(user_id=1, role_id=1)
+        await repo.assign_role(user_id=50, role_id=1)
+
+        result = await repo.get_user_ids_for_role(role_id=1)
+
+        assert result == [1, 50, 100]
+
+    async def test_empty_repo_returns_empty(self, empty_repo: InMemoryRoleRepository) -> None:
+        result = await empty_repo.get_user_ids_for_role(role_id=1)
+
+        assert result == []

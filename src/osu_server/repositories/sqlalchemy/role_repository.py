@@ -74,8 +74,14 @@ class SQLAlchemyRoleRepository:
 
     async def get_user_ids_for_role(self, role_id: int) -> list[int]:
         """Return user IDs assigned to *role_id*, sorted ascending."""
-        _ = role_id
-        raise NotImplementedError
+        async with self._session_factory() as session:
+            stmt = (
+                select(UserRoleModel.user_id)
+                .where(UserRoleModel.role_id == role_id)
+                .order_by(UserRoleModel.user_id.asc())
+            )
+            result = await session.execute(stmt)
+            return [row[0] for row in result.all()]
 
     @staticmethod
     def _to_domain(model: RoleModel) -> Role:

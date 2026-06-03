@@ -39,7 +39,7 @@
   - _Boundary: SessionStore Valkey_
   - _Depends: 1.1, 1.2_
 
-- [ ] 2.3 (P) RoleRepository で assigned user lookup を実装する
+- [x] 2.3 (P) RoleRepository で assigned user lookup を実装する
   - memory と SQLAlchemy の role repository が role ID から assigned users を返せるようにする。
   - unrelated role assignment を含めず、role update の affected user set を安定した順序で返す。
   - completed state は、repository tests が assigned users、unassigned role、unrelated assignments、複数 user の並びを検証していること。

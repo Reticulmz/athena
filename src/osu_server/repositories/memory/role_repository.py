@@ -68,5 +68,5 @@ class InMemoryRoleRepository:
 
     async def get_user_ids_for_role(self, role_id: int) -> list[int]:
         """Return user IDs assigned to *role_id*, sorted ascending."""
-        _ = role_id
-        raise NotImplementedError
+        user_ids = [uid for uid, rids in self._user_roles.items() if role_id in rids]
+        return sorted(user_ids)
