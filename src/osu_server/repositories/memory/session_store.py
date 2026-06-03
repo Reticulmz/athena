@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 
 from osu_server.domain.session import SessionData  # noqa: TC001
+from osu_server.domain.session_authorization import (
+    SessionAuthorization,  # noqa: TC001
+)
 
 
 class InMemorySessionStore:
@@ -69,6 +72,14 @@ class InMemorySessionStore:
             return
         _ = self._by_token.pop(token, None)
         _ = self._token_to_user.pop(token, None)
+
+    async def update_authorization(
+        self,
+        user_id: int,
+        authorization: SessionAuthorization,
+    ) -> bool:
+        _ = (user_id, authorization)
+        raise NotImplementedError
 
     async def get_all_user_ids(self) -> list[int]:
         """Return all active user IDs."""

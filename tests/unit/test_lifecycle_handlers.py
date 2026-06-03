@@ -32,6 +32,10 @@ class FakeSessionStore:
     async def delete_by_user(self, user_id: int) -> None:
         self.deleted_users.append(user_id)
 
+    async def update_authorization(self, user_id: int, authorization: object) -> bool:
+        _ = (user_id, authorization)
+        raise NotImplementedError
+
 
 class FakeEventBus:
     def __init__(self) -> None:

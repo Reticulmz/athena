@@ -7,6 +7,9 @@ from typing import Protocol, runtime_checkable
 from osu_server.domain.session import (
     SessionData,  # noqa: TC001  # runtime_checkable needs runtime access
 )
+from osu_server.domain.session_authorization import (
+    SessionAuthorization,  # noqa: TC001  # runtime_checkable needs runtime access
+)
 
 
 @runtime_checkable
@@ -14,7 +17,7 @@ class SessionStore(Protocol):
     """Protocol for session CRUD operations.
 
     Implementations must support create, get, get_by_user, delete,
-    delete_by_user, exists, refresh, and get_all_user_ids.
+    delete_by_user, exists, refresh, update_authorization, and get_all_user_ids.
     Session data is represented by the ``SessionData`` dataclass.
     """
 
@@ -46,6 +49,19 @@ class SessionStore(Protocol):
         """Remove the session for *user_id*.
 
         If no session exists for the given user, this is a no-op (idempotent).
+        """
+        ...
+
+    async def update_authorization(
+        self,
+        user_id: int,
+        authorization: SessionAuthorization,
+    ) -> bool:
+        """Update only privileges and role_ids of an active session.
+
+        Returns ``True`` if the session was updated, ``False`` if no active
+        session exists for *user_id*.  Does not create a new session, delete
+        the session, or change any non-authorization fields.
         """
         ...
 

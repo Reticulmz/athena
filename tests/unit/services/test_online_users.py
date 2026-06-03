@@ -56,6 +56,10 @@ class FakeSessionStore:
     async def get_all_user_ids(self) -> list[int]:
         return self._user_ids
 
+    async def update_authorization(self, user_id: int, authorization: object) -> bool:
+        _ = (user_id, authorization)
+        raise NotImplementedError
+
 
 class TestOnlineUsersServiceProtocol:
     """OnlineUsersService は SessionStore を受け取る。"""

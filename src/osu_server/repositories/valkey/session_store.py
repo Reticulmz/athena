@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING, ClassVar
 from glide import Script
 
 from osu_server.domain.session import SessionData
+from osu_server.domain.session_authorization import (
+    SessionAuthorization,  # noqa: TC001  # stub — will be used at runtime in task 2.2
+)
 
 if TYPE_CHECKING:
     from glide import GlideClient
@@ -179,6 +182,14 @@ return 1""")
             keys=[self._user_key(user_id)],
             args=[f"{self._prefix}session:"],
         )
+
+    async def update_authorization(
+        self,
+        user_id: int,
+        authorization: SessionAuthorization,
+    ) -> bool:
+        _ = (user_id, authorization)
+        raise NotImplementedError  # stub — implemented in task 2.2
 
     async def get_all_user_ids(self) -> list[int]:
         """Return all active user IDs by scanning ``user_session:*`` keys."""

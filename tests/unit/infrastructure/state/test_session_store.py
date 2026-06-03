@@ -7,6 +7,7 @@ from dataclasses import replace
 import pytest
 
 from osu_server.domain.session import SessionData
+from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 
 _SESSION = SessionData(
@@ -196,3 +197,15 @@ async def test_get_all_user_ids_excludes_deleted(store: InMemorySessionStore) ->
     result = await store.get_all_user_ids()
 
     assert result == [2]
+
+
+# ---------------------------------------------------------------------------
+# Protocol compliance
+# ---------------------------------------------------------------------------
+
+
+async def test_inmemory_session_store_is_instance_of_session_store() -> None:
+    """InMemorySessionStore is recognized as a SessionStore Protocol instance."""
+    store = InMemorySessionStore()
+
+    assert isinstance(store, SessionStore)
