@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Command registration foundation を整える
+- [x] 1. Command registration foundation を整える
 - [x] 1.1 Command invocation の typed contract を定義する
   - BanchoBot command handler が利用する sender identity、destination、command name、arguments、visible command metadata を immutable な invocation context として扱えるようにする。
   - command metadata と handler binding が typed contract として表現され、basedpyright strict で unsafe cast なしに利用できる状態にする。
@@ -15,7 +15,7 @@
   - _Requirements: 2.1, 3.1, 4.1, 4.2, 4.3, 5.1_
   - _Boundary: CommandRegistry_
 
-- [ ] 2. Builtin command behavior を分離する
+- [x] 2. Builtin command behavior を分離する
 - [x] 2.1 (P) `roll` command の既存挙動を registered command として実装する
   - 既存の default max、numeric first argument、lower bound、response format を維持する test を先に追加する。
   - `roll` command が invocation context だけを使って response content を返すようにする。
@@ -36,7 +36,7 @@
   - _Boundary: Builtin commands_
   - _Depends: 2.1, 2.2_
 
-- [ ] 3. Command execution flow を registry に移行する
+- [x] 3. Command execution flow を registry に移行する
 - [x] 3.1 Registry-backed command execution を実装する
   - command prefix 判定、empty command name の無視、case-insensitive resolution、argument order preservation を既存 expectations として test する。
   - channel target は channel に、PM target は sender username に response target を維持する。
@@ -51,7 +51,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 3.2, 3.3, 4.1, 4.3, 5.3_
   - _Boundary: CommandService tests_
 
-- [ ] 4. Chat pipeline and Bancho integration を移行する
+- [x] 4. Chat pipeline and Bancho integration を移行する
 - [x] 4.1 Chat service と composition roots を新しい command service に接続する
   - ChatService が registry-backed command service を constructor injection で使い、既存の channel / PM command detection point を維持する。
   - app runtime と worker runtime が builtin command catalog から command service を構築する。
@@ -73,14 +73,14 @@
   - _Boundary: Migration cleanup_
   - _Depends: 4.1, 4.2_
 
-- [ ] 5. Regression validation を完了する
-- [ ] 5.1 Focused behavior regression を実行する
+- [x] 5. Regression validation を完了する
+- [x] 5.1 Focused behavior regression を実行する
   - BanchoBot command service、registry、builtin commands、chat service、Bancho chat pipeline の focused tests を実行する。
   - `!roll 100` の packet stream、BanchoBot identity、channel / PM response target が既存 expectations と一致することを確認する。
   - non-command、prefix-only、unknown command、handler no-response の observable behavior が requirements と一致することを確認する。
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 5.1, 5.2, 5.3_
   - _Boundary: Validation_
-- [ ] 5.2 Quality gates を実行する
+- [x] 5.2 Quality gates を実行する
   - ruff check、ruff format check、basedpyright が新しい namespace と import structure で pass することを確認する。
   - import-linter を実行し、`services.bancho_bot`、domain、transport、composition の dependency direction に違反がないことを確認する。
   - 失敗があれば root cause を修正し、同じ checks が pass した状態で完了する。
