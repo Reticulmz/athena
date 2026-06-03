@@ -65,7 +65,7 @@
   - channel と PM の enqueue behavior が既存 expectations と一致することを確認する。
   - _Requirements: 5.2, 5.3_
   - _Boundary: Bancho handler identity integration_
-- [ ] 4.3 Legacy command service path を削除して import を整理する
+- [x] 4.3 Legacy command service path を削除して import を整理する
   - source と tests が新しい BanchoBot command namespace を参照し、旧 command service path への import が残っていないことを確認する。
   - compatibility shim を残さず、旧 command service file が削除されていることを確認する。
   - DI assertion と chat pipeline expectations が新しい namespace と `BANCHO_BOT_IDENTITY` に揃っていることを確認する。
