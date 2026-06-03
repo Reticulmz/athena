@@ -261,3 +261,74 @@ class TestRefreshUserAuthorizationFailed:
         _ = await svc.refresh_user_authorization(user_id=1)
 
         assert len(session_store.update_calls) == 0
+
+
+class TestRefreshUserAuthorizationIdempotent:
+    """同じ role state への repeated refresh は duplicate を作らず同等の結果を返す。"""
+
+    async def test_repeated_refresh_returns_same_status(
+        self,
+        perm_svc: FakePermissionService,
+        session_store: FakeSessionStore,
+    ) -> None:
+        svc = _make_service(perm_svc, session_store)
+
+        first = await svc.refresh_user_authorization(user_id=1)
+        second = await svc.refresh_user_authorization(user_id=1)
+
+        assert first.status == AuthorizationRefreshStatus.REFRESHED
+        assert second.status == AuthorizationRefreshStatus.REFRESHED
+
+    async def test_repeated_refresh_produces_equivalent_authorization(
+        self,
+        perm_svc: FakePermissionService,
+        session_store: FakeSessionStore,
+    ) -> None:
+        svc = _make_service(perm_svc, session_store)
+
+        first = await svc.refresh_user_authorization(user_id=1)
+        second = await svc.refresh_user_authorization(user_id=1)
+
+        assert first.authorization == second.authorization
+
+    async def test_repeated_refresh_calls_update_twice(
+        self,
+        perm_svc: FakePermissionService,
+        session_store: FakeSessionStore,
+    ) -> None:
+        svc = _make_service(perm_svc, session_store)
+
+        _ = await svc.refresh_user_authorization(user_id=1)
+        _ = await svc.refresh_user_authorization(user_id=1)
+
+        assert len(session_store.update_calls) == 2
+
+
+class TestRefreshUserAuthorizationSequentialRoleChanges:
+    """sequential role changes では latest refresh が最終的な認可を決める。"""
+
+    async def test_latest_refresh_sets_final_authorization(
+        self,
+        session_store: FakeSessionStore,
+    ) -> None:
+        first_snapshot = SessionAuthorization(
+            privileges=Privileges.NORMAL,
+            role_ids=(1,),
+        )
+        second_snapshot = SessionAuthorization(
+            privileges=Privileges.ADMIN,
+            role_ids=(5,),
+        )
+
+        perm_svc = FakePermissionService(snapshot=first_snapshot)
+        svc = _make_service(perm_svc, session_store)
+
+        _ = await svc.refresh_user_authorization(user_id=1)
+
+        # Change the role state
+        perm_svc.snapshot = second_snapshot
+        result = await svc.refresh_user_authorization(user_id=1)
+
+        assert result.authorization == second_snapshot
+        # Last update_authorization call got the latest snapshot
+        assert session_store.update_calls[-1][1] == second_snapshot

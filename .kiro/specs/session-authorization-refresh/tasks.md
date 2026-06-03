@@ -73,7 +73,7 @@
   - _Boundary: SessionAuthorizationService_
   - _Depends: 2.1, 2.2, 2.4_
 
-- [ ] 3.3 refresh failure と repeated refresh の service behavior を実装する
+- [x] 3.3 refresh failure と repeated refresh の service behavior を実装する
   - role-derived snapshot を決定できない場合は existing session authorization を保存したまま failed outcome を返す。
   - 同じ role state への repeated refresh は duplicate session を作らず equivalent authorization を保つ。
   - sequential role changes では latest completed refresh が subsequent authorization decision を決めるようにする。
