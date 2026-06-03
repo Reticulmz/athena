@@ -1,0 +1,88 @@
+# Implementation Plan
+
+- [ ] 1. Command registration foundation を整える
+- [x] 1.1 Command invocation の typed contract を定義する
+  - BanchoBot command handler が利用する sender identity、destination、command name、arguments、visible command metadata を immutable な invocation context として扱えるようにする。
+  - command metadata と handler binding が typed contract として表現され、basedpyright strict で unsafe cast なしに利用できる状態にする。
+  - 新しい BanchoBot command namespace から必要な contract を import できることを確認する。
+  - _Requirements: 2.2, 3.1, 3.2, 4.3_
+  - _Boundary: CommandContext, CommandMetadata, CommandDefinition_
+- [ ] 1.2 Deterministic command registry と decorator contract を実装する
+  - command name を canonical lower-case name として登録・解決できるようにする。
+  - visible command metadata が registration order を保持して列挙されるようにする。
+  - duplicate command name が登録時に検出され、test setup や startup で明確に失敗するようにする。
+  - global mutable registry に依存せず、test ごとに isolated registry を作れることを unit test で確認する。
+  - _Requirements: 2.1, 3.1, 4.1, 4.2, 4.3, 5.1_
+  - _Boundary: CommandRegistry_
+
+- [ ] 2. Builtin command behavior を分離する
+- [ ] 2.1 (P) `roll` command の既存挙動を registered command として実装する
+  - 既存の default max、numeric first argument、lower bound、response format を維持する test を先に追加する。
+  - `roll` command が invocation context だけを使って response content を返すようにする。
+  - `!roll` と `!roll 50` の observable response が既存 expectations と一致することを unit test で確認する。
+  - _Requirements: 1.1, 1.2, 2.2, 3.3_
+  - _Boundary: roll command_
+- [ ] 2.2 (P) `help` command を visible command metadata から生成する
+  - visible commands の order と names から help output を生成する test を先に追加する。
+  - `help` command が invocation context の available command metadata だけを使って response content を返すようにする。
+  - sample metadata を使った help output が expected command names と registration order を反映することを unit test で確認する。
+  - _Requirements: 1.3, 4.1, 4.2, 4.3_
+  - _Boundary: help command_
+- [ ] 2.3 Builtin command catalog を明示的な登録順で組み立てる
+  - builtin catalog が `roll`、`help` の順で player-visible command を登録するようにする。
+  - current scope で新しい player-visible command が増えていないことを unit test で確認する。
+  - builtin registry で `Available commands: !roll, !help` が返ることを確認する。
+  - _Requirements: 1.3, 4.1, 4.2, 5.1_
+  - _Boundary: Builtin commands_
+  - _Depends: 2.1, 2.2_
+
+- [ ] 3. Command execution flow を registry に移行する
+- [ ] 3.1 Registry-backed command execution を実装する
+  - command prefix 判定、empty command name の無視、case-insensitive resolution、argument order preservation を既存 expectations として test する。
+  - channel target は channel に、PM target は sender username に response target を維持する。
+  - unknown command は既存 unknown command response を返し、handler が response を返さない場合は command response を生成しない。
+  - `CommandService` が `ChatCommandResponse | None` を返し、packet enqueue や BanchoBot author identity を持たないことを確認する。
+  - _Requirements: 1.1, 1.2, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 3.2, 5.3_
+  - _Boundary: CommandService_
+- [ ] 3.2 Command service unit coverage を新しい namespace に移行する
+  - 既存の roll、help、unknown command、PM target tests が新しい command service contract で通るようにする。
+  - tuple response 前提の assertion が `ChatCommandResponse` 前提に置き換わっていることを確認する。
+  - old command service import に依存しない focused unit test suite が通ることを確認する。
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 3.2, 3.3, 4.1, 4.3, 5.3_
+  - _Boundary: CommandService tests_
+
+- [ ] 4. Chat pipeline and Bancho integration を移行する
+- [ ] 4.1 Chat service と composition roots を新しい command service に接続する
+  - ChatService が registry-backed command service を constructor injection で使い、既存の channel / PM command detection point を維持する。
+  - app runtime と worker runtime が builtin command catalog から command service を構築する。
+  - channel command response と PM command response が既存 result objects に残ることを integration-level tests で確認する。
+  - _Requirements: 1.1, 1.2, 5.2, 5.3_
+  - _Boundary: ChatService integration, CompositionRoot_
+  - _Depends: 3.1_
+- [ ] 4.2 BanchoBot packet author identity を system user identity に移す
+  - command response packet が existing BanchoBot user id と username で build されることを handler tests で確認する。
+  - transport handler が command execution service に identity constants を求めなくなることを確認する。
+  - channel と PM の enqueue behavior が既存 expectations と一致することを確認する。
+  - _Requirements: 5.2, 5.3_
+  - _Boundary: Bancho handler identity integration_
+- [ ] 4.3 Legacy command service path を削除して import を整理する
+  - source と tests が新しい BanchoBot command namespace を参照し、旧 command service path への import が残っていないことを確認する。
+  - compatibility shim を残さず、旧 command service file が削除されていることを確認する。
+  - DI assertion と chat pipeline expectations が新しい namespace と `BANCHO_BOT_IDENTITY` に揃っていることを確認する。
+  - _Requirements: 3.3, 5.2, 5.3_
+  - _Boundary: Migration cleanup_
+  - _Depends: 4.1, 4.2_
+
+- [ ] 5. Regression validation を完了する
+- [ ] 5.1 Focused behavior regression を実行する
+  - BanchoBot command service、registry、builtin commands、chat service、Bancho chat pipeline の focused tests を実行する。
+  - `!roll 100` の packet stream、BanchoBot identity、channel / PM response target が既存 expectations と一致することを確認する。
+  - non-command、prefix-only、unknown command、handler no-response の observable behavior が requirements と一致することを確認する。
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 5.1, 5.2, 5.3_
+  - _Boundary: Validation_
+- [ ] 5.2 Quality gates を実行する
+  - ruff check、ruff format check、basedpyright が新しい namespace と import structure で pass することを確認する。
+  - import-linter を実行し、`services.bancho_bot`、domain、transport、composition の dependency direction に違反がないことを確認する。
+  - 失敗があれば root cause を修正し、同じ checks が pass した状態で完了する。
+  - _Requirements: 3.1, 3.2, 3.3, 5.2_
+  - _Boundary: Validation_
