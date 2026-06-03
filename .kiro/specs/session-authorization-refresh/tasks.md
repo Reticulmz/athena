@@ -56,7 +56,7 @@
   - _Depends: 1.1_
 
 - [ ] 3. Service orchestration and composition
-- [ ] 3.1 login authorization calculation を共有 snapshot に揃える
+- [x] 3.1 login authorization calculation を共有 snapshot に揃える
   - successful login の session data と login response が共有 snapshot 由来の `privileges` と `role_ids` を使うようにする。
   - 既存の login result、token issuance、session replacement、login permissions packet behavior を変えない。
   - completed state は、auth service tests が login session と response の authorization が同じ snapshot から作られることを検証していること。

@@ -226,10 +226,10 @@ class AuthService:
             )
             return LoginResult.AUTHENTICATION_FAILED
 
-        # 3. 権限計算
-        roles = await self._role_repo.get_roles_for_user(user.id)
-        privileges = await self._permission_service.compute_permissions(user.id)
-        role_ids = tuple(role.id for role in roles)
+        # 3. 権限計算 (login と refresh で共有の snapshot)
+        auth_snapshot = await self._permission_service.compute_session_authorization(user.id)
+        privileges = auth_snapshot.privileges
+        role_ids = auth_snapshot.role_ids
 
         # 4. 国コード (Transport 層で解決済み)
         if country not in ("XX", user.country):
