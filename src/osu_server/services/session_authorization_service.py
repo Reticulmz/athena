@@ -8,10 +8,12 @@ import structlog
 
 from osu_server.domain.session_authorization import (
     AuthorizationRefreshStatus,
+    RoleAuthorizationRefreshResult,
     UserAuthorizationRefreshResult,
 )
 
 if TYPE_CHECKING:
+    from osu_server.repositories.interfaces.role_repository import RoleRepository
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.permission_service import PermissionService
 
@@ -23,15 +25,18 @@ class SessionAuthorizationService:
 
     _permission_service: PermissionService
     _session_store: SessionStore
+    _role_repository: RoleRepository
 
     def __init__(
         self,
         *,
         permission_service: PermissionService,
         session_store: SessionStore,
+        role_repository: RoleRepository,
     ) -> None:
         self._permission_service = permission_service
         self._session_store = session_store
+        self._role_repository = role_repository
 
     async def refresh_user_authorization(
         self,
@@ -85,4 +90,30 @@ class SessionAuthorizationService:
             user_id=user_id,
             status=AuthorizationRefreshStatus.REFRESHED,
             authorization=snapshot,
+        )
+
+    async def refresh_role_authorization(
+        self,
+        role_id: int,
+    ) -> RoleAuthorizationRefreshResult:
+        """*role_id* に割り当てられた全ユーザーの認可を refresh する。
+
+        RoleRepository.get_user_ids_for_role() で取得した各ユーザーに対し
+        refresh_user_authorization() を呼び、結果を集約する。
+        """
+        user_ids = await self._role_repository.get_user_ids_for_role(role_id)
+
+        user_results: list[UserAuthorizationRefreshResult] = []
+        for user_id in user_ids:
+            result = await self.refresh_user_authorization(user_id)
+            user_results.append(result)
+
+        logger.info(
+            "role_authorization_refreshed",
+            role_id=role_id,
+            user_count=len(user_results),
+        )
+        return RoleAuthorizationRefreshResult(
+            role_id=role_id,
+            user_results=tuple(user_results),
         )

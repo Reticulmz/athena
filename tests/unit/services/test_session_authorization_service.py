@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import override
+
 import pytest
 
 from osu_server.domain.role import Privileges
 from osu_server.domain.session_authorization import (
     AuthorizationRefreshStatus,
+    RoleAuthorizationRefreshResult,
     SessionAuthorization,
 )
 from osu_server.services.session_authorization_service import (
@@ -95,6 +98,20 @@ class FakeSessionStore:
         return self._update_result
 
 
+class FakeRoleRepository:
+    """get_user_ids_for_role の戻り値を制御する fake。"""
+
+    _user_ids: list[int]
+
+    def __init__(self, user_ids: list[int] | None = None) -> None:
+        self._user_ids = user_ids or []
+        self.get_calls: list[int] = []
+
+    async def get_user_ids_for_role(self, role_id: int) -> list[int]:
+        self.get_calls.append(role_id)
+        return list(self._user_ids)
+
+
 # ── Fixtures ───────────────────────────────────────────────────────────
 
 
@@ -111,10 +128,12 @@ def session_store() -> FakeSessionStore:
 def _make_service(
     perm_svc: FakePermissionService,
     session_store: FakeSessionStore,
+    role_repo: FakeRoleRepository | None = None,
 ) -> SessionAuthorizationService:
     return SessionAuthorizationService(
         permission_service=perm_svc,  # pyright: ignore[reportArgumentType]
         session_store=session_store,  # pyright: ignore[reportArgumentType]
+        role_repository=role_repo or FakeRoleRepository(),  # pyright: ignore[reportArgumentType]
     )
 
 
@@ -332,3 +351,120 @@ class TestRefreshUserAuthorizationSequentialRoleChanges:
         assert result.authorization == second_snapshot
         # Last update_authorization call got the latest snapshot
         assert session_store.update_calls[-1][1] == second_snapshot
+
+
+# ── refresh_role_authorization ─────────────────────────────────────────
+
+
+class TestRefreshRoleAuthorizationMultipleUsers:
+    """role に割り当てられた全ユーザーの refresh 結果を集約する。"""
+
+    async def test_returns_role_authorization_refresh_result(
+        self,
+        perm_svc: FakePermissionService,
+        session_store: FakeSessionStore,
+    ) -> None:
+        role_repo = FakeRoleRepository(user_ids=[1, 2, 3])
+        svc = _make_service(perm_svc, session_store, role_repo=role_repo)
+
+        result = await svc.refresh_role_authorization(role_id=10)
+
+        assert isinstance(result, RoleAuthorizationRefreshResult)
+        assert result.role_id == 10
+
+    async def test_refreshes_all_assigned_users(
+        self,
+        perm_svc: FakePermissionService,
+        session_store: FakeSessionStore,
+    ) -> None:
+        role_repo = FakeRoleRepository(user_ids=[10, 20, 30])
+        svc = _make_service(perm_svc, session_store, role_repo=role_repo)
+
+        result = await svc.refresh_role_authorization(role_id=5)
+
+        assert len(result.user_results) == 3
+        user_ids = {r.user_id for r in result.user_results}
+        assert user_ids == {10, 20, 30}
+
+    async def test_all_refreshed_when_all_active(
+        self,
+        perm_svc: FakePermissionService,
+        session_store: FakeSessionStore,
+    ) -> None:
+        role_repo = FakeRoleRepository(user_ids=[1, 2])
+        svc = _make_service(perm_svc, session_store, role_repo=role_repo)
+
+        result = await svc.refresh_role_authorization(role_id=1)
+
+        statuses = {r.status for r in result.user_results}
+        assert statuses == {AuthorizationRefreshStatus.REFRESHED}
+
+
+class TestRefreshRoleAuthorizationNoAssignedUsers:
+    """割り当てユーザーがいない role は空結果を返す。"""
+
+    async def test_empty_user_results(
+        self,
+        perm_svc: FakePermissionService,
+        session_store: FakeSessionStore,
+    ) -> None:
+        role_repo = FakeRoleRepository(user_ids=[])
+        svc = _make_service(perm_svc, session_store, role_repo=role_repo)
+
+        result = await svc.refresh_role_authorization(role_id=99)
+
+        assert len(result.user_results) == 0
+        assert result.role_id == 99
+
+
+class TestRefreshRoleAuthorizationMixedOutcomes:
+    """active user と offline user が混在する場合、outcome を正しく区別する。"""
+
+    async def test_mixed_refreshed_and_no_active_session(
+        self,
+        perm_svc: FakePermissionService,
+    ) -> None:
+        """user 1 は active、user 2 は offline (update_authorization が False)。"""
+        role_repo = FakeRoleRepository(user_ids=[1, 2])
+
+        # SessionStore returns True for user 1, False for user 2
+        class SelectiveSessionStore(FakeSessionStore):
+            @override
+            async def update_authorization(
+                self,
+                user_id: int,
+                authorization: SessionAuthorization,
+            ) -> bool:
+                self.update_calls.append((user_id, authorization))
+                return user_id == 1
+
+        store = SelectiveSessionStore()
+        svc = _make_service(perm_svc, store, role_repo=role_repo)
+
+        result = await svc.refresh_role_authorization(role_id=1)
+
+        assert len(result.user_results) == 2
+
+        user1_result = next(r for r in result.user_results if r.user_id == 1)
+        user2_result = next(r for r in result.user_results if r.user_id == 2)
+
+        assert user1_result.status == AuthorizationRefreshStatus.REFRESHED
+        assert user1_result.authorization is not None
+        assert user2_result.status == AuthorizationRefreshStatus.NO_ACTIVE_SESSION
+        assert user2_result.authorization is None
+
+
+class TestRefreshRoleAuthorizationDelegatesToRoleRepo:
+    """refresh_role_authorization は RoleRepository.get_user_ids_for_role を呼ぶ。"""
+
+    async def test_calls_get_user_ids_for_role(
+        self,
+        perm_svc: FakePermissionService,
+        session_store: FakeSessionStore,
+    ) -> None:
+        role_repo = FakeRoleRepository(user_ids=[1])
+        svc = _make_service(perm_svc, session_store, role_repo=role_repo)
+
+        _ = await svc.refresh_role_authorization(role_id=42)
+
+        assert role_repo.get_calls == [42]

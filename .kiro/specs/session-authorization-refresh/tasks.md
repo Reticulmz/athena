@@ -82,7 +82,7 @@
   - _Boundary: SessionAuthorizationService_
   - _Depends: 3.2_
 
-- [ ] 3.4 role 単位の authorization refresh を実装する
+- [x] 3.4 role 単位の authorization refresh を実装する
   - role permissions update 後、assigned users だけを対象に user refresh を適用する。
   - affected active users、offline assigned users、unaffected active users の outcome を分けて扱う。
   - completed state は、role refresh tests が複数 affected sessions、unaffected session preservation、no active assigned users、permission removal を検証していること。
