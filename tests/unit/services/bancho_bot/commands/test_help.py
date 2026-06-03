@@ -28,60 +28,60 @@ def _make_ctx(*commands: CommandMetadata) -> CommandContext:
 class TestHelpSingleVisible:
     """Req 1.3, 4.3: !help lists a single visible command."""
 
-    def test_single_visible_command(self) -> None:
+    async def test_single_visible_command(self) -> None:
         """Single visible command produces 'Available commands: !roll'."""
         roll = CommandMetadata(name="roll", description="Roll a random number")
-        result = help_handler(_make_ctx(roll))
+        result = await help_handler(_make_ctx(roll))
         assert result == "Available commands: !roll"
 
 
 class TestHelpMultipleVisible:
     """Req 4.1, 4.2: !help lists multiple visible commands in registration order."""
 
-    def test_multiple_visible_preserves_order(self) -> None:
+    async def test_multiple_visible_preserves_order(self) -> None:
         """Commands appear in registration order from available_commands."""
         roll = CommandMetadata(name="roll", description="Roll a random number")
         help_cmd = CommandMetadata(name="help", description="Show available commands")
-        result = help_handler(_make_ctx(roll, help_cmd))
+        result = await help_handler(_make_ctx(roll, help_cmd))
         assert result == "Available commands: !roll, !help"
 
-    def test_order_matches_available_commands(self) -> None:
+    async def test_order_matches_available_commands(self) -> None:
         """Reversing registration order changes output order."""
         help_cmd = CommandMetadata(name="help", description="Show available commands")
         roll = CommandMetadata(name="roll", description="Roll a random number")
-        result = help_handler(_make_ctx(help_cmd, roll))
+        result = await help_handler(_make_ctx(help_cmd, roll))
         assert result == "Available commands: !help, !roll"
 
 
 class TestHelpHiddenExcluded:
     """Req 4.1: hidden commands are excluded from help output."""
 
-    def test_hidden_command_not_listed(self) -> None:
+    async def test_hidden_command_not_listed(self) -> None:
         """Commands with visible=False do not appear in help."""
         roll = CommandMetadata(name="roll", description="Roll", visible=True)
         secret = CommandMetadata(name="secret", description="Admin only", visible=False)
-        result = help_handler(_make_ctx(roll, secret))
+        result = await help_handler(_make_ctx(roll, secret))
         assert result == "Available commands: !roll"
 
-    def test_all_hidden_returns_empty_list(self) -> None:
+    async def test_all_hidden_returns_empty_list(self) -> None:
         """When all commands are hidden, help shows no commands."""
         secret = CommandMetadata(name="secret", description="Hidden", visible=False)
-        result = help_handler(_make_ctx(secret))
+        result = await help_handler(_make_ctx(secret))
         assert result == "Available commands: "
 
-    def test_multiple_hidden_excluded(self) -> None:
+    async def test_multiple_hidden_excluded(self) -> None:
         """Multiple hidden commands are all excluded."""
         a = CommandMetadata(name="a", description="A", visible=True)
         h1 = CommandMetadata(name="h1", description="H1", visible=False)
         h2 = CommandMetadata(name="h2", description="H2", visible=False)
-        result = help_handler(_make_ctx(a, h1, h2))
+        result = await help_handler(_make_ctx(a, h1, h2))
         assert result == "Available commands: !a"
 
 
 class TestHelpEmptyCommands:
     """Req 1.3: !help with empty available_commands still returns valid message."""
 
-    def test_empty_available_commands(self) -> None:
+    async def test_empty_available_commands(self) -> None:
         """No available commands produces valid message."""
-        result = help_handler(_make_ctx())
+        result = await help_handler(_make_ctx())
         assert result == "Available commands: "

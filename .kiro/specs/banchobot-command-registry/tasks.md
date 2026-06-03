@@ -28,7 +28,7 @@
   - sample metadata を使った help output が expected command names と registration order を反映することを unit test で確認する。
   - _Requirements: 1.3, 4.1, 4.2, 4.3_
   - _Boundary: help command_
-- [ ] 2.3 Builtin command catalog を明示的な登録順で組み立てる
+- [x] 2.3 Builtin command catalog を明示的な登録順で組み立てる
   - builtin catalog が `roll`、`help` の順で player-visible command を登録するようにする。
   - current scope で新しい player-visible command が増えていないことを unit test で確認する。
   - builtin registry で `Available commands: !roll, !help` が返ることを確認する。

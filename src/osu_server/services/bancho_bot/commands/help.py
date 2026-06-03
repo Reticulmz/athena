@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from osu_server.services.bancho_bot.context import CommandContext
 
 
-def help_handler(ctx: CommandContext) -> str | None:
+async def help_handler(ctx: CommandContext) -> str | None:
     """Return a formatted list of visible commands.
 
     Reads ctx.available_commands (tuple of CommandMetadata), filters to
