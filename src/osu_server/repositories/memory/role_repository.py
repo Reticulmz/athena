@@ -65,3 +65,8 @@ class InMemoryRoleRepository:
             msg = "No role named 'Default' exists"
             raise LookupError(msg)
         return role
+
+    async def get_user_ids_for_role(self, role_id: int) -> list[int]:
+        """Return user IDs assigned to *role_id*, sorted ascending."""
+        _ = role_id
+        raise NotImplementedError

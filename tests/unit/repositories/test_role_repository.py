@@ -160,3 +160,13 @@ class TestGetDefaultRole:
     async def test_raises_when_no_default_role(self, empty_repo: InMemoryRoleRepository) -> None:
         with pytest.raises(LookupError, match="Default"):
             _ = await empty_repo.get_default_role()
+
+
+class TestGetUserIdsForRoleProtocol:
+    """get_user_ids_for_role() contract is declared on the Protocol."""
+
+    def test_protocol_declares_method(self) -> None:
+        assert hasattr(RoleRepository, "get_user_ids_for_role")
+
+    def test_memory_impl_satisfies_protocol(self, repo: InMemoryRoleRepository) -> None:
+        assert isinstance(repo, RoleRepository)

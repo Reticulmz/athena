@@ -39,3 +39,16 @@ class RoleRepository(Protocol):
         Raises ``LookupError`` if no such role exists.
         """
         ...
+
+    async def get_user_ids_for_role(self, role_id: int) -> list[int]:
+        """Return user IDs assigned to *role_id*, sorted ascending.
+
+        Preconditions:
+            - ``role_id`` is an internal role identifier.
+
+        Postconditions:
+            - Returns ``list[int]`` — user IDs assigned to the role.
+            - Returns empty list when no assignments exist.
+            - Returned user IDs are deterministic, sorted ascending.
+        """
+        ...
