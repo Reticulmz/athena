@@ -37,14 +37,14 @@
   - _Depends: 2.1, 2.2_
 
 - [ ] 3. Command execution flow を registry に移行する
-- [ ] 3.1 Registry-backed command execution を実装する
+- [x] 3.1 Registry-backed command execution を実装する
   - command prefix 判定、empty command name の無視、case-insensitive resolution、argument order preservation を既存 expectations として test する。
   - channel target は channel に、PM target は sender username に response target を維持する。
   - unknown command は既存 unknown command response を返し、handler が response を返さない場合は command response を生成しない。
   - `CommandService` が `ChatCommandResponse | None` を返し、packet enqueue や BanchoBot author identity を持たないことを確認する。
   - _Requirements: 1.1, 1.2, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 3.2, 5.3_
   - _Boundary: CommandService_
-- [ ] 3.2 Command service unit coverage を新しい namespace に移行する
+- [x] 3.2 Command service unit coverage を新しい namespace に移行する
   - 既存の roll、help、unknown command、PM target tests が新しい command service contract で通るようにする。
   - tuple response 前提の assertion が `ChatCommandResponse` 前提に置き換わっていることを確認する。
   - old command service import に依存しない focused unit test suite が通ることを確認する。
