@@ -23,7 +23,7 @@
   - _Requirements: 1.1, 1.2, 2.3, 7.1, 7.2, 8.1_
 
 - [ ] 2. Implement blob metadata repositories
-- [ ] 2.1 Define the blob repository contract
+- [x] 2.1 Define the blob repository contract
   - Provide the repository contract for finding blobs by ID and SHA-256 and creating new immutable blob records.
   - Keep update and delete operations out of the contract.
   - Specify duplicate-create behavior so the service can resolve races by returning an existing blob.
