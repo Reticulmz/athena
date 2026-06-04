@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from osu_server.domain.chat import ChatCommandResponse
-from osu_server.services.bancho_bot.context import CommandContext
+from osu_server.services.bancho_bot.context import CommandContext, CommandDestination
 
 if TYPE_CHECKING:
     from osu_server.services.bancho_bot.registry import CommandRegistry
@@ -54,6 +54,10 @@ class CommandService:
         cmd_name = parts[0].lower()
         args = tuple(parts[1:])
 
+        destination = (
+            CommandDestination.CHANNEL if target.startswith("#") else CommandDestination.PM
+        )
+
         response_target = target
         if not target.startswith("#"):
             # BanchoBot PM: reply target is the sender's username.
@@ -72,7 +76,8 @@ class CommandService:
             target=target,
             command_name=cmd_name,
             args=args,
-            available_commands=self._registry.visible_commands(),
+            destination=destination,
+            available_commands=self._registry.commands(),
         )
         response = await definition.handler(ctx)
         if response is None:

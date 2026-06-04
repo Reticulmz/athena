@@ -6,26 +6,19 @@ deterministically ordered registry of builtin player-visible commands.
 
 from __future__ import annotations
 
-from osu_server.services.bancho_bot.commands.help import help_handler
-from osu_server.services.bancho_bot.commands.roll import roll_handler
-from osu_server.services.bancho_bot.registry import CommandRegistry, command
+from osu_server.services.bancho_bot.commands.general import setup_general
+from osu_server.services.bancho_bot.registry import CommandRegistry
 
 
 def create_builtin_registry() -> CommandRegistry:
     """Create a registry pre-populated with builtin player-visible commands.
 
-    Registration order (roll then help) is deterministic and determines
-    !help output ordering.
+    Registration order is determined by the order of ``setup_*()`` calls.
+    Currently only ``setup_general()`` registers ``!roll`` then ``!help``.
 
     Returns:
-        A new CommandRegistry with roll and help registered.
+        A new CommandRegistry with all builtin commands registered.
     """
     registry = CommandRegistry()
-
-    roll_cmd = command("roll", description="Roll a random number")
-    registry.register(roll_cmd(roll_handler))
-
-    help_cmd = command("help", description="Show available commands")
-    registry.register(help_cmd(help_handler))
-
+    setup_general(registry)
     return registry

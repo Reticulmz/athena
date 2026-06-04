@@ -23,8 +23,7 @@ import pytest
 
 from osu_server.domain.chat import ChatCommandResponse
 from osu_server.services.bancho_bot.command_service import CommandService
-from osu_server.services.bancho_bot.commands.help import help_handler
-from osu_server.services.bancho_bot.commands.roll import roll_handler
+from osu_server.services.bancho_bot.commands.general import setup_general
 from osu_server.services.bancho_bot.registry import CommandRegistry, command
 
 if TYPE_CHECKING:
@@ -35,8 +34,7 @@ if TYPE_CHECKING:
 def registry() -> CommandRegistry:
     """Builtin registry with roll and help, matching the real builtin catalog."""
     reg = CommandRegistry()
-    reg.register(command("roll", description="Roll a random number")(roll_handler))
-    reg.register(command("help", description="Show available commands")(help_handler))
+    setup_general(reg)
     return reg
 
 
@@ -271,7 +269,7 @@ class TestCommandContextBuiltCorrectly:
         assert captured[0].sender_name == "PlayerOne"
 
     async def test_context_includes_available_commands(self) -> None:
-        """CommandContext.available_commands matches registry visible_commands."""
+        """CommandContext.available_commands matches registry commands."""
         reg = CommandRegistry()
         captured: list[CommandContext] = []
 
@@ -284,7 +282,7 @@ class TestCommandContextBuiltCorrectly:
 
         _ = await svc2.execute(1, "User", "#osu", "!who")
         assert len(captured) == 1
-        assert captured[0].available_commands == reg.visible_commands()
+        assert captured[0].available_commands == reg.commands()
 
 
 # --- Edge cases --------------------------------------------------------------------

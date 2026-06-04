@@ -9,7 +9,13 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from osu_server.services.bancho_bot.context import CommandContext, CommandMetadata
+from osu_server.domain.role import Privileges
+from osu_server.services.bancho_bot.context import (
+    CommandArgument,
+    CommandContext,
+    CommandDestination,
+    CommandMetadata,
+)
 
 CommandHandler = Callable[[CommandContext], Awaitable[str | None]]
 
@@ -72,25 +78,73 @@ class CommandRegistry:
         """
         return self._definitions.get(name.lower())
 
-    def visible_commands(self) -> tuple[CommandMetadata, ...]:
-        """Return visible command metadata in registration order (Req 4.1, 4.2).
+    def commands(self) -> tuple[CommandMetadata, ...]:
+        """Return all command metadata in registration order (Req 4.1, 4.2).
 
         Returns:
-            A tuple of CommandMetadata for all visible commands, preserving
+            A tuple of CommandMetadata for all registered commands, preserving
             insertion order.
         """
-        return tuple(
-            self._definitions[name].metadata
-            for name in self._insertion_order
-            if self._definitions[name].metadata.visible
-        )
+        return tuple(self._definitions[name].metadata for name in self._insertion_order)
+
+    def command(
+        self,
+        name: str,
+        *,
+        description: str,
+        usage: str = "",
+        arguments: tuple[CommandArgument, ...] = (),
+        required_privileges: Privileges = Privileges.NONE,
+        allowed_destinations: CommandDestination = CommandDestination.BOTH,
+    ) -> Callable[[CommandHandler], CommandDefinition]:
+        """Decorator that creates a CommandDefinition and registers it (Req 3.1).
+
+        Usage:
+            registry = CommandRegistry()
+
+            @registry.command("roll", description="Roll a random number")
+            async def roll_handler(ctx: CommandContext) -> str | None:
+                ...
+
+        Args:
+            name: The canonical command name (lower-case recommended).
+            description: Human-readable description for help output.
+            usage: Usage string for help output (e.g. "!roll [max]").
+            arguments: Tuple of CommandArgument describing accepted arguments.
+            required_privileges: Required Privileges to execute this command.
+            allowed_destinations: Where this command can be executed.
+
+        Returns:
+            A decorator that wraps the handler into a CommandDefinition
+            and registers it in this registry.
+        """
+
+        def decorate(handler: CommandHandler) -> CommandDefinition:
+            definition = CommandDefinition(
+                metadata=CommandMetadata(
+                    name=name,
+                    description=description,
+                    usage=usage,
+                    arguments=arguments,
+                    required_privileges=required_privileges,
+                    allowed_destinations=allowed_destinations,
+                ),
+                handler=handler,
+            )
+            self.register(definition)
+            return definition
+
+        return decorate
 
 
 def command(
     name: str,
     *,
     description: str,
-    visible: bool = True,
+    usage: str = "",
+    arguments: tuple[CommandArgument, ...] = (),
+    required_privileges: Privileges = Privileges.NONE,
+    allowed_destinations: CommandDestination = CommandDestination.BOTH,
 ) -> Callable[[CommandHandler], CommandDefinition]:
     """Create a CommandDefinition from a handler function (Req 3.1).
 
@@ -105,7 +159,10 @@ def command(
     Args:
         name: The canonical command name (lower-case recommended).
         description: Human-readable description for help output.
-        visible: Whether this command appears in help listings. Defaults to True.
+        usage: Usage string for help output (e.g. "!roll [max]").
+        arguments: Tuple of CommandArgument describing accepted arguments.
+        required_privileges: Required Privileges to execute this command.
+        allowed_destinations: Where this command can be executed.
 
     Returns:
         A callable that accepts a CommandHandler and returns a CommandDefinition.
@@ -116,7 +173,10 @@ def command(
             metadata=CommandMetadata(
                 name=name,
                 description=description,
-                visible=visible,
+                usage=usage,
+                arguments=arguments,
+                required_privileges=required_privileges,
+                allowed_destinations=allowed_destinations,
             ),
             handler=handler,
         )

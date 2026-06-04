@@ -15,7 +15,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from osu_server.services.bancho_bot.context import CommandContext, CommandMetadata
+from osu_server.domain.role import Privileges
+from osu_server.services.bancho_bot.context import (
+    CommandContext,
+    CommandDestination,
+    CommandMetadata,
+)
 from osu_server.services.bancho_bot.registry import (
     CommandDefinition,
     CommandRegistry,
@@ -75,6 +80,7 @@ class TestCommandDefinition:
                     target="#o",
                     command_name="async",
                     args=(),
+                    destination=CommandDestination.CHANNEL,
                     available_commands=(),
                 )
             )
@@ -149,44 +155,45 @@ class TestCommandRegistry:
         with pytest.raises(ValueError, match="roll"):
             registry.register(self._make_definition("ROLL"))
 
-    def test_visible_commands_empty_initially(self) -> None:
-        """A new registry has no visible commands."""
+    def test_commands_empty_initially(self) -> None:
+        """A new registry has no commands."""
         registry = CommandRegistry()
-        assert registry.visible_commands() == ()
+        assert registry.commands() == ()
 
-    def test_visible_commands_lists_visible_only(self) -> None:
-        """Req 4.1: visible_commands returns only player-visible metadata."""
+    def test_commands_lists_all(self) -> None:
+        """commands returns all registered command metadata."""
         registry = CommandRegistry()
         registry.register(self._make_definition("roll", "Roll"))
         registry.register(self._make_definition("help", "Help"))
-        # Register a hidden command
-        hidden_def = CommandDefinition(
-            metadata=CommandMetadata(name="hidden", description="Hidden", visible=False),
+        # Register a third command
+        third_def = CommandDefinition(
+            metadata=CommandMetadata(name="third", description="Third"),
             handler=lambda _: None,  # pyright: ignore[reportArgumentType]
         )
-        registry.register(hidden_def)
+        registry.register(third_def)
 
-        visible = registry.visible_commands()
-        assert len(visible) == 2
-        assert visible[0].name == "roll"
-        assert visible[1].name == "help"
+        all_cmds = registry.commands()
+        assert len(all_cmds) == 3
+        assert all_cmds[0].name == "roll"
+        assert all_cmds[1].name == "help"
+        assert all_cmds[2].name == "third"
 
-    def test_visible_commands_preserves_registration_order(self) -> None:
-        """Req 4.1, 4.2: visible_commands preserves insertion order."""
+    def test_commands_preserves_registration_order(self) -> None:
+        """Req 4.1, 4.2: commands preserves insertion order."""
         registry = CommandRegistry()
         registry.register(self._make_definition("help", "Help"))
         registry.register(self._make_definition("roll", "Roll"))
         registry.register(self._make_definition("stats", "Stats"))
 
-        visible = registry.visible_commands()
-        assert visible[0].name == "help"
-        assert visible[1].name == "roll"
-        assert visible[2].name == "stats"
+        all_cmds = registry.commands()
+        assert all_cmds[0].name == "help"
+        assert all_cmds[1].name == "roll"
+        assert all_cmds[2].name == "stats"
 
-    def test_visible_commands_returns_tuple(self) -> None:
-        """visible_commands returns a tuple (immutable)."""
+    def test_commands_returns_tuple(self) -> None:
+        """commands returns a tuple (immutable)."""
         registry = CommandRegistry()
-        assert isinstance(registry.visible_commands(), tuple)
+        assert isinstance(registry.commands(), tuple)
 
     def test_registry_is_isolated(self) -> None:
         """Req 3.1: each registry instance is independent, no global state."""
@@ -218,7 +225,7 @@ class TestCommandDecorator:
         assert isinstance(result, CommandDefinition)
         assert result.metadata.name == "roll"
         assert result.metadata.description == "Roll a random number"
-        assert result.metadata.visible is True
+        assert result.metadata.required_privileges == Privileges.NONE
 
     def test_decorator_handler_preserved(self) -> None:
         """The decorator preserves the original handler callable."""
@@ -264,11 +271,175 @@ class TestCommandDecorator:
         assert callable(resolved.handler)
 
     def test_visible_false(self) -> None:
-        """@command(visible=False) creates a hidden command definition."""
-        deco = command("internal", description="Internal only", visible=False)
+        """@command(required_privileges=...) creates a privileged command definition."""
+        deco = command(
+            "internal", description="Internal only", required_privileges=Privileges.ADMIN
+        )
 
         async def internal_handler(_ctx: CommandContext) -> str | None:
             return None
 
         definition = deco(internal_handler)
-        assert definition.metadata.visible is False
+        assert definition.metadata.required_privileges == Privileges.ADMIN
+
+
+class TestCommandDecoratorSyntax:
+    """Req 3.1: @command(...) decorator syntax produces correct CommandDefinition."""
+
+    def test_at_syntax_creates_definition(self) -> None:
+        """Using @command(...) as a decorator on a handler creates a CommandDefinition."""
+
+        @command("greet", description="Greet someone")
+        async def greet(_ctx: CommandContext) -> str | None:
+            return "Hello!"
+
+        assert isinstance(greet, CommandDefinition)
+        assert greet.metadata.name == "greet"
+        assert greet.metadata.description == "Greet someone"
+        assert greet.metadata.required_privileges == Privileges.NONE
+
+    def test_at_syntax_preserves_handler(self) -> None:
+        """The decorated function's handler is preserved and callable."""
+
+        @command("echo", description="Echo input")
+        async def echo(_ctx: CommandContext) -> str | None:
+            return "echo"
+
+        assert callable(echo.handler)
+
+    async def test_at_syntax_handler_invocable(self) -> None:
+        """The handler inside a @command-decorated function is invocable."""
+
+        @command("add", description="Add numbers")
+        async def add(ctx: CommandContext) -> str | None:
+            if ctx.args:
+                return f"sum={ctx.args[0]}"
+            return None
+
+        ctx = CommandContext(
+            sender_id=1,
+            sender_name="u",
+            target="#o",
+            command_name="add",
+            args=("42",),
+            destination=CommandDestination.CHANNEL,
+            available_commands=(),
+        )
+        result = await add.handler(ctx)
+        assert result == "sum=42"
+
+    def test_at_syntax_registers_in_registry(self) -> None:
+        """A @command-decorated handler can be registered and resolved."""
+
+        @command("ping", description="Ping the bot")
+        async def ping(_ctx: CommandContext) -> str | None:
+            return "pong"
+
+        registry = CommandRegistry()
+        registry.register(ping)
+
+        resolved = registry.resolve("ping")
+        assert resolved is not None
+        assert resolved is ping
+        assert resolved.metadata.name == "ping"
+
+    def test_at_syntax_hidden_command(self) -> None:
+        """@command(required_privileges=...) via decorator syntax sets privileges."""
+
+        @command("secret", description="Secret", required_privileges=Privileges.ADMIN)
+        async def secret(_ctx: CommandContext) -> str | None:
+            return None
+
+        registry = CommandRegistry()
+        registry.register(secret)
+
+        assert registry.commands()[0].required_privileges == Privileges.ADMIN
+
+
+class TestRegistryCommandMethod:
+    """Req 3.1: CommandRegistry.command() auto-registers the decorated handler."""
+
+    def test_auto_registers_handler(self) -> None:
+        """@registry.command() registers the definition in the registry."""
+        registry = CommandRegistry()
+
+        @registry.command("greet", description="Greet someone")
+        async def greet(_ctx: CommandContext) -> str | None:
+            return "Hello!"
+
+        resolved = registry.resolve("greet")
+        assert resolved is not None
+        assert resolved is greet
+        assert resolved.metadata.name == "greet"
+
+    def test_auto_registered_is_resolvable(self) -> None:
+        """After @registry.command(), resolve() returns the definition."""
+        registry = CommandRegistry()
+
+        @registry.command("ping", description="Ping")
+        async def ping(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+            return "pong"
+
+        assert registry.resolve("ping") is not None
+        assert registry.resolve("PING") is not None
+
+    def test_auto_registered_appears_in_commands(self) -> None:
+        """Auto-registered commands appear in commands()."""
+        registry = CommandRegistry()
+
+        @registry.command("first", description="First")
+        async def first(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+            return None
+
+        @registry.command("second", description="Second")
+        async def second(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+            return None
+
+        all_cmds = registry.commands()
+        assert len(all_cmds) == 2
+        assert all_cmds[0].name == "first"
+        assert all_cmds[1].name == "second"
+
+    def test_auto_register_hidden_command(self) -> None:
+        """@registry.command(required_privileges=...) auto-registers with privileges."""
+        registry = CommandRegistry()
+
+        @registry.command("secret", description="Secret", required_privileges=Privileges.ADMIN)
+        async def secret(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+            return None
+
+        assert registry.resolve("secret") is not None
+        assert registry.commands()[0].required_privileges == Privileges.ADMIN
+
+    def test_auto_register_preserves_insertion_order(self) -> None:
+        """Auto-registration preserves the order of @registry.command() calls."""
+        registry = CommandRegistry()
+
+        @registry.command("c", description="C")
+        async def c(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+            return None
+
+        @registry.command("a", description="A")
+        async def a(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+            return None
+
+        @registry.command("b", description="B")
+        async def b(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+            return None
+
+        all_cmds = registry.commands()
+        assert [cmd.name for cmd in all_cmds] == ["c", "a", "b"]
+
+    def test_auto_register_rejects_duplicate(self) -> None:
+        """@registry.command() with duplicate name raises ValueError."""
+        registry = CommandRegistry()
+
+        @registry.command("dup", description="First")
+        async def first(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+            return None
+
+        with pytest.raises(ValueError, match="dup"):
+
+            @registry.command("dup", description="Second")
+            async def second(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+                return None
