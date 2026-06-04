@@ -7,6 +7,7 @@ from osu_server.infrastructure.storage.errors import (
     BlobStorageConfigurationError,
     UnsupportedBlobStorageBackendError,
 )
+from osu_server.infrastructure.storage.factory import create_blob_storage_backend
 from osu_server.infrastructure.storage.interfaces import (
     BlobStorageBackend,
     ByteChunks,
@@ -22,4 +23,5 @@ __all__ = [
     "ByteChunks",
     "StagedBlobWrite",
     "UnsupportedBlobStorageBackendError",
+    "create_blob_storage_backend",
 ]

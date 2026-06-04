@@ -70,7 +70,7 @@
   - Completed state: Local backend tests can read finalized content in chunks and receive a typed missing-content error for absent keys.
   - _Requirements: 2.5, 3.2, 3.4, 6.1, 6.2, 6.4, 11.3_
 
-- [ ] 3.4 Add S3-reserved backend selection behavior
+- [x] 3.4 Add S3-reserved backend selection behavior
   - Recognize S3 as a configured backend choice without implementing S3 object reads or writes.
   - Preserve S3 configuration inputs for future implementation.
   - Return an unsupported-backend configuration error when S3 is selected in this slice.

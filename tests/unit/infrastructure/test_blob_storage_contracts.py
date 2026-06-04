@@ -119,7 +119,7 @@ def test_storage_error_types_are_specific_and_typed() -> None:
     assert str(write_error) == "local write failed"
 
 
-def test_storage_package_exports_only_contract_types() -> None:
+def test_storage_package_exports_contract_types_errors_and_factory() -> None:
     assert set(storage.__all__) == {
         "BackendReadError",
         "BackendWriteError",
@@ -129,4 +129,5 @@ def test_storage_package_exports_only_contract_types() -> None:
         "ByteChunks",
         "StagedBlobWrite",
         "UnsupportedBlobStorageBackendError",
+        "create_blob_storage_backend",
     }
