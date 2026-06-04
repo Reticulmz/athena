@@ -8,6 +8,8 @@ from __future__ import annotations
 import random
 from typing import TYPE_CHECKING
 
+from osu_server.services.bancho_bot.context import CommandArgument
+
 if TYPE_CHECKING:
     from osu_server.services.bancho_bot.context import CommandContext
     from osu_server.services.bancho_bot.registry import CommandRegistry
@@ -16,7 +18,16 @@ if TYPE_CHECKING:
 def setup_general(registry: CommandRegistry) -> None:
     """Register general-purpose player-visible commands on *registry*."""
 
-    @registry.command("roll", description="Roll a random number", usage="!roll [max]")
+    @registry.command(
+        "roll",
+        description="Roll a random number",
+        usage="!roll [max]",
+        arguments=(
+            CommandArgument(
+                name="max", required=False, description="Maximum roll value (default: 100)"
+            ),
+        ),
+    )
     async def roll_handler(ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction] -- captured by decorator
         max_val = 100
         if ctx.args and ctx.args[0].isdigit():
