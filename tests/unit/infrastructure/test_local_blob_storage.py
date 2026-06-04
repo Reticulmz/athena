@@ -97,6 +97,68 @@ async def test_staged_content_becomes_readable_only_after_finalize(tmp_path: Pat
     assert await collect_chunks(await backend.open_read(storage_key)) == content
 
 
+async def test_open_read_streams_finalized_content_in_backend_chunks(
+    tmp_path: Path,
+) -> None:
+    backend = LocalBlobStorageBackend(tmp_path, read_chunk_size=4)
+    await backend.validate_configuration()
+    content = b"chunked-final-content"
+    storage_key = sha256_storage_key(content)
+
+    staged = await backend.begin_write()
+    await staged.write(content)
+    await staged.finalize(storage_key)
+
+    chunks = [chunk async for chunk in await backend.open_read(storage_key)]
+
+    assert chunks == [b"chun", b"ked-", b"fina", b"l-co", b"nten", b"t"]
+
+
+async def test_missing_valid_storage_key_is_unavailable_content(
+    tmp_path: Path,
+) -> None:
+    backend = LocalBlobStorageBackend(tmp_path)
+    await backend.validate_configuration()
+    content = b"missing finalized content"
+    storage_key = sha256_storage_key(content)
+
+    assert not await backend.exists(storage_key)
+    with pytest.raises(BlobContentMissingError) as exc_info:
+        _ = await backend.open_read(storage_key)
+
+    assert exc_info.value.storage_key == storage_key
+
+
+async def test_user_filename_like_keys_are_missing_and_never_read_as_paths(
+    tmp_path: Path,
+) -> None:
+    backend = LocalBlobStorageBackend(tmp_path)
+    await backend.validate_configuration()
+    filename_path = tmp_path / "avatar.png"
+    _ = filename_path.write_bytes(b"user filename content")
+
+    assert not await backend.exists("avatar.png")
+    with pytest.raises(BlobContentMissingError) as exc_info:
+        _ = await backend.open_read("avatar.png")
+
+    assert exc_info.value.storage_key == "avatar.png"
+
+
+async def test_path_traversal_like_keys_are_missing_and_never_read_outside_root(
+    tmp_path: Path,
+) -> None:
+    backend = LocalBlobStorageBackend(tmp_path / "blob-root")
+    await backend.validate_configuration()
+    outside_path = tmp_path / "outside.bin"
+    _ = outside_path.write_bytes(b"outside content")
+
+    assert not await backend.exists("../outside.bin")
+    with pytest.raises(BlobContentMissingError) as exc_info:
+        _ = await backend.open_read("../outside.bin")
+
+    assert exc_info.value.storage_key == "../outside.bin"
+
+
 async def test_finalize_existing_key_is_idempotent_and_does_not_overwrite(
     tmp_path: Path,
 ) -> None:

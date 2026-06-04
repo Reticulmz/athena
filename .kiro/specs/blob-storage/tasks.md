@@ -63,7 +63,7 @@
   - Completed state: Local backend tests prove successful writes become readable only after finalization and failed staging leaves no final blob.
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 5.1, 5.4, 11.1, 11.2_
 
-- [ ] 3.3 Implement Local stream reads and existence checks
+- [x] 3.3 Implement Local stream reads and existence checks
   - Stream existing Local blob content in chunks from the configured storage root.
   - Report missing storage keys as unavailable content rather than successful empty reads.
   - Keep read behavior based on backend storage keys instead of user-provided filenames.
