@@ -26,6 +26,13 @@ def make_app_config(
     log_level: str = "INFO",
     log_dir: str = "logs",
     log_max_files: int = 30,
+    blob_storage_backend: str = "local",
+    blob_storage_local_root: str = ".data/blobs",
+    blob_storage_s3_bucket: str | None = None,
+    blob_storage_s3_region: str | None = None,
+    blob_storage_s3_endpoint: str | None = None,
+    blob_storage_s3_access_key: str | None = None,
+    blob_storage_s3_secret_key: str | None = None,
 ) -> AppConfig:
     """Type-safe factory for AppConfig.
 
@@ -53,4 +60,11 @@ def make_app_config(
         log_level=log_level,
         log_dir=log_dir,
         log_max_files=log_max_files,
+        blob_storage_backend=blob_storage_backend,
+        blob_storage_local_root=blob_storage_local_root,
+        blob_storage_s3_bucket=blob_storage_s3_bucket,
+        blob_storage_s3_region=blob_storage_s3_region,
+        blob_storage_s3_endpoint=blob_storage_s3_endpoint,
+        blob_storage_s3_access_key=blob_storage_s3_access_key,
+        blob_storage_s3_secret_key=blob_storage_s3_secret_key,
     )

@@ -44,6 +44,24 @@ class AppConfig(BaseSettings):
     log_dir: str = "logs"
     log_max_files: int = 30
 
+    blob_storage_backend: str = "local"
+    blob_storage_local_root: str = ".data/blobs"
+    blob_storage_s3_bucket: str | None = None
+    blob_storage_s3_region: str | None = None
+    blob_storage_s3_endpoint: str | None = None
+    blob_storage_s3_access_key: str | None = None
+    blob_storage_s3_secret_key: str | None = None
+
+    @field_validator("blob_storage_backend")
+    @classmethod
+    def _validate_blob_storage_backend(cls, v: str) -> str:
+        valid = frozenset({"local", "s3"})
+        lower = v.lower()
+        if lower not in valid:
+            msg = f"Invalid blob_storage_backend: {v!r}. Valid: local, s3"
+            raise ValueError(msg)
+        return lower
+
     @field_validator("log_max_files")
     @classmethod
     def _validate_log_max_files(cls, v: int) -> int:
