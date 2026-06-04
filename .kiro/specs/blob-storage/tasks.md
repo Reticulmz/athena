@@ -78,7 +78,7 @@
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 11.1_
 
 - [ ] 4. Implement blob storage service behavior
-- [ ] 4.1 Implement stream writes, SHA-256 integrity, and deduplication
+- [x] 4.1 Implement stream writes, SHA-256 integrity, and deduplication
   - Accept sequential chunks, calculate SHA-256 and byte size while writing, and require an explicit content type.
   - Return a new blob when the digest is not present and return the existing blob when content is duplicated.
   - Discard staged content when the blob already exists or when writing fails.
