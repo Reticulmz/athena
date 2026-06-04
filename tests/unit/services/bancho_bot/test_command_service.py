@@ -25,6 +25,7 @@ from osu_server.domain.chat import ChatAuthorization, ChatCommandResponse
 from osu_server.domain.role import Privileges
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands.general import setup_general
+from osu_server.services.bancho_bot.context import CommandDestination
 from osu_server.services.bancho_bot.registry import CommandRegistry, command
 
 if TYPE_CHECKING:
@@ -471,3 +472,133 @@ class TestPrivilegeAuthorization:
         auth = ChatAuthorization(privileges=Privileges.NONE, role_ids=(1, 2, 3))
         result = await svc.execute(1, "User", "#osu", "!modonly", authorization=auth)
         assert result == (_response("#osu", self.UNKNOWN_RESPONSE),)
+
+
+# --- Destination gating ----------------------------------------------------------
+
+
+class TestDestinationGating:
+    """Destination gating (Req 2.1, 2.2, 2.3, 2.6, 2.7, 2.8)."""
+
+    UNKNOWN_RESPONSE: str = "Unknown command. Type !help for available commands."
+
+    @staticmethod
+    def _make_pm_only_registry() -> CommandRegistry:
+        reg = CommandRegistry()
+
+        @reg.command(
+            "pmcmd",
+            description="PM only",
+            usage="!pmcmd",
+            allowed_destinations=CommandDestination.PM,
+        )
+        async def _pmcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "pm result"
+
+        return reg
+
+    @staticmethod
+    def _make_channel_only_registry() -> CommandRegistry:
+        reg = CommandRegistry()
+
+        @reg.command(
+            "chcmd",
+            description="Channel only",
+            usage="!chcmd",
+            allowed_destinations=CommandDestination.CHANNEL,
+        )
+        async def _chcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "channel result"
+
+        return reg
+
+    async def test_pm_only_executes_in_pm(self) -> None:
+        """PM-only command in PM executes normally."""
+        reg = self._make_pm_only_registry()
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "BanchoBot", "!pmcmd", authorization=ChatAuthorization()
+        )
+        assert result == (_response("User", "pm result"),)
+
+    async def test_pm_only_in_channel_returns_unknown_and_guidance(self) -> None:
+        """PM-only command in channel: channel unknown + sender PM guidance."""
+        reg = self._make_pm_only_registry()
+        svc = CommandService(reg)
+
+        result = await svc.execute(1, "User", "#osu", "!pmcmd", authorization=ChatAuthorization())
+        assert result == (
+            _response("#osu", self.UNKNOWN_RESPONSE),
+            _response("User", "The !pmcmd command can only be used in pm."),
+        )
+
+    async def test_channel_only_executes_in_channel(self) -> None:
+        """Channel-only command in channel executes normally."""
+        reg = self._make_channel_only_registry()
+        svc = CommandService(reg)
+
+        result = await svc.execute(1, "User", "#osu", "!chcmd", authorization=ChatAuthorization())
+        assert result == (_response("#osu", "channel result"),)
+
+    async def test_channel_only_in_pm_returns_guidance(self) -> None:
+        """Channel-only command in PM: sender PM guidance only."""
+        reg = self._make_channel_only_registry()
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "BanchoBot", "!chcmd", authorization=ChatAuthorization()
+        )
+        assert result == (_response("User", "The !chcmd command can only be used in channel."),)
+
+    async def test_pm_only_in_channel_unauthorized_no_guidance(self) -> None:
+        """PM-only + privileged command in channel by unauthorized user: unknown only."""
+        reg = CommandRegistry()
+
+        @reg.command(
+            "secretpm",
+            description="Secret PM",
+            usage="!secretpm",
+            required_privileges=Privileges.MODERATOR,
+            allowed_destinations=CommandDestination.PM,
+        )
+        async def _secretpm(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "secret"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "#osu", "!secretpm", authorization=ChatAuthorization()
+        )
+        # Unauthorized → unknown only, no guidance (Req 2.8)
+        assert result == (_response("#osu", self.UNKNOWN_RESPONSE),)
+
+    async def test_both_destination_works_in_channel(self) -> None:
+        """BOTH destination command works in channel."""
+        reg = CommandRegistry()
+
+        @reg.command("bothcmd", description="Both", usage="!bothcmd")
+        async def _bothcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "both ok"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "#osu", "!bothcmd", authorization=ChatAuthorization()
+        )
+        assert result == (_response("#osu", "both ok"),)
+
+    async def test_both_destination_works_in_pm(self) -> None:
+        """BOTH destination command works in PM."""
+        reg = CommandRegistry()
+
+        @reg.command("bothcmd", description="Both", usage="!bothcmd")
+        async def _bothcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "both ok"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "BanchoBot", "!bothcmd", authorization=ChatAuthorization()
+        )
+        assert result == (_response("User", "both ok"),)

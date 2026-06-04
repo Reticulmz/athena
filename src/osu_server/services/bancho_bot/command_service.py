@@ -32,6 +32,46 @@ class CommandService:
     def __init__(self, registry: CommandRegistry) -> None:
         self._registry: CommandRegistry = registry
 
+    @staticmethod
+    def _unknown_response(target: str) -> tuple[ChatCommandResponse, ...]:
+        """Return the standard unknown-command response for *target*."""
+        return (
+            ChatCommandResponse(
+                target=target,
+                content="Unknown command. Type !help for available commands.",
+            ),
+        )
+
+    @staticmethod
+    def _check_destination_gating(
+        allowed_dest: CommandDestination,
+        destination: CommandDestination,
+        command_name: str,
+        response_target: str,
+        sender_name: str,
+    ) -> tuple[ChatCommandResponse, ...] | None:
+        """Return gating responses when *destination* is not allowed, or ``None``.
+
+        Must only be called after privilege checks have passed.
+        """
+        if allowed_dest == CommandDestination.BOTH:
+            return None
+        if destination == allowed_dest:
+            return None
+
+        guidance = f"The !{command_name} command can only be used in {allowed_dest.value}."
+        if destination == CommandDestination.CHANNEL:
+            # PM-only command in public channel: unknown to channel + PM guidance
+            return (
+                ChatCommandResponse(
+                    target=response_target,
+                    content="Unknown command. Type !help for available commands.",
+                ),
+                ChatCommandResponse(target=sender_name, content=guidance),
+            )
+        # Channel-only command in PM: sender PM guidance only
+        return (ChatCommandResponse(target=response_target, content=guidance),)
+
     async def execute(
         self,
         sender_id: int,
@@ -67,23 +107,24 @@ class CommandService:
             response_target = sender_name
 
         definition = self._registry.resolve(cmd_name)
-        if definition is None:
-            return (
-                ChatCommandResponse(
-                    target=response_target,
-                    content="Unknown command. Type !help for available commands.",
-                ),
+        if definition is None or (
+            definition.metadata.required_privileges != Privileges.NONE
+            and not has_privilege(
+                authorization.privileges, definition.metadata.required_privileges
             )
+        ):
+            return self._unknown_response(response_target)
 
-        # Check privileges
-        required = definition.metadata.required_privileges
-        if required != Privileges.NONE and not has_privilege(authorization.privileges, required):
-            return (
-                ChatCommandResponse(
-                    target=response_target,
-                    content="Unknown command. Type !help for available commands.",
-                ),
-            )
+        # Check destination gating (after privilege check per Req 2.8)
+        gating = self._check_destination_gating(
+            definition.metadata.allowed_destinations,
+            destination,
+            definition.metadata.name,
+            response_target,
+            sender_name,
+        )
+        if gating is not None:
+            return gating
 
         ctx = CommandContext(
             sender_id=sender_id,
