@@ -8,7 +8,7 @@
   - Completed state: application configuration can represent Local and S3 choices, invalid values fail validation, and test factories produce valid Local defaults.
   - _Requirements: 3.3, 3.5, 4.1, 4.2, 4.3, 11.1_
 
-- [ ] 1.2 Define immutable blob domain behavior
+- [x] 1.2 Define immutable blob domain behavior
   - Define the blob entity as immutable metadata for stored content, not as a domain attachment.
   - Enforce required content type, lowercase SHA-256 identity, non-negative byte size, storage backend, storage key, and creation time.
   - Ensure original filename, uploader identity, owner record, and access policy are absent from shared blob metadata.
