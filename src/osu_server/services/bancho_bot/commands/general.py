@@ -27,5 +27,9 @@ def setup_general(registry: CommandRegistry) -> None:
 
     @registry.command("help", description="Show available commands", usage="!help [--all]")
     async def help_handler(ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction] -- captured by decorator
+        if ctx.args and ctx.args[0] == "--all":
+            lines = ["Available commands:"]
+            lines.extend(f"  !{cmd.name} - {cmd.description}" for cmd in ctx.available_commands)
+            return "\n".join(lines)
         available = ", ".join(f"!{cmd.name}" for cmd in ctx.available_commands)
         return f"Available commands: {available}"

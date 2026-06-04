@@ -60,6 +60,43 @@ class CommandService:
         return meta.allowed_destinations in (CommandDestination.BOTH, destination)
 
     @staticmethod
+    def _detail_help_response(
+        meta: CommandMetadata,
+        target: str,
+    ) -> tuple[ChatCommandResponse, ...]:
+        """Return common detail help for *meta* targeted at *target* (Req 4.1, 4.4)."""
+        lines = [f"Usage: {meta.usage}"]
+        if meta.arguments:
+            lines.append("Arguments:")
+            for arg in meta.arguments:
+                req = "required" if arg.required else "optional"
+                lines.append(f"  {arg.name} ({req}) - {arg.description}")
+        return (ChatCommandResponse(target=target, content="\n".join(lines)),)
+
+    _HELP_HELP_CONTENT: str = (
+        "Usage: !help [--all]\nOptions:\n  --all  Show all available commands with descriptions"
+    )
+
+    @staticmethod
+    def _try_common_help(
+        args: tuple[str, ...],
+        cmd_name: str,
+        meta: CommandMetadata,
+        target: str,
+    ) -> tuple[ChatCommandResponse, ...] | None:
+        """Return common help response when *args* starts with --help, or None."""
+        if not args or args[0] != "--help":
+            return None
+        if cmd_name == "help":
+            return (
+                ChatCommandResponse(
+                    target=target,
+                    content=CommandService._HELP_HELP_CONTENT,
+                ),
+            )
+        return CommandService._detail_help_response(meta, target)
+
+    @staticmethod
     def _check_destination_gating(
         allowed_dest: CommandDestination,
         destination: CommandDestination,
@@ -143,6 +180,11 @@ class CommandService:
         if gating is not None:
             return gating
 
+        # Common --help handling (Req 4.5): intercept before handler execution
+        help_response = self._try_common_help(args, cmd_name, definition.metadata, response_target)
+        if help_response is not None:
+            return help_response
+
         ctx = CommandContext(
             sender_id=sender_id,
             sender_name=sender_name,
@@ -157,7 +199,8 @@ class CommandService:
             ),
         )
         response = await definition.handler(ctx)
-        if response is None:
-            return ()
-
-        return (ChatCommandResponse(target=response_target, content=response),)
+        return (
+            ()
+            if response is None
+            else (ChatCommandResponse(target=response_target, content=response),)
+        )

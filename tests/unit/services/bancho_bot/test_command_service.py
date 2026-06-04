@@ -25,7 +25,7 @@ from osu_server.domain.chat import ChatAuthorization, ChatCommandResponse
 from osu_server.domain.role import Privileges
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands.general import setup_general
-from osu_server.services.bancho_bot.context import CommandDestination
+from osu_server.services.bancho_bot.context import CommandArgument, CommandDestination
 from osu_server.services.bancho_bot.registry import CommandRegistry, command
 
 if TYPE_CHECKING:
@@ -765,3 +765,230 @@ class TestHelpVisibilityFiltering:
         result = await svc.execute(1, "Admin", "#osu", "!help", authorization=auth)
         # secretpm should NOT appear in channel help
         assert result == (_response("#osu", "Available commands: !roll, !help"),)
+
+
+# --- Common help options -------------------------------------------------------
+
+
+class TestCommonHelpOptions:
+    """Common --help and !help --all behavior (Req 3.5, 3.6, 4.1, 4.2, 4.4, 4.5, 4.6)."""
+
+    async def test_help_help_returns_meta_help(self, svc: CommandService) -> None:
+        """!help --help returns usage and options for !help itself (Req 3.6)."""
+        result = await svc.execute(
+            1, "User", "#osu", "!help --help", authorization=ChatAuthorization()
+        )
+        assert result == (
+            _response(
+                "#osu",
+                (
+                    "Usage: !help [--all]\n"
+                    "Options:\n"
+                    "  --all  Show all available commands with descriptions"
+                ),
+            ),
+        )
+
+    async def test_detail_help_shows_usage_and_arguments(self) -> None:
+        """!<command> --help shows name, usage, arguments (Req 4.1)."""
+        reg = CommandRegistry()
+
+        @reg.command(
+            "greet",
+            description="Greet someone",
+            usage="!greet <name>",
+            arguments=(
+                CommandArgument(name="name", required=True, description="The name to greet"),
+            ),
+        )
+        async def _greet(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "hello"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "#osu", "!greet --help", authorization=ChatAuthorization()
+        )
+        assert result == (
+            _response(
+                "#osu",
+                "Usage: !greet <name>\nArguments:\n  name (required) - The name to greet",
+            ),
+        )
+
+    async def test_detail_help_without_arguments(self) -> None:
+        """Detail help for command with no arguments shows only usage."""
+        reg = CommandRegistry()
+
+        @reg.command("simple", description="Simple", usage="!simple")
+        async def _simple(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "ok"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "#osu", "!simple --help", authorization=ChatAuthorization()
+        )
+        assert result == (_response("#osu", "Usage: !simple"),)
+
+    async def test_detail_help_with_multiple_arguments(self) -> None:
+        """Detail help lists all arguments with required/optional status."""
+        reg = CommandRegistry()
+
+        @reg.command(
+            "cmd",
+            description="Test",
+            usage="!cmd <req> [opt]",
+            arguments=(
+                CommandArgument(name="req", required=True, description="Required arg"),
+                CommandArgument(name="opt", required=False, description="Optional arg"),
+            ),
+        )
+        async def _cmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "ok"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "#osu", "!cmd --help", authorization=ChatAuthorization()
+        )
+        expected = (
+            "Usage: !cmd <req> [opt]\n"
+            "Arguments:\n"
+            "  req (required) - Required arg\n"
+            "  opt (optional) - Optional arg"
+        )
+        assert result == (_response("#osu", expected),)
+
+    async def test_unauthorized_detail_help_returns_unknown(self) -> None:
+        """Unauthorized !<command> --help returns unknown (Req 4.2)."""
+        reg = CommandRegistry()
+
+        @reg.command(
+            "adminonly",
+            description="Admin only",
+            usage="!adminonly",
+            required_privileges=Privileges.ADMIN,
+        )
+        async def _adminonly(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "secret"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "#osu", "!adminonly --help", authorization=ChatAuthorization()
+        )
+        assert result == (
+            _response("#osu", "Unknown command. Type !help for available commands."),
+        )
+
+    async def test_help_as_non_first_arg_goes_to_handler(self) -> None:
+        """--help not as first arg is passed to handler as normal arg (Req 4.6)."""
+        reg = CommandRegistry()
+        captured: list[tuple[str, ...]] = []
+
+        async def _capture(ctx: CommandContext) -> str:
+            captured.append(ctx.args)
+            return "ok"
+
+        reg.register(command("test", description="Test", usage="!test")(_capture))
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "#osu", "!test arg1 --help", authorization=ChatAuthorization()
+        )
+        assert result == (_response("#osu", "ok"),)
+        assert captured == [("arg1", "--help")]
+
+    async def test_detail_help_does_not_show_privileges(self) -> None:
+        """Detail help never shows required_privileges (Req 4.4)."""
+        reg = CommandRegistry()
+
+        @reg.command(
+            "modcmd",
+            description="Mod command",
+            usage="!modcmd",
+            required_privileges=Privileges.MODERATOR,
+        )
+        async def _modcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "mod done"
+
+        svc = CommandService(reg)
+
+        auth = ChatAuthorization(privileges=Privileges.MODERATOR)
+        result = await svc.execute(1, "Mod", "#osu", "!modcmd --help", authorization=auth)
+        content = result[0].content
+        assert "MODERATOR" not in content
+        assert "privilege" not in content.lower()
+
+    async def test_help_all_shows_names_and_descriptions(self) -> None:
+        """!help --all lists command names and descriptions (Req 3.5)."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "#osu", "!help --all", authorization=ChatAuthorization()
+        )
+        expected = (
+            "Available commands:\n"
+            "  !roll - Roll a random number\n"
+            "  !help - Show available commands"
+        )
+        assert result == (_response("#osu", expected),)
+
+    async def test_help_all_respects_destination_filtering(self) -> None:
+        """!help --all excludes PM-only commands in channel (Req 3.3, 3.7)."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        @reg.command(
+            "pmcmd",
+            description="PM only",
+            usage="!pmcmd",
+            allowed_destinations=CommandDestination.PM,
+        )
+        async def _pmcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "pm"
+
+        svc = CommandService(reg)
+
+        # Channel: pmcmd excluded
+        result_ch = await svc.execute(
+            1, "User", "#osu", "!help --all", authorization=ChatAuthorization()
+        )
+        assert "!pmcmd" not in result_ch[0].content
+
+        # PM: pmcmd included
+        result_pm = await svc.execute(
+            1, "User", "BanchoBot", "!help --all", authorization=ChatAuthorization()
+        )
+        assert "!pmcmd - PM only" in result_pm[0].content
+
+    async def test_help_all_respects_privilege_filtering(self) -> None:
+        """!help --all excludes privileged commands for unauthorized users (Req 3.2)."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        @reg.command(
+            "modcmd",
+            description="Mod command",
+            usage="!modcmd",
+            required_privileges=Privileges.MODERATOR,
+        )
+        async def _modcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "mod"
+
+        svc = CommandService(reg)
+
+        # Unauthorized: modcmd excluded
+        result = await svc.execute(
+            1, "User", "#osu", "!help --all", authorization=ChatAuthorization()
+        )
+        assert "!modcmd" not in result[0].content
+
+        # Authorized: modcmd included
+        auth = ChatAuthorization(privileges=Privileges.MODERATOR)
+        result_mod = await svc.execute(1, "Mod", "#osu", "!help --all", authorization=auth)
+        assert "!modcmd - Mod command" in result_mod[0].content
