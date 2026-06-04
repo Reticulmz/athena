@@ -56,7 +56,7 @@
   - Completed state: backend implementations and service code can share one typed contract for staged writes and stream reads.
   - _Requirements: 3.1, 3.4, 4.4, 5.1, 5.4, 6.1, 6.4, 10.1, 10.3, 11.1, 11.2, 11.3_
 
-- [ ] 3.2 Implement Local storage validation and stream writes
+- [x] 3.2 Implement Local storage validation and stream writes
   - Validate that the configured Local storage root exists or can be created and is writable.
   - Stage incoming chunks under a temporary area and finalize only to SHA-256-derived storage keys.
   - Ensure failed writes never expose readable partial content.
