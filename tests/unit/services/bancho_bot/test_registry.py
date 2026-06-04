@@ -210,6 +210,97 @@ class TestCommandRegistry:
         with pytest.raises(ValueError, match="empty"):
             registry.register(self._make_definition(""))
 
+    def test_commands_includes_moderator_privileged_metadata(self) -> None:
+        """Registered MODERATOR-privilege command metadata is accessible via commands()."""
+        registry = CommandRegistry()
+        definition = CommandDefinition(
+            metadata=CommandMetadata(
+                name="modcmd",
+                description="Moderator command",
+                required_privileges=Privileges.MODERATOR,
+            ),
+            handler=lambda _: None,  # pyright: ignore[reportArgumentType]
+        )
+        registry.register(definition)
+
+        all_cmds = registry.commands()
+        assert len(all_cmds) == 1
+        assert all_cmds[0].name == "modcmd"
+        assert all_cmds[0].required_privileges == Privileges.MODERATOR
+
+    def test_commands_includes_pm_destination_metadata(self) -> None:
+        """A command registered with PM-only destination has metadata accessible via commands()."""
+        registry = CommandRegistry()
+        definition = CommandDefinition(
+            metadata=CommandMetadata(
+                name="pmcmd",
+                description="PM-only command",
+                allowed_destinations=CommandDestination.PM,
+            ),
+            handler=lambda _: None,  # pyright: ignore[reportArgumentType]
+        )
+        registry.register(definition)
+
+        all_cmds = registry.commands()
+        assert len(all_cmds) == 1
+        assert all_cmds[0].name == "pmcmd"
+        assert all_cmds[0].allowed_destinations == CommandDestination.PM
+
+    def test_commands_returns_all_regardless_of_privileges_or_destinations(self) -> None:
+        """commands() returns all commands, regardless of their privileges or destinations."""
+        registry = CommandRegistry()
+        registry.register(
+            CommandDefinition(
+                metadata=CommandMetadata(name="pub", description="Public"),
+                handler=lambda _: None,  # pyright: ignore[reportArgumentType]
+            )
+        )
+        registry.register(
+            CommandDefinition(
+                metadata=CommandMetadata(
+                    name="mod",
+                    description="Moderator",
+                    required_privileges=Privileges.MODERATOR,
+                ),
+                handler=lambda _: None,  # pyright: ignore[reportArgumentType]
+            )
+        )
+        registry.register(
+            CommandDefinition(
+                metadata=CommandMetadata(
+                    name="admin",
+                    description="Admin",
+                    required_privileges=Privileges.ADMIN,
+                ),
+                handler=lambda _: None,  # pyright: ignore[reportArgumentType]
+            )
+        )
+        registry.register(
+            CommandDefinition(
+                metadata=CommandMetadata(
+                    name="pm_only",
+                    description="PM only",
+                    allowed_destinations=CommandDestination.PM,
+                ),
+                handler=lambda _: None,  # pyright: ignore[reportArgumentType]
+            )
+        )
+        registry.register(
+            CommandDefinition(
+                metadata=CommandMetadata(
+                    name="channel_only",
+                    description="Channel only",
+                    allowed_destinations=CommandDestination.CHANNEL,
+                ),
+                handler=lambda _: None,  # pyright: ignore[reportArgumentType]
+            )
+        )
+
+        all_cmds = registry.commands()
+        assert len(all_cmds) == 5
+        names = [cmd.name for cmd in all_cmds]
+        assert names == ["pub", "mod", "admin", "pm_only", "channel_only"]
+
 
 class TestCommandDecorator:
     """Req 3.1: @command decorator produces correct CommandDefinition."""
@@ -429,6 +520,19 @@ class TestRegistryCommandMethod:
 
         all_cmds = registry.commands()
         assert [cmd.name for cmd in all_cmds] == ["c", "a", "b"]
+
+    def test_auto_register_pm_only_command(self) -> None:
+        """@registry.command(allowed_destinations=PM) auto-registers with PM-only destination."""
+        registry = CommandRegistry()
+
+        @registry.command(
+            "pmcmd", description="PM only", allowed_destinations=CommandDestination.PM
+        )
+        async def pmcmd(_ctx: CommandContext) -> str | None:  # pyright: ignore[reportUnusedFunction]
+            return None
+
+        assert registry.resolve("pmcmd") is not None
+        assert registry.commands()[0].allowed_destinations == CommandDestination.PM
 
     def test_auto_register_rejects_duplicate(self) -> None:
         """@registry.command() with duplicate name raises ValueError."""
