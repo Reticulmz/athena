@@ -15,7 +15,7 @@
   - Completed state: blob domain tests prove valid blobs can be created and invalid digest, size, or content type values are rejected.
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.5, 7.1, 7.2, 9.4_
 
-- [ ] 1.3 Create shared blob metadata persistence schema
+- [x] 1.3 Create shared blob metadata persistence schema
   - Add the `blobs` persistence model and migration for SHA-256, byte size, content type, storage backend, storage key, and creation time.
   - Enforce unique SHA-256 identity and non-negative byte size at the persistence boundary.
   - Register the model for migration discovery.
