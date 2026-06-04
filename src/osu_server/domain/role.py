@@ -19,10 +19,10 @@ class Privileges(IntFlag):
 
 
 def has_privilege(user_privileges: int, required: Privileges) -> bool:
-    """Check if user has the required privilege. ADMIN bypasses all checks."""
+    """Check if user has ALL required privileges. ADMIN bypasses all checks."""
     if user_privileges & Privileges.ADMIN:
         return True
-    return bool(user_privileges & required)
+    return (user_privileges & required) == required
 
 
 class ClientPermissions(IntFlag):

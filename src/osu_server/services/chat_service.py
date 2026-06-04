@@ -110,8 +110,12 @@ class ChatService:
             return None
 
         # Command detection (after routing per design pipeline)
-        command_response = await self._command_service.execute(
-            sender.user_id, sender.username, destination.name, valid_content
+        command_responses = await self._command_service.execute(
+            sender.user_id,
+            sender.username,
+            destination.name,
+            valid_content,
+            authorization=message.authorization,
         )
 
         # Fire persistence event — commands are also delivered to members
@@ -127,7 +131,7 @@ class ChatService:
         return ChannelMessageResult(
             delivered_to=targets,
             content=valid_content,
-            command_responses=(command_response,) if command_response is not None else (),
+            command_responses=command_responses,
         )
 
     async def persist_channel_message(
@@ -221,8 +225,12 @@ class ChatService:
             return None
 
         # Command detection
-        command_response = await self._command_service.execute(
-            sender.user_id, sender.username, destination.username, valid_content
+        command_responses = await self._command_service.execute(
+            sender.user_id,
+            sender.username,
+            destination.username,
+            valid_content,
+            authorization=message.authorization,
         )
 
         # Routing — resolve PM target
@@ -256,5 +264,5 @@ class ChatService:
             target_id=pm_result.target_id,
             is_online=pm_result.is_online,
             content=valid_content,
-            command_responses=(command_response,) if command_response is not None else (),
+            command_responses=command_responses,
         )

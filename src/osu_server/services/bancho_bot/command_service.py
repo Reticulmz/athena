@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from osu_server.domain.chat import ChatCommandResponse
+from osu_server.domain.chat import ChatAuthorization, ChatCommandResponse
+from osu_server.domain.role import Privileges, has_privilege
 from osu_server.services.bancho_bot.context import CommandContext, CommandDestination
 
 if TYPE_CHECKING:
@@ -37,19 +38,21 @@ class CommandService:
         sender_name: str,
         target: str,
         content: str,
-    ) -> ChatCommandResponse | None:
+        authorization: ChatAuthorization,
+    ) -> tuple[ChatCommandResponse, ...]:
         """Parse *content* and, when it names a registered command, execute it.
 
-        Returns ``None`` for non-command messages, prefix-only content, empty
-        command names, unresolved commands whose handler returns ``None``, and
-        commands that return ``None`` from their handler.
+        Returns an empty tuple for non-command messages, prefix-only content,
+        empty command names, and commands whose handler returns ``None``.
+        Returns a single-element tuple with an unknown-command response for
+        unregistered or unauthorized commands.
         """
         if not content.startswith("!"):
-            return None
+            return ()
 
         parts = content[1:].strip().split()
         if not parts:
-            return None
+            return ()
 
         cmd_name = parts[0].lower()
         args = tuple(parts[1:])
@@ -65,9 +68,21 @@ class CommandService:
 
         definition = self._registry.resolve(cmd_name)
         if definition is None:
-            return ChatCommandResponse(
-                target=response_target,
-                content="Unknown command. Type !help for available commands.",
+            return (
+                ChatCommandResponse(
+                    target=response_target,
+                    content="Unknown command. Type !help for available commands.",
+                ),
+            )
+
+        # Check privileges
+        required = definition.metadata.required_privileges
+        if required != Privileges.NONE and not has_privilege(authorization.privileges, required):
+            return (
+                ChatCommandResponse(
+                    target=response_target,
+                    content="Unknown command. Type !help for available commands.",
+                ),
             )
 
         ctx = CommandContext(
@@ -81,6 +96,6 @@ class CommandService:
         )
         response = await definition.handler(ctx)
         if response is None:
-            return None
+            return ()
 
-        return ChatCommandResponse(target=response_target, content=response)
+        return (ChatCommandResponse(target=response_target, content=response),)
