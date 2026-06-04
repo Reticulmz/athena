@@ -39,7 +39,7 @@
   - _Boundary: InMemoryBlobRepository_
   - _Depends: 2.1_
 
-- [ ] 2.3 (P) Implement the SQLAlchemy blob repository
+- [x] 2.3 (P) Implement the SQLAlchemy blob repository
   - Persist blob records through the existing async repository pattern.
   - Map persistence rows back into immutable blob domain entities.
   - Handle unique SHA-256 conflicts in a way the service can convert into a deduplicated result.
