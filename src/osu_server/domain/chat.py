@@ -22,7 +22,7 @@ class PrivateChatDestination:
 
 
 @dataclass(slots=True, frozen=True)
-class ChannelChatAuthorization:
+class ChatAuthorization:
     privileges: int = 0
     role_ids: tuple[int, ...] = ()
 
@@ -32,7 +32,7 @@ class SendChannelMessageInput:
     sender: ChatSender
     destination: ChannelChatDestination
     content: str
-    authorization: ChannelChatAuthorization = field(default_factory=ChannelChatAuthorization)
+    authorization: ChatAuthorization = field(default_factory=ChatAuthorization)
 
 
 @dataclass(slots=True, frozen=True)
@@ -40,6 +40,7 @@ class SendPrivateMessageInput:
     sender: ChatSender
     destination: PrivateChatDestination
     content: str
+    authorization: ChatAuthorization = field(default_factory=ChatAuthorization)
 
 
 @dataclass(slots=True)
@@ -52,7 +53,7 @@ class ChatCommandResponse:
 class ChannelMessageResult:
     delivered_to: set[int] | None
     content: str
-    command_response: ChatCommandResponse | None = None
+    command_responses: tuple[ChatCommandResponse, ...] = ()
 
 
 @dataclass(slots=True)
@@ -60,4 +61,4 @@ class PrivateMessageResult:
     target_id: int | None
     is_online: bool
     content: str
-    command_response: ChatCommandResponse | None = None
+    command_responses: tuple[ChatCommandResponse, ...] = ()

@@ -127,7 +127,7 @@ class ChatService:
         return ChannelMessageResult(
             delivered_to=targets,
             content=valid_content,
-            command_response=command_response,
+            command_responses=(command_response,) if command_response is not None else (),
         )
 
     async def persist_channel_message(
@@ -237,7 +237,7 @@ class ChatService:
                 target_id=None,
                 is_online=False,
                 content=valid_content,
-                command_response=None,
+                command_responses=(),
             )
 
         # Fire persistence event
@@ -256,5 +256,5 @@ class ChatService:
             target_id=pm_result.target_id,
             is_online=pm_result.is_online,
             content=valid_content,
-            command_response=command_response,
+            command_responses=(command_response,) if command_response is not None else (),
         )

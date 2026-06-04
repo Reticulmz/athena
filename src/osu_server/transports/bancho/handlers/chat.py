@@ -15,8 +15,8 @@ import structlog
 from caterpillar.model import unpack
 
 from osu_server.domain.chat import (
-    ChannelChatAuthorization,
     ChannelChatDestination,
+    ChatAuthorization,
     ChatSender,
     PrivateChatDestination,
     SendChannelMessageInput,
@@ -91,7 +91,7 @@ class ChatHandlers(HandlerGroup):
                 sender=ChatSender(user_id=user_id, username=session.username),
                 destination=ChannelChatDestination(name=msg.target),
                 content=msg.content,
-                authorization=ChannelChatAuthorization(
+                authorization=ChatAuthorization(
                     privileges=session.privileges,
                     role_ids=session.role_ids,
                 ),
@@ -106,24 +106,26 @@ class ChatHandlers(HandlerGroup):
             target=msg.target,
             sender_id=user_id,
         )
-        command_packet = None
-        if result.command_response is not None:
+        command_packets: list[bytes] = []
+        for cr in result.command_responses:
             bot = BANCHO_BOT_IDENTITY
-            command_packet = send_message(
-                sender=bot.username,
-                content=result.command_response.content,
-                target=result.command_response.target,
-                sender_id=bot.user_id,
+            command_packets.append(
+                send_message(
+                    sender=bot.username,
+                    content=cr.content,
+                    target=cr.target,
+                    sender_id=bot.user_id,
+                )
             )
 
         for target_id in result.delivered_to:
-            if command_packet is None:
+            if not command_packets:
                 await self._packet_queue.enqueue(target_id, message_packet)
             else:
-                await self._packet_queue.enqueue(target_id, message_packet, command_packet)
+                await self._packet_queue.enqueue(target_id, message_packet, *command_packets)
 
-        if command_packet is not None and user_id not in result.delivered_to:
-            await self._packet_queue.enqueue(user_id, command_packet)
+        if command_packets and user_id not in result.delivered_to:
+            await self._packet_queue.enqueue(user_id, *command_packets)
 
     @handles(ClientPacketID.SEND_PRIVATE_MESSAGE)
     async def handle_send_private_message(self, payload: bytes, user_id: int) -> None:
@@ -146,6 +148,10 @@ class ChatHandlers(HandlerGroup):
                 sender=ChatSender(user_id=user_id, username=session.username),
                 destination=PrivateChatDestination(username=msg.target),
                 content=msg.content,
+                authorization=ChatAuthorization(
+                    privileges=session.privileges,
+                    role_ids=session.role_ids,
+                ),
             )
         )
         if result is None:
@@ -162,14 +168,14 @@ class ChatHandlers(HandlerGroup):
                 ),
             )
 
-        if result.command_response is not None:
+        for cr in result.command_responses:
             bot = BANCHO_BOT_IDENTITY
             await self._packet_queue.enqueue(
                 user_id,
                 send_message(
                     sender=bot.username,
-                    content=result.command_response.content,
-                    target=result.command_response.target,
+                    content=cr.content,
+                    target=cr.target,
                     sender_id=bot.user_id,
                 ),
             )

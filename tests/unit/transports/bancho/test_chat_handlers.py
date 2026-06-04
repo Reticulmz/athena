@@ -32,10 +32,10 @@ class StubChatService:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
         self.channel_result: ChannelMessageResult | None = ChannelMessageResult(
-            delivered_to={2, 3}, content="hello", command_response=None
+            delivered_to={2, 3}, content="hello", command_responses=()
         )
         self.private_result: PrivateMessageResult | None = PrivateMessageResult(
-            target_id=2, is_online=True, content="secret", command_response=None
+            target_id=2, is_online=True, content="secret", command_responses=()
         )
 
     async def send_channel_message(

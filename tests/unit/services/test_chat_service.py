@@ -8,8 +8,8 @@ from pydantic import PostgresDsn, RedisDsn
 from osu_server.config import AppConfig
 from osu_server.domain.channel import Channel, ChannelType
 from osu_server.domain.chat import (
-    ChannelChatAuthorization,
     ChannelChatDestination,
+    ChatAuthorization,
     ChatSender,
     PrivateChatDestination,
     SendChannelMessageInput,
@@ -53,7 +53,7 @@ def _channel_message_input(
         sender=ChatSender(user_id=sender_id, username=sender_name),
         destination=ChannelChatDestination(name=channel_name),
         content=content,
-        authorization=ChannelChatAuthorization(
+        authorization=ChatAuthorization(
             privileges=user_privileges,
             role_ids=user_role_ids,
         ),
@@ -328,7 +328,7 @@ async def test_send_channel_message_success(
     assert res is not None
     assert res.delivered_to == {2, 3}
     assert res.content == "hello"
-    assert res.command_response is None
+    assert not res.command_responses
 
     assert len(captured_events) == 1
     event = captured_events[0]
@@ -394,7 +394,7 @@ async def test_send_private_message_success(
     assert res.target_id == created_target.id
     assert res.is_online is True
     assert res.content == "hello PM"
-    assert res.command_response is None
+    assert not res.command_responses
 
     assert len(captured_events) == 1
     event = captured_events[0]
@@ -511,9 +511,9 @@ async def test_command_execution(
 
     assert res is not None
     assert res.delivered_to == {2, 3}
-    assert res.command_response is not None
-    assert res.command_response.target == "#osu"
-    assert res.command_response.content == "sender rolls 50 point(s)"
+    assert len(res.command_responses) > 0
+    assert res.command_responses[0].target == "#osu"
+    assert res.command_responses[0].content == "sender rolls 50 point(s)"
 
     # Command messages are also delivered to channel members (Req 8.2)
     assert len(captured_events) == 1
