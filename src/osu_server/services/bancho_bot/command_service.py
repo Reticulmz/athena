@@ -15,7 +15,11 @@ from typing import TYPE_CHECKING
 
 from osu_server.domain.chat import ChatAuthorization, ChatCommandResponse
 from osu_server.domain.role import Privileges, has_privilege
-from osu_server.services.bancho_bot.context import CommandContext, CommandDestination
+from osu_server.services.bancho_bot.context import (
+    CommandContext,
+    CommandDestination,
+    CommandMetadata,
+)
 
 if TYPE_CHECKING:
     from osu_server.services.bancho_bot.registry import CommandRegistry
@@ -41,6 +45,19 @@ class CommandService:
                 content="Unknown command. Type !help for available commands.",
             ),
         )
+
+    @staticmethod
+    def _is_command_visible(
+        meta: CommandMetadata,
+        privileges: int,
+        destination: CommandDestination,
+    ) -> bool:
+        """Return True if *meta* is executable with *privileges* in *destination*."""
+        if meta.required_privileges != Privileges.NONE and not has_privilege(
+            privileges, meta.required_privileges
+        ):
+            return False
+        return meta.allowed_destinations in (CommandDestination.BOTH, destination)
 
     @staticmethod
     def _check_destination_gating(
@@ -133,7 +150,11 @@ class CommandService:
             command_name=cmd_name,
             args=args,
             destination=destination,
-            available_commands=self._registry.commands(),
+            available_commands=tuple(
+                meta
+                for meta in self._registry.commands()
+                if self._is_command_visible(meta, authorization.privileges, destination)
+            ),
         )
         response = await definition.handler(ctx)
         if response is None:

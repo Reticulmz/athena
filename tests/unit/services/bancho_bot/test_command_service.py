@@ -602,3 +602,166 @@ class TestDestinationGating:
             1, "User", "BanchoBot", "!bothcmd", authorization=ChatAuthorization()
         )
         assert result == (_response("User", "both ok"),)
+
+
+# --- Help visibility filtering -------------------------------------------------
+
+
+class TestHelpVisibilityFiltering:
+    """Help lists only commands executable in current destination (Req 3.1-3.4, 3.7)."""
+
+    async def test_channel_help_excludes_pm_only_commands(self) -> None:
+        """PM-only command not visible in channel !help, even for privileged users."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        @reg.command(
+            "pmcmd",
+            description="PM only",
+            usage="!pmcmd",
+            allowed_destinations=CommandDestination.PM,
+        )
+        async def _pmcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "pm result"
+
+        svc = CommandService(reg)
+
+        # Channel help should only show channel-available commands
+        result = await svc.execute(1, "User", "#osu", "!help", authorization=ChatAuthorization())
+        assert result == (_response("#osu", "Available commands: !roll, !help"),)
+
+    async def test_pm_help_includes_pm_only_commands(self) -> None:
+        """PM-only command visible in PM !help."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        @reg.command(
+            "pmcmd",
+            description="PM only",
+            usage="!pmcmd",
+            allowed_destinations=CommandDestination.PM,
+        )
+        async def _pmcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "pm result"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(
+            1, "User", "BanchoBot", "!help", authorization=ChatAuthorization()
+        )
+        assert result == (_response("User", "Available commands: !roll, !help, !pmcmd"),)
+
+    async def test_help_excludes_privileged_commands_for_unauthorized(self) -> None:
+        """Privileged command not visible in !help for unprivileged users."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        @reg.command(
+            "modcmd",
+            description="Mod command",
+            usage="!modcmd",
+            required_privileges=Privileges.MODERATOR,
+        )
+        async def _modcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "mod done"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(1, "User", "#osu", "!help", authorization=ChatAuthorization())
+        assert result == (_response("#osu", "Available commands: !roll, !help"),)
+
+    async def test_help_includes_privileged_commands_for_authorized(self) -> None:
+        """Privileged command visible in !help for authorized users."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        @reg.command(
+            "modcmd",
+            description="Mod command",
+            usage="!modcmd",
+            required_privileges=Privileges.MODERATOR,
+        )
+        async def _modcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "mod done"
+
+        svc = CommandService(reg)
+
+        auth = ChatAuthorization(privileges=Privileges.MODERATOR)
+        result = await svc.execute(1, "Mod", "#osu", "!help", authorization=auth)
+        assert result == (_response("#osu", "Available commands: !roll, !help, !modcmd"),)
+
+    async def test_help_preserves_registration_order(self) -> None:
+        """!help lists commands in registry order after filtering."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        @reg.command("c", description="C", usage="!c")
+        async def _c(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "c"
+
+        @reg.command("a", description="A", usage="!a")
+        async def _a(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "a"
+
+        @reg.command("b", description="B", usage="!b")
+        async def _b(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "b"
+
+        svc = CommandService(reg)
+
+        result = await svc.execute(1, "User", "#osu", "!help", authorization=ChatAuthorization())
+        assert result == (_response("#osu", "Available commands: !roll, !help, !c, !a, !b"),)
+
+    async def test_admin_sees_all_destination_compatible_commands(self) -> None:
+        """ADMIN sees all destination-compatible commands in channel help."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        @reg.command(
+            "modcmd",
+            description="Mod command",
+            usage="!modcmd",
+            required_privileges=Privileges.MODERATOR,
+        )
+        async def _modcmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "mod done"
+
+        @reg.command(
+            "admincmd",
+            description="Admin command",
+            usage="!admincmd",
+            required_privileges=Privileges.ADMIN,
+            allowed_destinations=CommandDestination.CHANNEL,
+        )
+        async def _admincmd(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "admin done"
+
+        svc = CommandService(reg)
+
+        auth = ChatAuthorization(privileges=Privileges.ADMIN)
+        result = await svc.execute(1, "Admin", "#osu", "!help", authorization=auth)
+        assert result == (
+            _response("#osu", "Available commands: !roll, !help, !modcmd, !admincmd"),
+        )
+
+    async def test_channel_help_excludes_pm_only_even_for_admin(self) -> None:
+        """PM-only commands are excluded from channel help even for ADMIN (Req 3.7)."""
+        reg = CommandRegistry()
+        setup_general(reg)
+
+        @reg.command(
+            "secretpm",
+            description="Secret PM",
+            usage="!secretpm",
+            required_privileges=Privileges.ADMIN,
+            allowed_destinations=CommandDestination.PM,
+        )
+        async def _secretpm(_ctx: CommandContext) -> str:  # pyright: ignore[reportUnusedFunction]
+            return "secret"
+
+        svc = CommandService(reg)
+
+        auth = ChatAuthorization(privileges=Privileges.ADMIN)
+        result = await svc.execute(1, "Admin", "#osu", "!help", authorization=auth)
+        # secretpm should NOT appear in channel help
+        assert result == (_response("#osu", "Available commands: !roll, !help"),)
