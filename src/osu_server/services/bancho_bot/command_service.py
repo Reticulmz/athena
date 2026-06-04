@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from osu_server.domain.chat import ChatAuthorization, ChatCommandResponse
-from osu_server.domain.role import Privileges, has_privilege
-from osu_server.services.bancho_bot.context import (
+from osu_server.domain.bancho_bot import (
     CommandContext,
     CommandDestination,
     CommandMetadata,
 )
+from osu_server.domain.chat import ChatAuthorization, ChatCommandResponse
+from osu_server.domain.role import Privileges, has_privilege
 
 if TYPE_CHECKING:
     from osu_server.services.bancho_bot.registry import CommandRegistry

@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import pytest
 
-from osu_server.services.bancho_bot.commands.general import setup_general
-from osu_server.services.bancho_bot.context import (
+from osu_server.domain.bancho_bot import (
     CommandContext,
     CommandDestination,
     CommandMetadata,
 )
+from osu_server.services.bancho_bot.commands.general import setup_general
 from osu_server.services.bancho_bot.registry import CommandDefinition, CommandRegistry
 
 

@@ -106,26 +106,30 @@ class ChatHandlers(HandlerGroup):
             target=msg.target,
             sender_id=user_id,
         )
-        command_packets: list[bytes] = []
+        channel_command_packets: list[bytes] = []
+        sender_command_packets: list[bytes] = []
         for cr in result.command_responses:
             bot = BANCHO_BOT_IDENTITY
-            command_packets.append(
-                send_message(
-                    sender=bot.username,
-                    content=cr.content,
-                    target=cr.target,
-                    sender_id=bot.user_id,
-                )
+            packet = send_message(
+                sender=bot.username,
+                content=cr.content,
+                target=cr.target,
+                sender_id=bot.user_id,
             )
+            if cr.target.startswith("#"):
+                channel_command_packets.append(packet)
+                continue
+            sender_command_packets.append(packet)
 
+        channel_packets = (message_packet, *channel_command_packets)
         for target_id in result.delivered_to:
-            if not command_packets:
-                await self._packet_queue.enqueue(target_id, message_packet)
-            else:
-                await self._packet_queue.enqueue(target_id, message_packet, *command_packets)
+            await self._packet_queue.enqueue(target_id, *channel_packets)
 
-        if command_packets and user_id not in result.delivered_to:
-            await self._packet_queue.enqueue(user_id, *command_packets)
+        if channel_command_packets and user_id not in result.delivered_to:
+            await self._packet_queue.enqueue(user_id, *channel_command_packets)
+
+        if sender_command_packets:
+            await self._packet_queue.enqueue(user_id, *sender_command_packets)
 
     @handles(ClientPacketID.SEND_PRIVATE_MESSAGE)
     async def handle_send_private_message(self, payload: bytes, user_id: int) -> None:

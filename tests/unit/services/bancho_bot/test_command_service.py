@@ -21,15 +21,15 @@ from unittest import mock
 
 import pytest
 
+from osu_server.domain.bancho_bot import CommandArgument, CommandDestination
 from osu_server.domain.chat import ChatAuthorization, ChatCommandResponse
 from osu_server.domain.role import Privileges
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands.general import setup_general
-from osu_server.services.bancho_bot.context import CommandArgument, CommandDestination
 from osu_server.services.bancho_bot.registry import CommandRegistry, command
 
 if TYPE_CHECKING:
-    from osu_server.services.bancho_bot.context import CommandContext
+    from osu_server.domain.bancho_bot import CommandContext
 
 
 @pytest.fixture

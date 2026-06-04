@@ -8,10 +8,10 @@ from __future__ import annotations
 import random
 from typing import TYPE_CHECKING
 
-from osu_server.services.bancho_bot.context import CommandArgument
+from osu_server.domain.bancho_bot import CommandArgument
 
 if TYPE_CHECKING:
-    from osu_server.services.bancho_bot.context import CommandContext
+    from osu_server.domain.bancho_bot import CommandContext
     from osu_server.services.bancho_bot.registry import CommandRegistry
 
 

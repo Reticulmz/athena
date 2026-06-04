@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from unittest import mock
 
+from osu_server.domain.bancho_bot import CommandContext, CommandDestination
 from osu_server.domain.role import Privileges
 from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.bancho_bot.context import CommandContext, CommandDestination
 from osu_server.services.bancho_bot.registry import CommandRegistry
 
 

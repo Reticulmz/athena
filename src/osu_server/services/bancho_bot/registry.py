@@ -9,13 +9,13 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from osu_server.domain.role import Privileges
-from osu_server.services.bancho_bot.context import (
+from osu_server.domain.bancho_bot import (
     CommandArgument,
     CommandContext,
     CommandDestination,
     CommandMetadata,
 )
+from osu_server.domain.role import Privileges
 
 CommandHandler = Callable[[CommandContext], Awaitable[str | None]]
 

@@ -15,12 +15,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from osu_server.domain.role import Privileges
-from osu_server.services.bancho_bot.context import (
+from osu_server.domain.bancho_bot import (
     CommandContext,
     CommandDestination,
     CommandMetadata,
 )
+from osu_server.domain.role import Privileges
 from osu_server.services.bancho_bot.registry import (
     CommandDefinition,
     CommandRegistry,

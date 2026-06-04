@@ -14,13 +14,16 @@ from caterpillar.model import pack
 
 from osu_server.domain.chat import (
     ChannelMessageResult,
+    ChatCommandResponse,
     PrivateMessageResult,
     SendChannelMessageInput,
     SendPrivateMessageInput,
 )
 from osu_server.domain.session import SessionData
+from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
+from osu_server.transports.bancho.protocol.s2c.chat import send_message
 from osu_server.transports.bancho.protocol.types import BanchoString, Message
 
 # ── Stubs ────────────────────────────────────────────────────────────────
@@ -238,6 +241,58 @@ class TestSendMessage:
 
         assert chat_service.calls[0]["user_privileges"] == 8
         assert chat_service.calls[0]["user_role_ids"] == (1, 2)
+
+    async def test_sender_only_command_response_not_sent_to_channel_members(
+        self,
+        handlers: ChatHandlers,
+        chat_service: StubChatService,
+        packet_queue: InMemoryPacketQueue,
+        session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
+    ) -> None:
+        """PM guidance from a channel command is visible only to the sender."""
+        await packet_queue.refresh_ttl(1, ttl=60)
+        await packet_queue.refresh_ttl(2, ttl=60)
+        await packet_queue.refresh_ttl(3, ttl=60)
+        chat_service.channel_result = ChannelMessageResult(
+            delivered_to={2, 3},
+            content="!ban user",
+            command_responses=(
+                ChatCommandResponse(
+                    target="#osu",
+                    content="Unknown command. Type !help for available commands.",
+                ),
+                ChatCommandResponse(
+                    target="test_user",
+                    content="The !ban command can only be used in pm.",
+                ),
+            ),
+        )
+        payload = _build_message_payload(content="!ban user", target="#osu")
+
+        await handlers.handle_send_message(payload, user_id=1)
+
+        user_message = send_message(
+            sender="test_user",
+            content="!ban user",
+            target="#osu",
+            sender_id=1,
+        )
+        unknown_packet = send_message(
+            sender=BANCHO_BOT_IDENTITY.username,
+            content="Unknown command. Type !help for available commands.",
+            target="#osu",
+            sender_id=BANCHO_BOT_IDENTITY.user_id,
+        )
+        guidance_packet = send_message(
+            sender=BANCHO_BOT_IDENTITY.username,
+            content="The !ban command can only be used in pm.",
+            target="test_user",
+            sender_id=BANCHO_BOT_IDENTITY.user_id,
+        )
+
+        assert await packet_queue.dequeue_all(2) == user_message + unknown_packet
+        assert await packet_queue.dequeue_all(3) == user_message + unknown_packet
+        assert await packet_queue.dequeue_all(1) == unknown_packet + guidance_packet
 
     async def test_session_not_found_does_nothing(
         self,
