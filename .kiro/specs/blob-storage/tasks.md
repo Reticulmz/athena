@@ -49,7 +49,7 @@
   - _Depends: 1.3, 2.1_
 
 - [ ] 3. Implement physical storage backend contracts
-- [ ] 3.1 Define storage backend contracts and errors
+- [x] 3.1 Define storage backend contracts and errors
   - Define stream chunk, staged write, backend validation, read, existence, and failure contracts.
   - Add typed errors for invalid storage configuration, unsupported backend selection, missing blob content, and backend read/write failures.
   - Keep backend contracts independent from filenames, uploader identity, domain attachments, and authorization.
