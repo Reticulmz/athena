@@ -30,7 +30,7 @@
   - Completed state: repository consumers can depend on one typed contract that exposes create and lookup only.
   - _Requirements: 1.1, 1.2, 2.2, 2.3, 6.2, 8.1, 8.3_
 
-- [ ] 2.2 (P) Implement the in-memory blob repository
+- [x] 2.2 (P) Implement the in-memory blob repository
   - Store blob records in memory with lookups by ID and SHA-256.
   - Preserve append-only behavior by omitting update and delete operations.
   - Return or raise a deterministic duplicate result when the same SHA-256 is created twice.
