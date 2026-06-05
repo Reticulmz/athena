@@ -68,6 +68,7 @@ async def startup(state: TaskiqState) -> None:
     )
     state.beatmap_metadata_fetch = create_worker_beatmap_metadata_fetch(
         session_factory=session_factory,
+        config=_config,
     )
     state.beatmap_file_fetch = await create_worker_beatmap_file_fetch(
         session_factory=session_factory,

@@ -194,7 +194,10 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         official_metadata_provider = InMemoryBeatmapMetadataProvider()
         mirror_metadata_provider = InMemoryBeatmapMetadataProvider()
     else:
-        official_metadata_provider = OsuApiMetadataProvider()
+        official_metadata_provider = OsuApiMetadataProvider(
+            client_id=config.beatmap_official_api_client_id,  # pyright: ignore[reportArgumentType]
+            client_secret=config.beatmap_official_api_client_secret,  # pyright: ignore[reportArgumentType]
+        )
         mirror_metadata_provider = MirrorMetadataProvider()
 
     metadata_provider = CompositeBeatmapMetadataProvider(

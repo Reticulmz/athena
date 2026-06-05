@@ -80,6 +80,7 @@ def create_worker_chat_service(
 def create_worker_beatmap_metadata_fetch(
     *,
     session_factory: async_sessionmaker[AsyncSession],
+    config: AppConfig,
 ) -> FetchBeatmapMetadataJob:
     """Build the worker-side beatmap metadata fetch job.
 
@@ -87,7 +88,10 @@ def create_worker_beatmap_metadata_fetch(
     mirror fallback second.
     """
     repo = SQLAlchemyBeatmapRepository(session_factory)
-    official = OsuApiMetadataProvider()
+    official = OsuApiMetadataProvider(
+        client_id=config.beatmap_official_api_client_id,  # pyright: ignore[reportArgumentType]
+        client_secret=config.beatmap_official_api_client_secret,  # pyright: ignore[reportArgumentType]
+    )
     mirror = MirrorMetadataProvider()
     composite = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
     return FetchBeatmapMetadataJob(repository=repo, metadata_provider=composite)
