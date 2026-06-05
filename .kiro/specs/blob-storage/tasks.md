@@ -107,7 +107,7 @@
   - _Requirements: 1.3, 8.1, 8.2, 8.3, 8.4, 9.1, 9.2, 9.3, 9.4, 9.5, 10.1, 10.2, 10.3_
 
 - [ ] 5. Wire blob storage into application composition
-- [ ] 5.1 Register blob repository, backend, and service in the composition root
+- [x] 5.1 Register blob repository, backend, and service in the composition root
   - Select in-memory metadata persistence for tests and SQLAlchemy persistence outside tests.
   - Select Local backend when configured and validate it before accepting storage operations.
   - Fail startup or first-use validation clearly when S3 is selected before implementation.

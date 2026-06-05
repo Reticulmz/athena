@@ -19,17 +19,22 @@ from osu_server.infrastructure.state.memory.channel_state_store import InMemoryC
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
 from osu_server.infrastructure.state.valkey.channel_state_store import ValkeyChannelStateStore
 from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimiter
+from osu_server.infrastructure.storage import create_blob_storage_backend
+from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.jobs import register_all_jobs
+from osu_server.repositories.interfaces.blob_repository import BlobRepository
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.chat_repository import ChatRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository
+from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
 from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
 from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
 from osu_server.repositories.sqlalchemy.role_repository import SQLAlchemyRoleRepository
@@ -38,6 +43,7 @@ from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
+from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
 from osu_server.services.online_users import OnlineUsersService
@@ -69,12 +75,17 @@ def _register_repositories(
 ) -> None:
     """Register repository implementations for the current environment."""
     if config.environment == "test":
+        container.register_singleton(BlobRepository, InMemoryBlobRepository)
         container.register_singleton(UserRepository, InMemoryUserRepository)
         container.register_singleton(RoleRepository, InMemoryRoleRepository)
         container.register_singleton(ChannelRepository, InMemoryChannelRepository)
         container.register_singleton(ChatRepository, InMemoryChatRepository)
         return
 
+    container.register_singleton(
+        BlobRepository,
+        lambda: SQLAlchemyBlobRepository(session_factory),
+    )
     container.register_singleton(
         UserRepository,
         lambda: SQLAlchemyUserRepository(session_factory),
@@ -129,6 +140,18 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
 
     # -- Repositories (singleton, environment-based switching) ----------------
     _register_repositories(container, config, session_factory)
+
+    # -- BlobStorage backend/service (singleton) ------------------------------
+    blob_backend = create_blob_storage_backend(config)
+    await blob_backend.validate_configuration()
+    container.register_singleton(BlobStorageBackend, lambda: blob_backend)
+    blob_repo = await container.resolve(BlobRepository)
+    blob_storage_service = BlobStorageService(
+        blob_repo=blob_repo,
+        backend=blob_backend,
+        storage_backend=config.blob_storage_backend,
+    )
+    container.register_singleton(BlobStorageService, lambda: blob_storage_service)
 
     # -- SystemUserIdentity (singleton) ---------------------------------------
     identity = create_bancho_bot_identity(config.bancho_bot_username)
