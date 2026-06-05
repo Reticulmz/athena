@@ -186,6 +186,25 @@ async def test_put_stream_returns_existing_blob_for_duplicate_content() -> None:
     assert events[0]["byte_size"] == len(content)
 
 
+async def test_put_bytes_matches_stream_identity_for_same_content() -> None:
+    service, _repo, backend = _make_service()
+    content = b"same identity through helper and stream"
+    streamed = await service.put_stream(
+        _chunks(b"same identity ", b"through helper ", b"and stream"),
+        content_type="text/plain",
+    )
+    assert isinstance(streamed, BlobStored)
+
+    helper = await service.put_bytes(content, content_type="application/octet-stream")
+
+    assert isinstance(helper, BlobDeduplicated)
+    assert helper.blob == streamed.blob
+    assert helper.blob.sha256 == hashlib.sha256(content).hexdigest()
+    assert helper.blob.byte_size == len(content)
+    assert helper.blob.content_type == "text/plain"
+    assert backend.finalized_content == {streamed.blob.storage_key: content}
+
+
 async def test_put_stream_rejects_missing_content_type_before_staging() -> None:
     service, _repo, backend = _make_service()
 

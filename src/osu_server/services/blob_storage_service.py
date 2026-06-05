@@ -65,6 +65,19 @@ class BlobStorageService:
         self._backend = backend
         self._storage_backend = storage_backend
 
+    async def put_bytes(
+        self,
+        data: bytes,
+        *,
+        content_type: str,
+    ) -> BlobStoreResult:
+        """Store one in-memory byte payload through the stream write path."""
+
+        async def chunks() -> ByteChunks:
+            yield data
+
+        return await self.put_stream(chunks(), content_type=content_type)
+
     async def put_stream(
         self,
         chunks: ByteChunks,

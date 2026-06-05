@@ -86,7 +86,7 @@
   - Completed state: service tests prove new writes, duplicate writes, missing content type, and write failures produce the expected stored, deduplicated, or failed outcomes.
   - _Requirements: 1.1, 1.2, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 5.1, 5.2, 5.3, 5.4, 7.1, 7.2, 7.3, 8.3, 11.2, 11.4_
 
-- [ ] 4.2 Implement small-data write helper parity
+- [x] 4.2 Implement small-data write helper parity
   - Provide the small-data write helper as a wrapper around the same stream write behavior.
   - Ensure helper calls produce the same SHA-256, byte size, deduplication, and content type validation results as equivalent stream writes.
   - Completed state: tests prove storing the same bytes through stream and helper paths resolves to the same blob identity.
