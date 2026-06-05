@@ -294,6 +294,21 @@ async def test_stream_read_returns_backend_chunks_for_existing_blob() -> None:
     assert await service.read_bytes(stored.blob.id) == b"read me"
 
 
+async def test_stream_read_does_not_rehash_backend_content() -> None:
+    service, _repo, backend = _make_service()
+    stored = await service.put_bytes(
+        b"metadata integrity is write-time",
+        content_type="text/plain",
+    )
+    assert isinstance(stored, BlobStored)
+    backend.finalized_content[stored.blob.storage_key] = b"backend stream is trusted on read"
+
+    chunks = await service.stream_read(stored.blob.id)
+
+    assert b"".join([chunk async for chunk in chunks]) == b"backend stream is trusted on read"
+    assert stored.blob.sha256 == hashlib.sha256(b"metadata integrity is write-time").hexdigest()
+
+
 async def test_stream_read_reports_missing_blob_metadata_as_unavailable() -> None:
     service, _repo, _backend = _make_service()
 
