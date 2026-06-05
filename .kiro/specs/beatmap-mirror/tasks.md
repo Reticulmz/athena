@@ -58,7 +58,7 @@
   - _Boundary: BeatmapFreshnessPolicy_
 
 - [ ] 3. Core persistence behavior
-- [ ] 3.1 Implement in-memory beatmap repository
+- [x] 3.1 Implement in-memory beatmap repository
   - Store beatmapsets, beatmaps, checksum lookup, file attachments, and fetch states in typed in-memory structures.
   - Support idempotent pending fetch markers and duplicate attachment handling.
   - Preserve local override values when metadata snapshots refresh official status.
