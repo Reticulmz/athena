@@ -98,7 +98,7 @@
   - _Boundary: BeatmapFileProvider_
 
 - [ ] 5. Beatmap mirror service behavior
-- [ ] 5.1 Implement cache-first resolve operations and structured result states
+- [x] 5.1 Implement cache-first resolve operations and structured result states
   - Resolve by beatmap id, beatmapset id, and checksum/md5.
   - Return cached usable data synchronously.
   - Return structured metadata status, file status, source, verification, last fetch, next refresh, eligibility, and reason fields.
