@@ -47,7 +47,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 9.2, 9.4, 9.5, 10.2, 10.3, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 12.1, 12.2, 12.3, 12.4, 12.5, 13.1, 13.2, 13.3, 13.4_
   - _Boundary: BeatmapStatusResolver, BeatmapEligibilityService_
 
-- [ ] 2.3 (P) Implement freshness policy for beatmap status refresh
+- [x] 2.3 (P) Implement freshness policy for beatmap status refresh
   - Treat Ranked, Approved, and Loved as stable unless explicit refresh or policy marks them stale.
   - Treat Qualified, Pending, and WIP as refreshable on a shorter cadence.
   - Treat Graveyard as refreshable on a longer cadence than Pending-like statuses.
