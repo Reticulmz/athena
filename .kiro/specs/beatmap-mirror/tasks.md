@@ -118,7 +118,7 @@
   - _Boundary: BeatmapMirrorService_
 
 - [ ] 6. Background fetch jobs
-- [ ] 6.1 Implement idempotent metadata fetch job
+- [x] 6.1 Implement idempotent metadata fetch job
   - Mark metadata fetch pending only when no equivalent fetch is already pending.
   - Fetch official metadata before mirror metadata.
   - Save official snapshots without clearing local overrides and save mirror snapshots as unverified.
