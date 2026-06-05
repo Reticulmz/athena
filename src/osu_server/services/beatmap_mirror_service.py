@@ -7,6 +7,7 @@ score submission, leaderboard, and rank management.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -92,6 +93,8 @@ class BeatmapSetResolveResult:
 # Service
 # ---------------------------------------------------------------------------
 
+_POLL_INTERVAL: float = 0.05
+
 
 class BeatmapMirrorService:
     """Cache-first beatmap resolver.
@@ -141,15 +144,27 @@ class BeatmapMirrorService:
         now = datetime.now(UTC)
 
         beatmap = await self._repository.get_beatmap(beatmap_id)
-        if beatmap is None:
-            return await self._unknown_result(
-                metadata_target=BeatmapFetchTarget.metadata_by_beatmap_id(beatmap_id),
-                file_target=BeatmapFetchTarget.file_by_beatmap_id(beatmap_id),
-                opts=opts,
-                now=now,
-            )
+        if beatmap is not None:
+            return await self._known_beatmap_result(beatmap, opts, now)
 
-        return await self._known_beatmap_result(beatmap, opts, now)
+        metadata_target = BeatmapFetchTarget.metadata_by_beatmap_id(beatmap_id)
+        file_target = BeatmapFetchTarget.file_by_beatmap_id(beatmap_id)
+
+        await self._try_enqueue(metadata_target)
+        if opts.require_osu_file:
+            await self._try_enqueue(file_target)
+
+        if opts.wait_timeout_seconds > 0:
+            beatmap = await self._wait_for_beatmap(beatmap_id, opts)
+            if beatmap is not None:
+                return await self._known_beatmap_result(beatmap, opts, now)
+
+        return await self._unknown_result(
+            metadata_target=metadata_target,
+            file_target=file_target,
+            opts=opts,
+            now=now,
+        )
 
     async def resolve_by_beatmapset_id(
         self,
@@ -161,14 +176,23 @@ class BeatmapMirrorService:
         now = datetime.now(UTC)
 
         beatmapset = await self._repository.get_beatmapset(beatmapset_id)
-        if beatmapset is None:
-            return await self._unknown_set_result(
-                metadata_target=BeatmapFetchTarget.metadata_by_beatmapset_id(beatmapset_id),
-                opts=opts,
-                now=now,
-            )
+        if beatmapset is not None:
+            return _set_result(beatmapset)
 
-        return _set_result(beatmapset)
+        metadata_target = BeatmapFetchTarget.metadata_by_beatmapset_id(beatmapset_id)
+
+        await self._try_enqueue(metadata_target)
+
+        if opts.wait_timeout_seconds > 0:
+            beatmapset = await self._wait_for_beatmapset(beatmapset_id, opts)
+            if beatmapset is not None:
+                return _set_result(beatmapset)
+
+        return await self._unknown_set_result(
+            metadata_target=metadata_target,
+            opts=opts,
+            now=now,
+        )
 
     async def resolve_by_checksum(
         self,
@@ -180,15 +204,24 @@ class BeatmapMirrorService:
         now = datetime.now(UTC)
 
         beatmap = await self._repository.get_beatmap_by_checksum(checksum_md5)
-        if beatmap is None:
-            return await self._unknown_result(
-                metadata_target=BeatmapFetchTarget.metadata_by_checksum(checksum_md5),
-                file_target=None,
-                opts=opts,
-                now=now,
-            )
+        if beatmap is not None:
+            return await self._known_beatmap_result(beatmap, opts, now)
 
-        return await self._known_beatmap_result(beatmap, opts, now)
+        metadata_target = BeatmapFetchTarget.metadata_by_checksum(checksum_md5)
+
+        await self._try_enqueue(metadata_target)
+
+        if opts.wait_timeout_seconds > 0:
+            beatmap = await self._wait_for_beatmap_by_checksum(checksum_md5, opts)
+            if beatmap is not None:
+                return await self._known_beatmap_result(beatmap, opts, now)
+
+        return await self._unknown_result(
+            metadata_target=metadata_target,
+            file_target=None,
+            opts=opts,
+            now=now,
+        )
 
     # ------------------------------------------------------------------
     # Known beatmap result builder
@@ -206,6 +239,13 @@ class BeatmapMirrorService:
             official_sources_available=self._official_sources_available,
             force_refresh=opts.force_refresh,
         )
+
+        if decision.should_refresh:
+            await self._try_enqueue(BeatmapFetchTarget.metadata_by_beatmap_id(beatmap.id))
+
+        if opts.require_osu_file and beatmap.file_state is not BeatmapFileState.AVAILABLE:
+            await self._try_enqueue(BeatmapFetchTarget.file_by_beatmap_id(beatmap.id))
+
         beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
         eligibility = self._eligibility.evaluate(
             beatmap, mirror_trust_enabled=self._mirror_trust_enabled
@@ -225,6 +265,67 @@ class BeatmapMirrorService:
             next_refresh_at=beatmap.next_refresh_at,
             reason=reason,
         )
+
+    # ------------------------------------------------------------------
+    # Enqueue helper
+    # ------------------------------------------------------------------
+
+    async def _try_enqueue(self, target: BeatmapFetchTarget) -> None:
+        """Enqueue a refresh if the callback is configured."""
+        if self._enqueue_refresh is not None:
+            await self._enqueue_refresh(target)
+
+    # ------------------------------------------------------------------
+    # Bounded wait helpers
+    # ------------------------------------------------------------------
+
+    async def _wait_for_beatmap(
+        self,
+        beatmap_id: int,
+        opts: BeatmapResolveOptions,
+    ) -> Beatmap | None:
+        """Poll repository for beatmap data until the wait limit expires."""
+        deadline = datetime.now(UTC).timestamp() + opts.wait_timeout_seconds
+        while True:
+            remaining = deadline - datetime.now(UTC).timestamp()
+            if remaining <= 0:
+                return None
+            await asyncio.sleep(min(_POLL_INTERVAL, max(0.0, remaining)))
+            beatmap = await self._repository.get_beatmap(beatmap_id)
+            if beatmap is not None:
+                return beatmap
+
+    async def _wait_for_beatmapset(
+        self,
+        beatmapset_id: int,
+        opts: BeatmapResolveOptions,
+    ) -> BeatmapSet | None:
+        """Poll repository for beatmapset data until the wait limit expires."""
+        deadline = datetime.now(UTC).timestamp() + opts.wait_timeout_seconds
+        while True:
+            remaining = deadline - datetime.now(UTC).timestamp()
+            if remaining <= 0:
+                return None
+            await asyncio.sleep(min(_POLL_INTERVAL, max(0.0, remaining)))
+            beatmapset = await self._repository.get_beatmapset(beatmapset_id)
+            if beatmapset is not None:
+                return beatmapset
+
+    async def _wait_for_beatmap_by_checksum(
+        self,
+        checksum_md5: str,
+        opts: BeatmapResolveOptions,
+    ) -> Beatmap | None:
+        """Poll repository for beatmap data by checksum until the wait limit expires."""
+        deadline = datetime.now(UTC).timestamp() + opts.wait_timeout_seconds
+        while True:
+            remaining = deadline - datetime.now(UTC).timestamp()
+            if remaining <= 0:
+                return None
+            await asyncio.sleep(min(_POLL_INTERVAL, max(0.0, remaining)))
+            beatmap = await self._repository.get_beatmap_by_checksum(checksum_md5)
+            if beatmap is not None:
+                return beatmap
 
     # ------------------------------------------------------------------
     # Unknown result builders

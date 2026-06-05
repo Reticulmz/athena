@@ -108,7 +108,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 7.1, 7.2, 7.3, 7.4, 7.5, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 15.4_
   - _Boundary: BeatmapMirrorService_
 
-- [ ] 5.2 Implement refresh enqueue and bounded wait behavior
+- [x] 5.2 Implement refresh enqueue and bounded wait behavior
   - Enqueue metadata fetch for missing, stale, mirror-sourced, and explicitly refreshed records.
   - Enqueue file fetch when `.osu` is required and missing.
   - Wait only up to the caller's requested bound and recheck persisted state without holding database transactions or connections across the wait.
