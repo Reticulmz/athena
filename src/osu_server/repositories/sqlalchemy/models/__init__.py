@@ -3,6 +3,12 @@
 Import all models here so that Alembic can discover them via Base.metadata.
 """
 
+from osu_server.repositories.sqlalchemy.models.beatmap import (
+    BeatmapFetchStateModel,
+    BeatmapFileAttachmentModel,
+    BeatmapModel,
+    BeatmapSetModel,
+)
 from osu_server.repositories.sqlalchemy.models.blob import BlobModel
 from osu_server.repositories.sqlalchemy.models.channel import (
     ChannelMessageModel,
@@ -17,6 +23,10 @@ from osu_server.repositories.sqlalchemy.models.user import (
 )
 
 __all__ = [
+    "BeatmapFetchStateModel",
+    "BeatmapFileAttachmentModel",
+    "BeatmapModel",
+    "BeatmapSetModel",
     "BlobModel",
     "ChannelMessageModel",
     "ChannelModel",

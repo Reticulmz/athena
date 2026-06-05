@@ -8,7 +8,7 @@
   - Observable completion: configuration tests show invalid mirror URLs and missing required official source credentials fail before source-dependent operations are accepted.
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 5.4, 6.7, 6.9, 16.6_
 
-- [ ] 1.2 Add beatmap mirror database migration and ORM discovery
+- [x] 1.2 Add beatmap mirror database migration and ORM discovery
   - Create relational storage for beatmapsets, beatmaps, beatmap file attachments, and beatmap fetch states.
   - Add uniqueness and lookup constraints for beatmap id, checksum/md5, file attachment idempotency, and fetch targets.
   - Keep `.osu` bodies out of beatmap tables and reference shared blob records only from beatmap file attachment records.
