@@ -6,6 +6,7 @@ TDD: RED phase first, then GREEN.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -20,7 +21,12 @@ from osu_server.domain.beatmap import (
     BeatmapSnapshot,
     BeatmapSourceVerification,
 )
-from osu_server.jobs.beatmap_fetch import FetchBeatmapMetadataJob
+from osu_server.domain.blob import Blob
+from osu_server.infrastructure.beatmaps.contracts import (
+    BeatmapFileSource,
+    OsuFileFetchResult,
+)
+from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
 from osu_server.repositories.interfaces.beatmap_repository import (
     BeatmapFetchTarget,
 )
@@ -30,7 +36,8 @@ from osu_server.services.beatmaps.metadata_providers import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmap import BeatmapMetadataProvider
+    from osu_server.domain.beatmap import Beatmap, BeatmapMetadataProvider
+    from osu_server.services.blob_storage_service import BlobStored
 
 _NOW = datetime(2026, 6, 5, tzinfo=UTC)
 _THIRTY_DAYS = timedelta(days=30)
@@ -460,3 +467,347 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
         last_fetched_at=snapshot.last_fetched_at,
         next_refresh_at=snapshot.next_refresh_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# FetchBeatmapFileJob tests
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class StubFileProvider:
+    """Conforms to ``BeatmapFileProvider``. Returns ``OsuFileFetchResult`` or raises."""
+
+    by_beatmap_id: dict[int, OsuFileFetchResult] = field(default_factory=dict)
+    exception: Exception | None = None
+    delay: float = 0
+    calls: list[int] = field(default_factory=list)
+
+    async def fetch_osu_file(self, beatmap_id: int) -> OsuFileFetchResult:
+        self.calls.append(beatmap_id)
+        if self.delay > 0:
+            await asyncio.sleep(self.delay)
+        if self.exception is not None:
+            raise self.exception
+        result = self.by_beatmap_id.get(beatmap_id)
+        if result is None:
+            raise ValueError(f"No file configured for beatmap_id={beatmap_id}")
+        return result
+
+
+@dataclass
+class StubBlobStorageService:
+    """Simple stub that returns ``BlobStored`` results."""
+
+    next_blob_id: int = 1
+    stored: list[Blob] = field(default_factory=list)
+
+    async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
+        from osu_server.services.blob_storage_service import BlobStored  # noqa: PLC0415
+
+        blob = Blob(
+            id=self.next_blob_id,
+            sha256=hashlib.sha256(data).hexdigest(),
+            byte_size=len(data),
+            content_type=content_type,
+            storage_backend="stub",
+            storage_key=f"stub/{self.next_blob_id}",
+            created_at=_NOW,
+        )
+        self.next_blob_id += 1
+        self.stored.append(blob)
+        return BlobStored(blob=blob)
+
+
+async def _setup_repo_with_beatmap(
+    repo: InMemoryBeatmapRepository,
+    *,
+    beatmap_id: int = 2000,
+    beatmapset_id: int = 1000,
+    checksum_md5: str = _DEFAULT_CHECKSUM,
+) -> Beatmap:
+    """Save a minimal beatmap into the repository and return it."""
+    from osu_server.domain.beatmap import (  # noqa: PLC0415
+        Beatmap,
+        BeatmapFileState,
+        BeatmapMetadataSource,
+        BeatmapRankStatus,
+        BeatmapSet,
+        BeatmapSourceVerification,
+    )
+
+    bm = Beatmap(
+        id=beatmap_id,
+        beatmapset_id=beatmapset_id,
+        checksum_md5=checksum_md5,
+        mode="osu",
+        version="Another",
+        total_length=None,
+        hit_length=None,
+        max_combo=None,
+        bpm=None,
+        cs=None,
+        od=None,
+        ar=None,
+        hp=None,
+        difficulty_rating=None,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        local_status_override=None,
+        metadata_fetch_state=BeatmapFetchState.FRESH,
+        file_state=BeatmapFileState.MISSING,
+        file_attachment=None,
+        last_fetched_at=_NOW,
+        next_refresh_at=_NOW + _THIRTY_DAYS,
+    )
+    beatmapset = BeatmapSet(
+        id=beatmapset_id,
+        artist="Camellia",
+        title="Exit This Earth's Atomosphere",
+        creator="Realazy",
+        artist_unicode=None,
+        title_unicode=None,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        beatmaps=(bm,),
+        last_fetched_at=_NOW,
+        next_refresh_at=_NOW + _THIRTY_DAYS,
+    )
+    await repo.save_beatmapset_snapshot(beatmapset)
+    return bm
+
+
+_FILE_BODY = b"osu file format v14\n[General]\nAudioFilename: audio.mp3\n"
+_FILE_BODY_MD5 = "c76db67ba86527673e81495b1602f24b"
+_FILE_BODY_MISMATCH = b"osu file format v14\n[General]\nAudioFilename: wrong.mp3\n"
+
+
+class TestFetchBeatmapFileJob:
+    """Idempotent .osu file fetch job behaviour."""
+
+    @staticmethod
+    def _make_job(
+        repo: InMemoryBeatmapRepository,
+        file_provider: StubFileProvider | None = None,
+        blob_storage: StubBlobStorageService | None = None,
+    ) -> FetchBeatmapFileJob:
+        _provider: StubFileProvider = file_provider or StubFileProvider()
+        _blob: StubBlobStorageService = blob_storage or StubBlobStorageService()
+        return FetchBeatmapFileJob(
+            repository=repo,
+            file_provider=_provider,
+            blob_storage=_blob,
+        )
+
+    # --- success path --------------------------------------------------------
+
+    async def test_successful_file_fetch_verifies_and_attaches(self) -> None:
+        """File is fetched, md5 verified, blob stored, and attachment attached."""
+        repo = InMemoryBeatmapRepository()
+        _ = await _setup_repo_with_beatmap(repo, checksum_md5=_FILE_BODY_MD5)
+        expected_md5 = _FILE_BODY_MD5
+        fetch_result = OsuFileFetchResult(
+            beatmap_id=2000,
+            body=_FILE_BODY,
+            source=BeatmapFileSource.OSU_CURRENT,
+            original_filename="2000.osu",
+        )
+        file_provider = StubFileProvider(by_beatmap_id={2000: fetch_result})
+        blob_storage = StubBlobStorageService()
+        job = self._make_job(repo, file_provider=file_provider, blob_storage=blob_storage)
+        target = BeatmapFetchTarget.file_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        # File provider was called once
+        assert len(file_provider.calls) == 1
+        assert file_provider.calls[0] == 2000
+
+        # Blob was stored
+        assert len(blob_storage.stored) == 1
+        assert blob_storage.stored[0].byte_size == len(_FILE_BODY)
+
+        # Attachment is attached
+        attachment = await repo.get_current_file_attachment(2000)
+        assert attachment is not None
+        assert attachment.blob_id == blob_storage.stored[0].id
+        assert attachment.checksum_md5 == expected_md5
+        assert attachment.source == BeatmapFileSource.OSU_CURRENT.value
+        assert attachment.original_filename == "2000.osu"
+        assert attachment.fetched_at is not None
+        assert attachment.verified_at is not None
+
+        # Fetch state is succeeded
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FRESH
+
+    # --- checksum mismatch ---------------------------------------------------
+
+    async def test_checksum_mismatch_marks_failed(self) -> None:
+        """When fetched bytes don't match expected md5, fetch is marked failed
+        and no blob is stored."""
+        repo = InMemoryBeatmapRepository()
+        _ = await _setup_repo_with_beatmap(repo, checksum_md5=_DEFAULT_CHECKSUM)
+        # _FILE_BODY_MISMATCH has a different md5 than _DEFAULT_CHECKSUM
+        fetch_result = OsuFileFetchResult(
+            beatmap_id=2000,
+            body=_FILE_BODY_MISMATCH,
+            source=BeatmapFileSource.OSU_CURRENT,
+            original_filename="2000.osu",
+        )
+        file_provider = StubFileProvider(by_beatmap_id={2000: fetch_result})
+        blob_storage = StubBlobStorageService()
+        job = self._make_job(repo, file_provider=file_provider, blob_storage=blob_storage)
+        target = BeatmapFetchTarget.file_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        # No blob was stored
+        assert len(blob_storage.stored) == 0
+
+        # No attachment exists
+        attachment = await repo.get_current_file_attachment(2000)
+        assert attachment is None
+
+        # Fetch state is failed with checksum mismatch detail
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FAILED
+        assert fetch_record.last_error is not None
+        assert "checksum mismatch" in fetch_record.last_error.lower()
+
+        # The beatmap's file_state is still the original (unchanged)
+        saved_beatmap = await repo.get_beatmap(2000)
+        assert saved_beatmap is not None
+        assert saved_beatmap.file_state is BeatmapFileState.MISSING
+
+    # --- idempotency ---------------------------------------------------------
+
+    async def test_already_pending_skips_fetch(self) -> None:
+        """When the target is already in PENDING_FETCH state, the job returns
+        without contacting the file provider."""
+        repo = InMemoryBeatmapRepository()
+        _ = await _setup_repo_with_beatmap(repo)
+        target = BeatmapFetchTarget.file_by_beatmap_id(2000)
+        # Pre-mark as pending
+        _ = await repo.try_mark_fetch_pending(target, _NOW)
+
+        fetch_result = OsuFileFetchResult(
+            beatmap_id=2000,
+            body=_FILE_BODY,
+            source=BeatmapFileSource.OSU_CURRENT,
+            original_filename="2000.osu",
+        )
+        file_provider = StubFileProvider(by_beatmap_id={2000: fetch_result})
+        job = self._make_job(repo, file_provider=file_provider)
+
+        await job.execute(target)
+
+        # The file provider was never called
+        assert len(file_provider.calls) == 0
+
+    async def test_duplicate_verified_file_reuses_existing_attachment(self) -> None:
+        """Existing verified attachment marks the fetch succeeded without storing again."""
+        repo = InMemoryBeatmapRepository()
+        _ = await _setup_repo_with_beatmap(repo, checksum_md5=_FILE_BODY_MD5)
+        fetch_result = OsuFileFetchResult(
+            beatmap_id=2000,
+            body=_FILE_BODY,
+            source=BeatmapFileSource.OSU_CURRENT,
+            original_filename="2000.osu",
+        )
+        file_provider = StubFileProvider(by_beatmap_id={2000: fetch_result})
+        blob_storage = StubBlobStorageService()
+        job = self._make_job(repo, file_provider=file_provider, blob_storage=blob_storage)
+        target = BeatmapFetchTarget.file_by_beatmap_id(2000)
+
+        await job.execute(target)
+        first_attachment = await repo.get_current_file_attachment(2000)
+        await job.execute(target)
+        second_attachment = await repo.get_current_file_attachment(2000)
+
+        assert first_attachment is second_attachment
+        assert len(file_provider.calls) == 1
+        assert len(blob_storage.stored) == 1
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FRESH
+
+    async def test_concurrent_calls_only_one_proceeds(self) -> None:
+        """Two concurrent calls for the same target: the second skips."""
+        repo = InMemoryBeatmapRepository()
+        _ = await _setup_repo_with_beatmap(repo, checksum_md5=_FILE_BODY_MD5)
+        fetch_result = OsuFileFetchResult(
+            beatmap_id=2000,
+            body=_FILE_BODY,
+            source=BeatmapFileSource.OSU_CURRENT,
+            original_filename="2000.osu",
+        )
+        file_provider = StubFileProvider(
+            by_beatmap_id={2000: fetch_result},
+            delay=0.05,
+        )
+        blob_storage = StubBlobStorageService()
+        job = self._make_job(repo, file_provider=file_provider, blob_storage=blob_storage)
+        target = BeatmapFetchTarget.file_by_beatmap_id(2000)
+
+        _ = await asyncio.gather(
+            job.execute(target),
+            job.execute(target),
+        )
+
+        # The file provider was called only once
+        assert len(file_provider.calls) == 1
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FRESH
+
+    # --- beatmap not found ---------------------------------------------------
+
+    async def test_beatmap_not_found_marks_failed(self) -> None:
+        """When the beatmap doesn't exist in the repository, the fetch is marked
+        failed without contacting the file provider."""
+        repo = InMemoryBeatmapRepository()
+        # Do NOT set up any beatmap
+        fetch_result = OsuFileFetchResult(
+            beatmap_id=2000,
+            body=_FILE_BODY,
+            source=BeatmapFileSource.OSU_CURRENT,
+            original_filename="2000.osu",
+        )
+        file_provider = StubFileProvider(by_beatmap_id={2000: fetch_result})
+        job = self._make_job(repo, file_provider=file_provider)
+        target = BeatmapFetchTarget.file_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        # The file provider was never called
+        assert len(file_provider.calls) == 0
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FAILED
+
+    # --- provider failure ----------------------------------------------------
+
+    async def test_file_provider_raises_marks_failed(self) -> None:
+        """When the file provider raises, the fetch is marked failed and no blob
+        is stored."""
+        repo = InMemoryBeatmapRepository()
+        _ = await _setup_repo_with_beatmap(repo)
+        file_provider = StubFileProvider(exception=RuntimeError("mirror down"))
+        blob_storage = StubBlobStorageService()
+        job = self._make_job(repo, file_provider=file_provider, blob_storage=blob_storage)
+        target = BeatmapFetchTarget.file_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        # No blob was stored
+        assert len(blob_storage.stored) == 0
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FAILED
+        assert fetch_record.last_error is not None
+        assert "mirror down" in fetch_record.last_error

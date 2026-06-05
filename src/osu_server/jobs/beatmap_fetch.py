@@ -12,10 +12,13 @@ target.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import structlog
+
+from osu_server.domain.beatmap import BeatmapFileAttachment
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmap import (
@@ -23,12 +26,23 @@ if TYPE_CHECKING:
         BeatmapSet,
         BeatmapsetSnapshot,
     )
+    from osu_server.infrastructure.beatmaps.contracts import BeatmapFileProvider
     from osu_server.repositories.interfaces.beatmap_repository import (
         BeatmapFetchTarget,
         BeatmapRepository,
     )
+    from osu_server.services.blob_storage_service import BlobStoreResult
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+
+
+class BeatmapBlobStorage(Protocol):
+    async def put_bytes(
+        self,
+        data: bytes,
+        *,
+        content_type: str,
+    ) -> BlobStoreResult: ...
 
 
 class FetchBeatmapMetadataJob:
@@ -146,4 +160,102 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
     )
 
 
-__all__ = ["FetchBeatmapMetadataJob"]
+__all__ = ["FetchBeatmapFileJob", "FetchBeatmapMetadataJob"]
+
+
+class FetchBeatmapFileJob:
+    """Fetch and verify a .osu file idempotently, then attach as a blob.
+
+    The job marks the target as pending, fetches the .osu file bytes through
+    a ``BeatmapFileProvider`` (typically the composite official+mirror
+    provider), verifies the md5 checksum against the expected value from
+    beatmap metadata, stores the verified bytes via ``BlobStorageService``,
+    and attaches the blob to the beatmap.
+
+    If the target is already pending, the job is a no-op.
+    """
+
+    def __init__(
+        self,
+        *,
+        repository: BeatmapRepository,
+        file_provider: BeatmapFileProvider,
+        blob_storage: BeatmapBlobStorage,
+    ) -> None:
+        self._repo: BeatmapRepository = repository
+        self._provider: BeatmapFileProvider = file_provider
+        self._blob: BeatmapBlobStorage = blob_storage
+
+    async def execute(self, target: BeatmapFetchTarget) -> None:
+        """Run the idempotent fetch-and-attach cycle for *target*."""
+        now = datetime.now(UTC)
+
+        acquired = await self._repo.try_mark_fetch_pending(target, now)
+        if not acquired:
+            logger.debug(
+                "beatmap_file_fetch_already_pending",
+                target_type=target.target_type,
+                target_key=target.target_key,
+            )
+            return
+
+        if target.target_type != "file:beatmap":
+            await self._repo.mark_fetch_failed(
+                target,
+                f"unsupported file fetch target type: {target.target_type}",
+                now,
+            )
+            return
+
+        beatmap_id = int(target.target_key)
+
+        beatmap = await self._repo.get_beatmap(beatmap_id)
+        if beatmap is None:
+            await self._repo.mark_fetch_failed(
+                target,
+                f"beatmap {beatmap_id} not found in repository",
+                now,
+            )
+            return
+
+        expected_md5 = beatmap.checksum_md5
+        existing_attachment = await self._repo.get_current_file_attachment(beatmap_id)
+        if existing_attachment is not None and existing_attachment.checksum_md5 == expected_md5:
+            await self._repo.mark_fetch_succeeded(target, now)
+            return
+
+        try:
+            result = await self._provider.fetch_osu_file(beatmap_id)
+        except Exception as exc:
+            await self._repo.mark_fetch_failed(
+                target,
+                f"{type(exc).__name__}: {exc}",
+                now,
+            )
+            return
+
+        fetched_md5 = hashlib.md5(result.body, usedforsecurity=False).hexdigest()
+
+        if fetched_md5 != expected_md5:
+            await self._repo.mark_fetch_failed(
+                target,
+                f"checksum mismatch: expected {expected_md5}, got {fetched_md5}",
+                now,
+            )
+            return
+
+        store_result = await self._blob.put_bytes(
+            result.body,
+            content_type="application/x-osu-beatmap",
+        )
+        attachment = BeatmapFileAttachment(
+            beatmap_id=beatmap_id,
+            blob_id=store_result.blob.id,
+            checksum_md5=expected_md5,
+            source=result.source.value,
+            original_filename=result.original_filename,
+            fetched_at=now,
+            verified_at=now,
+        )
+        _ = await self._repo.attach_osu_file(attachment)
+        await self._repo.mark_fetch_succeeded(target, now)

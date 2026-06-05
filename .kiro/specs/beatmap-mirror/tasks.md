@@ -128,7 +128,7 @@
   - _Requirements: 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 3.5, 7.1, 7.3, 7.4, 8.1, 8.2, 8.3, 8.4, 9.3, 14.1, 14.3, 14.4, 16.1, 16.2, 16.4_
   - _Boundary: FetchBeatmapMetadataJob_
 
-- [ ] 6.2 Implement idempotent `.osu` file fetch job
+- [x] 6.2 Implement idempotent `.osu` file fetch job
   - Require expected md5 from beatmap metadata before attaching a file.
   - Fetch file bytes through the file provider and verify expected md5 before blob storage attachment.
   - Store verified file bodies through the blob storage service and attach the returned blob to the beatmap.
