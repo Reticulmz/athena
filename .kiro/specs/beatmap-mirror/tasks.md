@@ -139,7 +139,7 @@
   - _Boundary: FetchBeatmapFileJob_
 
 - [ ] 7. Runtime integration and composition
-- [ ] 7.1 Register beatmap mirror dependencies in the application runtime
+- [x] 7.1 Register beatmap mirror dependencies in the application runtime
   - Register repository implementations by environment, metadata providers, file providers, eligibility service, mirror service, and required configuration validation.
   - Test environment uses in-memory repository and fake providers without real external credentials.
   - Non-test environments use SQLAlchemy repository and configured provider adapters.

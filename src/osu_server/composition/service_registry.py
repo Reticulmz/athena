@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from taskiq import AsyncBroker
 
+from osu_server.domain.beatmap import BeatmapMetadataProvider
 from osu_server.domain.system_user import BANCHO_BOT_USER_ID, create_bancho_bot_identity
+from osu_server.infrastructure.beatmaps.contracts import BeatmapFileProvider
+from osu_server.infrastructure.beatmaps.file_sources import CompositeBeatmapFileProvider
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
@@ -22,18 +26,21 @@ from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimite
 from osu_server.infrastructure.storage import create_blob_storage_backend
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.jobs import register_all_jobs
+from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
 from osu_server.repositories.interfaces.blob_repository import BlobRepository
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.chat_repository import ChatRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository
+from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
 from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
 from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
 from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
@@ -43,6 +50,17 @@ from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
+from osu_server.services.beatmap_eligibility import BeatmapEligibilityService
+from osu_server.services.beatmap_freshness import BeatmapFreshnessPolicy
+from osu_server.services.beatmap_mirror_service import BeatmapMirrorService
+from osu_server.services.beatmaps.metadata_providers import (
+    CompositeBeatmapMetadataProvider,
+)
+from osu_server.services.beatmaps.providers import (
+    InMemoryBeatmapMetadataProvider,
+    MirrorMetadataProvider,
+    OsuApiMetadataProvider,
+)
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
@@ -80,6 +98,7 @@ def _register_repositories(
         container.register_singleton(RoleRepository, InMemoryRoleRepository)
         container.register_singleton(ChannelRepository, InMemoryChannelRepository)
         container.register_singleton(ChatRepository, InMemoryChatRepository)
+        container.register_singleton(BeatmapRepository, InMemoryBeatmapRepository)
         return
 
     container.register_singleton(
@@ -101,6 +120,10 @@ def _register_repositories(
     container.register_singleton(
         ChatRepository,
         lambda: SQLAlchemyChatRepository(session_factory),
+    )
+    container.register_singleton(
+        BeatmapRepository,
+        lambda: SQLAlchemyBeatmapRepository(session_factory),
     )
 
 
@@ -152,6 +175,57 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         storage_backend=config.blob_storage_backend,
     )
     container.register_singleton(BlobStorageService, lambda: blob_storage_service)
+
+    # -- BeatmapFreshnessPolicy (singleton) ----------------------------------
+    freshness_policy = BeatmapFreshnessPolicy(
+        ranked_refresh_interval=timedelta(seconds=config.beatmap_ranked_refresh_interval_seconds),
+        pending_refresh_interval=timedelta(
+            seconds=config.beatmap_pending_refresh_interval_seconds
+        ),
+        graveyard_refresh_interval=timedelta(
+            seconds=config.beatmap_graveyard_refresh_interval_seconds
+        ),
+        mirror_refresh_interval=timedelta(seconds=config.beatmap_mirror_refresh_interval_seconds),
+    )
+    container.register_singleton(BeatmapFreshnessPolicy, lambda: freshness_policy)
+
+    # -- BeatmapMetadataProvider (singleton, environment-based switching) ----
+    if config.environment == "test":
+        official_metadata_provider = InMemoryBeatmapMetadataProvider()
+        mirror_metadata_provider = InMemoryBeatmapMetadataProvider()
+    else:
+        official_metadata_provider = OsuApiMetadataProvider()
+        mirror_metadata_provider = MirrorMetadataProvider()
+
+    metadata_provider = CompositeBeatmapMetadataProvider(
+        official=official_metadata_provider,
+        mirror=mirror_metadata_provider,
+    )
+    container.register_singleton(BeatmapMetadataProvider, lambda: metadata_provider)
+
+    # -- BeatmapFileProvider (singleton) -------------------------------------
+    file_provider = CompositeBeatmapFileProvider(
+        osu_current_url_template=config.beatmap_osu_current_url_template,
+        osu_legacy_url_template=config.beatmap_osu_legacy_url_template,
+        mirror_url_templates=list(config.beatmap_community_mirror_url_templates),
+    )
+    container.register_singleton(BeatmapFileProvider, lambda: file_provider)
+
+    # -- BeatmapEligibilityService (singleton) -------------------------------
+    eligibility_service = BeatmapEligibilityService()
+    container.register_singleton(BeatmapEligibilityService, lambda: eligibility_service)
+
+    # -- BeatmapMirrorService (singleton) ------------------------------------
+    beatmap_repo = await container.resolve(BeatmapRepository)
+    mirror_trust_enabled = config.beatmap_mirror_trust_policy == "trusted"
+    mirror_service = BeatmapMirrorService(
+        repository=beatmap_repo,
+        eligibility_service=eligibility_service,
+        freshness_policy=freshness_policy,
+        mirror_trust_enabled=mirror_trust_enabled,
+        official_sources_available=config.beatmap_official_sources_enabled,
+    )
+    container.register_singleton(BeatmapMirrorService, lambda: mirror_service)
 
     # -- SystemUserIdentity (singleton) ---------------------------------------
     identity = create_bancho_bot_identity(config.bancho_bot_username)

@@ -1,4 +1,4 @@
-"""Beatmap mirror infrastructure -- errors, contracts, and file providers."""
+"""Beatmap mirror infrastructure -- errors, contracts, and file sources."""
 
 from osu_server.infrastructure.beatmaps.contracts import (
     BeatmapFileProvider,
