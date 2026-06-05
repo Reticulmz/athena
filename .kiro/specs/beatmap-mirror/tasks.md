@@ -173,7 +173,7 @@
   - _Depends: 7.2_
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.5, 7.1, 7.3, 7.5, 14.1, 14.3, 14.4_
 
-- [ ] 8.2 Add `.osu` file availability end-to-end flow with fake blob storage
+- [x] 8.2 Add `.osu` file availability end-to-end flow with fake blob storage
   - Exercise file-missing state, file fetch job completion, md5 verification, blob storage write, and attachment availability.
   - Include community mirror fallback after simulated direct source rate limit.
   - Observable completion: E2E-style tests show file status transitions to available only after md5 verification and records mirror source when fallback is used.
