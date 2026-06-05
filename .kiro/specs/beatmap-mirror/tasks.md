@@ -15,7 +15,7 @@
   - Observable completion: Alembic upgrade creates all beatmap mirror tables and indexes, and ORM model imports are visible through metadata discovery.
   - _Requirements: 1.1, 1.2, 1.3, 1.5, 6.5, 7.4, 9.1, 9.3, 14.1, 14.2, 14.3, 14.4_
 
-- [ ] 1.3 Add typed beatmap factories and fake provider helpers
+- [x] 1.3 Add typed beatmap factories and fake provider helpers
   - Add test factories for beatmapsets, beatmaps, fetch states, file attachments, metadata snapshots, and `.osu` file bodies.
   - Add fake metadata and file providers that can return success, pending, not found, rate limit, timeout, server failure, and checksum mismatch scenarios.
   - Observable completion: unit tests can create complete beatmap snapshots and file fetch responses without real network credentials.
