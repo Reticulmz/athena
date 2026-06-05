@@ -37,7 +37,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.5, 3.5, 6.5, 7.1, 7.2, 7.4, 8.4, 9.1, 9.2, 10.1, 10.4_
   - _Boundary: Beatmap, BeatmapSet_
 
-- [ ] 2.2 (P) Implement status resolution and eligibility projection
+- [x] 2.2 (P) Implement status resolution and eligibility projection
   - Derive effective status from local override when present and official status otherwise.
   - Reject `Approved` as a local override value.
   - Return score acceptance, leaderboard, ranked PP, loved PP, failed-score, `.osu` requirement, official verification, and denial reason fields.
