@@ -133,7 +133,7 @@
   - Completed state: backend and service tests pass for chunked writes, chunked reads, duplicate writes, missing content, and helper parity.
   - _Requirements: 2.1, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2, 6.3, 6.4, 7.1, 7.2, 7.3, 7.4, 11.2, 11.3, 11.4_
 
-- [ ] 6.3 Complete composition and boundary regression tests
+- [x] 6.3 Complete composition and boundary regression tests
   - Cover Local and S3 backend selection, trusted-caller read expectations, no shared attachment table behavior, and absence of delete or garbage collection operations.
   - Ensure downstream attachment metadata remains outside shared blob records.
   - Completed state: integration tests prove composition resolves the service correctly and boundary regression tests fail if attachment, authorization, or delete concerns enter blob storage.

@@ -47,6 +47,17 @@ def test_blob_model_defines_immutable_metadata_columns() -> None:
     assert not _column(table, "created_at").nullable
 
 
+def test_blob_storage_does_not_register_shared_attachment_table() -> None:
+    shared_attachment_table_names = {
+        "blob_attachments",
+        "blob_attachment",
+        "attachments",
+        "polymorphic_blob_attachments",
+    }
+
+    assert shared_attachment_table_names.isdisjoint(Base.metadata.tables)
+
+
 def test_blob_model_enforces_unique_sha256_and_non_negative_size() -> None:
     table = _table()
 
