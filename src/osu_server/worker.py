@@ -15,7 +15,11 @@ import structlog
 from taskiq import TaskiqEvents
 from taskiq_redis import ListQueueBroker
 
-from osu_server.composition.worker_runtime import create_worker_chat_service
+from osu_server.composition.worker_runtime import (
+    create_worker_beatmap_file_fetch,
+    create_worker_beatmap_metadata_fetch,
+    create_worker_chat_service,
+)
 from osu_server.config import load_config
 from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.infrastructure.database.engine import create_engine
@@ -62,6 +66,13 @@ async def startup(state: TaskiqState) -> None:
         valkey=valkey,
         config=_config,
     )
+    state.beatmap_metadata_fetch = create_worker_beatmap_metadata_fetch(
+        session_factory=session_factory,
+    )
+    state.beatmap_file_fetch = await create_worker_beatmap_file_fetch(
+        session_factory=session_factory,
+        config=_config,
+    )
 
     logger.info("worker_started")
 
@@ -76,6 +87,8 @@ async def shutdown(state: TaskiqState) -> None:
     state.session_factory = None
     state.valkey = None
     state.chat_service = None
+    state.beatmap_metadata_fetch = None
+    state.beatmap_file_fetch = None
 
     if engine is not None:
         await engine.dispose()

@@ -1,18 +1,35 @@
-"""Worker-side ChatService runtime composition."""
+"""Worker-side runtime composition.
+
+Builds services the taskiq worker process needs: ChatService persistence
+and beatmap fetch jobs (metadata + .osu file).
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from osu_server.infrastructure.beatmaps.file_sources import CompositeBeatmapFileProvider
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.valkey.channel_state_store import ValkeyChannelStateStore
 from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimiter
+from osu_server.infrastructure.storage import create_blob_storage_backend
+from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
+from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
+from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
 from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
 from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
 from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
+from osu_server.services.beatmaps.metadata_providers import (
+    CompositeBeatmapMetadataProvider,
+)
+from osu_server.services.beatmaps.providers import (
+    MirrorMetadataProvider,
+    OsuApiMetadataProvider,
+)
+from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
 from osu_server.services.private_message_service import PrivateMessageService
@@ -60,4 +77,55 @@ def create_worker_chat_service(
     )
 
 
-__all__ = ["create_worker_chat_service"]
+def create_worker_beatmap_metadata_fetch(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> FetchBeatmapMetadataJob:
+    """Build the worker-side beatmap metadata fetch job.
+
+    Uses the real (non-test) metadata providers: official API first,
+    mirror fallback second.
+    """
+    repo = SQLAlchemyBeatmapRepository(session_factory)
+    official = OsuApiMetadataProvider()
+    mirror = MirrorMetadataProvider()
+    composite = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
+    return FetchBeatmapMetadataJob(repository=repo, metadata_provider=composite)
+
+
+async def create_worker_beatmap_file_fetch(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+    config: AppConfig,
+) -> FetchBeatmapFileJob:
+    """Build the worker-side beatmap file fetch job.
+
+    Uses the composite file provider for .osu file sources and a
+    ``BlobStorageService`` backed by the configured blob storage backend.
+    """
+    repo = SQLAlchemyBeatmapRepository(session_factory)
+    file_provider = CompositeBeatmapFileProvider(
+        osu_current_url_template=config.beatmap_osu_current_url_template,
+        osu_legacy_url_template=config.beatmap_osu_legacy_url_template,
+        mirror_url_templates=list(config.beatmap_community_mirror_url_templates),
+    )
+    blob_backend = create_blob_storage_backend(config)
+    await blob_backend.validate_configuration()
+    blob_repo = SQLAlchemyBlobRepository(session_factory)
+    blob_storage = BlobStorageService(
+        blob_repo=blob_repo,
+        backend=blob_backend,
+        storage_backend=config.blob_storage_backend,
+    )
+    return FetchBeatmapFileJob(
+        repository=repo,
+        file_provider=file_provider,
+        blob_storage=blob_storage,
+    )
+
+
+__all__ = [
+    "create_worker_beatmap_file_fetch",
+    "create_worker_beatmap_metadata_fetch",
+    "create_worker_chat_service",
+]

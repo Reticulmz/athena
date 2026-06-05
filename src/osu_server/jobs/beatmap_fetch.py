@@ -14,13 +14,18 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Annotated, Protocol, cast
 
 import structlog
+from taskiq import Context, TaskiqDepends
 
 from osu_server.domain.beatmap import BeatmapFileAttachment
+from osu_server.infrastructure.jobs.registry import jobs
+from osu_server.repositories.interfaces.beatmap_repository import BeatmapFetchTarget
 
 if TYPE_CHECKING:
+    from taskiq import TaskiqState
+
     from osu_server.domain.beatmap import (
         BeatmapMetadataProvider,
         BeatmapSet,
@@ -28,7 +33,6 @@ if TYPE_CHECKING:
     )
     from osu_server.infrastructure.beatmaps.contracts import BeatmapFileProvider
     from osu_server.repositories.interfaces.beatmap_repository import (
-        BeatmapFetchTarget,
         BeatmapRepository,
     )
     from osu_server.services.blob_storage_service import BlobStoreResult
@@ -160,9 +164,6 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
     )
 
 
-__all__ = ["FetchBeatmapFileJob", "FetchBeatmapMetadataJob"]
-
-
 class FetchBeatmapFileJob:
     """Fetch and verify a .osu file idempotently, then attach as a blob.
 
@@ -259,3 +260,96 @@ class FetchBeatmapFileJob:
         )
         _ = await self._repo.attach_osu_file(attachment)
         await self._repo.mark_fetch_succeeded(target, now)
+
+
+# ---------------------------------------------------------------------------
+# Worker runtime Protocols -- taskiq job adapters
+# ---------------------------------------------------------------------------
+
+
+class WorkerBeatmapMetadataFetch(Protocol):
+    """Beatmap metadata fetch use-case surface required by job adapters."""
+
+    async def execute(self, target: BeatmapFetchTarget) -> None: ...
+
+
+class WorkerBeatmapFileFetch(Protocol):
+    """Beatmap file fetch use-case surface required by job adapters."""
+
+    async def execute(self, target: BeatmapFetchTarget) -> None: ...
+
+
+def get_beatmap_metadata_fetch(state: TaskiqState) -> WorkerBeatmapMetadataFetch | None:
+    """Return the beatmap metadata fetch service stored in taskiq state."""
+    return cast(
+        "WorkerBeatmapMetadataFetch | None",
+        getattr(state, "beatmap_metadata_fetch", None),
+    )
+
+
+def get_beatmap_file_fetch(state: TaskiqState) -> WorkerBeatmapFileFetch | None:
+    """Return the beatmap file fetch service stored in taskiq state."""
+    return cast(
+        "WorkerBeatmapFileFetch | None",
+        getattr(state, "beatmap_file_fetch", None),
+    )
+
+
+@jobs.register(task_name="fetch_beatmap_metadata")
+async def fetch_beatmap_metadata(
+    target_type: str,
+    target_key: str,
+    context: Annotated[Context, TaskiqDepends()],
+) -> None:
+    """Taskiq adapter for ``FetchBeatmapMetadataJob``.
+
+    Converts serialised string parameters back to a ``BeatmapFetchTarget``
+    and delegates to the worker-side job instance.
+    """
+    job = get_beatmap_metadata_fetch(context.state)
+    if job is None:
+        logger.error(
+            "beatmap_metadata_fetch_runtime_unavailable",
+            task_name="fetch_beatmap_metadata",
+            target_type=target_type,
+            target_key=target_key,
+        )
+        return
+    target = BeatmapFetchTarget(target_type=target_type, target_key=target_key)
+    await job.execute(target)
+
+
+@jobs.register(task_name="fetch_beatmap_file")
+async def fetch_beatmap_file(
+    target_type: str,
+    target_key: str,
+    context: Annotated[Context, TaskiqDepends()],
+) -> None:
+    """Taskiq adapter for ``FetchBeatmapFileJob``.
+
+    Converts serialised string parameters back to a ``BeatmapFetchTarget``
+    and delegates to the worker-side job instance.
+    """
+    job = get_beatmap_file_fetch(context.state)
+    if job is None:
+        logger.error(
+            "beatmap_file_fetch_runtime_unavailable",
+            task_name="fetch_beatmap_file",
+            target_type=target_type,
+            target_key=target_key,
+        )
+        return
+    target = BeatmapFetchTarget(target_type=target_type, target_key=target_key)
+    await job.execute(target)
+
+
+__all__ = [
+    "FetchBeatmapFileJob",
+    "FetchBeatmapMetadataJob",
+    "WorkerBeatmapFileFetch",
+    "WorkerBeatmapMetadataFetch",
+    "fetch_beatmap_file",
+    "fetch_beatmap_metadata",
+    "get_beatmap_file_fetch",
+    "get_beatmap_metadata_fetch",
+]

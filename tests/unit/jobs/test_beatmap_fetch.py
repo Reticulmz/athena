@@ -1,6 +1,9 @@
-"""Tests for FetchBeatmapMetadataJob -- idempotent background metadata fetch.
+"""Tests for beatmap fetch jobs.
 
-TDD: RED phase first, then GREEN.
+Covers:
+- ``FetchBeatmapMetadataJob`` idempotent background metadata fetch.
+- ``FetchBeatmapFileJob`` idempotent .osu file fetch.
+- taskiq job adapter registration and runtime-unavailable handling.
 """
 
 from __future__ import annotations

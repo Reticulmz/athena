@@ -6,7 +6,7 @@ import json
 import logging
 from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING, cast, override
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import structlog
@@ -141,6 +141,16 @@ def _state_chat_service(state: TaskiqState) -> object | None:
     return cast("object | None", getattr(state, "chat_service", None))
 
 
+def _state_beatmap_metadata_fetch(state: TaskiqState) -> object | None:
+    """Return typed worker beatmap metadata fetch state for assertions."""
+    return cast("object | None", getattr(state, "beatmap_metadata_fetch", None))
+
+
+def _state_beatmap_file_fetch(state: TaskiqState) -> object | None:
+    """Return typed worker beatmap file fetch state for assertions."""
+    return cast("object | None", getattr(state, "beatmap_file_fetch", None))
+
+
 @pytest.fixture(autouse=True)
 def _reset_logging() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
     """Reset stdlib root logger and structlog config between tests."""
@@ -178,6 +188,16 @@ async def test_worker_startup_configures_logging(tmp_path: Path) -> None:
         patch("osu_server.worker.create_session_factory"),
         patch("osu_server.worker.create_valkey_client", new=create_valkey_client, create=True),
         patch("osu_server.worker.create_worker_chat_service", return_value=object(), create=True),
+        patch(
+            "osu_server.worker.create_worker_beatmap_metadata_fetch",
+            return_value=object(),
+            create=True,
+        ),
+        patch(
+            "osu_server.worker.create_worker_beatmap_file_fetch",
+            new=AsyncMock(return_value=object()),
+            create=True,
+        ),
         patch("osu_server.worker._config") as mock_config,
     ):
         mock_config.log_dir = str(tmp_path)
@@ -287,5 +307,68 @@ async def test_worker_shutdown_clears_chat_runtime_state() -> None:
     assert _state_session_factory(state) is None
     assert _state_chat_service(state) is None
     assert _state_valkey(state) is None
+    assert engine.dispose_calls == 1
+    assert valkey.close_calls == 1
+
+
+# ---------------------------------------------------------------------------
+# Beatmap fetch job runtime state tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_worker_startup_sets_beatmap_fetch_runtime_state(tmp_path: Path) -> None:
+    """Worker startup exposes beatmap fetch jobs through taskiq state."""
+    state = TaskiqState()
+    engine = FakeEngine()
+    session = FakeSession()
+    session_factory = FakeSessionFactory(session)
+    valkey = FakeValkeyClient()
+    fake_metadata_job = object()
+    fake_file_job = object()
+
+    async def create_valkey_client(_: str) -> FakeValkeyClient:
+        return valkey
+
+    with (
+        patch("osu_server.worker.create_engine", return_value=engine),
+        patch("osu_server.worker.create_session_factory", return_value=session_factory),
+        patch("osu_server.worker.create_valkey_client", new=create_valkey_client, create=True),
+        patch("osu_server.worker._config", _make_config(tmp_path)),
+        patch(
+            "osu_server.worker.create_worker_beatmap_metadata_fetch",
+            return_value=fake_metadata_job,
+            create=True,
+        ),
+        patch(
+            "osu_server.worker.create_worker_beatmap_file_fetch",
+            return_value=fake_file_job,
+            create=True,
+        ),
+    ):
+        _ = await startup(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
+
+    assert _state_beatmap_metadata_fetch(state) is fake_metadata_job
+    assert _state_beatmap_file_fetch(state) is fake_file_job
+
+
+@pytest.mark.asyncio
+async def test_worker_shutdown_clears_beatmap_fetch_runtime_state() -> None:
+    """Worker shutdown clears beatmap fetch runtime state owned by startup."""
+    state = TaskiqState()
+    engine = FakeEngine()
+    valkey = FakeValkeyClient()
+    metadata_job = object()
+    file_job = object()
+
+    state.engine = engine
+    state.valkey = valkey
+    state.beatmap_metadata_fetch = metadata_job
+    state.beatmap_file_fetch = file_job
+
+    _ = await shutdown(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
+
+    assert _state_beatmap_metadata_fetch(state) is None
+    assert _state_beatmap_file_fetch(state) is None
     assert engine.dispose_calls == 1
     assert valkey.close_calls == 1

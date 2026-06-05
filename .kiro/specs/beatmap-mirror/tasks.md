@@ -148,7 +148,7 @@
   - _Requirements: 4.1, 4.2, 4.4, 15.4_
   - _Boundary: service_registry, AppConfig_
 
-- [ ] 7.2 Register beatmap fetch jobs in the worker runtime
+- [x] 7.2 Register beatmap fetch jobs in the worker runtime
   - Add worker-side beatmap mirror runtime construction for metadata and file jobs.
   - Register metadata and file fetch taskiq jobs through the existing job registry.
   - Ensure jobs report runtime unavailable diagnostics instead of raising unhandled errors when worker state is incomplete.

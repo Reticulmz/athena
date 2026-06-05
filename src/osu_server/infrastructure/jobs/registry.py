@@ -41,6 +41,11 @@ class JobRegistry:
 
         return decorator
 
+    @property
+    def task_names(self) -> frozenset[str]:
+        """Return the set of registered task names."""
+        return frozenset(j.task_name for j in self._jobs)
+
     def attach_to(self, broker: AsyncBroker) -> None:
         """Attach all registered jobs to a taskiq broker."""
         for job in self._jobs:
