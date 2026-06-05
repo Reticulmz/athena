@@ -99,6 +99,10 @@ def test_make_app_config_creates_with_defaults() -> None:
     assert isinstance(config.database_url, PostgresDsn)
     assert isinstance(config.valkey_url, RedisDsn)
     assert config.environment == "development"
+    assert config.beatmap_official_sources_enabled is True
+    assert config.beatmap_official_api_client_id == "test-client-id"
+    assert config.beatmap_official_api_client_secret == "test-client-secret"
+    assert config.beatmap_mirror_trust_policy == "untrusted"
 
 
 def test_make_app_config_allows_overrides() -> None:
@@ -108,9 +112,13 @@ def test_make_app_config_allows_overrides() -> None:
         environment="production",
         server_port=9000,
         log_level="DEBUG",
+        beatmap_community_mirror_url_templates=["https://mirror.example.com/osu/{beatmap_id}"],
     )
     assert str(config.database_url) == "postgresql+asyncpg://prod_db:pass@host/prod"
     assert str(config.valkey_url) == "redis://valkey_host:6379/1"
     assert config.environment == "production"
     assert config.server_port == 9000
     assert config.log_level == "DEBUG"
+    assert config.beatmap_community_mirror_url_templates == [
+        "https://mirror.example.com/osu/{beatmap_id}"
+    ]

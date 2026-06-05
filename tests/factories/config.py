@@ -33,6 +33,19 @@ def make_app_config(
     blob_storage_s3_endpoint: str | None = None,
     blob_storage_s3_access_key: str | None = None,
     blob_storage_s3_secret_key: str | None = None,
+    beatmap_official_sources_enabled: bool = True,
+    beatmap_official_api_client_id: str | None = "test-client-id",
+    beatmap_official_api_client_secret: str | None = "test-client-secret",
+    beatmap_mirror_trust_policy: str = "untrusted",
+    beatmap_osu_current_url_template: str = "https://osu.ppy.sh/osu/{beatmap_id}",
+    beatmap_osu_legacy_url_template: str = "https://old.ppy.sh/osu/{beatmap_id}",
+    beatmap_community_mirror_url_templates: list[str] | None = None,
+    beatmap_ranked_refresh_interval_seconds: int = 2_592_000,
+    beatmap_pending_refresh_interval_seconds: int = 86_400,
+    beatmap_graveyard_refresh_interval_seconds: int = 604_800,
+    beatmap_mirror_refresh_interval_seconds: int = 86_400,
+    beatmap_default_bounded_wait_seconds: float = 0.5,
+    beatmap_max_bounded_wait_seconds: float = 3.0,
 ) -> AppConfig:
     """Type-safe factory for AppConfig.
 
@@ -40,6 +53,8 @@ def make_app_config(
     """
     if banned_passwords is None:
         banned_passwords = []
+    if beatmap_community_mirror_url_templates is None:
+        beatmap_community_mirror_url_templates = []
 
     return AppConfig(
         database_url=PostgresDsn(str(database_url))
@@ -67,4 +82,17 @@ def make_app_config(
         blob_storage_s3_endpoint=blob_storage_s3_endpoint,
         blob_storage_s3_access_key=blob_storage_s3_access_key,
         blob_storage_s3_secret_key=blob_storage_s3_secret_key,
+        beatmap_official_sources_enabled=beatmap_official_sources_enabled,
+        beatmap_official_api_client_id=beatmap_official_api_client_id,
+        beatmap_official_api_client_secret=beatmap_official_api_client_secret,
+        beatmap_mirror_trust_policy=beatmap_mirror_trust_policy,
+        beatmap_osu_current_url_template=beatmap_osu_current_url_template,
+        beatmap_osu_legacy_url_template=beatmap_osu_legacy_url_template,
+        beatmap_community_mirror_url_templates=beatmap_community_mirror_url_templates,
+        beatmap_ranked_refresh_interval_seconds=beatmap_ranked_refresh_interval_seconds,
+        beatmap_pending_refresh_interval_seconds=beatmap_pending_refresh_interval_seconds,
+        beatmap_graveyard_refresh_interval_seconds=beatmap_graveyard_refresh_interval_seconds,
+        beatmap_mirror_refresh_interval_seconds=beatmap_mirror_refresh_interval_seconds,
+        beatmap_default_bounded_wait_seconds=beatmap_default_bounded_wait_seconds,
+        beatmap_max_bounded_wait_seconds=beatmap_max_bounded_wait_seconds,
     )

@@ -239,3 +239,219 @@ class TestAppConfigTypeSafety:
 
         config = load_config()
         assert isinstance(config, AppConfig)
+
+
+class TestBeatmapMirrorConfig:
+    """Beatmap mirror source configuration and startup validation."""
+
+    def test_beatmap_mirror_defaults_disable_mirror_trust(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
+
+        config = load_config()
+
+        assert config.beatmap_official_sources_enabled is False
+        assert config.beatmap_mirror_trust_policy == "untrusted"
+        assert config.beatmap_osu_current_url_template == "https://osu.ppy.sh/osu/{beatmap_id}"
+        assert config.beatmap_osu_legacy_url_template == "https://old.ppy.sh/osu/{beatmap_id}"
+        assert config.beatmap_community_mirror_url_templates == []
+        assert config.beatmap_default_bounded_wait_seconds > 0
+        assert (
+            config.beatmap_default_bounded_wait_seconds <= config.beatmap_max_bounded_wait_seconds
+        )
+
+    def test_development_requires_official_credentials_when_sources_enabled(self) -> None:
+        with pytest.raises(ValidationError, match="beatmap official source credentials"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "development",
+                    "beatmap_official_sources_enabled": True,
+                }
+            )
+
+    def test_production_requires_official_credentials_when_sources_enabled(self) -> None:
+        with pytest.raises(ValidationError, match="beatmap official source credentials"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_official_sources_enabled": True,
+                    "beatmap_official_api_client_id": "123",
+                }
+            )
+
+    def test_test_environment_allows_fake_source_settings_without_real_credentials(self) -> None:
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "test",
+                "beatmap_official_sources_enabled": True,
+                "beatmap_community_mirror_url_templates": [
+                    "http://fake-beatmap-source.local/osu/{beatmap_id}"
+                ],
+            }
+        )
+
+        assert config.beatmap_official_sources_enabled is True
+        assert config.beatmap_official_api_client_id is None
+
+    def test_accepts_configured_community_mirror_url_templates(self) -> None:
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "production",
+                "beatmap_community_mirror_url_templates": [
+                    "https://catboy.best/osu/{beatmap_id}",
+                    "https://mirror.example.com/beatmaps/{beatmap_id}/download",
+                ],
+            }
+        )
+
+        assert config.beatmap_community_mirror_url_templates == [
+            "https://catboy.best/osu/{beatmap_id}",
+            "https://mirror.example.com/beatmaps/{beatmap_id}/download",
+        ]
+
+    def test_rejects_invalid_community_mirror_url_template(self) -> None:
+        with pytest.raises(ValidationError, match="beatmap_id"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_community_mirror_url_templates": ["https://catboy.best/osu/{id}"],
+                }
+            )
+
+    def test_rejects_direct_url_template_with_unsupported_placeholder(self) -> None:
+        with pytest.raises(ValidationError, match="unsupported placeholder"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_osu_current_url_template": (
+                        "https://osu.ppy.sh/osu/{beatmap_id}/{extra}"
+                    ),
+                }
+            )
+
+    def test_rejects_direct_url_template_with_escaped_beatmap_id_placeholder(
+        self,
+    ) -> None:
+        with pytest.raises(ValidationError, match="beatmap_id"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_osu_current_url_template": ("https://osu.ppy.sh/osu/{{beatmap_id}}"),
+                }
+            )
+
+    def test_rejects_direct_url_template_with_beatmap_id_conversion(self) -> None:
+        with pytest.raises(ValidationError, match="exactly"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_osu_current_url_template": ("https://osu.ppy.sh/osu/{beatmap_id!s}"),
+                }
+            )
+
+    def test_rejects_community_mirror_url_template_with_unsupported_placeholder(
+        self,
+    ) -> None:
+        with pytest.raises(ValidationError, match="unsupported placeholder"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_community_mirror_url_templates": [
+                        "https://mirror.example.com/osu/{beatmap_id}/{extra}"
+                    ],
+                }
+            )
+
+    def test_rejects_community_mirror_url_template_with_escaped_beatmap_id_placeholder(
+        self,
+    ) -> None:
+        with pytest.raises(ValidationError, match="beatmap_id"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_community_mirror_url_templates": [
+                        "https://mirror.example.com/osu/{{beatmap_id}}"
+                    ],
+                }
+            )
+
+    def test_rejects_community_mirror_url_template_with_beatmap_id_format_spec(
+        self,
+    ) -> None:
+        with pytest.raises(ValidationError, match="exactly"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_community_mirror_url_templates": [
+                        "https://mirror.example.com/osu/{beatmap_id:04d}"
+                    ],
+                }
+            )
+
+    def test_rejects_non_https_mirror_url_outside_test(self) -> None:
+        with pytest.raises(ValidationError, match="HTTPS"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_community_mirror_url_templates": [
+                        "http://catboy.best/osu/{beatmap_id}"
+                    ],
+                }
+            )
+
+    def test_rejects_invalid_mirror_trust_policy(self) -> None:
+        with pytest.raises(ValidationError, match="beatmap_mirror_trust_policy"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "beatmap_mirror_trust_policy": "always",
+                }
+            )
+
+    def test_rejects_invalid_refresh_timing(self) -> None:
+        with pytest.raises(ValidationError, match="beatmap refresh intervals"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "beatmap_ranked_refresh_interval_seconds": 0,
+                }
+            )
+
+    def test_rejects_default_bounded_wait_above_maximum(self) -> None:
+        with pytest.raises(ValidationError, match="bounded wait"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "beatmap_default_bounded_wait_seconds": 5.0,
+                    "beatmap_max_bounded_wait_seconds": 1.0,
+                }
+            )
