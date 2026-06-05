@@ -80,6 +80,12 @@ class FetchBeatmapMetadataJob:
             )
             return
 
+        logger.info(
+            "beatmap_metadata_fetch_started",
+            target_type=target.target_type,
+            target_key=target.target_key,
+        )
+
         snapshot = await self._lookup(target)
 
         if snapshot is None:
@@ -88,11 +94,26 @@ class FetchBeatmapMetadataJob:
                 "all configured metadata providers returned no result",
                 now,
             )
+            logger.error(
+                "beatmap_metadata_fetch_failed",
+                target_type=target.target_type,
+                target_key=target.target_key,
+                error="all configured metadata providers returned no result",
+            )
             return
 
         beatmapset = _snapshot_to_beatmapset(snapshot)
         await self._repo.save_beatmapset_snapshot(beatmapset)
         await self._repo.mark_fetch_succeeded(target, now)
+
+        logger.info(
+            "beatmap_metadata_fetch_succeeded",
+            target_type=target.target_type,
+            target_key=target.target_key,
+            beatmapset_id=snapshot.beatmapset_id,
+            source=snapshot.official_status_source.value,
+            verified=(snapshot.official_status_verified.value == "verified"),
+        )
 
     async def _lookup(self, target: BeatmapFetchTarget) -> BeatmapsetSnapshot | None:
         target_type = target.target_type
@@ -200,11 +221,23 @@ class FetchBeatmapFileJob:
             )
             return
 
+        logger.info(
+            "beatmap_file_fetch_started",
+            target_type=target.target_type,
+            target_key=target.target_key,
+        )
+
         if target.target_type != "file:beatmap":
             await self._repo.mark_fetch_failed(
                 target,
                 f"unsupported file fetch target type: {target.target_type}",
                 now,
+            )
+            logger.error(
+                "beatmap_file_fetch_failed",
+                target_type=target.target_type,
+                target_key=target.target_key,
+                error=f"unsupported file fetch target type: {target.target_type}",
             )
             return
 
@@ -217,12 +250,26 @@ class FetchBeatmapFileJob:
                 f"beatmap {beatmap_id} not found in repository",
                 now,
             )
+            logger.error(
+                "beatmap_file_fetch_failed",
+                target_type=target.target_type,
+                target_key=target.target_key,
+                beatmap_id=beatmap_id,
+                error=f"beatmap {beatmap_id} not found in repository",
+            )
             return
 
         expected_md5 = beatmap.checksum_md5
         existing_attachment = await self._repo.get_current_file_attachment(beatmap_id)
         if existing_attachment is not None and existing_attachment.checksum_md5 == expected_md5:
             await self._repo.mark_fetch_succeeded(target, now)
+            logger.info(
+                "beatmap_file_fetch_succeeded",
+                target_type=target.target_type,
+                target_key=target.target_key,
+                beatmap_id=beatmap_id,
+                source=existing_attachment.source,
+            )
             return
 
         try:
@@ -233,6 +280,14 @@ class FetchBeatmapFileJob:
                 f"{type(exc).__name__}: {exc}",
                 now,
             )
+            logger.error(
+                "beatmap_file_fetch_failed",
+                target_type=target.target_type,
+                target_key=target.target_key,
+                beatmap_id=beatmap_id,
+                error=f"{type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
             return
 
         fetched_md5 = hashlib.md5(result.body, usedforsecurity=False).hexdigest()
@@ -242,6 +297,19 @@ class FetchBeatmapFileJob:
                 target,
                 f"checksum mismatch: expected {expected_md5}, got {fetched_md5}",
                 now,
+            )
+            logger.error(
+                "beatmap_file_checksum_mismatch",
+                beatmap_id=beatmap_id,
+                expected_md5_prefix=expected_md5[:8],
+                fetched_md5_prefix=fetched_md5[:8],
+            )
+            logger.error(
+                "beatmap_file_fetch_failed",
+                target_type=target.target_type,
+                target_key=target.target_key,
+                beatmap_id=beatmap_id,
+                error="checksum mismatch",
             )
             return
 
@@ -260,6 +328,14 @@ class FetchBeatmapFileJob:
         )
         _ = await self._repo.attach_osu_file(attachment)
         await self._repo.mark_fetch_succeeded(target, now)
+
+        logger.info(
+            "beatmap_file_fetch_succeeded",
+            target_type=target.target_type,
+            target_key=target.target_key,
+            beatmap_id=beatmap_id,
+            source=result.source.value,
+        )
 
 
 # ---------------------------------------------------------------------------

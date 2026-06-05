@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from structlog.testing import capture_logs
 
 from osu_server.domain.beatmap import (
     Beatmap,
@@ -190,3 +191,72 @@ def test_local_override_can_grant_eligibility_for_untrusted_mirror_metadata() ->
     assert eligibility.is_officially_verified is False
     assert eligibility.is_mirror_derived is False
     assert eligibility.denial_reason is None
+
+
+# ---------------------------------------------------------------------------
+# Eligibility observability logging tests (16.5)
+# ---------------------------------------------------------------------------
+
+
+class TestEligibilityLogging:
+    """Structured observability for ``BeatmapEligibilityService``."""
+
+    def test_logs_eligibility_denied_for_ineligible_status(self) -> None:
+        """When eligibility is denied due to status, an event is logged."""
+        beatmap = _make_beatmap(BeatmapRankStatus.GRAVEYARD)
+        service = BeatmapEligibilityService()
+
+        with capture_logs() as logs:
+            _ = service.evaluate(beatmap)
+
+        denied = [e for e in logs if e.get("event") == "beatmap_eligibility_denied"]
+        assert len(denied) == 1
+        assert denied[0]["beatmap_id"] == beatmap.id
+        assert denied[0]["denial_reason"] == "status_not_eligible"
+        assert denied[0]["effective_status"] == BeatmapRankStatus.GRAVEYARD.value
+
+    def test_logs_eligibility_denied_for_untrusted_mirror(self) -> None:
+        """When eligibility is denied due to untrusted mirror status, an event is logged."""
+        beatmap = _make_beatmap(
+            BeatmapRankStatus.RANKED,
+            source=BeatmapMetadataSource.MIRROR,
+            verified=BeatmapSourceVerification.UNVERIFIED,
+        )
+        service = BeatmapEligibilityService()
+
+        with capture_logs() as logs:
+            _ = service.evaluate(beatmap)
+
+        denied = [e for e in logs if e.get("event") == "beatmap_eligibility_denied"]
+        assert len(denied) == 1
+        assert denied[0]["beatmap_id"] == beatmap.id
+        assert denied[0]["denial_reason"] == "untrusted_mirror_status"
+        assert denied[0]["is_mirror_derived"] is True
+
+    def test_no_log_when_eligibility_granted(self) -> None:
+        """No denial event when eligibility is granted."""
+        beatmap = _make_beatmap(BeatmapRankStatus.RANKED)
+        service = BeatmapEligibilityService()
+
+        with capture_logs() as logs:
+            _ = service.evaluate(beatmap)
+
+        denied = [e for e in logs if e.get("event") == "beatmap_eligibility_denied"]
+        assert len(denied) == 0
+
+    def test_denial_log_includes_official_verification_state(self) -> None:
+        """Denial log includes whether the source was officially verified."""
+        beatmap = _make_beatmap(
+            BeatmapRankStatus.PENDING,
+            source=BeatmapMetadataSource.OFFICIAL,
+            verified=BeatmapSourceVerification.VERIFIED,
+        )
+        service = BeatmapEligibilityService()
+
+        with capture_logs() as logs:
+            _ = service.evaluate(beatmap)
+
+        denied = [e for e in logs if e.get("event") == "beatmap_eligibility_denied"]
+        assert len(denied) == 1
+        assert denied[0]["is_officially_verified"] is True
+        assert denied[0]["is_mirror_derived"] is False

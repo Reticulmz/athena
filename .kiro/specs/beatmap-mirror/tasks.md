@@ -157,7 +157,7 @@
   - _Requirements: 2.2, 6.2, 14.1, 14.2, 14.3, 16.1, 16.2, 16.3_
   - _Boundary: worker_runtime, JobRegistry_
 
-- [ ] 7.3 Add structured observability for source, fallback, checksum, and eligibility outcomes
+- [x] 7.3 Add structured observability for source, fallback, checksum, and eligibility outcomes
   - Emit structured diagnostics for metadata fetch start/success/failure, file fetch start/success/failure, source rate limits, mirror fallback usage, checksum mismatch, and eligibility denial.
   - Redact API credentials and authorization values from provider diagnostics.
   - Observable completion: logging tests capture expected event names and fields for success, all-source failure, mirror fallback, rate limit, checksum mismatch, and unverified eligibility denial.

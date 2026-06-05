@@ -39,57 +39,86 @@ class CompositeBeatmapMetadataProvider:
         self._mirror = mirror
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+        key = str(beatmap_id)
+        official_failed = False
         try:
             result = await self._official.lookup_by_beatmap_id(beatmap_id)
             if result is not None:
                 return result
+            official_failed = True
         except Exception:
+            official_failed = True
             logger.debug(
                 "beatmap_metadata_lookup_failed",
                 key_kind="beatmap_id",
-                key=str(beatmap_id),
+                key=key,
                 exc_info=True,
             )
         try:
-            return await self._mirror.lookup_by_beatmap_id(beatmap_id)
+            mirror_result = await self._mirror.lookup_by_beatmap_id(beatmap_id)
         except Exception:
             logger.debug(
                 "beatmap_metadata_lookup_failed",
                 key_kind="beatmap_id",
-                key=str(beatmap_id),
+                key=key,
                 exc_info=True,
             )
             return None
+        else:
+            if mirror_result is not None and official_failed:
+                logger.info(
+                    "beatmap_mirror_fallback_used",
+                    source_type="metadata",
+                    key_kind="beatmap_id",
+                    key=key,
+                )
+            return mirror_result
 
     async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+        key = str(beatmapset_id)
+        official_failed = False
         try:
             result = await self._official.lookup_by_beatmapset_id(beatmapset_id)
             if result is not None:
                 return result
+            official_failed = True
         except Exception:
+            official_failed = True
             logger.debug(
                 "beatmap_metadata_lookup_failed",
                 key_kind="beatmapset_id",
-                key=str(beatmapset_id),
+                key=key,
                 exc_info=True,
             )
         try:
-            return await self._mirror.lookup_by_beatmapset_id(beatmapset_id)
+            mirror_result = await self._mirror.lookup_by_beatmapset_id(beatmapset_id)
         except Exception:
             logger.debug(
                 "beatmap_metadata_lookup_failed",
                 key_kind="beatmapset_id",
-                key=str(beatmapset_id),
+                key=key,
                 exc_info=True,
             )
             return None
+        else:
+            if mirror_result is not None and official_failed:
+                logger.info(
+                    "beatmap_mirror_fallback_used",
+                    source_type="metadata",
+                    key_kind="beatmapset_id",
+                    key=key,
+                )
+            return mirror_result
 
     async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+        official_failed = False
         try:
             result = await self._official.lookup_by_checksum(checksum_md5)
             if result is not None:
                 return result
+            official_failed = True
         except Exception:
+            official_failed = True
             logger.debug(
                 "beatmap_metadata_lookup_failed",
                 key_kind="checksum_md5",
@@ -97,7 +126,7 @@ class CompositeBeatmapMetadataProvider:
                 exc_info=True,
             )
         try:
-            return await self._mirror.lookup_by_checksum(checksum_md5)
+            mirror_result = await self._mirror.lookup_by_checksum(checksum_md5)
         except Exception:
             logger.debug(
                 "beatmap_metadata_lookup_failed",
@@ -106,3 +135,12 @@ class CompositeBeatmapMetadataProvider:
                 exc_info=True,
             )
             return None
+        else:
+            if mirror_result is not None and official_failed:
+                logger.info(
+                    "beatmap_mirror_fallback_used",
+                    source_type="metadata",
+                    key_kind="checksum_md5",
+                    key=checksum_md5,
+                )
+            return mirror_result

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+import structlog
+
 from osu_server.domain.beatmap import (
     Beatmap,
     BeatmapMetadataSource,
@@ -10,6 +12,8 @@ from osu_server.domain.beatmap import (
     BeatmapSourceVerification,
     LocalBeatmapStatus,
 )
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 _SCORE_ACCEPTING_STATUSES: Final = frozenset(
     {
@@ -74,6 +78,14 @@ class BeatmapEligibilityService:
         )
 
         if is_mirror_derived and not mirror_trust_enabled:
+            logger.info(
+                "beatmap_eligibility_denied",
+                beatmap_id=beatmap.id,
+                denial_reason="untrusted_mirror_status",
+                effective_status=status.value,
+                is_officially_verified=is_officially_verified,
+                is_mirror_derived=True,
+            )
             return _denied_eligibility(
                 denial_reason="untrusted_mirror_status",
                 is_officially_verified=is_officially_verified,
@@ -81,6 +93,14 @@ class BeatmapEligibilityService:
             )
 
         if status not in _SCORE_ACCEPTING_STATUSES:
+            logger.info(
+                "beatmap_eligibility_denied",
+                beatmap_id=beatmap.id,
+                denial_reason="status_not_eligible",
+                effective_status=status.value,
+                is_officially_verified=is_officially_verified,
+                is_mirror_derived=is_mirror_derived,
+            )
             return _denied_eligibility(
                 denial_reason="status_not_eligible",
                 is_officially_verified=is_officially_verified,

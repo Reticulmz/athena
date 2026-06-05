@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 
 import httpx
+import structlog
 
 from osu_server.infrastructure.beatmaps.contracts import (
     BeatmapFileSource,
@@ -21,6 +22,8 @@ from osu_server.infrastructure.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 _CONTENT_DISPOSITION_FILENAME = re.compile(
     r'filename\s*=\s*"([^"]*)"',
@@ -163,6 +166,12 @@ class CompositeBeatmapFileProvider:
         try:
             await self._try_mirror_sources(client, beatmap_id, lookup_key)
         except _FoundError as found:
+            logger.info(
+                "beatmap_mirror_fallback_used",
+                source_type="file",
+                beatmap_id=beatmap_id,
+                source=found.result.source.value,
+            )
             return found.result
         except BeatmapSourceError:
             raise
@@ -212,6 +221,13 @@ class CompositeBeatmapFileProvider:
                 body=response.content,
                 source=source,
                 original_filename=filename,
+            )
+
+        if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
+            logger.warning(
+                "beatmap_source_rate_limited",
+                source=source_label,
+                beatmap_id=beatmap_id,
             )
 
         raise _error_from_response(

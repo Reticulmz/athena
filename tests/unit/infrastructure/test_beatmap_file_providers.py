@@ -10,6 +10,7 @@ from typing import runtime_checkable
 
 import httpx
 import pytest
+from structlog.testing import capture_logs
 
 from osu_server.infrastructure.beatmaps.contracts import (
     BeatmapFileProvider,
@@ -452,3 +453,69 @@ class TestCompositeBeatmapFileProviderRateLimitObservability:
             _ = await provider.fetch_osu_file(_BEATMAP_ID)
         assert exc_info.value.category is BeatmapSourceErrorCategory.RATE_LIMITED
         assert str(_BEATMAP_ID) in exc_info.value.lookup_key
+
+
+class TestCompositeBeatmapFileProviderLogging:
+    """Structured observability for file source operations (16.3, 16.4, 16.6)."""
+
+    async def test_logs_rate_limited_event_on_429(self) -> None:
+        """When a direct source returns 429, a rate limit event is logged."""
+        provider = _make_provider(primary_status=429, legacy_status=200)
+        with capture_logs() as logs:
+            _ = await provider.fetch_osu_file(_BEATMAP_ID)
+
+        rate_limited = [e for e in logs if e.get("event") == "beatmap_source_rate_limited"]
+        assert len(rate_limited) >= 1
+        assert rate_limited[0]["source"] == "osu_current"
+        assert rate_limited[0]["beatmap_id"] == _BEATMAP_ID
+
+    async def test_logs_rate_limited_for_legacy_429(self) -> None:
+        """Rate limit on the legacy source is also logged."""
+        provider2 = _make_provider(primary_status=429, legacy_status=429, mirror_status=200)
+        with capture_logs() as logs:
+            _ = await provider2.fetch_osu_file(_BEATMAP_ID)
+
+        rate_limited = [e for e in logs if e.get("event") == "beatmap_source_rate_limited"]
+        # Both osu_current and osu_legacy should log rate-limited
+        sources = {e["source"] for e in rate_limited}
+        assert "osu_current" in sources
+        assert "osu_legacy" in sources
+
+    async def test_logs_mirror_fallback_event(self) -> None:
+        """When mirror is used, a mirror fallback event is logged."""
+        provider = _make_provider(
+            primary_status=429,
+            legacy_status=503,
+            mirror_status=200,
+        )
+        with capture_logs() as logs:
+            _ = await provider.fetch_osu_file(_BEATMAP_ID)
+
+        mirror_events = [e for e in logs if e.get("event") == "beatmap_mirror_fallback_used"]
+        assert len(mirror_events) == 1
+        assert mirror_events[0]["source_type"] == "file"
+        assert mirror_events[0]["beatmap_id"] == _BEATMAP_ID
+        assert "source" in mirror_events[0]
+        assert mirror_events[0]["source"] == BeatmapFileSource.COMMUNITY_MIRROR.value
+
+    async def test_no_mirror_fallback_event_when_direct_succeeds(self) -> None:
+        """No mirror fallback event when primary source succeeds."""
+        provider = _make_provider()
+        with capture_logs() as logs:
+            _ = await provider.fetch_osu_file(_BEATMAP_ID)
+
+        mirror_events = [e for e in logs if e.get("event") == "beatmap_mirror_fallback_used"]
+        assert len(mirror_events) == 0
+
+    async def test_no_api_credentials_in_rate_limit_log(self) -> None:
+        """Rate limit log must not include API credentials or tokens."""
+        provider = _make_provider(primary_status=429, legacy_status=200)
+        with capture_logs() as logs:
+            _ = await provider.fetch_osu_file(_BEATMAP_ID)
+
+        sensitive = {"api_key", "token", "secret", "credential", "authorization", "bearer"}
+        for entry in logs:
+            for key in entry:
+                assert not any(s in key.lower() for s in sensitive), (
+                    f"Sensitive field '{key}' in log event '{entry.get('event')}'"
+                )
