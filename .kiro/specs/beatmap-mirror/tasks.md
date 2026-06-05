@@ -87,7 +87,7 @@
   - _Requirements: 3.1, 3.2, 3.3, 3.5, 4.1, 4.2, 4.3, 4.4, 16.1, 16.2, 16.4_
   - _Boundary: BeatmapMetadataProvider_
 
-- [ ] 4.2 Implement direct and mirror `.osu` file source provider
+- [x] 4.2 Implement direct and mirror `.osu` file source provider
   - Fetch `.osu` files from current direct source first, legacy direct source second, and configured community mirror URL third.
   - Use GET for mirror fallback so catboy-style endpoints work even when HEAD does not.
   - Treat rate limit, timeout, connection error, and upstream server failure as fallback-triggering temporary failures.
