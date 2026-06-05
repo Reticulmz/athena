@@ -114,7 +114,7 @@
   - Completed state: DI integration tests can resolve the blob storage service with Local config and observe an unsupported-backend error with S3 config.
   - _Requirements: 3.3, 3.5, 4.1, 4.2, 4.3, 11.1_
 
-- [ ] 5.2 Integrate diagnostics for configuration, writes, reads, and deduplication
+- [x] 5.2 Integrate diagnostics for configuration, writes, reads, and deduplication
   - Emit structured diagnostic information for invalid configuration, write failures, read failures, and deduplicated writes.
   - Avoid logging blob body content or user-provided filenames.
   - Completed state: tests or log-capture checks prove failure and deduplication paths produce observable diagnostics without leaking file bodies.

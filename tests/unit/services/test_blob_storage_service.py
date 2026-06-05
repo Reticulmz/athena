@@ -192,6 +192,7 @@ async def test_put_stream_returns_existing_blob_for_duplicate_content() -> None:
     assert len(events) == 1
     assert events[0]["sha256"] == stored.blob.sha256
     assert events[0]["byte_size"] == len(content)
+    assert b"duplicate content".decode() not in repr(logs)
 
 
 async def test_put_bytes_matches_stream_identity_for_same_content() -> None:
@@ -239,6 +240,7 @@ async def test_put_stream_discards_staging_and_logs_when_write_fails() -> None:
     assert len(events) == 1
     assert events[0]["reason"] == "BackendWriteError"
     assert events[0]["byte_size"] == len(b"failed content")
+    assert "failed content" not in repr(logs)
 
 
 async def test_put_stream_discards_staging_and_logs_when_finalize_fails() -> None:
@@ -295,8 +297,16 @@ async def test_stream_read_returns_backend_chunks_for_existing_blob() -> None:
 async def test_stream_read_reports_missing_blob_metadata_as_unavailable() -> None:
     service, _repo, _backend = _make_service()
 
-    with pytest.raises(BlobContentUnavailableError):
+    with (
+        capture_logs() as logs,
+        pytest.raises(BlobContentUnavailableError),
+    ):
         _ = await service.stream_read(404)
+
+    events = [event for event in logs if event["event"] == "blob_read_failed"]
+    assert len(events) == 1
+    assert events[0]["blob_id"] == 404
+    assert events[0]["reason"] == "BlobMetadataMissing"
 
 
 async def test_stream_read_reports_missing_backend_content_as_unavailable() -> None:
@@ -306,8 +316,16 @@ async def test_stream_read_reports_missing_backend_content_as_unavailable() -> N
     assert isinstance(stored, BlobStored)
     backend.missing_reads.add(stored.blob.storage_key)
 
-    with pytest.raises(BlobContentUnavailableError):
+    with (
+        capture_logs() as logs,
+        pytest.raises(BlobContentUnavailableError),
+    ):
         _ = await service.stream_read(stored.blob.id)
+
+    events = [event for event in logs if event["event"] == "blob_read_failed"]
+    assert len(events) == 1
+    assert events[0]["reason"] == "BlobContentMissingError"
+    assert "metadata without content" not in repr(logs)
 
 
 def test_blob_storage_service_surface_excludes_lifecycle_and_attachment_operations() -> None:
