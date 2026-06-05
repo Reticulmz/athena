@@ -77,7 +77,7 @@
   - _Boundary: BeatmapRepository_
 
 - [ ] 4. Source provider behavior
-- [ ] 4.1 Implement metadata provider contracts and status mapping
+- [x] 4.1 Implement metadata provider contracts and status mapping
   - Normalize official API and mirror metadata into provider-neutral beatmapset snapshots.
   - Map external status values into Athena rank status values, including Approved and Loved.
   - Mark official metadata as verified and mirror metadata as unverified.
