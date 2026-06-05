@@ -139,7 +139,7 @@
   - Completed state: integration tests prove composition resolves the service correctly and boundary regression tests fail if attachment, authorization, or delete concerns enter blob storage.
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 8.1, 8.2, 8.4, 9.1, 9.2, 9.3, 9.4, 9.5, 10.1, 10.2, 10.3, 11.1_
 
-- [ ] 6.4 Run full quality validation for blob storage
+- [x] 6.4 Run full quality validation for blob storage
   - Run the project quality checks and targeted test suites for blob storage.
   - Fix lint, type, import boundary, and test failures within this spec's ownership.
   - Completed state: quality checks and blob-storage tests pass, and failures outside this spec are documented rather than hidden.
