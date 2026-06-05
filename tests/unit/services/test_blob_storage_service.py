@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from inspect import signature
 from typing import TYPE_CHECKING, override
 
 import pytest
@@ -307,3 +308,36 @@ async def test_stream_read_reports_missing_backend_content_as_unavailable() -> N
 
     with pytest.raises(BlobContentUnavailableError):
         _ = await service.stream_read(stored.blob.id)
+
+
+def test_blob_storage_service_surface_excludes_lifecycle_and_attachment_operations() -> None:
+    public_methods = {
+        "put_bytes",
+        "put_stream",
+        "read_bytes",
+        "stream_read",
+    }
+
+    assert public_methods == {"put_bytes", "put_stream", "read_bytes", "stream_read"}
+    for method_name in public_methods:
+        assert hasattr(BlobStorageService, method_name)
+    assert not hasattr(BlobStorageService, "delete")
+    assert not hasattr(BlobStorageService, "discard")
+    assert not hasattr(BlobStorageService, "garbage_collect")
+    assert not hasattr(BlobStorageService, "attach")
+    assert not hasattr(BlobStorageService, "create_attachment")
+    assert not hasattr(BlobStorageService, "authorize")
+
+
+def test_blob_storage_service_read_contract_uses_trusted_blob_identity_only() -> None:
+    stream_parameters = set(signature(BlobStorageService.stream_read).parameters)
+    read_parameters = set(signature(BlobStorageService.read_bytes).parameters)
+
+    assert stream_parameters == {"self", "blob_id"}
+    assert read_parameters == {"self", "blob_id"}
+    for parameters in (stream_parameters, read_parameters):
+        assert "filename" not in parameters
+        assert "uploader_id" not in parameters
+        assert "owner_id" not in parameters
+        assert "access_policy" not in parameters
+        assert "authorized_user_id" not in parameters

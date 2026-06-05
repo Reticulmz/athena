@@ -99,7 +99,7 @@
   - Completed state: service tests prove stream reads return chunks, read helper returns the full body, and missing records or missing backend content fail without returning partial success.
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 11.3_
 
-- [ ] 4.4 Enforce lifecycle, attachment, and access boundaries
+- [x] 4.4 Enforce lifecycle, attachment, and access boundaries
   - Keep delete, garbage collection, reference counting, attachment creation, filename tracking, uploader tracking, and authorization out of the service surface.
   - Allow multiple external domain attachment records to reference the same blob by keeping blobs domain-neutral.
   - Document trusted-caller expectations in service tests by requiring callers to perform authorization before reads.
