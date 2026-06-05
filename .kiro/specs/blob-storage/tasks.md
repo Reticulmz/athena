@@ -121,7 +121,7 @@
   - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
 - [ ] 6. Validate persistence, storage, and integration behavior
-- [ ] 6.1 Complete domain and repository test coverage
+- [x] 6.1 Complete domain and repository test coverage
   - Cover blob validation, immutable metadata, no attachment fields, in-memory repository behavior, and SQLAlchemy repository behavior.
   - Include duplicate SHA-256 and append-only expectations.
   - Completed state: domain and repository tests pass and cover blob creation, lookup, duplicate handling, and absence of update/delete behavior.
