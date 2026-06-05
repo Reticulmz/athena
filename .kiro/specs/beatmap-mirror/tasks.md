@@ -67,7 +67,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 6.1, 6.2, 6.5, 7.1, 7.2, 7.3, 7.4, 7.5, 9.1, 9.3, 9.4, 14.1, 14.2, 14.3, 14.4_
   - _Boundary: BeatmapRepository_
 
-- [ ] 3.2 Implement SQLAlchemy beatmap repository
+- [x] 3.2 Implement SQLAlchemy beatmap repository
   - Persist beatmapset snapshots, beatmaps, checksum lookup, file attachments, and fetch states using short repository-owned transactions.
   - Enforce database constraints for beatmap identity, checksum lookup, fetch targets, and duplicate file attachments.
   - Ensure official metadata refresh updates official fields without clearing local override.
