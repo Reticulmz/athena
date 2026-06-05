@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from osu_server.infrastructure.storage.errors import BlobContentMissingError
 from osu_server.repositories.interfaces.blob_repository import DuplicateBlobError, NewBlob
 
 if TYPE_CHECKING:
@@ -24,6 +25,10 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 class BlobContentTypeError(ValueError):
     """Raised when a blob write is requested without an explicit content type."""
+
+
+class BlobContentUnavailableError(FileNotFoundError):
+    """Raised when blob metadata or backend content is unavailable."""
 
 
 class BlobStorageWriteError(RuntimeError):
@@ -167,6 +172,32 @@ class BlobStorageService:
             )
             raise
 
+    async def stream_read(self, blob_id: int) -> ByteChunks:
+        """Open a backend chunk stream for existing blob metadata."""
+        blob = await self._blob_repo.get_by_id(blob_id)
+        if blob is None:
+            logger.warning("blob_read_failed", blob_id=blob_id, reason="BlobMetadataMissing")
+            raise BlobContentUnavailableError(f"blob content is unavailable: {blob_id}")
+
+        try:
+            return await self._backend.open_read(blob.storage_key)
+        except BlobContentMissingError as exc:
+            logger.warning(
+                "blob_read_failed",
+                blob_id=blob.id,
+                storage_backend=blob.storage_backend,
+                storage_key=blob.storage_key,
+                reason=type(exc).__name__,
+            )
+            raise BlobContentUnavailableError(
+                f"blob content is unavailable: {blob_id}",
+            ) from exc
+
+    async def read_bytes(self, blob_id: int) -> bytes:
+        """Read a known-small blob body into memory."""
+        chunks = await self.stream_read(blob_id)
+        return b"".join([chunk async for chunk in chunks])
+
 
 def _require_content_type(content_type: str) -> str:
     normalized = content_type.strip()
@@ -191,6 +222,7 @@ async def _discard_for_failure(staged: StagedBlobWrite) -> None:
 
 __all__ = [
     "BlobContentTypeError",
+    "BlobContentUnavailableError",
     "BlobDeduplicated",
     "BlobStorageService",
     "BlobStorageWriteError",

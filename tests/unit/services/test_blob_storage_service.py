@@ -6,10 +6,11 @@ from typing import TYPE_CHECKING, override
 import pytest
 from structlog.testing import capture_logs
 
-from osu_server.infrastructure.storage.errors import BackendWriteError
+from osu_server.infrastructure.storage.errors import BackendWriteError, BlobContentMissingError
 from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
 from osu_server.services.blob_storage_service import (
     BlobContentTypeError,
+    BlobContentUnavailableError,
     BlobDeduplicated,
     BlobStorageService,
     BlobStored,
@@ -38,17 +39,20 @@ class RecordingBackend:
     finalized_content: dict[str, bytes]
     fail_writes: bool
     fail_finalize: bool
+    missing_reads: set[str]
 
     def __init__(
         self,
         *,
         fail_writes: bool = False,
         fail_finalize: bool = False,
+        missing_reads: set[str] | None = None,
     ) -> None:
         self.staged_writes = []
         self.finalized_content = {}
         self.fail_writes = fail_writes
         self.fail_finalize = fail_finalize
+        self.missing_reads = missing_reads or set()
 
     async def validate_configuration(self) -> None:
         return None
@@ -63,6 +67,9 @@ class RecordingBackend:
         return staged
 
     async def open_read(self, storage_key: str) -> ByteChunks:
+        if storage_key in self.missing_reads:
+            raise BlobContentMissingError(storage_key)
+
         async def chunks() -> AsyncIterator[bytes]:
             yield self.finalized_content[storage_key]
 
@@ -271,3 +278,32 @@ async def test_put_stream_does_not_discard_after_finalize_when_metadata_create_f
     events = [event for event in logs if event["event"] == "blob_write_failed"]
     assert len(events) == 1
     assert events[0]["reason"] == "BlobStorageWriteError"
+
+
+async def test_stream_read_returns_backend_chunks_for_existing_blob() -> None:
+    service, _repo, _backend = _make_service()
+    stored = await service.put_bytes(b"read me", content_type="text/plain")
+    assert isinstance(stored, BlobStored)
+
+    chunks = await service.stream_read(stored.blob.id)
+
+    assert b"".join([chunk async for chunk in chunks]) == b"read me"
+    assert await service.read_bytes(stored.blob.id) == b"read me"
+
+
+async def test_stream_read_reports_missing_blob_metadata_as_unavailable() -> None:
+    service, _repo, _backend = _make_service()
+
+    with pytest.raises(BlobContentUnavailableError):
+        _ = await service.stream_read(404)
+
+
+async def test_stream_read_reports_missing_backend_content_as_unavailable() -> None:
+    backend = RecordingBackend()
+    service, _repo, _backend = _make_service(backend=backend)
+    stored = await service.put_bytes(b"metadata without content", content_type="text/plain")
+    assert isinstance(stored, BlobStored)
+    backend.missing_reads.add(stored.blob.storage_key)
+
+    with pytest.raises(BlobContentUnavailableError):
+        _ = await service.stream_read(stored.blob.id)

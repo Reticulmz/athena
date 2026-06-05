@@ -92,7 +92,7 @@
   - Completed state: tests prove storing the same bytes through stream and helper paths resolves to the same blob identity.
   - _Requirements: 2.1, 2.3, 5.5, 7.1, 7.2_
 
-- [ ] 4.3 Implement stream reads and small-data read helper
+- [x] 4.3 Implement stream reads and small-data read helper
   - Resolve blob metadata before opening backend content.
   - Stream existing content in chunks and report missing metadata or missing backend content as unavailable.
   - Provide a full-body helper for tests and known-small callers.
