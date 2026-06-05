@@ -21,7 +21,7 @@
   - Observable completion: unit tests can create complete beatmap snapshots and file fetch responses without real network credentials.
   - _Requirements: 4.4, 7.1, 7.2, 7.5, 16.1, 16.2, 16.3_
 
-- [ ] 1.4 Validate blob-storage dependency contract for `.osu` bodies
+- [x] 1.4 Validate blob-storage dependency contract for `.osu` bodies
   - Confirm the beatmap file fetch path can call the shared blob storage service for verified `.osu` bodies.
   - Add a typed fake blob storage service for beatmap mirror tests if the real blob-storage implementation is not available in unit scope.
   - Keep original filename, beatmap checksum, and attachment ownership outside the shared blob record.

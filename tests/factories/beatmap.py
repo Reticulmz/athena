@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from osu_server.domain.blob import Blob
+    from osu_server.services.blob_storage_service import BlobStorageService
+
 _DEFAULT_BEATMAP_ID = 2_000
 _DEFAULT_BEATMAPSET_ID = 1_000
 _DEFAULT_CHECKSUM_MD5 = "0123456789abcdef0123456789abcdef"
@@ -92,6 +95,12 @@ class BeatmapFileBodyFactory:
     content: bytes
     md5: str
     original_filename: str
+
+
+@dataclass(slots=True, frozen=True)
+class BeatmapBlobStorageWriteFactory:
+    blob: Blob
+    attachment: BeatmapFileAttachmentFactory
 
 
 @dataclass(slots=True, frozen=True)
@@ -316,6 +325,29 @@ class FakeBeatmapFileProvider:
     async def fetch_osu_file(self, beatmap_id: int) -> FakeFileProviderResponse:
         self.calls.append(beatmap_id)
         return self.by_beatmap_id.get(beatmap_id, self.default_response)
+
+
+async def store_beatmap_file_body_blob(
+    blob_storage_service: BlobStorageService,
+    file_body: BeatmapFileBodyFactory,
+    *,
+    beatmap_id: int = _DEFAULT_BEATMAP_ID,
+    source: str = "official",
+) -> BeatmapBlobStorageWriteFactory:
+    result = await blob_storage_service.put_bytes(
+        file_body.content,
+        content_type="application/octet-stream",
+    )
+    blob = result.blob
+    attachment = make_beatmap_file_attachment_factory(
+        beatmap_id=beatmap_id,
+        blob_id=blob.id,
+        checksum_md5=file_body.md5,
+        verified_md5=file_body.md5,
+        source=source,
+        original_filename=file_body.original_filename,
+    )
+    return BeatmapBlobStorageWriteFactory(blob=blob, attachment=attachment)
 
 
 def _error_kind_for_result(kind: FakeProviderResultKind) -> FakeProviderErrorKind | None:
