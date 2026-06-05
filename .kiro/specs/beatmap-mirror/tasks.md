@@ -166,7 +166,7 @@
   - _Boundary: BeatmapMirrorService, Providers, Jobs_
 
 - [ ] 8. End-to-end and regression validation
-- [ ] 8.1 Add resolve-metadata end-to-end flow with fake providers
+- [x] 8.1 Add resolve-metadata end-to-end flow with fake providers
   - Exercise missing beatmap resolution, pending metadata state, metadata job completion, and later fresh cache resolution.
   - Include lookup by beatmap id, beatmapset id, and checksum/md5 in the same validation path or tightly related tests.
   - Observable completion: E2E-style tests show a missing beatmap transitions from pending fetch to fresh resolved metadata without real network credentials.
