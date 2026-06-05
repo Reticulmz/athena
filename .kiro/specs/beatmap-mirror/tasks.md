@@ -29,7 +29,7 @@
   - _Requirements: 6.3, 6.4, 6.5, 14.2_
 
 - [ ] 2. Core domain and policy behavior
-- [ ] 2.1 Implement beatmap domain entities and status value rules
+- [x] 2.1 Implement beatmap domain entities and status value rules
   - Model beatmapset metadata, beatmap identity, checksum/md5, source, verification, fetch timing, file state, and attachment metadata as typed domain values.
   - Represent official status, local override status, and effective status separately.
   - Preserve `Approved` as an official status while excluding it from assignable local override values.
