@@ -180,7 +180,7 @@
   - _Depends: 7.2_
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 7.2, 7.3, 14.2, 14.4, 16.3, 16.4, 16.6_
 
-- [ ] 8.3 Add boundary regression tests for downstream separation
+- [x] 8.3 Add boundary regression tests for downstream separation
   - Verify beatmap mirror does not parse score payloads, calculate PP, write leaderboards, format Bancho score result responses, own request queues, or enqueue polling packets.
   - Verify downstream local rank changes can use local override semantics without changing official status.
   - Observable completion: regression tests and import boundaries show beatmap mirror remains independent from score-submission, leaderboard, WebUI, BanchoBot rank commands, and Bancho transports.
