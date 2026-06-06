@@ -1,0 +1,4 @@
+4|false|1200|100|0||
+0
+[bold:0,size:20]DECO*27|Ghost Rule
+0

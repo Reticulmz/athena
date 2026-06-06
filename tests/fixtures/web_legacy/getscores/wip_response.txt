@@ -1,0 +1,4 @@
+0|false|3000|250|0||
+0
+[bold:0,size:20]Camellia|Exit This Earth's Atomosphere
+0

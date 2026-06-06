@@ -1,0 +1,4 @@
+0|false|2500|200|0||
+0
+[bold:0,size:20]t+pazolite|Oshama Scramble!
+0

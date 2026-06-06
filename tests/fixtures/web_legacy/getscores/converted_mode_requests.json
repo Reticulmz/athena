@@ -1,0 +1,66 @@
+[
+  {
+    "description": "Standard osu! mode request for ranked beatmap",
+    "query": {
+      "c": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+      "f": "Suzaku - Anisakis -sakuya- (Ryuusei Aika) [Hyper].osu",
+      "i": "1",
+      "m": "0",
+      "mods": "0",
+      "s": "0",
+      "v": "1",
+      "vv": "4",
+      "us": "example_user",
+      "ha": "0123456789abcdef0123456789abcdef"
+    },
+    "expected_status": 2
+  },
+  {
+    "description": "Taiko converted mode request for the same ranked beatmap",
+    "query": {
+      "c": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+      "f": "Suzaku - Anisakis -sakuya- (Ryuusei Aika) [Hyper].osu",
+      "i": "1",
+      "m": "1",
+      "mods": "0",
+      "s": "0",
+      "v": "1",
+      "vv": "4",
+      "us": "example_user",
+      "ha": "0123456789abcdef0123456789abcdef"
+    },
+    "expected_status": 2
+  },
+  {
+    "description": "Catch the Beat converted mode request for the same ranked beatmap",
+    "query": {
+      "c": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+      "f": "Suzaku - Anisakis -sakuya- (Ryuusei Aika) [Hyper].osu",
+      "i": "1",
+      "m": "2",
+      "mods": "0",
+      "s": "0",
+      "v": "1",
+      "vv": "4",
+      "us": "example_user",
+      "ha": "0123456789abcdef0123456789abcdef"
+    },
+    "expected_status": 2
+  },
+  {
+    "description": "Mania converted mode request for the same ranked beatmap",
+    "query": {
+      "c": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+      "f": "Suzaku - Anisakis -sakuya- (Ryuusei Aika) [Hyper].osu",
+      "i": "1",
+      "m": "3",
+      "mods": "0",
+      "s": "0",
+      "v": "1",
+      "vv": "4",
+      "us": "example_user",
+      "ha": "0123456789abcdef0123456789abcdef"
+    },
+    "expected_status": 2
+  }
+]
