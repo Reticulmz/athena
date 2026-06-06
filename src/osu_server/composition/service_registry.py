@@ -13,6 +13,14 @@ from osu_server.domain.beatmap import BeatmapMetadataProvider
 from osu_server.domain.system_user import BANCHO_BOT_USER_ID, create_bancho_bot_identity
 from osu_server.infrastructure.beatmaps.contracts import BeatmapFileProvider
 from osu_server.infrastructure.beatmaps.file_sources import CompositeBeatmapFileProvider
+from osu_server.infrastructure.beatmaps.metadata_providers import (
+    CompositeBeatmapMetadataProvider,
+)
+from osu_server.infrastructure.beatmaps.providers import (
+    InMemoryBeatmapMetadataProvider,
+    MirrorMetadataProvider,
+    OsuApiMetadataProvider,
+)
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
@@ -52,15 +60,8 @@ from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
 from osu_server.services.beatmap_eligibility import BeatmapEligibilityService
 from osu_server.services.beatmap_freshness import BeatmapFreshnessPolicy
+from osu_server.services.beatmap_metadata_adapter import DomainBeatmapMetadataProviderAdapter
 from osu_server.services.beatmap_mirror_service import BeatmapMirrorService
-from osu_server.services.beatmaps.metadata_providers import (
-    CompositeBeatmapMetadataProvider,
-)
-from osu_server.services.beatmaps.providers import (
-    InMemoryBeatmapMetadataProvider,
-    MirrorMetadataProvider,
-    OsuApiMetadataProvider,
-)
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
@@ -200,10 +201,11 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         )
         mirror_metadata_provider = MirrorMetadataProvider()
 
-    metadata_provider = CompositeBeatmapMetadataProvider(
+    infrastructure_metadata_provider = CompositeBeatmapMetadataProvider(
         official=official_metadata_provider,
         mirror=mirror_metadata_provider,
     )
+    metadata_provider = DomainBeatmapMetadataProviderAdapter(infrastructure_metadata_provider)
     container.register_singleton(BeatmapMetadataProvider, lambda: metadata_provider)
 
     # -- BeatmapFileProvider (singleton) -------------------------------------

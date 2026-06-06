@@ -2,7 +2,7 @@
 
 CompositeBeatmapMetadataProvider chains official and mirror providers:
 official first, mirror as fallback. Both are expected to return None
-on normal lookup failures rather than raising.
+on normal lookup misses rather than raising.
 """
 
 from __future__ import annotations
@@ -12,33 +12,30 @@ from typing import TYPE_CHECKING
 import structlog
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmap import BeatmapMetadataProvider, BeatmapsetSnapshot
+    from osu_server.infrastructure.beatmaps.contracts import (
+        ProviderBeatmapMetadataProvider,
+        ProviderBeatmapsetSnapshot,
+    )
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 
 class CompositeBeatmapMetadataProvider:
-    """Chains official and mirror providers with official-first priority.
+    """Chains official and mirror providers with official-first priority."""
 
-    If the official provider returns a snapshot, the mirror provider
-    is never called. If the official provider returns ``None`` or raises
-    an exception, the mirror provider is tried. If both fail, ``None``
-    is returned.
-    """
-
-    _official: BeatmapMetadataProvider
-    _mirror: BeatmapMetadataProvider
+    _official: ProviderBeatmapMetadataProvider
+    _mirror: ProviderBeatmapMetadataProvider
 
     def __init__(
         self,
         *,
-        official: BeatmapMetadataProvider,
-        mirror: BeatmapMetadataProvider,
+        official: ProviderBeatmapMetadataProvider,
+        mirror: ProviderBeatmapMetadataProvider,
     ) -> None:
         self._official = official
         self._mirror = mirror
 
-    async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+    async def lookup_by_beatmap_id(self, beatmap_id: int) -> ProviderBeatmapsetSnapshot | None:
         key = str(beatmap_id)
         official_failed = False
         try:
@@ -74,7 +71,9 @@ class CompositeBeatmapMetadataProvider:
                 )
             return mirror_result
 
-    async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+    async def lookup_by_beatmapset_id(
+        self, beatmapset_id: int
+    ) -> ProviderBeatmapsetSnapshot | None:
         key = str(beatmapset_id)
         official_failed = False
         try:
@@ -110,7 +109,7 @@ class CompositeBeatmapMetadataProvider:
                 )
             return mirror_result
 
-    async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+    async def lookup_by_checksum(self, checksum_md5: str) -> ProviderBeatmapsetSnapshot | None:
         official_failed = False
         try:
             result = await self._official.lookup_by_checksum(checksum_md5)

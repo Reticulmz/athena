@@ -35,12 +35,12 @@ from osu_server.repositories.interfaces.beatmap_repository import BeatmapFetchTa
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.services.beatmap_eligibility import BeatmapEligibilityService
 from osu_server.services.beatmap_freshness import BeatmapFreshnessPolicy
+from osu_server.services.beatmap_metadata_adapter import (
+    DomainCompositeBeatmapMetadataProvider as CompositeBeatmapMetadataProvider,
+)
 from osu_server.services.beatmap_mirror_service import (
     BeatmapMirrorService,
     BeatmapResolveOptions,
-)
-from osu_server.services.beatmaps.metadata_providers import (
-    CompositeBeatmapMetadataProvider,
 )
 
 if TYPE_CHECKING:

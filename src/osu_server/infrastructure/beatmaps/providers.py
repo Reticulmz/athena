@@ -1,10 +1,4 @@
-"""Concrete ``BeatmapMetadataProvider`` implementations.
-
-Provides:
-    * ``InMemoryBeatmapMetadataProvider`` -- stores snapshots in memory for test environments.
-    * ``OsuApiMetadataProvider`` -- official osu! API v2 metadata provider.
-    * ``MirrorMetadataProvider`` -- placeholder mirror API provider (not yet implemented).
-"""
+"""Concrete ``BeatmapMetadataProvider`` implementations."""
 
 from __future__ import annotations
 
@@ -19,16 +13,12 @@ from osu_server.infrastructure.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
-from osu_server.services.beatmaps.mappers import beatmap_json_to_snapshot
+from osu_server.infrastructure.beatmaps.mappers import beatmap_json_to_snapshot
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmap import BeatmapsetSnapshot
+    from osu_server.infrastructure.beatmaps.contracts import ProviderBeatmapsetSnapshot
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
-
-# ---------------------------------------------------------------------------
-# Shared helpers (same patterns as file_sources.py)
-# ---------------------------------------------------------------------------
 
 _TRANSIENT_EXCEPTIONS: tuple[type[Exception], ...] = (
     httpx.TimeoutException,
@@ -87,19 +77,14 @@ def _error_from_exception(
 
 
 class InMemoryBeatmapMetadataProvider:
-    """Stores ``BeatmapsetSnapshot`` data in dicts for test environments.
-
-    Snapshots can be preloaded via ``add_snapshot()`` so that composition
-    tests and integration tests can arrange known beatmap data without
-    real external credentials.
-    """
+    """Stores provider snapshots in dicts for test environments."""
 
     def __init__(self) -> None:
-        self._by_beatmap_id: dict[int, BeatmapsetSnapshot] = {}
-        self._by_beatmapset_id: dict[int, BeatmapsetSnapshot] = {}
+        self._by_beatmap_id: dict[int, ProviderBeatmapsetSnapshot] = {}
+        self._by_beatmapset_id: dict[int, ProviderBeatmapsetSnapshot] = {}
         self._checksum_to_beatmap_id: dict[str, int] = {}
 
-    def add_snapshot(self, snapshot: BeatmapsetSnapshot) -> None:
+    def add_snapshot(self, snapshot: ProviderBeatmapsetSnapshot) -> None:
         """Preload a snapshot so lookups return it."""
         self._by_beatmapset_id[snapshot.beatmapset_id] = snapshot
         for bm in snapshot.beatmaps:
@@ -107,13 +92,15 @@ class InMemoryBeatmapMetadataProvider:
             if bm.checksum_md5:
                 self._checksum_to_beatmap_id[bm.checksum_md5] = bm.beatmap_id
 
-    async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+    async def lookup_by_beatmap_id(self, beatmap_id: int) -> ProviderBeatmapsetSnapshot | None:
         return self._by_beatmap_id.get(beatmap_id)
 
-    async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+    async def lookup_by_beatmapset_id(
+        self, beatmapset_id: int
+    ) -> ProviderBeatmapsetSnapshot | None:
         return self._by_beatmapset_id.get(beatmapset_id)
 
-    async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+    async def lookup_by_checksum(self, checksum_md5: str) -> ProviderBeatmapsetSnapshot | None:
         beatmap_id = self._checksum_to_beatmap_id.get(checksum_md5)
         if beatmap_id is None:
             return None
@@ -121,13 +108,7 @@ class InMemoryBeatmapMetadataProvider:
 
 
 class OsuApiMetadataProvider:
-    """Official osu! API v2 metadata provider.
-
-    Authenticates via OAuth2 client-credentials and fetches beatmap metadata
-    from the public osu! API v2 endpoints.  Errors are normalised to
-    ``BeatmapSourceError`` categories following the same pattern as the file
-    source provider.
-    """
+    """Official osu! API v2 metadata provider."""
 
     def __init__(
         self,
@@ -145,35 +126,29 @@ class OsuApiMetadataProvider:
         self._token_expiry: float = 0.0
         self._httpx_client: httpx.AsyncClient | None = None
 
-    # ------------------------------------------------------------------
-    # Public lookup interface
-    # ------------------------------------------------------------------
-
-    async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+    async def lookup_by_beatmap_id(self, beatmap_id: int) -> ProviderBeatmapsetSnapshot | None:
         return await self._lookup(f"/beatmaps/{beatmap_id}", lookup_key=str(beatmap_id))
 
-    async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+    async def lookup_by_beatmapset_id(
+        self, beatmapset_id: int
+    ) -> ProviderBeatmapsetSnapshot | None:
         return await self._lookup(
             f"/beatmapsets/{beatmapset_id}",
             lookup_key=str(beatmapset_id),
         )
 
-    async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+    async def lookup_by_checksum(self, checksum_md5: str) -> ProviderBeatmapsetSnapshot | None:
         return await self._lookup(
             f"/beatmaps/lookup?checksum={checksum_md5}",
             lookup_key=checksum_md5,
         )
-
-    # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
 
     async def _lookup(
         self,
         path: str,
         *,
         lookup_key: str,
-    ) -> BeatmapsetSnapshot | None:
+    ) -> ProviderBeatmapsetSnapshot | None:
         source_label = "osu_api_v2"
         client = self._get_client()
 
@@ -221,20 +196,12 @@ class OsuApiMetadataProvider:
             lookup_key=lookup_key,
         )
 
-    # ------------------------------------------------------------------
-    # httpx client (lazy, same pattern as file_sources.py)
-    # ------------------------------------------------------------------
-
     def _get_client(self) -> httpx.AsyncClient:
         if self._httpx_client is not None:
             return self._httpx_client
         client = httpx.AsyncClient()
         object.__setattr__(self, "_httpx_client", client)
         return client
-
-    # ------------------------------------------------------------------
-    # OAuth2 token management
-    # ------------------------------------------------------------------
 
     async def _get_token(self) -> str:
         if self._access_token is not None and time.monotonic() < self._token_expiry:
@@ -275,8 +242,6 @@ class OsuApiMetadataProvider:
         try:
             token_data = cast("dict[str, object]", response.json())
             access_token = cast("str", token_data["access_token"])
-            # Schedule refresh 60 s before expiry; default to 1 h if the field
-            # is missing.
             expires_in = int(cast("float", token_data.get("expires_in", 3600)))
             self._token_expiry = time.monotonic() + max(0, expires_in - 60)
             self._access_token = access_token
@@ -293,20 +258,18 @@ class OsuApiMetadataProvider:
 
 
 class MirrorMetadataProvider:
-    """Placeholder mirror API metadata provider.
+    """Placeholder mirror API metadata provider."""
 
-    Returns ``None`` for all lookups.  Real mirror integration will be added
-    once the mirror endpoint configuration is finalized.
-    """
-
-    async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+    async def lookup_by_beatmap_id(self, beatmap_id: int) -> ProviderBeatmapsetSnapshot | None:
         logger.debug("mirror_metadata_provider_not_implemented", beatmap_id=beatmap_id)
         return None
 
-    async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+    async def lookup_by_beatmapset_id(
+        self, beatmapset_id: int
+    ) -> ProviderBeatmapsetSnapshot | None:
         logger.debug("mirror_metadata_provider_not_implemented", beatmapset_id=beatmapset_id)
         return None
 
-    async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+    async def lookup_by_checksum(self, checksum_md5: str) -> ProviderBeatmapsetSnapshot | None:
         logger.debug("mirror_metadata_provider_not_implemented", checksum_md5=checksum_md5)
         return None

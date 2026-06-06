@@ -9,6 +9,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from osu_server.infrastructure.beatmaps.file_sources import CompositeBeatmapFileProvider
+from osu_server.infrastructure.beatmaps.metadata_providers import (
+    CompositeBeatmapMetadataProvider,
+)
+from osu_server.infrastructure.beatmaps.providers import (
+    MirrorMetadataProvider,
+    OsuApiMetadataProvider,
+)
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.valkey.channel_state_store import ValkeyChannelStateStore
 from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimiter
@@ -22,13 +29,7 @@ from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRep
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.beatmaps.metadata_providers import (
-    CompositeBeatmapMetadataProvider,
-)
-from osu_server.services.beatmaps.providers import (
-    MirrorMetadataProvider,
-    OsuApiMetadataProvider,
-)
+from osu_server.services.beatmap_metadata_adapter import DomainBeatmapMetadataProviderAdapter
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
@@ -94,7 +95,8 @@ def create_worker_beatmap_metadata_fetch(
     )
     mirror = MirrorMetadataProvider()
     composite = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
-    return FetchBeatmapMetadataJob(repository=repo, metadata_provider=composite)
+    metadata_provider = DomainBeatmapMetadataProviderAdapter(composite)
+    return FetchBeatmapMetadataJob(repository=repo, metadata_provider=metadata_provider)
 
 
 async def create_worker_beatmap_file_fetch(

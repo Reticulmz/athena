@@ -39,8 +39,8 @@ from osu_server.repositories.interfaces.beatmap_repository import (
     BeatmapFetchTarget,
 )
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.beatmaps.metadata_providers import (
-    CompositeBeatmapMetadataProvider,
+from osu_server.services.beatmap_metadata_adapter import (
+    DomainCompositeBeatmapMetadataProvider as CompositeBeatmapMetadataProvider,
 )
 from osu_server.services.blob_storage_service import BlobStored
 

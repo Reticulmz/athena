@@ -12,7 +12,7 @@ from osu_server.infrastructure.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
-from osu_server.services.beatmaps.providers import OsuApiMetadataProvider
+from osu_server.infrastructure.beatmaps.providers import OsuApiMetadataProvider
 
 # ---------------------------------------------------------------------------
 # Shared test data

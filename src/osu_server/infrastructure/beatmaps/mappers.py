@@ -1,21 +1,18 @@
-"""Map osu! API v2 JSON responses to domain ``BeatmapsetSnapshot``."""
+"""Map osu! API v2 JSON responses to provider-neutral snapshots."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import TypedDict, cast
 
-from osu_server.domain.beatmap import (
-    BeatmapMetadataSource,
-    BeatmapRankStatus,
-    BeatmapsetSnapshot,
-    BeatmapSnapshot,
-    BeatmapSourceVerification,
-    map_external_status,
+from osu_server.infrastructure.beatmaps.contracts import (
+    BeatmapMetadataSourceName,
+    ProviderBeatmapsetSnapshot,
+    ProviderBeatmapSnapshot,
 )
 
-_SOURCE = BeatmapMetadataSource.OFFICIAL
-_VERIFIED = BeatmapSourceVerification.VERIFIED
+_SOURCE = BeatmapMetadataSourceName.OFFICIAL
+_VERIFIED = True
 
 
 class _BeatmapJSON(TypedDict, total=False):
@@ -54,19 +51,15 @@ class _BeatmapsetJSON(TypedDict, total=False):
 
 def beatmap_json_to_snapshot(
     data: dict[str, object], *, now: datetime | None = None
-) -> BeatmapsetSnapshot:
-    """Convert an osu! API v2 beatmap JSON (with nested ``beatmapset``) to a snapshot.
-
-    Also accepts beatmapset JSON (with nested ``beatmaps`` array) via the same
-    entry point -- the shape is detected automatically.
-    """
+) -> ProviderBeatmapsetSnapshot:
+    """Convert osu! API v2 beatmap or beatmapset JSON to a snapshot."""
     _now = now or datetime.now(UTC)
     if "beatmaps" in data:
         return _from_beatmapset_json(cast("_BeatmapsetJSON", cast("object", data)), now=_now)
     return _from_beatmap_json(cast("_BeatmapJSON", cast("object", data)), now=_now)
 
 
-def _from_beatmap_json(data: _BeatmapJSON, *, now: datetime) -> BeatmapsetSnapshot:
+def _from_beatmap_json(data: _BeatmapJSON, *, now: datetime) -> ProviderBeatmapsetSnapshot:
     beatmapset_data = data.get("beatmapset") or {}
     return _from_beatmapset_json(
         {
@@ -83,13 +76,13 @@ def _from_beatmap_json(data: _BeatmapJSON, *, now: datetime) -> BeatmapsetSnapsh
     )
 
 
-def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> BeatmapsetSnapshot:
+def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> ProviderBeatmapsetSnapshot:
     beatmapset_id = data.get("id", 0)
     beatmapset_status = _map_status(data.get("status", ""))
 
     beatmaps_raw: list[_BeatmapJSON] = data.get("beatmaps") or []
     child_snapshots = tuple(
-        BeatmapSnapshot(
+        ProviderBeatmapSnapshot(
             beatmap_id=bm.get("id", 0),
             beatmapset_id=bm.get("beatmapset_id", beatmapset_id),
             checksum_md5=bm.get("checksum", "0" * 32),
@@ -113,7 +106,8 @@ def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> Beatmapset
         for bm in beatmaps_raw
     )
 
-    return BeatmapsetSnapshot(
+    _ = now
+    return ProviderBeatmapsetSnapshot(
         beatmapset_id=beatmapset_id,
         artist=data.get("artist", ""),
         title=data.get("title", ""),
@@ -131,8 +125,8 @@ def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> Beatmapset
     )
 
 
-def _map_status(raw: str) -> BeatmapRankStatus:
-    return map_external_status(raw)
+def _map_status(raw: str) -> str:
+    return raw.strip().lower()
 
 
 def _maybe_float(value: object) -> float | None:

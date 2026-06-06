@@ -21,11 +21,17 @@ from osu_server.domain.beatmap import (
     LocalBeatmapStatus,
     map_external_status,
 )
+from osu_server.infrastructure.beatmaps.contracts import (
+    BeatmapMetadataSourceName,
+    ProviderBeatmapMetadataProvider,
+    ProviderBeatmapsetSnapshot,
+    ProviderBeatmapSnapshot,
+)
 from osu_server.infrastructure.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
-from osu_server.services.beatmaps.metadata_providers import (
+from osu_server.infrastructure.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
 from tests.factories.beatmap import (
@@ -489,13 +495,17 @@ class TestBeatmapMetadataProviderProtocol:
         assert hasattr(BeatmapMetadataProvider, "lookup_by_beatmapset_id")
         assert hasattr(BeatmapMetadataProvider, "lookup_by_checksum")
 
-    def test_composite_satisfies_protocol(self) -> None:
-        """CompositeBeatmapMetadataProvider satisfies the Protocol."""
+    def test_fake_provider_satisfies_domain_protocol(self) -> None:
+        """Domain fake provider satisfies the domain Protocol."""
+        assert isinstance(FakeBeatmapMetadataProvider(), BeatmapMetadataProvider)
+
+    def test_composite_satisfies_provider_protocol(self) -> None:
+        """CompositeBeatmapMetadataProvider satisfies the infrastructure Protocol."""
         provider = CompositeBeatmapMetadataProvider(
             official=_make_null_provider(),
             mirror=_make_null_provider(),
         )
-        assert isinstance(provider, BeatmapMetadataProvider)
+        assert isinstance(provider, ProviderBeatmapMetadataProvider)
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +518,7 @@ class TestCompositeBeatmapMetadataProvider:
 
     async def test_official_success_does_not_try_mirror(self) -> None:
         """When official returns a snapshot, mirror is not called."""
-        official = _CountingProvider("official", _make_test_snapshot(beatmapset_id=1000))
+        official = _CountingProvider("official", _make_provider_test_snapshot(beatmapset_id=1000))
         mirror = _CountingProvider("mirror", None)
 
         composite = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
@@ -522,7 +532,7 @@ class TestCompositeBeatmapMetadataProvider:
     async def test_official_none_falls_back_to_mirror(self) -> None:
         """When official returns None, mirror is tried."""
         official = _CountingProvider("official", None)
-        mirror = _CountingProvider("mirror", _make_test_snapshot(beatmapset_id=8888))
+        mirror = _CountingProvider("mirror", _make_provider_test_snapshot(beatmapset_id=8888))
 
         composite = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
         result = await composite.lookup_by_beatmap_id(9999)
@@ -555,7 +565,7 @@ class TestCompositeBeatmapMetadataProvider:
                 message="timeout",
             ),
         )
-        mirror = _CountingProvider("mirror", _make_test_snapshot(beatmapset_id=7777))
+        mirror = _CountingProvider("mirror", _make_provider_test_snapshot(beatmapset_id=7777))
 
         composite = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
         result = await composite.lookup_by_beatmap_id(2000)
@@ -591,7 +601,7 @@ class TestCompositeBeatmapMetadataProvider:
 
     async def test_lookup_by_beatmap_id_delegates(self) -> None:
         """lookup_by_beatmap_id delegates to the correct method on sub-providers."""
-        official = _CountingProvider("official", _make_test_snapshot(beatmapset_id=1000))
+        official = _CountingProvider("official", _make_provider_test_snapshot(beatmapset_id=1000))
         mirror = _CountingProvider("mirror", None)
 
         composite = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
@@ -602,7 +612,7 @@ class TestCompositeBeatmapMetadataProvider:
     async def test_lookup_by_beatmapset_id_delegates(self) -> None:
         """lookup_by_beatmapset_id delegates to the correct method."""
         official = _CountingProvider("official", None)
-        mirror = _CountingProvider("mirror", _make_test_snapshot(beatmapset_id=1000))
+        mirror = _CountingProvider("mirror", _make_provider_test_snapshot(beatmapset_id=1000))
 
         composite = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
         _ = await composite.lookup_by_beatmapset_id(1000)
@@ -777,35 +787,30 @@ class TestFakeBeatmapMetadataProviderProtocol:
 # ---------------------------------------------------------------------------
 
 
-def _make_test_snapshot(
-    beatmapset_id: int = 1000,
-    *,
-    source: BeatmapMetadataSource = BeatmapMetadataSource.OFFICIAL,
-    verified: BeatmapSourceVerification = BeatmapSourceVerification.VERIFIED,
-) -> BeatmapsetSnapshot:
-    """Create a minimal BeatmapsetSnapshot for testing."""
+def _make_provider_test_snapshot(beatmapset_id: int = 1000) -> ProviderBeatmapsetSnapshot:
+    """Create a minimal provider-side snapshot for infrastructure provider tests."""
     now = datetime.now(UTC)
-    child = BeatmapSnapshot(
+    child = ProviderBeatmapSnapshot(
         beatmap_id=beatmapset_id * 2,
         beatmapset_id=beatmapset_id,
         checksum_md5="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
         mode="osu",
         version="Normal",
-        official_status=BeatmapRankStatus.RANKED,
-        official_status_source=source,
-        official_status_verified=verified,
+        official_status="ranked",
+        official_status_source=BeatmapMetadataSourceName.OFFICIAL,
+        official_status_verified=True,
         last_fetched_at=now,
     )
-    return BeatmapsetSnapshot(
+    return ProviderBeatmapsetSnapshot(
         beatmapset_id=beatmapset_id,
         artist="Test Artist",
         title="Test Title",
         creator="Test Creator",
-        source=source,
-        verified=verified,
-        official_status=BeatmapRankStatus.RANKED,
-        official_status_source=source,
-        official_status_verified=verified,
+        source=BeatmapMetadataSourceName.OFFICIAL,
+        verified=True,
+        official_status="ranked",
+        official_status_source=BeatmapMetadataSourceName.OFFICIAL,
+        official_status_verified=True,
         beatmaps=(child,),
         last_fetched_at=now,
         next_refresh_at=now + timedelta(days=30),
@@ -816,13 +821,13 @@ class _CountingProvider:
     """Provider that returns a fixed snapshot and records call counts."""
 
     name: str
-    response: BeatmapsetSnapshot | None
+    response: ProviderBeatmapsetSnapshot | None
     lookup_by_beatmap_id_calls: int
     lookup_by_beatmapset_id_calls: int
     lookup_by_checksum_calls: int
     last_called_method: str | None
 
-    def __init__(self, name: str, response: BeatmapsetSnapshot | None) -> None:
+    def __init__(self, name: str, response: ProviderBeatmapsetSnapshot | None) -> None:
         self.name = name
         self.response = response
         self.lookup_by_beatmap_id_calls = 0
@@ -833,7 +838,7 @@ class _CountingProvider:
     async def lookup_by_beatmap_id(
         self,
         beatmap_id: int,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> BeatmapsetSnapshot | None:
+    ) -> ProviderBeatmapsetSnapshot | None:
         self.lookup_by_beatmap_id_calls += 1
         self.last_called_method = "lookup_by_beatmap_id"
         return self.response
@@ -841,7 +846,7 @@ class _CountingProvider:
     async def lookup_by_beatmapset_id(
         self,
         beatmapset_id: int,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> BeatmapsetSnapshot | None:
+    ) -> ProviderBeatmapsetSnapshot | None:
         self.lookup_by_beatmapset_id_calls += 1
         self.last_called_method = "lookup_by_beatmapset_id"
         return self.response
@@ -849,7 +854,7 @@ class _CountingProvider:
     async def lookup_by_checksum(
         self,
         checksum_md5: str,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> BeatmapsetSnapshot | None:
+    ) -> ProviderBeatmapsetSnapshot | None:
         self.lookup_by_checksum_calls += 1
         self.last_called_method = "lookup_by_checksum"
         return self.response
@@ -868,19 +873,19 @@ class _RaisingProvider:
     async def lookup_by_beatmap_id(
         self,
         beatmap_id: int,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> BeatmapsetSnapshot | None:
+    ) -> ProviderBeatmapsetSnapshot | None:
         raise self.exception
 
     async def lookup_by_beatmapset_id(
         self,
         beatmapset_id: int,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> BeatmapsetSnapshot | None:
+    ) -> ProviderBeatmapsetSnapshot | None:
         raise self.exception
 
     async def lookup_by_checksum(
         self,
         checksum_md5: str,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> BeatmapsetSnapshot | None:
+    ) -> ProviderBeatmapsetSnapshot | None:
         raise self.exception
 
 
