@@ -114,6 +114,31 @@ class SQLAlchemyBeatmapRepository:
             )
             return _beatmap_to_domain(model, attachment)
 
+    async def get_beatmap_by_filename_in_beatmapset(
+        self, beatmapset_id: int, original_filename: str
+    ) -> Beatmap | None:
+        async with self._session_factory() as raw_session:
+            session = cast("_BeatmapPersistenceSession", raw_session)
+            stmt = (
+                select(BeatmapModel)
+                .join(
+                    BeatmapFileAttachmentModel,
+                    BeatmapFileAttachmentModel.beatmap_id == BeatmapModel.id,
+                )
+                .where(
+                    BeatmapModel.beatmapset_id == beatmapset_id,
+                    BeatmapFileAttachmentModel.original_filename == original_filename,
+                )
+                .limit(1)
+            )
+            model = (await session.execute(stmt)).scalar_one_or_none()
+            if not isinstance(model, BeatmapModel):
+                return None
+            attachment = await self._get_current_file_attachment_model(
+                session, beatmap_id=model.id
+            )
+            return _beatmap_to_domain(model, attachment)
+
     async def save_beatmapset_snapshot(self, snapshot: BeatmapSet) -> None:
         async with self._session_factory() as raw_session:
             session = cast("_BeatmapPersistenceSession", raw_session)

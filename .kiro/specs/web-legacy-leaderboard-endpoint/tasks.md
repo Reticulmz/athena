@@ -7,7 +7,7 @@
   - The completed state is visible when fixture tests can distinguish official response bodies from transport framing and cover every observed status fixture.
   - _Requirements: 1.3, 7.1, 8.1, 8.2, 9.1, 9.2, 9.4, 9.6, 9.7, 10.4, 11.8, 13.1, 13.2, 13.3, 13.4, 13.5_
 
-- [ ] 1.2 Add exact filename-within-beatmapset lookup support
+- [x] 1.2 Add exact filename-within-beatmapset lookup support
   - Add the repository read capability needed to find an exact original `.osu` filename within a specific beatmapset.
   - Preserve checksum as the authoritative identity and keep beatmapset id from selecting a difficulty by itself.
   - Add persistence support only if existing metadata cannot satisfy the exact set-scoped filename lookup.

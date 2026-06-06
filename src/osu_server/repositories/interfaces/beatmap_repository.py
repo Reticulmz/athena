@@ -81,6 +81,10 @@ class BeatmapRepository(Protocol):
 
     async def get_beatmap_by_checksum(self, checksum_md5: str) -> Beatmap | None: ...
 
+    async def get_beatmap_by_filename_in_beatmapset(
+        self, beatmapset_id: int, original_filename: str
+    ) -> Beatmap | None: ...
+
     async def save_beatmapset_snapshot(self, snapshot: BeatmapSet) -> None: ...
 
     async def set_local_status_override(

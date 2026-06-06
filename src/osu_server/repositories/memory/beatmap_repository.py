@@ -43,6 +43,18 @@ class InMemoryBeatmapRepository:
             return None
         return self._beatmaps.get(beatmap_id)
 
+    async def get_beatmap_by_filename_in_beatmapset(
+        self, beatmapset_id: int, original_filename: str
+    ) -> Beatmap | None:
+        beatmapset = self._beatmapsets.get(beatmapset_id)
+        if beatmapset is None:
+            return None
+        for beatmap in beatmapset.beatmaps:
+            attachment = beatmap.file_attachment
+            if attachment is not None and attachment.original_filename == original_filename:
+                return beatmap
+        return None
+
     async def save_beatmapset_snapshot(self, snapshot: BeatmapSet) -> None:
         self._check_checksum_conflicts(snapshot)
 

@@ -262,3 +262,89 @@ async def test_failed_fetch_state_is_observable() -> None:
     assert state.status is BeatmapFetchState.FAILED
     assert state.last_error == "timeout"
     assert state.last_attempted_at == _NOW + timedelta(seconds=5)
+
+
+# ---------------------------------------------------------------------------
+# Filename-within-beatmapset lookup (task 1.2)
+# ---------------------------------------------------------------------------
+
+
+async def test_resolves_beatmap_by_exact_filename_in_beatmapset() -> None:
+    """Exact original_filename within a beatmapset returns the matching beatmap."""
+    repo = InMemoryBeatmapRepository()
+    attachment = replace(_make_attachment(beatmap_id=2_000), original_filename="my_map.osu")
+    beatmap = _make_beatmap(file_attachment=attachment)
+    await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
+
+    result = await repo.get_beatmap_by_filename_in_beatmapset(1_000, "my_map.osu")
+
+    assert result is not None
+    assert result.id == 2_000
+
+
+async def test_filename_lookup_returns_none_when_no_match_in_set() -> None:
+    """Returns None when no beatmap in the set has the matching filename."""
+    repo = InMemoryBeatmapRepository()
+    attachment = replace(_make_attachment(beatmap_id=2_000), original_filename="real.osu")
+    beatmap = _make_beatmap(file_attachment=attachment)
+    await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
+
+    result = await repo.get_beatmap_by_filename_in_beatmapset(1_000, "other.osu")
+
+    assert result is None
+
+
+async def test_filename_lookup_returns_none_when_set_does_not_exist() -> None:
+    """Returns None when the requested beatmapset does not exist."""
+    repo = InMemoryBeatmapRepository()
+
+    result = await repo.get_beatmap_by_filename_in_beatmapset(999, "anything.osu")
+
+    assert result is None
+
+
+async def test_filename_lookup_returns_none_for_partial_filename_match() -> None:
+    """Exact match only; partial filename fragments must not resolve (requirement 4.6)."""
+    repo = InMemoryBeatmapRepository()
+    attachment = replace(_make_attachment(beatmap_id=2_000), original_filename="my_map.osu")
+    beatmap = _make_beatmap(file_attachment=attachment)
+    await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
+
+    assert await repo.get_beatmap_by_filename_in_beatmapset(1_000, "my_map") is None
+    assert await repo.get_beatmap_by_filename_in_beatmapset(1_000, ".osu") is None
+    assert await repo.get_beatmap_by_filename_in_beatmapset(1_000, "map.osu") is None
+
+
+async def test_filename_lookup_scoped_to_beatmapset() -> None:
+    """Filename is resolved only within its matching beatmapset (requirement 4.3, 4.4)."""
+    repo = InMemoryBeatmapRepository()
+
+    # Beatmapset 1000: beatmap 2000 with "shared.osu"
+    attachment_a = replace(_make_attachment(beatmap_id=2_000), original_filename="shared.osu")
+    beatmap_a = _make_beatmap(beatmap_id=2_000, beatmapset_id=1_000, file_attachment=attachment_a)
+    await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap_a))
+
+    # Beatmapset 2000: beatmap 3000 with "other.osu" (no "shared.osu" here)
+    attachment_b = replace(_make_attachment(beatmap_id=3_000), original_filename="other.osu")
+    beatmap_b = _make_beatmap(
+        beatmap_id=3_000,
+        beatmapset_id=2_000,
+        checksum_md5=_OTHER_CHECKSUM,
+        file_attachment=attachment_b,
+    )
+    await repo.save_beatmapset_snapshot(replace(_make_beatmapset(beatmap_b), id=2_000))
+
+    # "shared.osu" exists in set 1000 but NOT in set 2000
+    assert await repo.get_beatmap_by_filename_in_beatmapset(1_000, "shared.osu") is not None
+    assert await repo.get_beatmap_by_filename_in_beatmapset(2_000, "shared.osu") is None
+
+
+async def test_filename_lookup_beatmap_without_attachment_returns_none() -> None:
+    """Beatmap without a file attachment cannot be resolved by filename."""
+    repo = InMemoryBeatmapRepository()
+    beatmap = _make_beatmap()  # no file_attachment
+    await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
+
+    result = await repo.get_beatmap_by_filename_in_beatmapset(1_000, "2000.osu")
+
+    assert result is None
