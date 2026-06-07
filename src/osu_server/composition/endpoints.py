@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from starlette.responses import Response
 
     from osu_server.transports.bancho.endpoint import BanchoEndpoint
+    from osu_server.transports.web_legacy.getscores import GetscoresHandler
     from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 
@@ -21,4 +22,10 @@ async def bancho_endpoint(request: Request) -> Response:
 async def registration_endpoint(request: Request) -> Response:
     """Delegate to RegistrationHandler resolved from DI."""
     handler: RegistrationHandler = request.app.state.registration_handler  # pyright: ignore[reportAny]
+    return await handler(request)
+
+
+async def getscores_endpoint(request: Request) -> Response:
+    """Delegate to GetscoresHandler resolved from DI."""
+    handler: GetscoresHandler = request.app.state.getscores_handler  # pyright: ignore[reportAny]
     return await handler(request)

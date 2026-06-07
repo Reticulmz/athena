@@ -65,6 +65,7 @@ from osu_server.services.beatmap_mirror_service import BeatmapMirrorService
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
+from osu_server.services.legacy_web_auth_service import LegacyWebAuthService
 from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
@@ -80,6 +81,11 @@ from osu_server.transports.bancho.listeners import setup_listeners
 from osu_server.transports.bancho.workflows.login import LoginWorkflow
 from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
 from osu_server.transports.bancho.workflows.polling import PollingWorkflow
+from osu_server.transports.web_legacy.getscores import GetscoresHandler
+from osu_server.transports.web_legacy.getscores_formatter import GetscoresFormatter
+from osu_server.transports.web_legacy.getscores_query_parser import GetscoresQueryParser
+from osu_server.transports.web_legacy.getscores_resolver import GetscoresResolver
+from osu_server.transports.web_legacy.getscores_status_mapper import GetscoresStatusMapper
 from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 if TYPE_CHECKING:
@@ -391,3 +397,37 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     # -- RegistrationHandler (singleton) --------------------------------------
     registration_handler = RegistrationHandler(auth_service=auth_service)
     container.register_singleton(RegistrationHandler, lambda: registration_handler)
+
+    # -- LegacyWebAuthService (singleton) -------------------------------------
+    legacy_web_auth_service = LegacyWebAuthService(
+        user_repo=user_repo,
+        password_service=password_service,
+        session_store=session_store,
+    )
+    container.register_singleton(LegacyWebAuthService, lambda: legacy_web_auth_service)
+
+    # -- Getscores components (singletons) ------------------------------------
+    getscores_parser = GetscoresQueryParser()
+    container.register_singleton(GetscoresQueryParser, lambda: getscores_parser)
+
+    getscores_status_mapper = GetscoresStatusMapper()
+    container.register_singleton(GetscoresStatusMapper, lambda: getscores_status_mapper)
+
+    getscores_formatter = GetscoresFormatter()
+    container.register_singleton(GetscoresFormatter, lambda: getscores_formatter)
+
+    getscores_resolver = GetscoresResolver(
+        repository=beatmap_repo,
+        status_mapper=getscores_status_mapper,
+        _mirror_resolve=mirror_service.resolve_by_checksum,
+    )
+    container.register_singleton(GetscoresResolver, lambda: getscores_resolver)
+
+    getscores_handler = GetscoresHandler(
+        auth_service=legacy_web_auth_service,
+        parser=getscores_parser,
+        resolver=getscores_resolver,
+        formatter=getscores_formatter,
+        status_mapper=getscores_status_mapper,
+    )
+    container.register_singleton(GetscoresHandler, lambda: getscores_handler)

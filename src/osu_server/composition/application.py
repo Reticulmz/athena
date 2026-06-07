@@ -8,7 +8,11 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.routing import Host, Mount, Route, Router
 
-from osu_server.composition.endpoints import bancho_endpoint, registration_endpoint
+from osu_server.composition.endpoints import (
+    bancho_endpoint,
+    getscores_endpoint,
+    registration_endpoint,
+)
 from osu_server.composition.health import health_check_endpoint, health_endpoint
 from osu_server.composition.lifespan import lifespan
 from osu_server.composition.middleware import RequestLoggingMiddleware
@@ -48,6 +52,11 @@ def create_app() -> Starlette:
             Route(
                 "/web/bancho_connect.php",
                 endpoint=bancho_connect_endpoint,
+                methods=["GET"],
+            ),
+            Route(
+                "/web/osu-osz2-getscores.php",
+                endpoint=getscores_endpoint,
                 methods=["GET"],
             ),
         ],

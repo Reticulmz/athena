@@ -56,7 +56,7 @@
   - _Requirements: 4.3, 4.4, 4.5, 6.1, 6.2, 6.3, 6.4, 7.1, 7.4, 12.3_
 
 - [ ] 4. Endpoint integration and routing
-- [ ] 4.1 Wire the getscores endpoint into the web legacy app
+- [x] 4.1 Wire the getscores endpoint into the web legacy app
   - Register the getscores handler through the existing composition, lifespan, and service registration pattern.
   - Route `GET /web/osu-osz2-getscores.php` only on `osu.$DOMAIN` without adding a path-based fallback for other hosts.
   - Return `401` without beatmap data for auth failures and stable `200` bodies for unavailable, update-available, and known-header outcomes.
