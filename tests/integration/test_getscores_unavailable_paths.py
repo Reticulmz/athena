@@ -41,6 +41,7 @@ from osu_server.domain.beatmap import (
     BeatmapFileState,
     BeatmapMetadataSource,
     BeatmapRankStatus,
+    BeatmapResolveResult,
     BeatmapSet,
     BeatmapSourceVerification,
 )
@@ -50,9 +51,8 @@ from osu_server.repositories.interfaces.beatmap_repository import BeatmapReposit
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.beatmap_mirror_service import BeatmapResolveResult
+from osu_server.services.legacy_getscores_service import GetscoresResolver
 from osu_server.services.password_service import PasswordService
-from osu_server.transports.web_legacy.getscores_resolver import GetscoresResolver
 
 if TYPE_CHECKING:
     from collections.abc import Generator

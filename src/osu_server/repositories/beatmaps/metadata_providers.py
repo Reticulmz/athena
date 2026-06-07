@@ -12,10 +12,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 if TYPE_CHECKING:
-    from osu_server.infrastructure.beatmaps.contracts import (
-        ProviderBeatmapMetadataProvider,
-        ProviderBeatmapsetSnapshot,
-    )
+    from osu_server.domain.beatmap import BeatmapMetadataProvider, BeatmapsetSnapshot
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -23,19 +20,19 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 class CompositeBeatmapMetadataProvider:
     """Chains official and mirror providers with official-first priority."""
 
-    _official: ProviderBeatmapMetadataProvider
-    _mirror: ProviderBeatmapMetadataProvider
+    _official: BeatmapMetadataProvider
+    _mirror: BeatmapMetadataProvider
 
     def __init__(
         self,
         *,
-        official: ProviderBeatmapMetadataProvider,
-        mirror: ProviderBeatmapMetadataProvider,
+        official: BeatmapMetadataProvider,
+        mirror: BeatmapMetadataProvider,
     ) -> None:
         self._official = official
         self._mirror = mirror
 
-    async def lookup_by_beatmap_id(self, beatmap_id: int) -> ProviderBeatmapsetSnapshot | None:
+    async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
         key = str(beatmap_id)
         official_failed = False
         try:
@@ -71,9 +68,7 @@ class CompositeBeatmapMetadataProvider:
                 )
             return mirror_result
 
-    async def lookup_by_beatmapset_id(
-        self, beatmapset_id: int
-    ) -> ProviderBeatmapsetSnapshot | None:
+    async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
         key = str(beatmapset_id)
         official_failed = False
         try:
@@ -109,7 +104,7 @@ class CompositeBeatmapMetadataProvider:
                 )
             return mirror_result
 
-    async def lookup_by_checksum(self, checksum_md5: str) -> ProviderBeatmapsetSnapshot | None:
+    async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
         official_failed = False
         try:
             result = await self._official.lookup_by_checksum(checksum_md5)

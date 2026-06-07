@@ -24,23 +24,21 @@ from osu_server.domain.beatmap import (
     BeatmapFileState,
     BeatmapMetadataSource,
     BeatmapRankStatus,
+    BeatmapResolveResult,
     BeatmapSet,
     BeatmapSourceVerification,
+)
+from osu_server.domain.legacy_getscores import (
+    GetscoresOutcomeKind,
+    GetscoresRequest,
+    GetscoresResolveOutcome,
+    GetscoresResolveReason,
 )
 from osu_server.repositories.memory.beatmap_repository import (
     InMemoryBeatmapRepository,
 )
-from osu_server.services.beatmap_mirror_service import BeatmapResolveResult
-from osu_server.transports.web_legacy.getscores_query_parser import (
-    GetscoresRequest,
-)
-from osu_server.transports.web_legacy.getscores_resolver import (
-    GetscoresOutcomeKind,
-    GetscoresResolveOutcome,
+from osu_server.services.legacy_getscores_service import (
     GetscoresResolver,
-    GetscoresResolveReason,
-)
-from osu_server.transports.web_legacy.getscores_status_mapper import (
     GetscoresStatusMapper,
 )
 

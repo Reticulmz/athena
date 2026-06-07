@@ -16,25 +16,23 @@ import pytest
 
 from osu_server.domain.beatmap import (
     Beatmap,
+    BeatmapEligibility,
     BeatmapFetchState,
     BeatmapFileAttachment,
     BeatmapFileState,
     BeatmapMetadataSource,
     BeatmapRankStatus,
+    BeatmapResolveOptions,
+    BeatmapResolveResult,
     BeatmapSet,
+    BeatmapSetResolveResult,
     BeatmapSourceVerification,
     LocalBeatmapStatus,
 )
-from osu_server.services.beatmap_eligibility import (
-    BeatmapEligibility,
-    BeatmapEligibilityService,
-    BeatmapStatusResolver,
-)
 from osu_server.services.beatmap_mirror_service import (
+    BeatmapEligibilityService,
     BeatmapMirrorService,
-    BeatmapResolveOptions,
-    BeatmapResolveResult,
-    BeatmapSetResolveResult,
+    BeatmapStatusResolver,
 )
 
 # ---------------------------------------------------------------------------
@@ -48,15 +46,14 @@ _CHECKSUM = "0123456789abcdef0123456789abcdef"
 # All modules that belong to the beatmap-mirror feature boundary.
 _BEATMAP_MODULES: tuple[str, ...] = (
     "osu_server.domain.beatmap",
-    "osu_server.services.beatmap_eligibility",
-    "osu_server.services.beatmap_freshness",
     "osu_server.services.beatmap_mirror_service",
-    "osu_server.infrastructure.beatmaps.mappers",
-    "osu_server.infrastructure.beatmaps.metadata_providers",
-    "osu_server.infrastructure.beatmaps.providers",
-    "osu_server.infrastructure.beatmaps.contracts",
-    "osu_server.infrastructure.beatmaps.errors",
-    "osu_server.infrastructure.beatmaps.file_sources",
+    "osu_server.services.beatmap_mirror_service",
+    "osu_server.services.beatmap_mirror_service",
+    "osu_server.repositories.beatmaps.mappers",
+    "osu_server.repositories.beatmaps.metadata_providers",
+    "osu_server.repositories.beatmaps.providers",
+    "osu_server.repositories.beatmaps.errors",
+    "osu_server.repositories.beatmaps.file_sources",
     "osu_server.repositories.interfaces.beatmap_repository",
     "osu_server.repositories.memory.beatmap_repository",
     "osu_server.jobs.beatmap_fetch",

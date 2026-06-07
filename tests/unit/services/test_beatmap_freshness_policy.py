@@ -8,11 +8,11 @@ from osu_server.domain.beatmap import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFileState,
+    BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
     BeatmapRankStatus,
     BeatmapSourceVerification,
 )
-from osu_server.services.beatmap_freshness import BeatmapFreshnessPolicy
 
 _NOW = datetime(2026, 6, 4, 12, tzinfo=UTC)
 _LAST_FETCHED = _NOW - timedelta(hours=1)

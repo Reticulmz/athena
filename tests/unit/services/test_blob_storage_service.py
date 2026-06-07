@@ -7,14 +7,13 @@ from typing import TYPE_CHECKING, override
 import pytest
 from structlog.testing import capture_logs
 
+from osu_server.domain.blob import BlobDeduplicated, BlobStored
 from osu_server.infrastructure.storage.errors import BackendWriteError, BlobContentMissingError
 from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
 from osu_server.services.blob_storage_service import (
     BlobContentTypeError,
     BlobContentUnavailableError,
-    BlobDeduplicated,
     BlobStorageService,
-    BlobStored,
 )
 
 if TYPE_CHECKING:

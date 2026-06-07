@@ -5,14 +5,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TypedDict, cast
 
-from osu_server.infrastructure.beatmaps.contracts import (
-    BeatmapMetadataSourceName,
-    ProviderBeatmapsetSnapshot,
-    ProviderBeatmapSnapshot,
+from osu_server.domain.beatmap import (
+    BeatmapMetadataSource,
+    BeatmapsetSnapshot,
+    BeatmapSnapshot,
+    BeatmapSourceVerification,
+    map_external_status,
 )
 
-_SOURCE = BeatmapMetadataSourceName.OFFICIAL
-_VERIFIED = True
+_SOURCE = BeatmapMetadataSource.OFFICIAL
+_VERIFIED = BeatmapSourceVerification.VERIFIED
 
 
 class _BeatmapJSON(TypedDict, total=False):
@@ -51,7 +53,7 @@ class _BeatmapsetJSON(TypedDict, total=False):
 
 def beatmap_json_to_snapshot(
     data: dict[str, object], *, now: datetime | None = None
-) -> ProviderBeatmapsetSnapshot:
+) -> BeatmapsetSnapshot:
     """Convert osu! API v2 beatmap or beatmapset JSON to a snapshot."""
     _now = now or datetime.now(UTC)
     if "beatmaps" in data:
@@ -59,7 +61,7 @@ def beatmap_json_to_snapshot(
     return _from_beatmap_json(cast("_BeatmapJSON", cast("object", data)), now=_now)
 
 
-def _from_beatmap_json(data: _BeatmapJSON, *, now: datetime) -> ProviderBeatmapsetSnapshot:
+def _from_beatmap_json(data: _BeatmapJSON, *, now: datetime) -> BeatmapsetSnapshot:
     beatmapset_data = data.get("beatmapset") or {}
     return _from_beatmapset_json(
         {
@@ -76,19 +78,19 @@ def _from_beatmap_json(data: _BeatmapJSON, *, now: datetime) -> ProviderBeatmaps
     )
 
 
-def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> ProviderBeatmapsetSnapshot:
+def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> BeatmapsetSnapshot:
     beatmapset_id = data.get("id", 0)
-    beatmapset_status = _map_status(data.get("status", ""))
+    beatmapset_status = data.get("status", "")
 
     beatmaps_raw: list[_BeatmapJSON] = data.get("beatmaps") or []
     child_snapshots = tuple(
-        ProviderBeatmapSnapshot(
+        BeatmapSnapshot(
             beatmap_id=bm.get("id", 0),
             beatmapset_id=bm.get("beatmapset_id", beatmapset_id),
             checksum_md5=bm.get("checksum", "0" * 32),
             mode=bm.get("mode", ""),
             version=bm.get("version", ""),
-            official_status=_map_status(bm.get("status", "")),
+            official_status=map_external_status(bm.get("status", "")),
             official_status_source=_SOURCE,
             official_status_verified=_VERIFIED,
             total_length=bm.get("total_length"),
@@ -107,14 +109,14 @@ def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> ProviderBe
     )
 
     _ = now
-    return ProviderBeatmapsetSnapshot(
+    return BeatmapsetSnapshot(
         beatmapset_id=beatmapset_id,
         artist=data.get("artist", ""),
         title=data.get("title", ""),
         creator=data.get("creator", ""),
         source=_SOURCE,
         verified=_VERIFIED,
-        official_status=beatmapset_status,
+        official_status=map_external_status(beatmapset_status),
         official_status_source=_SOURCE,
         official_status_verified=_VERIFIED,
         beatmaps=child_snapshots,
@@ -123,10 +125,6 @@ def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> ProviderBe
         last_fetched_at=now,
         next_refresh_at=now,
     )
-
-
-def _map_status(raw: str) -> str:
-    return raw.strip().lower()
 
 
 def _maybe_float(value: object) -> float | None:

@@ -21,6 +21,7 @@ from structlog.testing import capture_logs
 from osu_server.domain.beatmap import (
     Beatmap,
     BeatmapFetchState,
+    BeatmapFileSource,
     BeatmapFileState,
     BeatmapMetadataSource,
     BeatmapRankStatus,
@@ -28,21 +29,17 @@ from osu_server.domain.beatmap import (
     BeatmapsetSnapshot,
     BeatmapSnapshot,
     BeatmapSourceVerification,
-)
-from osu_server.domain.blob import Blob
-from osu_server.infrastructure.beatmaps.contracts import (
-    BeatmapFileSource,
     OsuFileFetchResult,
 )
+from osu_server.domain.blob import Blob, BlobStored
 from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
+from osu_server.repositories.beatmaps.metadata_providers import (
+    CompositeBeatmapMetadataProvider,
+)
 from osu_server.repositories.interfaces.beatmap_repository import (
     BeatmapFetchTarget,
 )
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.beatmap_metadata_adapter import (
-    DomainCompositeBeatmapMetadataProvider as CompositeBeatmapMetadataProvider,
-)
-from osu_server.services.blob_storage_service import BlobStored
 
 _NOW = datetime(2026, 6, 5, tzinfo=UTC)
 _THIRTY_DAYS = timedelta(days=30)

@@ -21,17 +21,11 @@ from osu_server.domain.beatmap import (
     LocalBeatmapStatus,
     map_external_status,
 )
-from osu_server.infrastructure.beatmaps.contracts import (
-    BeatmapMetadataSourceName,
-    ProviderBeatmapMetadataProvider,
-    ProviderBeatmapsetSnapshot,
-    ProviderBeatmapSnapshot,
-)
-from osu_server.infrastructure.beatmaps.errors import (
+from osu_server.repositories.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
-from osu_server.infrastructure.beatmaps.metadata_providers import (
+from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
 from tests.factories.beatmap import (
@@ -505,7 +499,7 @@ class TestBeatmapMetadataProviderProtocol:
             official=_make_null_provider(),
             mirror=_make_null_provider(),
         )
-        assert isinstance(provider, ProviderBeatmapMetadataProvider)
+        assert isinstance(provider, BeatmapMetadataProvider)
 
 
 # ---------------------------------------------------------------------------
@@ -787,30 +781,30 @@ class TestFakeBeatmapMetadataProviderProtocol:
 # ---------------------------------------------------------------------------
 
 
-def _make_provider_test_snapshot(beatmapset_id: int = 1000) -> ProviderBeatmapsetSnapshot:
+def _make_provider_test_snapshot(beatmapset_id: int = 1000) -> BeatmapsetSnapshot:
     """Create a minimal provider-side snapshot for infrastructure provider tests."""
     now = datetime.now(UTC)
-    child = ProviderBeatmapSnapshot(
+    child = BeatmapSnapshot(
         beatmap_id=beatmapset_id * 2,
         beatmapset_id=beatmapset_id,
         checksum_md5="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
         mode="osu",
         version="Normal",
-        official_status="ranked",
-        official_status_source=BeatmapMetadataSourceName.OFFICIAL,
-        official_status_verified=True,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
         last_fetched_at=now,
     )
-    return ProviderBeatmapsetSnapshot(
+    return BeatmapsetSnapshot(
         beatmapset_id=beatmapset_id,
         artist="Test Artist",
         title="Test Title",
         creator="Test Creator",
-        source=BeatmapMetadataSourceName.OFFICIAL,
-        verified=True,
-        official_status="ranked",
-        official_status_source=BeatmapMetadataSourceName.OFFICIAL,
-        official_status_verified=True,
+        source=BeatmapMetadataSource.OFFICIAL,
+        verified=BeatmapSourceVerification.VERIFIED,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
         beatmaps=(child,),
         last_fetched_at=now,
         next_refresh_at=now + timedelta(days=30),
@@ -821,13 +815,13 @@ class _CountingProvider:
     """Provider that returns a fixed snapshot and records call counts."""
 
     name: str
-    response: ProviderBeatmapsetSnapshot | None
+    response: BeatmapsetSnapshot | None
     lookup_by_beatmap_id_calls: int
     lookup_by_beatmapset_id_calls: int
     lookup_by_checksum_calls: int
     last_called_method: str | None
 
-    def __init__(self, name: str, response: ProviderBeatmapsetSnapshot | None) -> None:
+    def __init__(self, name: str, response: BeatmapsetSnapshot | None) -> None:
         self.name = name
         self.response = response
         self.lookup_by_beatmap_id_calls = 0
@@ -838,7 +832,7 @@ class _CountingProvider:
     async def lookup_by_beatmap_id(
         self,
         beatmap_id: int,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> ProviderBeatmapsetSnapshot | None:
+    ) -> BeatmapsetSnapshot | None:
         self.lookup_by_beatmap_id_calls += 1
         self.last_called_method = "lookup_by_beatmap_id"
         return self.response
@@ -846,7 +840,7 @@ class _CountingProvider:
     async def lookup_by_beatmapset_id(
         self,
         beatmapset_id: int,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> ProviderBeatmapsetSnapshot | None:
+    ) -> BeatmapsetSnapshot | None:
         self.lookup_by_beatmapset_id_calls += 1
         self.last_called_method = "lookup_by_beatmapset_id"
         return self.response
@@ -854,7 +848,7 @@ class _CountingProvider:
     async def lookup_by_checksum(
         self,
         checksum_md5: str,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> ProviderBeatmapsetSnapshot | None:
+    ) -> BeatmapsetSnapshot | None:
         self.lookup_by_checksum_calls += 1
         self.last_called_method = "lookup_by_checksum"
         return self.response
@@ -873,19 +867,19 @@ class _RaisingProvider:
     async def lookup_by_beatmap_id(
         self,
         beatmap_id: int,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> ProviderBeatmapsetSnapshot | None:
+    ) -> BeatmapsetSnapshot | None:
         raise self.exception
 
     async def lookup_by_beatmapset_id(
         self,
         beatmapset_id: int,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> ProviderBeatmapsetSnapshot | None:
+    ) -> BeatmapsetSnapshot | None:
         raise self.exception
 
     async def lookup_by_checksum(
         self,
         checksum_md5: str,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
-    ) -> ProviderBeatmapsetSnapshot | None:
+    ) -> BeatmapsetSnapshot | None:
         raise self.exception
 
 

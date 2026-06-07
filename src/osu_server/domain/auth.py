@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import IntEnum
+from enum import Enum, IntEnum
 from typing import TYPE_CHECKING
 
 from osu_server.shared.errors import AppError
@@ -20,6 +20,11 @@ class LoginResult(IntEnum):
     SERVER_ERROR = -5
     SUPPORTER_ONLY = -6
     PASSWORD_RESET = -7
+
+
+class LegacyWebAuthFailure(Enum):
+    INVALID_CREDENTIALS = "invalid_credentials"
+    NO_SESSION = "no_session"
 
 
 @dataclass(slots=True)
@@ -46,6 +51,13 @@ class LoginResponse:
     role_ids: tuple[int, ...]
     country: str
     session_data: SessionData
+
+
+@dataclass(slots=True, frozen=True)
+class LegacyWebAuthResult:
+    user_id: int | None = None
+    username: str | None = None
+    failure: LegacyWebAuthFailure | None = None
 
 
 @dataclass(slots=True)

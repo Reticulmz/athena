@@ -10,22 +10,22 @@ from osu_server.domain.beatmap import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFileState,
+    BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
     BeatmapRankStatus,
+    BeatmapResolveOptions,
+    BeatmapResolveResult,
     BeatmapSet,
+    BeatmapSetResolveResult,
     BeatmapSourceVerification,
 )
 from osu_server.repositories.interfaces.beatmap_repository import (
     BeatmapFetchTarget,
 )
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.beatmap_eligibility import BeatmapEligibilityService
-from osu_server.services.beatmap_freshness import BeatmapFreshnessPolicy
 from osu_server.services.beatmap_mirror_service import (
+    BeatmapEligibilityService,
     BeatmapMirrorService,
-    BeatmapResolveOptions,
-    BeatmapResolveResult,
-    BeatmapSetResolveResult,
 )
 
 _NOW = datetime(2026, 6, 4, tzinfo=UTC)

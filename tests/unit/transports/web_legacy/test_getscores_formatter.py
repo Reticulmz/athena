@@ -18,7 +18,7 @@ from osu_server.domain.beatmap import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
-from osu_server.transports.web_legacy.getscores_formatter import (
+from osu_server.transports.web_legacy.getscores import (
     GetscoresFormatter,
 )
 

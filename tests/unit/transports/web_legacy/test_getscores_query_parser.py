@@ -12,12 +12,12 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-from osu_server.transports.web_legacy.getscores_query_parser import (
+from osu_server.domain.legacy_getscores import (
     GetscoresParseError,
     GetscoresParseResult,
     GetscoresParseWarning,
-    GetscoresQueryParser,
 )
+from osu_server.services.legacy_getscores_service import GetscoresQueryParser
 
 
 def _parse(query: dict[str, str]) -> GetscoresParseResult:

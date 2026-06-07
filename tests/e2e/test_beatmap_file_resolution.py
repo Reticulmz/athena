@@ -18,33 +18,31 @@ import pytest
 
 from osu_server.domain.beatmap import (
     BeatmapFetchState,
+    BeatmapFileSource,
     BeatmapFileState,
+    BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
     BeatmapRankStatus,
+    BeatmapResolveOptions,
     BeatmapsetSnapshot,
     BeatmapSnapshot,
     BeatmapSourceVerification,
-)
-from osu_server.domain.blob import Blob
-from osu_server.infrastructure.beatmaps.contracts import (
-    BeatmapFileSource,
     OsuFileFetchResult,
 )
+from osu_server.domain.blob import Blob
 from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
+from osu_server.repositories.beatmaps.metadata_providers import (
+    CompositeBeatmapMetadataProvider,
+)
 from osu_server.repositories.interfaces.beatmap_repository import BeatmapFetchTarget
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.beatmap_eligibility import BeatmapEligibilityService
-from osu_server.services.beatmap_freshness import BeatmapFreshnessPolicy
-from osu_server.services.beatmap_metadata_adapter import (
-    DomainCompositeBeatmapMetadataProvider as CompositeBeatmapMetadataProvider,
-)
 from osu_server.services.beatmap_mirror_service import (
+    BeatmapEligibilityService,
     BeatmapMirrorService,
-    BeatmapResolveOptions,
 )
 
 if TYPE_CHECKING:
-    from osu_server.services.blob_storage_service import BlobStored
+    from osu_server.domain.blob import BlobStored
 
 _NOW = datetime(2026, 6, 6, tzinfo=UTC)
 _ONE_HOUR = timedelta(hours=1)
@@ -177,7 +175,7 @@ class StubBlobStorageService:
     stored: list[Blob] = field(default_factory=list)
 
     async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
-        from osu_server.services.blob_storage_service import BlobStored  # noqa: PLC0415
+        from osu_server.domain.blob import BlobStored  # noqa: PLC0415
 
         blob = Blob(
             id=self.next_blob_id,

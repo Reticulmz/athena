@@ -27,15 +27,15 @@ if TYPE_CHECKING:
     from taskiq import TaskiqState
 
     from osu_server.domain.beatmap import (
+        BeatmapFileProvider,
         BeatmapMetadataProvider,
         BeatmapSet,
         BeatmapsetSnapshot,
     )
-    from osu_server.infrastructure.beatmaps.contracts import BeatmapFileProvider
+    from osu_server.domain.blob import BlobStoreResult
     from osu_server.repositories.interfaces.beatmap_repository import (
         BeatmapRepository,
     )
-    from osu_server.services.blob_storage_service import BlobStoreResult
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 

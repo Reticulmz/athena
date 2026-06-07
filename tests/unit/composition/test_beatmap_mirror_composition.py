@@ -17,17 +17,21 @@ from osu_server.composition.service_registry import (
     register_services,
 )
 from osu_server.config import AppConfig
-from osu_server.domain.beatmap import BeatmapMetadataProvider
-from osu_server.infrastructure.beatmaps.contracts import BeatmapFileProvider
-from osu_server.infrastructure.beatmaps.file_sources import CompositeBeatmapFileProvider
+from osu_server.domain.beatmap import (
+    BeatmapFileProvider,
+    BeatmapFreshnessPolicy,
+    BeatmapMetadataProvider,
+)
 from osu_server.infrastructure.di.container import Container
 from osu_server.infrastructure.di.providers import build_container
+from osu_server.repositories.beatmaps.file_sources import CompositeBeatmapFileProvider
 from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
-from osu_server.services.beatmap_eligibility import BeatmapEligibilityService
-from osu_server.services.beatmap_freshness import BeatmapFreshnessPolicy
-from osu_server.services.beatmap_mirror_service import BeatmapMirrorService
+from osu_server.services.beatmap_mirror_service import (
+    BeatmapEligibilityService,
+    BeatmapMirrorService,
+)
 
 
 def _make_config(*, environment: str = "test") -> AppConfig:

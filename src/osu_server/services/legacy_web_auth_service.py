@@ -6,12 +6,11 @@ and requires active bancho session presence before serving getscores metadata.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING
 
 import structlog
 
+from osu_server.domain.auth import LegacyWebAuthFailure, LegacyWebAuthResult
 from osu_server.domain.user import User
 
 if TYPE_CHECKING:
@@ -20,18 +19,6 @@ if TYPE_CHECKING:
     from osu_server.services.password_service import PasswordService
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
-
-
-class LegacyWebAuthFailure(Enum):
-    INVALID_CREDENTIALS = "invalid_credentials"
-    NO_SESSION = "no_session"
-
-
-@dataclass(slots=True, frozen=True)
-class LegacyWebAuthResult:
-    user_id: int | None = None
-    username: str | None = None
-    failure: LegacyWebAuthFailure | None = None
 
 
 class LegacyWebAuthService:

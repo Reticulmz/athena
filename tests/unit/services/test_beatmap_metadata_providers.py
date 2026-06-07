@@ -15,13 +15,16 @@ import pytest
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-from osu_server.domain.beatmap import BeatmapRankStatus
-from osu_server.infrastructure.beatmaps.contracts import BeatmapMetadataSourceName
-from osu_server.infrastructure.beatmaps.errors import (
+from osu_server.domain.beatmap import (
+    BeatmapMetadataSource,
+    BeatmapRankStatus,
+    BeatmapSourceVerification,
+)
+from osu_server.repositories.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
-from osu_server.infrastructure.beatmaps.providers import OsuApiMetadataProvider
+from osu_server.repositories.beatmaps.providers import OsuApiMetadataProvider
 
 # ---------------------------------------------------------------------------
 # Fixtures / constants
@@ -200,9 +203,9 @@ class TestLookupByBeatmapsetId:
         assert result.title == "Exit This Earth's Atomosphere"
         assert result.creator == "Realazy"
         assert result.artist_unicode == "かめるりあ"
-        assert result.source is BeatmapMetadataSourceName.OFFICIAL
-        assert result.verified is True
-        assert result.official_status == BeatmapRankStatus.RANKED.value
+        assert result.source is BeatmapMetadataSource.OFFICIAL
+        assert result.verified is BeatmapSourceVerification.VERIFIED
+        assert result.official_status is BeatmapRankStatus.RANKED
         assert len(result.beatmaps) == 1
 
         bm = result.beatmaps[0]
@@ -485,5 +488,5 @@ class TestStatusMapping:
         result = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert result is not None
-        assert result.official_status == expected.value
-        assert result.beatmaps[0].official_status == expected.value
+        assert result.official_status is expected
+        assert result.beatmaps[0].official_status is expected

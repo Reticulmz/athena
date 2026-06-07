@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+from osu_server.domain.blob import NewBlob
 
 if TYPE_CHECKING:
     from osu_server.domain.blob import Blob
-
-_SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 
 class DuplicateBlobError(ValueError):
@@ -20,29 +18,6 @@ class DuplicateBlobError(ValueError):
     def __init__(self, sha256: str) -> None:
         self.sha256 = sha256
         super().__init__(f"blob already exists for sha256 {sha256}")
-
-
-@dataclass(frozen=True, slots=True)
-class NewBlob:
-    """Blob metadata before repository-assigned identity and creation time exist."""
-
-    sha256: str
-    byte_size: int
-    content_type: str
-    storage_backend: str
-    storage_key: str
-
-    def __post_init__(self) -> None:
-        if not self.content_type:
-            raise ValueError("content_type must not be empty")
-        if self.byte_size < 0:
-            raise ValueError("byte_size must be non-negative")
-        if not _SHA256_PATTERN.match(self.sha256):
-            raise ValueError("sha256 must be a 64-character lowercase hexadecimal string")
-        if not self.storage_backend:
-            raise ValueError("storage_backend must not be empty")
-        if not self.storage_key:
-            raise ValueError("storage_key must not be empty")
 
 
 @runtime_checkable

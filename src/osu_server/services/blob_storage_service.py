@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import structlog
 
+from osu_server.domain.blob import BlobDeduplicated, BlobStored, BlobStoreResult
 from osu_server.infrastructure.storage.errors import BlobContentMissingError
 from osu_server.repositories.interfaces.blob_repository import DuplicateBlobError, NewBlob
 
 if TYPE_CHECKING:
-    from osu_server.domain.blob import Blob
     from osu_server.infrastructure.storage.interfaces import (
         BlobStorageBackend,
         ByteChunks,
@@ -33,23 +32,6 @@ class BlobContentUnavailableError(FileNotFoundError):
 
 class BlobStorageWriteError(RuntimeError):
     """Raised when blob storage cannot produce a successful blob result."""
-
-
-@dataclass(frozen=True, slots=True)
-class BlobStored:
-    """Result for newly persisted blob content."""
-
-    blob: Blob
-
-
-@dataclass(frozen=True, slots=True)
-class BlobDeduplicated:
-    """Result for content that matched an existing blob."""
-
-    blob: Blob
-
-
-type BlobStoreResult = BlobStored | BlobDeduplicated
 
 
 class BlobStorageService:

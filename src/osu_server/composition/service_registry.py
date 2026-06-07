@@ -9,18 +9,12 @@ from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from taskiq import AsyncBroker
 
-from osu_server.domain.beatmap import BeatmapMetadataProvider
+from osu_server.domain.beatmap import (
+    BeatmapFileProvider,
+    BeatmapFreshnessPolicy,
+    BeatmapMetadataProvider,
+)
 from osu_server.domain.system_user import BANCHO_BOT_USER_ID, create_bancho_bot_identity
-from osu_server.infrastructure.beatmaps.contracts import BeatmapFileProvider
-from osu_server.infrastructure.beatmaps.file_sources import CompositeBeatmapFileProvider
-from osu_server.infrastructure.beatmaps.metadata_providers import (
-    CompositeBeatmapMetadataProvider,
-)
-from osu_server.infrastructure.beatmaps.providers import (
-    InMemoryBeatmapMetadataProvider,
-    MirrorMetadataProvider,
-    OsuApiMetadataProvider,
-)
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
@@ -34,6 +28,15 @@ from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimite
 from osu_server.infrastructure.storage import create_blob_storage_backend
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.jobs import register_all_jobs
+from osu_server.repositories.beatmaps.file_sources import CompositeBeatmapFileProvider
+from osu_server.repositories.beatmaps.metadata_providers import (
+    CompositeBeatmapMetadataProvider,
+)
+from osu_server.repositories.beatmaps.providers import (
+    InMemoryBeatmapMetadataProvider,
+    MirrorMetadataProvider,
+    OsuApiMetadataProvider,
+)
 from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
 from osu_server.repositories.interfaces.blob_repository import BlobRepository
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
@@ -58,13 +61,14 @@ from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.beatmap_eligibility import BeatmapEligibilityService
-from osu_server.services.beatmap_freshness import BeatmapFreshnessPolicy
-from osu_server.services.beatmap_metadata_adapter import DomainBeatmapMetadataProviderAdapter
-from osu_server.services.beatmap_mirror_service import BeatmapMirrorService
+from osu_server.services.beatmap_mirror_service import (
+    BeatmapEligibilityService,
+    BeatmapMirrorService,
+)
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
+from osu_server.services.legacy_getscores_service import LegacyGetscoresService
 from osu_server.services.legacy_web_auth_service import LegacyWebAuthService
 from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
@@ -82,10 +86,6 @@ from osu_server.transports.bancho.workflows.login import LoginWorkflow
 from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
 from osu_server.transports.bancho.workflows.polling import PollingWorkflow
 from osu_server.transports.web_legacy.getscores import GetscoresHandler
-from osu_server.transports.web_legacy.getscores_formatter import GetscoresFormatter
-from osu_server.transports.web_legacy.getscores_query_parser import GetscoresQueryParser
-from osu_server.transports.web_legacy.getscores_resolver import GetscoresResolver
-from osu_server.transports.web_legacy.getscores_status_mapper import GetscoresStatusMapper
 from osu_server.transports.web_legacy.registration import RegistrationHandler
 
 if TYPE_CHECKING:
@@ -211,8 +211,7 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         official=official_metadata_provider,
         mirror=mirror_metadata_provider,
     )
-    metadata_provider = DomainBeatmapMetadataProviderAdapter(infrastructure_metadata_provider)
-    container.register_singleton(BeatmapMetadataProvider, lambda: metadata_provider)
+    container.register_singleton(BeatmapMetadataProvider, lambda: infrastructure_metadata_provider)
 
     # -- BeatmapFileProvider (singleton) -------------------------------------
     file_provider = CompositeBeatmapFileProvider(
@@ -406,28 +405,15 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     )
     container.register_singleton(LegacyWebAuthService, lambda: legacy_web_auth_service)
 
-    # -- Getscores components (singletons) ------------------------------------
-    getscores_parser = GetscoresQueryParser()
-    container.register_singleton(GetscoresQueryParser, lambda: getscores_parser)
-
-    getscores_status_mapper = GetscoresStatusMapper()
-    container.register_singleton(GetscoresStatusMapper, lambda: getscores_status_mapper)
-
-    getscores_formatter = GetscoresFormatter()
-    container.register_singleton(GetscoresFormatter, lambda: getscores_formatter)
-
-    getscores_resolver = GetscoresResolver(
+    # -- Getscores service / endpoint (singletons) ----------------------------
+    getscores_service = LegacyGetscoresService(
         repository=beatmap_repo,
-        status_mapper=getscores_status_mapper,
-        _mirror_resolve=mirror_service.resolve_by_checksum,
+        mirror_resolve=mirror_service.resolve_by_checksum,
     )
-    container.register_singleton(GetscoresResolver, lambda: getscores_resolver)
+    container.register_singleton(LegacyGetscoresService, lambda: getscores_service)
 
     getscores_handler = GetscoresHandler(
         auth_service=legacy_web_auth_service,
-        parser=getscores_parser,
-        resolver=getscores_resolver,
-        formatter=getscores_formatter,
-        status_mapper=getscores_status_mapper,
+        getscores_service=getscores_service,
     )
     container.register_singleton(GetscoresHandler, lambda: getscores_handler)

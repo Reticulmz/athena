@@ -17,7 +17,7 @@ from osu_server.domain.beatmap import (
     BeatmapSourceVerification,
     LocalBeatmapStatus,
 )
-from osu_server.transports.web_legacy.getscores_status_mapper import (
+from osu_server.services.legacy_getscores_service import (
     GetscoresStatusMapper,
 )
 

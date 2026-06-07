@@ -8,11 +8,11 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from osu_server.infrastructure.beatmaps.errors import (
+from osu_server.repositories.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
-from osu_server.infrastructure.beatmaps.providers import OsuApiMetadataProvider
+from osu_server.repositories.beatmaps.providers import OsuApiMetadataProvider
 
 # ---------------------------------------------------------------------------
 # Shared test data

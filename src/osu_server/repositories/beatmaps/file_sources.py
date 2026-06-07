@@ -14,11 +14,11 @@ from http import HTTPStatus
 import httpx
 import structlog
 
-from osu_server.infrastructure.beatmaps.contracts import (
+from osu_server.domain.beatmap import (
     BeatmapFileSource,
     OsuFileFetchResult,
 )
-from osu_server.infrastructure.beatmaps.errors import (
+from osu_server.repositories.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
