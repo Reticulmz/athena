@@ -22,7 +22,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 12.2_
 
 - [ ] 2. Core getscores transport behavior
-- [ ] 2.1 (P) Parse stable getscores query requests
+- [x] 2.1 (P) Parse stable getscores query requests
   - Parse all observed query fields into a typed single-beatmap request while separating identity fields from parse-only controls.
   - Treat malformed non-identity fields as warnings and insufficient identity data as an unavailable outcome.
   - Preserve `v`, `vv`, `s`, `m`, and `mods` for future score rows without allowing them to change MVP header output.
