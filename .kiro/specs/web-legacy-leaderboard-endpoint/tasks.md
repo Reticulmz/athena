@@ -30,7 +30,7 @@
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 12.1, 12.4_
   - _Boundary: GetscoresQueryParser_
 
-- [ ] 2.2 (P) Format stable getscores status and response bodies
+- [x] 2.2 (P) Format stable getscores status and response bodies
   - Map submitted and unavailable beatmap states to getscores wire values `-1`, `0`, `1`, `2`, `3`, `4`, and `5`.
   - Format unavailable, update-available, and known-header response bodies with `text/plain; charset=UTF-8` semantics.
   - Emit score count `0`, failed flag `false`, rating `0`, empty personal best, empty score rows, and sanitized artist/title values.
