@@ -4,6 +4,10 @@ Pipeline: authenticate (us/ha + active session) -> parse query -> resolve
 metadata -> format response body.  Returns 401 with empty body for auth
 failures, and stable 200 text/plain bodies for unavailable / update-available
 / known-header outcomes.  Never exposes provenance fields in the response.
+
+Operator-observable diagnostics are emitted via structlog at each branch
+without leaking ``ha`` (password md5), raw ``us`` values, or any internal
+provenance into stable response bodies.
 """
 
 from __future__ import annotations
@@ -11,6 +15,7 @@ from __future__ import annotations
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
+import structlog
 from starlette.responses import Response
 
 from osu_server.transports.web_legacy.getscores_resolver import GetscoresOutcomeKind
@@ -29,6 +34,8 @@ if TYPE_CHECKING:
     )
 
 _TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8"
+
+_logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 
 class GetscoresHandler:
@@ -69,19 +76,47 @@ class GetscoresHandler:
             password_md5=password_md5,
         )
         if auth_result.failure is not None:
+            _logger.info(
+                "getscores_auth_failed",
+                failure_reason=auth_result.failure.value,
+            )
             return Response(content=b"", status_code=HTTPStatus.UNAUTHORIZED)
 
         parse_result = self._parser.parse(request.query_params)
         if parse_result.error is not None or parse_result.request is None:
+            error_value = parse_result.error.value if parse_result.error is not None else None
+            _logger.info(
+                "getscores_identity_invalid",
+                parse_error=error_value,
+                user_id=auth_result.user_id,
+            )
             return Response(
                 content=self._formatter.format_unavailable(),
                 status_code=HTTPStatus.OK,
                 media_type=_TEXT_PLAIN_UTF8,
             )
 
-        outcome = await self._resolver.resolve(parse_result.request)
+        request_obj = parse_result.request
+        if request_obj.parse_warnings:
+            _logger.info(
+                "getscores_parse_warning",
+                warnings=[w.value for w in request_obj.parse_warnings],
+                user_id=auth_result.user_id,
+            )
+        if request_obj.anti_cheat_signal:
+            _logger.info(
+                "getscores_anti_cheat_signal",
+                user_id=auth_result.user_id,
+            )
+
+        outcome = await self._resolver.resolve(request_obj)
 
         if outcome.kind is GetscoresOutcomeKind.UNAVAILABLE:
+            _logger.info(
+                "getscores_unavailable",
+                resolve_reason=outcome.reason.value,
+                user_id=auth_result.user_id,
+            )
             return Response(
                 content=self._formatter.format_unavailable(),
                 status_code=HTTPStatus.OK,
@@ -89,6 +124,11 @@ class GetscoresHandler:
             )
 
         if outcome.kind is GetscoresOutcomeKind.UPDATE_AVAILABLE:
+            _logger.info(
+                "getscores_update_available",
+                resolve_reason=outcome.reason.value,
+                user_id=auth_result.user_id,
+            )
             return Response(
                 content=self._formatter.format_update_available(),
                 status_code=HTTPStatus.OK,
@@ -99,6 +139,11 @@ class GetscoresHandler:
         assert outcome.header is not None  # invariant for HEADER outcomes
         wire_status = self._status_mapper.map_header_status(outcome.header.beatmap)
         if wire_status is None:
+            _logger.info(
+                "getscores_unavailable",
+                resolve_reason=outcome.reason.value,
+                user_id=auth_result.user_id,
+            )
             return Response(
                 content=self._formatter.format_unavailable(),
                 status_code=HTTPStatus.OK,

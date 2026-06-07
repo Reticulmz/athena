@@ -64,7 +64,7 @@
   - _Depends: 1.3, 2.1, 2.2, 3.2_
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 7.5, 11.1, 11.6_
 
-- [ ] 4.2 Add operator-observable diagnostics for getscores
+- [x] 4.2 Add operator-observable diagnostics for getscores
   - Emit diagnostics for anti-cheat signal, parse warnings, invalid identity, lookup conflicts, unavailable outcomes, update-available outcomes, and auth failures.
   - Redact `ha`, `us` when needed, and raw credential values from all diagnostic events.
   - Ensure stable response bodies never include internal source, verification, policy, fetch-state, or override provenance fields.
