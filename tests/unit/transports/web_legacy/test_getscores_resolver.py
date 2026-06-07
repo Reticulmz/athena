@@ -488,6 +488,297 @@ async def test_known_checksum_not_submitted_returns_unavailable() -> None:
 
 
 # ---------------------------------------------------------------------------
+# UpdateAvailable resolution (requirements 6.1, 6.3, 4.3, 4.4)
+# ---------------------------------------------------------------------------
+
+
+async def test_checksum_miss_filename_set_different_checksum_returns_update_available() -> None:
+    """Checksum miss + filename+set finds submitted beatmap with different checksum -> UPDATE_AVAILABLE (req 6.1)."""  # noqa: E501
+    client_checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    stored_checksum = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+    repo = InMemoryBeatmapRepository()
+    beatmap = _make_beatmap(
+        beatmap_id=75,
+        beatmapset_id=1,
+        checksum_md5=stored_checksum,
+        official_status=BeatmapRankStatus.RANKED,
+    )
+    beatmapset = _make_beatmapset(beatmapset_id=1)
+
+    attachment = BeatmapFileAttachment(
+        beatmap_id=beatmap.id,
+        blob_id=1,
+        checksum_md5=stored_checksum,
+        source="osu_api",
+        original_filename="beatmap.osu",
+        fetched_at=_NOW,
+        verified_at=None,
+    )
+    beatmap_with_file = _beatmap_with_attachment(beatmap, attachment)
+    patched_set = _make_set_with_beatmaps(beatmapset, (beatmap_with_file,))
+    _seed_beatmap_in_repo(repo, beatmap_with_file, patched_set)
+
+    resolver = _make_resolver(repo)
+
+    outcome = await resolver.resolve(
+        GetscoresRequest(
+            checksum_md5=client_checksum,
+            filename="beatmap.osu",
+            beatmapset_id_hint=1,
+            mode=None,
+            mods=None,
+            leaderboard_type=None,
+            leaderboard_version=None,
+            song_select=None,
+            anti_cheat_signal=False,
+        ),
+        wait_timeout_seconds=0.5,
+    )
+
+    assert outcome.kind == GetscoresOutcomeKind.UPDATE_AVAILABLE
+    assert outcome.header is not None
+    assert outcome.header.beatmap.id == 75
+    assert outcome.reason == GetscoresResolveReason.UPDATE_AVAILABLE
+
+
+async def test_checksum_miss_filename_set_not_submitted_not_update_available() -> None:
+    """Checksum miss + filename+set finds NOT_SUBMITTED beatmap -> UNAVAILABLE, not UPDATE_AVAILABLE (req 6.3)."""  # noqa: E501
+    client_checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    stored_checksum = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+    repo = InMemoryBeatmapRepository()
+    beatmap = _make_beatmap(
+        beatmap_id=75,
+        beatmapset_id=1,
+        checksum_md5=stored_checksum,
+        official_status=BeatmapRankStatus.NOT_SUBMITTED,
+    )
+    beatmapset = _make_beatmapset(beatmapset_id=1)
+
+    attachment = BeatmapFileAttachment(
+        beatmap_id=beatmap.id,
+        blob_id=1,
+        checksum_md5=stored_checksum,
+        source="osu_api",
+        original_filename="beatmap.osu",
+        fetched_at=_NOW,
+        verified_at=None,
+    )
+    beatmap_with_file = _beatmap_with_attachment(beatmap, attachment)
+    patched_set = _make_set_with_beatmaps(beatmapset, (beatmap_with_file,))
+    _seed_beatmap_in_repo(repo, beatmap_with_file, patched_set)
+
+    resolver = _make_resolver(repo)
+
+    outcome = await resolver.resolve(
+        GetscoresRequest(
+            checksum_md5=client_checksum,
+            filename="beatmap.osu",
+            beatmapset_id_hint=1,
+            mode=None,
+            mods=None,
+            leaderboard_type=None,
+            leaderboard_version=None,
+            song_select=None,
+            anti_cheat_signal=False,
+        ),
+        wait_timeout_seconds=0.5,
+    )
+
+    assert outcome.kind == GetscoresOutcomeKind.UNAVAILABLE
+    assert outcome.reason == GetscoresResolveReason.NOT_SUBMITTED
+
+
+async def test_checksum_miss_filename_set_no_match_falls_to_mirror() -> None:
+    """Checksum miss + filename+set no match -> falls through to mirror (req 4.3)."""
+    repo = InMemoryBeatmapRepository()
+    mirror_checksum = "99999999999999999999999999999999"
+    beatmap = _make_beatmap(checksum_md5=mirror_checksum, official_status=BeatmapRankStatus.RANKED)
+    beatmapset = _make_beatmapset()
+
+    async def _mirror_resolve(_checksum_md5: str, _options: object = None) -> BeatmapResolveResult:
+        await asyncio.sleep(0.01)
+        _seed_beatmap_in_repo(repo, beatmap, beatmapset)
+        return _make_resolve_result(beatmap=beatmap, beatmapset=beatmapset)
+
+    resolver = _make_resolver(repo, mirror_resolve=_mirror_resolve)
+
+    outcome = await resolver.resolve(
+        GetscoresRequest(
+            checksum_md5="ffffffffffffffffffffffffffffffff",
+            filename="nonexistent.osu",
+            beatmapset_id_hint=999,
+            mode=None,
+            mods=None,
+            leaderboard_type=None,
+            leaderboard_version=None,
+            song_select=None,
+            anti_cheat_signal=False,
+        ),
+        wait_timeout_seconds=0.5,
+    )
+
+    assert outcome.kind == GetscoresOutcomeKind.HEADER
+    assert outcome.header is not None
+    assert outcome.header.beatmap.id == beatmap.id
+
+
+async def test_checksum_miss_filename_set_no_match_no_mirror_returns_unavailable() -> None:
+    """Checksum miss + filename+set no match + no mirror -> UNAVAILABLE (req 7.4)."""
+    repo = InMemoryBeatmapRepository()
+    resolver = GetscoresResolver(
+        repository=repo,
+        status_mapper=GetscoresStatusMapper(),
+    )
+
+    outcome = await resolver.resolve(
+        GetscoresRequest(
+            checksum_md5="unknown_checksum",
+            filename="nonexistent.osu",
+            beatmapset_id_hint=999,
+            mode=None,
+            mods=None,
+            leaderboard_type=None,
+            leaderboard_version=None,
+            song_select=None,
+            anti_cheat_signal=False,
+        ),
+        wait_timeout_seconds=0.5,
+    )
+
+    assert outcome.kind == GetscoresOutcomeKind.UNAVAILABLE
+
+
+async def test_set_id_only_without_checksum_or_filename_returns_unavailable() -> None:
+    """set id alone without checksum or filename -> UNAVAILABLE (req 4.4)."""
+    repo = InMemoryBeatmapRepository()
+    beatmap = _make_beatmap(beatmap_id=75, beatmapset_id=1)
+    beatmapset = _make_beatmapset(beatmapset_id=1)
+    _seed_beatmap_in_repo(repo, beatmap, beatmapset)
+
+    resolver = _make_resolver(repo)
+
+    outcome = await resolver.resolve(
+        GetscoresRequest(
+            checksum_md5=None,
+            filename=None,
+            beatmapset_id_hint=1,
+            mode=None,
+            mods=None,
+            leaderboard_type=None,
+            leaderboard_version=None,
+            song_select=None,
+            anti_cheat_signal=False,
+        ),
+        wait_timeout_seconds=0.5,
+    )
+
+    assert outcome.kind == GetscoresOutcomeKind.UNAVAILABLE
+
+
+async def test_checksum_miss_no_filename_no_mirror_returns_unavailable() -> None:
+    """Checksum miss with no filename+set hint and no mirror -> UNAVAILABLE."""
+    repo = InMemoryBeatmapRepository()
+    resolver = GetscoresResolver(
+        repository=repo,
+        status_mapper=GetscoresStatusMapper(),
+    )
+
+    outcome = await resolver.resolve(
+        GetscoresRequest(
+            checksum_md5="unknown_checksum",
+            filename=None,
+            beatmapset_id_hint=None,
+            mode=None,
+            mods=None,
+            leaderboard_type=None,
+            leaderboard_version=None,
+            song_select=None,
+            anti_cheat_signal=False,
+        ),
+        wait_timeout_seconds=0.5,
+    )
+
+    assert outcome.kind == GetscoresOutcomeKind.UNAVAILABLE
+    assert outcome.reason == GetscoresResolveReason.NOT_FOUND
+
+
+async def test_update_available_filename_collision_across_sets() -> None:
+    """Same filename in different sets — correct set match returns UPDATE_AVAILABLE (req 6.1)."""
+    client_checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+    repo = InMemoryBeatmapRepository()
+
+    # Beatmap in set 1 — same filename, different checksum
+    stored_checksum1 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    beatmap_set1 = _make_beatmap(
+        beatmap_id=101,
+        beatmapset_id=1,
+        checksum_md5=stored_checksum1,
+        official_status=BeatmapRankStatus.RANKED,
+    )
+    beatmapset_1 = _make_beatmapset(beatmapset_id=1)
+    attachment_1 = BeatmapFileAttachment(
+        beatmap_id=beatmap_set1.id,
+        blob_id=1,
+        checksum_md5=stored_checksum1,
+        source="osu_api",
+        original_filename="beatmap.osu",
+        fetched_at=_NOW,
+        verified_at=None,
+    )
+    beatmap_set1_with_file = _beatmap_with_attachment(beatmap_set1, attachment_1)
+    patched_set1 = _make_set_with_beatmaps(beatmapset_1, (beatmap_set1_with_file,))
+    _seed_beatmap_in_repo(repo, beatmap_set1_with_file, patched_set1)
+
+    # Beatmap in set 2 — same filename (collision), different data
+    stored_checksum2 = "cccccccccccccccccccccccccccccccc"
+    beatmap_set2 = _make_beatmap(
+        beatmap_id=102,
+        beatmapset_id=2,
+        checksum_md5=stored_checksum2,
+        official_status=BeatmapRankStatus.RANKED,
+    )
+    beatmapset_2 = _make_beatmapset(beatmapset_id=2)
+    attachment_2 = BeatmapFileAttachment(
+        beatmap_id=beatmap_set2.id,
+        blob_id=2,
+        checksum_md5=stored_checksum2,
+        source="osu_api",
+        original_filename="beatmap.osu",
+        fetched_at=_NOW,
+        verified_at=None,
+    )
+    beatmap_set2_with_file = _beatmap_with_attachment(beatmap_set2, attachment_2)
+    patched_set2 = _make_set_with_beatmaps(beatmapset_2, (beatmap_set2_with_file,))
+    _seed_beatmap_in_repo(repo, beatmap_set2_with_file, patched_set2)
+
+    resolver = _make_resolver(repo)
+
+    # Request set 1 with the same filename — should match set 1's beatmap
+    outcome = await resolver.resolve(
+        GetscoresRequest(
+            checksum_md5=client_checksum,
+            filename="beatmap.osu",
+            beatmapset_id_hint=1,
+            mode=None,
+            mods=None,
+            leaderboard_type=None,
+            leaderboard_version=None,
+            song_select=None,
+            anti_cheat_signal=False,
+        ),
+        wait_timeout_seconds=0.5,
+    )
+
+    assert outcome.kind == GetscoresOutcomeKind.UPDATE_AVAILABLE
+    assert outcome.header is not None
+    assert outcome.header.beatmap.id == 101  # Set 1 beatmap, not set 2
+    assert outcome.reason == GetscoresResolveReason.UPDATE_AVAILABLE
+
+
+# ---------------------------------------------------------------------------
 # Outcome reason enum coverage
 # ---------------------------------------------------------------------------
 
@@ -503,10 +794,12 @@ def test_resolve_reason_enum_covers_resolution_paths() -> None:
     """GetscoresResolveReason covers known paths."""
     reasons = list(GetscoresResolveReason)
     assert GetscoresResolveReason.KNOWN_CHECKSUM in reasons
+    assert GetscoresResolveReason.KNOWN_FILENAME_IN_SET in reasons
     assert GetscoresResolveReason.NOT_SUBMITTED in reasons
     assert GetscoresResolveReason.PENDING_FETCH in reasons
     assert GetscoresResolveReason.FAILED_METADATA in reasons
     assert GetscoresResolveReason.NOT_FOUND in reasons
+    assert GetscoresResolveReason.UPDATE_AVAILABLE in reasons
 
 
 # ---------------------------------------------------------------------------
@@ -588,6 +881,27 @@ def _make_resolver(
 
 async def _noop_mirror_resolve(_checksum_md5: str, _options: object = None) -> object:
     return _make_resolve_result()
+
+
+def _make_set_with_beatmaps(
+    beatmapset: BeatmapSet,
+    beatmaps: tuple[Beatmap, ...],
+) -> BeatmapSet:
+    """Return a copy of beatmapset with the given beatmaps tuple."""
+    return BeatmapSet(
+        id=beatmapset.id,
+        artist=beatmapset.artist,
+        title=beatmapset.title,
+        creator=beatmapset.creator,
+        artist_unicode=beatmapset.artist_unicode,
+        title_unicode=beatmapset.title_unicode,
+        official_status=beatmapset.official_status,
+        official_status_source=beatmapset.official_status_source,
+        official_status_verified=beatmapset.official_status_verified,
+        beatmaps=beatmaps,
+        last_fetched_at=beatmapset.last_fetched_at,
+        next_refresh_at=beatmapset.next_refresh_at,
+    )
 
 
 def _beatmap_with_attachment(beatmap: Beatmap, attachment: BeatmapFileAttachment) -> Beatmap:

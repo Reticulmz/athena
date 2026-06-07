@@ -47,7 +47,7 @@
   - _Depends: 1.2, 2.1, 2.2_
   - _Requirements: 4.1, 4.2, 4.5, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 7.2, 7.3, 8.3, 12.3_
 
-- [ ] 3.2 Resolve UpdateAvailable and set-scoped fallback outcomes
+- [x] 3.2 Resolve UpdateAvailable and set-scoped fallback outcomes
   - Detect update-available only when checksum misses and the same beatmapset plus exact filename identifies a submitted beatmap with a different checksum.
   - Avoid update-available from filename similarity or beatmapset id alone.
   - Make lookup conflicts and update-available outcomes observable to operators without changing stable response shape.

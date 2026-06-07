@@ -45,6 +45,7 @@ class GetscoresResolveReason(Enum):
     NOT_FOUND = "not_found"
     PENDING_FETCH = "pending_fetch"
     FAILED_METADATA = "failed_metadata"
+    UPDATE_AVAILABLE = "update_available"
 
 
 @dataclass(slots=True, frozen=True)
@@ -87,7 +88,7 @@ class GetscoresResolver:
         self._mapper = status_mapper
         self._mirror_resolve = _mirror_resolve
 
-    async def resolve(
+    async def resolve(  # noqa: PLR0911  # decision-tree method with early returns
         self,
         request: GetscoresRequest,
         *,
@@ -109,6 +110,15 @@ class GetscoresResolver:
             if beatmap is not None:
                 return await self._evaluate_known_beatmap(
                     beatmap, reason=GetscoresResolveReason.KNOWN_CHECKSUM
+                )
+
+            # Checksum miss — try UpdateAvailable via filename + set hint
+            if request.filename is not None and request.beatmapset_id_hint is not None:
+                return await self._resolve_update_available(
+                    request.checksum_md5,
+                    request.beatmapset_id_hint,
+                    request.filename,
+                    wait_timeout_seconds=wait_timeout_seconds,
                 )
 
             # Unknown checksum -> mirror service with bounded wait
@@ -155,6 +165,51 @@ class GetscoresResolver:
             kind=GetscoresOutcomeKind.HEADER,
             header=GetscoresResolvedHeader(beatmap=beatmap, beatmapset=beatmapset),
             reason=reason,
+        )
+
+    async def _resolve_update_available(
+        self,
+        checksum_md5: str,
+        beatmapset_id: int,
+        filename: str,
+        *,
+        wait_timeout_seconds: float = 5.0,
+    ) -> GetscoresResolveOutcome:
+        """Check for UpdateAvailable when checksum misses and filename+set hint exists.
+
+        If the filename+set lookup finds a submitted beatmap with a different
+        checksum, returns UPDATE_AVAILABLE.  Otherwise falls through to mirror
+        resolve or returns UNAVAILABLE.
+        """
+        beatmap = await self._repo.get_beatmap_by_filename_in_beatmapset(beatmapset_id, filename)
+        if beatmap is None:
+            # No match found — fall through to mirror or UNAVAILABLE
+            if self._mirror_resolve is not None:
+                return await self._resolve_via_mirror(checksum_md5, wait_timeout_seconds)
+            return self._unavailable(GetscoresResolveReason.NOT_FOUND)
+
+        # Found a beatmap by filename+set — check for different checksum
+        if beatmap.checksum_md5 == checksum_md5:
+            # Same checksum; shouldn't normally reach here (checksum lookup
+            # already tried), but evaluate defensively.
+            return await self._evaluate_known_beatmap(
+                beatmap, reason=GetscoresResolveReason.KNOWN_FILENAME_IN_SET
+            )
+
+        # Different checksum — check if the stored beatmap is submitted
+        beatmapset = await self._repo.get_beatmapset(beatmap.beatmapset_id)
+        if beatmapset is None:
+            return self._unavailable(GetscoresResolveReason.NOT_FOUND)
+
+        wire_status = self._mapper.map_header_status(beatmap)
+        if wire_status is None:
+            return self._unavailable(GetscoresResolveReason.NOT_SUBMITTED)
+
+        # Same set+filename, different checksum, submitted → UPDATE_AVAILABLE
+        return GetscoresResolveOutcome(
+            kind=GetscoresOutcomeKind.UPDATE_AVAILABLE,
+            header=GetscoresResolvedHeader(beatmap=beatmap, beatmapset=beatmapset),
+            reason=GetscoresResolveReason.UPDATE_AVAILABLE,
         )
 
     async def _resolve_via_mirror(
