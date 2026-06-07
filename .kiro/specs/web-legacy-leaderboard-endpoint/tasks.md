@@ -73,7 +73,7 @@
   - _Requirements: 2.4, 4.5, 12.1, 12.2, 12.3, 12.4, 12.5_
 
 - [ ] 5. Compatibility and behavior validation
-- [ ] 5.1 Validate known submitted status fixtures end to end
+- [x] 5.1 Validate known submitted status fixtures end to end
   - Exercise Ranked, Loved, Qualified, Pending, WIP, and Graveyard fixtures through the endpoint with known metadata.
   - Assert status mapping, beatmap id, beatmapset id, score count `0`, failed flag `false`, display title formatting, rating `0`, and no score/personal-best rows.
   - The completed state is visible when all submitted status fixture integration tests pass and official behavior takes precedence over bancho.py differences.
