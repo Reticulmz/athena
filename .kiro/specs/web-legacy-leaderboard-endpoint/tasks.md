@@ -39,7 +39,7 @@
   - _Boundary: GetscoresFormatter, GetscoresStatusMapper_
 
 - [ ] 3. Metadata resolution outcomes
-- [ ] 3.1 Resolve checksum-first header and unavailable outcomes
+- [x] 3.1 Resolve checksum-first header and unavailable outcomes
   - Resolve by checksum before any filename or beatmapset hint, and prefer checksum results when request hints disagree.
   - Request metadata-only resolution with bounded wait for unknown checksum targets.
   - Return header, unavailable, pending-after-wait, or failed-metadata outcomes without consulting score state or requiring `.osu` file availability.
