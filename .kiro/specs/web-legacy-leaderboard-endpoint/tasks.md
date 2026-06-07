@@ -88,7 +88,7 @@
   - _Requirements: 2.2, 2.3, 2.4, 3.8, 3.9, 5.2, 5.3, 5.5, 5.6, 5.7, 5.8, 6.1, 6.2, 7.1, 7.2, 7.3, 7.4, 10.4, 10.5, 10.6, 13.1, 13.2_
 
 - [ ] 6. Final quality verification
-- [ ] 6.1 Run focused and project quality checks for the endpoint
+- [x] 6.1 Run focused and project quality checks for the endpoint
   - Run relevant unit and integration tests for web legacy getscores, auth, repository lookup, and beatmap mirror interaction.
   - Run formatter, linter, type checker, and migration checks for the changed areas.
   - Fix failures by addressing root causes rather than suppressing type or lint errors.
