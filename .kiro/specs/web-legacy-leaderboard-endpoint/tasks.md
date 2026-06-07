@@ -14,7 +14,7 @@
   - The completed state is visible when known checksum lookup remains unchanged and a stored filename can be resolved only within its matching beatmapset.
   - _Requirements: 3.2, 3.3, 4.3, 4.4, 4.6, 6.1, 6.3_
 
-- [ ] 1.3 Add or reuse legacy web credential authentication
+- [x] 1.3 Add or reuse legacy web credential authentication
   - Provide stable web authentication that accepts endpoint-extracted username and password md5 values.
   - Require active bancho session presence before serving getscores metadata.
   - Ensure `h` is not treated as the password field for getscores and credential values are redacted from diagnostics.
