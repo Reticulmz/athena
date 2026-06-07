@@ -80,7 +80,7 @@
   - _Depends: 4.2_
   - _Requirements: 8.1, 8.2, 8.4, 8.5, 8.6, 8.7, 8.8, 9.2, 9.4, 9.6, 9.7, 11.2, 11.3, 11.4, 11.5, 13.2, 13.3, 13.5_
 
-- [ ] 5.2 Validate unavailable, update, auth, and parse-only paths end to end
+- [x] 5.2 Validate unavailable, update, auth, and parse-only paths end to end
   - Exercise NotSubmitted, unknown, pending-after-wait, failed metadata, missing identity, update-available, invalid credentials, and no-session cases.
   - Assert `m`, `mods`, `s`, `v`, and `vv` are preserved but do not vary MVP header output, including converted-mode fixture requests.
   - The completed state is visible when end-to-end tests pass for short responses, auth disclosure prevention, parse-only controls, and metadata-only resolution.
