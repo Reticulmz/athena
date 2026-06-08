@@ -51,7 +51,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.4_
   - _Boundary: Env Writer_
   - _Depends: 1.3, 1.4_
-- [ ] 2.4 (P) subprocess 実行 runner を実装する
+- [x] 2.4 (P) subprocess 実行 runner を実装する
   - Alembic と pytest を argv と environment map で実行し、stdout/stderr を operator に見える形で扱う。
   - selected environment と既存 process env を subprocess に渡す。
   - subprocess の exit code を CLI command が伝播できる結果として返す。
