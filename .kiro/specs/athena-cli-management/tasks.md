@@ -143,7 +143,7 @@
   - 完了時は removed path が silent DB admin を実行せず、canonical command のテストが代替保証になる。
   - _Requirements: 11.1, 11.2, 11.3_
   - _Depends: 3.6, 4.1_
-- [ ] 4.3 CLI と server runtime の dependency boundary を固定する
+- [x] 4.3 CLI と server runtime の dependency boundary を固定する
   - server runtime が CLI package に依存しない forbidden contract を追加する。
   - CLI は必要な application config と DB admin helper だけを呼ぶ境界に留める。
   - app / worker 起動経路が CLI import を必要としないことを import-linter で検証する。

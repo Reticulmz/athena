@@ -140,6 +140,12 @@ source_modules = ["osu_server.services"]
 forbidden_modules = ["osu_server.transports"]
 
 [[tool.importlinter.contracts]]
+name = "Server runtime doesn't depend on CLI"
+type = "forbidden"
+source_modules = ["osu_server"]
+forbidden_modules = ["athena_cli"]
+
+[[tool.importlinter.contracts]]
 name = "Jobs only depend on approved layers"
 type = "forbidden"
 source_modules = ["osu_server.jobs"]
