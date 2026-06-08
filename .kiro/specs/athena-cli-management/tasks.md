@@ -69,7 +69,7 @@
   - _Depends: 1.3, 1.4_
 
 - [ ] 3. CLI command の中核動作を実装する
-- [ ] 3.1 (P) env content generation を interactive / non-interactive で共有する
+- [x] 3.1 (P) env content generation を interactive / non-interactive で共有する
   - 選択 section と入力値から dotenv content を生成し、write 前に application config validation を通す。
   - non-interactive では prompt を使わず、必要値が足りない場合に missing env 名を列挙する。
   - invalid content は writer に渡る前に失敗する。
