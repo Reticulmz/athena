@@ -13,7 +13,7 @@
   - server / worker 起動や将来の state-changing 管理 command は登録しない。
   - 完了時は help 出力に in-scope group だけが表示される統合テストが通る。
   - _Requirements: 1.1, 1.2, 1.4, 7.5, 12.4_
-- [ ] 1.3 共通 environment 選択を実装する
+- [x] 1.3 共通 environment 選択を実装する
   - `development`、`test`、`production` だけを受け付け、未指定時は既存 process env、なければ development に解決する。
   - 選択した environment を config loading と subprocess environment に渡せる形にする。
   - unsupported environment は typed error として command boundary へ渡す。
