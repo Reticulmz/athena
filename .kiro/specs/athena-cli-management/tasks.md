@@ -19,7 +19,7 @@
   - unsupported environment は typed error として command boundary へ渡す。
   - 完了時は supported / default / unsupported environment と subprocess env construction の単体テストが通る。
   - _Requirements: 2.1, 2.2, 2.3_
-- [ ] 1.4 CLI presentation と error mapping を整える
+- [x] 1.4 CLI presentation と error mapping を整える
   - CLI user error、config validation error、DB helper error、subprocess failure を operator 向け message と exit code に変換する。
   - production の non-read-only work では作業前に対象 environment が見える出力を用意する。
   - secret value は confirmation や summary で masked 表示だけにする。
