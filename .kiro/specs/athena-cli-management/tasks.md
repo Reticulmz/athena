@@ -7,7 +7,7 @@
   - CLI package が wheel build、Ruff first-party、import-linter root package の対象になるようにする。
   - 完了時は `uv run athena --help` が entrypoint 解決まで進む状態になる。
   - _Requirements: 1.3, 12.2_
-- [ ] 1.2 root CLI の command group を定義する
+- [x] 1.2 root CLI の command group を定義する
   - `env`、`db`、`config`、top-level `test` のみを表示する root help を提供する。
   - unknown command は Typer 標準の usage error と non-zero exit になるようにする。
   - server / worker 起動や将来の state-changing 管理 command は登録しない。
