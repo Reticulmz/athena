@@ -7,12 +7,14 @@ expected repository and provider choices for each environment.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from osu_server.composition.service_registry import (
+    _enqueue_beatmap_fetch,  # pyright: ignore[reportPrivateUsage]
     _register_repositories,  # pyright: ignore[reportPrivateUsage]
     register_services,
 )
@@ -25,13 +27,19 @@ from osu_server.domain.beatmap import (
 from osu_server.infrastructure.di.container import Container
 from osu_server.infrastructure.di.providers import build_container
 from osu_server.repositories.beatmaps.file_sources import CompositeBeatmapFileProvider
-from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
+from osu_server.repositories.interfaces.beatmap_repository import (
+    BeatmapFetchTarget,
+    BeatmapRepository,
+)
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
 from osu_server.services.beatmap_mirror_service import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
 )
+
+if TYPE_CHECKING:
+    from taskiq import AsyncBroker
 
 
 def _make_config(*, environment: str = "test") -> AppConfig:
@@ -42,6 +50,27 @@ def _make_config(*, environment: str = "test") -> AppConfig:
             "environment": environment,
         },
     )
+
+
+class _FakeTask:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    async def kiq(self, target_type: str, target_key: str) -> None:
+        self.calls.append((target_type, target_key))
+
+
+class _FakeBroker:
+    def __init__(self) -> None:
+        self.metadata: _FakeTask = _FakeTask()
+        self.file: _FakeTask = _FakeTask()
+
+    def find_task(self, task_name: str) -> _FakeTask | None:
+        if task_name == "fetch_beatmap_metadata":
+            return self.metadata
+        if task_name == "fetch_beatmap_file":
+            return self.file
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +138,36 @@ async def test_beatmap_freshness_policy_resolves_in_test_environment() -> None:
     policy = await container.resolve(BeatmapFreshnessPolicy)
 
     assert isinstance(policy, BeatmapFreshnessPolicy)
+
+
+@pytest.mark.asyncio
+async def test_beatmap_fetch_enqueue_routes_metadata_targets_to_metadata_job() -> None:
+    """Metadata fetch targets are sent to the metadata worker task."""
+    broker = _FakeBroker()
+
+    await _enqueue_beatmap_fetch(
+        cast("AsyncBroker", cast("object", broker)),
+        BeatmapFetchTarget.metadata_by_checksum("0123456789abcdef0123456789abcdef"),
+    )
+
+    assert broker.metadata.calls == [
+        ("metadata:checksum", "0123456789abcdef0123456789abcdef"),
+    ]
+    assert broker.file.calls == []
+
+
+@pytest.mark.asyncio
+async def test_beatmap_fetch_enqueue_routes_file_targets_to_file_job() -> None:
+    """File fetch targets are sent to the file worker task."""
+    broker = _FakeBroker()
+
+    await _enqueue_beatmap_fetch(
+        cast("AsyncBroker", cast("object", broker)),
+        BeatmapFetchTarget.file_by_beatmap_id(1),
+    )
+
+    assert broker.metadata.calls == []
+    assert broker.file.calls == [("file:beatmap", "1")]
 
 
 # ---------------------------------------------------------------------------

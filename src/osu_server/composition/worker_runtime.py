@@ -92,7 +92,7 @@ def create_worker_beatmap_metadata_fetch(
         client_id=config.beatmap_official_api_client_id,  # pyright: ignore[reportArgumentType]
         client_secret=config.beatmap_official_api_client_secret,  # pyright: ignore[reportArgumentType]
     )
-    mirror = MirrorMetadataProvider()
+    mirror = MirrorMetadataProvider(base_urls=config.beatmap_metadata_mirror_base_urls)
     metadata_provider = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
     return FetchBeatmapMetadataJob(repository=repo, metadata_provider=metadata_provider)
 

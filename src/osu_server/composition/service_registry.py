@@ -37,7 +37,10 @@ from osu_server.repositories.beatmaps.providers import (
     MirrorMetadataProvider,
     OsuApiMetadataProvider,
 )
-from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
+from osu_server.repositories.interfaces.beatmap_repository import (
+    BeatmapFetchTarget,
+    BeatmapRepository,
+)
 from osu_server.repositories.interfaces.blob_repository import BlobRepository
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.chat_repository import ChatRepository
@@ -91,6 +94,19 @@ from osu_server.transports.web_legacy.registration import RegistrationHandler
 if TYPE_CHECKING:
     from osu_server.config import AppConfig
     from osu_server.infrastructure.di.container import Container
+
+
+async def _enqueue_beatmap_fetch(broker: AsyncBroker, target: BeatmapFetchTarget) -> None:
+    """Enqueue the worker job matching a beatmap fetch target."""
+    if target.target_type.startswith("file:"):
+        task_name = "fetch_beatmap_file"
+    else:
+        task_name = "fetch_beatmap_metadata"
+    task = broker.find_task(task_name)
+    if task is None:
+        return
+
+    _ = await task.kiq(target.target_type, target.target_key)
 
 
 def _register_repositories(
@@ -205,7 +221,9 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
             client_id=config.beatmap_official_api_client_id,  # pyright: ignore[reportArgumentType]
             client_secret=config.beatmap_official_api_client_secret,  # pyright: ignore[reportArgumentType]
         )
-        mirror_metadata_provider = MirrorMetadataProvider()
+        mirror_metadata_provider = MirrorMetadataProvider(
+            base_urls=config.beatmap_metadata_mirror_base_urls,
+        )
 
     infrastructure_metadata_provider = CompositeBeatmapMetadataProvider(
         official=official_metadata_provider,
@@ -228,12 +246,14 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     # -- BeatmapMirrorService (singleton) ------------------------------------
     beatmap_repo = await container.resolve(BeatmapRepository)
     mirror_trust_enabled = config.beatmap_mirror_trust_policy == "trusted"
+    broker = await container.resolve(AsyncBroker)
     mirror_service = BeatmapMirrorService(
         repository=beatmap_repo,
         eligibility_service=eligibility_service,
         freshness_policy=freshness_policy,
         mirror_trust_enabled=mirror_trust_enabled,
         official_sources_available=config.beatmap_official_sources_enabled,
+        enqueue_refresh=lambda target: _enqueue_beatmap_fetch(broker, target),
     )
     container.register_singleton(BeatmapMirrorService, lambda: mirror_service)
 

@@ -5,17 +5,24 @@ from __future__ import annotations
 import time
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
+from urllib.parse import urlparse
 
 import httpx
 import structlog
 
+from osu_server.domain.beatmap import BeatmapMetadataSource, BeatmapSourceVerification
 from osu_server.repositories.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
-from osu_server.repositories.beatmaps.mappers import beatmap_json_to_snapshot
+from osu_server.repositories.beatmaps.mappers import (
+    beatmap_json_to_snapshot,
+    beatmap_v1_json_to_snapshot,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from osu_server.domain.beatmap import BeatmapsetSnapshot
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -253,17 +260,139 @@ class OsuApiMetadataProvider:
         return access_token
 
 
+def _source_label(base_url: str) -> str:
+    host = urlparse(base_url).netloc or base_url
+    return f"beatmap_metadata_mirror:{host}"
+
+
+def _is_nerinyan_url(base_url: str) -> bool:
+    host = urlparse(base_url).netloc.lower()
+    return host == "api.nerinyan.moe" or host.endswith(".api.nerinyan.moe")
+
+
 class MirrorMetadataProvider:
-    """Placeholder mirror API metadata provider."""
+    """Unauthenticated mirror API metadata provider."""
+
+    def __init__(self, *, base_urls: Sequence[str] = ()) -> None:
+        self._base_urls: tuple[str, ...] = tuple(url.rstrip("/") for url in base_urls)
+        self._httpx_client: httpx.AsyncClient | None = None
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
-        logger.debug("mirror_metadata_provider_not_implemented", beatmap_id=beatmap_id)
-        return None
+        return await self._lookup(
+            key_kind="beatmap_id",
+            lookup_key=str(beatmap_id),
+            compatible_path=f"/beatmaps/{beatmap_id}",
+            nerinyan_params={"b": str(beatmap_id)},
+        )
 
     async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
-        logger.debug("mirror_metadata_provider_not_implemented", beatmapset_id=beatmapset_id)
-        return None
+        return await self._lookup(
+            key_kind="beatmapset_id",
+            lookup_key=str(beatmapset_id),
+            compatible_path=f"/beatmapsets/{beatmapset_id}",
+            nerinyan_params={"s": str(beatmapset_id)},
+        )
 
     async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
-        logger.debug("mirror_metadata_provider_not_implemented", checksum_md5=checksum_md5)
+        return await self._lookup(
+            key_kind="checksum",
+            lookup_key=checksum_md5,
+            compatible_path="/beatmaps/lookup",
+            compatible_params={"checksum": checksum_md5},
+            nerinyan_params={"h": checksum_md5},
+        )
+
+    async def _lookup(
+        self,
+        *,
+        key_kind: str,
+        lookup_key: str,
+        compatible_path: str,
+        nerinyan_params: Mapping[str, str],
+        compatible_params: Mapping[str, str] | None = None,
+    ) -> BeatmapsetSnapshot | None:
+        if not self._base_urls:
+            logger.debug(
+                "mirror_metadata_provider_not_configured", key_kind=key_kind, key=lookup_key
+            )
+            return None
+
+        last_error: BeatmapSourceError | None = None
+        for base_url in self._base_urls:
+            source_label = _source_label(base_url)
+            is_nerinyan = _is_nerinyan_url(base_url)
+            path = "/v1/get_beatmaps" if is_nerinyan else compatible_path
+            params = nerinyan_params if is_nerinyan else compatible_params
+
+            try:
+                response = await self._get_client().get(
+                    f"{base_url}{path}",
+                    params=params,
+                    headers={"Accept": "application/json"},
+                )
+            except _TRANSIENT_EXCEPTIONS as exc:
+                category = (
+                    BeatmapSourceErrorCategory.TIMEOUT
+                    if isinstance(exc, httpx.TimeoutException)
+                    else BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
+                )
+                last_error = _error_from_exception(
+                    exc,
+                    source=source_label,
+                    lookup_key=lookup_key,
+                    category=category,
+                )
+                continue
+
+            if response.status_code == httpx.codes.NOT_FOUND:
+                continue
+            if response.status_code != httpx.codes.OK:
+                last_error = _error_from_response(
+                    response,
+                    source=source_label,
+                    lookup_key=lookup_key,
+                )
+                continue
+
+            try:
+                raw = cast("object", response.json())
+            except Exception as exc:
+                last_error = BeatmapSourceError(
+                    category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                    source=source_label,
+                    lookup_key=lookup_key,
+                    message=f"Invalid JSON from {source_label} for {lookup_key}",
+                    original_error=exc,
+                )
+                continue
+
+            if isinstance(raw, list):
+                return beatmap_v1_json_to_snapshot(
+                    cast("Sequence[Mapping[str, object]]", raw),
+                    source=BeatmapMetadataSource.MIRROR,
+                    verification=BeatmapSourceVerification.UNVERIFIED,
+                )
+            if isinstance(raw, dict):
+                return beatmap_json_to_snapshot(
+                    cast("dict[str, object]", raw),
+                    source=BeatmapMetadataSource.MIRROR,
+                    verification=BeatmapSourceVerification.UNVERIFIED,
+                )
+
+            last_error = BeatmapSourceError(
+                category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                source=source_label,
+                lookup_key=lookup_key,
+                message=f"Unexpected JSON from {source_label} for {lookup_key}",
+            )
+
+        if last_error is not None:
+            raise last_error
         return None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._httpx_client is not None:
+            return self._httpx_client
+        client = httpx.AsyncClient()
+        object.__setattr__(self, "_httpx_client", client)
+        return client

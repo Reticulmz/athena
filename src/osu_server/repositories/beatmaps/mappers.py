@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 from osu_server.domain.beatmap import (
     BeatmapMetadataSource,
@@ -12,9 +15,6 @@ from osu_server.domain.beatmap import (
     BeatmapSourceVerification,
     map_external_status,
 )
-
-_SOURCE = BeatmapMetadataSource.OFFICIAL
-_VERIFIED = BeatmapSourceVerification.VERIFIED
 
 
 class _BeatmapJSON(TypedDict, total=False):
@@ -52,16 +52,93 @@ class _BeatmapsetJSON(TypedDict, total=False):
 
 
 def beatmap_json_to_snapshot(
-    data: dict[str, object], *, now: datetime | None = None
+    data: dict[str, object],
+    *,
+    now: datetime | None = None,
+    source: BeatmapMetadataSource = BeatmapMetadataSource.OFFICIAL,
+    verification: BeatmapSourceVerification = BeatmapSourceVerification.VERIFIED,
 ) -> BeatmapsetSnapshot:
     """Convert osu! API v2 beatmap or beatmapset JSON to a snapshot."""
     _now = now or datetime.now(UTC)
     if "beatmaps" in data:
-        return _from_beatmapset_json(cast("_BeatmapsetJSON", cast("object", data)), now=_now)
-    return _from_beatmap_json(cast("_BeatmapJSON", cast("object", data)), now=_now)
+        return _from_beatmapset_json(
+            cast("_BeatmapsetJSON", cast("object", data)),
+            now=_now,
+            source=source,
+            verification=verification,
+        )
+    return _from_beatmap_json(
+        cast("_BeatmapJSON", cast("object", data)),
+        now=_now,
+        source=source,
+        verification=verification,
+    )
 
 
-def _from_beatmap_json(data: _BeatmapJSON, *, now: datetime) -> BeatmapsetSnapshot:
+def beatmap_v1_json_to_snapshot(
+    items: Sequence[Mapping[str, object]],
+    *,
+    now: datetime | None = None,
+    source: BeatmapMetadataSource = BeatmapMetadataSource.MIRROR,
+    verification: BeatmapSourceVerification = BeatmapSourceVerification.UNVERIFIED,
+) -> BeatmapsetSnapshot | None:
+    """Convert osu! API v1 flat beatmap rows to a snapshot."""
+    if not items:
+        return None
+
+    _now = now or datetime.now(UTC)
+    first = items[0]
+    beatmapset_id = _maybe_int(first.get("beatmapset_id")) or 0
+    beatmaps = tuple(
+        BeatmapSnapshot(
+            beatmap_id=_maybe_int(item.get("beatmap_id")) or 0,
+            beatmapset_id=_maybe_int(item.get("beatmapset_id")) or beatmapset_id,
+            checksum_md5=_maybe_str(item.get("file_md5")) or "0" * 32,
+            mode=_mode_text(item.get("mode")),
+            version=_maybe_str(item.get("version")) or "",
+            official_status=map_external_status(_status_text(item.get("approved"))),
+            official_status_source=source,
+            official_status_verified=verification,
+            total_length=_maybe_int(item.get("total_length")),
+            hit_length=_maybe_int(item.get("hit_length")),
+            max_combo=_maybe_int(item.get("max_combo")),
+            bpm=_maybe_float(item.get("bpm")),
+            cs=_maybe_float(item.get("diff_size")),
+            od=_maybe_float(item.get("diff_overall")),
+            ar=_maybe_float(item.get("diff_approach")),
+            hp=_maybe_float(item.get("diff_drain")),
+            difficulty_rating=_maybe_float(item.get("difficultyrating")),
+            last_fetched_at=_now,
+            next_refresh_at=_now,
+        )
+        for item in items
+    )
+
+    return BeatmapsetSnapshot(
+        beatmapset_id=beatmapset_id,
+        artist=_maybe_str(first.get("artist")) or "",
+        title=_maybe_str(first.get("title")) or "",
+        creator=_maybe_str(first.get("creator")) or "",
+        source=source,
+        verified=verification,
+        official_status=map_external_status(_status_text(first.get("approved"))),
+        official_status_source=source,
+        official_status_verified=verification,
+        beatmaps=beatmaps,
+        artist_unicode=_maybe_str(first.get("artist_unicode")),
+        title_unicode=_maybe_str(first.get("title_unicode")),
+        last_fetched_at=_now,
+        next_refresh_at=_now,
+    )
+
+
+def _from_beatmap_json(
+    data: _BeatmapJSON,
+    *,
+    now: datetime,
+    source: BeatmapMetadataSource,
+    verification: BeatmapSourceVerification,
+) -> BeatmapsetSnapshot:
     beatmapset_data = data.get("beatmapset") or {}
     return _from_beatmapset_json(
         {
@@ -75,10 +152,18 @@ def _from_beatmap_json(data: _BeatmapJSON, *, now: datetime) -> BeatmapsetSnapsh
             "beatmaps": [data],
         },
         now=now,
+        source=source,
+        verification=verification,
     )
 
 
-def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> BeatmapsetSnapshot:
+def _from_beatmapset_json(
+    data: _BeatmapsetJSON,
+    *,
+    now: datetime,
+    source: BeatmapMetadataSource,
+    verification: BeatmapSourceVerification,
+) -> BeatmapsetSnapshot:
     beatmapset_id = data.get("id", 0)
     beatmapset_status = data.get("status", "")
 
@@ -91,8 +176,8 @@ def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> Beatmapset
             mode=bm.get("mode", ""),
             version=bm.get("version", ""),
             official_status=map_external_status(bm.get("status", "")),
-            official_status_source=_SOURCE,
-            official_status_verified=_VERIFIED,
+            official_status_source=source,
+            official_status_verified=verification,
             total_length=bm.get("total_length"),
             hit_length=bm.get("hit_length"),
             max_combo=bm.get("max_combo"),
@@ -114,11 +199,11 @@ def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> Beatmapset
         artist=data.get("artist", ""),
         title=data.get("title", ""),
         creator=data.get("creator", ""),
-        source=_SOURCE,
-        verified=_VERIFIED,
+        source=source,
+        verified=verification,
         official_status=map_external_status(beatmapset_status),
-        official_status_source=_SOURCE,
-        official_status_verified=_VERIFIED,
+        official_status_source=source,
+        official_status_verified=verification,
         beatmaps=child_snapshots,
         artist_unicode=data.get("artist_unicode"),
         title_unicode=data.get("title_unicode"),
@@ -127,10 +212,66 @@ def _from_beatmapset_json(data: _BeatmapsetJSON, *, now: datetime) -> Beatmapset
     )
 
 
-def _maybe_float(value: object) -> float | None:
+def _maybe_int(value: object) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _maybe_str(value: object) -> str | None:
     if value is None:
         return None
-    try:
-        return float(value)  # pyright: ignore[reportArgumentType]
-    except (TypeError, ValueError):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, int | float):
+        return str(value)
+    return None
+
+
+def _mode_text(value: object) -> str:
+    mode = _maybe_int(value)
+    if mode is not None:
+        return {
+            0: "osu",
+            1: "taiko",
+            2: "fruits",
+            3: "mania",
+        }.get(mode, "")
+    return (_maybe_str(value) or "").strip()
+
+
+def _status_text(value: object) -> str:
+    approved = _maybe_int(value)
+    if approved is not None:
+        return {
+            -2: "graveyard",
+            -1: "wip",
+            0: "pending",
+            1: "ranked",
+            2: "approved",
+            3: "qualified",
+            4: "loved",
+        }.get(approved, "")
+    return (_maybe_str(value) or "").strip()
+
+
+def _maybe_float(value: object) -> float | None:
+    if isinstance(value, bool) or value is None:
         return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
