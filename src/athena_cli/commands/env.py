@@ -9,7 +9,7 @@ import typer
 from athena_cli.context import EnvironmentName, resolve_context
 from athena_cli.env.dsn import build_database_dsn, build_valkey_dsn
 from athena_cli.env.generation import EnvGenerationInput, generate_env_content
-from athena_cli.env.schema import get_config_env_metadata
+from athena_cli.env.schema import get_config_env_metadata, render_config_example
 from athena_cli.env.writer import write_environment_file
 from athena_cli.errors import map_cli_error
 from athena_cli.presentation import format_environment_file_written, format_production_banner
@@ -21,6 +21,11 @@ app = typer.Typer(help="Environment file management commands.")
 @app.callback()
 def env() -> None:
     """Manage Athena environment files."""
+
+
+@app.command(name="example")
+def example_environment() -> None:
+    typer.echo(render_config_example())
 
 
 def create_prompt_adapter() -> PromptAdapter:

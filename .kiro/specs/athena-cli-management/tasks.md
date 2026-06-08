@@ -99,7 +99,7 @@
   - 完了時は non-interactive env init の CliRunner integration test が成功作成、missing values、overwrite refusal を検証する。
   - _Requirements: 3.7, 4.1, 4.2, 5.1, 5.2, 5.4_
   - _Depends: 2.1, 2.3, 3.1_
-- [ ] 3.5 env example command を接続する
+- [x] 3.5 env example command を接続する
   - example command は schema 由来の見本だけを stdout に出力する。
   - `.env.example` を読み込まなくても complete example が生成されることを保証する。
   - 完了時は env example の CliRunner integration test が schema 由来出力と `.env.example` 非依存を検証する。

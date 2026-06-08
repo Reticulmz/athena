@@ -229,3 +229,22 @@ def test_non_interactive_env_init_rejects_existing_file_without_force(
     assert result.exit_code != 0
     assert "Environment file already exists: .env.test" in result.output
     assert Path(".env.test").read_text(encoding="utf-8") == "EXISTING=value\n"
+
+
+def test_env_example_outputs_schema_derived_example(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ = (tmp_path / ".env.example").write_text(
+        "DATABASE_URL=from-file\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["env", "example"])
+
+    assert result.exit_code == 0
+    assert "DATABASE_URL=" in result.output
+    assert "VALKEY_URL=" in result.output
+    assert "SERVER_PORT=8000" in result.output
+    assert "DATABASE_URL=from-file" not in result.output
