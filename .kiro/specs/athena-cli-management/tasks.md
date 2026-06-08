@@ -59,7 +59,7 @@
   - _Requirements: 7.1, 7.4, 9.6_
   - _Boundary: Process Runner_
   - _Depends: 1.3, 1.4_
-- [ ] 2.5 (P) production config safety check を実装する
+- [x] 2.5 (P) production config safety check を実装する
   - production で不適切な local default を検出する policy を定義する。
   - DB、Valkey、osu! API、blob storage へ接続せず、読み込んだ設定値だけを判定する。
   - 安全な production 設定と unsafe local default の単体テストを追加する。
