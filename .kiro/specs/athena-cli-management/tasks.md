@@ -43,7 +43,7 @@
   - _Requirements: 3.3, 3.4, 3.6_
   - _Boundary: DSN Builder_
   - _Depends: 1.3, 1.4_
-- [ ] 2.3 (P) env file 書き込み安全性を実装する
+- [x] 2.3 (P) env file 書き込み安全性を実装する
   - `.env.<environment>` の target path を決定し、既存 file は `--force` なしで拒否する。
   - non-production の force overwrite は target path を表示できる結果として扱う。
   - production overwrite は `--force` と explicit confirmation の両方がない限り拒否する。
