@@ -85,7 +85,7 @@
   - _Requirements: 3.1, 3.2, 3.5, 3.6, 5.3, 6.3_
   - _Boundary: Prompt Adapter_
   - _Depends: 1.4, 2.2_
-- [ ] 3.3 interactive env init command を接続する
+- [x] 3.3 interactive env init command を接続する
   - interactive init は wizard、DSN 組み立て、content generation、overwrite policy、path report を一連の flow として実行する。
   - secret summary は masked 表示だけにし、invalid content は file write 前に失敗させる。
   - production overwrite は force と explicit confirmation が揃う場合だけ許可する。
