@@ -129,7 +129,7 @@
   - _Depends: 2.4, 3.6_
 
 - [ ] 4. 開発環境と旧入口を新 CLI に統合する
-- [ ] 4.1 devenv task wrapper を Athena CLI 経由に置き換える
+- [x] 4.1 devenv task wrapper を Athena CLI 経由に置き換える
   - 既存 task 名を維持し、test DB create / migrate / test は `athena` command を呼ぶようにする。
   - devenv 固有の dynamic database / Valkey default と override env var の解決は Nix 側に残す。
   - CLI 側に devenv port や task internals の知識を入れない。

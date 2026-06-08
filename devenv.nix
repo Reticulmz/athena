@@ -159,7 +159,7 @@ in
         else
           export VALKEY_URL="${test_valkey_url}"
         fi
-        uv run python -m osu_server.db create
+        uv run athena db create --env test
       '';
       after = [ "devenv:python:virtualenv" ];
     };
@@ -181,7 +181,7 @@ in
         else
           export VALKEY_URL="${test_valkey_url}"
         fi
-        uv run alembic upgrade head
+        uv run athena db migrate --env test
       '';
       after = [ "db:test:create" ];
     };
@@ -203,9 +203,9 @@ in
         else
           export VALKEY_URL="${test_valkey_url}"
         fi
-        uv run pytest tests/
+        uv run athena test --env test
       '';
-      after = [ "db:test:migrate" ];
+      after = [ "devenv:python:virtualenv" ];
     };
   };
 
