@@ -105,7 +105,7 @@
   - 完了時は env example の CliRunner integration test が schema 由来出力と `.env.example` 非依存を検証する。
   - _Requirements: 4.3, 4.4_
   - _Depends: 2.1_
-- [ ] 3.6 database create / migrate / setup command を実装する
+- [x] 3.6 database create / migrate / setup command を実装する
   - create は選択 environment の config から database URL を読み、既存 DB helper を通して missing DB だけを作る。
   - 既存 DB は success として報告し、production create は作業前の production banner と explicit confirmation を要求する。
   - migrate は selected environment で `alembic upgrade head` を実行し、setup は create 後に migrate を実行する。
