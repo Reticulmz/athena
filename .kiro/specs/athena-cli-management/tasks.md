@@ -27,7 +27,7 @@
   - _Requirements: 2.4, 3.6, 4.2, 5.4, 6.4, 8.3_
 
 - [ ] 2. env 生成の純粋 core を実装する
-- [ ] 2.1 (P) AppConfig schema 由来の env metadata を作る
+- [x] 2.1 (P) AppConfig schema 由来の env metadata を作る
   - application config schema から env var 名、required/default、secret、list-like の分類を取り出す。
   - `.env.example` を入力 source にせず、schema 由来の complete example を生成できる metadata を提供する。
   - schema drift が起きたときに unit test で検出できるようにする。
