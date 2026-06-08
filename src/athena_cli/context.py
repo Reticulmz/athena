@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Generator, Mapping
 
 
 EnvironmentName = Literal["development", "test", "production"]
@@ -54,3 +56,16 @@ def _resolve_environment_name(
     if candidate not in SUPPORTED_ENVIRONMENTS:
         raise UnsupportedEnvironmentError(candidate)
     return candidate
+
+
+@contextmanager
+def selected_environment_variable(environment: EnvironmentName) -> Generator[None]:
+    previous_environment = os.environ.get(ENVIRONMENT_VARIABLE)
+    os.environ[ENVIRONMENT_VARIABLE] = environment
+    try:
+        yield
+    finally:
+        if previous_environment is None:
+            _ = os.environ.pop(ENVIRONMENT_VARIABLE, None)
+        else:
+            os.environ[ENVIRONMENT_VARIABLE] = previous_environment

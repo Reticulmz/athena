@@ -113,7 +113,7 @@
   - 完了時は created / already exists / production banner / production confirmation / migration failure / setup order の統合テストが通る。
   - _Requirements: 2.4, 6.1, 6.2, 6.3, 6.4, 7.1, 7.2, 7.3, 7.4, 7.5_
   - _Depends: 2.4, 3.2_
-- [ ] 3.7 config check command を実装する
+- [x] 3.7 config check command を実装する
   - selected environment の config validation を実行し、成功時は外部接続なしで success を報告する。
   - validation failure は invalid / missing setting が分かる message と non-zero exit にする。
   - production では unsafe local default policy を追加で適用する。

@@ -2,21 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import os
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 import typer
 
-from athena_cli.context import ENVIRONMENT_VARIABLE, EnvironmentName, resolve_context
+from athena_cli.context import (
+    EnvironmentName,
+    resolve_context,
+    selected_environment_variable,
+)
 from athena_cli.errors import CliUserError, SubprocessFailureError, map_cli_error
 from athena_cli.presentation import format_production_banner
 from athena_cli.prompts import PromptAdapter
 from athena_cli.runners import ProcessRunner
 from osu_server.config import load_config
 from osu_server.infrastructure.database.admin import create_database_if_missing
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
 
 app = typer.Typer(help="Database management commands.")
 
@@ -85,7 +85,7 @@ def _create_database(*, environment: str | None) -> bool:
         process_environment=dict(os.environ),
     )
     _confirm_production_create(context.environment)
-    with _selected_environment(context.environment):
+    with selected_environment_variable(context.environment):
         config = load_config()
     created = asyncio.run(create_database_if_missing(str(config.database_url)))
     if created:
@@ -125,16 +125,3 @@ def _confirm_production_create(environment: EnvironmentName) -> None:
         default=False,
     ):
         raise CliUserError("Production database creation requires explicit confirmation.")
-
-
-@contextmanager
-def _selected_environment(environment: EnvironmentName) -> Generator[None]:
-    previous_environment = os.environ.get(ENVIRONMENT_VARIABLE)
-    os.environ[ENVIRONMENT_VARIABLE] = environment
-    try:
-        yield
-    finally:
-        if previous_environment is None:
-            _ = os.environ.pop(ENVIRONMENT_VARIABLE, None)
-        else:
-            os.environ[ENVIRONMENT_VARIABLE] = previous_environment
