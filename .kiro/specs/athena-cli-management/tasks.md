@@ -35,7 +35,7 @@
   - _Requirements: 4.3, 4.4_
   - _Boundary: Env Schema_
   - _Depends: 1.3, 1.4_
-- [ ] 2.2 (P) 接続情報から安全に DSN を組み立てる
+- [x] 2.2 (P) 接続情報から安全に DSN を組み立てる
   - database と Valkey の host、port、database、username、password から URL encoded DSN を生成する。
   - file output 用の実値と console 表示用の masked value を分離する。
   - 特殊文字を含む credential と database name の単体テストを追加する。
