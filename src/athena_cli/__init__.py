@@ -1,0 +1,1 @@
+"""Athena management CLI package."""

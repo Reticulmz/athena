@@ -1,0 +1,172 @@
+# Implementation Plan
+
+- [ ] 1. CLI 基盤と境界を準備する
+- [x] 1.1 CLI package を開発環境に組み込む
+  - Typer と InquirerPy を project dependency として追加し、開発環境で解決できる状態にする。
+  - `athena` console script が開発環境から呼び出せる packaging 設定を追加する。
+  - CLI package が wheel build、Ruff first-party、import-linter root package の対象になるようにする。
+  - 完了時は `uv run athena --help` が entrypoint 解決まで進む状態になる。
+  - _Requirements: 1.3, 12.2_
+- [ ] 1.2 root CLI の command group を定義する
+  - `env`、`db`、`config`、top-level `test` のみを表示する root help を提供する。
+  - unknown command は Typer 標準の usage error と non-zero exit になるようにする。
+  - server / worker 起動や将来の state-changing 管理 command は登録しない。
+  - 完了時は help 出力に in-scope group だけが表示される統合テストが通る。
+  - _Requirements: 1.1, 1.2, 1.4, 7.5, 12.4_
+- [ ] 1.3 共通 environment 選択を実装する
+  - `development`、`test`、`production` だけを受け付け、未指定時は既存 process env、なければ development に解決する。
+  - 選択した environment を config loading と subprocess environment に渡せる形にする。
+  - unsupported environment は typed error として command boundary へ渡す。
+  - 完了時は supported / default / unsupported environment と subprocess env construction の単体テストが通る。
+  - _Requirements: 2.1, 2.2, 2.3_
+- [ ] 1.4 CLI presentation と error mapping を整える
+  - CLI user error、config validation error、DB helper error、subprocess failure を operator 向け message と exit code に変換する。
+  - production の non-read-only work では作業前に対象 environment が見える出力を用意する。
+  - secret value は confirmation や summary で masked 表示だけにする。
+  - 完了時は error message、exit code、production banner、secret masking の単体テストが通る。
+  - _Requirements: 2.4, 3.6, 4.2, 5.4, 6.4, 8.3_
+
+- [ ] 2. env 生成の純粋 core を実装する
+- [ ] 2.1 (P) AppConfig schema 由来の env metadata を作る
+  - application config schema から env var 名、required/default、secret、list-like の分類を取り出す。
+  - `.env.example` を入力 source にせず、schema 由来の complete example を生成できる metadata を提供する。
+  - schema drift が起きたときに unit test で検出できるようにする。
+  - 完了時は schema introspection が required/default/secret/list-like field を正しく分類する単体テストが通る。
+  - _Requirements: 4.3, 4.4_
+  - _Boundary: Env Schema_
+  - _Depends: 1.3, 1.4_
+- [ ] 2.2 (P) 接続情報から安全に DSN を組み立てる
+  - database と Valkey の host、port、database、username、password から URL encoded DSN を生成する。
+  - file output 用の実値と console 表示用の masked value を分離する。
+  - 特殊文字を含む credential と database name の単体テストを追加する。
+  - 完了時は生成された PostgreSQL / Valkey URL が `AppConfig` に受け入れられる形になる。
+  - _Requirements: 3.3, 3.4, 3.6_
+  - _Boundary: DSN Builder_
+  - _Depends: 1.3, 1.4_
+- [ ] 2.3 (P) env file 書き込み安全性を実装する
+  - `.env.<environment>` の target path を決定し、既存 file は `--force` なしで拒否する。
+  - non-production の force overwrite は target path を表示できる結果として扱う。
+  - production overwrite は `--force` と explicit confirmation の両方がない限り拒否する。
+  - 完了時は既存 file、force overwrite、production confirmation の単体テストで file 内容が保護される。
+  - _Requirements: 5.1, 5.2, 5.3, 5.4_
+  - _Boundary: Env Writer_
+  - _Depends: 1.3, 1.4_
+- [ ] 2.4 (P) subprocess 実行 runner を実装する
+  - Alembic と pytest を argv と environment map で実行し、stdout/stderr を operator に見える形で扱う。
+  - selected environment と既存 process env を subprocess に渡す。
+  - subprocess の exit code を CLI command が伝播できる結果として返す。
+  - 完了時は argv、environment、exit code propagation の単体テストが通る。
+  - _Requirements: 7.1, 7.4, 9.6_
+  - _Boundary: Process Runner_
+  - _Depends: 1.3, 1.4_
+- [ ] 2.5 (P) production config safety check を実装する
+  - production で不適切な local default を検出する policy を定義する。
+  - DB、Valkey、osu! API、blob storage へ接続せず、読み込んだ設定値だけを判定する。
+  - 安全な production 設定と unsafe local default の単体テストを追加する。
+  - 完了時は production unsafe default が non-zero 対象の structured error として返る。
+  - _Requirements: 8.2, 8.4, 8.5_
+  - _Boundary: Production Safety_
+  - _Depends: 1.3, 1.4_
+
+- [ ] 3. CLI command の中核動作を実装する
+- [ ] 3.1 (P) env content generation を interactive / non-interactive で共有する
+  - 選択 section と入力値から dotenv content を生成し、write 前に application config validation を通す。
+  - non-interactive では prompt を使わず、必要値が足りない場合に missing env 名を列挙する。
+  - invalid content は writer に渡る前に失敗する。
+  - 完了時は missing values と validation failure の単体テストが通る。
+  - _Requirements: 3.7, 4.1, 4.2_
+  - _Boundary: Env Generator_
+  - _Depends: 2.1, 2.2_
+- [ ] 3.2 (P) typed prompt adapter を実装する
+  - section selection、database parts、Valkey parts、osu! API enablement と credentials、confirmation を typed result に変換する。
+  - secret input は入力中に隠し、confirmation output では masked value だけを表示できるようにする。
+  - raw prompt result の弱い型は adapter 境界から外へ漏らさない。
+  - 完了時は prompt adapter の unit test が typed result と secret masking を検証する。
+  - _Requirements: 3.1, 3.2, 3.5, 3.6, 5.3, 6.3_
+  - _Boundary: Prompt Adapter_
+  - _Depends: 1.4, 2.2_
+- [ ] 3.3 interactive env init command を接続する
+  - interactive init は wizard、DSN 組み立て、content generation、overwrite policy、path report を一連の flow として実行する。
+  - secret summary は masked 表示だけにし、invalid content は file write 前に失敗させる。
+  - production overwrite は force と explicit confirmation が揃う場合だけ許可する。
+  - 完了時は interactive env init の CliRunner integration test が wizard flow、作成、拒否、path report を検証する。
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 5.1, 5.2, 5.3, 5.4_
+  - _Depends: 2.2, 2.3, 3.1, 3.2_
+- [ ] 3.4 non-interactive env init command を接続する
+  - non-interactive init は required values が揃うと file を作成し、不足時は missing values を表示して non-zero exit になる。
+  - prompt adapter を呼ばずに同じ env generation core と writer policy を使う。
+  - invalid content は file write 前に失敗させる。
+  - 完了時は non-interactive env init の CliRunner integration test が成功作成、missing values、overwrite refusal を検証する。
+  - _Requirements: 3.7, 4.1, 4.2, 5.1, 5.2, 5.4_
+  - _Depends: 2.1, 2.3, 3.1_
+- [ ] 3.5 env example command を接続する
+  - example command は schema 由来の見本だけを stdout に出力する。
+  - `.env.example` を読み込まなくても complete example が生成されることを保証する。
+  - 完了時は env example の CliRunner integration test が schema 由来出力と `.env.example` 非依存を検証する。
+  - _Requirements: 4.3, 4.4_
+  - _Depends: 2.1_
+- [ ] 3.6 database create / migrate / setup command を実装する
+  - create は選択 environment の config から database URL を読み、既存 DB helper を通して missing DB だけを作る。
+  - 既存 DB は success として報告し、production create は作業前の production banner と explicit confirmation を要求する。
+  - migrate は selected environment で `alembic upgrade head` を実行し、setup は create 後に migrate を実行する。
+  - drop、reset、seed command は追加しない。
+  - 完了時は created / already exists / production banner / production confirmation / migration failure / setup order の統合テストが通る。
+  - _Requirements: 2.4, 6.1, 6.2, 6.3, 6.4, 7.1, 7.2, 7.3, 7.4, 7.5_
+  - _Depends: 2.4, 3.2_
+- [ ] 3.7 config check command を実装する
+  - selected environment の config validation を実行し、成功時は外部接続なしで success を報告する。
+  - validation failure は invalid / missing setting が分かる message と non-zero exit にする。
+  - production では unsafe local default policy を追加で適用する。
+  - 完了時は success、pydantic validation failure、production unsafe default、connectivity 非実行の統合テストが通る。
+  - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
+  - _Depends: 2.5_
+- [ ] 3.8 test command を実装する
+  - `--env test` で database setup を先に実行し、setup 成功時だけ pytest を実行する。
+  - `--path` は単数・複数とも pytest argv に渡し、未指定時は `tests/` を既定にする。
+  - setup failure は pytest を起動せず、pytest failure は runner exit code を伝播する。
+  - 完了時は default path、multiple path、setup failure guard、pytest exit propagation の統合テストが通る。
+  - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6_
+  - _Depends: 2.4, 3.6_
+
+- [ ] 4. 開発環境と旧入口を新 CLI に統合する
+- [ ] 4.1 devenv task wrapper を Athena CLI 経由に置き換える
+  - 既存 task 名を維持し、test DB create / migrate / test は `athena` command を呼ぶようにする。
+  - devenv 固有の dynamic database / Valkey default と override env var の解決は Nix 側に残す。
+  - CLI 側に devenv port や task internals の知識を入れない。
+  - 完了時は devenv task body が CLI 呼び出しになり、Nix parse check が通る。
+  - _Requirements: 10.1, 10.2, 10.3, 10.4, 11.2_
+  - _Depends: 3.6, 3.8_
+- [ ] 4.2 temporary DB administration entrypoint を削除する
+  - temporary database CLI path から DB admin が実行されない状態にする。
+  - canonical path は `athena db ...` と devenv wrapper だけにする。
+  - 参照が残っていないことを search / tests で確認する。
+  - 完了時は removed path が silent DB admin を実行せず、canonical command のテストが代替保証になる。
+  - _Requirements: 11.1, 11.2, 11.3_
+  - _Depends: 3.6, 4.1_
+- [ ] 4.3 CLI と server runtime の dependency boundary を固定する
+  - server runtime が CLI package に依存しない forbidden contract を追加する。
+  - CLI は必要な application config と DB admin helper だけを呼ぶ境界に留める。
+  - app / worker 起動経路が CLI import を必要としないことを import-linter で検証する。
+  - 完了時は import-linter が CLI/server 境界違反なしで通る。
+  - _Requirements: 12.1, 12.2, 12.3, 12.4_
+  - _Depends: 1.1, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
+
+- [ ] 5. 仕様全体の検証を通す
+- [ ] 5.1 CLI behavior と packaging smoke を検証する
+  - help、unknown command、command group、server command absence を CliRunner で検証する。
+  - installed development environment で `athena --help` が console script として解決することを検証する。
+  - 完了時は CLI entrypoint と command surface の検証が automated checks に含まれる。
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 7.5, 12.4_
+  - _Depends: 1.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
+- [ ] 5.2 command orchestration の失敗経路を統合検証する
+  - env invalid content、file overwrite refusal、DB create failure、migration failure、config validation failure、test setup failure、pytest failure を検証する。
+  - 各失敗で non-zero exit と operator-readable message が返ることを確認する。
+  - 完了時は主要 command の失敗経路が integration tests で再現される。
+  - _Requirements: 2.3, 3.7, 4.2, 5.1, 5.3, 6.4, 7.4, 8.3, 9.5, 9.6_
+  - _Depends: 3.3, 3.4, 3.6, 3.7, 3.8_
+- [ ] 5.3 project quality gates を実行して task 仕様を満たす
+  - pytest、basedpyright、ruff check、ruff format check、import-linter、Nix parse の対象を新 CLI まで含める。
+  - 旧 entrypoint の削除、devenv wrapper、boundary contract、console script の統合状態を確認する。
+  - 完了時は `pytest tests/`、`basedpyright src/`、`ruff check src/ tests/`、`ruff format --check src/ tests/`、`import-linter lint`、`nix-instantiate --parse devenv.nix` がすべて exit code 0 になる。
+  - _Requirements: 1.3, 10.1, 10.2, 10.3, 11.1, 11.3, 12.1, 12.3_
+  - _Depends: 4.1, 4.2, 4.3, 5.1, 5.2_

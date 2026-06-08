@@ -19,7 +19,12 @@ dependencies = [
     "structlog>=25.5.0",
     "taskiq>=0.11",
     "taskiq-redis>=1.0",
+    "typer>=0.26.7",
+    "inquirerpy>=0.3.4",
 ]
+
+[project.scripts]
+athena = "athena_cli.main:main"
 
 [dependency-groups]
 dev = [
@@ -40,7 +45,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/osu_server"]
+packages = ["src/osu_server", "src/athena_cli"]
 
 # --- Code Quality Tools ---
 
@@ -92,7 +97,7 @@ ignore = [
 "tests/integration/test_registration_flow.py" = ["PLC0415"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["osu_server"]
+known-first-party = ["osu_server", "athena_cli"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -113,7 +118,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 [tool.importlinter]
-root_packages = ["osu_server"]
+root_packages = ["osu_server", "athena_cli"]
 
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
