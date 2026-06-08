@@ -77,7 +77,7 @@
   - _Requirements: 3.7, 4.1, 4.2_
   - _Boundary: Env Generator_
   - _Depends: 2.1, 2.2_
-- [ ] 3.2 (P) typed prompt adapter を実装する
+- [x] 3.2 (P) typed prompt adapter を実装する
   - section selection、database parts、Valkey parts、osu! API enablement と credentials、confirmation を typed result に変換する。
   - secret input は入力中に隠し、confirmation output では masked value だけを表示できるようにする。
   - raw prompt result の弱い型は adapter 境界から外へ漏らさない。
