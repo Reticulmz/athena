@@ -5,13 +5,14 @@ Required fields: DATABASE_URL, VALKEY_URL.
 Optional fields with defaults: ENVIRONMENT, SERVER_HOST, SERVER_PORT.
 """
 
+import os
 import re
 from string import Formatter
-from typing import ClassVar, Self
+from typing import Annotated, ClassVar, Self
 from urllib.parse import urlparse
 
-from pydantic import Field, PostgresDsn, RedisDsn, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, PostgresDsn, RedisDsn, TypeAdapter, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Valkey は redis:// スキーマを使用するため、RedisDsn のバリデーションをそのまま活用
 ValkeyDsn = RedisDsn
@@ -23,6 +24,8 @@ _BEATMAP_URL_TEMPLATE_TOKEN = "{beatmap_id}"
 _SOURCE_CREDENTIAL_ENVIRONMENTS = frozenset({"development", "production"})
 _TEST_ENVIRONMENT = "test"
 _BEATMAP_URL_TEMPLATE_FIELD = "beatmap_id"
+_DEFAULT_ENVIRONMENT = "development"
+_ENVIRONMENT_VARIABLE = "ENVIRONMENT"
 
 
 class AppConfig(BaseSettings):
@@ -64,7 +67,10 @@ class AppConfig(BaseSettings):
     beatmap_mirror_trust_policy: str = "untrusted"
     beatmap_osu_current_url_template: str = "https://osu.ppy.sh/osu/{beatmap_id}"
     beatmap_osu_legacy_url_template: str = "https://old.ppy.sh/osu/{beatmap_id}"
-    beatmap_community_mirror_url_templates: list[str] = Field(default_factory=list)
+    beatmap_community_mirror_url_templates: Annotated[list[str], NoDecode] = Field(
+        default_factory=list
+    )
+    beatmap_metadata_mirror_base_urls: Annotated[list[str], NoDecode] = Field(default_factory=list)
     beatmap_ranked_refresh_interval_seconds: int = 2_592_000
     beatmap_pending_refresh_interval_seconds: int = 86_400
     beatmap_graveyard_refresh_interval_seconds: int = 604_800
@@ -128,6 +134,22 @@ class AppConfig(BaseSettings):
             raise ValueError(msg)
         return v
 
+    @field_validator(
+        "beatmap_community_mirror_url_templates",
+        "beatmap_metadata_mirror_base_urls",
+        mode="before",
+    )
+    @classmethod
+    def _parse_url_list(cls, v: object) -> object:
+        if not isinstance(v, str):
+            return v
+        stripped = v.strip()
+        if not stripped:
+            return []
+        if stripped.startswith("["):
+            return TypeAdapter(list[str]).validate_json(stripped)
+        return [item.strip() for item in stripped.split(",") if item.strip()]
+
     @model_validator(mode="after")
     def _validate_beatmap_mirror_config(self) -> Self:
         environment = self.environment.lower()
@@ -159,6 +181,12 @@ class AppConfig(BaseSettings):
             self._validate_beatmap_url_template(
                 template,
                 field_name="beatmap_community_mirror_url_templates",
+                environment=environment,
+            )
+        for base_url in self.beatmap_metadata_mirror_base_urls:
+            self._validate_beatmap_base_url(
+                base_url,
+                field_name="beatmap_metadata_mirror_base_urls",
                 environment=environment,
             )
 
@@ -242,9 +270,28 @@ class AppConfig(BaseSettings):
             msg = f"{field_name} must use HTTPS outside test configuration"
             raise ValueError(msg)
 
-    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="", env_file=".env")
+    @staticmethod
+    def _validate_beatmap_base_url(
+        base_url: str,
+        *,
+        field_name: str,
+        environment: str,
+    ) -> None:
+        parsed = urlparse(base_url)
+        if not parsed.scheme or not parsed.netloc:
+            msg = f"{field_name} must be an absolute URL"
+            raise ValueError(msg)
+        if parsed.scheme not in {"http", "https"}:
+            msg = f"{field_name} must use HTTP or HTTPS"
+            raise ValueError(msg)
+        if environment != _TEST_ENVIRONMENT and parsed.scheme != "https":
+            msg = f"{field_name} must use HTTPS outside test configuration"
+            raise ValueError(msg)
+
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="")
 
 
 def load_config() -> AppConfig:
     """Factory function to create AppConfig from environment variables."""
-    return AppConfig()  # pyright: ignore[reportCallIssue]
+    environment = os.environ.get(_ENVIRONMENT_VARIABLE, _DEFAULT_ENVIRONMENT).lower()
+    return AppConfig(_env_file=f".env.{environment}")  # pyright: ignore[reportCallIssue]

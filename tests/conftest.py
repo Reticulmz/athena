@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import weakref
 from contextlib import suppress
 from typing import TYPE_CHECKING
@@ -56,6 +57,8 @@ _brokers: list[weakref.ReferenceType[object]] = []
 
 def pytest_configure(config: pytest.Config) -> None:  # noqa: ARG001  # pyright: ignore[reportUnusedParameter]
     """Patch create_valkey_client and ListQueueBroker early, before test imports."""
+    _ = os.environ.setdefault("ENVIRONMENT", "test")
+
     # -- Patch create_valkey_client
     import osu_server.infrastructure.cache.valkey_client as _valkey_mod  # noqa: PLC0415
 

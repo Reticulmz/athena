@@ -6,6 +6,8 @@ Covers requirements 2.1, 2.2, 2.3:
 - 2.3: Type-safe configuration object (not raw strings)
 """
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -35,6 +37,66 @@ class TestAppConfigEnvVarReading:
 
         config = load_config()
         assert str(config.valkey_url) == _TEST_VALKEY_URL
+
+    def test_load_config_reads_development_env_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("VALKEY_URL", raising=False)
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        _ = (tmp_path / ".env.development").write_text(
+            f"DATABASE_URL={_TEST_DATABASE_URL}\nVALKEY_URL={_TEST_VALKEY_URL}\n",
+            encoding="utf-8",
+        )
+
+        config = load_config()
+
+        assert str(config.database_url) == _TEST_DATABASE_URL
+        assert str(config.valkey_url) == _TEST_VALKEY_URL
+        assert config.environment == "development"
+
+    def test_load_config_accepts_plain_metadata_mirror_url_in_env_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("VALKEY_URL", raising=False)
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        env_file_content = (
+            f"DATABASE_URL={_TEST_DATABASE_URL}\n"
+            f"VALKEY_URL={_TEST_VALKEY_URL}\n"
+            "BEATMAP_METADATA_MIRROR_BASE_URLS=https://api.nerinyan.moe\n"
+        )
+        _ = (tmp_path / ".env.development").write_text(env_file_content, encoding="utf-8")
+
+        config = load_config()
+
+        assert config.beatmap_metadata_mirror_base_urls == ["https://api.nerinyan.moe"]
+
+    def test_load_config_reads_environment_specific_env_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        test_database_url = "postgresql+asyncpg://test:test@localhost/test_osu"
+        test_valkey_url = "redis://localhost:6380/1"
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("VALKEY_URL", raising=False)
+        monkeypatch.setenv("ENVIRONMENT", "test")
+        _ = (tmp_path / ".env.development").write_text(
+            f"DATABASE_URL={_TEST_DATABASE_URL}\nVALKEY_URL={_TEST_VALKEY_URL}\n",
+            encoding="utf-8",
+        )
+        _ = (tmp_path / ".env.test").write_text(
+            f"DATABASE_URL={test_database_url}\nVALKEY_URL={test_valkey_url}\n",
+            encoding="utf-8",
+        )
+
+        config = load_config()
+
+        assert str(config.database_url) == test_database_url
+        assert str(config.valkey_url) == test_valkey_url
+        assert config.environment == "test"
 
 
 class TestAppConfigValidation:
@@ -245,8 +307,9 @@ class TestBeatmapMirrorConfig:
     """Beatmap mirror source configuration and startup validation."""
 
     def test_beatmap_mirror_defaults_disable_mirror_trust(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
         monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
 
@@ -257,6 +320,7 @@ class TestBeatmapMirrorConfig:
         assert config.beatmap_osu_current_url_template == "https://osu.ppy.sh/osu/{beatmap_id}"
         assert config.beatmap_osu_legacy_url_template == "https://old.ppy.sh/osu/{beatmap_id}"
         assert config.beatmap_community_mirror_url_templates == []
+        assert config.beatmap_metadata_mirror_base_urls == []
         assert config.beatmap_default_bounded_wait_seconds > 0
         assert (
             config.beatmap_default_bounded_wait_seconds <= config.beatmap_max_bounded_wait_seconds
@@ -424,6 +488,70 @@ class TestBeatmapMirrorConfig:
                     ],
                 }
             )
+
+    def test_accepts_metadata_mirror_base_urls(self) -> None:
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "production",
+                "beatmap_metadata_mirror_base_urls": [
+                    "https://api.nerinyan.moe",
+                    "https://mirror.example.com/api/v2",
+                ],
+            }
+        )
+
+        assert config.beatmap_metadata_mirror_base_urls == [
+            "https://api.nerinyan.moe",
+            "https://mirror.example.com/api/v2",
+        ]
+
+    def test_metadata_mirror_base_url_does_not_require_beatmap_id_placeholder(self) -> None:
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "production",
+                "beatmap_metadata_mirror_base_urls": ["https://api.nerinyan.moe"],
+            }
+        )
+
+        assert config.beatmap_metadata_mirror_base_urls == ["https://api.nerinyan.moe"]
+
+    def test_rejects_relative_metadata_mirror_base_url(self) -> None:
+        with pytest.raises(ValidationError, match="absolute URL"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_metadata_mirror_base_urls": ["/api/v2"],
+                }
+            )
+
+    def test_rejects_non_https_metadata_mirror_base_url_outside_test(self) -> None:
+        with pytest.raises(ValidationError, match="HTTPS"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "beatmap_metadata_mirror_base_urls": ["http://api.nerinyan.moe"],
+                }
+            )
+
+    def test_test_environment_allows_http_metadata_mirror_base_url(self) -> None:
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "test",
+                "beatmap_metadata_mirror_base_urls": ["http://mirror.test/api/v2"],
+            }
+        )
+
+        assert config.beatmap_metadata_mirror_base_urls == ["http://mirror.test/api/v2"]
 
     def test_rejects_invalid_mirror_trust_policy(self) -> None:
         with pytest.raises(ValidationError, match="beatmap_mirror_trust_policy"):
