@@ -32,6 +32,7 @@ cloudflared/config.yml
 # Environment variables
 .env
 .env.*
+!.env.example
 
 # direnv
 .direnv

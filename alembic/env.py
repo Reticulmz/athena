@@ -1,11 +1,10 @@
 """Alembic async migration environment.
 
-Reads DATABASE_URL from environment variables and converts it to the
+Reads DATABASE_URL from AppConfig and converts it to the
 ``postgresql+asyncpg://`` scheme for async engine creation.
 """
 
 import asyncio
-import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -13,17 +12,16 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from osu_server.config import load_config
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import *  # noqa: F403 — register models with Base.metadata
 
 # Alembic Config object
 config = context.config
 
-# Set sqlalchemy.url from environment variable (required for all migration operations)
-database_url = os.environ.get("DATABASE_URL")
-if not database_url:
-    msg = "DATABASE_URL environment variable is required for migrations"
-    raise RuntimeError(msg)
+# Set sqlalchemy.url from AppConfig. DATABASE_URL in the process environment still
+# takes precedence over .env.<environment> via pydantic-settings.
+database_url = str(load_config().database_url)
 
 async_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1).replace(
     "postgresql://", "postgresql+asyncpg://", 1

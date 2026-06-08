@@ -2,8 +2,11 @@
 
 let
   db_name = "athena";
+  test_db_name = "athena_test";
   pg_port = toString config.processes.postgres.ports.main.value;
   valkey_port = toString config.processes.redis.ports.main.value;
+  test_database_url = "postgresql://localhost:${pg_port}/${test_db_name}";
+  test_valkey_url = "redis://localhost:${valkey_port}/1";
 in
 {
   process.manager.implementation = "process-compose";
@@ -39,22 +42,22 @@ in
   processes.app = {
     exec = "uv run uvicorn osu_server.app:app --reload --reload-dir src --host $SERVER_HOST --port $SERVER_PORT --no-access-log";
     after = [ "devenv:processes:postgres" "devenv:processes:redis" ];
-    ready = {
-      http.get = {
-          port = 8000;
-        path = "/health";
-      };
-      initial_delay = 2;
-      period = 60;
-    };
+#    ready = {
+#      http.get = {
+#          port = 8000;
+#        path = "/health";
+#      };
+#      initial_delay = 2;
+#      period = 60;
+#    };
   };
   processes.nginx = {
     exec = "mkdir -p .devenv/state/nginx && sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1; nginx -p ${toString ./.}/ -c ${toString ./.}/nginx.dev.conf -g 'daemon off;'";
-    after = [ "devenv:processes:app" ];
+#    after = [ "devenv:processes:app" ];
   };
   processes.cloudflared = {
     exec = "cloudflared tunnel --config cloudflared/config.yml --no-autoupdate run";
-    after = [ "devenv:processes:nginx" ];
+#    after = [ "devenv:processes:nginx" ];
   };
   processes.worker = {
     exec = "uv run taskiq worker osu_server.worker:broker";
@@ -138,6 +141,74 @@ in
     };
   };
 
+  tasks = {
+    "db:test:create" = {
+      exec = ''
+        export ENVIRONMENT=test
+        if [ -n "''${ATHENA_TEST_DATABASE_URL:-}" ]; then
+          export DATABASE_URL="$ATHENA_TEST_DATABASE_URL"
+        elif [ -f .env.test ]; then
+          unset DATABASE_URL
+        else
+          export DATABASE_URL="${test_database_url}"
+        fi
+        if [ -n "''${ATHENA_TEST_VALKEY_URL:-}" ]; then
+          export VALKEY_URL="$ATHENA_TEST_VALKEY_URL"
+        elif [ -f .env.test ]; then
+          unset VALKEY_URL
+        else
+          export VALKEY_URL="${test_valkey_url}"
+        fi
+        uv run python -m osu_server.db create
+      '';
+      after = [ "devenv:python:virtualenv" ];
+    };
+
+    "db:test:migrate" = {
+      exec = ''
+        export ENVIRONMENT=test
+        if [ -n "''${ATHENA_TEST_DATABASE_URL:-}" ]; then
+          export DATABASE_URL="$ATHENA_TEST_DATABASE_URL"
+        elif [ -f .env.test ]; then
+          unset DATABASE_URL
+        else
+          export DATABASE_URL="${test_database_url}"
+        fi
+        if [ -n "''${ATHENA_TEST_VALKEY_URL:-}" ]; then
+          export VALKEY_URL="$ATHENA_TEST_VALKEY_URL"
+        elif [ -f .env.test ]; then
+          unset VALKEY_URL
+        else
+          export VALKEY_URL="${test_valkey_url}"
+        fi
+        uv run alembic upgrade head
+      '';
+      after = [ "db:test:create" ];
+    };
+
+    "test" = {
+      exec = ''
+        export ENVIRONMENT=test
+        if [ -n "''${ATHENA_TEST_DATABASE_URL:-}" ]; then
+          export DATABASE_URL="$ATHENA_TEST_DATABASE_URL"
+        elif [ -f .env.test ]; then
+          unset DATABASE_URL
+        else
+          export DATABASE_URL="${test_database_url}"
+        fi
+        if [ -n "''${ATHENA_TEST_VALKEY_URL:-}" ]; then
+          export VALKEY_URL="$ATHENA_TEST_VALKEY_URL"
+        elif [ -f .env.test ]; then
+          unset VALKEY_URL
+        else
+          export VALKEY_URL="${test_valkey_url}"
+        fi
+        uv run pytest tests/
+      '';
+      after = [ "db:test:migrate" ];
+    };
+  };
+
   packages = with pkgs; [
     git
     nginx
@@ -159,6 +230,9 @@ in
     echo "athena dev environment ready"
     echo "  devenv up  - start services (postgres, valkey) + app + worker + nginx + cloudflared"
     echo "  uv run pytest  - run tests"
+    echo "  devenv tasks run db:test:create   - create test database"
+    echo "  devenv tasks run db:test:migrate  - migrate test database"
+    echo "  devenv tasks run test             - migrate test DB and run tests"
     echo "  nginx listens on :80/:443 → athena :8000"
     echo "  cloudflared tunnel → *.example.com :80"
     echo ""
