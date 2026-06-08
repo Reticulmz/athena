@@ -164,7 +164,7 @@
   - 完了時は主要 command の失敗経路が integration tests で再現される。
   - _Requirements: 2.3, 3.7, 4.2, 5.1, 5.3, 6.4, 7.4, 8.3, 9.5, 9.6_
   - _Depends: 3.3, 3.4, 3.6, 3.7, 3.8_
-- [ ] 5.3 project quality gates を実行して task 仕様を満たす
+- [x] 5.3 project quality gates を実行して task 仕様を満たす
   - pytest、basedpyright、ruff check、ruff format check、import-linter、Nix parse の対象を新 CLI まで含める。
   - 旧 entrypoint の削除、devenv wrapper、boundary contract、console script の統合状態を確認する。
   - 完了時は `pytest tests/`、`basedpyright src/`、`ruff check src/ tests/`、`ruff format --check src/ tests/`、`import-linter lint`、`nix-instantiate --parse devenv.nix` がすべて exit code 0 になる。
