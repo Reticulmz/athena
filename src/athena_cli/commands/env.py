@@ -6,9 +6,10 @@ from typing import Annotated
 
 import typer
 
-from athena_cli.context import resolve_context
+from athena_cli.context import EnvironmentName, resolve_context
 from athena_cli.env.dsn import build_database_dsn, build_valkey_dsn
 from athena_cli.env.generation import EnvGenerationInput, generate_env_content
+from athena_cli.env.schema import get_config_env_metadata
 from athena_cli.env.writer import write_environment_file
 from athena_cli.errors import map_cli_error
 from athena_cli.presentation import format_environment_file_written, format_production_banner
@@ -33,21 +34,53 @@ def init_environment(
         bool,
         typer.Option("--force", help="Overwrite an existing env file."),
     ] = False,
+    non_interactive: Annotated[
+        bool,
+        typer.Option("--non-interactive", help="Generate from process environment."),
+    ] = False,
 ) -> None:
     try:
-        _init_environment(environment=environment, force=force)
+        _init_environment(
+            environment=environment,
+            force=force,
+            non_interactive=non_interactive,
+        )
     except Exception as exc:
         error = map_cli_error(exc)
         typer.echo(error.message, err=True)
         raise typer.Exit(error.exit_code) from exc
 
 
-def _init_environment(*, environment: str, force: bool) -> None:
+def _init_environment(*, environment: str, force: bool, non_interactive: bool) -> None:
     context = resolve_context(
         selected_environment=environment,
         process_environment=dict(os.environ),
     )
-    prompt_adapter = create_prompt_adapter()
+    prompt_adapter: PromptAdapter | None = None
+    if non_interactive:
+        values = _collect_non_interactive_values(context.subprocess_environment)
+    else:
+        prompt_adapter = create_prompt_adapter()
+        values = _collect_interactive_values(prompt_adapter)
+    production_confirmed = _confirm_production_overwrite(
+        environment=context.environment,
+        force=force,
+        prompt_adapter=prompt_adapter,
+    )
+    generation_result = generate_env_content(
+        EnvGenerationInput(environment=context.environment, values=values)
+    )
+    write_result = write_environment_file(
+        root=Path(),
+        environment=context.environment,
+        content=generation_result.content,
+        force=force,
+        production_confirmed=production_confirmed,
+    )
+    typer.echo(format_environment_file_written(write_result.path))
+
+
+def _collect_interactive_values(prompt_adapter: PromptAdapter) -> dict[str, str]:
     selected_sections = prompt_adapter.select_sections()
     values: dict[str, str] = {}
     if "database" in selected_sections:
@@ -63,23 +96,29 @@ def _init_environment(*, environment: str, force: bool) -> None:
             values["BEATMAP_OFFICIAL_API_CLIENT_ID"] = osu_api.client_id
         if osu_api.client_secret is not None:
             values["BEATMAP_OFFICIAL_API_CLIENT_SECRET"] = osu_api.client_secret
+    return values
 
-    generation_result = generate_env_content(
-        EnvGenerationInput(environment=context.environment, values=values)
+
+def _collect_non_interactive_values(process_environment: dict[str, str]) -> dict[str, str]:
+    return {
+        field.env_var: process_environment[field.env_var]
+        for field in get_config_env_metadata()
+        if field.env_var in process_environment
+    }
+
+
+def _confirm_production_overwrite(
+    *,
+    environment: EnvironmentName,
+    force: bool,
+    prompt_adapter: PromptAdapter | None,
+) -> bool:
+    if environment != "production":
+        return False
+    typer.echo(format_production_banner())
+    if not force or prompt_adapter is None:
+        return False
+    return prompt_adapter.confirm(
+        "Overwrite .env.production?",
+        default=False,
     )
-    production_confirmed = False
-    if context.environment == "production":
-        typer.echo(format_production_banner())
-        if force:
-            production_confirmed = prompt_adapter.confirm(
-                "Overwrite .env.production?",
-                default=False,
-            )
-    write_result = write_environment_file(
-        root=Path(),
-        environment=context.environment,
-        content=generation_result.content,
-        force=force,
-        production_confirmed=production_confirmed,
-    )
-    typer.echo(format_environment_file_written(write_result.path))

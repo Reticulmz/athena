@@ -92,7 +92,7 @@
   - 完了時は interactive env init の CliRunner integration test が wizard flow、作成、拒否、path report を検証する。
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 5.1, 5.2, 5.3, 5.4_
   - _Depends: 2.2, 2.3, 3.1, 3.2_
-- [ ] 3.4 non-interactive env init command を接続する
+- [x] 3.4 non-interactive env init command を接続する
   - non-interactive init は required values が揃うと file を作成し、不足時は missing values を表示して non-zero exit になる。
   - prompt adapter を呼ばずに同じ env generation core と writer policy を使う。
   - invalid content は file write 前に失敗させる。

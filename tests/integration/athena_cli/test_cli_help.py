@@ -93,6 +93,10 @@ def create_unconfirmed_production_prompt_adapter() -> FakeEnvInitPromptAdapter:
     return FakeEnvInitPromptAdapter(production_confirmed=False)
 
 
+def create_forbidden_prompt_adapter() -> FakeEnvInitPromptAdapter:
+    raise AssertionError("prompt adapter must not be created")
+
+
 def test_interactive_env_init_creates_file_and_reports_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -153,3 +157,75 @@ def test_interactive_env_init_requires_production_overwrite_confirmation(
     assert result.exit_code != 0
     assert "Overwriting .env.production requires --force" in result.output
     assert Path(".env.production").read_text(encoding="utf-8") == "EXISTING=value\n"
+
+
+def test_non_interactive_env_init_creates_file_from_process_env_without_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        env_command,
+        "create_prompt_adapter",
+        create_forbidden_prompt_adapter,
+    )
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://athena:db-password@localhost:5432/athena",
+    )
+    monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["env", "init", "test", "--non-interactive"])
+
+    assert result.exit_code == 0
+    assert "Environment file written: .env.test" in result.output
+    env_content = Path(".env.test").read_text(encoding="utf-8")
+    assert (
+        "DATABASE_URL=postgresql+asyncpg://athena:db-password@localhost:5432/athena" in env_content
+    )
+    assert "VALKEY_URL=redis://localhost:6379/0" in env_content
+    assert "ENVIRONMENT=test" in env_content
+
+
+def test_non_interactive_env_init_lists_missing_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        env_command,
+        "create_prompt_adapter",
+        create_forbidden_prompt_adapter,
+    )
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("VALKEY_URL", raising=False)
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["env", "init", "test", "--non-interactive"])
+
+    assert result.exit_code != 0
+    assert "Missing required environment values: DATABASE_URL, VALKEY_URL" in result.output
+    assert not Path(".env.test").exists()
+
+
+def test_non_interactive_env_init_rejects_existing_file_without_force(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        env_command,
+        "create_prompt_adapter",
+        create_forbidden_prompt_adapter,
+    )
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://athena:db-password@localhost:5432/athena",
+    )
+    monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
+
+    monkeypatch.chdir(tmp_path)
+    _ = Path(".env.test").write_text("EXISTING=value\n", encoding="utf-8")
+    result = runner.invoke(app, ["env", "init", "test", "--non-interactive"])
+
+    assert result.exit_code != 0
+    assert "Environment file already exists: .env.test" in result.output
+    assert Path(".env.test").read_text(encoding="utf-8") == "EXISTING=value\n"
