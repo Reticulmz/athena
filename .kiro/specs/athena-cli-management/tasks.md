@@ -152,7 +152,7 @@
   - _Depends: 1.1, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
 
 - [ ] 5. 仕様全体の検証を通す
-- [ ] 5.1 CLI behavior と packaging smoke を検証する
+- [x] 5.1 CLI behavior と packaging smoke を検証する
   - help、unknown command、command group、server command absence を CliRunner で検証する。
   - installed development environment で `athena --help` が console script として解決することを検証する。
   - 完了時は CLI entrypoint と command surface の検証が automated checks に含まれる。
