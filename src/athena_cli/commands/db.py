@@ -34,6 +34,10 @@ def create_process_runner() -> ProcessRunner:
     return ProcessRunner()
 
 
+def run_setup_database(*, environment: str | None) -> None:
+    _setup_database(environment=environment)
+
+
 @app.command(name="create")
 def create_database(
     environment: Annotated[

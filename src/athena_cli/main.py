@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 import typer
 
 from athena_cli.commands import config, db, env, test
@@ -16,8 +18,17 @@ def root() -> None:
 
 
 @app.command(name="test")
-def test_command() -> None:
-    test.run_tests()
+def run_test_command(
+    environment: Annotated[
+        str | None,
+        typer.Option("--env", help="Target environment."),
+    ] = None,
+    paths: Annotated[
+        list[str] | None,
+        typer.Option("--path", help="Test path to pass to pytest."),
+    ] = None,
+) -> None:
+    test.run_tests(environment=environment, paths=tuple(paths or ()))
 
 
 def main() -> None:

@@ -120,7 +120,7 @@
   - 完了時は success、pydantic validation failure、production unsafe default、connectivity 非実行の統合テストが通る。
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
   - _Depends: 2.5_
-- [ ] 3.8 test command を実装する
+- [x] 3.8 test command を実装する
   - `--env test` で database setup を先に実行し、setup 成功時だけ pytest を実行する。
   - `--path` は単数・複数とも pytest argv に渡し、未指定時は `tests/` を既定にする。
   - setup failure は pytest を起動せず、pytest failure は runner exit code を伝播する。
