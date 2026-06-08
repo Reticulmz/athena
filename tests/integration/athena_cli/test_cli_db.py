@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from typer.testing import CliRunner
 
 from athena_cli.commands import db as db_command
+from athena_cli.errors import DatabaseOperationError
 from athena_cli.main import app
 from athena_cli.runners import CommandResult
 
@@ -121,6 +122,28 @@ def test_db_create_requires_production_confirmation(monkeypatch: pytest.MonkeyPa
     assert "Target environment: production" in result.output
     assert "Production database creation requires explicit confirmation." in result.output
     assert create_calls == []
+
+
+def test_db_create_reports_database_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_create_database_if_missing(database_url: str) -> bool:
+        _ = database_url
+        raise DatabaseOperationError("connection refused")
+
+    monkeypatch.setattr(
+        db_command,
+        "load_config",
+        lambda: FakeConfig(database_url=_DATABASE_URL),
+    )
+    monkeypatch.setattr(
+        db_command,
+        "create_database_if_missing",
+        fake_create_database_if_missing,
+    )
+
+    result = runner.invoke(app, ["db", "create", "--env", "test"])
+
+    assert result.exit_code != 0
+    assert "Database operation failed: connection refused" in result.output
 
 
 def test_db_migrate_propagates_migration_failure(monkeypatch: pytest.MonkeyPatch) -> None:

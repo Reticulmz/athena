@@ -231,6 +231,26 @@ def test_non_interactive_env_init_rejects_existing_file_without_force(
     assert Path(".env.test").read_text(encoding="utf-8") == "EXISTING=value\n"
 
 
+def test_non_interactive_env_init_rejects_invalid_content_before_write(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        env_command,
+        "create_prompt_adapter",
+        create_forbidden_prompt_adapter,
+    )
+    monkeypatch.setenv("DATABASE_URL", "not-a-dsn")
+    monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["env", "init", "test", "--non-interactive"])
+
+    assert result.exit_code != 0
+    assert "Invalid configuration: database_url" in result.output
+    assert not Path(".env.test").exists()
+
+
 def test_env_example_outputs_schema_derived_example(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

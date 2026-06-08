@@ -158,7 +158,7 @@
   - 完了時は CLI entrypoint と command surface の検証が automated checks に含まれる。
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 7.5, 12.4_
   - _Depends: 1.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
-- [ ] 5.2 command orchestration の失敗経路を統合検証する
+- [x] 5.2 command orchestration の失敗経路を統合検証する
   - env invalid content、file overwrite refusal、DB create failure、migration failure、config validation failure、test setup failure、pytest failure を検証する。
   - 各失敗で non-zero exit と operator-readable message が返ることを確認する。
   - 完了時は主要 command の失敗経路が integration tests で再現される。
