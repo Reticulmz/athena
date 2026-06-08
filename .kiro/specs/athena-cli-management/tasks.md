@@ -136,7 +136,7 @@
   - 完了時は devenv task body が CLI 呼び出しになり、Nix parse check が通る。
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 11.2_
   - _Depends: 3.6, 3.8_
-- [ ] 4.2 temporary DB administration entrypoint を削除する
+- [x] 4.2 temporary DB administration entrypoint を削除する
   - temporary database CLI path から DB admin が実行されない状態にする。
   - canonical path は `athena db ...` と devenv wrapper だけにする。
   - 参照が残っていないことを search / tests で確認する。
