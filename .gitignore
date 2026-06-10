@@ -57,3 +57,4 @@ logs/
 *.log
 
 .playwright-mcp/
+.data/*
