@@ -12,7 +12,7 @@
   - _Requirements: 3.5_
   - _Boundary: athena-crypto Rust module_
 
-- [ ] 1.2 Rijndael-256 decryption関数を実装
+- [x] 1.2 Rijndael-256 decryption関数を実装
   - `simple-rijndael`の`RijndaelCbc`を使用
   - Key selection logic（osuverベース）
   - CBC mode decryption (block_size=32, IV=32)
@@ -20,6 +20,14 @@
   - PyO3経由でPythonから呼び出し可能
   - _Requirements: 3.1, 3.2, 3.3, 3.4_
   - _Boundary: athena-crypto Rust module_
+
+- [x] 2. Python Service Layer
+- [x] 2.1 ScoreCryptoServiceを実装
+  - `DecryptedPayload` dataclass
+  - `decrypt_score_payload()` function
+  - athena_crypto wrapper with error handling
+  - _Requirements: 3.1-3.5_
+  - _Boundary: osu_server.services.score_crypto_
 
 - [ ] 2. Database Schema
 - [ ] 2.1 Alembic migrationを作成

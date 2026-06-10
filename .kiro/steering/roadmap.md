@@ -24,8 +24,11 @@
 
 5. **blob-storage** — `.osu` ファイル、将来のリプレイファイル、画像アップロードを保存する汎用 blob storage。`blob_sha256` を軸に Local backend を先行実装し、S3 backend へ拡張できる interface / config を用意する。共通責務は `blobs` テーブルと storage service までとし、polymorphic attachment は採用しない。用途別 attachment table（例: beatmap file、score replay、screenshot）は各 domain spec が所有し、外部キーと domain 固有制約を明示する
 6. **beatmap-mirror** — ビートマップ情報取得（osu! API v1/v2 を正、ミラーは障害時フォールバック）。`.osu` ファイル保存は blob-storage に委譲する。依存: blob-storage
-7. **score-submission** — スコア送信パイプライン（受付 → PP 計算 → リーダーボード更新）。依存: beatmap-mirror
-8. **leaderboard** — ビートマップ別・グローバルランキング。依存: score-submission
+7. **score-ingestion** (Wave 1) — Stable client からの score 受付、validation、保存、replay 保存。PP なし、completed response 返却。依存: beatmap-mirror, blob-storage
+8. **score-pp-calculation** (Wave 2) — rosu-pp-py による PP/stars 計算、provenance tracking。依存: score-ingestion
+9. **beatmap-leaderboards** (Wave 3) — Beatmap leaderboard projection、personal best tracking。依存: score-ingestion, score-pp-calculation
+10. **user-stats** (Wave 3) — User stats 集計 (play count, ranked score, weighted PP, accuracy)。依存: score-ingestion, score-pp-calculation
+11. **user-ranking** (Wave 4) — Global/country rank 時系列履歴、rank snapshot rebuild、ranking graph API。依存: user-stats
 
 ### Phase 3: 運用・拡張
 

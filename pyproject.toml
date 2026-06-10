@@ -21,6 +21,7 @@ dependencies = [
     "taskiq-redis>=1.0",
     "typer>=0.26.7",
     "inquirerpy>=0.3.4",
+    "athena-crypto",
 ]
 
 [project.scripts]
@@ -39,6 +40,9 @@ dev = [
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+athena-crypto = { path = "athena-crypto", editable = true }
 
 [build-system]
 requires = ["hatchling"]

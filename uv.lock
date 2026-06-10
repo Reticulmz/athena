@@ -210,6 +210,7 @@ dependencies = [
     { name = "alembic" },
     { name = "argon2-cffi" },
     { name = "asyncpg" },
+    { name = "athena-crypto" },
     { name = "caterpillar-py" },
     { name = "httpx" },
     { name = "inquirerpy" },
@@ -241,6 +242,7 @@ requires-dist = [
     { name = "alembic" },
     { name = "argon2-cffi" },
     { name = "asyncpg" },
+    { name = "athena-crypto", editable = "athena-crypto" },
     { name = "caterpillar-py", specifier = ">=2.8.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "inquirerpy", specifier = ">=0.3.4" },
@@ -266,6 +268,10 @@ dev = [
     { name = "pytest-timeout" },
     { name = "ruff" },
 ]
+
+[[package]]
+name = "athena-crypto"
+source = { editable = "athena-crypto" }
 
 [[package]]
 name = "attrs"

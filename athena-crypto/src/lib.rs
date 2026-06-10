@@ -16,12 +16,37 @@ fn decrypt_score_payload(
     use simple_rijndael::impls::RijndaelCbc;
     use simple_rijndael::paddings::ZeroPadding;
 
-    let key = match osu_version {
-        Some(ver) => format!("osu!-scoreburgr---------{}", ver),
-        None => "h89f2-890h2h89b34g-h80g134n90133".to_string(),
-    };
+    if iv.len() != 32 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "IV must be 32 bytes, got {}",
+            iv.len()
+        )));
+    }
 
-    let cipher: RijndaelCbc<ZeroPadding> = RijndaelCbc::new(key.as_bytes(), 32)
+    if encrypted.is_empty() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "Encrypted data cannot be empty"
+        ));
+    }
+
+    let mut key = [0u8; 32];
+
+    match osu_version {
+        Some(ver) => {
+            let prefix = b"osu!-scoreburgr---------";
+            let ver_bytes = ver.as_bytes();
+            let prefix_len = prefix.len();
+            let ver_len = ver_bytes.len().min(32 - prefix_len);
+
+            key[..prefix_len].copy_from_slice(prefix);
+            key[prefix_len..prefix_len + ver_len].copy_from_slice(&ver_bytes[..ver_len]);
+        }
+        None => {
+            key.copy_from_slice(b"h89f2-890h2h89b34g-h80g134n90133");
+        }
+    }
+
+    let cipher: RijndaelCbc<ZeroPadding> = RijndaelCbc::new(&key, 32)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Cipher init failed: {:?}", e)))?;
     let decrypted = cipher.decrypt(iv, encrypted.to_vec())
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Decryption failed: {:?}", e)))?;
