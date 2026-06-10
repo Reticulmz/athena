@@ -39,8 +39,8 @@
   - _Requirements: 6.1, 6.2, 6.3, 7.1_
   - _Boundary: Database schema_
 
-- [ ] 3. Test Infrastructure
-- [ ] 3.1 (P) Test fixturesとfactoriesをセットアップ
+- [x] 3. Test Infrastructure
+- [x] 3.1 (P) Test fixturesとfactoriesをセットアップ
   - `tests/factories/score_factory.py`: Valid score data生成
   - `tests/factories/multipart_factory.py`: Multipart request生成
   - `tests/factories/crypto_factory.py`: Encrypted payload生成
