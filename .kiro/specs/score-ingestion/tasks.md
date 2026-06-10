@@ -51,7 +51,7 @@
 ## Phase 2: Domain Layer (TDD)
 
 - [ ] 4. Domain Models
-- [ ] 4.1 (P) Score dataclassを実装
+- [x] 4.1 (P) Score dataclassを実装
   - `domain/score/score.py`
   - `@dataclass(slots=True)` with all fields
   - Ruleset, Playstyle, Grade enums

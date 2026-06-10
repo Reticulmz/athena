@@ -1,7 +1,5 @@
 """Score test data factory."""
 
-from datetime import UTC, datetime
-
 
 def make_score_data(
     *,

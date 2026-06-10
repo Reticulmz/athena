@@ -1,0 +1,1 @@
+"""Score domain models."""
