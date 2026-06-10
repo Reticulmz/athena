@@ -66,7 +66,7 @@
   - _Requirements: 9.1, 9.2_
   - _Boundary: domain/score/submission.py_
 
-- [ ] 4.3 (P) Replay dataclassを実装
+- [x] 4.3 (P) Replay dataclassを実装
   - `domain/score/replay.py`
   - blob_key, checksum_sha256, byte_size fields
   - Unit test: checksum validation
