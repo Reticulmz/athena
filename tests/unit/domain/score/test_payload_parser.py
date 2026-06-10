@@ -1,0 +1,103 @@
+"""Unit tests for Score Payload Parser."""
+
+import pytest
+
+from osu_server.domain.score.payload_parser import ParseError, ParsedScore, parse
+
+
+def test_parse_valid_payload() -> None:
+    """Valid colon-separated payloadを正しくparseする。"""
+    # Format: user_id:username:beatmap_checksum:online_checksum:ruleset:mods:n300:n100:n50:geki:katu:miss:score:max_combo:perfect:passed
+    payload = "100:testuser:abc123:xyz789:0:0:300:50:10:0:0:5:500000:350:0:1"
+
+    result = parse(payload)
+
+    assert isinstance(result, ParsedScore)
+    assert result.user_id == 100
+    assert result.username == "testuser"
+    assert result.beatmap_checksum == "abc123"
+    assert result.online_checksum == "xyz789"
+    assert result.ruleset == 0
+    assert result.mods == 0
+    assert result.n300 == 300
+    assert result.n100 == 50
+    assert result.n50 == 10
+    assert result.geki == 0
+    assert result.katu == 0
+    assert result.miss == 5
+    assert result.score == 500000
+    assert result.max_combo == 350
+    assert result.perfect is False
+    assert result.passed is True
+
+
+def test_parse_with_perfect_flag() -> None:
+    """Perfect flag (1) を正しくparseする。"""
+    payload = "100:user:abc:xyz:0:0:300:0:0:0:0:0:500000:300:1:1"
+
+    result = parse(payload)
+
+    assert result.perfect is True
+
+
+def test_parse_failed_score() -> None:
+    """Failed score (passed=0) を正しくparseする。"""
+    payload = "100:user:abc:xyz:0:0:100:50:30:0:0:20:200000:150:0:0"
+
+    result = parse(payload)
+
+    assert result.passed is False
+
+
+def test_parse_with_mods() -> None:
+    """Mods値を正しくparseする。"""
+    payload = "100:user:abc:xyz:0:72:300:0:0:0:0:0:500000:300:0:1"
+
+    result = parse(payload)
+
+    assert result.mods == 72  # HD+DT
+
+
+def test_parse_different_rulesets() -> None:
+    """各rulesetを正しくparseする。"""
+    for ruleset_id in [0, 1, 2, 3]:
+        payload = f"100:user:abc:xyz:{ruleset_id}:0:100:50:10:0:0:5:300000:200:0:1"
+
+        result = parse(payload)
+
+        assert result.ruleset == ruleset_id
+
+
+def test_parse_invalid_field_count() -> None:
+    """フィールド数が不正な場合ParseErrorを発生させる。"""
+    payload = "100:user:abc:xyz:0:0"  # Too few fields
+
+    with pytest.raises(ParseError) as exc_info:
+        parse(payload)
+
+    assert "fields" in str(exc_info.value).lower()
+
+
+def test_parse_invalid_integer() -> None:
+    """整数フィールドが不正な場合ParseErrorを発生させる。"""
+    payload = "invalid:user:abc:xyz:0:0:300:50:10:0:0:5:500000:350:0:1"
+
+    with pytest.raises(ParseError) as exc_info:
+        parse(payload)
+
+    assert "user_id" in str(exc_info.value).lower() or "integer" in str(exc_info.value).lower()
+
+
+def test_parse_empty_payload() -> None:
+    """Empty payloadでParseErrorを発生させる。"""
+    with pytest.raises(ParseError):
+        parse("")
+
+
+def test_parse_username_with_special_characters() -> None:
+    """特殊文字を含むusernameを正しくparseする。"""
+    payload = "100:test_user-123:abc:xyz:0:0:300:50:10:0:0:5:500000:350:0:1"
+
+    result = parse(payload)
+
+    assert result.username == "test_user-123"

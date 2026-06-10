@@ -74,7 +74,7 @@
   - _Boundary: domain/score/replay.py_
 
 - [ ] 5. Score Payload Parser
-- [ ] 5.1 ScorePayloadParserを実装
+- [x] 5.1 ScorePayloadParserを実装
   - `domain/score/payload_parser.py`
   - Colon-separated parsing
   - Field type conversion
