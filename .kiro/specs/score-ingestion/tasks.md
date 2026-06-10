@@ -59,7 +59,7 @@
   - _Requirements: 7.1_
   - _Boundary: domain/score/score.py_
 
-- [ ] 4.2 (P) ScoreSubmission dataclassを実装
+- [x] 4.2 (P) ScoreSubmission dataclassを実装
   - `domain/score/submission.py`
   - Fingerprint, state, result_snapshot fields
   - Unit test: state transitions
