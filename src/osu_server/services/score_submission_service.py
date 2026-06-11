@@ -14,14 +14,14 @@ from osu_server.infrastructure.auth.score_authorization import (
     AuthorizationContext,
     ScoreAuthorizationService,
 )
-from osu_server.infrastructure.beatmap.eligibility_service import (
-    BeatmapNotFoundError,
-    check_eligibility,
-)
 from osu_server.infrastructure.crypto.score_crypto import decrypt_score_payload
 from osu_server.repositories.interfaces.replay_repository import ReplayRepository
 from osu_server.repositories.interfaces.score_repository import ScoreRepository
 from osu_server.repositories.interfaces.submission_repository import ScoreSubmissionRepository
+from osu_server.services.beatmap_eligibility_service import (
+    BeatmapNotFoundError,
+    check_eligibility,
+)
 from osu_server.shared.errors import DecryptionError
 
 

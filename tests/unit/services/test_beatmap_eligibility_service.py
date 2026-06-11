@@ -3,7 +3,7 @@
 import pytest
 
 from osu_server.domain.beatmap import BeatmapStatus, EligibilityResult
-from osu_server.infrastructure.beatmap import (
+from osu_server.services.beatmap_eligibility_service import (
     BeatmapNotFoundError,
     check_eligibility,
 )

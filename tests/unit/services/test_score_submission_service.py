@@ -1,3 +1,4 @@
+# pyright: reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedParameter=false, reportOperatorIssue=false, reportMissingParameterType=false
 """Unit tests for ScoreSubmissionService."""
 
 import hashlib
@@ -175,7 +176,8 @@ async def test_replay_attachment(
     assert result.outcome == SubmissionOutcome.COMPLETED
 
     # Verify replay exists
-    replay_checksum = hashlib.sha256(valid_input.replay_data).hexdigest()  # type: ignore[arg-type]
+    assert valid_input.replay_data is not None
+    replay_checksum = hashlib.sha256(valid_input.replay_data).hexdigest()
     assert await replay_repo.exists_by_checksum(replay_checksum)
 
 
