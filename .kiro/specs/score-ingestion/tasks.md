@@ -175,7 +175,7 @@
   - _Depends: 1.2_
 
 - [ ] 11. Score Authorization Service
-- [ ] 11.1 ScoreAuthorizationServiceを実装
+- [x] 11.1 ScoreAuthorizationServiceを実装
   - `infrastructure/auth/score_authorization.py`
   - Password verification (mock legacy auth service)
   - Active session check (mock Valkey)
