@@ -103,7 +103,7 @@
   - _Requirements: 6.1, 7.1_
   - _Boundary: repositories/interfaces/_
 
-- [ ] 7.2 (P) ScoreSubmissionRepository Protocolを定義
+- [x] 7.2 (P) ScoreSubmissionRepository Protocolを定義
   - `repositories/interfaces/submission_repository.py`
   - `create()`, `get_by_fingerprint()`, `update_state()` methods
   - _Requirements: 6.3, 9.1_
