@@ -109,14 +109,14 @@
   - _Requirements: 6.3, 9.1_
   - _Boundary: repositories/interfaces/_
 
-- [ ] 7.3 (P) ReplayRepository Protocolを定義
+- [x] 7.3 (P) ReplayRepository Protocolを定義
   - `repositories/interfaces/replay_repository.py`
   - `create()`, `exists_by_checksum()` methods
   - _Requirements: 6.2, 7.3_
   - _Boundary: repositories/interfaces/_
 
 - [ ] 8. In-Memory Repository Implementations
-- [ ] 8.1 (P) InMemoryScoreRepositoryを実装
+- [x] 8.1 (P) InMemoryScoreRepositoryを実装
   - `repositories/memory/score_repository.py`
   - Dict-based storage
   - Unique constraint emulation
