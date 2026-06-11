@@ -17,6 +17,11 @@ from osu_server.repositories.sqlalchemy.models.channel import (
     PrivateMessageModel,
 )
 from osu_server.repositories.sqlalchemy.models.role import RoleModel, UserRoleModel
+from osu_server.repositories.sqlalchemy.models.score import (
+    ReplayModel,
+    ScoreModel,
+    ScoreSubmissionModel,
+)
 from osu_server.repositories.sqlalchemy.models.user import (
     DisallowedUsernameModel,
     UserModel,
@@ -33,7 +38,10 @@ __all__ = [
     "ChannelRoleOverrideModel",
     "DisallowedUsernameModel",
     "PrivateMessageModel",
+    "ReplayModel",
     "RoleModel",
+    "ScoreModel",
+    "ScoreSubmissionModel",
     "UserModel",
     "UserRoleModel",
 ]
