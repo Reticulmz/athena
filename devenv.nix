@@ -161,7 +161,6 @@ in
         fi
         uv run athena db create --env test
       '';
-      after = [ "devenv:python:virtualenv" ];
     };
 
     "db:test:migrate" = {
@@ -186,7 +185,7 @@ in
       after = [ "db:test:create" ];
     };
 
-    "test" = {
+    "db:test:run" = {
       exec = ''
         export ENVIRONMENT=test
         if [ -n "''${ATHENA_TEST_DATABASE_URL:-}" ]; then
@@ -205,7 +204,6 @@ in
         fi
         uv run athena test --env test
       '';
-      after = [ "devenv:python:virtualenv" ];
     };
   };
 
@@ -232,7 +230,7 @@ in
     echo "  uv run pytest  - run tests"
     echo "  devenv tasks run db:test:create   - create test database"
     echo "  devenv tasks run db:test:migrate  - migrate test database"
-    echo "  devenv tasks run test             - migrate test DB and run tests"
+    echo "  devenv tasks run db:test:run      - migrate test DB and run tests"
     echo "  nginx listens on :80/:443 → athena :8000"
     echo "  cloudflared tunnel → *.example.com :80"
     echo ""
