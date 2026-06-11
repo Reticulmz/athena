@@ -125,7 +125,7 @@
   - _Requirements: 6.1, 7.1_
   - _Boundary: repositories/memory/_
 
-- [ ] 8.2 (P) InMemoryScoreSubmissionRepositoryを実装
+- [x] 8.2 (P) InMemoryScoreSubmissionRepositoryを実装
   - `repositories/memory/submission_repository.py`
   - Dict-based storage
   - Fingerprint uniqueness
@@ -133,7 +133,7 @@
   - _Requirements: 6.3, 9.1_
   - _Boundary: repositories/memory/_
 
-- [ ] 8.3 (P) InMemoryReplayRepositoryを実装
+- [x] 8.3 (P) InMemoryReplayRepositoryを実装
   - `repositories/memory/replay_repository.py`
   - Dict-based storage
   - Checksum uniqueness
