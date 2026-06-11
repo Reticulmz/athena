@@ -1,7 +1,7 @@
 # Gap Analysis: Score Submission
 
-**Feature**: score-submission  
-**Analysis Date**: 2026-06-11  
+**Feature**: score-submission
+**Analysis Date**: 2026-06-11
 **Status**: tasks-generated (実装前のコードベース再確認)
 
 ## Executive Summary

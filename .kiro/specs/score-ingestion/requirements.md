@@ -1,7 +1,7 @@
 # Requirements Document: Score Ingestion (Wave 1)
 
-**Feature**: score-ingestion  
-**Wave**: 1 of 4  
+**Feature**: score-ingestion
+**Wave**: 1 of 4
 **Goal**: Stable client が vanilla play の score を submit でき、completed response を受け取れる
 
 ## Introduction

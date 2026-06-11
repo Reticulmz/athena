@@ -1,8 +1,8 @@
 # 技術設計書: Score Ingestion (Wave 1)
 
-**Feature**: score-ingestion  
-**Wave**: 1 of 4  
-**Status**: Design Draft  
+**Feature**: score-ingestion
+**Wave**: 1 of 4
+**Status**: Design Draft
 **Last Updated**: 2026-06-11
 
 ## 概要
@@ -173,36 +173,36 @@ sequenceDiagram
 
     Client->>Handler: POST /web/osu-submit-modular-selector.php
     Handler->>Service: submit_score(parsed)
-    
+
     Service->>Repo: get_by_fingerprint()
     alt Existing submission
         Repo-->>Service: Return result snapshot
         Service-->>Handler: Return cached result
         Handler-->>Client: Completed response
     end
-    
+
     Service->>Crypto: decrypt_score_payload()
     Crypto-->>Service: Decrypted payload
-    
+
     Service->>Auth: authorize_submission()
     Auth-->>Service: Authorization context
-    
+
     Service->>Beatmap: check_eligibility()
     Beatmap-->>Service: Eligibility result
-    
+
     Service->>Repo: exists_by_online_checksum()
     Repo-->>Service: false
-    
+
     Service->>Repo: exists_by_replay_checksum()
     Repo-->>Service: false
-    
+
     Service->>Repo: create(score)
     Repo->>DB: INSERT INTO scores
     DB-->>Repo: Score record
-    
+
     Service->>Repo: create(replay)
     Repo->>DB: INSERT INTO replays
-    
+
     Service-->>Handler: SubmissionResult
     Handler-->>Client: Completed response
 ```
@@ -253,10 +253,10 @@ sequenceDiagram
 async def handle_score_submit(request: Request) -> Response:
     """
     POST /web/osu-submit-modular-selector.php
-    
+
     Headers:
         Content-Type: multipart/form-data
-    
+
     Response:
         - Completed: "beatmapId:beatmapSetId:beatmapPlaycount:3\nchart..."
         - Terminal reject: "error: no"
@@ -513,7 +513,7 @@ async def submit_score(parsed: ParsedSubmission) -> SubmissionResult:
     Preconditions: parsed is valid ParsedSubmission
     Postconditions: Score persisted or terminal reject reason returned
     Invariants: Idempotent for same submission fingerprint
-    
+
     Flow:
     1. Generate submission fingerprint
     2. Check existing submission
@@ -670,7 +670,7 @@ CREATE TABLE scores (
     perfect BOOLEAN NOT NULL,
     client_version VARCHAR(32) NOT NULL,
     submitted_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    
+
     INDEX idx_scores_user_beatmap (user_id, beatmap_id),
     INDEX idx_scores_beatmap_ruleset (beatmap_id, ruleset, playstyle)
 );
@@ -687,7 +687,7 @@ CREATE TABLE score_submissions (
     submitted_at TIMESTAMP WITH TIME ZONE NOT NULL,
     state VARCHAR(32) NOT NULL,
     result_snapshot JSONB,
-    
+
     INDEX idx_submissions_user (user_id),
     INDEX idx_submissions_submitted_at (submitted_at)
 );
@@ -703,7 +703,7 @@ CREATE TABLE replays (
     checksum_sha256 VARCHAR(64) NOT NULL UNIQUE,
     byte_size INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    
+
     INDEX idx_replays_score (score_id)
 );
 ```
