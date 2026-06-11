@@ -123,6 +123,7 @@ python_functions = ["test_*"]
 
 [tool.importlinter]
 root_packages = ["osu_server", "athena_cli"]
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
@@ -171,7 +172,46 @@ name = "Domain has no I/O dependencies"
 type = "forbidden"
 source_modules = ["osu_server.domain"]
 forbidden_modules = [
+    # Internal modules
     "osu_server.repositories",
     "osu_server.infrastructure",
     "osu_server.transports",
+    # External I/O libraries
+    "httpx",
+    "aiohttp",
+    "requests",
+    "sqlalchemy",
+    "redis",
+    "valkey",
+    "psycopg",
+    "asyncpg",
+    "aiomysql",
+    "motor",
+    "boto3",
+]
+
+[[tool.importlinter.contracts]]
+name = "Shared has no business logic dependencies"
+type = "forbidden"
+source_modules = ["osu_server.shared"]
+forbidden_modules = [
+    "osu_server.domain",
+    "osu_server.services",
+    "osu_server.repositories",
+    "osu_server.infrastructure",
+    "osu_server.transports",
+    "osu_server.jobs",
+]
+
+[[tool.importlinter.contracts]]
+name = "Repositories only use approved database libraries"
+type = "forbidden"
+source_modules = ["osu_server.repositories"]
+forbidden_modules = [
+    # HTTP clients (repositories should not make HTTP calls)
+    "httpx",
+    "aiohttp",
+    "requests",
+    # Message queues (use infrastructure layer)
+    "taskiq",
 ]

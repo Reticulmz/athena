@@ -24,7 +24,7 @@ from osu_server.repositories.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
-from osu_server.repositories.beatmaps.providers import OsuApiMetadataProvider
+from osu_server.services.beatmap_mirror.providers import OsuApiMetadataProvider
 
 # ---------------------------------------------------------------------------
 # Fixtures / constants

@@ -28,14 +28,8 @@ from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimite
 from osu_server.infrastructure.storage import create_blob_storage_backend
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.jobs import register_all_jobs
-from osu_server.repositories.beatmaps.file_sources import CompositeBeatmapFileProvider
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
-)
-from osu_server.repositories.beatmaps.providers import (
-    InMemoryBeatmapMetadataProvider,
-    MirrorMetadataProvider,
-    OsuApiMetadataProvider,
 )
 from osu_server.repositories.interfaces.beatmap_repository import (
     BeatmapFetchTarget,
@@ -64,6 +58,12 @@ from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
+from osu_server.services.beatmap_mirror.file_sources import CompositeBeatmapFileProvider
+from osu_server.services.beatmap_mirror.providers import (
+    InMemoryBeatmapMetadataProvider,
+    MirrorMetadataProvider,
+    OsuApiMetadataProvider,
+)
 from osu_server.services.beatmap_mirror_service import (
     BeatmapEligibilityService,
     BeatmapMirrorService,

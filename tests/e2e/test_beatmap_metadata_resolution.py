@@ -30,10 +30,10 @@ from osu_server.jobs.beatmap_fetch import FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
-from osu_server.repositories.beatmaps.providers import (
+from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
+from osu_server.services.beatmap_mirror.providers import (
     InMemoryBeatmapMetadataProvider,
 )
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.services.beatmap_mirror_service import (
     BeatmapEligibilityService,
     BeatmapMirrorService,

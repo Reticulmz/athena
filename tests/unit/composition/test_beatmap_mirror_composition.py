@@ -26,13 +26,13 @@ from osu_server.domain.beatmap import (
 )
 from osu_server.infrastructure.di.container import Container
 from osu_server.infrastructure.di.providers import build_container
-from osu_server.repositories.beatmaps.file_sources import CompositeBeatmapFileProvider
 from osu_server.repositories.interfaces.beatmap_repository import (
     BeatmapFetchTarget,
     BeatmapRepository,
 )
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
+from osu_server.services.beatmap_mirror.file_sources import CompositeBeatmapFileProvider
 from osu_server.services.beatmap_mirror_service import (
     BeatmapEligibilityService,
     BeatmapMirrorService,

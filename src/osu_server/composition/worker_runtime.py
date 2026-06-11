@@ -13,13 +13,8 @@ from osu_server.infrastructure.state.valkey.channel_state_store import ValkeyCha
 from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimiter
 from osu_server.infrastructure.storage import create_blob_storage_backend
 from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
-from osu_server.repositories.beatmaps.file_sources import CompositeBeatmapFileProvider
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
-)
-from osu_server.repositories.beatmaps.providers import (
-    MirrorMetadataProvider,
-    OsuApiMetadataProvider,
 )
 from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
 from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
@@ -29,6 +24,11 @@ from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRep
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
+from osu_server.services.beatmap_mirror.file_sources import CompositeBeatmapFileProvider
+from osu_server.services.beatmap_mirror.providers import (
+    MirrorMetadataProvider,
+    OsuApiMetadataProvider,
+)
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
