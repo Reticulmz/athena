@@ -190,7 +190,7 @@
   - _Boundary: infrastructure/auth/_
 
 - [ ] 12. Beatmap Eligibility Service
-- [ ] 12.1 BeatmapEligibilityServiceを実装
+- [x] 12.1 BeatmapEligibilityServiceを実装
   - `infrastructure/beatmap/eligibility_service.py`
   - Beatmap metadata取得 (mock beatmap mirror)
   - Status check (Ranked/Approved/Loved/Qualified accept)
