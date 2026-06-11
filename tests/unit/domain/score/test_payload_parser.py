@@ -2,12 +2,13 @@
 
 import pytest
 
-from osu_server.domain.score.payload_parser import ParseError, ParsedScore, parse
+from osu_server.domain.score.payload_parser import ParsedScore, ParseError, parse
 
 
 def test_parse_valid_payload() -> None:
     """Valid colon-separated payloadを正しくparseする。"""
-    # Format: user_id:username:beatmap_checksum:online_checksum:ruleset:mods:n300:n100:n50:geki:katu:miss:score:max_combo:perfect:passed
+    # Format: user_id:username:beatmap_checksum:online_checksum:ruleset:mods
+    #         :n300:n100:n50:geki:katu:miss:score:max_combo:perfect:passed
     payload = "100:testuser:abc123:xyz789:0:0:300:50:10:0:0:5:500000:350:0:1"
 
     result = parse(payload)
@@ -73,7 +74,7 @@ def test_parse_invalid_field_count() -> None:
     payload = "100:user:abc:xyz:0:0"  # Too few fields
 
     with pytest.raises(ParseError) as exc_info:
-        parse(payload)
+        _ = parse(payload)
 
     assert "fields" in str(exc_info.value).lower()
 
@@ -83,7 +84,7 @@ def test_parse_invalid_integer() -> None:
     payload = "invalid:user:abc:xyz:0:0:300:50:10:0:0:5:500000:350:0:1"
 
     with pytest.raises(ParseError) as exc_info:
-        parse(payload)
+        _ = parse(payload)
 
     assert "user_id" in str(exc_info.value).lower() or "integer" in str(exc_info.value).lower()
 
@@ -91,7 +92,7 @@ def test_parse_invalid_integer() -> None:
 def test_parse_empty_payload() -> None:
     """Empty payloadでParseErrorを発生させる。"""
     with pytest.raises(ParseError):
-        parse("")
+        _ = parse("")
 
 
 def test_parse_username_with_special_characters() -> None:
