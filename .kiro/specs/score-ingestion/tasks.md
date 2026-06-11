@@ -144,7 +144,7 @@
 ## Phase 3: Infrastructure Layer (TDD)
 
 - [ ] 9. Multipart Parser
-- [ ] 9.1 MultipartParserを実装
+- [x] 9.1 MultipartParserを実装
   - `infrastructure/parsers/multipart_parser.py`
   - Duplicate `score` field handling (1st=payload, 2nd=replay)
   - Required fields extraction
@@ -159,7 +159,7 @@
   - _Boundary: infrastructure/parsers/_
 
 - [ ] 10. Score Crypto Service
-- [ ] 10.1 ScoreCryptoServiceを実装
+- [x] 10.1 ScoreCryptoServiceを実装
   - `infrastructure/crypto/score_crypto.py`
   - Key selection (osuver-based)
   - `athena_crypto` Rust moduleをimport
