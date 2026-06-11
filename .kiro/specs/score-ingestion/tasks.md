@@ -85,7 +85,7 @@
   - _Boundary: domain/score/payload_parser.py_
 
 - [ ] 6. Score Validator
-- [ ] 6.1 ScoreValidatorを実装
+- [x] 6.1 ScoreValidatorを実装
   - `domain/score/validator.py`
   - Hit counts validation per ruleset
   - Accuracy calculation (server-side)
