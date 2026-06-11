@@ -29,16 +29,6 @@
   - _Requirements: 3.1-3.5_
   - _Boundary: osu_server.services.score_crypto_
 
-- [ ] 2. Database Schema
-- [ ] 2.1 Alembic migrationを作成
-  - `scores` table: online_checksum unique constraint
-  - `score_submissions` table: fingerprint unique constraint
-  - `replays` table: checksum_sha256 unique constraint
-  - Indexes: user_id, beatmap_id, submitted_at
-  - Migration file生成: `alembic revision --autogenerate`
-  - _Requirements: 6.1, 6.2, 6.3, 7.1_
-  - _Boundary: Database schema_
-
 - [x] 3. Test Infrastructure
 - [x] 3.1 (P) Test fixturesとfactoriesをセットアップ
   - `tests/factories/score_factory.py`: Valid score data生成
@@ -226,8 +216,17 @@
 
 ## Phase 5: Repository Layer (SQLAlchemy)
 
-- [ ] 14. SQLAlchemy Repository Implementations
-- [ ] 14.1 (P) SQLAlchemyScoreRepositoryを実装
+- [ ] 14. Database Schema & SQLAlchemy Repository Implementations
+- [ ] 14.1 Alembic migrationを作成
+  - `scores` table: online_checksum unique constraint
+  - `score_submissions` table: fingerprint unique constraint
+  - `replays` table: checksum_sha256 unique constraint
+  - Indexes: user_id, beatmap_id, submitted_at
+  - Migration file生成: `alembic revision --autogenerate`
+  - _Requirements: 6.1, 6.2, 6.3, 7.1_
+  - _Boundary: Database schema_
+
+- [ ] 14.2 (P) SQLAlchemyScoreRepositoryを実装
   - `repositories/sqlalchemy/score_repository.py`
   - SQLAlchemy async operations
   - Unique constraint handling
@@ -235,25 +234,25 @@
   - Integration test: unique constraint violation
   - _Requirements: 6.1, 7.1_
   - _Boundary: repositories/sqlalchemy/_
-  - _Depends: 2.1_
+  - _Depends: 14.1_
 
-- [ ] 14.2 (P) SQLAlchemyScoreSubmissionRepositoryを実装
+- [ ] 14.3 (P) SQLAlchemyScoreSubmissionRepositoryを実装
   - `repositories/sqlalchemy/submission_repository.py`
   - SQLAlchemy async operations
   - Fingerprint uniqueness
   - Integration test (real PostgreSQL): idempotent retrieval
   - _Requirements: 6.3, 9.1_
   - _Boundary: repositories/sqlalchemy/_
-  - _Depends: 2.1_
+  - _Depends: 14.1_
 
-- [ ] 14.3 (P) SQLAlchemyReplayRepositoryを実装
+- [ ] 14.4 (P) SQLAlchemyReplayRepositoryを実装
   - `repositories/sqlalchemy/replay_repository.py`
   - SQLAlchemy async operations
   - Checksum uniqueness
   - Integration test (real PostgreSQL): duplicate rejection
   - _Requirements: 6.2, 7.3_
   - _Boundary: repositories/sqlalchemy/_
-  - _Depends: 2.1_
+  - _Depends: 14.1_
 
 - [ ] 15. Service Layer Integration Test
 - [ ] 15.1 ScoreSubmissionServiceをreal DBでテスト
@@ -262,7 +261,7 @@
   - Database transaction handling
   - Concurrent submission handling
   - _Requirements: All_
-  - _Depends: 13.1, 14.1, 14.2, 14.3_
+  - _Depends: 13.1, 14.2, 14.3, 14.4_
 
 ## Phase 6: Transport Layer
 
