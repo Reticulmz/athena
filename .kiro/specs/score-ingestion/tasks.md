@@ -254,8 +254,8 @@
   - _Boundary: repositories/sqlalchemy/_
   - _Depends: 14.1_
 
-- [ ] 15. Service Layer Integration Test
-- [ ] 15.1 ScoreSubmissionServiceをreal DBでテスト
+- [x] 15. Service Layer Integration Test
+- [x] 15.1 ScoreSubmissionServiceをreal DBでテスト
   - `tests/integration/test_score_submission_integration.py`
   - E2E flow: multipart → decrypt → validate → persist → response
   - Database transaction handling
