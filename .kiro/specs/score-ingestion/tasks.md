@@ -204,7 +204,7 @@
 ## Phase 4: Service Layer (TDD)
 
 - [ ] 13. Score Submission Service
-- [ ] 13.1 ScoreSubmissionServiceを実装
+- [x] 13.1 ScoreSubmissionServiceを実装
   - `services/score_submission_service.py`
   - Use-case orchestration: decrypt → parse → authorize → validate → persist
   - Submission fingerprint生成
