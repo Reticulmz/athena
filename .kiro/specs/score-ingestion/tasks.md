@@ -2,7 +2,7 @@
 
 ## Phase 1: Foundation
 
-- [ ] 1. PyO3 Crypto Module
+- [x] 1. PyO3 Crypto Module
 - [x] 1.1 Rust workspaceとPyO3 bindingsをセットアップ
   - `athena-crypto/` ディレクトリを作成
   - `Cargo.toml`: `simple-rijndael` 依存追加、PyO3有効化
@@ -50,7 +50,7 @@
 
 ## Phase 2: Domain Layer (TDD)
 
-- [ ] 4. Domain Models
+- [x] 4. Domain Models
 - [x] 4.1 (P) Score dataclassを実装
   - `domain/score/score.py`
   - `@dataclass(slots=True)` with all fields
@@ -73,7 +73,7 @@
   - _Requirements: 7.3, 7.4_
   - _Boundary: domain/score/replay.py_
 
-- [ ] 5. Score Payload Parser
+- [x] 5. Score Payload Parser
 - [x] 5.1 ScorePayloadParserを実装
   - `domain/score/payload_parser.py`
   - Colon-separated parsing
@@ -84,7 +84,7 @@
   - _Requirements: 5.1, 5.2_
   - _Boundary: domain/score/payload_parser.py_
 
-- [ ] 6. Score Validator
+- [x] 6. Score Validator
 - [x] 6.1 ScoreValidatorを実装
   - `domain/score/validator.py`
   - Hit counts validation per ruleset
@@ -96,7 +96,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
   - _Boundary: domain/score/validator.py_
 
-- [ ] 7. Repository Interfaces
+- [x] 7. Repository Interfaces
 - [x] 7.1 (P) ScoreRepository Protocolを定義
   - `repositories/interfaces/score_repository.py`
   - `create()`, `exists_by_online_checksum()`, `get_by_id()` methods
@@ -115,7 +115,7 @@
   - _Requirements: 6.2, 7.3_
   - _Boundary: repositories/interfaces/_
 
-- [ ] 8. In-Memory Repository Implementations
+- [x] 8. In-Memory Repository Implementations
 - [x] 8.1 (P) InMemoryScoreRepositoryを実装
   - `repositories/memory/score_repository.py`
   - Dict-based storage
@@ -143,7 +143,7 @@
 
 ## Phase 3: Infrastructure Layer (TDD)
 
-- [ ] 9. Multipart Parser
+- [x] 9. Multipart Parser
 - [x] 9.1 MultipartParserを実装
   - `infrastructure/parsers/multipart_parser.py`
   - Duplicate `score` field handling (1st=payload, 2nd=replay)
@@ -158,7 +158,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
   - _Boundary: infrastructure/parsers/_
 
-- [ ] 10. Score Crypto Service
+- [x] 10. Score Crypto Service
 - [x] 10.1 ScoreCryptoServiceを実装
   - `infrastructure/crypto/score_crypto.py`
   - Key selection (osuver-based)
@@ -174,7 +174,7 @@
   - _Boundary: infrastructure/crypto/_
   - _Depends: 1.2_
 
-- [ ] 11. Score Authorization Service
+- [x] 11. Score Authorization Service
 - [x] 11.1 ScoreAuthorizationServiceを実装
   - `infrastructure/auth/score_authorization.py`
   - Password verification (mock legacy auth service)
@@ -189,7 +189,7 @@
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 11.1_
   - _Boundary: infrastructure/auth/_
 
-- [ ] 12. Beatmap Eligibility Service
+- [x] 12. Beatmap Eligibility Service
 - [x] 12.1 BeatmapEligibilityServiceを実装
   - `infrastructure/beatmap/eligibility_service.py`
   - Beatmap metadata取得 (mock beatmap mirror)
@@ -203,7 +203,7 @@
 
 ## Phase 4: Service Layer (TDD)
 
-- [ ] 13. Score Submission Service
+- [x] 13. Score Submission Service
 - [x] 13.1 ScoreSubmissionServiceを実装
   - `services/score_submission_service.py`
   - Use-case orchestration: decrypt → parse → authorize → validate → persist
