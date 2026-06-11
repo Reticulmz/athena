@@ -216,7 +216,7 @@
 
 ## Phase 5: Repository Layer (SQLAlchemy)
 
-- [ ] 14. Database Schema & SQLAlchemy Repository Implementations
+- [x] 14. Database Schema & SQLAlchemy Repository Implementations
 - [x] 14.1 Alembic migrationを作成
   - `scores` table: online_checksum unique constraint
   - `score_submissions` table: fingerprint unique constraint
@@ -245,7 +245,7 @@
   - _Boundary: repositories/sqlalchemy/_
   - _Depends: 14.1_
 
-- [ ] 14.4 (P) SQLAlchemyReplayRepositoryを実装
+- [x] 14.4 (P) SQLAlchemyReplayRepositoryを実装
   - `repositories/sqlalchemy/replay_repository.py`
   - SQLAlchemy async operations
   - Checksum uniqueness
