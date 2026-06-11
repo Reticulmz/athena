@@ -44,7 +44,7 @@
   - `tests/factories/score_factory.py`: Valid score data生成
   - `tests/factories/multipart_factory.py`: Multipart request生成
   - `tests/factories/crypto_factory.py`: Encrypted payload生成
-  - Golden files: `tests/fixtures/golden/` (real stable client samples)
+  - Golden files: `tests/fixtures/golden/` (test-account stable client samples)
   - _Requirements: All (test support)_
   - _Boundary: Test infrastructure_
 
@@ -97,7 +97,7 @@
   - _Boundary: domain/score/validator.py_
 
 - [ ] 7. Repository Interfaces
-- [ ] 7.1 (P) ScoreRepository Protocolを定義
+- [x] 7.1 (P) ScoreRepository Protocolを定義
   - `repositories/interfaces/score_repository.py`
   - `create()`, `exists_by_online_checksum()`, `get_by_id()` methods
   - _Requirements: 6.1, 7.1_
