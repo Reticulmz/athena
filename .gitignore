@@ -58,3 +58,6 @@ logs/
 
 .playwright-mcp/
 .data/*
+
+# Temporary files
+tmp/*
