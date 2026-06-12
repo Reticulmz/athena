@@ -292,8 +292,8 @@
   - _Boundary: services/_
   - _Depends: 13.1_
 
-- [ ] 18. Security & Privacy Verification
-- [ ] 18.1 機密情報loggingをverify
+- [x] 18. Security & Privacy Verification
+- [x] 18.1 機密情報loggingをverify
   - Log output検証: password-md5がSHA-256 hashのみ
   - Log output検証: encrypted payloadが出力されない
   - Log output検証: opaque fieldsがSHA-256 hashのみ
@@ -301,8 +301,8 @@
   - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
   - _Depends: 16.1_
 
-- [ ] 19. Performance Metrics Setup
-- [ ] 19.1 Observability metricsを追加
+- [x] 19. Performance Metrics Setup
+- [x] 19.1 Observability metricsを追加
   - Endpoint latency metrics (P50, P95, P99)
   - Database query latency
   - Decrypt operation latency

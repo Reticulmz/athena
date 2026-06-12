@@ -1,4 +1,4 @@
-# pyright: reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedParameter=false, reportOperatorIssue=false, reportMissingParameterType=false
+# pyright: reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedParameter=false, reportOperatorIssue=false, reportMissingParameterType=false, reportAny=false
 """Unit tests for ScoreSubmissionService."""
 
 import hashlib
@@ -433,3 +433,47 @@ async def test_validation_failure_terminal_reject(
     result = await service.submit_score(valid_input)
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert "validation_failed" in result.error_reason  # type: ignore[operator]
+
+
+@pytest.mark.asyncio
+async def test_metrics_logged_on_success(
+    service: ScoreSubmissionService,
+    valid_input: ParsedSubmissionInput,
+    monkeypatch,
+) -> None:
+    """Metrics are logged on successful submission."""
+    logged_metrics = {}
+
+    def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
+        payload = "1000:test_user:abc123:online_checksum_metrics:0:0:100:10:5:0:0:2:500000:99:1:1"
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    # Capture logger.info calls
+    original_logger = __import__(
+        "osu_server.services.score_submission_service", fromlist=["logger"]
+    ).logger
+
+    def capture_info(event: str, **kwargs) -> None:
+        if event == "score_submission_completed":
+            logged_metrics.update(kwargs)
+
+    monkeypatch.setattr(original_logger, "info", capture_info)
+    monkeypatch.setattr(
+        "osu_server.services.score_submission_service.decrypt_score_payload",
+        mock_decrypt,
+    )
+
+    result = await service.submit_score(valid_input)
+    assert result.outcome == SubmissionOutcome.COMPLETED
+
+    # Verify metrics were logged
+    assert "duration_ms" in logged_metrics
+    assert "decrypt_latency_ms" in logged_metrics
+    assert "beatmap_latency_ms" in logged_metrics
+    assert "db_latency_ms" in logged_metrics
+
+    # Verify all latency values are positive or zero
+    assert logged_metrics["duration_ms"] > 0
+    assert logged_metrics["decrypt_latency_ms"] >= 0
+    assert logged_metrics["beatmap_latency_ms"] >= 0
+    assert logged_metrics["db_latency_ms"] > 0

@@ -2,6 +2,7 @@
 """Score submission service orchestrating the full submission pipeline."""
 
 import hashlib
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -89,7 +90,7 @@ class ScoreSubmissionService:
         self._auth_service: ScoreAuthorizationService = auth_service
         self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
 
-    async def submit_score(  # noqa: PLR0911, PLR0912
+    async def submit_score(  # noqa: PLR0911, PLR0912, PLR0915
         self, input_data: ParsedSubmissionInput
     ) -> SubmissionResult:
         """Submit a score with full validation and persistence.
@@ -116,6 +117,8 @@ class ScoreSubmissionService:
             - R7.1-7.5: Persistence
             - R11.1-11.5: Security logging
         """
+        start_time = time.perf_counter()
+
         # 1. Generate submission fingerprint (R9.4)
         fingerprint = self._generate_fingerprint(input_data)
 
@@ -137,12 +140,14 @@ class ScoreSubmissionService:
             )
 
         # 3. Decrypt payload (R3.1-3.4)
+        decrypt_start = time.perf_counter()
         try:
             decrypted = decrypt_score_payload(
                 input_data.encrypted_payload,
                 input_data.iv,
                 input_data.osu_version,
             )
+            decrypt_latency_ms = (time.perf_counter() - decrypt_start) * 1000
         except DecryptionError as e:
             logger.warning(
                 "score_submission_failed",
@@ -209,10 +214,12 @@ class ScoreSubmissionService:
             )
 
         # 6. Check beatmap eligibility (R8.1-8.5)
+        beatmap_start = time.perf_counter()
         beatmap_result = await self._beatmap_resolver.resolve_by_beatmap_id(
             input_data.beatmap_id,
             BeatmapResolveOptions(),
         )
+        beatmap_latency_ms = (time.perf_counter() - beatmap_start) * 1000
         eligibility = beatmap_result.eligibility
         accepts_submission = False
         if eligibility is not None:
@@ -291,7 +298,9 @@ class ScoreSubmissionService:
             submitted_at=input_data.submitted_at,
         )
 
+        db_start = time.perf_counter()
         created_score = await self._score_repo.create(score)
+        db_latency_ms = (time.perf_counter() - db_start) * 1000
         assert created_score.id is not None, "Score ID must be set after creation"
 
         # 10. Persist replay if present (R7.3-7.4)
@@ -316,6 +325,19 @@ class ScoreSubmissionService:
             result_snapshot={"score_id": created_score.id},
         )
         _ = await self._submission_repo.create(submission)
+
+        total_duration_ms = (time.perf_counter() - start_time) * 1000
+        logger.info(
+            "score_submission_completed",
+            duration_ms=total_duration_ms,
+            decrypt_latency_ms=decrypt_latency_ms,
+            beatmap_latency_ms=beatmap_latency_ms,
+            db_latency_ms=db_latency_ms,
+            fingerprint=fingerprint,
+            user_id=parsed.user_id,
+            beatmap_id=input_data.beatmap_id,
+            score_id=created_score.id,
+        )
 
         return SubmissionResult(
             outcome=SubmissionOutcome.COMPLETED,
