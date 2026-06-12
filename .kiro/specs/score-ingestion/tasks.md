@@ -265,8 +265,8 @@
 
 ## Phase 6: Transport Layer
 
-- [ ] 16. Score Submit Endpoint
-- [ ] 16.1 ScoreSubmitHandlerを実装
+- [x] 16. Score Submit Endpoint
+- [x] 16.1 ScoreSubmitHandlerを実装
   - `transports/web_legacy/routes/score_submit.py`
   - POST `/web/osu-submit-modular-selector.php` handler
   - Multipart request受信
