@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     SmallInteger,
@@ -75,14 +76,19 @@ class ScoreSubmissionModel(Base):
 
 
 class ReplayModel(Base):
-    __tablename__: str = "replays"
-    __table_args__: tuple[Index, ...] = (Index("idx_replays_score_id", "score_id"),)
+    __tablename__: str = "replay_file_attachments"
+    __table_args__: tuple[Index, ...] = (
+        Index("idx_replay_file_attachments_score_id", "score_id"),
+        Index("idx_replay_file_attachments_blob_id", "blob_id"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     score_id: Mapped[int] = mapped_column(
-        BigInteger, nullable=False
-    )  # ForeignKey deferred to migration
-    blob_key: Mapped[str] = mapped_column(String(255), nullable=False)
+        ForeignKey("scores.id", name="fk_replay_file_attachments_score_id"), nullable=False
+    )
+    blob_id: Mapped[int] = mapped_column(
+        ForeignKey("blobs.id", name="fk_replay_file_attachments_blob_id"), nullable=False
+    )
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

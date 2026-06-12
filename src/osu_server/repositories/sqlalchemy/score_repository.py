@@ -71,6 +71,13 @@ class SQLAlchemyScoreRepository:
             result = (await session.execute(stmt)).scalar_one_or_none()
             return result is not None
 
+    async def get_by_online_checksum(self, checksum: str) -> Score | None:
+        """Return the score with *checksum*, or ``None`` if not found."""
+        async with self._session_factory() as session:
+            stmt = select(ScoreModel).where(ScoreModel.online_checksum == checksum)
+            model = (await session.execute(stmt)).scalar_one_or_none()
+            return self._to_domain(model) if model is not None else None
+
     async def get_by_id(self, score_id: int) -> Score | None:
         """Return the score with *score_id*, or ``None`` if not found."""
         async with self._session_factory() as session:

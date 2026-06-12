@@ -32,9 +32,10 @@ class InMemoryScoreSubmissionRepository:
 
         created = replace(submission, id=self._next_id)
         self._next_id += 1
+        assert created.id is not None
 
-        self._submissions_by_id[created.id] = created  # pyright: ignore[reportArgumentType]
-        self._id_by_fingerprint[created.fingerprint] = created.id  # pyright: ignore[reportArgumentType]
+        self._submissions_by_id[created.id] = created
+        self._id_by_fingerprint[created.fingerprint] = created.id
 
         return created
 
@@ -45,7 +46,12 @@ class InMemoryScoreSubmissionRepository:
             return None
         return self._submissions_by_id.get(submission_id)
 
-    async def update_state(self, submission_id: int, state: str) -> None:
+    async def update_state(
+        self,
+        submission_id: int,
+        state: str,
+        result_snapshot: dict[str, object] | None = None,
+    ) -> None:
         """Update submission state.
 
         Raises ``ValueError`` if *submission_id* not found.
@@ -55,5 +61,9 @@ class InMemoryScoreSubmissionRepository:
             msg = f"Submission not found: {submission_id}"
             raise ValueError(msg)
 
-        updated = replace(submission, state=state)
+        updated = replace(
+            submission,
+            state=state,
+            result_snapshot=result_snapshot,
+        )
         self._submissions_by_id[submission_id] = updated

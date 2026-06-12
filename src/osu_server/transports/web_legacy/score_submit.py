@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import structlog
 from starlette.responses import Response
 
-from osu_server.infrastructure.parsers.multipart_parser import ParseError, parse
+from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits, ParseError, parse
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     SubmissionOutcome,
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
 
     from osu_server.services.score_submission_service import ScoreSubmissionService
 
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+
 
 class ScoreSubmitHandler:
     """Handler for POST /web/osu-submit-modular-selector.php.
@@ -25,8 +28,13 @@ class ScoreSubmitHandler:
     Stable client score submission endpoint.
     """
 
-    def __init__(self, service: ScoreSubmissionService) -> None:
+    def __init__(
+        self,
+        service: ScoreSubmissionService,
+        limits: MultipartLimits | None = None,
+    ) -> None:
         self._service: ScoreSubmissionService = service
+        self._limits: MultipartLimits = limits or MultipartLimits()
 
     async def __call__(self, request: Request) -> Response:
         """Handle score submission request.
@@ -36,9 +44,23 @@ class ScoreSubmitHandler:
         try:
             body = await request.body()
             content_type = request.headers.get("content-type", "")
-            parsed = parse(body, content_type)
-        except ParseError:
+            parsed = parse(body, content_type, self._limits)
+        except ParseError as exc:
+            logger.warning(
+                "score_submission_failed",
+                reason="multipart_parse_failed",
+                error=str(exc),
+            )
             return Response(b"error: no", status_code=200)
+
+        logger.debug(
+            "score_submission_multipart_parsed",
+            score_field_count=parsed.score_field_count,
+            replay_present=parsed.replay_data is not None,
+            replay_byte_size=len(parsed.replay_data) if parsed.replay_data is not None else None,
+            fail_time_ms=parsed.fail_time_ms,
+            osu_version=parsed.osu_version,
+        )
 
         input_data = ParsedSubmissionInput(
             encrypted_payload=parsed.encrypted_payload,
@@ -55,22 +77,37 @@ class ScoreSubmitHandler:
         result = await self._service.submit_score(input_data)
 
         if result.outcome == SubmissionOutcome.COMPLETED:
-            return _format_completed_response(result.score_id or 0)
+            return _format_completed_response(
+                beatmap_id=result.beatmap_id or 0,
+                beatmap_set_id=result.beatmapset_id or 0,
+            )
         if result.outcome == SubmissionOutcome.RETRYABLE:
+            logger.info(
+                "score_submission_retryable_response",
+                error_reason=result.error_reason,
+            )
             return Response(b"error: yes", status_code=200)
+        if result.outcome == SubmissionOutcome.ACCEPTED_PENDING:
+            logger.info(
+                "score_submission_pending_response",
+                error_reason=result.error_reason,
+            )
+            return Response(b"error: yes", status_code=200)
+        logger.warning(
+            "score_submission_terminal_response",
+            error_reason=result.error_reason,
+        )
         return Response(b"error: no", status_code=200)
 
 
-def _format_completed_response(_score_id: int) -> Response:
+def _format_completed_response(*, beatmap_id: int, beatmap_set_id: int) -> Response:
     """Format completed response in stable client format.
 
     Format: beatmapId:beatmapSetId:beatmapPlaycount:3\\nchart...
     Requirements: R10.1, R10.5
 
-    Note: score_id is accepted but not used in Wave 1 (PP calculation deferred to Wave 2).
+    Note: PP calculation and leaderboard ranks are deferred to later waves.
     """
-    beatmap_id = 0
-    beatmap_set_id = 0
     beatmap_playcount = 1
 
     body = f"{beatmap_id}:{beatmap_set_id}:{beatmap_playcount}:3\n".encode()

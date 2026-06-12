@@ -29,38 +29,11 @@ if TYPE_CHECKING:
 
 _TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8"
 
-_logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 
 def _sanitize(text: str) -> str:
     return text.replace("|", " ").replace("\r", " ").replace("\n", " ")
-
-
-class GetscoresFormatter:
-    def format_unavailable(self) -> bytes:
-        return b"-1|false"
-
-    def format_update_available(self) -> bytes:
-        return b"1|false"
-
-    def format_header(
-        self,
-        *,
-        status: int,
-        beatmap: Beatmap,
-        beatmapset: BeatmapSet,
-    ) -> bytes:
-        artist = _sanitize(beatmapset.artist)
-        title = _sanitize(beatmapset.title)
-
-        return (
-            f"{status}|false|{beatmap.id}|{beatmap.beatmapset_id}|0||\n"
-            f"0\n"
-            f"[bold:0,size:20]{artist}|{title}\n"
-            f"0\n"
-            f"\n"
-            f"\n"
-        ).encode()
 
 
 class GetscoresHandler:
@@ -70,20 +43,13 @@ class GetscoresHandler:
     endpoint via ``__call__``.
     """
 
-    _auth_service: LegacyWebAuthService
-    _getscores_service: LegacyGetscoresService
-    _formatter: GetscoresFormatter
-
     def __init__(
         self,
-        *,
         auth_service: LegacyWebAuthService,
         getscores_service: LegacyGetscoresService,
-        formatter: GetscoresFormatter | None = None,
     ) -> None:
-        self._auth_service = auth_service
-        self._getscores_service = getscores_service
-        self._formatter = formatter or GetscoresFormatter()
+        self._auth_service: LegacyWebAuthService = auth_service
+        self._getscores_service: LegacyGetscoresService = getscores_service
 
     async def __call__(self, request: Request) -> Response:
         """Handle a getscores request, returning the stable wire body."""
@@ -95,7 +61,7 @@ class GetscoresHandler:
             password_md5=password_md5,
         )
         if auth_result.failure is not None:
-            _logger.info(
+            logger.info(
                 "getscores_auth_failed",
                 failure_reason=auth_result.failure.value,
             )
@@ -104,26 +70,22 @@ class GetscoresHandler:
         parse_result = self._getscores_service.parse(request.query_params)
         if parse_result.error is not None or parse_result.request is None:
             error_value = parse_result.error.value if parse_result.error is not None else None
-            _logger.info(
+            logger.info(
                 "getscores_identity_invalid",
                 parse_error=error_value,
                 user_id=auth_result.user_id,
             )
-            return Response(
-                content=self._formatter.format_unavailable(),
-                status_code=HTTPStatus.OK,
-                media_type=_TEXT_PLAIN_UTF8,
-            )
+            return format_getscores_unavailable_response()
 
         request_obj = parse_result.request
         if request_obj.parse_warnings:
-            _logger.info(
+            logger.info(
                 "getscores_parse_warning",
                 warnings=[w.value for w in request_obj.parse_warnings],
                 user_id=auth_result.user_id,
             )
         if request_obj.anti_cheat_signal:
-            _logger.info(
+            logger.info(
                 "getscores_anti_cheat_signal",
                 user_id=auth_result.user_id,
             )
@@ -131,51 +93,74 @@ class GetscoresHandler:
         outcome = await self._getscores_service.resolve(request_obj)
 
         if outcome.kind is GetscoresOutcomeKind.UNAVAILABLE:
-            _logger.info(
+            logger.info(
                 "getscores_unavailable",
                 resolve_reason=outcome.reason.value,
                 user_id=auth_result.user_id,
             )
-            return Response(
-                content=self._formatter.format_unavailable(),
-                status_code=HTTPStatus.OK,
-                media_type=_TEXT_PLAIN_UTF8,
-            )
+            return format_getscores_unavailable_response()
 
         if outcome.kind is GetscoresOutcomeKind.UPDATE_AVAILABLE:
-            _logger.info(
+            logger.info(
                 "getscores_update_available",
                 resolve_reason=outcome.reason.value,
                 user_id=auth_result.user_id,
             )
-            return Response(
-                content=self._formatter.format_update_available(),
-                status_code=HTTPStatus.OK,
-                media_type=_TEXT_PLAIN_UTF8,
-            )
+            return format_getscores_update_available_response()
 
         # HEADER outcome
         assert outcome.header is not None  # invariant for HEADER outcomes
         wire_status = self._getscores_service.map_header_status(outcome.header.beatmap)
         if wire_status is None:
-            _logger.info(
+            logger.info(
                 "getscores_unavailable",
                 resolve_reason=outcome.reason.value,
                 user_id=auth_result.user_id,
             )
-            return Response(
-                content=self._formatter.format_unavailable(),
-                status_code=HTTPStatus.OK,
-                media_type=_TEXT_PLAIN_UTF8,
-            )
+            return format_getscores_unavailable_response()
 
-        body = self._formatter.format_header(
+        return format_getscores_header_response(
             status=wire_status,
             beatmap=outcome.header.beatmap,
             beatmapset=outcome.header.beatmapset,
         )
-        return Response(
-            content=body,
-            status_code=HTTPStatus.OK,
-            media_type=_TEXT_PLAIN_UTF8,
-        )
+
+
+def format_getscores_unavailable_response() -> Response:
+    return Response(
+        content=b"-1|false",
+        status_code=HTTPStatus.OK,
+        media_type=_TEXT_PLAIN_UTF8,
+    )
+
+
+def format_getscores_update_available_response() -> Response:
+    return Response(
+        content=b"1|false",
+        status_code=HTTPStatus.OK,
+        media_type=_TEXT_PLAIN_UTF8,
+    )
+
+
+def format_getscores_header_response(
+    *,
+    status: int,
+    beatmap: Beatmap,
+    beatmapset: BeatmapSet,
+) -> Response:
+    artist = _sanitize(beatmapset.artist)
+    title = _sanitize(beatmapset.title)
+
+    body = (
+        f"{status}|false|{beatmap.id}|{beatmap.beatmapset_id}|0||\n"
+        f"0\n"
+        f"[bold:0,size:20]{artist}|{title}\n"
+        f"0\n"
+        f"\n"
+        f"\n"
+    ).encode()
+    return Response(
+        content=body,
+        status_code=HTTPStatus.OK,
+        media_type=_TEXT_PLAIN_UTF8,
+    )

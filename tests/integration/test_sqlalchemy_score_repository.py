@@ -123,6 +123,21 @@ async def test_sqlalchemy_score_repository_exists_by_online_checksum(
     assert await repo.exists_by_online_checksum("nonexistent_checksum") is False
 
 
+async def test_sqlalchemy_score_repository_get_by_online_checksum(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    repo = SQLAlchemyScoreRepository(session_factory)
+
+    score = _make_score(online_checksum="test_checksum_get_by_online")
+    created = await repo.create(score)
+
+    retrieved = await repo.get_by_online_checksum(created.online_checksum)
+    assert retrieved is not None
+    assert retrieved.id == created.id
+    assert retrieved.online_checksum == created.online_checksum
+    assert await repo.get_by_online_checksum("nonexistent_checksum") is None
+
+
 async def test_sqlalchemy_score_repository_rejects_duplicate_online_checksum(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

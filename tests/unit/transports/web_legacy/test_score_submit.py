@@ -2,9 +2,11 @@
 
 # pyright: reportArgumentType=false
 
+import base64
 from typing import Protocol
 
 import pytest
+import structlog.testing
 from starlette.datastructures import Headers
 from starlette.responses import Response
 
@@ -46,29 +48,36 @@ class StubRequest:
 @pytest.fixture
 def valid_multipart_body() -> bytes:
     """Valid multipart request body fixture."""
-    return (
-        b"------WebKitFormBoundary\r\n"
-        b'Content-Disposition: form-data; name="score"\r\n\r\n'
-        b"encrypted_payload_data\r\n"
-        b"------WebKitFormBoundary\r\n"
-        b'Content-Disposition: form-data; name="iv"\r\n\r\n'
-        b"iv_data_16bytes_\r\n"
-        b"------WebKitFormBoundary\r\n"
-        b'Content-Disposition: form-data; name="pass"\r\n\r\n'
-        b"password_md5_hash\r\n"
-        b"------WebKitFormBoundary\r\n"
-        b'Content-Disposition: form-data; name="x"\r\n\r\n'
-        b"client_hash\r\n"
-        b"------WebKitFormBoundary\r\n"
-        b'Content-Disposition: form-data; name="ft"\r\n\r\n'
-        b"0\r\n"
-        b"------WebKitFormBoundary\r\n"
-        b'Content-Disposition: form-data; name="osuver"\r\n\r\n'
-        b"20241201\r\n"
-        b"------WebKitFormBoundary\r\n"
-        b'Content-Disposition: form-data; name="score"\r\n\r\n'
-        b"replay_binary_data\r\n"
-        b"------WebKitFormBoundary--\r\n"
+    encrypted_payload = base64.b64encode(b"encrypted_payload_data")
+    iv = base64.b64encode(b"0" * 32)
+
+    return b"".join(
+        (
+            b"------WebKitFormBoundary\r\n",
+            b'Content-Disposition: form-data; name="score"\r\n\r\n',
+            encrypted_payload,
+            b"\r\n",
+            b"------WebKitFormBoundary\r\n",
+            b'Content-Disposition: form-data; name="iv"\r\n\r\n',
+            iv,
+            b"\r\n",
+            b"------WebKitFormBoundary\r\n",
+            b'Content-Disposition: form-data; name="pass"\r\n\r\n',
+            b"password_md5_hash\r\n",
+            b"------WebKitFormBoundary\r\n",
+            b'Content-Disposition: form-data; name="x"\r\n\r\n',
+            b"client_hash\r\n",
+            b"------WebKitFormBoundary\r\n",
+            b'Content-Disposition: form-data; name="ft"\r\n\r\n',
+            b"0\r\n",
+            b"------WebKitFormBoundary\r\n",
+            b'Content-Disposition: form-data; name="osuver"\r\n\r\n',
+            b"20241201\r\n",
+            b"------WebKitFormBoundary\r\n",
+            b'Content-Disposition: form-data; name="score"\r\n\r\n',
+            b"replay_binary_data\r\n",
+            b"------WebKitFormBoundary--\r\n",
+        )
     )
 
 
@@ -110,11 +119,17 @@ async def test_handle_score_submit_terminal_reject(mock_request: StubRequest) ->
     )
     handler = ScoreSubmitHandler(service)
 
-    response = await handler(mock_request)
+    with structlog.testing.capture_logs() as cap_logs:
+        response = await handler(mock_request)
 
     assert isinstance(response, Response)
     assert response.status_code == 200
     assert response.body == b"error: no"
+    assert any(
+        entry["event"] == "score_submission_terminal_response"
+        and entry["error_reason"] == "authorization_failure"
+        for entry in cap_logs
+    )
 
 
 @pytest.mark.asyncio
@@ -145,8 +160,13 @@ async def test_handle_score_submit_parsing_error(valid_multipart_body: bytes) ->
 
     request = StubRequest(valid_multipart_body, "text/plain")
 
-    response = await handler(request)
+    with structlog.testing.capture_logs() as cap_logs:
+        response = await handler(request)
 
     assert isinstance(response, Response)
     assert response.status_code == 200
     assert response.body == b"error: no"
+    assert any(
+        entry["event"] == "score_submission_failed" and entry["reason"] == "multipart_parse_failed"
+        for entry in cap_logs
+    )

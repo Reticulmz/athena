@@ -20,7 +20,7 @@ def sample_replay() -> Replay:
     return Replay(
         id=None,
         score_id=1,
-        blob_key="replays/1/abc123.osr",
+        blob_id=1,
         checksum_sha256="a" * 64,
         byte_size=12345,
     )
@@ -45,7 +45,7 @@ async def test_create_increments_id(
         Replay(
             id=None,
             score_id=2,
-            blob_key="replays/2/def456.osr",
+            blob_id=2,
             checksum_sha256="b" * 64,
             byte_size=67890,
         )
@@ -62,7 +62,7 @@ async def test_create_rejects_duplicate_checksum(
     duplicate = Replay(
         id=None,
         score_id=999,
-        blob_key="replays/999/duplicate.osr",
+        blob_id=999,
         checksum_sha256=sample_replay.checksum_sha256,
         byte_size=99999,
     )

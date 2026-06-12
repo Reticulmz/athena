@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -22,28 +22,37 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from osu_server.domain.beatmap import (
+    Beatmap,
     BeatmapEligibility,
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapResolveResult,
+    BeatmapSourceVerification,
 )
+from osu_server.domain.blob import BlobStored
+from osu_server.domain.score.decryption import DecryptedPayload
 from osu_server.domain.score.score import Grade, Playstyle, Ruleset
-from osu_server.infrastructure.auth.score_authorization import ScoreAuthorizationService
-from osu_server.infrastructure.crypto.score_crypto import DecryptedPayload
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
+from osu_server.repositories.interfaces.blob_repository import NewBlob
+from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
 from osu_server.repositories.sqlalchemy.replay_repository import SQLAlchemyReplayRepository
 from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository
 from osu_server.repositories.sqlalchemy.submission_repository import (
     SQLAlchemyScoreSubmissionRepository,
 )
+from osu_server.services.score_authorization_service import ScoreAuthorizationService
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
     SubmissionOutcome,
+    generate_submission_fingerprint,
+    generate_submission_request_hash,
 )
+from tests.support.fakes import StubScorePayloadDecryptor
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -69,6 +78,49 @@ def _eligible_beatmap() -> BeatmapEligibility:
     )
 
 
+def _resolved_beatmap() -> Beatmap:
+    return Beatmap(
+        id=1,
+        beatmapset_id=10,
+        checksum_md5="0123456789abcdef0123456789abcdef",
+        mode="osu",
+        version="Integration",
+        total_length=None,
+        hit_length=None,
+        max_combo=None,
+        bpm=None,
+        cs=None,
+        od=None,
+        ar=None,
+        hp=None,
+        difficulty_rating=None,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        local_status_override=None,
+        metadata_fetch_state=BeatmapFetchState.FRESH,
+        file_state=BeatmapFileState.MISSING,
+        file_attachment=None,
+        last_fetched_at=None,
+        next_refresh_at=None,
+    )
+
+
+def _fingerprint_for(
+    input_data: ParsedSubmissionInput,
+    *,
+    user_id: int = 1000,
+    beatmap_checksum: str = "abc123",
+    submitted_timestamp: str | None = None,
+) -> str:
+    return generate_submission_fingerprint(
+        user_id=user_id,
+        beatmap_checksum=beatmap_checksum,
+        submitted_timestamp=submitted_timestamp,
+        request_hash=generate_submission_request_hash(input_data),
+    )
+
+
 @dataclass(slots=True)
 class FakeBeatmapResolver:
     eligibility: BeatmapEligibility | None
@@ -91,6 +143,48 @@ class FakeBeatmapResolver:
             reason=None,
         )
 
+    async def resolve_by_checksum(
+        self,
+        checksum_md5: str,  # noqa: ARG002
+        options: BeatmapResolveOptions | None = None,  # noqa: ARG002
+    ) -> BeatmapResolveResult:
+        return BeatmapResolveResult(
+            beatmap=_resolved_beatmap(),
+            beatmapset=None,
+            eligibility=self.eligibility,
+            metadata_status=BeatmapFetchState.FRESH,
+            file_status=BeatmapFileState.MISSING,
+            source=BeatmapMetadataSource.OFFICIAL,
+            verified=True,
+            last_fetched_at=None,
+            next_refresh_at=None,
+            reason=None,
+        )
+
+
+class SQLAlchemyBlobStorageStub:
+    """Blob storage fake that persists blob metadata for FK-backed integration tests."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._blob_repo: SQLAlchemyBlobRepository = SQLAlchemyBlobRepository(session_factory)
+
+    async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
+        digest = hashlib.sha256(data).hexdigest()
+        existing = await self._blob_repo.get_by_sha256(digest)
+        if existing is not None:
+            return BlobStored(existing)
+
+        blob = await self._blob_repo.create(
+            NewBlob(
+                sha256=digest,
+                byte_size=len(data),
+                content_type=content_type,
+                storage_backend="test",
+                storage_key=f"test/replay/{digest}.osr",
+            )
+        )
+        return BlobStored(blob)
+
 
 async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
     test_score_filter = """
@@ -100,7 +194,7 @@ async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
     _ = await session.execute(
         text(
             f"""
-            DELETE FROM replays
+            DELETE FROM replay_file_attachments
             WHERE score_id IN (
                 SELECT id FROM scores WHERE {test_score_filter}
             )
@@ -108,6 +202,7 @@ async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
         )
     )
     _ = await session.execute(text(f"DELETE FROM scores WHERE {test_score_filter}"))
+    _ = await session.execute(text("DELETE FROM blobs WHERE storage_key LIKE 'test/replay/%'"))
     _ = await session.execute(
         text(
             """
@@ -163,8 +258,14 @@ async def session_factory(
 
 
 @pytest.fixture
+def score_decryptor() -> StubScorePayloadDecryptor:
+    return StubScorePayloadDecryptor()
+
+
+@pytest.fixture
 def service(
     session_factory: async_sessionmaker[AsyncSession],
+    score_decryptor: StubScorePayloadDecryptor,
 ) -> ScoreSubmissionService:
     """Create ScoreSubmissionService with SQLAlchemy repositories."""
     score_repo = SQLAlchemyScoreRepository(session_factory)
@@ -173,7 +274,13 @@ def service(
     auth_service = ScoreAuthorizationService()
     beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap())
     return ScoreSubmissionService(
-        score_repo, submission_repo, replay_repo, auth_service, beatmap_resolver
+        score_repo,
+        submission_repo,
+        replay_repo,
+        SQLAlchemyBlobStorageStub(session_factory),
+        score_decryptor,
+        auth_service,
+        beatmap_resolver,
     )
 
 
@@ -198,7 +305,7 @@ async def test_e2e_valid_submission_persists_to_database(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
     session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch,
+    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Valid submission creates score, replay, and submission records in DB."""
 
@@ -208,10 +315,7 @@ async def test_e2e_valid_submission_persists_to_database(
         )
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
 
     result = await service.submit_score(valid_input)
 
@@ -236,13 +340,7 @@ async def test_e2e_valid_submission_persists_to_database(
 
     # Verify submission record persisted in DB
     submission_repo = SQLAlchemyScoreSubmissionRepository(session_factory)
-    fingerprint = hashlib.sha256(
-        (
-            f"{valid_input.beatmap_id}:"
-            f"{valid_input.client_hash}:"
-            f"{valid_input.submitted_at.isoformat()}"
-        ).encode()
-    ).hexdigest()
+    fingerprint = _fingerprint_for(valid_input)
     submission = await submission_repo.get_by_fingerprint(fingerprint)
     assert submission is not None
     assert submission.state == "completed"
@@ -254,7 +352,7 @@ async def test_e2e_valid_submission_persists_to_database(
 async def test_e2e_database_transaction_handling(
     service: ScoreSubmissionService,
     session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch,
+    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Database transactions are handled correctly."""
 
@@ -264,10 +362,7 @@ async def test_e2e_database_transaction_handling(
         )
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
 
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted_data",
@@ -300,7 +395,7 @@ async def test_e2e_database_transaction_handling(
 async def test_e2e_concurrent_submission_handling(
     service: ScoreSubmissionService,
     session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch,
+    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Concurrent submissions with different checksums are handled correctly."""
     call_count = 0
@@ -313,10 +408,7 @@ async def test_e2e_concurrent_submission_handling(
         )
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
 
     # Create 3 concurrent submissions with different fingerprints
     inputs = [
@@ -355,18 +447,16 @@ async def test_e2e_concurrent_submission_handling(
 @pytest.mark.asyncio
 async def test_e2e_duplicate_online_checksum_rejected_in_db(
     service: ScoreSubmissionService,
-    monkeypatch,
+    session_factory: async_sessionmaker[AsyncSession],
+    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
-    """E2E: Duplicate online checksum is rejected at database level."""
+    """E2E: Duplicate online checksum rejects a different submission."""
 
     def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
         payload = "1000:test_user:abc123:int_test_dup:0:0:100:10:5:0:0:2:500000:99:1:1"
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
 
     # First submission
     input1 = ParsedSubmissionInput(
@@ -397,15 +487,23 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
     )
     result2 = await service.submit_score(input2)
     assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
-    assert result2.error_reason is not None
-    assert "duplicate_online_checksum" in result2.error_reason
+    assert result2.score_id is None
+    assert result2.error_reason == "duplicate_online_checksum"
+
+    async with session_factory() as session:
+        query_result = await session.execute(
+            text("SELECT COUNT(*) FROM scores WHERE online_checksum = :checksum"),
+            {"checksum": "int_test_dup"},
+        )
+        count = query_result.scalar()
+        assert count == 1
 
 
 @pytest.mark.asyncio
 async def test_e2e_failed_play_persists_to_database(
     service: ScoreSubmissionService,
     session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch,
+    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Failed play (passed=0) is stored in database."""
 
@@ -414,10 +512,7 @@ async def test_e2e_failed_play_persists_to_database(
         payload = "1000:test_user:abc123:int_test_failed:0:0:50:10:5:0:0:10:200000:40:0:0"
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
 
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted_data",
@@ -448,7 +543,7 @@ async def test_e2e_failed_play_persists_to_database(
 async def test_e2e_idempotent_retry_returns_cached_result(
     service: ScoreSubmissionService,
     session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch,
+    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Idempotent retry returns cached result from database."""
 
@@ -456,10 +551,7 @@ async def test_e2e_idempotent_retry_returns_cached_result(
         payload = "1000:test_user:abc123:int_test_idem:0:0:100:10:5:0:0:2:500000:99:1:1"
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
 
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted_data",
@@ -478,8 +570,10 @@ async def test_e2e_idempotent_retry_returns_cached_result(
     assert result1.outcome == SubmissionOutcome.COMPLETED
     score_id1 = result1.score_id
 
-    # Second submission (same fingerprint)
-    result2 = await service.submit_score(input_data)
+    resent_input = replace(input_data, submitted_at=datetime.now(UTC))
+
+    # Second submission has the same request content and a different receive time.
+    result2 = await service.submit_score(resent_input)
     assert result2.outcome == SubmissionOutcome.COMPLETED
     assert result2.score_id == score_id1
 

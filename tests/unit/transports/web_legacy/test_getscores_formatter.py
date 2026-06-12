@@ -1,4 +1,4 @@
-"""GetscoresFormatter unit tests.
+"""Getscores response formatter unit tests.
 
 TDD RED -> GREEN -> REFACTOR.
 Validates response body formatting: short bodies, header bodies,
@@ -8,6 +8,7 @@ delimiter sanitization, and fixture compatibility.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from osu_server.domain.beatmap import (
     Beatmap,
@@ -19,12 +20,21 @@ from osu_server.domain.beatmap import (
     BeatmapSourceVerification,
 )
 from osu_server.transports.web_legacy.getscores import (
-    GetscoresFormatter,
+    format_getscores_header_response,
+    format_getscores_unavailable_response,
+    format_getscores_update_available_response,
 )
+
+if TYPE_CHECKING:
+    from starlette.responses import Response
 
 _NOW = datetime(2026, 6, 7, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
 _CHECKSUM = "0123456789abcdef0123456789abcdef"
+
+
+def _response_body(response: Response) -> bytes:
+    return bytes(response.body)
 
 
 def _make_beatmap(
@@ -89,15 +99,13 @@ def _make_beatmapset(
 
 def test_format_unavailable_returns_short_body() -> None:
     """Unavailable outcome formats as '-1|false' (requirement 7.1)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_unavailable()
+    body = _response_body(format_getscores_unavailable_response())
     assert body == b"-1|false"
 
 
 def test_format_update_available_returns_short_body() -> None:
     """UpdateAvailable outcome formats as '1|false' (requirement 6.2)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_update_available()
+    body = _response_body(format_getscores_update_available_response())
     assert body == b"1|false"
 
 
@@ -108,14 +116,15 @@ def test_format_update_available_returns_short_body() -> None:
 
 def test_header_first_line_format() -> None:
     """First line: <status>|false|<beatmap_id>|<beatmapset_id>|0||"""
-    formatter = GetscoresFormatter()
     beatmap = _make_beatmap(beatmap_id=75, beatmapset_id=1)
     beatmapset = _make_beatmapset(beatmapset_id=1)
 
-    body = formatter.format_header(
-        status=2,
-        beatmap=beatmap,
-        beatmapset=beatmapset,
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=beatmap,
+            beatmapset=beatmapset,
+        )
     )
     first_line = body.split(b"\n")[0]
     assert first_line == b"2|false|75|1|0||"
@@ -123,11 +132,12 @@ def test_header_first_line_format() -> None:
 
 def test_header_score_count_is_zero() -> None:
     """Score count must be 0 while ranking rows are out of scope (requirement 8.5)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+        )
     )
     first_line = body.split(b"\n")[0]
     parts = first_line.split(b"|")
@@ -136,11 +146,12 @@ def test_header_score_count_is_zero() -> None:
 
 def test_header_failed_flag_is_false() -> None:
     """Failed flag must be 'false' (requirement 8.6)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+        )
     )
     first_line = body.split(b"\n")[0]
     parts = first_line.split(b"|")
@@ -154,11 +165,12 @@ def test_header_failed_flag_is_false() -> None:
 
 def test_header_body_line_count() -> None:
     """Header body has exactly 6 lines (4 data + 2 blank sections, ending with newline)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+        )
     )
     lines = body.split(b"\n")
     # 4 data lines + 2 blank + trailing empty from terminal newline = 7 entries from split
@@ -170,11 +182,12 @@ def test_header_body_line_count() -> None:
 
 def test_header_second_line_is_beatmap_offset() -> None:
     """Second line is the beatmap offset (integer, '0' in MVP) (requirement 11.3)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+        )
     )
     lines = body.split(b"\n")
     assert lines[1] == b"0"
@@ -182,11 +195,12 @@ def test_header_second_line_is_beatmap_offset() -> None:
 
 def test_header_third_line_is_display_title() -> None:
     """Third line is [bold:0,size:20]artist|title (requirement 11.4)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(artist="Camellia", title="Exit This Earth's Atomosphere"),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(artist="Camellia", title="Exit This Earth's Atomosphere"),
+        )
     )
     lines = body.split(b"\n")
     assert lines[2] == b"[bold:0,size:20]Camellia|Exit This Earth's Atomosphere"
@@ -194,11 +208,12 @@ def test_header_third_line_is_display_title() -> None:
 
 def test_header_fourth_line_is_rating() -> None:
     """Fourth line is the rating (0 in MVP) (requirement 11.5)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+        )
     )
     lines = body.split(b"\n")
     assert lines[3] == b"0"
@@ -206,11 +221,12 @@ def test_header_fourth_line_is_rating() -> None:
 
 def test_header_response_ends_with_newline() -> None:
     """Header body terminates with a newline."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+        )
     )
     assert body.endswith(b"\n")
 
@@ -222,11 +238,12 @@ def test_header_response_ends_with_newline() -> None:
 
 def test_pipe_delimiter_in_artist_is_replaced() -> None:
     """Pipe in artist is replaced to avoid breaking delimited format (requirement 11.7)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(artist="A|B", title="Song"),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(artist="A|B", title="Song"),
+        )
     )
     lines = body.split(b"\n")
     assert b"A|B" not in lines[2]
@@ -235,11 +252,12 @@ def test_pipe_delimiter_in_artist_is_replaced() -> None:
 
 def test_pipe_delimiter_in_title_is_replaced() -> None:
     """Pipe in title is replaced (requirement 11.7)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(artist="Artist", title="Song|Remix"),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(artist="Artist", title="Song|Remix"),
+        )
     )
     lines = body.split(b"\n")
     assert b"Song|Remix" not in lines[2]
@@ -247,11 +265,12 @@ def test_pipe_delimiter_in_title_is_replaced() -> None:
 
 def test_line_break_in_artist_is_replaced() -> None:
     """Line breaks in artist are replaced (requirement 11.8)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(artist="A\nB", title="Song"),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(artist="A\nB", title="Song"),
+        )
     )
     lines = body.split(b"\n")
     assert b"A\nB" not in lines[2]
@@ -259,11 +278,12 @@ def test_line_break_in_artist_is_replaced() -> None:
 
 def test_line_break_in_title_is_replaced() -> None:
     """Line breaks in title are replaced (requirement 11.8)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(artist="Artist", title="Song\r\nRemix"),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(artist="Artist", title="Song\r\nRemix"),
+        )
     )
     lines = body.split(b"\n")
     assert b"Song\r\nRemix" not in lines[2]
@@ -276,11 +296,12 @@ def test_line_break_in_title_is_replaced() -> None:
 
 def test_header_body_has_no_provenance_fields() -> None:
     """Header body must not expose internal provenance fields (requirement 12.5)."""
-    formatter = GetscoresFormatter()
-    body = formatter.format_header(
-        status=2,
-        beatmap=_make_beatmap(),
-        beatmapset=_make_beatmapset(),
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+        )
     )
     text = body.decode("utf-8")
     forbidden = ("_source:", "_verified:", "_policy:", "_fetch_state:", "_override:")
@@ -290,8 +311,10 @@ def test_header_body_has_no_provenance_fields() -> None:
 
 def test_short_body_has_no_provenance_fields() -> None:
     """Short bodies must not expose provenance fields."""
-    formatter = GetscoresFormatter()
-    for body in (formatter.format_unavailable(), formatter.format_update_available()):
+    for body in (
+        _response_body(format_getscores_unavailable_response()),
+        _response_body(format_getscores_update_available_response()),
+    ):
         text = body.decode("utf-8")
         forbidden = ("_source:", "_verified:", "_policy:", "_fetch_state:", "_override:")
         for field in forbidden:
@@ -305,14 +328,15 @@ def test_short_body_has_no_provenance_fields() -> None:
 
 def test_formatter_output_is_plain_text_no_chunk_framing() -> None:
     """All formatter output must be plain text without chunk framing (requirement 11.9)."""
-    formatter = GetscoresFormatter()
     bodies = [
-        formatter.format_unavailable(),
-        formatter.format_update_available(),
-        formatter.format_header(
-            status=2,
-            beatmap=_make_beatmap(),
-            beatmapset=_make_beatmapset(),
+        _response_body(format_getscores_unavailable_response()),
+        _response_body(format_getscores_update_available_response()),
+        _response_body(
+            format_getscores_header_response(
+                status=2,
+                beatmap=_make_beatmap(),
+                beatmapset=_make_beatmapset(),
+            )
         ),
     ]
     for body in bodies:
@@ -326,8 +350,7 @@ def test_formatter_output_is_plain_text_no_chunk_framing() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_formatter_has_expected_interface() -> None:
-    formatter = GetscoresFormatter()
-    assert callable(formatter.format_unavailable)
-    assert callable(formatter.format_update_available)
-    assert callable(formatter.format_header)
+def test_module_formatter_helpers_have_expected_interface() -> None:
+    assert callable(format_getscores_unavailable_response)
+    assert callable(format_getscores_update_available_response)
+    assert callable(format_getscores_header_response)

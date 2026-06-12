@@ -9,6 +9,6 @@ class Replay:
 
     id: int | None
     score_id: int
-    blob_key: str
+    blob_id: int
     checksum_sha256: str
     byte_size: int

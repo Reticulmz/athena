@@ -17,6 +17,9 @@ class ConcreteScoreRepository:
     async def exists_by_online_checksum(self, _checksum: str) -> bool:
         return False
 
+    async def get_by_online_checksum(self, _checksum: str) -> Score | None:
+        return None
+
     async def get_by_id(self, _score_id: int) -> Score | None:
         return None
 
@@ -72,4 +75,12 @@ async def test_get_by_id_returns_optional_score() -> None:
     """get_by_id() should return Score | None."""
     repo = ConcreteScoreRepository()
     result = await repo.get_by_id(1)
+    assert result is None or isinstance(result, Score)
+
+
+@pytest.mark.asyncio
+async def test_get_by_online_checksum_returns_optional_score() -> None:
+    """get_by_online_checksum() should return Score | None."""
+    repo = ConcreteScoreRepository()
+    result = await repo.get_by_online_checksum("test_checksum")
     assert result is None or isinstance(result, Score)

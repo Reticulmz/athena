@@ -92,6 +92,25 @@ class TestExistsByOnlineChecksum:
         assert exists is True
 
 
+class TestGetByOnlineChecksum:
+    """Tests for get_by_online_checksum() method."""
+
+    async def test_returns_none_when_not_found(self, repository: InMemoryScoreRepository) -> None:
+        """Test that get_by_online_checksum returns None when checksum not found."""
+        score = await repository.get_by_online_checksum("nonexistent")
+        assert score is None
+
+    async def test_returns_score_when_found(
+        self, repository: InMemoryScoreRepository, sample_score: Score
+    ) -> None:
+        """Test that get_by_online_checksum returns score when checksum exists."""
+        created = await repository.create(sample_score)
+        retrieved = await repository.get_by_online_checksum(sample_score.online_checksum)
+        assert retrieved is not None
+        assert retrieved.id == created.id
+        assert retrieved.online_checksum == sample_score.online_checksum
+
+
 class TestGetById:
     """Tests for get_by_id() method."""
 

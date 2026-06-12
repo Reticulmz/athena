@@ -32,6 +32,38 @@ def test_parse_valid_payload() -> None:
     assert result.passed is True
 
 
+def test_parse_stable_client_payload() -> None:
+    """Stable client 19-field payload を正しくparseする。"""
+    payload = (
+        "8119fb28af74b9445f4a685f8b09eec2:PlayerOne:"
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:552:2:1:1066:53:4:"
+        "943904:1264:False:S:0:True:3:260610132044:20260412:50695543"
+    )
+
+    result = parse(payload)
+
+    assert result.user_id == 0
+    assert result.username == "PlayerOne"
+    assert result.beatmap_checksum == "8119fb28af74b9445f4a685f8b09eec2"
+    assert result.online_checksum == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert result.ruleset == 3
+    assert result.mods == 0
+    assert result.n300 == 552
+    assert result.n100 == 2
+    assert result.n50 == 1
+    assert result.geki == 1066
+    assert result.katu == 53
+    assert result.miss == 4
+    assert result.score == 943904
+    assert result.max_combo == 1264
+    assert result.perfect is False
+    assert result.passed is True
+    assert result.client_grade == "S"
+    assert result.client_submitted_at == "260610132044"
+    assert result.client_version == "20260412"
+    assert result.client_checksum == "50695543"
+
+
 def test_parse_with_perfect_flag() -> None:
     """Perfect flag (1) を正しくparseする。"""
     payload = "100:user:abc:xyz:0:0:300:0:0:0:0:0:500000:300:1:1"

@@ -30,7 +30,7 @@ class SQLAlchemyReplayRepository:
         async with self._session_factory() as session:
             model = ReplayModel(
                 score_id=replay.score_id,
-                blob_key=replay.blob_key,
+                blob_id=replay.blob_id,
                 checksum_sha256=replay.checksum_sha256,
                 byte_size=replay.byte_size,
             )
@@ -60,7 +60,7 @@ class SQLAlchemyReplayRepository:
         return Replay(
             id=model.id,
             score_id=model.score_id,
-            blob_key=model.blob_key,
+            blob_id=model.blob_id,
             checksum_sha256=model.checksum_sha256,
             byte_size=model.byte_size,
         )

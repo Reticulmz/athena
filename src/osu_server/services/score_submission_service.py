@@ -1,4 +1,3 @@
-# pyright: reportAny=false
 """Score submission service orchestrating the full submission pipeline."""
 
 import hashlib
@@ -11,23 +10,47 @@ from typing import Protocol
 import structlog
 
 from osu_server.domain.beatmap import BeatmapResolveOptions, BeatmapResolveResult
+from osu_server.domain.blob import BlobStoreResult
 from osu_server.domain.mods import Mods
+from osu_server.domain.score.decryption import DecryptedPayload
 from osu_server.domain.score.payload_parser import ParseError, parse
 from osu_server.domain.score.replay import Replay
 from osu_server.domain.score.score import Playstyle, Ruleset, Score
 from osu_server.domain.score.submission import ScoreSubmission
 from osu_server.domain.score.validator import ValidationError, validate_hit_counts
-from osu_server.infrastructure.auth.score_authorization import (
-    AuthorizationContext,
-    ScoreAuthorizationService,
-)
-from osu_server.infrastructure.crypto.score_crypto import decrypt_score_payload
 from osu_server.repositories.interfaces.replay_repository import ReplayRepository
 from osu_server.repositories.interfaces.score_repository import ScoreRepository
 from osu_server.repositories.interfaces.submission_repository import ScoreSubmissionRepository
+from osu_server.services.score_authorization_service import (
+    AuthorizationContext,
+    ScoreAuthorizationService,
+)
 from osu_server.shared.errors import DecryptionError
 
-logger = structlog.get_logger(__name__)
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+
+_REPLAY_CONTENT_TYPE = "application/octet-stream"
+_STATE_PROCESSING = "processing"
+_STATE_COMPLETED = "completed"
+_STATE_TERMINAL_REJECTED = "terminal_rejected"
+_STATE_RETRYABLE = "retryable"
+
+
+class _FingerprintHasher(Protocol):
+    def update(self, data: bytes, /) -> None: ...
+
+
+def _update_fingerprint_bytes(hasher: _FingerprintHasher, label: bytes, value: bytes) -> None:
+    hasher.update(label)
+    hasher.update(b"\0")
+    hasher.update(str(len(value)).encode())
+    hasher.update(b"\0")
+    hasher.update(value)
+    hasher.update(b"\0")
+
+
+def _update_fingerprint_text(hasher: _FingerprintHasher, label: str, value: str) -> None:
+    _update_fingerprint_bytes(hasher, label.encode(), value.encode())
 
 
 class BeatmapEligibilityResolver(Protocol):
@@ -37,6 +60,30 @@ class BeatmapEligibilityResolver(Protocol):
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult: ...
 
+    async def resolve_by_checksum(
+        self,
+        checksum_md5: str,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult: ...
+
+
+class ReplayBlobStorage(Protocol):
+    async def put_bytes(
+        self,
+        data: bytes,
+        *,
+        content_type: str,
+    ) -> BlobStoreResult: ...
+
+
+class ScorePayloadDecryptor(Protocol):
+    def decrypt_score_payload(
+        self,
+        encrypted: bytes,
+        iv: bytes,
+        osu_version: str | None,
+    ) -> DecryptedPayload: ...
+
 
 class SubmissionOutcome(Enum):
     """Submission result outcome."""
@@ -44,6 +91,7 @@ class SubmissionOutcome(Enum):
     COMPLETED = "completed"
     TERMINAL_REJECTED = "terminal_rejected"
     RETRYABLE = "retryable"
+    ACCEPTED_PENDING = "accepted_pending"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +100,8 @@ class SubmissionResult:
 
     outcome: SubmissionOutcome
     score_id: int | None = None
+    beatmap_id: int | None = None
+    beatmapset_id: int | None = None
     error_reason: str | None = None
 
 
@@ -70,6 +120,42 @@ class ParsedSubmissionInput:
     submitted_at: datetime
 
 
+def generate_submission_request_hash(input_data: ParsedSubmissionInput) -> str:
+    """Hash request material that is stable across network retries."""
+    hasher = hashlib.sha256()
+    _update_fingerprint_bytes(hasher, b"encrypted_payload", input_data.encrypted_payload)
+    _update_fingerprint_bytes(hasher, b"iv", input_data.iv)
+    _update_fingerprint_text(
+        hasher,
+        "password_md5_hash",
+        hashlib.sha256(input_data.password_md5.encode()).hexdigest(),
+    )
+    replay_marker = b"" if input_data.replay_data is None else input_data.replay_data
+    _update_fingerprint_bytes(hasher, b"replay", replay_marker)
+    _update_fingerprint_text(hasher, "replay_present", str(input_data.replay_data is not None))
+    _update_fingerprint_text(hasher, "client_hash", input_data.client_hash)
+    _update_fingerprint_text(hasher, "fail_time_ms", str(input_data.fail_time_ms))
+    _update_fingerprint_text(hasher, "osu_version", str(input_data.osu_version))
+    _update_fingerprint_text(hasher, "beatmap_id", str(input_data.beatmap_id))
+    return hasher.hexdigest()
+
+
+def generate_submission_fingerprint(
+    *,
+    user_id: int,
+    beatmap_checksum: str,
+    submitted_timestamp: str | None,
+    request_hash: str,
+) -> str:
+    """Generate a submission fingerprint per Requirement 6.4."""
+    hasher = hashlib.sha256()
+    _update_fingerprint_text(hasher, "user_id", str(user_id))
+    _update_fingerprint_text(hasher, "beatmap_checksum", beatmap_checksum)
+    _update_fingerprint_text(hasher, "submitted_timestamp", submitted_timestamp or "")
+    _update_fingerprint_text(hasher, "request_hash", request_hash)
+    return hasher.hexdigest()
+
+
 class ScoreSubmissionService:
     """Orchestrate score submission use-case.
 
@@ -81,12 +167,16 @@ class ScoreSubmissionService:
         score_repo: ScoreRepository,
         submission_repo: ScoreSubmissionRepository,
         replay_repo: ReplayRepository,
+        replay_blob_storage: ReplayBlobStorage,
+        payload_decryptor: ScorePayloadDecryptor,
         auth_service: ScoreAuthorizationService,
         beatmap_resolver: BeatmapEligibilityResolver,
     ) -> None:
         self._score_repo: ScoreRepository = score_repo
         self._submission_repo: ScoreSubmissionRepository = submission_repo
         self._replay_repo: ReplayRepository = replay_repo
+        self._replay_blob_storage: ReplayBlobStorage = replay_blob_storage
+        self._payload_decryptor: ScorePayloadDecryptor = payload_decryptor
         self._auth_service: ScoreAuthorizationService = auth_service
         self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
 
@@ -119,30 +209,12 @@ class ScoreSubmissionService:
         """
         start_time = time.perf_counter()
 
-        # 1. Generate submission fingerprint (R9.4)
-        fingerprint = self._generate_fingerprint(input_data)
-
-        # 2. Check existing submission (R9.2)
-        existing = await self._submission_repo.get_by_fingerprint(fingerprint)
-        if existing and existing.state == "completed":
-            score_id_value = (
-                existing.result_snapshot.get("score_id") if existing.result_snapshot else None
-            )
-            # Ensure score_id is int or None
-            if isinstance(score_id_value, int):
-                return SubmissionResult(
-                    outcome=SubmissionOutcome.COMPLETED,
-                    score_id=score_id_value,
-                )
-            return SubmissionResult(
-                outcome=SubmissionOutcome.COMPLETED,
-                score_id=None,
-            )
+        request_hash = generate_submission_request_hash(input_data)
 
         # 3. Decrypt payload (R3.1-3.4)
         decrypt_start = time.perf_counter()
         try:
-            decrypted = decrypt_score_payload(
+            decrypted = self._payload_decryptor.decrypt_score_payload(
                 input_data.encrypted_payload,
                 input_data.iv,
                 input_data.osu_version,
@@ -152,12 +224,22 @@ class ScoreSubmissionService:
             logger.warning(
                 "score_submission_failed",
                 reason="decryption_failed",
-                fingerprint=fingerprint,
+                request_hash=request_hash,
                 error=str(e),
             )
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
                 error_reason=f"decryption_failed: {e}",
+            )
+        if not decrypted.checksum_valid:
+            logger.warning(
+                "score_submission_failed",
+                reason="crypto_checksum_invalid",
+                request_hash=request_hash,
+            )
+            return SubmissionResult(
+                outcome=SubmissionOutcome.TERMINAL_REJECTED,
+                error_reason="crypto_checksum_invalid",
             )
 
         # 4. Parse payload (R5.1)
@@ -167,7 +249,7 @@ class ScoreSubmissionService:
             logger.warning(
                 "score_submission_failed",
                 reason="parse_failed",
-                fingerprint=fingerprint,
+                request_hash=request_hash,
                 error=str(e),
             )
             return SubmissionResult(
@@ -181,6 +263,35 @@ class ScoreSubmissionService:
             parsed.username,
             parsed.user_id,
         )
+
+        fingerprint = generate_submission_fingerprint(
+            user_id=auth_ctx.user_id,
+            beatmap_checksum=parsed.beatmap_checksum,
+            submitted_timestamp=parsed.client_submitted_at,
+            request_hash=request_hash,
+        )
+        existing = await self._submission_repo.get_by_fingerprint(fingerprint)
+        if existing is not None:
+            return self._result_from_existing_submission(existing)
+
+        submission = ScoreSubmission(
+            id=None,
+            fingerprint=fingerprint,
+            user_id=auth_ctx.user_id,
+            beatmap_checksum=parsed.beatmap_checksum,
+            submitted_at=input_data.submitted_at,
+            state=_STATE_PROCESSING,
+            result_snapshot=None,
+        )
+        try:
+            active_submission = await self._submission_repo.create(submission)
+        except ValueError:
+            raced_submission = await self._submission_repo.get_by_fingerprint(fingerprint)
+            if raced_submission is not None:
+                return self._result_from_existing_submission(raced_submission)
+            raise
+        assert active_submission.id is not None, "Submission ID must be set after creation"
+
         if not auth_ctx.authorized:
             password_hash = hashlib.sha256(input_data.password_md5.encode()).hexdigest()
             logger.warning(
@@ -189,37 +300,48 @@ class ScoreSubmissionService:
                 fingerprint=fingerprint,
                 password_hash=password_hash,
                 username=parsed.username,
-                user_id=parsed.user_id,
+                user_id=auth_ctx.user_id,
                 password_valid=auth_ctx.password_valid,
                 session_valid=auth_ctx.session_valid,
                 identity_match=auth_ctx.payload_identity_match,
             )
-            return SubmissionResult(
-                outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason=self._format_auth_error(auth_ctx),
+            return await self._record_terminal_reject(
+                active_submission,
+                self._format_auth_error(auth_ctx),
             )
 
         # 5.5. Check playstyle (R1.3, R1.4)
         if self._is_relax_or_autopilot(parsed.mods):
+            error_reason = "playstyle_not_supported: relax_or_autopilot"
             logger.warning(
                 "score_submission_failed",
                 reason="playstyle_not_supported",
                 fingerprint=fingerprint,
                 mods=parsed.mods,
-                user_id=parsed.user_id,
+                user_id=auth_ctx.user_id,
             )
-            return SubmissionResult(
-                outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason="playstyle_not_supported: relax_or_autopilot",
-            )
+            return await self._record_terminal_reject(active_submission, error_reason)
 
         # 6. Check beatmap eligibility (R8.1-8.5)
         beatmap_start = time.perf_counter()
-        beatmap_result = await self._beatmap_resolver.resolve_by_beatmap_id(
-            input_data.beatmap_id,
-            BeatmapResolveOptions(),
+        beatmap_result = await self._beatmap_resolver.resolve_by_checksum(
+            parsed.beatmap_checksum,
+            BeatmapResolveOptions(wait_timeout_seconds=5),
         )
         beatmap_latency_ms = (time.perf_counter() - beatmap_start) * 1000
+
+        # 6.1. Handle beatmap not found (fetch in progress)
+        if beatmap_result.beatmap is None:
+            error_reason = "beatmap_fetch_in_progress"
+            logger.info(
+                "score_submission_retryable",
+                reason=error_reason,
+                fingerprint=fingerprint,
+                beatmap_checksum=parsed.beatmap_checksum,
+            )
+            return await self._record_retryable(active_submission, error_reason)
+
+        # 6.2. Check eligibility
         eligibility = beatmap_result.eligibility
         accepts_submission = False
         if eligibility is not None:
@@ -228,55 +350,102 @@ class ScoreSubmissionService:
             )
         if not accepts_submission:
             denial_reason = eligibility.denial_reason if eligibility is not None else None
+            error_reason = f"beatmap_ineligible: {denial_reason or 'not_accepting_scores'}"
             logger.warning(
                 "score_submission_failed",
                 reason="beatmap_ineligible",
                 fingerprint=fingerprint,
                 beatmap_id=input_data.beatmap_id,
+                beatmap_checksum=parsed.beatmap_checksum,
                 denial_reason=denial_reason,
                 passed=parsed.passed,
             )
-            return SubmissionResult(
-                outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason=f"beatmap_ineligible: {denial_reason or 'not_accepting_scores'}",
-            )
+            return await self._record_terminal_reject(active_submission, error_reason)
 
+        replay_byte_size = (
+            len(input_data.replay_data) if input_data.replay_data is not None else None
+        )
+        if input_data.replay_data == b"":
+            error_reason = "empty_replay_data"
+            logger.warning(
+                "score_submission_failed",
+                reason="empty_replay_data",
+                fingerprint=fingerprint,
+                passed=parsed.passed,
+                fail_time_ms=input_data.fail_time_ms,
+            )
+            return await self._record_terminal_reject(active_submission, error_reason)
         # 7. Validate hit counts (R5.1-5.5)
         try:
             validation = validate_hit_counts(parsed)
         except ValidationError as e:
+            error_reason = f"validation_failed: {e}"
             logger.warning(
                 "score_submission_failed",
                 reason="validation_failed",
                 fingerprint=fingerprint,
                 error=str(e),
             )
-            return SubmissionResult(
-                outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason=f"validation_failed: {e}",
-            )
+            return await self._record_terminal_reject(active_submission, error_reason)
 
         # 8. Check uniqueness (R6.1, R6.2)
-        if await self._score_repo.exists_by_online_checksum(parsed.online_checksum):
-            return SubmissionResult(
-                outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason="duplicate_online_checksum",
+        existing_score = await self._score_repo.get_by_online_checksum(parsed.online_checksum)
+        if existing_score is not None:
+            error_reason = "duplicate_online_checksum"
+            logger.warning(
+                "score_submission_failed",
+                reason="duplicate_online_checksum",
+                fingerprint=fingerprint,
+                online_checksum=parsed.online_checksum,
+                user_id=auth_ctx.user_id,
+                score_id=existing_score.id,
+                beatmap_id=existing_score.beatmap_id,
+                beatmap_checksum=parsed.beatmap_checksum,
             )
+            return await self._record_terminal_reject(active_submission, error_reason)
 
+        replay_data = input_data.replay_data
         replay_checksum: str | None = None
-        if input_data.replay_data:
-            replay_checksum = hashlib.sha256(input_data.replay_data).hexdigest()
+        if replay_data is not None:
+            replay_checksum = hashlib.sha256(replay_data).hexdigest()
             if await self._replay_repo.exists_by_checksum(replay_checksum):
-                return SubmissionResult(
-                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                    error_reason="duplicate_replay_checksum",
+                error_reason = "duplicate_replay_checksum"
+                logger.warning(
+                    "score_submission_failed",
+                    reason="duplicate_replay_checksum",
+                    fingerprint=fingerprint,
+                    replay_checksum=replay_checksum,
+                    user_id=auth_ctx.user_id,
+                    beatmap_checksum=parsed.beatmap_checksum,
                 )
+                return await self._record_terminal_reject(active_submission, error_reason)
+
+        replay_blob_result: BlobStoreResult | None = None
+        if replay_data is not None:
+            try:
+                replay_blob_result = await self._replay_blob_storage.put_bytes(
+                    replay_data,
+                    content_type=_REPLAY_CONTENT_TYPE,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "score_submission_retryable",
+                    reason="replay_blob_store_failed",
+                    fingerprint=fingerprint,
+                    error=type(exc).__name__,
+                )
+                return await self._record_retryable(active_submission, "replay_blob_store_failed")
+
+        resolved_beatmap_id = input_data.beatmap_id or beatmap_result.beatmap.id
+        resolved_beatmapset_id = (
+            beatmap_result.beatmapset.id if beatmap_result.beatmapset is not None else 0
+        )
 
         # 9. Persist score (R7.1-7.5, R12.1-12.4)
         score = Score(
             id=None,
-            user_id=parsed.user_id,
-            beatmap_id=input_data.beatmap_id,
+            user_id=auth_ctx.user_id,
+            beatmap_id=resolved_beatmap_id,
             beatmap_checksum=parsed.beatmap_checksum,
             online_checksum=parsed.online_checksum,
             ruleset=Ruleset(parsed.ruleset),
@@ -304,27 +473,34 @@ class ScoreSubmissionService:
         assert created_score.id is not None, "Score ID must be set after creation"
 
         # 10. Persist replay if present (R7.3-7.4)
-        if input_data.replay_data and replay_checksum:
+        if replay_data is not None and replay_checksum:
+            assert replay_blob_result is not None, "Replay blob must be stored before attachment"
             replay = Replay(
                 id=None,
                 score_id=created_score.id,
-                blob_key=f"replay/{created_score.id}",
+                blob_id=replay_blob_result.blob.id,
                 checksum_sha256=replay_checksum,
-                byte_size=len(input_data.replay_data),
+                byte_size=len(replay_data),
             )
-            _ = await self._replay_repo.create(replay)
+            created_replay = await self._replay_repo.create(replay)
+        else:
+            created_replay = None
 
         # 11. Record submission (R9.1)
-        submission = ScoreSubmission(
-            id=None,
-            fingerprint=fingerprint,
-            user_id=parsed.user_id,
-            beatmap_checksum=parsed.beatmap_checksum,
-            submitted_at=input_data.submitted_at,
-            state="completed",
-            result_snapshot={"score_id": created_score.id},
+        completion_snapshot: dict[str, object] = {
+            "score_id": created_score.id,
+            "beatmap_id": resolved_beatmap_id,
+            "beatmapset_id": resolved_beatmapset_id,
+        }
+        if created_replay is not None:
+            completion_snapshot["replay_attachment_id"] = created_replay.id
+            completion_snapshot["replay_blob_id"] = created_replay.blob_id
+
+        await self._submission_repo.update_state(
+            active_submission.id,
+            _STATE_COMPLETED,
+            completion_snapshot,
         )
-        _ = await self._submission_repo.create(submission)
 
         total_duration_ms = (time.perf_counter() - start_time) * 1000
         logger.info(
@@ -334,24 +510,103 @@ class ScoreSubmissionService:
             beatmap_latency_ms=beatmap_latency_ms,
             db_latency_ms=db_latency_ms,
             fingerprint=fingerprint,
-            user_id=parsed.user_id,
-            beatmap_id=input_data.beatmap_id,
+            user_id=auth_ctx.user_id,
+            beatmap_id=resolved_beatmap_id,
             score_id=created_score.id,
+            replay_attachment_id=created_replay.id if created_replay is not None else None,
+            replay_present=replay_data is not None,
+            replay_byte_size=replay_byte_size,
+            passed=parsed.passed,
+            fail_time_ms=input_data.fail_time_ms,
         )
 
         return SubmissionResult(
             outcome=SubmissionOutcome.COMPLETED,
             score_id=created_score.id,
+            beatmap_id=resolved_beatmap_id,
+            beatmapset_id=resolved_beatmapset_id,
         )
 
-    def _generate_fingerprint(self, input_data: ParsedSubmissionInput) -> str:
-        """Generate submission fingerprint for idempotency (R9.4)."""
-        material = (
-            f"{input_data.beatmap_id}:"
-            f"{input_data.client_hash}:"
-            f"{input_data.submitted_at.isoformat()}"
+    def _result_from_existing_submission(self, submission: ScoreSubmission) -> SubmissionResult:
+        """Return the client-safe response for an existing submission fingerprint."""
+        if submission.state in {_STATE_PROCESSING, "received"}:
+            logger.info(
+                "score_submission_idempotency_pending",
+                fingerprint=submission.fingerprint,
+                submission_id=submission.id,
+            )
+            return SubmissionResult(
+                outcome=SubmissionOutcome.ACCEPTED_PENDING,
+                error_reason="accepted_pending",
+            )
+
+        snapshot = submission.result_snapshot or {}
+        if submission.state == _STATE_COMPLETED:
+            score_id_value = snapshot.get("score_id")
+            beatmap_id_value = snapshot.get("beatmap_id")
+            beatmapset_id_value = snapshot.get("beatmapset_id")
+            if isinstance(score_id_value, int):
+                logger.info(
+                    "score_submission_idempotency_hit",
+                    fingerprint=submission.fingerprint,
+                    score_id=score_id_value,
+                    beatmap_id=beatmap_id_value if isinstance(beatmap_id_value, int) else None,
+                    beatmapset_id=beatmapset_id_value
+                    if isinstance(beatmapset_id_value, int)
+                    else None,
+                )
+                return SubmissionResult(
+                    outcome=SubmissionOutcome.COMPLETED,
+                    score_id=score_id_value,
+                    beatmap_id=beatmap_id_value if isinstance(beatmap_id_value, int) else None,
+                    beatmapset_id=beatmapset_id_value
+                    if isinstance(beatmapset_id_value, int)
+                    else None,
+                )
+
+        error_reason = snapshot.get("error_reason")
+        if submission.state == _STATE_RETRYABLE:
+            return SubmissionResult(
+                outcome=SubmissionOutcome.RETRYABLE,
+                error_reason=error_reason if isinstance(error_reason, str) else "retryable",
+            )
+
+        return SubmissionResult(
+            outcome=SubmissionOutcome.TERMINAL_REJECTED,
+            error_reason=error_reason if isinstance(error_reason, str) else "terminal_rejected",
         )
-        return hashlib.sha256(material.encode()).hexdigest()
+
+    async def _record_terminal_reject(
+        self,
+        submission: ScoreSubmission,
+        error_reason: str,
+    ) -> SubmissionResult:
+        assert submission.id is not None, "Submission ID must be set before state update"
+        await self._submission_repo.update_state(
+            submission.id,
+            _STATE_TERMINAL_REJECTED,
+            {"error_reason": error_reason},
+        )
+        return SubmissionResult(
+            outcome=SubmissionOutcome.TERMINAL_REJECTED,
+            error_reason=error_reason,
+        )
+
+    async def _record_retryable(
+        self,
+        submission: ScoreSubmission,
+        error_reason: str,
+    ) -> SubmissionResult:
+        assert submission.id is not None, "Submission ID must be set before state update"
+        await self._submission_repo.update_state(
+            submission.id,
+            _STATE_RETRYABLE,
+            {"error_reason": error_reason},
+        )
+        return SubmissionResult(
+            outcome=SubmissionOutcome.RETRYABLE,
+            error_reason=error_reason,
+        )
 
     def _format_auth_error(self, ctx: AuthorizationContext) -> str:
         """Format authorization error without exposing credentials (R11.1)."""

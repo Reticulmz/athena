@@ -4,16 +4,30 @@
 
 from __future__ import annotations
 
+import base64
 from typing import TYPE_CHECKING
 
 import pytest
 from starlette.datastructures import Headers
+from tests.support.fakes import StubBlobStorageService, StubScorePayloadDecryptor
 
+from osu_server.domain.beatmap import (
+    Beatmap,
+    BeatmapEligibility,
+    BeatmapFetchState,
+    BeatmapFileState,
+    BeatmapMetadataSource,
+    BeatmapRankStatus,
+    BeatmapResolveResult,
+    BeatmapSourceVerification,
+)
+from osu_server.domain.score.decryption import DecryptedPayload
 from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
 from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
 from osu_server.repositories.memory.submission_repository import (
     InMemoryScoreSubmissionRepository,
 )
+from osu_server.services.score_authorization_service import AuthorizationContext
 from osu_server.services.score_submission_service import ScoreSubmissionService
 from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
 
@@ -21,18 +35,76 @@ if TYPE_CHECKING:
     from osu_server.domain.beatmap import BeatmapResolveOptions
 
 
+def _resolved_beatmap() -> Beatmap:
+    return Beatmap(
+        id=1,
+        beatmapset_id=10,
+        checksum_md5="0123456789abcdef0123456789abcdef",
+        mode="osu",
+        version="Test",
+        total_length=None,
+        hit_length=None,
+        max_combo=None,
+        bpm=None,
+        cs=None,
+        od=None,
+        ar=None,
+        hp=None,
+        difficulty_rating=None,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        local_status_override=None,
+        metadata_fetch_state=BeatmapFetchState.FRESH,
+        file_state=BeatmapFileState.MISSING,
+        file_attachment=None,
+        last_fetched_at=None,
+        next_refresh_at=None,
+    )
+
+
+def _eligible_result() -> BeatmapResolveResult:
+    return BeatmapResolveResult(
+        beatmap=_resolved_beatmap(),
+        beatmapset=None,
+        eligibility=BeatmapEligibility(
+            accepts_scores=True,
+            has_leaderboard=True,
+            awards_ranked_pp=True,
+            awards_loved_pp=False,
+            requires_osu_file_for_pp=True,
+            is_officially_verified=True,
+            is_mirror_derived=False,
+            accepts_failed_scores=True,
+            failed_scores_have_leaderboard=False,
+            failed_scores_update_best_score=False,
+            failed_scores_award_ranked_pp=False,
+            failed_scores_award_loved_pp=False,
+            denial_reason=None,
+        ),
+        metadata_status=BeatmapFetchState.FRESH,
+        file_status=BeatmapFileState.MISSING,
+        source=BeatmapMetadataSource.OFFICIAL,
+        verified=True,
+        last_fetched_at=None,
+        next_refresh_at=None,
+        reason=None,
+    )
+
+
 class MockAuthService:
     """Mock authorization service that always succeeds."""
 
     async def authorize_submission(
         self, _password_md5: str, payload_username: str, payload_user_id: int
-    ):
-        class AuthContext:
-            authorized = True
-            user_id = payload_user_id
-            username = payload_username
-
-        return AuthContext()
+    ) -> AuthorizationContext:
+        return AuthorizationContext(
+            user_id=payload_user_id,
+            username=payload_username,
+            session_valid=True,
+            password_valid=True,
+            payload_identity_match=True,
+        )
 
 
 class MockBeatmapResolver:
@@ -40,16 +112,13 @@ class MockBeatmapResolver:
 
     async def resolve_by_beatmap_id(
         self, _beatmap_id: int, _options: BeatmapResolveOptions | None = None
-    ):
-        class Eligibility:
-            accepts_scores = True
-            accepts_failed_scores = True
-            denial_reason = None
+    ) -> BeatmapResolveResult:
+        return _eligible_result()
 
-        class Result:
-            eligibility = Eligibility()
-
-        return Result()
+    async def resolve_by_checksum(
+        self, _checksum_md5: str, _options: BeatmapResolveOptions | None = None
+    ) -> BeatmapResolveResult:
+        return _eligible_result()
 
 
 class MockRequest:
@@ -70,8 +139,8 @@ def _create_valid_multipart_body() -> tuple[bytes, str]:
 
     # Valid encrypted payload that decrypts to a real score
     # Format: user_id:username:checksum:online_checksum:ruleset:...
-    encrypted_payload = b"test_encrypted_payload"
-    iv = b"0" * 32  # 32-byte IV
+    encrypted_payload = base64.b64encode(b"test_encrypted_payload")
+    iv = base64.b64encode(b"0" * 32)
     replay_data = b"test_replay_data"
 
     body = (f'--{boundary}\r\nContent-Disposition: form-data; name="score"\r\n\r\n').encode()
@@ -100,6 +169,15 @@ def _create_valid_multipart_body() -> tuple[bytes, str]:
     return body, content_type
 
 
+def _score_payload_decryptor() -> StubScorePayloadDecryptor:
+    return StubScorePayloadDecryptor(
+        DecryptedPayload(
+            plaintext="1000:test_user:abc123:e2e_score_submit:0:0:100:10:5:0:0:2:500000:99:1:1",
+            checksum_valid=True,
+        )
+    )
+
+
 @pytest.mark.asyncio
 async def test_e2e_score_submit_completed_response() -> None:
     """E2E test: POST with real multipart data returns completed response."""
@@ -114,6 +192,8 @@ async def test_e2e_score_submit_completed_response() -> None:
         score_repo=score_repo,
         submission_repo=submission_repo,
         replay_repo=replay_repo,
+        replay_blob_storage=StubBlobStorageService(),
+        payload_decryptor=_score_payload_decryptor(),
         auth_service=auth_service,
         beatmap_resolver=beatmap_resolver,
     )
@@ -127,7 +207,9 @@ async def test_e2e_score_submit_completed_response() -> None:
 
     # Assert
     assert response.status_code == 200
-    assert b"beatmapId:" in response.body or b"error: no" in response.body
+    response_body = bytes(response.body)
+    assert response_body.startswith(b"1:0:1:3\n")
+    assert b"chartId:overall\n" in response_body
 
 
 @pytest.mark.asyncio
@@ -142,18 +224,21 @@ async def test_e2e_score_submit_terminal_reject_format() -> None:
     class FailingAuthService:
         async def authorize_submission(
             self, _password_md5: str, _payload_username: str, _payload_user_id: int
-        ):
-            class AuthContext:
-                authorized = False
-                user_id = None
-                username = None
-
-            return AuthContext()
+        ) -> AuthorizationContext:
+            return AuthorizationContext(
+                user_id=0,
+                username="",
+                session_valid=False,
+                password_valid=False,
+                payload_identity_match=False,
+            )
 
     service = ScoreSubmissionService(
         score_repo=score_repo,
         submission_repo=submission_repo,
         replay_repo=replay_repo,
+        replay_blob_storage=StubBlobStorageService(),
+        payload_decryptor=_score_payload_decryptor(),
         auth_service=FailingAuthService(),
         beatmap_resolver=MockBeatmapResolver(),
     )

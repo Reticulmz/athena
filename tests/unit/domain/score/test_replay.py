@@ -8,14 +8,14 @@ def test_replay_creation_with_all_fields() -> None:
     replay = Replay(
         id=1,
         score_id=100,
-        blob_key="replays/2026/06/11/score-100-replay.osr",
+        blob_id=10,
         checksum_sha256="a" * 64,
         byte_size=12345,
     )
 
     assert replay.id == 1
     assert replay.score_id == 100
-    assert replay.blob_key == "replays/2026/06/11/score-100-replay.osr"
+    assert replay.blob_id == 10
     assert replay.checksum_sha256 == "a" * 64
     assert replay.byte_size == 12345
 
@@ -25,7 +25,7 @@ def test_replay_without_id() -> None:
     replay = Replay(
         id=None,
         score_id=200,
-        blob_key="replays/test.osr",
+        blob_id=20,
         checksum_sha256="b" * 64,
         byte_size=5000,
     )
@@ -40,7 +40,7 @@ def test_replay_checksum_validation() -> None:
     replay = Replay(
         id=1,
         score_id=100,
-        blob_key="test.osr",
+        blob_id=10,
         checksum_sha256="0123456789abcdef" * 4,
         byte_size=1000,
     )
@@ -54,7 +54,7 @@ def test_replay_byte_size_positive() -> None:
     replay = Replay(
         id=1,
         score_id=100,
-        blob_key="test.osr",
+        blob_id=10,
         checksum_sha256="f" * 64,
         byte_size=1,
     )

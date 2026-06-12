@@ -36,12 +36,19 @@ class ScoreSubmissionRepository(Protocol):
         """
         ...
 
-    async def update_state(self, submission_id: int, state: str) -> None:
+    async def update_state(
+        self,
+        submission_id: int,
+        state: str,
+        result_snapshot: dict[str, object] | None = None,
+    ) -> None:
         """Update submission processing state.
 
         Args:
             submission_id: Submission record ID
-            state: New state ("received" | "processing" | "completed" | "terminal_rejected")
+            state: New state ("received" | "processing" | "completed" |
+                "terminal_rejected" | "retryable")
+            result_snapshot: Optional client-safe result snapshot for idempotent retries
 
         Raises:
             ValueError: If submission_id not found

@@ -15,9 +15,10 @@ from osu_server.domain.beatmap import (
     BeatmapMetadataProvider,
 )
 from osu_server.domain.system_user import BANCHO_BOT_USER_ID, create_bancho_bot_identity
-from osu_server.infrastructure.auth.score_authorization import ScoreAuthorizationService
 from osu_server.infrastructure.country.interfaces import CountryResolver
+from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.infrastructure.messaging.interfaces import EventBus
+from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
@@ -87,6 +88,7 @@ from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.score_authorization_service import ScoreAuthorizationService
 from osu_server.services.score_submission_service import ScoreSubmissionService
 from osu_server.services.session_authorization_service import (
     SessionAuthorizationService,
@@ -470,19 +472,33 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     replay_repo = await container.resolve(ReplayRepository)
     submission_repo = await container.resolve(ScoreSubmissionRepository)
 
-    # ScoreAuthorizationService は Wave 1 では依存なしで直接インスタンス化可能
-    score_auth_service = ScoreAuthorizationService()
+    score_auth_service = ScoreAuthorizationService(
+        user_repo=user_repo,
+        password_service=password_service,
+        session_store=session_store,
+    )
     container.register_singleton(ScoreAuthorizationService, lambda: score_auth_service)
+    score_crypto_service = ScoreCryptoService()
+    container.register_singleton(ScoreCryptoService, lambda: score_crypto_service)
 
     score_submission_service = ScoreSubmissionService(
         score_repo=score_repo,
         submission_repo=submission_repo,
         replay_repo=replay_repo,
+        replay_blob_storage=blob_storage_service,
+        payload_decryptor=score_crypto_service,
         auth_service=score_auth_service,
         beatmap_resolver=mirror_service,  # Pass the entire service, not just the method
     )
     container.register_singleton(ScoreSubmissionService, lambda: score_submission_service)
 
     # -- ScoreSubmitHandler (singleton) ---------------------------------------
-    score_submit_handler = ScoreSubmitHandler(service=score_submission_service)
+    score_submit_handler = ScoreSubmitHandler(
+        service=score_submission_service,
+        limits=MultipartLimits(
+            total_body_size=config.max_request_body_size,
+            replay_size=config.score_submit_max_replay_size,
+            text_field_size=config.score_submit_max_text_field_size,
+        ),
+    )
     container.register_singleton(ScoreSubmitHandler, lambda: score_submit_handler)

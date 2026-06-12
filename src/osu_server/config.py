@@ -42,6 +42,8 @@ class AppConfig(BaseSettings):
     session_ttl: int = 300
     packet_queue_max_size: int = 4096
     max_request_body_size: int = 1_048_576
+    score_submit_max_replay_size: int = 1_048_576
+    score_submit_max_text_field_size: int = 65_536
 
     message_max_length: int = 450
     rate_limit_messages: int = 10

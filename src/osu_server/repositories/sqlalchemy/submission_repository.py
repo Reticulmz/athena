@@ -58,7 +58,12 @@ class SQLAlchemyScoreSubmissionRepository:
             result = (await session.execute(stmt)).scalar_one_or_none()
             return self._to_domain(result) if result is not None else None
 
-    async def update_state(self, submission_id: int, state: str) -> None:
+    async def update_state(
+        self,
+        submission_id: int,
+        state: str,
+        result_snapshot: dict[str, object] | None = None,
+    ) -> None:
         """Update submission state.
 
         Raises ``ValueError`` if *submission_id* not found.
@@ -70,6 +75,7 @@ class SQLAlchemyScoreSubmissionRepository:
                 raise ValueError(msg)
 
             model.state = state
+            model.result_snapshot = result_snapshot
             await session.commit()
 
     @staticmethod

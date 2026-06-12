@@ -1,11 +1,72 @@
 """Unit tests for ScoreAuthorizationService."""
 
+import hashlib
+from datetime import UTC, datetime
+
 import pytest
 
-from osu_server.infrastructure.auth.score_authorization import (
+from osu_server.domain.session import SessionData
+from osu_server.domain.user import User
+from osu_server.repositories.memory.session_store import InMemorySessionStore
+from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.services.password_service import PasswordService
+from osu_server.services.score_authorization_service import (
     AuthorizationContext,
     ScoreAuthorizationService,
 )
+
+_NOW = datetime(2026, 6, 12, tzinfo=UTC)
+
+
+async def _make_repository_backed_service(
+    *,
+    username: str = "PlayerOne",
+    password: str = "password",
+    create_session: bool = True,
+) -> tuple[ScoreAuthorizationService, str, int]:
+    user_repo = InMemoryUserRepository()
+    password_service = PasswordService(hibp_client=None, banned_passwords=[])
+    session_store = InMemorySessionStore()
+
+    password_md5 = hashlib.md5(password.encode()).hexdigest()
+    user = await user_repo.create(
+        User(
+            id=0,
+            username=username,
+            safe_username=User.normalize_username(username),
+            email="player@example.com",
+            password_hash=await password_service.hash(password_md5),
+            country="JP",
+            created_at=_NOW,
+            updated_at=_NOW,
+        )
+    )
+    if create_session:
+        await session_store.create(
+            user.id,
+            f"token-{user.id}",
+            SessionData(
+                user_id=user.id,
+                username=user.username,
+                privileges=1,
+                country="JP",
+                osu_version="20260412",
+                utc_offset=9,
+                display_city=False,
+                client_hashes="",
+                pm_private=False,
+            ),
+        )
+
+    return (
+        ScoreAuthorizationService(
+            user_repo=user_repo,
+            password_service=password_service,
+            session_store=session_store,
+        ),
+        password_md5,
+        user.id,
+    )
 
 
 @pytest.fixture
@@ -31,6 +92,39 @@ class TestScoreAuthorizationService:
         assert result.username == "test_user"
         assert result.session_valid
         assert result.password_valid
+        assert result.payload_identity_match
+
+    @pytest.mark.asyncio
+    async def test_valid_authorization_without_payload_user_id(
+        self, service: ScoreAuthorizationService
+    ) -> None:
+        """Stable payloads identify users by username, not user ID."""
+        result = await service.authorize_submission(
+            password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            payload_username="test_user",
+            payload_user_id=0,
+        )
+
+        assert result.authorized
+        assert result.user_id == 1000
+        assert result.payload_identity_match
+
+    @pytest.mark.asyncio
+    async def test_repository_backed_authorization(self) -> None:
+        """Repository-backed auth accepts real users with active sessions."""
+        service, password_md5, user_id = await _make_repository_backed_service()
+
+        result = await service.authorize_submission(
+            password_md5=password_md5,
+            payload_username="PlayerOne",
+            payload_user_id=0,
+        )
+
+        assert result.authorized
+        assert result.user_id == user_id
+        assert result.username == "PlayerOne"
+        assert result.password_valid
+        assert result.session_valid
         assert result.payload_identity_match
 
     @pytest.mark.asyncio

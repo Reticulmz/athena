@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, final
+
+from osu_server.domain.blob import Blob, BlobStored
+from osu_server.domain.score.decryption import DecryptedPayload
 
 if TYPE_CHECKING:
     from osu_server.domain.system_user import SystemUserIdentity
@@ -71,3 +77,67 @@ class ErrorRaisingUserRepository:
 
     async def sync_system_user(self, identity: SystemUserIdentity) -> None:
         await self._inner.sync_system_user(identity)
+
+
+class StubBlobStorageService:
+    """Typed fake for tests that need blob write verification."""
+
+    def __init__(self, *, fail_writes: bool = False) -> None:
+        self.fail_writes: bool = fail_writes
+        self.stored: list[Blob] = []
+        self.writes: list[bytes] = []
+
+    async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
+        if self.fail_writes:
+            raise RuntimeError("blob write failed")
+
+        digest = hashlib.sha256(data).hexdigest()
+        blob = Blob(
+            id=len(self.stored) + 1,
+            sha256=digest,
+            byte_size=len(data),
+            content_type=content_type,
+            storage_backend="test",
+            storage_key=f"sha256/{digest[:2]}/{digest[2:4]}/{digest}",
+            created_at=datetime.now(UTC),
+        )
+        self.stored.append(blob)
+        self.writes.append(data)
+        return BlobStored(blob=blob)
+
+
+type ScorePayloadDecryptFactory = Callable[[bytes, bytes, str | None], DecryptedPayload]
+
+
+class StubScorePayloadDecryptor:
+    """Typed fake for score payload decryption in submission tests."""
+
+    def __init__(
+        self,
+        result: DecryptedPayload | None = None,
+        *,
+        factory: ScorePayloadDecryptFactory | None = None,
+    ) -> None:
+        self._result: DecryptedPayload | None = result
+        self._factory: ScorePayloadDecryptFactory | None = factory
+        self.calls: list[tuple[bytes, bytes, str | None]] = []
+
+    def set_result(self, result: DecryptedPayload) -> None:
+        self._result = result
+        self._factory = None
+
+    def set_factory(self, factory: ScorePayloadDecryptFactory) -> None:
+        self._factory = factory
+
+    def decrypt_score_payload(
+        self,
+        encrypted: bytes,
+        iv: bytes,
+        osu_version: str | None,
+    ) -> DecryptedPayload:
+        self.calls.append((encrypted, iv, osu_version))
+        if self._factory is not None:
+            return self._factory(encrypted, iv, osu_version)
+        if self._result is None:
+            raise AssertionError("StubScorePayloadDecryptor result was not configured")
+        return self._result

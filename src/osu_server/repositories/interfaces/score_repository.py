@@ -29,6 +29,10 @@ class ScoreRepository(Protocol):
         """Return ``True`` if a score with *checksum* exists."""
         ...
 
+    async def get_by_online_checksum(self, checksum: str) -> Score | None:
+        """Return the score with *checksum*, or ``None`` if not found."""
+        ...
+
     async def get_by_id(self, score_id: int) -> Score | None:
         """Return the score with *score_id*, or ``None`` if not found."""
         ...

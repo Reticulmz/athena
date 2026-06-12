@@ -1,5 +1,3 @@
-# pyright: reportUnusedParameter=false, reportOperatorIssue=false
-# TODO: Add proper type annotations and fix operator type issues
 """Security verification tests for score submission (Requirement 11: Security and Privacy).
 
 This module verifies that:
@@ -18,26 +16,75 @@ import pytest
 import structlog.testing
 
 from osu_server.domain.beatmap import (
+    Beatmap,
     BeatmapEligibility,
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapResolveResult,
+    BeatmapSourceVerification,
 )
+from osu_server.domain.score.decryption import DecryptedPayload
 from osu_server.domain.score.payload_parser import ParsedScore
-from osu_server.infrastructure.auth.score_authorization import (
-    ScoreAuthorizationService,
-)
-from osu_server.infrastructure.crypto.score_crypto import DecryptedPayload
 from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
 from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
 from osu_server.repositories.memory.submission_repository import InMemoryScoreSubmissionRepository
+from osu_server.services.score_authorization_service import (
+    ScoreAuthorizationService,
+)
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
     SubmissionOutcome,
+    generate_submission_fingerprint,
+    generate_submission_request_hash,
 )
+from tests.support.fakes import StubBlobStorageService, StubScorePayloadDecryptor
+
+
+def _resolved_beatmap() -> Beatmap:
+    return Beatmap(
+        id=123,
+        beatmapset_id=456,
+        checksum_md5="0123456789abcdef0123456789abcdef",
+        mode="osu",
+        version="Test",
+        total_length=None,
+        hit_length=None,
+        max_combo=None,
+        bpm=None,
+        cs=None,
+        od=None,
+        ar=None,
+        hp=None,
+        difficulty_rating=None,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        local_status_override=None,
+        metadata_fetch_state=BeatmapFetchState.FRESH,
+        file_state=BeatmapFileState.MISSING,
+        file_attachment=None,
+        last_fetched_at=None,
+        next_refresh_at=None,
+    )
+
+
+def _fingerprint_for(
+    input_data: ParsedSubmissionInput,
+    *,
+    user_id: int = 1000,
+    beatmap_checksum: str = "valid_checksum",
+    submitted_timestamp: str | None = None,
+) -> str:
+    return generate_submission_fingerprint(
+        user_id=user_id,
+        beatmap_checksum=beatmap_checksum,
+        submitted_timestamp=submitted_timestamp,
+        request_hash=generate_submission_request_hash(input_data),
+    )
 
 
 @dataclass(slots=True)
@@ -46,11 +93,31 @@ class FakeBeatmapResolver:
 
     async def resolve_by_beatmap_id(
         self,
-        beatmap_id: int,  # noqa: ARG002
-        options: BeatmapResolveOptions | None = None,  # noqa: ARG002
+        beatmap_id: int,
+        options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        del beatmap_id, options
         return BeatmapResolveResult(
             beatmap=None,
+            beatmapset=None,
+            eligibility=self.eligibility,
+            metadata_status=BeatmapFetchState.FRESH,
+            file_status=BeatmapFileState.MISSING,
+            source=BeatmapMetadataSource.OFFICIAL,
+            verified=True,
+            last_fetched_at=None,
+            next_refresh_at=None,
+            reason=None,
+        )
+
+    async def resolve_by_checksum(
+        self,
+        checksum_md5: str,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        del checksum_md5, options
+        return BeatmapResolveResult(
+            beatmap=_resolved_beatmap(),
             beatmapset=None,
             eligibility=self.eligibility,
             metadata_status=BeatmapFetchState.FRESH,
@@ -94,26 +161,30 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
         )
     )
 
+    score_decryptor = StubScorePayloadDecryptor()
     service = ScoreSubmissionService(
-        score_repo, submission_repo, replay_repo, auth_service, resolver
+        score_repo,
+        submission_repo,
+        replay_repo,
+        StubBlobStorageService(),
+        score_decryptor,
+        auth_service,
+        resolver,
     )
 
     def mock_decrypt(
-        encrypted: bytes,  # noqa: ARG001
-        iv: bytes,  # noqa: ARG001
-        osu_version: str | None,  # noqa: ARG001
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
     ) -> DecryptedPayload:
         return DecryptedPayload(
             plaintext="1000|test_user|0|300|100|50|5|3|2|1|500|1000|True|0|12345678|0|0|98765432|0",
             checksum_valid=True,
         )
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
 
-    def mock_parse(plaintext: str) -> ParsedScore:  # noqa: ARG001
+    def mock_parse(_plaintext: str) -> ParsedScore:
         return ParsedScore(
             user_id=1000,
             username="test_user",
@@ -210,21 +281,28 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
             denial_reason=None,
         )
     )
+    score_decryptor = StubScorePayloadDecryptor()
     service = ScoreSubmissionService(
-        score_repo, submission_repo, replay_repo, auth_service, resolver
+        score_repo,
+        submission_repo,
+        replay_repo,
+        StubBlobStorageService(),
+        score_decryptor,
+        auth_service,
+        resolver,
     )
 
     def mock_decrypt(
-        encrypted: bytes,  # noqa: ARG001
-        iv: bytes,  # noqa: ARG001
-        osu_version: str | None,  # noqa: ARG001
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
     ) -> DecryptedPayload:
         return DecryptedPayload(
             plaintext="1000|test_user|0|300|100|50|5|3|2|1|500|1000|True|0|12345678|0|0|98765432|0",
             checksum_valid=True,
         )
 
-    def mock_parse(plaintext: str) -> ParsedScore:  # noqa: ARG001
+    def mock_parse(_plaintext: str) -> ParsedScore:
         return ParsedScore(
             user_id=1000,
             username="test_user",
@@ -244,10 +322,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
             passed=True,
         )
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.parse",
         mock_parse,
@@ -269,7 +344,8 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
         result = await service.submit_score(input_data)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
-    assert "authorization_failed" in result.error_reason  # type: ignore
+    assert result.error_reason is not None
+    assert "authorization_failed" in result.error_reason
 
     # Verify logs contain failure category
     all_logs = "".join(str(entry) for entry in cap_logs)
@@ -293,9 +369,17 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
             denial_reason="status_not_ranked",
         )
     )
+    score_decryptor2 = StubScorePayloadDecryptor()
     service2 = ScoreSubmissionService(
-        score_repo, submission_repo, replay_repo, auth_service, ineligible_resolver
+        score_repo,
+        submission_repo,
+        replay_repo,
+        StubBlobStorageService(),
+        score_decryptor2,
+        auth_service,
+        ineligible_resolver,
     )
+    score_decryptor2.set_factory(mock_decrypt)
 
     valid_input = ParsedSubmissionInput(
         encrypted_payload=b"encrypted",
@@ -313,7 +397,8 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
         result2 = await service2.submit_score(valid_input)
 
     assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
-    assert "beatmap_ineligible" in result2.error_reason  # type: ignore
+    assert result2.error_reason is not None
+    assert "beatmap_ineligible" in result2.error_reason
 
     # Verify logs contain failure category
     all_logs2 = "".join(str(entry) for entry in cap_logs2)
@@ -351,21 +436,28 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
         )
     )
 
+    score_decryptor = StubScorePayloadDecryptor()
     service = ScoreSubmissionService(
-        score_repo, submission_repo, replay_repo, auth_service, resolver
+        score_repo,
+        submission_repo,
+        replay_repo,
+        StubBlobStorageService(),
+        score_decryptor,
+        auth_service,
+        resolver,
     )
 
     def mock_decrypt(
-        encrypted: bytes,  # noqa: ARG001
-        iv: bytes,  # noqa: ARG001
-        osu_version: str | None,  # noqa: ARG001
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
     ) -> DecryptedPayload:
         return DecryptedPayload(
             plaintext="1000|test_user|valid_checksum|300|100|50|5|3|2|1000000|500|True|0|12345678|0|0|98765432|0",
             checksum_valid=True,
         )
 
-    def mock_parse(plaintext: str) -> ParsedScore:  # noqa: ARG001
+    def mock_parse(_plaintext: str) -> ParsedScore:
         return ParsedScore(
             user_id=1000,
             username="test_user",
@@ -385,10 +477,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
             passed=True,
         )
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.parse",
         mock_parse,
@@ -397,7 +486,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted",
         iv=b"1234567890123456",
-        replay_data=None,
+        replay_data=b"replay_binary_data",
         password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         client_hash="client123",
         fail_time_ms=None,
@@ -410,7 +499,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
     assert result.outcome == SubmissionOutcome.COMPLETED
 
     # Verify submission was recorded
-    fingerprint = hashlib.sha256(b"123:client123:2024-01-01T12:00:00+00:00").hexdigest()
+    fingerprint = _fingerprint_for(input_data)
     submission = await submission_repo.get_by_fingerprint(fingerprint)
     assert submission is not None
 
@@ -453,24 +542,31 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
         )
     )
 
+    score_decryptor = StubScorePayloadDecryptor()
     service = ScoreSubmissionService(
-        score_repo, submission_repo, replay_repo, auth_service, resolver
+        score_repo,
+        submission_repo,
+        replay_repo,
+        StubBlobStorageService(),
+        score_decryptor,
+        auth_service,
+        resolver,
     )
 
     secret_password = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     secret_payload = b"this_is_encrypted_secret_payload"
 
     def mock_decrypt(
-        encrypted: bytes,  # noqa: ARG001
-        iv: bytes,  # noqa: ARG001
-        osu_version: str | None,  # noqa: ARG001
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
     ) -> DecryptedPayload:
         return DecryptedPayload(
             plaintext="1000|test_user|valid_checksum|300|100|50|5|3|2|1000000|500|True|0|12345678|0|0|98765432|0",
             checksum_valid=True,
         )
 
-    def mock_parse(plaintext: str) -> ParsedScore:  # noqa: ARG001
+    def mock_parse(_plaintext: str) -> ParsedScore:
         return ParsedScore(
             user_id=1000,
             username="test_user",
@@ -490,10 +586,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
             passed=True,
         )
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.parse",
         mock_parse,
@@ -502,7 +595,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
     input_data = ParsedSubmissionInput(
         encrypted_payload=secret_payload,
         iv=b"1234567890123456",
-        replay_data=None,
+        replay_data=b"replay_binary_data",
         password_md5=secret_password,
         client_hash="client123",
         fail_time_ms=None,
@@ -555,21 +648,28 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
         )
     )
 
+    score_decryptor = StubScorePayloadDecryptor()
     service = ScoreSubmissionService(
-        score_repo, submission_repo, replay_repo, auth_service, resolver
+        score_repo,
+        submission_repo,
+        replay_repo,
+        StubBlobStorageService(),
+        score_decryptor,
+        auth_service,
+        resolver,
     )
 
     def mock_decrypt(
-        encrypted: bytes,  # noqa: ARG001
-        iv: bytes,  # noqa: ARG001
-        osu_version: str | None,  # noqa: ARG001
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
     ) -> DecryptedPayload:
         return DecryptedPayload(
             plaintext="1000|test_user|valid_checksum|300|100|50|5|3|2|1000000|500|True|0|12345678|0|0|98765432|0",
             checksum_valid=True,
         )
 
-    def mock_parse(plaintext: str) -> ParsedScore:  # noqa: ARG001
+    def mock_parse(_plaintext: str) -> ParsedScore:
         return ParsedScore(
             user_id=1000,
             username="test_user",
@@ -589,10 +689,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
             passed=True,
         )
 
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.decrypt_score_payload",
-        mock_decrypt,
-    )
+    score_decryptor.set_factory(mock_decrypt)
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.parse",
         mock_parse,
@@ -601,7 +698,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted",
         iv=b"1234567890123456",
-        replay_data=None,
+        replay_data=b"replay_binary_data",
         password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         client_hash="client123",
         fail_time_ms=None,
@@ -617,7 +714,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
     assert result.score_id is not None
 
     # Verify submission fingerprint was generated and stored
-    expected_fingerprint = hashlib.sha256(b"123:client123:2024-01-01T12:00:00+00:00").hexdigest()
+    expected_fingerprint = _fingerprint_for(input_data)
 
     submission = await submission_repo.get_by_fingerprint(expected_fingerprint)
     assert submission is not None

@@ -42,6 +42,13 @@ class InMemoryScoreRepository:
         """Return ``True`` if a score with *checksum* exists."""
         return checksum in self._id_by_online_checksum
 
+    async def get_by_online_checksum(self, checksum: str) -> Score | None:
+        """Return the score with *checksum*, or ``None`` if not found."""
+        score_id = self._id_by_online_checksum.get(checksum)
+        if score_id is None:
+            return None
+        return self._scores_by_id.get(score_id)
+
     async def get_by_id(self, score_id: int) -> Score | None:
         """Return the score with *score_id*, or ``None`` if not found."""
         return self._scores_by_id.get(score_id)
