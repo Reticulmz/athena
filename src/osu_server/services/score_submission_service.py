@@ -22,6 +22,10 @@ from osu_server.repositories.interfaces.score_repository import ScoreRepository
 from osu_server.repositories.interfaces.submission_repository import ScoreSubmissionRepository
 from osu_server.shared.errors import DecryptionError
 
+# Mod bit constants for playstyle detection (Requirement 1.3)
+_MOD_RELAX = 1 << 7  # 128
+_MOD_AUTOPILOT = 1 << 13  # 8192
+
 
 class BeatmapEligibilityResolver(Protocol):
     async def resolve_by_beatmap_id(
@@ -83,7 +87,7 @@ class ScoreSubmissionService:
         self._auth_service: ScoreAuthorizationService = auth_service
         self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
 
-    async def submit_score(  # noqa: PLR0911
+    async def submit_score(  # noqa: PLR0911, PLR0912
         self, input_data: ParsedSubmissionInput
     ) -> SubmissionResult:
         """Submit a score with full validation and persistence.
@@ -162,6 +166,13 @@ class ScoreSubmissionService:
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
                 error_reason=self._format_auth_error(auth_ctx),
+            )
+
+        # 5.5. Check playstyle (R1.3, R1.4)
+        if self._is_relax_or_autopilot(parsed.mods):
+            return SubmissionResult(
+                outcome=SubmissionOutcome.TERMINAL_REJECTED,
+                error_reason="playstyle_not_supported: relax_or_autopilot",
             )
 
         # 6. Check beatmap eligibility (R8.1-8.5)
@@ -282,3 +293,7 @@ class ScoreSubmissionService:
         if not ctx.payload_identity_match:
             return "authorization_failed: identity_mismatch"
         return "authorization_failed: unknown"
+
+    def _is_relax_or_autopilot(self, mods: int) -> bool:
+        """Check if submission contains Relax or Autopilot mods (R1.3, R1.4)."""
+        return (mods & _MOD_RELAX) != 0 or (mods & _MOD_AUTOPILOT) != 0
