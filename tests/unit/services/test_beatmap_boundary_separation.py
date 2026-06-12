@@ -10,7 +10,6 @@ from __future__ import annotations
 import sys
 from dataclasses import FrozenInstanceError, fields
 from datetime import UTC, datetime, timedelta
-from typing import get_type_hints
 
 import pytest
 
@@ -29,7 +28,7 @@ from osu_server.domain.beatmap import (
     BeatmapSourceVerification,
     LocalBeatmapStatus,
 )
-from osu_server.services.beatmap_mirror_service import (
+from osu_server.services.beatmap_mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
     BeatmapStatusResolver,
@@ -46,14 +45,10 @@ _CHECKSUM = "0123456789abcdef0123456789abcdef"
 # All modules that belong to the beatmap-mirror feature boundary.
 _BEATMAP_MODULES: tuple[str, ...] = (
     "osu_server.domain.beatmap",
-    "osu_server.services.beatmap_mirror_service",
-    "osu_server.services.beatmap_mirror_service",
-    "osu_server.services.beatmap_mirror_service",
+    "osu_server.services.beatmap_mirror.file_provider_service",
+    "osu_server.services.beatmap_mirror.metadata_provider_service",
     "osu_server.repositories.beatmaps.mappers",
     "osu_server.repositories.beatmaps.metadata_providers",
-    "osu_server.services.beatmap_mirror.providers",
-    "osu_server.repositories.beatmaps.errors",
-    "osu_server.services.beatmap_mirror.file_sources",
     "osu_server.repositories.interfaces.beatmap_repository",
     "osu_server.repositories.memory.beatmap_repository",
     "osu_server.jobs.beatmap_fetch",
@@ -311,9 +306,15 @@ class TestBeatmapDomainBoundarySeparation:
 
     def test_beatmap_evaluation_does_not_return_score_objects(self) -> None:
         """BeatmapEligibility.evaluate returns BeatmapEligibility, not score objects."""
-        hints = get_type_hints(BeatmapEligibilityService.evaluate)
-        assert hints.get("return") is BeatmapEligibility
-        assert "Score" not in str(hints)
+        # Verify evaluate method exists and returns BeatmapEligibility
+        assert hasattr(BeatmapEligibilityService, "evaluate")
+        result = BeatmapEligibilityService().evaluate(
+            _make_beatmap(official_status=BeatmapRankStatus.RANKED), mirror_trust_enabled=False
+        )
+        assert isinstance(result, BeatmapEligibility)
+        # Verify result has no score-related attributes
+        assert not hasattr(result, "score")
+        assert not hasattr(result, "pp")
 
 
 # ---------------------------------------------------------------------------

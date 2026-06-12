@@ -1,4 +1,4 @@
-"""Tests for BeatmapFileProvider contract and CompositeBeatmapFileProvider.
+"""Tests for BeatmapFileProvider contract and BeatmapFileProviderService.
 
 TDD: RED phase first, then GREEN.
 """
@@ -15,14 +15,13 @@ from structlog.testing import capture_logs
 from osu_server.domain.beatmap import (
     BeatmapFileProvider,
     BeatmapFileSource,
-    OsuFileFetchResult,
-)
-from osu_server.repositories.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
+    OsuFileFetchResult,
 )
-from osu_server.services.beatmap_mirror.file_sources import (
-    CompositeBeatmapFileProvider,
+from osu_server.infrastructure.http import BeatmapHttpClient
+from osu_server.services.beatmap_mirror import (
+    BeatmapFileProviderService,
 )
 
 # ---------------------------------------------------------------------------
@@ -140,7 +139,7 @@ def _make_provider(
     mirror_body: bytes | None = None,
     mirror_headers: dict[str, str] | None = None,
     mirror_error: type[Exception] | None = None,
-) -> CompositeBeatmapFileProvider:
+) -> BeatmapFileProviderService:
     client = _make_client(
         primary_status=primary_status,
         primary_body=primary_body,
@@ -155,11 +154,12 @@ def _make_provider(
         mirror_headers=mirror_headers,
         mirror_error=mirror_error,
     )
-    return CompositeBeatmapFileProvider(
+    http_client = BeatmapHttpClient(client=client)
+    return BeatmapFileProviderService(
         osu_current_url_template="https://osu.ppy.sh/osu/{beatmap_id}",
         osu_legacy_url_template="https://old.ppy.sh/osu/{beatmap_id}",
         mirror_url_templates=["https://catboy.best/osu/{beatmap_id}"],
-        httpx_client=client,
+        http_client=http_client,
     )
 
 
@@ -264,11 +264,11 @@ class TestBeatmapFileProviderProtocol:
 
 
 # ---------------------------------------------------------------------------
-# CompositeBeatmapFileProvider tests
+# BeatmapFileProviderService tests
 # ---------------------------------------------------------------------------
 
 
-class TestCompositeBeatmapFileProviderPrimarySource:
+class TestBeatmapFileProviderServicePrimarySource:
     """Tests for primary source (osu_current) fetch behavior."""
 
     async def test_fetch_from_primary_source_success(self) -> None:
@@ -295,7 +295,7 @@ class TestCompositeBeatmapFileProviderPrimarySource:
         assert exc_info.value.category is BeatmapSourceErrorCategory.NOT_FOUND
 
 
-class TestCompositeBeatmapFileProviderLegacyFallback:
+class TestBeatmapFileProviderServiceLegacyFallback:
     """Tests for legacy source fallback behavior."""
 
     async def test_fallback_to_legacy_on_primary_429(self) -> None:
@@ -337,7 +337,7 @@ class TestCompositeBeatmapFileProviderLegacyFallback:
         assert exc_info.value.category is BeatmapSourceErrorCategory.NOT_FOUND
 
 
-class TestCompositeBeatmapFileProviderMirrorFallback:
+class TestBeatmapFileProviderServiceMirrorFallback:
     """Tests for mirror fallback when both direct sources are unavailable."""
 
     async def test_fallback_to_mirror_when_both_direct_fail(self) -> None:
@@ -374,7 +374,7 @@ class TestCompositeBeatmapFileProviderMirrorFallback:
         assert exc_info.value.category is BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
 
 
-class TestCompositeBeatmapFileProviderFilenameCapture:
+class TestBeatmapFileProviderServiceFilenameCapture:
     """Tests for original filename capture from Content-Disposition header."""
 
     async def test_captures_filename_from_content_disposition(self) -> None:
@@ -399,7 +399,7 @@ class TestCompositeBeatmapFileProviderFilenameCapture:
         assert result.original_filename is None
 
 
-class TestCompositeBeatmapFileProviderErrorCategoryMapping:
+class TestBeatmapFileProviderServiceErrorCategoryMapping:
     """Tests for error normalization and category mapping."""
 
     @pytest.mark.parametrize(
@@ -428,23 +428,24 @@ class TestCompositeBeatmapFileProviderErrorCategoryMapping:
         assert exc_info.value.category is expected_category
 
 
-class TestCompositeBeatmapFileProviderNoMirrors:
+class TestBeatmapFileProviderServiceNoMirrors:
     """Tests for providers with empty mirror URL list."""
 
     async def test_no_fallback_when_no_mirrors_configured(self) -> None:
         client = _make_client(primary_status=429, legacy_status=503)
-        provider = CompositeBeatmapFileProvider(
+        http_client = BeatmapHttpClient(client=client)
+        provider = BeatmapFileProviderService(
             osu_current_url_template="https://osu.ppy.sh/osu/{beatmap_id}",
             osu_legacy_url_template="https://old.ppy.sh/osu/{beatmap_id}",
             mirror_url_templates=[],
-            httpx_client=client,
+            http_client=http_client,
         )
         with pytest.raises(BeatmapSourceError) as exc_info:
             _ = await provider.fetch_osu_file(_BEATMAP_ID)
         assert exc_info.value.category is BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
 
 
-class TestCompositeBeatmapFileProviderRateLimitObservability:
+class TestBeatmapFileProviderServiceRateLimitObservability:
     """Tests for rate-limit observability (Requirement 16.6)."""
 
     async def test_rate_limit_error_includes_source_info(self) -> None:
@@ -455,7 +456,7 @@ class TestCompositeBeatmapFileProviderRateLimitObservability:
         assert str(_BEATMAP_ID) in exc_info.value.lookup_key
 
 
-class TestCompositeBeatmapFileProviderLogging:
+class TestBeatmapFileProviderServiceLogging:
     """Structured observability for file source operations (16.3, 16.4, 16.6)."""
 
     async def test_logs_rate_limited_event_on_429(self) -> None:

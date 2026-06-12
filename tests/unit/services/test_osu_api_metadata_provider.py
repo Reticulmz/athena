@@ -11,15 +11,14 @@ import pytest
 from osu_server.domain.beatmap import (
     BeatmapMetadataSource,
     BeatmapRankStatus,
-    BeatmapSourceVerification,
-)
-from osu_server.repositories.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
+    BeatmapSourceVerification,
 )
-from osu_server.services.beatmap_mirror.providers import (
-    MirrorMetadataProvider,
-    OsuApiMetadataProvider,
+from osu_server.infrastructure.http import BeatmapHttpClient
+from osu_server.services.beatmap_mirror import (
+    MirrorMetadataProviderService,
+    OsuApiMetadataProviderService,
 )
 
 # ---------------------------------------------------------------------------
@@ -126,16 +125,17 @@ def _request_url(request: httpx.Request) -> str:
     return str(request.url)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
 
 
-def _make_provider(transport: httpx.MockTransport) -> OsuApiMetadataProvider:
+def _make_provider(transport: httpx.MockTransport) -> OsuApiMetadataProviderService:
     """Create a provider with a mock transport injected."""
-    provider = OsuApiMetadataProvider(
+    client = httpx.AsyncClient(transport=transport)
+    http_client = BeatmapHttpClient(client=client)
+    return OsuApiMetadataProviderService(
         client_id=_CLIENT_ID,
         client_secret=_CLIENT_SECRET,
         base_url=_BASE_URL,
         token_url=_TOKEN_URL,
+        http_client=http_client,
     )
-    provider._httpx_client = httpx.AsyncClient(transport=transport)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    return provider
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +326,7 @@ class TestTimeoutErrors:
         assert exc_info.value.category is BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
 
 
-class TestMirrorMetadataProvider:
+class TestMirrorMetadataProviderService:
     """Mirror metadata lookup without osu! OAuth."""
 
     async def test_returns_nerinyan_v1_snapshot_by_beatmap_id(self) -> None:
@@ -359,8 +359,12 @@ class TestMirrorMetadataProvider:
                 request=request,
             )
 
-        provider = MirrorMetadataProvider(base_urls=["https://api.nerinyan.moe"])
-        provider._httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        provider = MirrorMetadataProviderService(
+            base_url="https://api.nerinyan.moe",
+            http_client=BeatmapHttpClient(
+                httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            ),
+        )
 
         result = await provider.lookup_by_beatmap_id(100)
 
@@ -380,14 +384,15 @@ class TestMirrorMetadataProvider:
 
     async def test_uses_compatible_v2_endpoint_for_unknown_mirror(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
-            assert (
-                _request_url(request)
-                == "https://mirror.example.com/api/v2/beatmaps/lookup?checksum=" + "a" * 32
-            )
+            assert _request_url(request) == "https://mirror.example.com/v2/hash/" + "a" * 32
             return httpx.Response(200, json=_BEATMAP_BODY, request=request)
 
-        provider = MirrorMetadataProvider(base_urls=["https://mirror.example.com/api/v2"])
-        provider._httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        provider = MirrorMetadataProviderService(
+            base_url="https://mirror.example.com",
+            http_client=BeatmapHttpClient(
+                httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            ),
+        )
 
         result = await provider.lookup_by_checksum("a" * 32)
 
@@ -406,22 +411,35 @@ class TestMirrorMetadataProvider:
                 return httpx.Response(404, request=request)
             return httpx.Response(200, json=_BEATMAPSET_BODY, request=request)
 
-        provider = MirrorMetadataProvider(
-            base_urls=["https://first.example.com/api/v2", "https://second.example.com/api/v2"]
+        provider = MirrorMetadataProviderService(
+            base_urls=(
+                "https://first.example.com",
+                "https://second.example.com",
+            ),
+            http_client=BeatmapHttpClient(
+                httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            ),
         )
-        provider._httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
         result = await provider.lookup_by_beatmapset_id(1)
 
         assert result is not None
         assert result.beatmapset_id == 1
         assert requested_urls == [
-            "https://first.example.com/api/v2/beatmapsets/1",
-            "https://second.example.com/api/v2/beatmapsets/1",
+            "https://first.example.com/v2/s/1",
+            "https://second.example.com/v2/s/1",
         ]
 
     async def test_returns_none_when_no_mirror_is_configured(self) -> None:
-        provider = MirrorMetadataProvider()
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise AssertionError(f"unexpected request: {_request_url(request)}")
+
+        provider = MirrorMetadataProviderService(
+            base_urls=(),
+            http_client=BeatmapHttpClient(
+                httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            ),
+        )
 
         result = await provider.lookup_by_beatmap_id(100)
 

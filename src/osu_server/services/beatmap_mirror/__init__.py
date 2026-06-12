@@ -1,17 +1,27 @@
-"""Beatmap mirror services - HTTP-based file and metadata providers."""
+"""Beatmap mirror services - resolution, file and metadata providers."""
 
-from osu_server.services.beatmap_mirror.file_sources import (
-    CompositeBeatmapFileProvider,
+from osu_server.services.beatmap_mirror.eligibility_service import (
+    BeatmapEligibilityService,
+    BeatmapStatusResolver,
 )
-from osu_server.services.beatmap_mirror.providers import (
+from osu_server.services.beatmap_mirror.file_provider_service import (
+    BeatmapFileProviderService,
+)
+from osu_server.services.beatmap_mirror.metadata_provider_service import (
     InMemoryBeatmapMetadataProvider,
-    MirrorMetadataProvider,
-    OsuApiMetadataProvider,
+    MirrorMetadataProviderService,
+    OsuApiMetadataProviderService,
+)
+from osu_server.services.beatmap_mirror.resolution_service import (
+    BeatmapMirrorService,
 )
 
 __all__ = [
-    "CompositeBeatmapFileProvider",
+    "BeatmapEligibilityService",
+    "BeatmapFileProviderService",
+    "BeatmapMirrorService",
+    "BeatmapStatusResolver",
     "InMemoryBeatmapMetadataProvider",
-    "MirrorMetadataProvider",
-    "OsuApiMetadataProvider",
+    "MirrorMetadataProviderService",
+    "OsuApiMetadataProviderService",
 ]

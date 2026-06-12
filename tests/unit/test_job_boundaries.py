@@ -56,8 +56,8 @@ def test_jobs_layer_is_part_of_import_linter_contract() -> None:
         "osu_server.jobs",
         "osu_server.services",
         "osu_server.repositories",
-        "osu_server.domain",
         "osu_server.infrastructure",
+        "osu_server.domain",
         "osu_server.shared",
     ]
 

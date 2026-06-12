@@ -14,7 +14,7 @@ from osu_server.domain.beatmap import (
     BeatmapSourceVerification,
     LocalBeatmapStatus,
 )
-from osu_server.services.beatmap_mirror_service import (
+from osu_server.services.beatmap_mirror import (
     BeatmapEligibilityService,
     BeatmapStatusResolver,
 )

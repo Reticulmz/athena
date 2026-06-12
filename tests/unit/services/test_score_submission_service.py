@@ -2,11 +2,19 @@
 """Unit tests for ScoreSubmissionService."""
 
 import hashlib
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pytest
 
-from osu_server.domain.beatmap.eligibility import BeatmapStatus, EligibilityResult
+from osu_server.domain.beatmap import (
+    BeatmapEligibility,
+    BeatmapFetchState,
+    BeatmapFileState,
+    BeatmapMetadataSource,
+    BeatmapResolveOptions,
+    BeatmapResolveResult,
+)
 from osu_server.domain.score.score import Playstyle, Ruleset
 from osu_server.infrastructure.auth.score_authorization import (
     ScoreAuthorizationService,
@@ -22,6 +30,65 @@ from osu_server.services.score_submission_service import (
 )
 
 
+def _eligible_beatmap() -> BeatmapEligibility:
+    return BeatmapEligibility(
+        accepts_scores=True,
+        has_leaderboard=True,
+        awards_ranked_pp=True,
+        awards_loved_pp=False,
+        requires_osu_file_for_pp=True,
+        is_officially_verified=True,
+        is_mirror_derived=False,
+        accepts_failed_scores=True,
+        failed_scores_have_leaderboard=False,
+        failed_scores_update_best_score=False,
+        failed_scores_award_ranked_pp=False,
+        failed_scores_award_loved_pp=False,
+        denial_reason=None,
+    )
+
+
+def _ineligible_beatmap(reason: str = "status_not_eligible") -> BeatmapEligibility:
+    return BeatmapEligibility(
+        accepts_scores=False,
+        has_leaderboard=False,
+        awards_ranked_pp=False,
+        awards_loved_pp=False,
+        requires_osu_file_for_pp=False,
+        is_officially_verified=True,
+        is_mirror_derived=False,
+        accepts_failed_scores=False,
+        failed_scores_have_leaderboard=False,
+        failed_scores_update_best_score=False,
+        failed_scores_award_ranked_pp=False,
+        failed_scores_award_loved_pp=False,
+        denial_reason=reason,
+    )
+
+
+@dataclass(slots=True)
+class FakeBeatmapResolver:
+    eligibility: BeatmapEligibility | None = None
+
+    async def resolve_by_beatmap_id(
+        self,
+        beatmap_id: int,  # noqa: ARG002
+        options: BeatmapResolveOptions | None = None,  # noqa: ARG002
+    ) -> BeatmapResolveResult:
+        return BeatmapResolveResult(
+            beatmap=None,
+            beatmapset=None,
+            eligibility=self.eligibility,
+            metadata_status=BeatmapFetchState.FRESH,
+            file_status=BeatmapFileState.MISSING,
+            source=BeatmapMetadataSource.OFFICIAL,
+            verified=True,
+            last_fetched_at=None,
+            next_refresh_at=None,
+            reason=None,
+        )
+
+
 @pytest.fixture
 def repos() -> tuple[
     InMemoryScoreRepository, InMemoryScoreSubmissionRepository, InMemoryReplayRepository
@@ -35,11 +102,18 @@ def repos() -> tuple[
 
 
 @pytest.fixture
-def service(repos) -> ScoreSubmissionService:
+def beatmap_resolver() -> FakeBeatmapResolver:
+    return FakeBeatmapResolver(_eligible_beatmap())
+
+
+@pytest.fixture
+def service(repos, beatmap_resolver: FakeBeatmapResolver) -> ScoreSubmissionService:
     """Create service with in-memory repositories."""
     score_repo, submission_repo, replay_repo = repos
     auth_service = ScoreAuthorizationService()
-    return ScoreSubmissionService(score_repo, submission_repo, replay_repo, auth_service)
+    return ScoreSubmissionService(
+        score_repo, submission_repo, replay_repo, auth_service, beatmap_resolver
+    )
 
 
 @pytest.fixture
@@ -84,15 +158,6 @@ async def test_happy_path_valid_submission_creates_score(
         mock_decrypt,
     )
 
-    # Mock eligibility
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
-    )
-
     result = await service.submit_score(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
@@ -128,14 +193,6 @@ async def test_failed_play_handling(
         mock_decrypt,
     )
 
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
-    )
-
     result = await service.submit_score(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
@@ -161,14 +218,6 @@ async def test_replay_attachment(
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.decrypt_score_payload",
         mock_decrypt,
-    )
-
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
     )
 
     result = await service.submit_score(valid_input)
@@ -198,14 +247,6 @@ async def test_online_checksum_duplicate_rejection(
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.decrypt_score_payload",
         mock_decrypt,
-    )
-
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
     )
 
     # First submission
@@ -249,14 +290,6 @@ async def test_replay_checksum_duplicate_rejection(
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.decrypt_score_payload",
         mock_decrypt,
-    )
-
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
     )
 
     # First submission
@@ -306,14 +339,6 @@ async def test_submission_fingerprint_idempotency(
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.decrypt_score_payload",
         mock_decrypt,
-    )
-
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
     )
 
     # First submission
@@ -366,6 +391,7 @@ async def test_authorization_failure_terminal_reject(
 async def test_beatmap_ineligibility_terminal_reject(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
+    beatmap_resolver: FakeBeatmapResolver,
     monkeypatch,
 ) -> None:
     """Ineligible beatmap returns terminal reject."""
@@ -379,17 +405,7 @@ async def test_beatmap_ineligibility_terminal_reject(
         mock_decrypt,
     )
 
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(
-            eligible=False,
-            status=BeatmapStatus.PENDING,
-            reason="Beatmap status PENDING is not eligible",
-        )
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
-    )
+    beatmap_resolver.eligibility = _ineligible_beatmap()
 
     result = await service.submit_score(valid_input)
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
@@ -412,14 +428,6 @@ async def test_validation_failure_terminal_reject(
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.decrypt_score_payload",
         mock_decrypt,
-    )
-
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
     )
 
     result = await service.submit_score(valid_input)

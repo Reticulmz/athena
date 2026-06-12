@@ -24,10 +24,10 @@ from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRep
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.beatmap_mirror.file_sources import CompositeBeatmapFileProvider
-from osu_server.services.beatmap_mirror.providers import (
-    MirrorMetadataProvider,
-    OsuApiMetadataProvider,
+from osu_server.services.beatmap_mirror import (
+    BeatmapFileProviderService,
+    MirrorMetadataProviderService,
+    OsuApiMetadataProviderService,
 )
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
@@ -88,11 +88,13 @@ def create_worker_beatmap_metadata_fetch(
     mirror fallback second.
     """
     repo = SQLAlchemyBeatmapRepository(session_factory)
-    official = OsuApiMetadataProvider(
+    official = OsuApiMetadataProviderService(
         client_id=config.beatmap_official_api_client_id,  # pyright: ignore[reportArgumentType]
         client_secret=config.beatmap_official_api_client_secret,  # pyright: ignore[reportArgumentType]
     )
-    mirror = MirrorMetadataProvider(base_urls=config.beatmap_metadata_mirror_base_urls)
+    mirror = MirrorMetadataProviderService(
+        base_urls=config.beatmap_metadata_mirror_base_urls,
+    )
     metadata_provider = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
     return FetchBeatmapMetadataJob(repository=repo, metadata_provider=metadata_provider)
 
@@ -108,7 +110,7 @@ async def create_worker_beatmap_file_fetch(
     ``BlobStorageService`` backed by the configured blob storage backend.
     """
     repo = SQLAlchemyBeatmapRepository(session_factory)
-    file_provider = CompositeBeatmapFileProvider(
+    file_provider = BeatmapFileProviderService(
         osu_current_url_template=config.beatmap_osu_current_url_template,
         osu_legacy_url_template=config.beatmap_osu_legacy_url_template,
         mirror_url_templates=list(config.beatmap_community_mirror_url_templates),

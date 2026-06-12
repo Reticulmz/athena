@@ -1,4 +1,4 @@
-"""Tests for OsuApiMetadataProvider — osu! API v2 integration.
+"""Tests for OsuApiMetadataProviderService — osu! API v2 integration.
 
 Uses httpx.MockTransport for deterministic HTTP simulation.
 """
@@ -18,13 +18,12 @@ if TYPE_CHECKING:
 from osu_server.domain.beatmap import (
     BeatmapMetadataSource,
     BeatmapRankStatus,
-    BeatmapSourceVerification,
-)
-from osu_server.repositories.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
+    BeatmapSourceVerification,
 )
-from osu_server.services.beatmap_mirror.providers import OsuApiMetadataProvider
+from osu_server.infrastructure.http import BeatmapHttpClient
+from osu_server.services.beatmap_mirror import OsuApiMetadataProviderService
 
 # ---------------------------------------------------------------------------
 # Fixtures / constants
@@ -124,7 +123,7 @@ def _handler_for(
 
     def handle(request: httpx.Request) -> httpx.Response:
         nonlocal _token_call_counter
-        url_str = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue, reportUnknownArgumentType]
+        url_str = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
 
         # -- Token endpoint (POST) --------------------------------------------
         if _TOKEN_URL in url_str and request.method == "POST":  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
@@ -164,8 +163,8 @@ def _make_provider(
     api_error: type[Exception] | None = None,
     token_error: type[Exception] | None = None,
     token_count: int = 0,
-) -> OsuApiMetadataProvider:
-    """Create an OsuApiMetadataProvider backed by a MockTransport."""
+) -> OsuApiMetadataProviderService:
+    """Create an OsuApiMetadataProviderService backed by a MockTransport."""
     handler = _handler_for(
         token_status=token_status,
         token_body=token_body,
@@ -177,12 +176,12 @@ def _make_provider(
     )
     transport = httpx.MockTransport(handler)
     client = httpx.AsyncClient(transport=transport)
-    provider = OsuApiMetadataProvider(
+    http_client = BeatmapHttpClient(client=client)
+    return OsuApiMetadataProviderService(
         client_id=_CLIENT_ID,
         client_secret=_CLIENT_SECRET,
+        http_client=http_client,
     )
-    provider._httpx_client = client  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    return provider
 
 
 # ---------------------------------------------------------------------------
@@ -271,13 +270,9 @@ class TestLookupByBeatmapsetId:
 
     async def test_raises_on_invalid_json(self) -> None:
         """Non-JSON response body → BeatmapSourceError(INVALID_RESPONSE)."""
-        handler = _handler_for(api_status=200)
-        transport = httpx.MockTransport(handler)
-        # Override the handler to return garbage bytes
-        client = httpx.AsyncClient(transport=transport)
 
         def bad_json(request: httpx.Request) -> httpx.Response:
-            url_str = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue, reportUnknownArgumentType]
+            url_str = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
             if _TOKEN_URL in url_str and request.method == "POST":  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
                 return httpx.Response(
                     200,
@@ -288,11 +283,12 @@ class TestLookupByBeatmapsetId:
 
         transport = httpx.MockTransport(bad_json)
         client = httpx.AsyncClient(transport=transport)
-        provider = OsuApiMetadataProvider(
+        http_client = BeatmapHttpClient(client=client)
+        provider = OsuApiMetadataProviderService(
             client_id=_CLIENT_ID,
             client_secret=_CLIENT_SECRET,
+            http_client=http_client,
         )
-        provider._httpx_client = client  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
         with pytest.raises(BeatmapSourceError) as exc_info:
             await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
@@ -432,7 +428,7 @@ class TestTokenManagement:
         client = httpx.AsyncClient(transport=transport)
 
         def bad_token(request: httpx.Request) -> httpx.Response:
-            url_str = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue, reportUnknownArgumentType]
+            url_str = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
             if _TOKEN_URL in url_str and request.method == "POST":  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
                 return httpx.Response(200, content=b"not valid json {{{", request=request)
             return httpx.Response(
@@ -443,11 +439,12 @@ class TestTokenManagement:
 
         transport = httpx.MockTransport(bad_token)
         client = httpx.AsyncClient(transport=transport)
-        provider = OsuApiMetadataProvider(
+        http_client = BeatmapHttpClient(client=client)
+        provider = OsuApiMetadataProviderService(
             client_id=_CLIENT_ID,
             client_secret=_CLIENT_SECRET,
+            http_client=http_client,
         )
-        provider._httpx_client = client  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
         with pytest.raises(BeatmapSourceError) as exc_info:
             await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]

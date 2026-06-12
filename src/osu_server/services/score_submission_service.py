@@ -4,7 +4,9 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Protocol
 
+from osu_server.domain.beatmap import BeatmapResolveOptions, BeatmapResolveResult
 from osu_server.domain.score.payload_parser import ParseError, parse
 from osu_server.domain.score.replay import Replay
 from osu_server.domain.score.score import Playstyle, Ruleset, Score
@@ -18,11 +20,15 @@ from osu_server.infrastructure.crypto.score_crypto import decrypt_score_payload
 from osu_server.repositories.interfaces.replay_repository import ReplayRepository
 from osu_server.repositories.interfaces.score_repository import ScoreRepository
 from osu_server.repositories.interfaces.submission_repository import ScoreSubmissionRepository
-from osu_server.services.beatmap_eligibility_service import (
-    BeatmapNotFoundError,
-    check_eligibility,
-)
 from osu_server.shared.errors import DecryptionError
+
+
+class BeatmapEligibilityResolver(Protocol):
+    async def resolve_by_beatmap_id(
+        self,
+        beatmap_id: int,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult: ...
 
 
 class SubmissionOutcome(Enum):
@@ -69,11 +75,13 @@ class ScoreSubmissionService:
         submission_repo: ScoreSubmissionRepository,
         replay_repo: ReplayRepository,
         auth_service: ScoreAuthorizationService,
+        beatmap_resolver: BeatmapEligibilityResolver,
     ) -> None:
         self._score_repo: ScoreRepository = score_repo
         self._submission_repo: ScoreSubmissionRepository = submission_repo
         self._replay_repo: ReplayRepository = replay_repo
         self._auth_service: ScoreAuthorizationService = auth_service
+        self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
 
     async def submit_score(  # noqa: PLR0911
         self, input_data: ParsedSubmissionInput
@@ -157,18 +165,21 @@ class ScoreSubmissionService:
             )
 
         # 6. Check beatmap eligibility (R8.1-8.5)
-        try:
-            eligibility = await check_eligibility(input_data.beatmap_id)
-        except BeatmapNotFoundError:
-            return SubmissionResult(
-                outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason="beatmap_not_found",
+        beatmap_result = await self._beatmap_resolver.resolve_by_beatmap_id(
+            input_data.beatmap_id,
+            BeatmapResolveOptions(),
+        )
+        eligibility = beatmap_result.eligibility
+        accepts_submission = False
+        if eligibility is not None:
+            accepts_submission = (
+                eligibility.accepts_scores if parsed.passed else eligibility.accepts_failed_scores
             )
-
-        if not eligibility.eligible:
+        if not accepts_submission:
+            denial_reason = eligibility.denial_reason if eligibility is not None else None
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason=f"beatmap_ineligible: {eligibility.reason}",
+                error_reason=f"beatmap_ineligible: {denial_reason or 'not_accepting_scores'}",
             )
 
         # 7. Validate hit counts (R5.1-5.5)

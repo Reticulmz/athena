@@ -180,6 +180,7 @@ class TestSetupLogging:
             log_dir="/nonexistent/impossible/path",
         )
         with warnings.catch_warnings(record=True) as _w:
+            warnings.simplefilter("always")
             setup_logging(config)
 
         assert any(w.category is UserWarning for w in _w)

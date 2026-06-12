@@ -23,7 +23,7 @@ from osu_server.repositories.interfaces.beatmap_repository import (
     BeatmapFetchTarget,
 )
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.beatmap_mirror_service import (
+from osu_server.services.beatmap_mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
 )

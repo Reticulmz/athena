@@ -133,8 +133,8 @@ layers = [
     "osu_server.jobs",
     "osu_server.services",
     "osu_server.repositories",
-    "osu_server.domain",
     "osu_server.infrastructure",
+    "osu_server.domain",
     "osu_server.shared",
 ]
 

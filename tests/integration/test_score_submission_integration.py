@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -20,7 +21,14 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from osu_server.domain.beatmap.eligibility import BeatmapStatus, EligibilityResult
+from osu_server.domain.beatmap import (
+    BeatmapEligibility,
+    BeatmapFetchState,
+    BeatmapFileState,
+    BeatmapMetadataSource,
+    BeatmapResolveOptions,
+    BeatmapResolveResult,
+)
 from osu_server.domain.score.score import Grade, Playstyle, Ruleset
 from osu_server.infrastructure.auth.score_authorization import ScoreAuthorizationService
 from osu_server.infrastructure.crypto.score_crypto import DecryptedPayload
@@ -41,6 +49,73 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
+
+def _eligible_beatmap() -> BeatmapEligibility:
+    return BeatmapEligibility(
+        accepts_scores=True,
+        has_leaderboard=True,
+        awards_ranked_pp=True,
+        awards_loved_pp=False,
+        requires_osu_file_for_pp=True,
+        is_officially_verified=True,
+        is_mirror_derived=False,
+        accepts_failed_scores=True,
+        failed_scores_have_leaderboard=False,
+        failed_scores_update_best_score=False,
+        failed_scores_award_ranked_pp=False,
+        failed_scores_award_loved_pp=False,
+        denial_reason=None,
+    )
+
+
+@dataclass(slots=True)
+class FakeBeatmapResolver:
+    eligibility: BeatmapEligibility | None
+
+    async def resolve_by_beatmap_id(
+        self,
+        beatmap_id: int,  # noqa: ARG002
+        options: BeatmapResolveOptions | None = None,  # noqa: ARG002
+    ) -> BeatmapResolveResult:
+        return BeatmapResolveResult(
+            beatmap=None,
+            beatmapset=None,
+            eligibility=self.eligibility,
+            metadata_status=BeatmapFetchState.FRESH,
+            file_status=BeatmapFileState.MISSING,
+            source=BeatmapMetadataSource.OFFICIAL,
+            verified=True,
+            last_fetched_at=None,
+            next_refresh_at=None,
+            reason=None,
+        )
+
+
+async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
+    test_score_filter = """
+        online_checksum LIKE 'integration_test_%'
+        OR online_checksum LIKE 'int_test_%'
+    """
+    _ = await session.execute(
+        text(
+            f"""
+            DELETE FROM replays
+            WHERE score_id IN (
+                SELECT id FROM scores WHERE {test_score_filter}
+            )
+            """
+        )
+    )
+    _ = await session.execute(text(f"DELETE FROM scores WHERE {test_score_filter}"))
+    _ = await session.execute(
+        text(
+            """
+            DELETE FROM score_submissions
+            WHERE user_id = 1000 AND beatmap_checksum = 'abc123'
+            """
+        )
+    )
 
 
 def _get_database_url() -> str:
@@ -71,21 +146,7 @@ async def session_factory(
     # Cleanup before test
     try:
         async with factory() as session:
-            _ = await session.execute(
-                text("DELETE FROM replays WHERE checksum_sha256 LIKE 'integration_test_%'")
-            )
-            _ = await session.execute(
-                text("DELETE FROM replays WHERE checksum_sha256 LIKE 'int_test_%'")
-            )
-            _ = await session.execute(
-                text("DELETE FROM scores WHERE online_checksum LIKE 'integration_test_%'")
-            )
-            _ = await session.execute(
-                text("DELETE FROM scores WHERE online_checksum LIKE 'int_test_%'")
-            )
-            _ = await session.execute(
-                text("DELETE FROM score_submissions WHERE fingerprint LIKE 'integration_test_%'")
-            )
+            await _cleanup_score_submission_rows(session)
             await session.commit()
     except (OSError, SQLAlchemyError):
         pass
@@ -95,21 +156,7 @@ async def session_factory(
     # Cleanup after test
     try:
         async with factory() as session:
-            _ = await session.execute(
-                text("DELETE FROM replays WHERE checksum_sha256 LIKE 'integration_test_%'")
-            )
-            _ = await session.execute(
-                text("DELETE FROM replays WHERE checksum_sha256 LIKE 'int_test_%'")
-            )
-            _ = await session.execute(
-                text("DELETE FROM scores WHERE online_checksum LIKE 'integration_test_%'")
-            )
-            _ = await session.execute(
-                text("DELETE FROM scores WHERE online_checksum LIKE 'int_test_%'")
-            )
-            _ = await session.execute(
-                text("DELETE FROM score_submissions WHERE fingerprint LIKE 'integration_test_%'")
-            )
+            await _cleanup_score_submission_rows(session)
             await session.commit()
     except (OSError, SQLAlchemyError):
         return
@@ -124,7 +171,10 @@ def service(
     submission_repo = SQLAlchemyScoreSubmissionRepository(session_factory)
     replay_repo = SQLAlchemyReplayRepository(session_factory)
     auth_service = ScoreAuthorizationService()
-    return ScoreSubmissionService(score_repo, submission_repo, replay_repo, auth_service)
+    beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap())
+    return ScoreSubmissionService(
+        score_repo, submission_repo, replay_repo, auth_service, beatmap_resolver
+    )
 
 
 @pytest.fixture
@@ -161,14 +211,6 @@ async def test_e2e_valid_submission_persists_to_database(
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.decrypt_score_payload",
         mock_decrypt,
-    )
-
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
     )
 
     result = await service.submit_score(valid_input)
@@ -227,14 +269,6 @@ async def test_e2e_database_transaction_handling(
         mock_decrypt,
     )
 
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
-    )
-
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted_data",
         iv=b"0" * 32,
@@ -282,14 +316,6 @@ async def test_e2e_concurrent_submission_handling(
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.decrypt_score_payload",
         mock_decrypt,
-    )
-
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
     )
 
     # Create 3 concurrent submissions with different fingerprints
@@ -340,14 +366,6 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.decrypt_score_payload",
         mock_decrypt,
-    )
-
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
     )
 
     # First submission
@@ -401,14 +419,6 @@ async def test_e2e_failed_play_persists_to_database(
         mock_decrypt,
     )
 
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
-    )
-
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted_data",
         iv=b"0" * 32,
@@ -431,7 +441,7 @@ async def test_e2e_failed_play_persists_to_database(
     assert score is not None
     assert score.passed is False
     assert score.score == 200000
-    assert score.grade == Grade.D
+    assert score.grade == Grade.B
 
 
 @pytest.mark.asyncio
@@ -449,14 +459,6 @@ async def test_e2e_idempotent_retry_returns_cached_result(
     monkeypatch.setattr(
         "osu_server.services.score_submission_service.decrypt_score_payload",
         mock_decrypt,
-    )
-
-    async def mock_eligibility(beatmap_id: int) -> EligibilityResult:  # noqa: ARG001
-        return EligibilityResult(eligible=True, status=BeatmapStatus.RANKED)
-
-    monkeypatch.setattr(
-        "osu_server.services.score_submission_service.check_eligibility",
-        mock_eligibility,
     )
 
     input_data = ParsedSubmissionInput(

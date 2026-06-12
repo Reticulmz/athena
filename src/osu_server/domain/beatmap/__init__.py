@@ -4,6 +4,10 @@ from osu_server.domain.beatmap.eligibility import (
     BeatmapStatus,
     EligibilityResult,
 )
+from osu_server.domain.beatmap.errors import (
+    BeatmapSourceError,
+    BeatmapSourceErrorCategory,
+)
 from osu_server.domain.beatmap.models import (
     Beatmap,
     BeatmapEligibility,
@@ -32,7 +36,6 @@ from osu_server.domain.beatmap.models import (
 )
 
 __all__ = [
-    # Models (beatmap-mirror feature)
     "Beatmap",
     "BeatmapEligibility",
     "BeatmapFetchRecord",
@@ -52,8 +55,9 @@ __all__ = [
     "BeatmapSet",
     "BeatmapSetResolveResult",
     "BeatmapSnapshot",
+    "BeatmapSourceError",
+    "BeatmapSourceErrorCategory",
     "BeatmapSourceVerification",
-    # Eligibility (Task 12.1)
     "BeatmapStatus",
     "BeatmapsetSnapshot",
     "EligibilityResult",

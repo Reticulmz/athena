@@ -17,13 +17,11 @@ from osu_server.domain.beatmap import (
     BeatmapRankStatus,
     BeatmapsetSnapshot,
     BeatmapSnapshot,
+    BeatmapSourceError,
+    BeatmapSourceErrorCategory,
     BeatmapSourceVerification,
     LocalBeatmapStatus,
     map_external_status,
-)
-from osu_server.repositories.beatmaps.errors import (
-    BeatmapSourceError,
-    BeatmapSourceErrorCategory,
 )
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,

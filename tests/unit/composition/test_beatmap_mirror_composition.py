@@ -32,9 +32,9 @@ from osu_server.repositories.interfaces.beatmap_repository import (
 )
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
-from osu_server.services.beatmap_mirror.file_sources import CompositeBeatmapFileProvider
-from osu_server.services.beatmap_mirror_service import (
+from osu_server.services.beatmap_mirror import (
     BeatmapEligibilityService,
+    BeatmapFileProviderService,
     BeatmapMirrorService,
 )
 
@@ -113,7 +113,7 @@ async def test_beatmap_file_provider_resolves_in_test_environment() -> None:
 
     provider = await container.resolve(BeatmapFileProvider)
 
-    assert isinstance(provider, CompositeBeatmapFileProvider)
+    assert isinstance(provider, BeatmapFileProviderService)
 
 
 @pytest.mark.asyncio

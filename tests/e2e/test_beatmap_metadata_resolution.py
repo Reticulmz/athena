@@ -31,12 +31,10 @@ from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.beatmap_mirror.providers import (
-    InMemoryBeatmapMetadataProvider,
-)
-from osu_server.services.beatmap_mirror_service import (
+from osu_server.services.beatmap_mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
+    InMemoryBeatmapMetadataProvider,
 )
 
 if TYPE_CHECKING:

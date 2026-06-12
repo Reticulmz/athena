@@ -58,15 +58,13 @@ from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.beatmap_mirror.file_sources import CompositeBeatmapFileProvider
-from osu_server.services.beatmap_mirror.providers import (
-    InMemoryBeatmapMetadataProvider,
-    MirrorMetadataProvider,
-    OsuApiMetadataProvider,
-)
-from osu_server.services.beatmap_mirror_service import (
+from osu_server.services.beatmap_mirror import (
     BeatmapEligibilityService,
+    BeatmapFileProviderService,
     BeatmapMirrorService,
+    InMemoryBeatmapMetadataProvider,
+    MirrorMetadataProviderService,
+    OsuApiMetadataProviderService,
 )
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
@@ -217,11 +215,11 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         official_metadata_provider = InMemoryBeatmapMetadataProvider()
         mirror_metadata_provider = InMemoryBeatmapMetadataProvider()
     else:
-        official_metadata_provider = OsuApiMetadataProvider(
+        official_metadata_provider = OsuApiMetadataProviderService(
             client_id=config.beatmap_official_api_client_id,  # pyright: ignore[reportArgumentType]
             client_secret=config.beatmap_official_api_client_secret,  # pyright: ignore[reportArgumentType]
         )
-        mirror_metadata_provider = MirrorMetadataProvider(
+        mirror_metadata_provider = MirrorMetadataProviderService(
             base_urls=config.beatmap_metadata_mirror_base_urls,
         )
 
@@ -232,7 +230,7 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(BeatmapMetadataProvider, lambda: infrastructure_metadata_provider)
 
     # -- BeatmapFileProvider (singleton) -------------------------------------
-    file_provider = CompositeBeatmapFileProvider(
+    file_provider = BeatmapFileProviderService(
         osu_current_url_template=config.beatmap_osu_current_url_template,
         osu_legacy_url_template=config.beatmap_osu_legacy_url_template,
         mirror_url_templates=list(config.beatmap_community_mirror_url_templates),
