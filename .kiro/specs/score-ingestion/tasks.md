@@ -282,8 +282,8 @@
 
 ## Phase 7: Final Integration & Edge Cases
 
-- [ ] 17. Playstyle Validation
-- [ ] 17.1 Relax/Autopilot rejectionを実装
+- [x] 17. Playstyle Validation
+- [x] 17.1 Relax/Autopilot rejectionを実装
   - ScoreSubmissionServiceにplaystyle check追加
   - Unit test: RX mod → terminal reject
   - Unit test: AP mod → terminal reject
