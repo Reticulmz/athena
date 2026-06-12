@@ -1,3 +1,4 @@
+# pyright: reportAny=false
 """Score submission service orchestrating the full submission pipeline."""
 
 import hashlib
@@ -6,7 +7,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol
 
+import structlog
+
 from osu_server.domain.beatmap import BeatmapResolveOptions, BeatmapResolveResult
+from osu_server.domain.mods import Mods
 from osu_server.domain.score.payload_parser import ParseError, parse
 from osu_server.domain.score.replay import Replay
 from osu_server.domain.score.score import Playstyle, Ruleset, Score
@@ -22,9 +26,7 @@ from osu_server.repositories.interfaces.score_repository import ScoreRepository
 from osu_server.repositories.interfaces.submission_repository import ScoreSubmissionRepository
 from osu_server.shared.errors import DecryptionError
 
-# Mod bit constants for playstyle detection (Requirement 1.3)
-_MOD_RELAX = 1 << 7  # 128
-_MOD_AUTOPILOT = 1 << 13  # 8192
+logger = structlog.get_logger(__name__)
 
 
 class BeatmapEligibilityResolver(Protocol):
@@ -142,6 +144,12 @@ class ScoreSubmissionService:
                 input_data.osu_version,
             )
         except DecryptionError as e:
+            logger.warning(
+                "score_submission_failed",
+                reason="decryption_failed",
+                fingerprint=fingerprint,
+                error=str(e),
+            )
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
                 error_reason=f"decryption_failed: {e}",
@@ -151,6 +159,12 @@ class ScoreSubmissionService:
         try:
             parsed = parse(decrypted.plaintext)
         except ParseError as e:
+            logger.warning(
+                "score_submission_failed",
+                reason="parse_failed",
+                fingerprint=fingerprint,
+                error=str(e),
+            )
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
                 error_reason=f"parse_failed: {e}",
@@ -163,6 +177,18 @@ class ScoreSubmissionService:
             parsed.user_id,
         )
         if not auth_ctx.authorized:
+            password_hash = hashlib.sha256(input_data.password_md5.encode()).hexdigest()
+            logger.warning(
+                "score_submission_failed",
+                reason="authorization_failed",
+                fingerprint=fingerprint,
+                password_hash=password_hash,
+                username=parsed.username,
+                user_id=parsed.user_id,
+                password_valid=auth_ctx.password_valid,
+                session_valid=auth_ctx.session_valid,
+                identity_match=auth_ctx.payload_identity_match,
+            )
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
                 error_reason=self._format_auth_error(auth_ctx),
@@ -170,6 +196,13 @@ class ScoreSubmissionService:
 
         # 5.5. Check playstyle (R1.3, R1.4)
         if self._is_relax_or_autopilot(parsed.mods):
+            logger.warning(
+                "score_submission_failed",
+                reason="playstyle_not_supported",
+                fingerprint=fingerprint,
+                mods=parsed.mods,
+                user_id=parsed.user_id,
+            )
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
                 error_reason="playstyle_not_supported: relax_or_autopilot",
@@ -188,6 +221,14 @@ class ScoreSubmissionService:
             )
         if not accepts_submission:
             denial_reason = eligibility.denial_reason if eligibility is not None else None
+            logger.warning(
+                "score_submission_failed",
+                reason="beatmap_ineligible",
+                fingerprint=fingerprint,
+                beatmap_id=input_data.beatmap_id,
+                denial_reason=denial_reason,
+                passed=parsed.passed,
+            )
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
                 error_reason=f"beatmap_ineligible: {denial_reason or 'not_accepting_scores'}",
@@ -197,6 +238,12 @@ class ScoreSubmissionService:
         try:
             validation = validate_hit_counts(parsed)
         except ValidationError as e:
+            logger.warning(
+                "score_submission_failed",
+                reason="validation_failed",
+                fingerprint=fingerprint,
+                error=str(e),
+            )
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
                 error_reason=f"validation_failed: {e}",
@@ -296,4 +343,4 @@ class ScoreSubmissionService:
 
     def _is_relax_or_autopilot(self, mods: int) -> bool:
         """Check if submission contains Relax or Autopilot mods (R1.3, R1.4)."""
-        return (mods & _MOD_RELAX) != 0 or (mods & _MOD_AUTOPILOT) != 0
+        return (mods & Mods.RELAX) != 0 or (mods & Mods.AUTOPILOT) != 0
