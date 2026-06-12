@@ -48,7 +48,7 @@ _SESSION_LOCK = _LoggingSessionLock()
 
 
 def mask_sensitive_fields(
-    _logger: structlog.types.WrappedLogger,  # pyright: ignore[reportAny]
+    _logger: structlog.types.WrappedLogger,
     _method_name: str,
     event_dict: structlog.types.EventDict,
 ) -> structlog.types.EventDict:
@@ -273,7 +273,7 @@ def setup_logging(config: AppConfig) -> None:
         finally:
             _downgrade_process_logging_session()
 
-    shared_processors: list[structlog.types.Processor] = [
+    shared_processors: list[structlog.types.Processor] = [  # type: ignore[assignment]  # structlog's built-in processors don't match our Protocol definition
         structlog.contextvars.merge_contextvars,
         mask_sensitive_fields,
         structlog.stdlib.add_log_level,

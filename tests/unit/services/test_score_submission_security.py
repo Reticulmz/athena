@@ -1,4 +1,5 @@
-# pyright: reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedParameter=false, reportOperatorIssue=false
+# pyright: reportUnusedParameter=false, reportOperatorIssue=false
+# TODO: Add proper type annotations and fix operator type issues
 """Security verification tests for score submission (Requirement 11: Security and Privacy).
 
 This module verifies that:

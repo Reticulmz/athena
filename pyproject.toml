@@ -36,6 +36,7 @@ dev = [
     "basedpyright",
     "import-linter",
     "gitlint-core",
+    "pytest-fixture-classes>=1.0.4",
 ]
 
 [tool.uv]

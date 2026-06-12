@@ -1,4 +1,8 @@
 # pyright: reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedParameter=false, reportOperatorIssue=false, reportMissingParameterType=false, reportAny=false
+# TODO: Remove file-level type suppressions and add proper type
+#       annotations to all test functions and fixtures.
+# This is a legacy suppression for existing tests.
+# New tests should have full type annotations.
 """Unit tests for ScoreSubmissionService."""
 
 import hashlib
@@ -449,9 +453,10 @@ async def test_metrics_logged_on_success(
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
 
     # Capture logger.info calls
-    original_logger = __import__(
+    score_submission_module = __import__(
         "osu_server.services.score_submission_service", fromlist=["logger"]
-    ).logger
+    )
+    original_logger = score_submission_module.logger
 
     def capture_info(event: str, **kwargs) -> None:
         if event == "score_submission_completed":

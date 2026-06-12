@@ -1,3 +1,5 @@
+# pyright: reportArgumentType=false
+# TODO: Add proper type stubs or mock objects for WrappedLogger protocol
 """Tests for infrastructure/logging.py — structlog initialization and sensitive field masking."""
 
 from __future__ import annotations

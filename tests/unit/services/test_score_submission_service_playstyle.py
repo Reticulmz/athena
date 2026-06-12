@@ -1,4 +1,5 @@
-# pyright: reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedParameter=false, reportOperatorIssue=false, reportMissingParameterType=false
+# pyright: reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedParameter=false, reportMissingParameterType=false
+# TODO: Add proper type annotations to test functions and fixtures
 """Unit tests for ScoreSubmissionService playstyle validation (Task 17.1)."""
 
 from dataclasses import dataclass
