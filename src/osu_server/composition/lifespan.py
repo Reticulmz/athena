@@ -13,6 +13,7 @@ from osu_server.infrastructure.logging import setup_logging
 from osu_server.transports.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.web_legacy.registration import RegistrationHandler
+from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -48,6 +49,7 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
         bancho_endpoint = await container.resolve(BanchoEndpoint)
         registration_handler = await container.resolve(RegistrationHandler)
         getscores_handler = await container.resolve(GetscoresHandler)
+        score_submit_handler = await container.resolve(ScoreSubmitHandler)
 
         # Store on app.state for route endpoint access
         app.state.config = config
@@ -55,6 +57,7 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None]:
         app.state.bancho_endpoint = bancho_endpoint
         app.state.registration_handler = registration_handler
         app.state.getscores_handler = getscores_handler
+        app.state.score_submit_handler = score_submit_handler
         app.state.version_info = get_version_info()
         yield
     finally:

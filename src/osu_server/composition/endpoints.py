@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from osu_server.transports.bancho.endpoint import BanchoEndpoint
     from osu_server.transports.web_legacy.getscores import GetscoresHandler
     from osu_server.transports.web_legacy.registration import RegistrationHandler
+    from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
 
 
 async def bancho_endpoint(request: Request) -> Response:
@@ -28,4 +29,10 @@ async def registration_endpoint(request: Request) -> Response:
 async def getscores_endpoint(request: Request) -> Response:
     """Delegate to GetscoresHandler resolved from DI."""
     handler: GetscoresHandler = request.app.state.getscores_handler  # pyright: ignore[reportAny]
+    return await handler(request)
+
+
+async def score_submit_endpoint(request: Request) -> Response:
+    """Delegate to ScoreSubmitHandler resolved from DI."""
+    handler: ScoreSubmitHandler = request.app.state.score_submit_handler  # pyright: ignore[reportAny]
     return await handler(request)

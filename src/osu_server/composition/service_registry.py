@@ -15,6 +15,7 @@ from osu_server.domain.beatmap import (
     BeatmapMetadataProvider,
 )
 from osu_server.domain.system_user import BANCHO_BOT_USER_ID, create_bancho_bot_identity
+from osu_server.infrastructure.auth.score_authorization import ScoreAuthorizationService
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.security.hibp import HIBPClient
@@ -38,21 +39,32 @@ from osu_server.repositories.interfaces.beatmap_repository import (
 from osu_server.repositories.interfaces.blob_repository import BlobRepository
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.chat_repository import ChatRepository
+from osu_server.repositories.interfaces.replay_repository import ReplayRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
+from osu_server.repositories.interfaces.score_repository import ScoreRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
+from osu_server.repositories.interfaces.submission_repository import ScoreSubmissionRepository
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
+from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
+from osu_server.repositories.memory.submission_repository import InMemoryScoreSubmissionRepository
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
 from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
 from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
 from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
+from osu_server.repositories.sqlalchemy.replay_repository import SQLAlchemyReplayRepository
 from osu_server.repositories.sqlalchemy.role_repository import SQLAlchemyRoleRepository
+from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository
+from osu_server.repositories.sqlalchemy.submission_repository import (
+    SQLAlchemyScoreSubmissionRepository,
+)
 from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
@@ -75,6 +87,7 @@ from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.score_submission_service import ScoreSubmissionService
 from osu_server.services.session_authorization_service import (
     SessionAuthorizationService,
 )
@@ -88,6 +101,7 @@ from osu_server.transports.bancho.workflows.login_response_builder import LoginR
 from osu_server.transports.bancho.workflows.polling import PollingWorkflow
 from osu_server.transports.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.web_legacy.registration import RegistrationHandler
+from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
     from osu_server.config import AppConfig
@@ -120,6 +134,9 @@ def _register_repositories(
         container.register_singleton(ChannelRepository, InMemoryChannelRepository)
         container.register_singleton(ChatRepository, InMemoryChatRepository)
         container.register_singleton(BeatmapRepository, InMemoryBeatmapRepository)
+        container.register_singleton(ScoreRepository, InMemoryScoreRepository)
+        container.register_singleton(ReplayRepository, InMemoryReplayRepository)
+        container.register_singleton(ScoreSubmissionRepository, InMemoryScoreSubmissionRepository)
         return
 
     container.register_singleton(
@@ -145,6 +162,18 @@ def _register_repositories(
     container.register_singleton(
         BeatmapRepository,
         lambda: SQLAlchemyBeatmapRepository(session_factory),
+    )
+    container.register_singleton(
+        ScoreRepository,
+        lambda: SQLAlchemyScoreRepository(session_factory),
+    )
+    container.register_singleton(
+        ReplayRepository,
+        lambda: SQLAlchemyReplayRepository(session_factory),
+    )
+    container.register_singleton(
+        ScoreSubmissionRepository,
+        lambda: SQLAlchemyScoreSubmissionRepository(session_factory),
     )
 
 
@@ -435,3 +464,25 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         getscores_service=getscores_service,
     )
     container.register_singleton(GetscoresHandler, lambda: getscores_handler)
+
+    # -- ScoreSubmissionService (singleton) -----------------------------------
+    score_repo = await container.resolve(ScoreRepository)
+    replay_repo = await container.resolve(ReplayRepository)
+    submission_repo = await container.resolve(ScoreSubmissionRepository)
+
+    # ScoreAuthorizationService は Wave 1 では依存なしで直接インスタンス化可能
+    score_auth_service = ScoreAuthorizationService()
+    container.register_singleton(ScoreAuthorizationService, lambda: score_auth_service)
+
+    score_submission_service = ScoreSubmissionService(
+        score_repo=score_repo,
+        submission_repo=submission_repo,
+        replay_repo=replay_repo,
+        auth_service=score_auth_service,
+        beatmap_resolver=mirror_service,  # Pass the entire service, not just the method
+    )
+    container.register_singleton(ScoreSubmissionService, lambda: score_submission_service)
+
+    # -- ScoreSubmitHandler (singleton) ---------------------------------------
+    score_submit_handler = ScoreSubmitHandler(service=score_submission_service)
+    container.register_singleton(ScoreSubmitHandler, lambda: score_submit_handler)

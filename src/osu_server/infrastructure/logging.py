@@ -273,7 +273,7 @@ def setup_logging(config: AppConfig) -> None:
         finally:
             _downgrade_process_logging_session()
 
-    shared_processors: list[structlog.types.Processor] = [  # type: ignore[assignment]  # structlog's built-in processors don't match our Protocol definition
+    shared_processors: list[structlog.types.Processor] = [  # pyright: ignore[reportAssignmentType]
         structlog.contextvars.merge_contextvars,
         mask_sensitive_fields,
         structlog.stdlib.add_log_level,

@@ -19,40 +19,46 @@ if TYPE_CHECKING:
     from osu_server.services.score_submission_service import ScoreSubmissionService
 
 
-async def handle_score_submit(
-    request: Request,
-    service: ScoreSubmissionService,
-) -> Response:
-    """Handle POST /web/osu-submit-modular-selector.php.
+class ScoreSubmitHandler:
+    """Handler for POST /web/osu-submit-modular-selector.php.
 
-    Requirements: R1.1, R2.1-2.5, R10.1-10.5
+    Stable client score submission endpoint.
     """
-    try:
-        body = await request.body()
-        content_type = request.headers.get("content-type", "")
-        parsed = parse(body, content_type)
-    except ParseError:
+
+    def __init__(self, service: ScoreSubmissionService) -> None:
+        self._service: ScoreSubmissionService = service
+
+    async def __call__(self, request: Request) -> Response:
+        """Handle score submission request.
+
+        Requirements: R1.1, R2.1-2.5, R10.1-10.5
+        """
+        try:
+            body = await request.body()
+            content_type = request.headers.get("content-type", "")
+            parsed = parse(body, content_type)
+        except ParseError:
+            return Response(b"error: no", status_code=200)
+
+        input_data = ParsedSubmissionInput(
+            encrypted_payload=parsed.encrypted_payload,
+            iv=parsed.iv,
+            replay_data=parsed.replay_data,
+            password_md5=parsed.password_md5,
+            client_hash=parsed.client_hash,
+            fail_time_ms=parsed.fail_time_ms,
+            osu_version=parsed.osu_version,
+            beatmap_id=0,  # Extracted from decrypted payload in service layer
+            submitted_at=datetime.now(UTC),
+        )
+
+        result = await self._service.submit_score(input_data)
+
+        if result.outcome == SubmissionOutcome.COMPLETED:
+            return _format_completed_response(result.score_id or 0)
+        if result.outcome == SubmissionOutcome.RETRYABLE:
+            return Response(b"error: yes", status_code=200)
         return Response(b"error: no", status_code=200)
-
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=parsed.encrypted_payload,
-        iv=parsed.iv,
-        replay_data=parsed.replay_data,
-        password_md5=parsed.password_md5,
-        client_hash=parsed.client_hash,
-        fail_time_ms=parsed.fail_time_ms,
-        osu_version=parsed.osu_version,
-        beatmap_id=0,  # Extracted from decrypted payload in service layer
-        submitted_at=datetime.now(UTC),
-    )
-
-    result = await service.submit_score(input_data)
-
-    if result.outcome == SubmissionOutcome.COMPLETED:
-        return _format_completed_response(result.score_id or 0)
-    if result.outcome == SubmissionOutcome.RETRYABLE:
-        return Response(b"error: yes", status_code=200)
-    return Response(b"error: no", status_code=200)
 
 
 def _format_completed_response(_score_id: int) -> Response:

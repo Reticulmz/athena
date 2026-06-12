@@ -13,7 +13,7 @@ from osu_server.services.score_submission_service import (
     SubmissionOutcome,
     SubmissionResult,
 )
-from osu_server.transports.web_legacy.score_submit import handle_score_submit
+from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
 
 
 class ScoreSubmissionServiceProtocol(Protocol):
@@ -89,8 +89,9 @@ async def test_handle_score_submit_completed(mock_request: StubRequest) -> None:
             score_id=12345,
         )
     )
+    handler = ScoreSubmitHandler(service)
 
-    response = await handle_score_submit(mock_request, service)
+    response = await handler(mock_request)
 
     assert isinstance(response, Response)
     assert response.status_code == 200
@@ -107,8 +108,9 @@ async def test_handle_score_submit_terminal_reject(mock_request: StubRequest) ->
             error_reason="authorization_failure",
         )
     )
+    handler = ScoreSubmitHandler(service)
 
-    response = await handle_score_submit(mock_request, service)
+    response = await handler(mock_request)
 
     assert isinstance(response, Response)
     assert response.status_code == 200
@@ -124,8 +126,9 @@ async def test_handle_score_submit_retryable(mock_request: StubRequest) -> None:
             error_reason="temporary_error",
         )
     )
+    handler = ScoreSubmitHandler(service)
 
-    response = await handle_score_submit(mock_request, service)
+    response = await handler(mock_request)
 
     assert isinstance(response, Response)
     assert response.status_code == 200
@@ -138,10 +141,11 @@ async def test_handle_score_submit_parsing_error(valid_multipart_body: bytes) ->
     service = StubScoreSubmissionService(
         SubmissionResult(outcome=SubmissionOutcome.COMPLETED, score_id=1)
     )
+    handler = ScoreSubmitHandler(service)
 
     request = StubRequest(valid_multipart_body, "text/plain")
 
-    response = await handle_score_submit(request, service)
+    response = await handler(request)
 
     assert isinstance(response, Response)
     assert response.status_code == 200

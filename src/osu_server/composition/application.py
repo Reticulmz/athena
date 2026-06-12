@@ -12,6 +12,7 @@ from osu_server.composition.endpoints import (
     bancho_endpoint,
     getscores_endpoint,
     registration_endpoint,
+    score_submit_endpoint,
 )
 from osu_server.composition.health import health_check_endpoint, health_endpoint
 from osu_server.composition.lifespan import lifespan
@@ -58,6 +59,11 @@ def create_app() -> Starlette:
                 "/web/osu-osz2-getscores.php",
                 endpoint=getscores_endpoint,
                 methods=["GET"],
+            ),
+            Route(
+                "/web/osu-submit-modular-selector.php",
+                endpoint=score_submit_endpoint,
+                methods=["POST"],
             ),
         ],
     )

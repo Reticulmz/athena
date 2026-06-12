@@ -15,7 +15,7 @@ from osu_server.repositories.memory.submission_repository import (
     InMemoryScoreSubmissionRepository,
 )
 from osu_server.services.score_submission_service import ScoreSubmissionService
-from osu_server.transports.web_legacy.score_submit import handle_score_submit
+from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmap import BeatmapResolveOptions
@@ -117,12 +117,13 @@ async def test_e2e_score_submit_completed_response() -> None:
         auth_service=auth_service,
         beatmap_resolver=beatmap_resolver,
     )
+    handler = ScoreSubmitHandler(service)
 
     body, content_type = _create_valid_multipart_body()
     request = MockRequest(body, content_type)
 
     # Act
-    response = await handle_score_submit(request, service)
+    response = await handler(request)
 
     # Assert
     assert response.status_code == 200
@@ -156,12 +157,13 @@ async def test_e2e_score_submit_terminal_reject_format() -> None:
         auth_service=FailingAuthService(),
         beatmap_resolver=MockBeatmapResolver(),
     )
+    handler = ScoreSubmitHandler(service)
 
     body, content_type = _create_valid_multipart_body()
     request = MockRequest(body, content_type)
 
     # Act
-    response = await handle_score_submit(request, service)
+    response = await handler(request)
 
     # Assert
     assert response.status_code == 200
