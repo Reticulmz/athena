@@ -12,6 +12,11 @@
 - **DRY**: Avoid logic duplication, but favor clarity over forced abstraction.
 - **KISS**: Keep it simple. No unnecessary abstraction or complexity.
 - **YAGNI**: Do not implement features that are not yet needed.
+- **Library-first**: 車輪の再発明を避ける。機能を追加する前に以下の順で検討する:
+  1. 目的を達成できる定評あるライブラリが存在するか探す
+  2. プロジェクトの依存関係に既に含まれていないか確認する
+  3. 上記いずれも存在しない場合のみ、自前実装する
+  - 新規ライブラリ導入時は、プロジェクトに適切で思想が一致しているか独断せず、ユーザーの承認を得てから `uv add` する
 
 ### Quality Assurance
 
