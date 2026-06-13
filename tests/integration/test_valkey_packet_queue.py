@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 from typing import TYPE_CHECKING, cast
+from uuid import uuid4
 
 import pytest
 
@@ -37,21 +38,27 @@ def _get_valkey_url() -> str:
 async def valkey_client() -> AsyncGenerator[GlideClient]:
     client = await create_valkey_client(_get_valkey_url())
     yield client
-    for pattern in (f"{_KEY_PREFIX}packet_queue:*", f"{_KEY_PREFIX}pq_meta:*"):
-        cursor: str = "0"
-        while True:
-            next_cursor, keys = await client.scan(cursor, match=pattern, count=100)
-            if keys:
-                _ = await client.delete(cast("list[TEncodable]", keys))
-            cursor = next_cursor.decode() if isinstance(next_cursor, bytes) else str(next_cursor)
-            if cursor == "0":
-                break
     await client.close()
 
 
 @pytest.fixture
-def valkey_queue(valkey_client: GlideClient) -> ValkeyPacketQueue:
-    return ValkeyPacketQueue(valkey_client, max_size=4096, ttl=300, key_prefix=_KEY_PREFIX)
+async def valkey_key_prefix(valkey_client: GlideClient) -> AsyncGenerator[str]:
+    key_prefix = f"{_KEY_PREFIX}packet_queue:{uuid4().hex}:"
+    yield key_prefix
+    for pattern in (f"{key_prefix}packet_queue:*", f"{key_prefix}pq_meta:*"):
+        cursor: str = "0"
+        while True:
+            next_cursor, keys = await valkey_client.scan(cursor, match=pattern, count=100)
+            if keys:
+                _ = await valkey_client.delete(cast("list[TEncodable]", keys))
+            cursor = next_cursor.decode() if isinstance(next_cursor, bytes) else str(next_cursor)
+            if cursor == "0":
+                break
+
+
+@pytest.fixture
+def valkey_queue(valkey_client: GlideClient, valkey_key_prefix: str) -> ValkeyPacketQueue:
+    return ValkeyPacketQueue(valkey_client, max_size=4096, ttl=300, key_prefix=valkey_key_prefix)
 
 
 @pytest.fixture
@@ -72,8 +79,8 @@ def queue(
 
 
 @pytest.fixture
-def valkey_small_queue(valkey_client: GlideClient) -> ValkeyPacketQueue:
-    return ValkeyPacketQueue(valkey_client, max_size=3, ttl=300, key_prefix=_KEY_PREFIX)
+def valkey_small_queue(valkey_client: GlideClient, valkey_key_prefix: str) -> ValkeyPacketQueue:
+    return ValkeyPacketQueue(valkey_client, max_size=3, ttl=300, key_prefix=valkey_key_prefix)
 
 
 @pytest.fixture
@@ -235,8 +242,17 @@ class TestRefreshTTL:
 class TestValkeyTTLExpiry:
     """Valkey TTL causes automatic queue cleanup."""
 
-    async def test_ttl_expiry_cleans_up_queue(self, valkey_client: GlideClient) -> None:
-        queue = ValkeyPacketQueue(valkey_client, max_size=4096, ttl=1, key_prefix=_KEY_PREFIX)
+    async def test_ttl_expiry_cleans_up_queue(
+        self,
+        valkey_client: GlideClient,
+        valkey_key_prefix: str,
+    ) -> None:
+        queue = ValkeyPacketQueue(
+            valkey_client,
+            max_size=4096,
+            ttl=1,
+            key_prefix=valkey_key_prefix,
+        )
         await queue.refresh_ttl(user_id=1, ttl=1)
         await queue.enqueue(1, b"\x01\x02\x03")
 
@@ -245,17 +261,28 @@ class TestValkeyTTLExpiry:
         result = await queue.dequeue_all(user_id=1)
         assert result == b""
 
-    async def test_refresh_ttl_extends_expiry(self, valkey_client: GlideClient) -> None:
-        queue = ValkeyPacketQueue(valkey_client, max_size=4096, ttl=2, key_prefix=_KEY_PREFIX)
+    async def test_refresh_ttl_extends_expiry(
+        self,
+        valkey_client: GlideClient,
+        valkey_key_prefix: str,
+    ) -> None:
+        queue = ValkeyPacketQueue(
+            valkey_client,
+            max_size=4096,
+            ttl=2,
+            key_prefix=valkey_key_prefix,
+        )
         await queue.refresh_ttl(user_id=1, ttl=2)
         await queue.enqueue(1, b"\x01")
 
-        await asyncio.sleep(1.0)
-        await queue.refresh_ttl(user_id=1, ttl=2)
-
-        await asyncio.sleep(1.5)
+        queue_key = f"{valkey_key_prefix}packet_queue:1"
+        ttl_before_refresh = await valkey_client.ttl(queue_key)
+        await queue.refresh_ttl(user_id=1, ttl=5)
+        ttl_after_refresh = await valkey_client.ttl(queue_key)
 
         result = await queue.dequeue_all(user_id=1)
+        assert ttl_before_refresh > 0
+        assert ttl_after_refresh > ttl_before_refresh
         assert result == b"\x01"
 
 

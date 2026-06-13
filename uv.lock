@@ -212,12 +212,14 @@ dependencies = [
     { name = "asyncpg" },
     { name = "athena-crypto" },
     { name = "caterpillar-py" },
+    { name = "dishka" },
     { name = "httpx" },
     { name = "inquirerpy" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "starlette" },
+    { name = "starlette-dishka" },
     { name = "structlog" },
     { name = "taskiq" },
     { name = "taskiq-redis" },
@@ -245,12 +247,14 @@ requires-dist = [
     { name = "asyncpg" },
     { name = "athena-crypto", editable = "athena-crypto" },
     { name = "caterpillar-py", specifier = ">=2.8.1" },
+    { name = "dishka" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "inquirerpy", specifier = ">=0.3.4" },
     { name = "pydantic-settings" },
     { name = "python-multipart", specifier = ">=0.0.29" },
     { name = "sqlalchemy", extras = ["asyncio"] },
     { name = "starlette" },
+    { name = "starlette-dishka" },
     { name = "structlog", specifier = ">=25.5.0" },
     { name = "taskiq", specifier = ">=0.11" },
     { name = "taskiq-redis", specifier = ">=1.0" },
@@ -369,6 +373,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "dishka"
+version = "1.10.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/da/b75b5fe665d16725e1d46e291c8dd4b0ed1731c7964f41087fda92f03d40/dishka-1.10.1.tar.gz", hash = "sha256:51fb624b9acc948b90f57128460061d1f3a1780121fe1c7d14c565e8bbff2083", size = 282008, upload-time = "2026-04-25T12:07:57.587Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2c/08/dd3259a319ba45c48d975caf237c830c7873a203288cb4ab186cc5bef585/dishka-1.10.1-py3-none-any.whl", hash = "sha256:84f40c1115eb391ce3fb558fd7946c5bcaf6361c35b77b7a185b7697a5720ec7", size = 120062, upload-time = "2026-04-25T12:07:59.153Z" },
 ]
 
 [[package]]
@@ -1113,6 +1126,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/81/69/17425771797c36cded50b7fe44e850315d039f28b15901ab44839e70b593/starlette-1.0.0.tar.gz", hash = "sha256:6a4beaf1f81bb472fd19ea9b918b50dc3a77a6f2e190a12954b25e6ed5eea149", size = 2655289, upload-time = "2026-03-22T18:29:46.779Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/c9/584bc9651441b4ba60cc4d557d8a547b5aff901af35bda3a4ee30c819b82/starlette-1.0.0-py3-none-any.whl", hash = "sha256:d3ec55e0bb321692d275455ddfd3df75fff145d009685eb40dc91fc66b03d38b", size = 72651, upload-time = "2026-03-22T18:29:45.111Z" },
+]
+
+[[package]]
+name = "starlette-dishka"
+version = "1.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dishka" },
+    { name = "starlette" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/32/4da097f2443ceafae09d418fcc62e7e9f0e637b8c37c90ac36f68b17e2a6/starlette_dishka-1.0.2.tar.gz", hash = "sha256:f01054d9ca675e7778283b66bffaa5284a7e6e8cb3d895d103aba3f117dd715a", size = 16747, upload-time = "2026-03-07T15:03:35.484Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c9/45/aca50b953a81968a7e68aa1b764d0c86fe061ccf8b7779b108aca3d72f35/starlette_dishka-1.0.2-py3-none-any.whl", hash = "sha256:e554ebc99c7a494c1084196871ccdb3f313f8430347d589576d688b5645fbbfe", size = 9168, upload-time = "2026-03-07T15:03:36.22Z" },
 ]
 
 [[package]]

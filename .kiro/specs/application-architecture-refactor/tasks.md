@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. Foundation: dependency, architecture validation, and migration guardrails
-- [ ] 1.1 Add the DI runtime dependencies and architecture documentation baseline
+- [x] 1.1 Add the DI runtime dependencies and architecture documentation baseline
   - Add the selected DI packages to the runtime dependency set and keep the lock state consistent.
   - Create the architecture guide with layer direction, composition responsibilities, command/query placement, UoW, transport families, jobs, and compatibility boundaries.
   - Completion is observable when the dependency set can import the DI packages and the architecture guide describes every boundary owned by this spec.
