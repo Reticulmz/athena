@@ -63,7 +63,7 @@
   - _Requirements: 1.3, 6.1, 6.7, 10.3, 10.5, 10.6_
 
 - [ ] 3. Persistence boundaries: Unit of Work and CQRS repositories
-- [ ] 3.1 Define command/query repository contracts and the Unit of Work boundary
+- [x] 3.1 Define command/query repository contracts and the Unit of Work boundary
   - Introduce command repository contracts for mutation and consistency checks.
   - Introduce query repository contracts for display, search, aggregation, and read-only compatibility workflows.
   - Define the command Unit of Work as the only command transaction boundary.
