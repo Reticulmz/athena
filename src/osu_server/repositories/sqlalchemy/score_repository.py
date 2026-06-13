@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: TC002
 
-from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
 from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.sqlalchemy.models.score import ScoreModel
 
 

@@ -2,8 +2,8 @@
 
 from datetime import UTC, datetime
 
-from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
 from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 
 
 def test_score_creation_with_all_fields() -> None:

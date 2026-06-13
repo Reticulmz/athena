@@ -32,8 +32,8 @@ from osu_server.domain.beatmaps import (
     BeatmapResolveResult,
     BeatmapSourceVerification,
 )
-from osu_server.domain.score.decryption import DecryptedPayload
-from osu_server.domain.score.score import Grade, Playstyle, Ruleset
+from osu_server.domain.scores.decryption import DecryptedPayload
+from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
 from osu_server.domain.storage.blobs import BlobStored
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory

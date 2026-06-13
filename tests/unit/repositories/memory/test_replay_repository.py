@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from osu_server.domain.score.replay import Replay
+from osu_server.domain.scores.replay import Replay
 from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
 
 

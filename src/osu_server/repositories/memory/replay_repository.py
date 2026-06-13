@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from osu_server.domain.score.replay import Replay
+    from osu_server.domain.scores.replay import Replay
 
 
 class InMemoryReplayRepository:

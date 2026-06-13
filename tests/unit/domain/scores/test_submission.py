@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from osu_server.domain.score.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission
 
 
 def test_submission_creation_with_all_fields() -> None:

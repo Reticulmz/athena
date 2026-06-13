@@ -56,7 +56,7 @@
   - _Boundary: Domain Context Packages - Chat, Beatmaps, Storage, Events_
   - _Depends: 1.4_
 
-- [ ] 2.5 Update cross-layer imports to the new domain language
+- [x] 2.5 Update cross-layer imports to the new domain language
   - Update repositories, services, transports, jobs, and tests to use the new domain context imports.
   - Remove old domain import usage without adding compatibility re-exports.
   - Completion is observable when the test suite and import validation no longer reference deprecated flat domain concepts.

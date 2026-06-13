@@ -2,13 +2,13 @@
 
 import pytest
 
-from osu_server.domain.score.payload_parser import ParsedScore
-from osu_server.domain.score.score import Grade, Ruleset
-from osu_server.domain.score.validator import (
+from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.payload_parser import ParsedScore
+from osu_server.domain.scores.score import Grade, Ruleset
+from osu_server.domain.scores.validator import (
     ValidationError,
     validate_hit_counts,
 )
-from osu_server.domain.scores.mods import ModCombination
 
 
 def test_validate_osu_standard_valid() -> None:

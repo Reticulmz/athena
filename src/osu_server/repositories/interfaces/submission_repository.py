@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from osu_server.domain.score.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission
 
 
 class ScoreSubmissionRepository(Protocol):

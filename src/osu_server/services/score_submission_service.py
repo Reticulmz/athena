@@ -11,13 +11,13 @@ from typing import Protocol
 import structlog
 
 from osu_server.domain.beatmaps import BeatmapResolveOptions, BeatmapResolveResult
-from osu_server.domain.score.decryption import DecryptedPayload
-from osu_server.domain.score.payload_parser import ParseError, parse
-from osu_server.domain.score.replay import Replay
-from osu_server.domain.score.score import Playstyle, Ruleset, Score
-from osu_server.domain.score.submission import ScoreSubmission
-from osu_server.domain.score.validator import ValidationError, validate_hit_counts
+from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import Mod, ModCombination
+from osu_server.domain.scores.payload_parser import ParseError, parse
+from osu_server.domain.scores.replay import Replay
+from osu_server.domain.scores.score import Playstyle, Ruleset, Score
+from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.validator import ValidationError, validate_hit_counts
 from osu_server.domain.storage.blobs import BlobStoreResult
 from osu_server.repositories.interfaces.replay_repository import ReplayRepository
 from osu_server.repositories.interfaces.score_repository import ScoreRepository

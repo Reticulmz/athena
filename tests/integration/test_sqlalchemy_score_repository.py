@@ -13,8 +13,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
 from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository

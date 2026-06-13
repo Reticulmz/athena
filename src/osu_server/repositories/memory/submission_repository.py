@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from osu_server.domain.score.submission import ScoreSubmission
+    from osu_server.domain.scores.submission import ScoreSubmission
 
 
 class InMemoryScoreSubmissionRepository:

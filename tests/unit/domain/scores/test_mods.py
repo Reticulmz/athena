@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from inspect import get_annotations
 from typing import get_type_hints
 
-from osu_server.domain.score.payload_parser import ParsedScore, parse
-from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
 from osu_server.domain.scores.mods import Mod, ModCombination
+from osu_server.domain.scores.payload_parser import ParsedScore, parse
+from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 
 
 def test_mod_combination_preserves_stable_bitmask_for_persistence() -> None:

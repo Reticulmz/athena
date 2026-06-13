@@ -2,7 +2,7 @@
 
 import athena_crypto
 
-from osu_server.domain.score.decryption import DecryptedPayload
+from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.shared.errors import DecryptionError
 
 _RIJNDAEL_BLOCK_SIZE = 32

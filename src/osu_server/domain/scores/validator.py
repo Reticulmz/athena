@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from osu_server.domain.score.payload_parser import ParsedScore
-from osu_server.domain.score.score import Grade, Ruleset
+from osu_server.domain.scores.payload_parser import ParsedScore
+from osu_server.domain.scores.score import Grade, Ruleset
 
 # Grade thresholds (osu! specification)
 _GRADE_SS_ACCURACY = 1.0

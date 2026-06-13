@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from osu_server.domain.score.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.sqlalchemy.submission_repository import (

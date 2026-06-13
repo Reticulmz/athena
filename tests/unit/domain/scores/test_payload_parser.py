@@ -2,8 +2,8 @@
 
 import pytest
 
-from osu_server.domain.score.payload_parser import ParsedScore, ParseError, parse
 from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.payload_parser import ParsedScore, ParseError, parse
 
 
 def test_parse_valid_payload() -> None:

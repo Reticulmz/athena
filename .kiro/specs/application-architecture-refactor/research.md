@@ -76,7 +76,7 @@
   - `CONTEXT.md`
   - `src/osu_server/domain/role.py`
   - `src/osu_server/domain/mods.py`
-  - `src/osu_server/domain/score/score.py`
+  - `src/osu_server/domain/scores/score.py`
   - `src/osu_server/services/permission_service.py`
 - **Findings**:
   - `Role` は `permissions: Privileges` を持つが、`ClientPermissions` も同じ domain module に存在する。

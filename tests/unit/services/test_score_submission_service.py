@@ -19,9 +19,9 @@ from osu_server.domain.beatmaps import (
     BeatmapResolveResult,
     BeatmapSourceVerification,
 )
-from osu_server.domain.score.decryption import DecryptedPayload
-from osu_server.domain.score.score import Playstyle, Ruleset
-from osu_server.domain.score.submission import ScoreSubmission
+from osu_server.domain.scores.decryption import DecryptedPayload
+from osu_server.domain.scores.score import Playstyle, Ruleset
+from osu_server.domain.scores.submission import ScoreSubmission
 from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
 from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
 from osu_server.repositories.memory.submission_repository import InMemoryScoreSubmissionRepository

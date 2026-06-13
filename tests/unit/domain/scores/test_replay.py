@@ -1,6 +1,6 @@
 """Unit tests for Replay domain model."""
 
-from osu_server.domain.score.replay import Replay
+from osu_server.domain.scores.replay import Replay
 
 
 def test_replay_creation_with_all_fields() -> None:

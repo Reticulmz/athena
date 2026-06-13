@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from osu_server.domain.score.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission
 from osu_server.repositories.memory.submission_repository import (
     InMemoryScoreSubmissionRepository,
 )

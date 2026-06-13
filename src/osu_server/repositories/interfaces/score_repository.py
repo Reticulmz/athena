@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from osu_server.domain.score.score import Score
+    from osu_server.domain.scores.score import Score
 
 
 @runtime_checkable

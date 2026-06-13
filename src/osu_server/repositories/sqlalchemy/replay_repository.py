@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: TC002
 
-from osu_server.domain.score.replay import Replay
+from osu_server.domain.scores.replay import Replay
 from osu_server.repositories.sqlalchemy.models.score import ReplayModel
 
 

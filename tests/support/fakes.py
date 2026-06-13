@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, final, override
 
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
-from osu_server.domain.score.decryption import DecryptedPayload
+from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.storage.blobs import Blob, BlobStored
 from osu_server.services.password_service import PasswordService
 from osu_server.services.score_authorization_service import ScoreAuthorizationService
