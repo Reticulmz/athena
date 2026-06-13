@@ -13,7 +13,7 @@
 | ORM | SQLAlchemy 2.0 async + asyncpg | Alembic でマイグレーション |
 | ジョブキュー | taskiq + taskiq-redis | redis-py 経由で Valkey に接続、async ネイティブ |
 | EventBus | 自前実装 (Valkey Pub/Sub + in-memory) | ~40行の軽量実装 |
-| DI | 自前軽量コンテナ | フレームワーク非依存 |
+| DI | Dishka + starlette-dishka | ADR 0002 で採用決定。現行の自前軽量コンテナは application-architecture-refactor spec で置き換える |
 | 型チェック | basedpyright (strict) | Pyright フォーク。conformance 95.7%、uv dev dependency でインストール |
 | Lint/Format | ruff | |
 | テスト | pytest + pytest-asyncio | |
