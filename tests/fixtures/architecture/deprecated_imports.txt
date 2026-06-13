@@ -152,7 +152,6 @@ src/osu_server/services/score_authorization_service.py	osu_server.repositories.i
 src/osu_server/services/score_authorization_service.py	osu_server.services.password_service
 src/osu_server/services/score_submission_service.py	osu_server.domain.beatmap
 src/osu_server/services/score_submission_service.py	osu_server.domain.blob
-src/osu_server/services/score_submission_service.py	osu_server.domain.mods
 src/osu_server/services/score_submission_service.py	osu_server.domain.score
 src/osu_server/services/score_submission_service.py	osu_server.repositories.interfaces.replay_repository
 src/osu_server/services/score_submission_service.py	osu_server.repositories.interfaces.score_repository

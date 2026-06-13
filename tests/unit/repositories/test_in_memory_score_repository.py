@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
 
 
@@ -26,7 +27,7 @@ def sample_score() -> Score:
         online_checksum="online_abc123",
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
-        mods=0,
+        mods=ModCombination.none(),
         n300=500,
         n100=50,
         n50=10,

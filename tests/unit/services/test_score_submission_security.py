@@ -28,6 +28,7 @@ from osu_server.domain.beatmap import (
 )
 from osu_server.domain.score.decryption import DecryptedPayload
 from osu_server.domain.score.payload_parser import ParsedScore
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
 from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
 from osu_server.repositories.memory.submission_repository import InMemoryScoreSubmissionRepository
@@ -192,7 +193,7 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
             beatmap_checksum="valid_checksum",
             online_checksum="12345678",
             ruleset=0,
-            mods=0,
+            mods=ModCombination.none(),
             n300=300,
             n100=100,
             n50=50,
@@ -310,7 +311,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
             beatmap_checksum="valid_checksum",
             online_checksum="12345678",
             ruleset=0,
-            mods=0,
+            mods=ModCombination.none(),
             n300=300,
             n100=100,
             n50=50,
@@ -464,7 +465,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
             beatmap_checksum="valid_checksum",
             online_checksum="12345678",
             ruleset=0,
-            mods=0,
+            mods=ModCombination.none(),
             n300=300,
             n100=100,
             n50=50,
@@ -584,7 +585,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
             beatmap_checksum="valid_checksum",
             online_checksum="12345678",
             ruleset=0,
-            mods=0,
+            mods=ModCombination.none(),
             n300=300,
             n100=100,
             n50=50,
@@ -689,7 +690,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
             beatmap_checksum="valid_checksum",
             online_checksum="12345678",
             ruleset=0,
-            mods=0,
+            mods=ModCombination.none(),
             n300=300,
             n100=100,
             n50=50,

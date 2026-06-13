@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from osu_server.domain.score.replay import Replay
 from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.interfaces.blob_repository import NewBlob
@@ -87,7 +88,7 @@ def _make_score(
         online_checksum=online_checksum,
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
-        mods=0,
+        mods=ModCombination.none(),
         n300=100,
         n100=10,
         n50=5,

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.repositories.interfaces.score_repository import ScoreRepository
 
 
@@ -42,7 +43,7 @@ async def test_create_returns_score_with_id() -> None:
         online_checksum="def456",
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
-        mods=0,
+        mods=ModCombination.none(),
         n300=100,
         n100=0,
         n50=0,

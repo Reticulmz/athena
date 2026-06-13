@@ -12,13 +12,13 @@ import structlog
 
 from osu_server.domain.beatmap import BeatmapResolveOptions, BeatmapResolveResult
 from osu_server.domain.blob import BlobStoreResult
-from osu_server.domain.mods import Mods
 from osu_server.domain.score.decryption import DecryptedPayload
 from osu_server.domain.score.payload_parser import ParseError, parse
 from osu_server.domain.score.replay import Replay
 from osu_server.domain.score.score import Playstyle, Ruleset, Score
 from osu_server.domain.score.submission import ScoreSubmission
 from osu_server.domain.score.validator import ValidationError, validate_hit_counts
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.repositories.interfaces.replay_repository import ReplayRepository
 from osu_server.repositories.interfaces.score_repository import ScoreRepository
 from osu_server.repositories.interfaces.submission_repository import ScoreSubmissionRepository
@@ -354,7 +354,7 @@ class ScoreSubmissionService:
                 "score_submission_failed",
                 reason="playstyle_not_supported",
                 fingerprint=fingerprint,
-                mods=parsed.mods,
+                mods=parsed.mods.to_persistence_bitmask(),
                 user_id=auth_ctx.user_id,
             )
             return await self._record_terminal_reject(
@@ -716,6 +716,6 @@ class ScoreSubmissionService:
             return "authorization_failed: identity_mismatch"
         return "authorization_failed: unknown"
 
-    def _is_relax_or_autopilot(self, mods: int) -> bool:
+    def _is_relax_or_autopilot(self, mods: ModCombination) -> bool:
         """Check if submission contains Relax or Autopilot mods (R1.3, R1.4)."""
-        return (mods & Mods.RELAX) != 0 or (mods & Mods.AUTOPILOT) != 0
+        return mods.has(Mod.RELAX) or mods.has(Mod.AUTOPILOT)

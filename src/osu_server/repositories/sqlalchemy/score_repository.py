@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: TC002
 
 from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.repositories.sqlalchemy.models.score import ScoreModel
 
 
@@ -35,7 +36,7 @@ class SQLAlchemyScoreRepository:
                 online_checksum=score.online_checksum,
                 ruleset=score.ruleset.value,
                 playstyle=score.playstyle.value,
-                mods=score.mods,
+                mods=score.mods.to_persistence_bitmask(),
                 n300=score.n300,
                 n100=score.n100,
                 n50=score.n50,
@@ -96,7 +97,7 @@ class SQLAlchemyScoreRepository:
             online_checksum=model.online_checksum,
             ruleset=Ruleset(model.ruleset),
             playstyle=Playstyle(model.playstyle),
-            mods=model.mods,
+            mods=ModCombination.from_persistence_bitmask(model.mods),
             n300=model.n300,
             n100=model.n100,
             n50=model.n50,

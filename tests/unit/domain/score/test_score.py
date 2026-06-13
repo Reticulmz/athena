@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.mods import ModCombination
 
 
 def test_score_creation_with_all_fields() -> None:
@@ -15,7 +16,7 @@ def test_score_creation_with_all_fields() -> None:
         online_checksum="xyz789",
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
-        mods=0,
+        mods=ModCombination.none(),
         n300=300,
         n100=50,
         n50=10,
@@ -51,7 +52,7 @@ def test_score_without_id() -> None:
         online_checksum="xyz",
         ruleset=Ruleset.TAIKO,
         playstyle=Playstyle.VANILLA,
-        mods=0,
+        mods=ModCombination.none(),
         n300=0,
         n100=0,
         n50=0,

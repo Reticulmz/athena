@@ -14,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from osu_server.domain.score.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository
@@ -75,7 +76,7 @@ def _make_score(
         online_checksum=online_checksum,
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
-        mods=0,
+        mods=ModCombination.none(),
         n300=100,
         n100=10,
         n50=5,
@@ -182,7 +183,7 @@ async def test_sqlalchemy_score_repository_preserves_all_fields(
 
     score = _make_score(online_checksum="test_checksum_005")
     score.ruleset = Ruleset.TAIKO
-    score.mods = 72  # HD+DT
+    score.mods = ModCombination.from_stable_bitmask(72)  # HD+DT
     score.perfect = True
 
     created = await repo.create(score)
@@ -192,7 +193,7 @@ async def test_sqlalchemy_score_repository_preserves_all_fields(
 
     assert retrieved is not None
     assert retrieved.ruleset == Ruleset.TAIKO
-    assert retrieved.mods == 72
+    assert retrieved.mods == ModCombination.from_stable_bitmask(72)
     assert retrieved.perfect is True
     assert retrieved.n300 == score.n300
     assert retrieved.n100 == score.n100

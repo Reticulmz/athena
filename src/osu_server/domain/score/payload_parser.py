@@ -1,6 +1,10 @@
 """Score payload parser."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+
+from osu_server.domain.scores.mods import ModCombination
 
 _LEGACY_FIELD_COUNT = 16
 _STABLE_MIN_FIELD_COUNT = 16
@@ -24,7 +28,7 @@ class ParsedScore:
     beatmap_checksum: str
     online_checksum: str
     ruleset: int
-    mods: int
+    mods: ModCombination
     n300: int
     n100: int
     n50: int
@@ -93,7 +97,7 @@ def _parse_legacy_payload(fields: list[str]) -> ParsedScore:
             beatmap_checksum=fields[2],
             online_checksum=fields[3],
             ruleset=int(fields[4]),
-            mods=int(fields[5]),
+            mods=ModCombination.from_stable_bitmask(int(fields[5])),
             n300=int(fields[6]),
             n100=int(fields[7]),
             n50=int(fields[8]),
@@ -126,7 +130,7 @@ def _parse_stable_payload(fields: list[str]) -> ParsedScore:
             max_combo=int(fields[10]),
             perfect=_parse_bool(fields[11]),
             client_grade=fields[12],
-            mods=int(fields[13]),
+            mods=ModCombination.from_stable_bitmask(int(fields[13])),
             passed=_parse_bool(fields[14]),
             ruleset=int(fields[15]),
             client_submitted_at=fields[_STABLE_SUBMITTED_AT_INDEX]

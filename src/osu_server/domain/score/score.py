@@ -1,8 +1,15 @@
 """Score domain model."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from osu_server.domain.scores.mods import ModCombination
 
 
 class Ruleset(Enum):
@@ -44,7 +51,7 @@ class Score:
     online_checksum: str
     ruleset: Ruleset
     playstyle: Playstyle
-    mods: int
+    mods: ModCombination
     n300: int
     n100: int
     n50: int

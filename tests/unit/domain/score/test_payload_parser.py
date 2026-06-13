@@ -3,6 +3,7 @@
 import pytest
 
 from osu_server.domain.score.payload_parser import ParsedScore, ParseError, parse
+from osu_server.domain.scores.mods import ModCombination
 
 
 def test_parse_valid_payload() -> None:
@@ -19,7 +20,7 @@ def test_parse_valid_payload() -> None:
     assert result.beatmap_checksum == "abc123"
     assert result.online_checksum == "xyz789"
     assert result.ruleset == 0
-    assert result.mods == 0
+    assert result.mods == ModCombination.none()
     assert result.n300 == 300
     assert result.n100 == 50
     assert result.n50 == 10
@@ -47,7 +48,7 @@ def test_parse_stable_client_payload() -> None:
     assert result.beatmap_checksum == "8119fb28af74b9445f4a685f8b09eec2"
     assert result.online_checksum == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     assert result.ruleset == 3
-    assert result.mods == 0
+    assert result.mods == ModCombination.none()
     assert result.n300 == 552
     assert result.n100 == 2
     assert result.n50 == 1
@@ -88,7 +89,7 @@ def test_parse_with_mods() -> None:
 
     result = parse(payload)
 
-    assert result.mods == 72  # HD+DT
+    assert result.mods == ModCombination.from_stable_bitmask(72)  # HD+DT
 
 
 def test_parse_different_rulesets() -> None:

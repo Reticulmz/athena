@@ -40,7 +40,7 @@
   - Completion is observable when stable login/presence permission output is produced by compatibility mapping and is not accepted as internal authorization input.
   - _Requirements: 6.2, 6.3, 6.7_
 
-- [ ] 2.3 (P) Canonicalize score mods and score mod storage semantics
+- [x] 2.3 (P) Canonicalize score mods and score mod storage semantics
   - Introduce canonical Mod and ModCombination concepts for stable, lazer, and first-party API inputs.
   - Move score domain code away from raw integer mod handling while preserving integer bitmask persistence semantics.
   - Completion is observable when score use-cases receive canonical mod combinations and stable unsupported mod cases are explicit at the boundary.
