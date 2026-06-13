@@ -22,15 +22,16 @@ from osu_server.repositories.memory.score_repository import InMemoryScoreReposit
 from osu_server.repositories.memory.submission_repository import (
     InMemoryScoreSubmissionRepository,
 )
-from osu_server.services.score_authorization_service import (
-    ScoreAuthorizationService,
-)
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
     SubmissionOutcome,
 )
-from tests.support.fakes import StubBlobStorageService, StubScorePayloadDecryptor
+from tests.support.fakes import (
+    StubBlobStorageService,
+    StubScorePayloadDecryptor,
+    make_score_authorization_service,
+)
 
 # Mod bit constants (from osu! stable protocol)
 RELAX = 1 << 7  # 128
@@ -161,7 +162,7 @@ def service(
 ) -> ScoreSubmissionService:
     """Create service with in-memory repositories."""
     score_repo, submission_repo, replay_repo = repos
-    auth_service = ScoreAuthorizationService()
+    auth_service = make_score_authorization_service()
     return ScoreSubmissionService(
         score_repo,
         submission_repo,

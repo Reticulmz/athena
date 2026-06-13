@@ -70,8 +70,8 @@ class ScoreSubmitHandler:
             client_hash=parsed.client_hash,
             fail_time_ms=parsed.fail_time_ms,
             osu_version=parsed.osu_version,
-            beatmap_id=0,  # Extracted from decrypted payload in service layer
             submitted_at=datetime.now(UTC),
+            submission_metadata=parsed.submission_metadata,
         )
 
         result = await self._service.submit_score(input_data)

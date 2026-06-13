@@ -14,6 +14,7 @@ from osu_server.services.score_authorization_service import (
     AuthorizationContext,
     ScoreAuthorizationService,
 )
+from tests.support.fakes import make_score_authorization_service
 
 _NOW = datetime(2026, 6, 12, tzinfo=UTC)
 
@@ -72,7 +73,7 @@ async def _make_repository_backed_service(
 @pytest.fixture
 def service() -> ScoreAuthorizationService:
     """Create service instance."""
-    return ScoreAuthorizationService()
+    return make_score_authorization_service()
 
 
 class TestScoreAuthorizationService:
@@ -138,18 +139,20 @@ class TestScoreAuthorizationService:
 
         assert not result.authorized
         assert not result.password_valid
-        assert not result.session_valid
+        assert result.session_valid
 
     @pytest.mark.asyncio
-    async def test_no_active_session_rejection(self, service: ScoreAuthorizationService) -> None:
-        """No active session should reject (mocked as password_valid=False)."""
-        result = await service.authorize_submission(
-            password_md5="wrong_password",
+    async def test_no_active_session_rejection(self) -> None:
+        """No active session should reject even when the password is valid."""
+        service_without_session = make_score_authorization_service(create_session=False)
+        result = await service_without_session.authorize_submission(
+            password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             payload_username="test_user",
             payload_user_id=1000,
         )
 
         assert not result.authorized
+        assert result.password_valid
         assert not result.session_valid
 
     @pytest.mark.asyncio

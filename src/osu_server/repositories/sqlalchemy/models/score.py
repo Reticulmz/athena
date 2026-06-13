@@ -53,6 +53,7 @@ class ScoreModel(Base):
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    beatmap_status_at_submission: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class ScoreSubmissionModel(Base):

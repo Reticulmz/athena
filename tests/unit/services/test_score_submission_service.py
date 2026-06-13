@@ -25,9 +25,6 @@ from osu_server.domain.score.submission import ScoreSubmission
 from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
 from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
 from osu_server.repositories.memory.submission_repository import InMemoryScoreSubmissionRepository
-from osu_server.services.score_authorization_service import (
-    ScoreAuthorizationService,
-)
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
@@ -35,7 +32,11 @@ from osu_server.services.score_submission_service import (
     generate_submission_fingerprint,
     generate_submission_request_hash,
 )
-from tests.support.fakes import StubBlobStorageService, StubScorePayloadDecryptor
+from tests.support.fakes import (
+    StubBlobStorageService,
+    StubScorePayloadDecryptor,
+    make_score_authorization_service,
+)
 
 
 def _eligible_beatmap() -> BeatmapEligibility:
@@ -186,7 +187,7 @@ def service(
 ) -> ScoreSubmissionService:
     """Create service with in-memory repositories."""
     score_repo, submission_repo, replay_repo = repos
-    auth_service = ScoreAuthorizationService()
+    auth_service = make_score_authorization_service()
     return ScoreSubmissionService(
         score_repo,
         submission_repo,
@@ -243,7 +244,7 @@ async def test_happy_path_valid_submission_creates_score(
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Happy path: valid submission creates score record."""
-    score_repo, _submission_repo, _replay_repo = repos
+    score_repo, submission_repo, _replay_repo = repos
 
     # Mock decrypt
     def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
@@ -265,6 +266,56 @@ async def test_happy_path_valid_submission_creates_score(
     assert score.passed is True
     assert score.ruleset == Ruleset.OSU
     assert score.playstyle == Playstyle.VANILLA
+    assert score.beatmap_status_at_submission == BeatmapRankStatus.RANKED.value
+
+    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(valid_input))
+    assert submission is not None
+    assert submission.result_snapshot is not None
+    assert (
+        submission.result_snapshot["beatmap_status_at_submission"]
+        == BeatmapRankStatus.RANKED.value
+    )
+
+
+@pytest.mark.asyncio
+async def test_client_server_grade_discrepancy_is_preserved(
+    service: ScoreSubmissionService,
+    valid_input: ParsedSubmissionInput,
+    repos: ScoreRepos,
+    score_decryptor: StubScorePayloadDecryptor,
+) -> None:
+    """Client/server grade mismatches are logged and stored for diagnostics."""
+    _score_repo, submission_repo, _replay_repo = repos
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "abc123:test_user:online_grade_discrepancy:"
+            "300:0:0:0:0:0:1000000:500:1:D:0:1:0:"
+            "20240101:b20240101:client_checksum"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    with structlog.testing.capture_logs() as cap_logs:
+        result = await service.submit_score(valid_input)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    submission = await submission_repo.get_by_fingerprint(
+        _fingerprint_for(valid_input, submitted_timestamp="20240101")
+    )
+    assert submission is not None
+    assert submission.result_snapshot is not None
+    assert submission.result_snapshot["grade_discrepancy"] == {
+        "client_grade": "D",
+        "server_grade": "X",
+    }
+
+    discrepancy_log = next(
+        entry for entry in cap_logs if entry["event"] == "score_grade_discrepancy"
+    )
+    assert discrepancy_log["client_grade"] == "D"
+    assert discrepancy_log["server_grade"] == "X"
 
 
 @pytest.mark.asyncio

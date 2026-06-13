@@ -30,6 +30,7 @@ def test_score_creation_with_all_fields() -> None:
         perfect=False,
         client_version="b20250101",
         submitted_at=datetime(2026, 6, 11, 0, 0, 0, tzinfo=UTC),
+        beatmap_status_at_submission="ranked",
     )
 
     assert score.id == 1
@@ -37,6 +38,7 @@ def test_score_creation_with_all_fields() -> None:
     assert score.ruleset == Ruleset.OSU
     assert score.playstyle == Playstyle.VANILLA
     assert score.grade == Grade.A
+    assert score.beatmap_status_at_submission == "ranked"
 
 
 def test_score_without_id() -> None:

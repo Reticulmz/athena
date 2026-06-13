@@ -59,3 +59,4 @@ class Score:
     perfect: bool
     client_version: str
     submitted_at: datetime
+    beatmap_status_at_submission: str | None = None

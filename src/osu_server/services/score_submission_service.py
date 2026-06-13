@@ -2,7 +2,8 @@
 
 import hashlib
 import time
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Protocol
@@ -34,6 +35,11 @@ _STATE_PROCESSING = "processing"
 _STATE_COMPLETED = "completed"
 _STATE_TERMINAL_REJECTED = "terminal_rejected"
 _STATE_RETRYABLE = "retryable"
+_OPAQUE_METADATA_FIELDS = frozenset({"fs", "bmk", "sbk", "c1", "st", "i", "token"})
+
+
+def _empty_submission_metadata() -> dict[str, str]:
+    return {}
 
 
 class _FingerprintHasher(Protocol):
@@ -116,8 +122,32 @@ class ParsedSubmissionInput:
     client_hash: str
     fail_time_ms: int | None
     osu_version: str | None
-    beatmap_id: int
     submitted_at: datetime
+    beatmap_id: int | None = None
+    submission_metadata: Mapping[str, str] = field(default_factory=_empty_submission_metadata)
+
+
+def hash_submission_metadata(metadata: Mapping[str, str]) -> dict[str, str]:
+    """Return SHA-256 hashes for optional opaque score submission fields."""
+    return {
+        f"{key}_sha256": hashlib.sha256(value.encode()).hexdigest()
+        for key, value in sorted(metadata.items())
+        if key in _OPAQUE_METADATA_FIELDS
+    }
+
+
+def _grade_discrepancy(client_grade: str | None, server_grade: str) -> dict[str, str] | None:
+    if client_grade is None:
+        return None
+
+    normalized_client_grade = client_grade.strip().upper()
+    if not normalized_client_grade or normalized_client_grade == server_grade:
+        return None
+
+    return {
+        "client_grade": client_grade,
+        "server_grade": server_grade,
+    }
 
 
 def generate_submission_request_hash(input_data: ParsedSubmissionInput) -> str:
@@ -136,7 +166,9 @@ def generate_submission_request_hash(input_data: ParsedSubmissionInput) -> str:
     _update_fingerprint_text(hasher, "client_hash", input_data.client_hash)
     _update_fingerprint_text(hasher, "fail_time_ms", str(input_data.fail_time_ms))
     _update_fingerprint_text(hasher, "osu_version", str(input_data.osu_version))
-    _update_fingerprint_text(hasher, "beatmap_id", str(input_data.beatmap_id))
+    _update_fingerprint_text(hasher, "beatmap_id", str(input_data.beatmap_id or ""))
+    for key, digest in hash_submission_metadata(input_data.submission_metadata).items():
+        _update_fingerprint_text(hasher, f"metadata:{key}", digest)
     return hasher.hexdigest()
 
 
@@ -210,6 +242,7 @@ class ScoreSubmissionService:
         start_time = time.perf_counter()
 
         request_hash = generate_submission_request_hash(input_data)
+        opaque_field_hashes = hash_submission_metadata(input_data.submission_metadata)
 
         # 3. Decrypt payload (R3.1-3.4)
         decrypt_start = time.perf_counter()
@@ -225,6 +258,7 @@ class ScoreSubmissionService:
                 "score_submission_failed",
                 reason="decryption_failed",
                 request_hash=request_hash,
+                opaque_fields=opaque_field_hashes or None,
                 error=str(e),
             )
             return SubmissionResult(
@@ -236,6 +270,7 @@ class ScoreSubmissionService:
                 "score_submission_failed",
                 reason="crypto_checksum_invalid",
                 request_hash=request_hash,
+                opaque_fields=opaque_field_hashes or None,
             )
             return SubmissionResult(
                 outcome=SubmissionOutcome.TERMINAL_REJECTED,
@@ -250,6 +285,7 @@ class ScoreSubmissionService:
                 "score_submission_failed",
                 reason="parse_failed",
                 request_hash=request_hash,
+                opaque_fields=opaque_field_hashes or None,
                 error=str(e),
             )
             return SubmissionResult(
@@ -308,6 +344,7 @@ class ScoreSubmissionService:
             return await self._record_terminal_reject(
                 active_submission,
                 self._format_auth_error(auth_ctx),
+                opaque_field_hashes,
             )
 
         # 5.5. Check playstyle (R1.3, R1.4)
@@ -320,7 +357,11 @@ class ScoreSubmissionService:
                 mods=parsed.mods,
                 user_id=auth_ctx.user_id,
             )
-            return await self._record_terminal_reject(active_submission, error_reason)
+            return await self._record_terminal_reject(
+                active_submission,
+                error_reason,
+                opaque_field_hashes,
+            )
 
         # 6. Check beatmap eligibility (R8.1-8.5)
         beatmap_start = time.perf_counter()
@@ -338,8 +379,13 @@ class ScoreSubmissionService:
                 reason=error_reason,
                 fingerprint=fingerprint,
                 beatmap_checksum=parsed.beatmap_checksum,
+                opaque_fields=opaque_field_hashes or None,
             )
-            return await self._record_retryable(active_submission, error_reason)
+            return await self._record_retryable(
+                active_submission,
+                error_reason,
+                opaque_field_hashes,
+            )
 
         # 6.2. Check eligibility
         eligibility = beatmap_result.eligibility
@@ -360,7 +406,11 @@ class ScoreSubmissionService:
                 denial_reason=denial_reason,
                 passed=parsed.passed,
             )
-            return await self._record_terminal_reject(active_submission, error_reason)
+            return await self._record_terminal_reject(
+                active_submission,
+                error_reason,
+                opaque_field_hashes,
+            )
 
         replay_byte_size = (
             len(input_data.replay_data) if input_data.replay_data is not None else None
@@ -374,7 +424,11 @@ class ScoreSubmissionService:
                 passed=parsed.passed,
                 fail_time_ms=input_data.fail_time_ms,
             )
-            return await self._record_terminal_reject(active_submission, error_reason)
+            return await self._record_terminal_reject(
+                active_submission,
+                error_reason,
+                opaque_field_hashes,
+            )
         # 7. Validate hit counts (R5.1-5.5)
         try:
             validation = validate_hit_counts(parsed)
@@ -386,7 +440,22 @@ class ScoreSubmissionService:
                 fingerprint=fingerprint,
                 error=str(e),
             )
-            return await self._record_terminal_reject(active_submission, error_reason)
+            return await self._record_terminal_reject(
+                active_submission,
+                error_reason,
+                opaque_field_hashes,
+            )
+
+        grade_discrepancy = _grade_discrepancy(parsed.client_grade, validation.grade.value)
+        if grade_discrepancy is not None:
+            logger.info(
+                "score_grade_discrepancy",
+                fingerprint=fingerprint,
+                user_id=auth_ctx.user_id,
+                beatmap_checksum=parsed.beatmap_checksum,
+                client_grade=grade_discrepancy["client_grade"],
+                server_grade=grade_discrepancy["server_grade"],
+            )
 
         # 8. Check uniqueness (R6.1, R6.2)
         existing_score = await self._score_repo.get_by_online_checksum(parsed.online_checksum)
@@ -402,7 +471,11 @@ class ScoreSubmissionService:
                 beatmap_id=existing_score.beatmap_id,
                 beatmap_checksum=parsed.beatmap_checksum,
             )
-            return await self._record_terminal_reject(active_submission, error_reason)
+            return await self._record_terminal_reject(
+                active_submission,
+                error_reason,
+                opaque_field_hashes,
+            )
 
         replay_data = input_data.replay_data
         replay_checksum: str | None = None
@@ -418,7 +491,11 @@ class ScoreSubmissionService:
                     user_id=auth_ctx.user_id,
                     beatmap_checksum=parsed.beatmap_checksum,
                 )
-                return await self._record_terminal_reject(active_submission, error_reason)
+                return await self._record_terminal_reject(
+                    active_submission,
+                    error_reason,
+                    opaque_field_hashes,
+                )
 
         replay_blob_result: BlobStoreResult | None = None
         if replay_data is not None:
@@ -434,12 +511,17 @@ class ScoreSubmissionService:
                     fingerprint=fingerprint,
                     error=type(exc).__name__,
                 )
-                return await self._record_retryable(active_submission, "replay_blob_store_failed")
+                return await self._record_retryable(
+                    active_submission,
+                    "replay_blob_store_failed",
+                    opaque_field_hashes,
+                )
 
         resolved_beatmap_id = input_data.beatmap_id or beatmap_result.beatmap.id
         resolved_beatmapset_id = (
             beatmap_result.beatmapset.id if beatmap_result.beatmapset is not None else 0
         )
+        beatmap_status_at_submission = beatmap_result.beatmap.effective_status.value
 
         # 9. Persist score (R7.1-7.5, R12.1-12.4)
         score = Score(
@@ -465,6 +547,7 @@ class ScoreSubmissionService:
             perfect=parsed.perfect,
             client_version=input_data.osu_version or "unknown",
             submitted_at=input_data.submitted_at,
+            beatmap_status_at_submission=beatmap_status_at_submission,
         )
 
         db_start = time.perf_counter()
@@ -491,7 +574,12 @@ class ScoreSubmissionService:
             "score_id": created_score.id,
             "beatmap_id": resolved_beatmap_id,
             "beatmapset_id": resolved_beatmapset_id,
+            "beatmap_status_at_submission": beatmap_status_at_submission,
         }
+        if grade_discrepancy is not None:
+            completion_snapshot["grade_discrepancy"] = grade_discrepancy
+        if opaque_field_hashes:
+            completion_snapshot["opaque_fields"] = opaque_field_hashes
         if created_replay is not None:
             completion_snapshot["replay_attachment_id"] = created_replay.id
             completion_snapshot["replay_blob_id"] = created_replay.blob_id
@@ -518,6 +606,8 @@ class ScoreSubmissionService:
             replay_byte_size=replay_byte_size,
             passed=parsed.passed,
             fail_time_ms=input_data.fail_time_ms,
+            beatmap_status_at_submission=beatmap_status_at_submission,
+            opaque_fields=opaque_field_hashes or None,
         )
 
         return SubmissionResult(
@@ -580,12 +670,16 @@ class ScoreSubmissionService:
         self,
         submission: ScoreSubmission,
         error_reason: str,
+        opaque_field_hashes: Mapping[str, str] | None = None,
     ) -> SubmissionResult:
         assert submission.id is not None, "Submission ID must be set before state update"
+        result_snapshot: dict[str, object] = {"error_reason": error_reason}
+        if opaque_field_hashes:
+            result_snapshot["opaque_fields"] = dict(opaque_field_hashes)
         await self._submission_repo.update_state(
             submission.id,
             _STATE_TERMINAL_REJECTED,
-            {"error_reason": error_reason},
+            result_snapshot,
         )
         return SubmissionResult(
             outcome=SubmissionOutcome.TERMINAL_REJECTED,
@@ -596,12 +690,16 @@ class ScoreSubmissionService:
         self,
         submission: ScoreSubmission,
         error_reason: str,
+        opaque_field_hashes: Mapping[str, str] | None = None,
     ) -> SubmissionResult:
         assert submission.id is not None, "Submission ID must be set before state update"
+        result_snapshot: dict[str, object] = {"error_reason": error_reason}
+        if opaque_field_hashes:
+            result_snapshot["opaque_fields"] = dict(opaque_field_hashes)
         await self._submission_repo.update_state(
             submission.id,
             _STATE_RETRYABLE,
-            {"error_reason": error_reason},
+            result_snapshot,
         )
         return SubmissionResult(
             outcome=SubmissionOutcome.RETRYABLE,

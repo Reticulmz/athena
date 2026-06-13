@@ -31,9 +31,6 @@ from osu_server.domain.score.payload_parser import ParsedScore
 from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
 from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
 from osu_server.repositories.memory.submission_repository import InMemoryScoreSubmissionRepository
-from osu_server.services.score_authorization_service import (
-    ScoreAuthorizationService,
-)
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
@@ -41,7 +38,11 @@ from osu_server.services.score_submission_service import (
     generate_submission_fingerprint,
     generate_submission_request_hash,
 )
-from tests.support.fakes import StubBlobStorageService, StubScorePayloadDecryptor
+from tests.support.fakes import (
+    StubBlobStorageService,
+    StubScorePayloadDecryptor,
+    make_score_authorization_service,
+)
 
 
 def _resolved_beatmap() -> Beatmap:
@@ -142,7 +143,7 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
     score_repo = InMemoryScoreRepository()
     submission_repo = InMemoryScoreSubmissionRepository()
     replay_repo = InMemoryReplayRepository()
-    auth_service = ScoreAuthorizationService()
+    auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
         eligibility=BeatmapEligibility(
             accepts_scores=True,
@@ -261,7 +262,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
     score_repo = InMemoryScoreRepository()
     submission_repo = InMemoryScoreSubmissionRepository()
     replay_repo = InMemoryReplayRepository()
-    auth_service = ScoreAuthorizationService()
+    auth_service = make_score_authorization_service()
 
     # Test 1: Authorization failure category
     resolver = FakeBeatmapResolver(
@@ -411,13 +412,12 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
 ) -> None:
     """R11.3: Opaque fields must be stored as SHA-256 hashes only.
 
-    Wave 1 does NOT implement opaque field storage. This test verifies that
-    the current implementation does NOT store opaque fields in result_snapshot.
+    Raw opaque field values must not be stored in result_snapshot.
     """
     score_repo = InMemoryScoreRepository()
     submission_repo = InMemoryScoreSubmissionRepository()
     replay_repo = InMemoryReplayRepository()
-    auth_service = ScoreAuthorizationService()
+    auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
         eligibility=BeatmapEligibility(
             accepts_scores=True,
@@ -483,6 +483,15 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
         mock_parse,
     )
 
+    opaque_fields = {
+        "fs": "fullscreen_flag",
+        "bmk": "beatmap_key",
+        "sbk": "score_key",
+        "c1": "custom1",
+        "st": "score_time",
+        "i": "info_field",
+        "token": "session_token",
+    }
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted",
         iv=b"1234567890123456",
@@ -493,6 +502,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
         osu_version="2024.101.0",
         beatmap_id=123,
         submitted_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        submission_metadata=opaque_fields,
     )
 
     result = await service.submit_score(input_data)
@@ -503,14 +513,14 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
     submission = await submission_repo.get_by_fingerprint(fingerprint)
     assert submission is not None
 
-    # CRITICAL: Verify opaque fields are NOT stored in Wave 1
-    # result_snapshot should only contain score_id, not opaque fields
     assert submission.result_snapshot is not None
-    opaque_field_keys = ["fs", "bmk", "sbk", "c1", "st", "i", "token"]
-    for key in opaque_field_keys:
+    stored_opaque_fields = submission.result_snapshot.get("opaque_fields")
+    assert isinstance(stored_opaque_fields, dict)
+    for key, value in opaque_fields.items():
+        expected_hash = hashlib.sha256(value.encode()).hexdigest()
         assert key not in submission.result_snapshot
-        # Also verify hashed versions are not stored yet
-        assert f"{key}_sha256" not in submission.result_snapshot
+        assert stored_opaque_fields[f"{key}_sha256"] == expected_hash
+        assert value not in str(submission.result_snapshot)
 
 
 @pytest.mark.asyncio
@@ -523,7 +533,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
     score_repo = InMemoryScoreRepository()
     submission_repo = InMemoryScoreSubmissionRepository()
     replay_repo = InMemoryReplayRepository()
-    auth_service = ScoreAuthorizationService()
+    auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
         eligibility=BeatmapEligibility(
             accepts_scores=True,
@@ -555,6 +565,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
 
     secret_password = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     secret_payload = b"this_is_encrypted_secret_payload"
+    secret_token = "raw_session_token"
 
     def mock_decrypt(
         _encrypted: bytes,
@@ -602,6 +613,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
         osu_version="2024.101.0",
         beatmap_id=123,
         submitted_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        submission_metadata={"token": secret_token},
     )
 
     # Capture actual log output
@@ -614,6 +626,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
     all_logs = "".join(str(entry) for entry in cap_logs)
     assert secret_password not in all_logs
     assert "this_is_encrypted_secret_payload" not in all_logs
+    assert secret_token not in all_logs
 
 
 @pytest.mark.asyncio
@@ -629,7 +642,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
     score_repo = InMemoryScoreRepository()
     submission_repo = InMemoryScoreSubmissionRepository()
     replay_repo = InMemoryReplayRepository()
-    auth_service = ScoreAuthorizationService()
+    auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
         eligibility=BeatmapEligibility(
             accepts_scores=True,

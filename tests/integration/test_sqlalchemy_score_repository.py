@@ -90,6 +90,7 @@ def _make_score(
         perfect=False,
         client_version="b20240101",
         submitted_at=datetime.now(UTC),
+        beatmap_status_at_submission="ranked",
     )
 
 
@@ -109,6 +110,7 @@ async def test_sqlalchemy_score_repository_creates_and_retrieves_score(
     assert retrieved is not None
     assert retrieved.id == created.id
     assert retrieved.online_checksum == created.online_checksum
+    assert retrieved.beatmap_status_at_submission == "ranked"
 
 
 async def test_sqlalchemy_score_repository_exists_by_online_checksum(
@@ -198,3 +200,4 @@ async def test_sqlalchemy_score_repository_preserves_all_fields(
     assert retrieved.geki == score.geki
     assert retrieved.katu == score.katu
     assert retrieved.miss == score.miss
+    assert retrieved.beatmap_status_at_submission == "ranked"

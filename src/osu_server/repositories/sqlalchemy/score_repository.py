@@ -50,6 +50,7 @@ class SQLAlchemyScoreRepository:
                 perfect=score.perfect,
                 client_version=score.client_version,
                 submitted_at=score.submitted_at,
+                beatmap_status_at_submission=score.beatmap_status_at_submission,
             )
             session.add(model)
             try:
@@ -110,4 +111,5 @@ class SQLAlchemyScoreRepository:
             perfect=model.perfect,
             client_version=model.client_version,
             submitted_at=model.submitted_at,
+            beatmap_status_at_submission=model.beatmap_status_at_submission,
         )

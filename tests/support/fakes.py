@@ -3,14 +3,18 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, final, override
 
 from osu_server.domain.blob import Blob, BlobStored
 from osu_server.domain.score.decryption import DecryptedPayload
+from osu_server.domain.session import SessionData
+from osu_server.domain.user import User
+from osu_server.services.password_service import PasswordService
+from osu_server.services.score_authorization_service import ScoreAuthorizationService
 
 if TYPE_CHECKING:
+    from osu_server.domain.session_authorization import SessionAuthorization
     from osu_server.domain.system_user import SystemUserIdentity
-    from osu_server.domain.user import User
     from osu_server.infrastructure.security.hibp import HIBPClient
     from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 
@@ -77,6 +81,148 @@ class ErrorRaisingUserRepository:
 
     async def sync_system_user(self, identity: SystemUserIdentity) -> None:
         await self._inner.sync_system_user(identity)
+
+
+@final
+class StaticScoreUserRepository:
+    """Single-user repository for score authorization tests."""
+
+    def __init__(self, user: User) -> None:
+        self._user = user
+
+    async def create(self, user: User) -> User:
+        self._user = user
+        return user
+
+    async def get_by_id(self, user_id: int) -> User | None:
+        return self._user if self._user.id == user_id else None
+
+    async def get_by_safe_username(self, safe_username: str) -> User | None:
+        return self._user if self._user.safe_username == safe_username else None
+
+    async def get_by_email(self, email: str) -> User | None:
+        return self._user if self._user.email == email else None
+
+    async def is_username_disallowed(self, safe_username: str) -> bool:
+        _ = safe_username
+        return False
+
+    async def add_disallowed_username(self, safe_username: str) -> None:
+        _ = safe_username
+
+    async def update_country(self, user_id: int, country: str) -> None:
+        if self._user.id == user_id:
+            self._user.country = country
+
+    async def sync_system_user(self, identity: SystemUserIdentity) -> None:
+        _ = identity
+
+
+@final
+class StaticPasswordService(PasswordService):
+    """PasswordService test double with one accepted password-md5."""
+
+    def __init__(self, accepted_password_md5: str) -> None:
+        super().__init__(hibp_client=None, banned_passwords=[])
+        self._accepted_password_md5 = accepted_password_md5
+
+    @override
+    async def verify(self, hashed: str, password: str) -> bool:
+        _ = hashed
+        return password == self._accepted_password_md5
+
+
+@final
+class StaticSessionStore:
+    """SessionStore test double with an optional active session."""
+
+    def __init__(self, session: SessionData | None) -> None:
+        self._session = session
+        self._token = f"token-{session.user_id}" if session is not None else ""
+
+    async def create(self, user_id: int, token: str, data: SessionData) -> None:
+        _ = user_id
+        self._token = token
+        self._session = data
+
+    async def get(self, token: str) -> SessionData | None:
+        return self._session if self._session is not None and token == self._token else None
+
+    async def get_by_user(self, user_id: int) -> SessionData | None:
+        return (
+            self._session
+            if self._session is not None and self._session.user_id == user_id
+            else None
+        )
+
+    async def delete(self, token: str) -> None:
+        if token == self._token:
+            self._session = None
+
+    async def exists(self, token: str) -> bool:
+        return self._session is not None and token == self._token
+
+    async def refresh(self, token: str) -> bool:
+        return await self.exists(token)
+
+    async def delete_by_user(self, user_id: int) -> None:
+        if self._session is not None and self._session.user_id == user_id:
+            self._session = None
+
+    async def update_authorization(
+        self,
+        user_id: int,
+        authorization: SessionAuthorization,
+    ) -> bool:
+        if self._session is None or self._session.user_id != user_id:
+            return False
+        self._session.privileges = int(authorization.privileges)
+        self._session.role_ids = authorization.role_ids
+        return True
+
+    async def get_all_user_ids(self) -> list[int]:
+        return [] if self._session is None else [self._session.user_id]
+
+
+def make_score_authorization_service(
+    *,
+    user_id: int = 1000,
+    username: str = "test_user",
+    password_md5: str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    create_session: bool = True,
+) -> ScoreAuthorizationService:
+    """Create repository-backed score auth with explicit test doubles."""
+    now = datetime.now(UTC)
+    user = User(
+        id=user_id,
+        username=username,
+        safe_username=User.normalize_username(username),
+        email=f"{username}@example.com",
+        password_hash="!static-test-hash",
+        country="JP",
+        created_at=now,
+        updated_at=now,
+    )
+    session = (
+        SessionData(
+            user_id=user_id,
+            username=username,
+            privileges=1,
+            country="JP",
+            osu_version="20240101",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="",
+            pm_private=False,
+        )
+        if create_session
+        else None
+    )
+    return ScoreAuthorizationService(
+        user_repo=StaticScoreUserRepository(user),
+        password_service=StaticPasswordService(password_md5),
+        session_store=StaticSessionStore(session),
+    )
 
 
 class StubBlobStorageService:

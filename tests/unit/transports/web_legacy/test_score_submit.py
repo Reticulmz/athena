@@ -29,8 +29,10 @@ class StubScoreSubmissionService:
 
     def __init__(self, result: SubmissionResult) -> None:
         self._result: SubmissionResult = result
+        self.last_input: ParsedSubmissionInput | None = None
 
-    async def submit_score(self, _input_data: ParsedSubmissionInput) -> SubmissionResult:
+    async def submit_score(self, input_data: ParsedSubmissionInput) -> SubmissionResult:
+        self.last_input = input_data
         return self._result
 
 
@@ -74,6 +76,9 @@ def valid_multipart_body() -> bytes:
             b'Content-Disposition: form-data; name="osuver"\r\n\r\n',
             b"20241201\r\n",
             b"------WebKitFormBoundary\r\n",
+            b'Content-Disposition: form-data; name="token"\r\n\r\n',
+            b"session_token\r\n",
+            b"------WebKitFormBoundary\r\n",
             b'Content-Disposition: form-data; name="score"\r\n\r\n',
             b"replay_binary_data\r\n",
             b"------WebKitFormBoundary--\r\n",
@@ -106,6 +111,9 @@ async def test_handle_score_submit_completed(mock_request: StubRequest) -> None:
     assert response.status_code == 200
     assert b":" in response.body
     assert b"chartId:" in response.body
+    assert service.last_input is not None
+    assert service.last_input.beatmap_id is None
+    assert service.last_input.submission_metadata == {"token": "session_token"}
 
 
 @pytest.mark.asyncio

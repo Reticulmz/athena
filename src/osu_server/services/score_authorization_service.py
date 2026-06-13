@@ -43,32 +43,23 @@ class AuthorizationContext:
 class ScoreAuthorizationService:
     """Authorize score submissions (password + session + identity).
 
-    Uses repository-backed auth when dependencies are provided. A no-arg
-    compatibility mode is retained for older unit tests.
+    Uses repository-backed auth. Test credentials must be provided through
+    explicit test doubles at the composition boundary.
     """
 
-    _user_repo: UserRepository | None
-    _password_service: PasswordService | None
-    _session_store: SessionStore | None
+    _user_repo: UserRepository
+    _password_service: PasswordService
+    _session_store: SessionStore
 
-    # Mock test credentials (Wave 1 only)
-    _MOCK_USER_ID: int = 1000
-    _MOCK_USERNAME: str = "test_user"
-    _MOCK_PASSWORD_MD5: str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"  # "password"
     _NO_PAYLOAD_USER_ID: int = 0
 
     def __init__(
         self,
         *,
-        user_repo: UserRepository | None = None,
-        password_service: PasswordService | None = None,
-        session_store: SessionStore | None = None,
+        user_repo: UserRepository,
+        password_service: PasswordService,
+        session_store: SessionStore,
     ) -> None:
-        deps = (user_repo, password_service, session_store)
-        if any(dep is None for dep in deps) and any(dep is not None for dep in deps):
-            msg = "user_repo, password_service, and session_store must be provided together"
-            raise ValueError(msg)
-
         self._user_repo = user_repo
         self._password_service = password_service
         self._session_store = session_store
@@ -100,18 +91,11 @@ class ScoreAuthorizationService:
         Returns:
             AuthorizationContext with verification results
         """
-        if (
-            self._user_repo is not None
-            and self._password_service is not None
-            and self._session_store is not None
-        ):
-            return await self._authorize_with_repositories(
-                password_md5,
-                payload_username,
-                payload_user_id,
-            )
-
-        return self._authorize_mock(password_md5, payload_username, payload_user_id)
+        return await self._authorize_with_repositories(
+            password_md5,
+            payload_username,
+            payload_user_id,
+        )
 
     async def _authorize_with_repositories(
         self,
@@ -119,10 +103,6 @@ class ScoreAuthorizationService:
         payload_username: str,
         payload_user_id: int,
     ) -> AuthorizationContext:
-        assert self._user_repo is not None
-        assert self._password_service is not None
-        assert self._session_store is not None
-
         safe_username = User.normalize_username(payload_username)
         user = await self._user_repo.get_by_safe_username(safe_username)
         if user is None:
@@ -146,27 +126,4 @@ class ScoreAuthorizationService:
             session_valid=session_valid,
             password_valid=password_valid,
             payload_identity_match=payload_identity_match,
-        )
-
-    def _authorize_mock(
-        self,
-        password_md5: str,
-        payload_username: str,
-        payload_user_id: int,
-    ) -> AuthorizationContext:
-        # Mock: Accept specific test credentials
-        password_valid = password_md5 == self._MOCK_PASSWORD_MD5
-        session_valid = password_valid
-        payload_user_id_matches = payload_user_id in (
-            self._NO_PAYLOAD_USER_ID,
-            self._MOCK_USER_ID,
-        )
-        identity_match = payload_username == self._MOCK_USERNAME and payload_user_id_matches
-
-        return AuthorizationContext(
-            user_id=self._MOCK_USER_ID,
-            username=self._MOCK_USERNAME,
-            session_valid=session_valid,
-            password_valid=password_valid,
-            payload_identity_match=identity_match,
         )

@@ -44,7 +44,6 @@ from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreR
 from osu_server.repositories.sqlalchemy.submission_repository import (
     SQLAlchemyScoreSubmissionRepository,
 )
-from osu_server.services.score_authorization_service import ScoreAuthorizationService
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
@@ -52,7 +51,7 @@ from osu_server.services.score_submission_service import (
     generate_submission_fingerprint,
     generate_submission_request_hash,
 )
-from tests.support.fakes import StubScorePayloadDecryptor
+from tests.support.fakes import StubScorePayloadDecryptor, make_score_authorization_service
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -271,7 +270,7 @@ def service(
     score_repo = SQLAlchemyScoreRepository(session_factory)
     submission_repo = SQLAlchemyScoreSubmissionRepository(session_factory)
     replay_repo = SQLAlchemyReplayRepository(session_factory)
-    auth_service = ScoreAuthorizationService()
+    auth_service = make_score_authorization_service()
     beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap())
     return ScoreSubmissionService(
         score_repo,
@@ -331,6 +330,7 @@ async def test_e2e_valid_submission_persists_to_database(
     assert score.passed is True
     assert score.ruleset == Ruleset.OSU
     assert score.playstyle == Playstyle.VANILLA
+    assert score.beatmap_status_at_submission == BeatmapRankStatus.RANKED.value
 
     # Verify replay persisted in DB
     replay_repo = SQLAlchemyReplayRepository(session_factory)
@@ -346,6 +346,10 @@ async def test_e2e_valid_submission_persists_to_database(
     assert submission.state == "completed"
     assert submission.result_snapshot is not None
     assert submission.result_snapshot["score_id"] == result.score_id
+    assert (
+        submission.result_snapshot["beatmap_status_at_submission"]
+        == BeatmapRankStatus.RANKED.value
+    )
 
 
 @pytest.mark.asyncio
