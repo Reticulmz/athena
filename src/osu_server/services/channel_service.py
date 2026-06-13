@@ -13,7 +13,7 @@ import structlog
 from osu_server.domain.identity.authorization import Privileges, has_privilege
 
 if TYPE_CHECKING:
-    from osu_server.domain.channel import Channel, ChannelRoleOverride
+    from osu_server.domain.chat.channels import Channel, ChannelRoleOverride
     from osu_server.infrastructure.state.interfaces.channel_state_store import (
         ChannelStateStore,
     )

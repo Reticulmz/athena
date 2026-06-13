@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from osu_server.domain.blob import Blob, InvalidBlobError
+from osu_server.domain.storage.blobs import Blob, InvalidBlobError
 from tests.support.runtime_assertions import assert_rejects_setattr
 
 VALID_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

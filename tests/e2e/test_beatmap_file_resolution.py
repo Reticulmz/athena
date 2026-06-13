@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileSource,
     BeatmapFileState,
@@ -29,7 +29,7 @@ from osu_server.domain.beatmap import (
     BeatmapSourceVerification,
     OsuFileFetchResult,
 )
-from osu_server.domain.blob import Blob
+from osu_server.domain.storage.blobs import Blob
 from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
@@ -42,7 +42,7 @@ from osu_server.services.beatmap_mirror import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.domain.blob import BlobStored
+    from osu_server.domain.storage.blobs import BlobStored
 
 _NOW = datetime(2026, 6, 6, tzinfo=UTC)
 _ONE_HOUR = timedelta(hours=1)
@@ -175,7 +175,7 @@ class StubBlobStorageService:
     stored: list[Blob] = field(default_factory=list)
 
     async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
-        from osu_server.domain.blob import BlobStored  # noqa: PLC0415
+        from osu_server.domain.storage.blobs import BlobStored  # noqa: PLC0415
 
         blob = Blob(
             id=self.next_blob_id,

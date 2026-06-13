@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from structlog.testing import capture_logs
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFileState,

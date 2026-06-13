@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, TypedDict, cast
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapMetadataSource,
     BeatmapsetSnapshot,
     BeatmapSnapshot,

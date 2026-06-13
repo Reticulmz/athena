@@ -10,7 +10,7 @@ from urllib.parse import urlencode, urlparse
 import httpx
 import structlog
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapMetadataSource,
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
@@ -25,7 +25,7 @@ from osu_server.repositories.beatmaps.mappers import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from osu_server.domain.beatmap import BeatmapsetSnapshot
+    from osu_server.domain.beatmaps import BeatmapsetSnapshot
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 

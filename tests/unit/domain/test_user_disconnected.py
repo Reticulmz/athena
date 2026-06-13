@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import fields
 
 from osu_server.domain.events import Event
-from osu_server.domain.users.events import UserDisconnected
+from osu_server.domain.events.users import UserDisconnected
 from tests.support import assert_rejects_setattr
 
 

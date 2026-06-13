@@ -6,7 +6,7 @@ import struct
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast, final
 
-from osu_server.domain.channel import Channel, ChannelType
+from osu_server.domain.chat.channels import Channel, ChannelType
 from osu_server.domain.identity.authentication import LoginResponse
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData

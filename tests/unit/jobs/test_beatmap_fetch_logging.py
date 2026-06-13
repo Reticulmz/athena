@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 
 from structlog.testing import capture_logs
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFileSource,
@@ -31,7 +31,7 @@ from osu_server.domain.beatmap import (
     BeatmapSourceVerification,
     OsuFileFetchResult,
 )
-from osu_server.domain.blob import Blob, BlobStored
+from osu_server.domain.storage.blobs import Blob, BlobStored
 from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,

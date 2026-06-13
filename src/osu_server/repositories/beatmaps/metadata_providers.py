@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmap import BeatmapMetadataProvider, BeatmapsetSnapshot
+    from osu_server.domain.beatmaps import BeatmapMetadataProvider, BeatmapsetSnapshot
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 

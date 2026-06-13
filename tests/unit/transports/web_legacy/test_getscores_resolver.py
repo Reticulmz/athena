@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 import pytest
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFileAttachment,

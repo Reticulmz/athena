@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from osu_server.domain.blob import NewBlob
+from osu_server.domain.storage.blobs import NewBlob
 
 if TYPE_CHECKING:
-    from osu_server.domain.blob import Blob
+    from osu_server.domain.storage.blobs import Blob
 
 
 class DuplicateBlobError(ValueError):

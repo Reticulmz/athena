@@ -14,8 +14,8 @@ from __future__ import annotations
 import struct
 
 from osu_server.domain.events.base import Event
+from osu_server.domain.events.users import UserDisconnected
 from osu_server.domain.identity.sessions import SessionData
-from osu_server.domain.users.events import UserDisconnected
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.memory.session_store import InMemorySessionStore

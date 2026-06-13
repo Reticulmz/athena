@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from osu_server.domain.blob import Blob
+from osu_server.domain.storage.blobs import Blob
 from osu_server.repositories.interfaces.blob_repository import DuplicateBlobError, NewBlob
 from osu_server.repositories.sqlalchemy.models.blob import BlobModel
 

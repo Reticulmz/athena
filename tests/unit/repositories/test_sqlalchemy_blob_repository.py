@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, override
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from osu_server.domain.blob import Blob
+from osu_server.domain.storage.blobs import Blob
 from osu_server.repositories.interfaces.blob_repository import (
     BlobRepository,
     DuplicateBlobError,

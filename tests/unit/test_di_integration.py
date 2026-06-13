@@ -25,7 +25,7 @@ from taskiq_redis import ListQueueBroker
 
 from osu_server.app import app, create_app, register_services
 from osu_server.config import AppConfig
-from osu_server.domain.users.events import UserDisconnected
+from osu_server.domain.events.users import UserDisconnected
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.di.providers import build_container

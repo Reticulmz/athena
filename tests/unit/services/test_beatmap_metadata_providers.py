@@ -15,7 +15,7 @@ import pytest
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapMetadataSource,
     BeatmapRankStatus,
     BeatmapSourceError,

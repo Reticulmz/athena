@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, cast
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapRankStatus,
     BeatmapResolveOptions,
@@ -25,7 +25,7 @@ from osu_server.domain.legacy_getscores import (
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping
 
-    from osu_server.domain.beatmap import Beatmap
+    from osu_server.domain.beatmaps import Beatmap
     from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
 
 _MD5_HEX_PATTERN = re.compile(r"^[0-9a-fA-F]{32}$")

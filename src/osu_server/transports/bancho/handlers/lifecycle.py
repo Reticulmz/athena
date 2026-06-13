@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.users.events import UserDisconnected
+from osu_server.domain.events.users import UserDisconnected
 from osu_server.transports.bancho.handlers.base import HandlerGroup, handles
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFileState,

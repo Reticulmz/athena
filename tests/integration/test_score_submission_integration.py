@@ -21,7 +21,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapEligibility,
     BeatmapFetchState,
@@ -32,9 +32,9 @@ from osu_server.domain.beatmap import (
     BeatmapResolveResult,
     BeatmapSourceVerification,
 )
-from osu_server.domain.blob import BlobStored
 from osu_server.domain.score.decryption import DecryptedPayload
 from osu_server.domain.score.score import Grade, Playstyle, Ruleset
+from osu_server.domain.storage.blobs import BlobStored
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.interfaces.blob_repository import NewBlob

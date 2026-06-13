@@ -9,10 +9,10 @@ from pydantic import PostgresDsn, RedisDsn
 
 from osu_server.config import AppConfig
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
+from osu_server.domain.events.users import UserDisconnected
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
-from osu_server.domain.users.events import UserDisconnected
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue

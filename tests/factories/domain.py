@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
+from osu_server.domain.chat.channels import Channel, ChannelRoleOverride, ChannelType
 from osu_server.domain.identity.users import User
 
 

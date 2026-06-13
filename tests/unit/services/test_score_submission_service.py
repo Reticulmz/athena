@@ -8,7 +8,7 @@ from typing import cast
 import pytest
 import structlog.testing
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapEligibility,
     BeatmapFetchState,

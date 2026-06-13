@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from osu_server.domain.blob import Blob
+    from osu_server.domain.storage.blobs import Blob
     from osu_server.services.blob_storage_service import BlobStorageService
 
 _DEFAULT_BEATMAP_ID = 2_000

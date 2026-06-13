@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: TC002
 
-from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
+from osu_server.domain.chat.channels import Channel, ChannelRoleOverride, ChannelType
 from osu_server.repositories.sqlalchemy.models.channel import (
     ChannelModel,
     ChannelRoleOverrideModel,

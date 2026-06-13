@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapEligibility,
     BeatmapFetchState,
@@ -44,7 +44,7 @@ _CHECKSUM = "0123456789abcdef0123456789abcdef"
 
 # All modules that belong to the beatmap-mirror feature boundary.
 _BEATMAP_MODULES: tuple[str, ...] = (
-    "osu_server.domain.beatmap",
+    "osu_server.domain.beatmaps",
     "osu_server.services.beatmap_mirror.file_provider_service",
     "osu_server.services.beatmap_mirror.metadata_provider_service",
     "osu_server.repositories.beatmaps.mappers",
@@ -193,9 +193,9 @@ class TestBeatmapMirrorImportBoundaries:
     def test_domain_module_no_transport_imports(self) -> None:
         """Domain module must not import from any transport package."""
         violations = _module_imports_forbidden(
-            "osu_server.domain.beatmap", _FORBIDDEN_IMPORT_PREFIXES
+            "osu_server.domain.beatmaps", _FORBIDDEN_IMPORT_PREFIXES
         )
-        assert violations == [], f"domain.beatmap has forbidden imports: {violations}"
+        assert violations == [], f"domain.beatmaps has forbidden imports: {violations}"
 
     def test_service_module_no_transport_imports(self) -> None:
         """Service modules must not import from any transport package."""

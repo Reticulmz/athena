@@ -23,7 +23,7 @@ from osu_server.domain.legacy_getscores import GetscoresOutcomeKind
 if TYPE_CHECKING:
     from starlette.requests import Request
 
-    from osu_server.domain.beatmap import Beatmap, BeatmapSet
+    from osu_server.domain.beatmaps import Beatmap, BeatmapSet
     from osu_server.services.legacy_getscores_service import LegacyGetscoresService
     from osu_server.services.legacy_web_auth_service import LegacyWebAuthService
 

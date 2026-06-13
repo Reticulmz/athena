@@ -19,20 +19,20 @@ from typing import TYPE_CHECKING, Annotated, Protocol, cast
 import structlog
 from taskiq import Context, TaskiqDepends
 
-from osu_server.domain.beatmap import BeatmapFileAttachment
+from osu_server.domain.beatmaps import BeatmapFileAttachment
 from osu_server.infrastructure.jobs.registry import jobs
 from osu_server.repositories.interfaces.beatmap_repository import BeatmapFetchTarget
 
 if TYPE_CHECKING:
     from taskiq import TaskiqState
 
-    from osu_server.domain.beatmap import (
+    from osu_server.domain.beatmaps import (
         BeatmapFileProvider,
         BeatmapMetadataProvider,
         BeatmapSet,
         BeatmapsetSnapshot,
     )
-    from osu_server.domain.blob import BlobStoreResult
+    from osu_server.domain.storage.blobs import BlobStoreResult
     from osu_server.repositories.interfaces.beatmap_repository import (
         BeatmapRepository,
     )
@@ -133,7 +133,7 @@ class FetchBeatmapMetadataJob:
 
 def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
     """Convert a provider snapshot to a domain ``BeatmapSet``."""
-    from osu_server.domain.beatmap import (  # noqa: PLC0415
+    from osu_server.domain.beatmaps import (  # noqa: PLC0415
         Beatmap,
         BeatmapFetchState,
         BeatmapFileState,

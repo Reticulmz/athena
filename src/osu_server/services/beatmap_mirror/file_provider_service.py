@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import structlog
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapFileSource,
     BeatmapSourceError,
     BeatmapSourceErrorCategory,

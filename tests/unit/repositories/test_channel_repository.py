@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from osu_server.domain.channel import Channel, ChannelType
+from osu_server.domain.chat.channels import Channel, ChannelType
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 

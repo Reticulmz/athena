@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.blob import BlobDeduplicated, BlobStored, BlobStoreResult
+from osu_server.domain.storage.blobs import BlobDeduplicated, BlobStored, BlobStoreResult
 from osu_server.infrastructure.storage.errors import BlobContentMissingError
 from osu_server.repositories.interfaces.blob_repository import DuplicateBlobError, NewBlob
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from osu_server.domain.blob import Blob
+from osu_server.domain.storage.blobs import Blob
 from osu_server.repositories.interfaces.blob_repository import DuplicateBlobError, NewBlob
 
 

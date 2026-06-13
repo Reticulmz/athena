@@ -19,7 +19,7 @@ from osu_server.composition.service_registry import (
     register_services,
 )
 from osu_server.config import AppConfig
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapFileProvider,
     BeatmapFreshnessPolicy,
     BeatmapMetadataProvider,

@@ -5,7 +5,7 @@ from typing import get_type_hints
 
 import pytest
 
-from osu_server.domain.blob import Blob
+from osu_server.domain.storage.blobs import Blob
 from osu_server.repositories.interfaces import blob_repository
 from osu_server.repositories.interfaces.blob_repository import (
     BlobRepository,

@@ -48,7 +48,7 @@
   - _Boundary: Domain Context Packages - Scores_
   - _Depends: 1.4_
 
-- [ ] 2.4 (P) Rehome chat, beatmap, storage, and event domain concepts
+- [x] 2.4 (P) Rehome chat, beatmap, storage, and event domain concepts
   - Move shared chat, beatmap, storage, and domain event concepts into bounded context packages.
   - Keep domain packages free from transport, repository implementation, infrastructure, SQLAlchemy, Valkey, taskiq, and HTTP client imports.
   - Completion is observable when domain import validation passes for the moved bounded contexts.

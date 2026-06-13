@@ -12,7 +12,7 @@ import httpx
 import pytest
 from structlog.testing import capture_logs
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapFileProvider,
     BeatmapFileSource,
     BeatmapSourceError,

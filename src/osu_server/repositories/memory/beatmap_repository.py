@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from osu_server.domain.beatmap import BeatmapFetchState, BeatmapFileState
+from osu_server.domain.beatmaps import BeatmapFetchState, BeatmapFileState
 from osu_server.repositories.interfaces.beatmap_repository import (
     BeatmapFetchRecord,
     BeatmapFetchTarget,
@@ -14,7 +14,7 @@ from osu_server.repositories.interfaces.beatmap_repository import (
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from osu_server.domain.beatmap import (
+    from osu_server.domain.beatmaps import (
         Beatmap,
         BeatmapFileAttachment,
         BeatmapSet,

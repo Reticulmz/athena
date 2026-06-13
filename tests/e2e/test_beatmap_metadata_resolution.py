@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapFreshnessPolicy,

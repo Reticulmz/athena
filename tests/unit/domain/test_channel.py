@@ -17,7 +17,7 @@ from enum import Enum
 
 import pytest
 
-from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
+from osu_server.domain.chat.channels import Channel, ChannelRoleOverride, ChannelType
 from osu_server.domain.events import Event
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 

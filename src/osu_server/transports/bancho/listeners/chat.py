@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
-from osu_server.domain.users.events import UserDisconnected
+from osu_server.domain.events.users import UserDisconnected
 from osu_server.transports.bancho.listeners.base import ListenerGroup, listens
 
 if TYPE_CHECKING:

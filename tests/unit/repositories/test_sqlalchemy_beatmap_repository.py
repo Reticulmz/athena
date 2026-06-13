@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, override
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFileAttachment,

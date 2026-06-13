@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from osu_server.domain.beatmap import BeatmapFetchRecord, BeatmapFetchTarget
+from osu_server.domain.beatmaps import BeatmapFetchRecord, BeatmapFetchTarget
 
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from osu_server.domain.beatmap import (
+    from osu_server.domain.beatmaps import (
         Beatmap,
         BeatmapFileAttachment,
         BeatmapSet,

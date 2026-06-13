@@ -13,7 +13,7 @@ from __future__ import annotations
 import struct
 from typing import TYPE_CHECKING
 
-from osu_server.domain.users.events import UserDisconnected
+from osu_server.domain.events.users import UserDisconnected
 from osu_server.transports.bancho.listeners.base import ListenerGroup, listens
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.writer import write_packet

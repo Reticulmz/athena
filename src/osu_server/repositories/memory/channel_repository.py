@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from osu_server.domain.channel import ChannelType
+from osu_server.domain.chat.channels import ChannelType
 
 if TYPE_CHECKING:
-    from osu_server.domain.channel import Channel, ChannelRoleOverride
+    from osu_server.domain.chat.channels import Channel, ChannelRoleOverride
 
 
 class InMemoryChannelRepository:

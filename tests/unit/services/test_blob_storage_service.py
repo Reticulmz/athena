@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, override
 import pytest
 from structlog.testing import capture_logs
 
-from osu_server.domain.blob import BlobDeduplicated, BlobStored
+from osu_server.domain.storage.blobs import BlobDeduplicated, BlobStored
 from osu_server.infrastructure.storage.errors import BackendWriteError, BlobContentMissingError
 from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
 from osu_server.services.blob_storage_service import (
@@ -19,7 +19,7 @@ from osu_server.services.blob_storage_service import (
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from osu_server.domain.blob import Blob
+    from osu_server.domain.storage.blobs import Blob
     from osu_server.infrastructure.storage.interfaces import ByteChunks, StagedBlobWrite
     from osu_server.repositories.interfaces.blob_repository import BlobRepository, NewBlob
 

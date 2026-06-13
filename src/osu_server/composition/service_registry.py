@@ -9,7 +9,7 @@ from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from taskiq import AsyncBroker
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapFileProvider,
     BeatmapFreshnessPolicy,
     BeatmapMetadataProvider,

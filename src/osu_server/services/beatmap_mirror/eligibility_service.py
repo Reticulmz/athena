@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Final
 
 import structlog
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapEligibility,
     BeatmapMetadataSource,
     BeatmapRankStatus,
@@ -15,7 +15,7 @@ from osu_server.domain.beatmap import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmap import Beatmap
+    from osu_server.domain.beatmaps import Beatmap
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 

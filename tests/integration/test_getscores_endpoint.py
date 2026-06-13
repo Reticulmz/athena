@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from starlette.testclient import TestClient
 
 from osu_server.app import create_app
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFileState,

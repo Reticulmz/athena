@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileSource,
     BeatmapFileState,
@@ -26,7 +26,7 @@ from osu_server.domain.beatmap import (
     BeatmapSourceVerification,
     OsuFileFetchResult,
 )
-from osu_server.domain.blob import Blob
+from osu_server.domain.storage.blobs import Blob
 from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
@@ -37,8 +37,8 @@ from osu_server.repositories.interfaces.beatmap_repository import (
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmap import Beatmap, BeatmapMetadataProvider
-    from osu_server.domain.blob import BlobStored
+    from osu_server.domain.beatmaps import Beatmap, BeatmapMetadataProvider
+    from osu_server.domain.storage.blobs import BlobStored
 
 _NOW = datetime(2026, 6, 5, tzinfo=UTC)
 _THIRTY_DAYS = timedelta(days=30)
@@ -308,7 +308,7 @@ class TestFetchBeatmapMetadataJob:
     async def test_official_refresh_preserves_local_status_override(self) -> None:
         """When a beatmap already has a local_status_override, re-fetching
         official metadata does not clear it."""
-        from osu_server.domain.beatmap import LocalBeatmapStatus  # noqa: PLC0415
+        from osu_server.domain.beatmaps import LocalBeatmapStatus  # noqa: PLC0415
 
         repo = InMemoryBeatmapRepository()
         # Save initial snapshot with local override set on the beatmap.
@@ -424,7 +424,7 @@ class TestFetchBeatmapMetadataJob:
 
 def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
     """Convert a domain snapshot to a domain BeatmapSet for test setup."""
-    from osu_server.domain.beatmap import Beatmap  # noqa: PLC0415
+    from osu_server.domain.beatmaps import Beatmap  # noqa: PLC0415
 
     beatmaps = [
         Beatmap(
@@ -504,7 +504,7 @@ class StubBlobStorageService:
     stored: list[Blob] = field(default_factory=list)
 
     async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
-        from osu_server.domain.blob import BlobStored  # noqa: PLC0415
+        from osu_server.domain.storage.blobs import BlobStored  # noqa: PLC0415
 
         blob = Blob(
             id=self.next_blob_id,
@@ -528,7 +528,7 @@ async def _setup_repo_with_beatmap(
     checksum_md5: str = _DEFAULT_CHECKSUM,
 ) -> Beatmap:
     """Save a minimal beatmap into the repository and return it."""
-    from osu_server.domain.beatmap import (  # noqa: PLC0415
+    from osu_server.domain.beatmaps import (  # noqa: PLC0415
         Beatmap,
         BeatmapFileState,
         BeatmapMetadataSource,

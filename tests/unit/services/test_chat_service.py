@@ -6,7 +6,6 @@ import pytest
 from pydantic import PostgresDsn, RedisDsn
 
 from osu_server.config import AppConfig
-from osu_server.domain.channel import Channel, ChannelType
 from osu_server.domain.chat import (
     ChannelChatDestination,
     ChatAuthorization,
@@ -15,6 +14,7 @@ from osu_server.domain.chat import (
     SendChannelMessageInput,
     SendPrivateMessageInput,
 )
+from osu_server.domain.chat.channels import Channel, ChannelType
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User

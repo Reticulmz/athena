@@ -14,7 +14,7 @@ import typing
 
 import pytest
 
-from osu_server.domain.users.events import UserDisconnected
+from osu_server.domain.events.users import UserDisconnected
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue  # noqa: TC001
 from osu_server.services.online_users import OnlineUsersService  # noqa: TC001
 from osu_server.transports.bancho.listeners.lifecycle import LifecycleListeners

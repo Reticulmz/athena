@@ -5,7 +5,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmap import Beatmap, BeatmapSet
+    from osu_server.domain.beatmaps import Beatmap, BeatmapSet
 
 
 class GetscoresParseError(Enum):

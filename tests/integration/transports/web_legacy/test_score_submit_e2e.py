@@ -11,7 +11,7 @@ import pytest
 from starlette.datastructures import Headers
 from tests.support.fakes import StubBlobStorageService, StubScorePayloadDecryptor
 
-from osu_server.domain.beatmap import (
+from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapEligibility,
     BeatmapFetchState,
@@ -32,7 +32,7 @@ from osu_server.services.score_submission_service import ScoreSubmissionService
 from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmap import BeatmapResolveOptions
+    from osu_server.domain.beatmaps import BeatmapResolveOptions
 
 
 def _resolved_beatmap() -> Beatmap:
