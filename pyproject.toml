@@ -148,6 +148,22 @@ source_modules = ["osu_server.services"]
 forbidden_modules = ["osu_server.transports"]
 
 [[tool.importlinter.contracts]]
+name = "Services stay adapter independent"
+type = "forbidden"
+source_modules = ["osu_server.services"]
+forbidden_modules = [
+    "osu_server.composition",
+    "osu_server.jobs",
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.repositories.memory",
+    "osu_server.infrastructure.database",
+    "sqlalchemy",
+    "taskiq",
+    "starlette",
+    "fastapi",
+]
+
+[[tool.importlinter.contracts]]
 name = "Server runtime doesn't depend on CLI"
 type = "forbidden"
 source_modules = ["osu_server"]
@@ -165,10 +181,44 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "Jobs stay persistence-adapter independent"
+type = "forbidden"
+source_modules = ["osu_server.jobs"]
+forbidden_modules = [
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.repositories.memory",
+    "osu_server.infrastructure.database",
+    "sqlalchemy",
+    "starlette",
+    "fastapi",
+]
+
+[[tool.importlinter.contracts]]
 name = "Transports don't depend on jobs"
 type = "forbidden"
 source_modules = ["osu_server.transports"]
 forbidden_modules = ["osu_server.jobs"]
+
+[[tool.importlinter.contracts]]
+name = "Transports stay persistence-adapter independent"
+type = "forbidden"
+source_modules = ["osu_server.transports"]
+forbidden_modules = [
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.repositories.memory",
+    "osu_server.infrastructure.database",
+    "sqlalchemy",
+]
+
+[[tool.importlinter.contracts]]
+name = "Transport family packages stay independent"
+type = "independence"
+modules = [
+    "osu_server.transports.bancho",
+    "osu_server.transports.web_legacy",
+    "osu_server.transports.api",
+    "osu_server.transports.signalr",
+]
 
 [[tool.importlinter.contracts]]
 name = "Domain has no I/O dependencies"
@@ -178,19 +228,45 @@ forbidden_modules = [
     # Internal modules
     "osu_server.repositories",
     "osu_server.infrastructure",
+    "osu_server.services",
     "osu_server.transports",
+    "osu_server.jobs",
     # External I/O libraries
+    "pydantic",
+    "starlette",
+    "fastapi",
+    "taskiq",
     "httpx",
     "aiohttp",
     "requests",
     "sqlalchemy",
     "redis",
     "valkey",
+    "glide",
     "psycopg",
     "asyncpg",
     "aiomysql",
     "motor",
     "boto3",
+]
+
+[[tool.importlinter.contracts]]
+name = "Repository interfaces stay pure"
+type = "forbidden"
+source_modules = ["osu_server.repositories.interfaces"]
+forbidden_modules = [
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.repositories.memory",
+    "osu_server.infrastructure",
+    "osu_server.services",
+    "osu_server.transports",
+    "osu_server.jobs",
+    "sqlalchemy",
+    "taskiq",
+    "starlette",
+    "fastapi",
+    "pydantic",
+    "httpx",
 ]
 
 [[tool.importlinter.contracts]]

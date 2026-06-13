@@ -7,7 +7,7 @@
   - Completion is observable when the dependency set can import the DI packages and the architecture guide describes every boundary owned by this spec.
   - _Requirements: 2.1, 2.2, 2.3, 2.6, 9.1, 9.4_
 
-- [ ] 1.2 Encode the Architecture Boundary Contract and deprecated path detection
+- [x] 1.2 Encode the Architecture Boundary Contract and deprecated path detection
   - Extend automated dependency checks for command/query services, command/query repositories, transport family isolation, job adapter restrictions, and domain I/O restrictions.
   - Add validation that detects imports from deprecated architecture locations before the refactor is accepted.
   - Completion is observable when dependency validation fails on forbidden imports and includes the new architecture boundaries.
