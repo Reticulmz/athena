@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, cast, final, override
 import structlog.contextvars
 import structlog.testing
 
-from osu_server.domain.auth import LoginRequest, LoginResponse, LoginResult
-from osu_server.domain.role import Privileges
-from osu_server.domain.session import SessionData
+from osu_server.domain.identity.authentication import LoginRequest, LoginResponse, LoginResult
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.sessions import SessionData
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository

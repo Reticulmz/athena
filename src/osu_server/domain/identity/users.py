@@ -1,3 +1,5 @@
+"""User model for the identity bounded context."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

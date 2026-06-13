@@ -15,7 +15,7 @@ from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.services.online_users import OnlineUsersService
 
 if TYPE_CHECKING:
-    from osu_server.domain.session import SessionData
+    from osu_server.domain.identity.sessions import SessionData
 
 # ── Fake SessionStore ───────────────────────────────────────────────
 

@@ -16,8 +16,8 @@ from osu_server.domain.chat import (
     SendPrivateMessageInput,
 )
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
-from osu_server.domain.session import SessionData
-from osu_server.domain.user import User
+from osu_server.domain.identity.sessions import SessionData
+from osu_server.domain.identity.users import User
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.memory.channel_state_store import (
     InMemoryChannelStateStore,

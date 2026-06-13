@@ -10,7 +10,7 @@ from tests.factories.domain import make_channel, make_channel_role_override, mak
 
 from osu_server.config import AppConfig
 from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
-from osu_server.domain.user import User
+from osu_server.domain.identity.users import User
 
 
 def test_make_channel_creates_with_defaults() -> None:

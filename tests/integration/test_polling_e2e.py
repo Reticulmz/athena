@@ -24,8 +24,9 @@ import pytest
 from starlette.testclient import TestClient
 
 from osu_server.composition.application import create_app
-from osu_server.domain.auth import LoginResult, RegistrationForm
-from osu_server.domain.role import Privileges, Role
+from osu_server.domain.identity.authentication import LoginResult, RegistrationForm
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.session_store import SessionStore

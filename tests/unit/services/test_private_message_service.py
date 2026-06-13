@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from osu_server.domain.session import SessionData
-from osu_server.domain.user import User
+from osu_server.domain.identity.sessions import SessionData
+from osu_server.domain.identity.users import User
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.private_message_service import PMDeliveryResult, PrivateMessageService

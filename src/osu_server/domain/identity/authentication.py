@@ -1,3 +1,5 @@
+"""Authentication and registration value objects for the identity context."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,9 +9,9 @@ from typing import TYPE_CHECKING
 from osu_server.shared.errors import AppError
 
 if TYPE_CHECKING:
-    from osu_server.domain.role import Privileges
-    from osu_server.domain.session import SessionData
-    from osu_server.domain.user import User
+    from osu_server.domain.identity.authorization import Privileges
+    from osu_server.domain.identity.sessions import SessionData
+    from osu_server.domain.identity.users import User
 
 
 class LoginResult(IntEnum):

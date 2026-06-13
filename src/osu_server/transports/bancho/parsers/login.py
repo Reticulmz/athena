@@ -10,7 +10,7 @@ The client_info line is pipe-delimited:
 
 from __future__ import annotations
 
-from osu_server.domain.auth import ClientInfo, LoginRequest
+from osu_server.domain.identity.authentication import ClientInfo, LoginRequest
 
 _EXPECTED_LINE_COUNT = 3
 _EXPECTED_FIELD_COUNT = 5

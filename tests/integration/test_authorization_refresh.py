@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from osu_server.domain.role import Privileges, Role
-from osu_server.domain.session import SessionData
-from osu_server.domain.session_authorization import AuthorizationRefreshStatus
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
+from osu_server.domain.identity.sessions import AuthorizationRefreshStatus, SessionData
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.services.permission_service import PermissionService

@@ -6,14 +6,14 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, final, override
 
 from osu_server.domain.blob import Blob, BlobStored
+from osu_server.domain.identity.sessions import SessionData
+from osu_server.domain.identity.users import User
 from osu_server.domain.score.decryption import DecryptedPayload
-from osu_server.domain.session import SessionData
-from osu_server.domain.user import User
 from osu_server.services.password_service import PasswordService
 from osu_server.services.score_authorization_service import ScoreAuthorizationService
 
 if TYPE_CHECKING:
-    from osu_server.domain.session_authorization import SessionAuthorization
+    from osu_server.domain.identity.sessions import SessionAuthorization
     from osu_server.domain.system_user import SystemUserIdentity
     from osu_server.infrastructure.security.hibp import HIBPClient
     from osu_server.repositories.memory.user_repository import InMemoryUserRepository

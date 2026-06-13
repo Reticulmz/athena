@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.session_authorization import (
+from osu_server.domain.identity.sessions import (
     AuthorizationRefreshStatus,
     RoleAuthorizationRefreshResult,
     UserAuthorizationRefreshResult,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from osu_server.domain.role import ClientPermissions, Privileges, Role
+from osu_server.domain.compatibility.stable.permissions import BanchoClientPermission
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
 
 
 class TestPrivileges:
@@ -37,13 +39,13 @@ class TestPrivileges:
             assert member in all_flags
 
 
-class TestClientPermissions:
+class TestBanchoClientPermission:
     def test_each_flag_is_single_bit(self) -> None:
-        for member in ClientPermissions:
+        for member in BanchoClientPermission:
             assert member.bit_count() == 1
 
     def test_flags_are_distinct(self) -> None:
-        values = [m.value for m in ClientPermissions]
+        values = [m.value for m in BanchoClientPermission]
         assert len(values) == len(set(values))
 
 

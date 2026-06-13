@@ -17,7 +17,8 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from osu_server.domain.role import Privileges, Role
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository

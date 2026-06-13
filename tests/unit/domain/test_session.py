@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from osu_server.domain.session import SessionData
+from osu_server.domain.identity.sessions import SessionData
 
 SAMPLE_PRIVILEGES = 131  # NORMAL | VERIFIED | UNRESTRICTED
 

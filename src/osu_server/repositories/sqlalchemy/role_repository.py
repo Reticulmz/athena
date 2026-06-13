@@ -5,7 +5,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: TC002
 
-from osu_server.domain.role import Privileges, Role
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
 from osu_server.repositories.sqlalchemy.models.role import RoleModel, UserRoleModel
 
 

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from osu_server.domain.role import Role
+    from osu_server.domain.identity.roles import Role
 
 
 class InMemoryRoleRepository:

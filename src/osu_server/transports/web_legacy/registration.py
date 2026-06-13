@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from starlette.responses import Response
 
-from osu_server.domain.auth import RegistrationForm
+from osu_server.domain.identity.authentication import RegistrationForm
 
 if TYPE_CHECKING:
     from starlette.requests import Request

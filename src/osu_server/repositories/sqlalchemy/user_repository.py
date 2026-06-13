@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: TC002
 
-from osu_server.domain.user import User
+from osu_server.domain.identity.users import User
 from osu_server.repositories.sqlalchemy.models.user import (
     DisallowedUsernameModel,
     UserModel,

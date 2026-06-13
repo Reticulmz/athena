@@ -6,9 +6,8 @@ from dataclasses import replace
 
 import pytest
 
-from osu_server.domain.role import Privileges
-from osu_server.domain.session import SessionData
-from osu_server.domain.session_authorization import SessionAuthorization
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.sessions import SessionAuthorization, SessionData
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 

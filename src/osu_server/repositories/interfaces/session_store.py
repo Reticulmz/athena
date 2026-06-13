@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from osu_server.domain.session import (
-    SessionData,  # noqa: TC001  # runtime_checkable needs runtime access
-)
-from osu_server.domain.session_authorization import (
+from osu_server.domain.identity.sessions import (
     SessionAuthorization,  # noqa: TC001  # runtime_checkable needs runtime access
+    SessionData,  # noqa: TC001  # runtime_checkable needs runtime access
 )
 
 

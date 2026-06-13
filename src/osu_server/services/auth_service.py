@@ -9,17 +9,17 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.auth import (
+from osu_server.domain.identity.authentication import (
     LoginResponse,
     LoginResult,
     RegistrationForm,
     RegistrationResult,
 )
-from osu_server.domain.session import SessionData
-from osu_server.domain.user import User
+from osu_server.domain.identity.sessions import SessionData
+from osu_server.domain.identity.users import User
 
 if TYPE_CHECKING:
-    from osu_server.domain.auth import LoginRequest
+    from osu_server.domain.identity.authentication import LoginRequest
     from osu_server.repositories.interfaces.role_repository import RoleRepository
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.repositories.interfaces.user_repository import UserRepository

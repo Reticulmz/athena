@@ -27,7 +27,8 @@ from typing import TYPE_CHECKING, cast
 from starlette.testclient import TestClient
 
 from osu_server.app import create_app
-from osu_server.domain.role import Privileges, Role
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.protocol.enums import ClientPacketID, ServerPacketID

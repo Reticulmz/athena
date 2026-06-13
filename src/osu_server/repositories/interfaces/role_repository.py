@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from osu_server.domain.role import Role
+    from osu_server.domain.identity.roles import Role
 
 
 @runtime_checkable

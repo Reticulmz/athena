@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.auth import LegacyWebAuthFailure, LegacyWebAuthResult
-from osu_server.domain.user import User
+from osu_server.domain.identity.authentication import LegacyWebAuthFailure, LegacyWebAuthResult
+from osu_server.domain.identity.users import User
 
 if TYPE_CHECKING:
     from osu_server.repositories.interfaces.session_store import SessionStore

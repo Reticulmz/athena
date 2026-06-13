@@ -20,7 +20,7 @@ from osu_server.domain.bancho_bot import (
     CommandDestination,
     CommandMetadata,
 )
-from osu_server.domain.role import Privileges
+from osu_server.domain.identity.authorization import Privileges
 
 
 class TestCommandDestination:

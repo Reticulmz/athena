@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from osu_server.domain.user import User
+from osu_server.domain.identity.users import User
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 

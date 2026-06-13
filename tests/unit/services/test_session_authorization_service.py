@@ -6,8 +6,8 @@ from typing import override
 
 import pytest
 
-from osu_server.domain.role import Privileges
-from osu_server.domain.session_authorization import (
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.sessions import (
     AuthorizationRefreshStatus,
     RoleAuthorizationRefreshResult,
     SessionAuthorization,

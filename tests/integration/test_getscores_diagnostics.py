@@ -29,8 +29,8 @@ from osu_server.domain.beatmap import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
-from osu_server.domain.session import SessionData
-from osu_server.domain.user import User
+from osu_server.domain.identity.sessions import SessionData
+from osu_server.domain.identity.users import User
 from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository

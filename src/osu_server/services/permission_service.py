@@ -1,4 +1,4 @@
-"""PermissionService — RBAC 権限計算とクライアントフラグ変換。"""
+"""PermissionService -- server-side RBAC authorization calculation."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.role import ClientPermissions, Privileges
-from osu_server.domain.session_authorization import SessionAuthorization
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.sessions import SessionAuthorization
 
 if TYPE_CHECKING:
     from osu_server.repositories.interfaces.role_repository import RoleRepository
@@ -16,7 +16,7 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class PermissionService:
-    """ユーザーの全ロールから内部権限を計算し、osu! クライアント用フラグに変換する。"""
+    """ユーザーの全ロールから内部権限を計算する。"""
 
     _role_repo: RoleRepository
 
@@ -55,30 +55,3 @@ class PermissionService:
             privileges=privileges,
             role_ids=tuple(role_ids),
         )
-
-    @staticmethod
-    def to_client_flags(privileges: Privileges) -> ClientPermissions:
-        """内部 Privileges → osu! クライアント用 ClientPermissions に変換。
-
-        マッピング:
-            - MODERATOR → ClientPermissions.MODERATOR (2)
-            - SUPPORTER → ClientPermissions.SUPPORTER (4)
-            - ADMIN     → ClientPermissions.PEPPY     (8)
-            - DEVELOPER → ClientPermissions.DEVELOPER (16)
-
-        ClientPermissions.NORMAL (1) は常に含まれる。
-        """
-        flags = ClientPermissions.NORMAL
-
-        mapping: tuple[tuple[Privileges, ClientPermissions], ...] = (
-            (Privileges.MODERATOR, ClientPermissions.MODERATOR),
-            (Privileges.SUPPORTER, ClientPermissions.SUPPORTER),
-            (Privileges.ADMIN, ClientPermissions.PEPPY),
-            (Privileges.DEVELOPER, ClientPermissions.DEVELOPER),
-        )
-
-        for priv, client_flag in mapping:
-            if priv in privileges:
-                flags |= client_flag
-
-        return flags

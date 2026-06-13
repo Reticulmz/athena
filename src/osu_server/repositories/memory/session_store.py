@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from osu_server.domain.session import SessionData  # noqa: TC001
-from osu_server.domain.session_authorization import (
+from osu_server.domain.identity.sessions import (
     SessionAuthorization,  # noqa: TC001
+    SessionData,  # noqa: TC001
 )
 
 

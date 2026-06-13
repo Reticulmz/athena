@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, ClassVar
 
 from glide import Script
 
-from osu_server.domain.session import SessionData
-from osu_server.domain.session_authorization import (
-    SessionAuthorization,  # noqa: TC001  # runtime use via invoke_script args
+from osu_server.domain.identity.sessions import (
+    SessionAuthorization,  # runtime use via invoke_script args
+    SessionData,
 )
 
 if TYPE_CHECKING:

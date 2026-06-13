@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from osu_server.domain.compatibility.stable.permissions import to_bancho_client_permissions
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY, SystemUserIdentity
 from osu_server.infrastructure.country.codes import country_code_to_id
-from osu_server.services.permission_service import PermissionService
 from osu_server.transports.bancho.protocol import PROTOCOL_VERSION
 from osu_server.transports.bancho.protocol.s2c.login import (
     channel_available,
@@ -23,7 +23,7 @@ from osu_server.transports.bancho.protocol.s2c.login import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.domain.auth import LoginResponse
+    from osu_server.domain.identity.authentication import LoginResponse
     from osu_server.services.channel_service import ChannelService
 
 
@@ -46,7 +46,7 @@ class LoginResponseBuilder:
         """Assemble the S2C packet stream for a successful login."""
         user = login_response.user
         session = login_response.session_data
-        client_flags = PermissionService.to_client_flags(login_response.privileges)
+        client_flags = to_bancho_client_permissions(login_response.privileges)
         country_id = country_code_to_id(login_response.country)
         role_ids = list(login_response.role_ids)
 

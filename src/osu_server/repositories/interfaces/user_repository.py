@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from osu_server.domain.identity.users import User
     from osu_server.domain.system_user import SystemUserIdentity
-    from osu_server.domain.user import User
 
 
 @runtime_checkable

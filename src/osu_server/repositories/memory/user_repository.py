@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from osu_server.domain.user import User
+from osu_server.domain.identity.users import User
 
 if TYPE_CHECKING:
     from osu_server.domain.system_user import SystemUserIdentity

@@ -6,12 +6,12 @@ import struct
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast, final
 
-from osu_server.domain.auth import LoginResponse
 from osu_server.domain.channel import Channel, ChannelType
-from osu_server.domain.role import Privileges
-from osu_server.domain.session import SessionData
+from osu_server.domain.identity.authentication import LoginResponse
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.sessions import SessionData
+from osu_server.domain.identity.users import User
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
-from osu_server.domain.user import User
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.s2c.login import (
     user_presence,

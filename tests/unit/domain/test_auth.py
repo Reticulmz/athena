@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 
-from osu_server.domain.auth import (
+from osu_server.domain.identity.authentication import (
     AuthenticationError,
     ClientInfo,
     LoginRequest,

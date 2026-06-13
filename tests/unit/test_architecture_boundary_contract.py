@@ -184,7 +184,10 @@ DEPRECATED_EXACT_ROOTS = (
 
 DEPRECATED_PACKAGE_REPLACEMENTS = {
     ("osu_server", "services"): (3, {"commands", "queries"}),
-    ("osu_server", "domain"): (3, {"events"}),
+    (
+        "osu_server",
+        "domain",
+    ): (3, {"beatmaps", "chat", "compatibility", "events", "identity", "scores", "storage"}),
     ("osu_server", "repositories", "interfaces"): (4, {"commands", "queries"}),
     ("osu_server", "repositories", "sqlalchemy"): (4, {"commands", "queries", "models"}),
     ("osu_server", "repositories", "memory"): (4, {"commands", "queries"}),

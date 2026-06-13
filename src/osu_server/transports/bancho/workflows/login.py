@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import structlog
 import structlog.contextvars
 
-from osu_server.domain.auth import LoginResult
+from osu_server.domain.identity.authentication import LoginResult
 from osu_server.transports.bancho.parsers.login import parse_login_request
 from osu_server.transports.bancho.protocol.s2c.login import login_reply
 

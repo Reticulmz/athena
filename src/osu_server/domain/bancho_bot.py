@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from osu_server.domain.role import Privileges
+from osu_server.domain.identity.authorization import Privileges
 
 
 class CommandDestination(StrEnum):

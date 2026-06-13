@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.role import Privileges, has_privilege
+from osu_server.domain.identity.authorization import Privileges, has_privilege
 
 if TYPE_CHECKING:
     from osu_server.domain.channel import Channel, ChannelRoleOverride

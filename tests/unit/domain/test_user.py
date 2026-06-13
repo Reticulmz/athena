@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 
-from osu_server.domain.user import User
+from osu_server.domain.identity.users import User
 
 
 class TestNormalizeUsername:

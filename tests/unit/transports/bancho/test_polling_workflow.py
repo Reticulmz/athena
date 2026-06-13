@@ -7,8 +7,8 @@ from typing import cast, final, override
 
 import structlog.testing
 
-from osu_server.domain.auth import LoginResult
-from osu_server.domain.session import SessionData
+from osu_server.domain.identity.authentication import LoginResult
+from osu_server.domain.identity.sessions import SessionData
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.transports.bancho.dispatch import PacketDispatcher

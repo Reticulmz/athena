@@ -26,7 +26,7 @@
   - _Requirements: 3.4, 7.7, 10.3, 10.6_
 
 - [ ] 2. Domain bounded contexts and compatibility language
-- [ ] 2.1 (P) Move identity and authorization language into the identity domain
+- [x] 2.1 (P) Move identity and authorization language into the identity domain
   - Move Role, Privilege, authorization policy, users, and session authorization snapshot concepts into the identity context.
   - Update authorization-sensitive behavior to use server-side privileges as the source of truth.
   - Completion is observable when internal authorization code no longer depends on client-visible permission flags.

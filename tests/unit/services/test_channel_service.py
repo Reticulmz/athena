@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 import pytest
 
 from osu_server.domain.channel import Channel, ChannelRoleOverride, ChannelType
-from osu_server.domain.role import Privileges
+from osu_server.domain.identity.authorization import Privileges
 from osu_server.infrastructure.state.memory.channel_state_store import (
     InMemoryChannelStateStore,
 )

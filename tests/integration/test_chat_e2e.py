@@ -20,8 +20,9 @@ from caterpillar.model import pack
 from starlette.testclient import TestClient
 
 from osu_server.composition.application import create_app
-from osu_server.domain.auth import RegistrationForm
-from osu_server.domain.role import Privileges, Role
+from osu_server.domain.identity.authentication import RegistrationForm
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository

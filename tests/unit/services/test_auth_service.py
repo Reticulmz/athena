@@ -11,7 +11,7 @@ import hashlib
 
 from structlog.testing import capture_logs
 
-from osu_server.domain.auth import (
+from osu_server.domain.identity.authentication import (
     ClientInfo,
     LoginRequest,
     LoginResponse,
@@ -19,8 +19,9 @@ from osu_server.domain.auth import (
     RegistrationForm,
     RegistrationResult,
 )
-from osu_server.domain.role import Privileges, Role
-from osu_server.domain.session import SessionData
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
+from osu_server.domain.identity.sessions import SessionData
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
