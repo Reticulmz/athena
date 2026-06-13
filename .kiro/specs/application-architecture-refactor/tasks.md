@@ -19,7 +19,7 @@
   - Completion is observable when tests can construct app and worker dependency graphs with fake providers through test-only wiring.
   - _Requirements: 2.4, 5.5, 9.5, 10.5_
 
-- [ ] 1.4 Establish the new package skeletons without compatibility facades
+- [x] 1.4 Establish the new package skeletons without compatibility facades
   - Create the target command/query, bounded-domain, repository, transport-family, composition-provider, and mapper package shapes.
   - Do not add re-export modules for old service, repository, domain, or transport paths.
   - Completion is observable when new package roots import cleanly and no new compatibility facade is introduced.
