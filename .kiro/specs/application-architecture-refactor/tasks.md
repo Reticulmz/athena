@@ -13,7 +13,7 @@
   - Completion is observable when dependency validation fails on forbidden imports and includes the new architecture boundaries.
   - _Requirements: 1.3, 4.6, 7.6, 7.7, 8.5, 9.2, 9.3, 10.1, 10.2, 10.3, 10.4, 10.6_
 
-- [ ] 1.3 Prepare Composition Providers test fixtures for provider replacement
+- [x] 1.3 Prepare Composition Providers test fixtures for provider replacement
   - Add test support that can replace runtime providers without production-only environment branches.
   - Prefer typed in-memory implementations or typed stubs for command/query persistence and runtime state.
   - Completion is observable when tests can construct app and worker dependency graphs with fake providers through test-only wiring.
