@@ -1,5 +1,23 @@
 # Athena Domain Glossary
 
+## Identity and Authorization Context
+
+### Role
+A named authorization bundle assigned to a user. A role grants server-side privileges and is not itself exposed as a stable client permission.
+_Avoid_: Permission group, client role
+
+### Privilege
+A server-side authorization capability used by Athena to permit protected operations. Privileges are the source of truth for internal authorization decisions.
+_Avoid_: Permission, client permission
+
+### Bancho Client Permission
+A stable client-visible compatibility flag derived from a user's privileges for Bancho login and presence packets. It is never the source of truth for server authorization.
+_Avoid_: Privilege, internal permission, ClientPermissions
+
+### Session Authorization Snapshot
+A point-in-time authorization view for an active session, containing the user's current privileges and role membership. It is refreshed from role state and then used by authorization-sensitive actions.
+_Avoid_: Session permissions, cached roles
+
 ## Score Submission Context
 
 ### Score Submission
