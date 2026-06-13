@@ -34,6 +34,17 @@ PROJECT_ROOT = Path(__file__).parents[3]
 SOURCE_ROOT = PROJECT_ROOT / "src" / "osu_server"
 COMMAND_INTERFACE_ROOT = SOURCE_ROOT / "repositories" / "interfaces" / "commands"
 QUERY_INTERFACE_ROOT = SOURCE_ROOT / "repositories" / "interfaces" / "queries"
+SERVICE_FACING_SOURCE_ROOTS = (
+    SOURCE_ROOT / "services",
+    SOURCE_ROOT / "transports",
+    SOURCE_ROOT / "jobs",
+)
+SERVICE_FACING_TEST_ROOTS = (
+    PROJECT_ROOT / "tests" / "unit" / "services",
+    PROJECT_ROOT / "tests" / "unit" / "transports",
+    PROJECT_ROOT / "tests" / "unit" / "jobs",
+    PROJECT_ROOT / "tests" / "unit" / "test_worker.py",
+)
 
 COMMAND_REPOSITORY_ATTRIBUTES = {
     "users": UserCommandRepository,
@@ -73,6 +84,20 @@ FORBIDDEN_INTERFACE_IMPORT_ROOTS = (
     "fastapi",
     "pydantic",
     "httpx",
+)
+FORBIDDEN_SERVICE_FACING_PERSISTENCE_ROOTS = (
+    "osu_server.repositories.sqlalchemy.models",
+    "osu_server.repositories.sqlalchemy.beatmap_repository",
+    "osu_server.repositories.sqlalchemy.blob_repository",
+    "osu_server.repositories.sqlalchemy.channel_repository",
+    "osu_server.repositories.sqlalchemy.chat_repository",
+    "osu_server.repositories.sqlalchemy.replay_repository",
+    "osu_server.repositories.sqlalchemy.role_repository",
+    "osu_server.repositories.sqlalchemy.score_repository",
+    "osu_server.repositories.sqlalchemy.submission_repository",
+    "osu_server.repositories.sqlalchemy.user_repository",
+    "osu_server.infrastructure.database",
+    "sqlalchemy",
 )
 
 MUTATION_METHOD_PREFIXES = (
@@ -183,6 +208,32 @@ def test_query_repository_interfaces_do_not_depend_on_command_boundaries() -> No
     assert violations == []
 
 
+def test_service_facing_sources_do_not_import_low_level_persistence() -> None:
+    violations = [
+        _format_import_violation(path, forbidden_root, module)
+        for root in SERVICE_FACING_SOURCE_ROOTS
+        for path in _python_files(root)
+        for module in _absolute_imports(path)
+        for forbidden_root in FORBIDDEN_SERVICE_FACING_PERSISTENCE_ROOTS
+        if _module_matches_root(module, forbidden_root)
+    ]
+
+    assert violations == []
+
+
+def test_service_facing_tests_do_not_assert_against_persistence_models() -> None:
+    violations = [
+        _format_import_violation(path, forbidden_root, module)
+        for root in SERVICE_FACING_TEST_ROOTS
+        for path in _python_files(root)
+        for module in _absolute_imports(path)
+        for forbidden_root in ("osu_server.repositories.sqlalchemy.models",)
+        if _module_matches_root(module, forbidden_root)
+    ]
+
+    assert violations == []
+
+
 def _public_async_methods(repository: type[object]) -> set[str]:
     return {
         name
@@ -204,6 +255,22 @@ def _absolute_imports(path: Path) -> set[str]:
 
     modules.discard("__future__")
     return modules
+
+
+def _python_files(path: Path) -> tuple[Path, ...]:
+    if path.is_file():
+        return (path,) if path.suffix == ".py" else ()
+    if not path.exists():
+        return ()
+    return tuple(
+        sorted(
+            candidate for candidate in path.rglob("*.py") if "__pycache__" not in candidate.parts
+        )
+    )
+
+
+def _format_import_violation(path: Path, forbidden_root: str, module: str) -> str:
+    return f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {forbidden_root} via {module}"
 
 
 def _module_matches_root(module: str, root: str) -> bool:

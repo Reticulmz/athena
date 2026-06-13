@@ -94,7 +94,7 @@
   - _Boundary: Query Repositories_
   - _Depends: 3.1_
 
-- [ ] 3.5 Migrate persistence tests and call sites to the new repository boundaries
+- [x] 3.5 Migrate persistence tests and call sites to the new repository boundaries
   - Update existing persistence tests to cover command transaction outcomes and query read-only behavior separately.
   - Update service-facing call sites so transports, jobs, and use-cases do not access low-level persistence resources or persistence models.
   - Completion is observable when persistence tests pass and import validation rejects low-level persistence access outside repository implementations.

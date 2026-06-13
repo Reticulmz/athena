@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast, override
 from unittest.mock import AsyncMock, patch
 
@@ -14,7 +15,6 @@ from taskiq import Context, InMemoryBroker, TaskiqMessage, TaskiqState
 
 from osu_server.config import AppConfig
 from osu_server.jobs.chat_persistence import persist_private_message
-from osu_server.repositories.sqlalchemy.models.channel import PrivateMessageModel
 from osu_server.worker import shutdown, startup
 
 if TYPE_CHECKING:
@@ -49,14 +49,23 @@ class FakeValkeyClient:
         self.close_calls += 1
 
 
+@dataclass(frozen=True, slots=True)
+class RecordedPrivateMessage:
+    sender_id: int
+    target_user_id: int
+    content: str
+
+
 class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     """Session fake for worker runtime persistence tests."""
 
     added: list[object]
+    private_messages: list[RecordedPrivateMessage]
     commits: int
 
     def __init__(self) -> None:
         self.added = []
+        self.private_messages = []
         self.commits = 0
 
     @override
@@ -77,6 +86,14 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     def add(self, instance: object) -> None:
         """Record the object added by the repository."""
         self.added.append(instance)
+        if instance.__class__.__name__ == "PrivateMessageModel":
+            self.private_messages.append(
+                RecordedPrivateMessage(
+                    sender_id=_int_attr(instance, "sender_id"),
+                    target_user_id=_int_attr(instance, "target_user_id"),
+                    content=_str_attr(instance, "content"),
+                )
+            )
 
     async def commit(self) -> None:
         """Record commit calls."""
@@ -105,6 +122,22 @@ def _make_config(tmp_path: Path) -> AppConfig:
             "log_dir": str(tmp_path),
         }
     )
+
+
+def _int_attr(instance: object, name: str) -> int:
+    value = cast("object", getattr(instance, name))
+    if not isinstance(value, int):
+        msg = f"expected {name} to be int"
+        raise TypeError(msg)
+    return value
+
+
+def _str_attr(instance: object, name: str) -> str:
+    value = cast("object", getattr(instance, name))
+    if not isinstance(value, str):
+        msg = f"expected {name} to be str"
+        raise TypeError(msg)
+    return value
 
 
 def _make_task_context(chat_service: object) -> Context:
@@ -279,12 +312,13 @@ async def test_worker_runtime_chat_service_executes_persistence_task(tmp_path: P
     )
 
     assert session.commits == 1
-    assert len(session.added) == 1
-    message = session.added[0]
-    assert isinstance(message, PrivateMessageModel)
-    assert message.sender_id == 1
-    assert message.target_user_id == 2
-    assert message.content == "secret"
+    assert session.private_messages == [
+        RecordedPrivateMessage(
+            sender_id=1,
+            target_user_id=2,
+            content="secret",
+        )
+    ]
 
 
 @pytest.mark.asyncio
