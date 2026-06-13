@@ -70,7 +70,7 @@
   - Completion is observable when command and query persistence contracts are distinguishable and services can depend on interfaces only.
   - _Requirements: 3.1, 3.2, 4.5, 5.1, 5.4_
 
-- [ ] 3.2 (P) Implement typed in-memory command repositories and in-memory Unit of Work
+- [x] 3.2 (P) Implement typed in-memory command repositories and in-memory Unit of Work
   - Provide in-memory command repository behavior that participates in commit and rollback semantics.
   - Keep test doubles typed and independent of production environment branches.
   - Completion is observable when command tests can prove rollback leaves no partially committed in-memory outcome.
