@@ -86,7 +86,7 @@
   - _Boundary: Unit of Work - SQLAlchemy, Command Repositories - SQLAlchemy_
   - _Depends: 3.1_
 
-- [ ] 3.4 (P) Implement read-only query repository adapters for existing reads
+- [x] 3.4 (P) Implement read-only query repository adapters for existing reads
   - Provide query-side adapters for existing read workflows such as legacy getscores, beatmap resolution reads, session/online reads, and display-oriented chat reads.
   - Ensure query repositories do not require a command transaction and do not mutate durable state.
   - Completion is observable when read-only workflows can execute through query repositories without opening a command Unit of Work.
