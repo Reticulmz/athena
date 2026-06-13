@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from structlog.testing import capture_logs
 
-from osu_server.domain.compatibility.stable.permissions import (
-    BanchoClientPermission,
-    to_bancho_client_permissions,
-)
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import SessionAuthorization
@@ -104,96 +100,6 @@ class TestComputePermissionsNoRoles:
         result = await svc.compute_permissions(user_id=999)
 
         assert result == Privileges.NONE
-
-
-# ── stable compatibility mapping ─────────────────────────────────────
-
-
-class TestToBanchoClientPermissionsIndividual:
-    """個別の Privileges フラグが stable client permission にマッピングされる。"""
-
-    def test_none_returns_normal(self) -> None:
-        result = to_bancho_client_permissions(Privileges.NONE)
-        assert result == BanchoClientPermission.NORMAL
-
-    def test_normal_returns_normal(self) -> None:
-        result = to_bancho_client_permissions(Privileges.NORMAL)
-        assert result == BanchoClientPermission.NORMAL
-
-    def test_moderator(self) -> None:
-        result = to_bancho_client_permissions(Privileges.MODERATOR)
-        assert result == (BanchoClientPermission.NORMAL | BanchoClientPermission.MODERATOR)
-
-    def test_supporter(self) -> None:
-        result = to_bancho_client_permissions(Privileges.SUPPORTER)
-        assert result == (BanchoClientPermission.NORMAL | BanchoClientPermission.SUPPORTER)
-
-    def test_admin(self) -> None:
-        result = to_bancho_client_permissions(Privileges.ADMIN)
-        assert result == (BanchoClientPermission.NORMAL | BanchoClientPermission.PEPPY)
-
-    def test_developer(self) -> None:
-        result = to_bancho_client_permissions(Privileges.DEVELOPER)
-        assert result == (BanchoClientPermission.NORMAL | BanchoClientPermission.DEVELOPER)
-
-
-class TestToBanchoClientPermissionsCombinations:
-    """複数の Privileges フラグが OR 結合で正しく変換される。"""
-
-    def test_moderator_and_supporter(self) -> None:
-        privs = Privileges.MODERATOR | Privileges.SUPPORTER
-        result = to_bancho_client_permissions(privs)
-        expected = (
-            BanchoClientPermission.NORMAL
-            | BanchoClientPermission.MODERATOR
-            | BanchoClientPermission.SUPPORTER
-        )
-        assert result == expected
-
-    def test_all_mapped_flags(self) -> None:
-        privs = (
-            Privileges.MODERATOR | Privileges.SUPPORTER | Privileges.ADMIN | Privileges.DEVELOPER
-        )
-        result = to_bancho_client_permissions(privs)
-        expected = (
-            BanchoClientPermission.NORMAL
-            | BanchoClientPermission.MODERATOR
-            | BanchoClientPermission.SUPPORTER
-            | BanchoClientPermission.PEPPY
-            | BanchoClientPermission.DEVELOPER
-        )
-        assert result == expected
-
-    def test_admin_and_developer(self) -> None:
-        privs = Privileges.ADMIN | Privileges.DEVELOPER
-        result = to_bancho_client_permissions(privs)
-        expected = (
-            BanchoClientPermission.NORMAL
-            | BanchoClientPermission.PEPPY
-            | BanchoClientPermission.DEVELOPER
-        )
-        assert result == expected
-
-    def test_unmapped_flags_ignored(self) -> None:
-        """VERIFIED, TOURNAMENT, UNRESTRICTED はクライアントフラグに影響しない。"""
-        privs = Privileges.VERIFIED | Privileges.TOURNAMENT | Privileges.UNRESTRICTED
-        result = to_bancho_client_permissions(privs)
-        assert result == BanchoClientPermission.NORMAL
-
-    def test_full_privileges_set(self) -> None:
-        """全 Privileges フラグを立てた場合のクライアント変換。"""
-        all_privs = Privileges.NONE
-        for p in Privileges:
-            all_privs |= p
-        result = to_bancho_client_permissions(all_privs)
-        expected = (
-            BanchoClientPermission.NORMAL
-            | BanchoClientPermission.MODERATOR
-            | BanchoClientPermission.SUPPORTER
-            | BanchoClientPermission.PEPPY
-            | BanchoClientPermission.DEVELOPER
-        )
-        assert result == expected
 
 
 # ── permissions_computed ログイベント ────────────────────────────────

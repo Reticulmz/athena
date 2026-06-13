@@ -34,7 +34,7 @@
   - _Boundary: Domain Context Packages - Identity_
   - _Depends: 1.4_
 
-- [ ] 2.2 Isolate stable client authorization in the Stable Compatibility Context
+- [x] 2.2 Isolate stable client authorization in the Stable Compatibility Context
   - Represent Bancho Client Permission as stable compatibility output derived from privileges.
   - Move stable permission conversion out of core authorization services.
   - Completion is observable when stable login/presence permission output is produced by compatibility mapping and is not accepted as internal authorization input.

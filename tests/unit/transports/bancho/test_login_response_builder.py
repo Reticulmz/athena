@@ -12,13 +12,22 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
+from osu_server.infrastructure.country.codes import country_code_to_id
+from osu_server.transports.bancho.protocol import PROTOCOL_VERSION
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.s2c.login import (
+    login_permissions,
+    login_reply,
+    protocol_version,
     user_presence,
     user_presence_bundle,
+    user_stats,
 )
 from osu_server.transports.bancho.workflows.login_response_builder import (
     LoginResponseBuilder,
+)
+from osu_server.transports.stable.bancho.mappers.permissions import (
+    map_stable_bancho_authorization,
 )
 
 if TYPE_CHECKING:
@@ -247,6 +256,53 @@ class TestLoginResponseBuilder:
         assert expected in result
 
     # -- existing packet order tests ---------------------------------------
+
+    async def test_login_and_presence_permissions_use_stable_bancho_mapper(
+        self,
+    ) -> None:
+        """LoginPermissions and self UserPresence use stable compatibility output."""
+        login_response = _login_response(
+            privileges=Privileges.ADMIN | Privileges.DEVELOPER | Privileges.UNRESTRICTED
+        )
+        authorization_output = map_stable_bancho_authorization(login_response.privileges)
+        builder = _make_builder()
+
+        result = await builder.build(login_response)
+
+        expected_self_prefix = b"".join(
+            [
+                login_reply(login_response.user.id),
+                protocol_version(PROTOCOL_VERSION),
+                login_permissions(int(authorization_output.login_permissions)),
+                user_presence(
+                    user_id=login_response.user.id,
+                    username=login_response.user.username,
+                    timezone=login_response.session_data.utc_offset + 24,
+                    country_id=country_code_to_id(login_response.country),
+                    permissions=int(authorization_output.presence_permissions),
+                    mode=0,
+                    longitude=0.0,
+                    latitude=0.0,
+                    rank=0,
+                ),
+                user_stats(
+                    user_id=login_response.user.id,
+                    status=0,
+                    status_text="",
+                    beatmap_md5="",
+                    mods=0,
+                    play_mode=0,
+                    beatmap_id=0,
+                    ranked_score=0,
+                    accuracy=0.0,
+                    play_count=0,
+                    total_score=0,
+                    rank=0,
+                    pp=0,
+                ),
+            ]
+        )
+        assert result.startswith(expected_self_prefix)
 
     async def test_packet_order_without_channels(self) -> None:
         """Initial and completion packets in exact order when no channels exist."""
