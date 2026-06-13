@@ -78,7 +78,7 @@
   - _Boundary: Unit of Work - Memory, Command Repositories - Memory_
   - _Depends: 3.1_
 
-- [ ] 3.3 (P) Implement SQLAlchemy command repositories through Unit of Work ownership
+- [x] 3.3 (P) Implement SQLAlchemy command repositories through Unit of Work ownership
   - Move command-side SQLAlchemy writes to repositories owned by an active Unit of Work.
   - Remove command-side per-method commit and rollback from repository implementations.
   - Completion is observable when a multi-repository command can commit once or roll back once through the Unit of Work.
