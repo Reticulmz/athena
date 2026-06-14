@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -17,10 +19,16 @@ class InMemoryRoleRepository:
     Not thread-safe — intended for single-threaded test environments only.
     """
 
-    def __init__(self, seed_roles: Sequence[Role] | None = None) -> None:
-        self._roles_by_id: dict[int, Role] = {}
-        self._roles_by_name: dict[str, int] = {}
-        self._user_roles: dict[int, set[int]] = {}
+    def __init__(
+        self,
+        seed_roles: Sequence[Role] | None = None,
+        *,
+        state: InMemoryCommandRepositoryState | None = None,
+    ) -> None:
+        self._state: InMemoryCommandRepositoryState = state or InMemoryCommandRepositoryState()
+        self._roles_by_id: dict[int, Role] = self._state.roles_by_id
+        self._roles_by_name: dict[str, int] = self._state.role_id_by_name
+        self._user_roles: dict[int, set[int]] = self._state.role_ids_by_user_id
 
         if seed_roles is not None:
             for role in seed_roles:

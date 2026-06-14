@@ -31,6 +31,7 @@ src/osu_server/composition/service_registry.py	osu_server.repositories.memory.ro
 src/osu_server/composition/service_registry.py	osu_server.repositories.memory.score_repository
 src/osu_server/composition/service_registry.py	osu_server.repositories.memory.session_store
 src/osu_server/composition/service_registry.py	osu_server.repositories.memory.submission_repository
+src/osu_server/composition/service_registry.py	osu_server.repositories.memory.unit_of_work
 src/osu_server/composition/service_registry.py	osu_server.repositories.memory.user_repository
 src/osu_server/composition/service_registry.py	osu_server.repositories.sqlalchemy.beatmap_repository
 src/osu_server/composition/service_registry.py	osu_server.repositories.sqlalchemy.blob_repository

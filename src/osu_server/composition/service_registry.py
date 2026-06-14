@@ -53,11 +53,15 @@ from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRep
 from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
+from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.submission_repository import InMemoryScoreSubmissionRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
 from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
@@ -145,12 +149,14 @@ def _register_repositories(
     container: Container,
     config: AppConfig,
     session_factory: async_sessionmaker[AsyncSession],
+    memory_state: InMemoryCommandRepositoryState | None = None,
 ) -> None:
     """Register repository implementations for the current environment."""
     if config.environment == "test":
+        state = memory_state or InMemoryCommandRepositoryState()
         container.register_singleton(BlobRepository, InMemoryBlobRepository)
-        container.register_singleton(UserRepository, InMemoryUserRepository)
-        container.register_singleton(RoleRepository, InMemoryRoleRepository)
+        container.register_singleton(UserRepository, lambda: InMemoryUserRepository(state=state))
+        container.register_singleton(RoleRepository, lambda: InMemoryRoleRepository(state=state))
         container.register_singleton(ChannelRepository, InMemoryChannelRepository)
         container.register_singleton(ChatRepository, InMemoryChatRepository)
         container.register_singleton(BeatmapRepository, InMemoryBeatmapRepository)
@@ -197,6 +203,42 @@ def _register_repositories(
     )
 
 
+def _register_unit_of_work_factory(
+    container: Container,
+    session_factory: async_sessionmaker[AsyncSession],
+    memory_state: InMemoryCommandRepositoryState | None,
+) -> None:
+    """Register command UoW factory for the active persistence backend."""
+    if memory_state is not None:
+        in_memory_uow_factory = InMemoryUnitOfWorkFactory(memory_state)
+        container.register_singleton(UnitOfWorkFactory, lambda: in_memory_uow_factory)
+        return
+
+    def create_uow() -> SQLAlchemyUnitOfWork:
+        return SQLAlchemyUnitOfWork(session_factory)
+
+    container.register_singleton(UnitOfWorkFactory, lambda: create_uow)
+
+
+async def _register_query_repositories(
+    container: Container,
+    session_factory: async_sessionmaker[AsyncSession],
+    memory_state: InMemoryCommandRepositoryState | None,
+) -> tuple[UserQueryRepository, RoleQueryRepository]:
+    """Register query repositories for the active persistence backend."""
+    if memory_state is not None:
+        shared_uow_factory = InMemoryUnitOfWorkFactory(memory_state)
+        user_query_repo = InMemoryUserQueryRepository(shared_uow_factory)
+        role_query_repo = InMemoryRoleQueryRepository(shared_uow_factory)
+    else:
+        user_query_repo = SQLAlchemyUserQueryRepository(session_factory)
+        role_query_repo = SQLAlchemyRoleQueryRepository(session_factory)
+
+    container.register_singleton(UserQueryRepository, lambda: user_query_repo)
+    container.register_singleton(RoleQueryRepository, lambda: role_query_repo)
+    return user_query_repo, role_query_repo
+
+
 async def register_services(container: Container, config: AppConfig) -> None:  # noqa: PLR0915
     """Register repository, service, and transport-layer components.
 
@@ -231,21 +273,22 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     )
     container.register_singleton(PasswordService, lambda: password_service)
 
+    memory_command_state = (
+        InMemoryCommandRepositoryState() if config.environment == "test" else None
+    )
+
     # -- Repositories (singleton, environment-based switching) ----------------
-    _register_repositories(container, config, session_factory)
+    _register_repositories(container, config, session_factory, memory_command_state)
 
     # -- UnitOfWorkFactory (singleton) ----------------------------------------
-    def create_uow() -> SQLAlchemyUnitOfWork:
-        return SQLAlchemyUnitOfWork(session_factory)
-
-    container.register_singleton(UnitOfWorkFactory, lambda: create_uow)
+    _register_unit_of_work_factory(container, session_factory, memory_command_state)
 
     # -- Query Repositories (singleton) ---------------------------------------
-    user_query_repo = SQLAlchemyUserQueryRepository(session_factory)
-    container.register_singleton(UserQueryRepository, lambda: user_query_repo)
-
-    role_query_repo = SQLAlchemyRoleQueryRepository(session_factory)
-    container.register_singleton(RoleQueryRepository, lambda: role_query_repo)
+    user_query_repo, role_query_repo = await _register_query_repositories(
+        container,
+        session_factory,
+        memory_command_state,
+    )
 
     # -- BlobStorage backend/service (singleton) ------------------------------
     blob_backend = create_blob_storage_backend(config)

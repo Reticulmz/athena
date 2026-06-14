@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from osu_server.domain.identity.users import User
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 if TYPE_CHECKING:
     from osu_server.domain.system_user import SystemUserIdentity
@@ -22,12 +23,12 @@ class InMemoryUserRepository:
     Not thread-safe — intended for single-threaded test environments only.
     """
 
-    def __init__(self) -> None:
-        self._users_by_id: dict[int, User] = {}
-        self._id_by_safe_username: dict[str, int] = {}
-        self._id_by_email: dict[str, int] = {}
-        self._disallowed_usernames: set[str] = set()
-        self._next_id: int = 1
+    def __init__(self, *, state: InMemoryCommandRepositoryState | None = None) -> None:
+        self._state: InMemoryCommandRepositoryState = state or InMemoryCommandRepositoryState()
+        self._users_by_id: dict[int, User] = self._state.users_by_id
+        self._id_by_safe_username: dict[str, int] = self._state.user_id_by_safe_username
+        self._id_by_email: dict[str, int] = self._state.user_id_by_email
+        self._disallowed_usernames: set[str] = self._state.disallowed_usernames
 
     async def create(self, user: User) -> User:
         """Persist a new user with an auto-generated id.
@@ -43,11 +44,11 @@ class InMemoryUserRepository:
             raise ValueError(msg)
 
         # Skip the reserved BanchoBot system user ID.
-        if self._next_id == _BANCHO_BOT_USER_ID:
-            self._next_id += 1
+        if self._state.next_user_id == _BANCHO_BOT_USER_ID:
+            self._state.next_user_id += 1
 
-        created = replace(user, id=self._next_id)
-        self._next_id += 1
+        created = replace(user, id=self._state.next_user_id)
+        self._state.next_user_id += 1
 
         self._users_by_id[created.id] = created
         self._id_by_safe_username[created.safe_username.lower()] = created.id
