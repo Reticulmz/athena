@@ -101,7 +101,7 @@
   - _Requirements: 1.3, 4.1, 4.2, 4.5, 4.6, 5.5, 9.5_
 
 - [ ] 4. Command and query use-case split
-- [ ] 4.1 Migrate identity workflows into command and query use-cases
+- [x] 4.1 Migrate identity workflows into command and query use-cases
   - Separate login, registration, authorization refresh, session authorization, and online-user reads into command or query workflows based on mutation.
   - Preserve existing externally observable login, registration, session, and permission behavior.
   - Completion is observable when identity transports call clearly named command/query use-cases and existing identity tests still pass.

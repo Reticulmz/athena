@@ -172,6 +172,27 @@ FUTURE_BOUNDARY_RULES = (
     ),
 )
 
+IDENTITY_TRANSPORT_USE_CASE_RULES = (
+    BoundaryRule(
+        name="bancho login identity use-case boundary",
+        source_path=SOURCE_ROOT / "transports" / "bancho" / "workflows",
+        forbidden_roots=("osu_server.services.auth_service",),
+    ),
+    BoundaryRule(
+        name="bancho lifecycle identity query boundary",
+        source_path=SOURCE_ROOT / "transports" / "bancho" / "listeners",
+        forbidden_roots=("osu_server.services.online_users",),
+    ),
+    BoundaryRule(
+        name="legacy web identity use-case boundary",
+        source_path=SOURCE_ROOT / "transports" / "web_legacy",
+        forbidden_roots=(
+            "osu_server.services.auth_service",
+            "osu_server.services.legacy_web_auth_service",
+        ),
+    ),
+)
+
 DEPRECATED_EXACT_ROOTS = (
     "osu_server.infrastructure.di",
     "osu_server.composition.service_registry",
@@ -377,6 +398,26 @@ def test_architecture_boundary_rules_have_no_forbidden_imports() -> None:
             module=module,
         )
         for rule in FUTURE_BOUNDARY_RULES
+        if rule.source_path.exists()
+        for path in sorted(rule.source_path.rglob("*.py"))
+        if "__pycache__" not in path.parts
+        for module in sorted(imported_modules(path))
+        for forbidden_root in rule.forbidden_roots
+        if module_matches_root(module, forbidden_root)
+    ]
+
+    assert violations == []
+
+
+def test_identity_transports_use_command_or_query_use_case_boundaries() -> None:
+    violations = [
+        format_boundary_violation(
+            rule=rule,
+            path=path,
+            forbidden_root=forbidden_root,
+            module=module,
+        )
+        for rule in IDENTITY_TRANSPORT_USE_CASE_RULES
         if rule.source_path.exists()
         for path in sorted(rule.source_path.rglob("*.py"))
         if "__pycache__" not in path.parts

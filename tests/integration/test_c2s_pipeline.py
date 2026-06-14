@@ -20,6 +20,7 @@ from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.services.online_users import OnlineUsersService
+from osu_server.services.queries.identity import ListOnlineUsersQueryUseCase
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.handlers.lifecycle import LifecycleHandlers
 from osu_server.transports.bancho.listeners.lifecycle import LifecycleListeners
@@ -70,13 +71,14 @@ class TestExitPipelineIntegration:
         event_bus = InMemoryEventBus()
         packet_queue = InMemoryPacketQueue()
         online_users = OnlineUsersService(session_store)
+        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
 
         handlers = LifecycleHandlers(
             session_store=session_store,
             event_bus=event_bus,
         )
         listeners = LifecycleListeners(
-            online_users=online_users,
+            online_users_query=online_users_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)
@@ -112,13 +114,14 @@ class TestExitPipelineIntegration:
         event_bus = InMemoryEventBus()
         packet_queue = InMemoryPacketQueue()
         online_users = OnlineUsersService(session_store)
+        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
 
         handlers = LifecycleHandlers(
             session_store=session_store,
             event_bus=event_bus,
         )
         listeners = LifecycleListeners(
-            online_users=online_users,
+            online_users_query=online_users_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)
@@ -137,13 +140,14 @@ class TestExitPipelineIntegration:
         event_bus = InMemoryEventBus()
         packet_queue = InMemoryPacketQueue()
         online_users = OnlineUsersService(session_store)
+        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
 
         handlers = LifecycleHandlers(
             session_store=session_store,
             event_bus=event_bus,
         )
         listeners = LifecycleListeners(
-            online_users=online_users,
+            online_users_query=online_users_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)
@@ -238,9 +242,10 @@ class TestListenerGroupEventBusIntegration:
         packet_queue = InMemoryPacketQueue()
         event_bus = InMemoryEventBus()
         online_users = OnlineUsersService(session_store)
+        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
 
         listeners = LifecycleListeners(
-            online_users=online_users,
+            online_users_query=online_users_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)
@@ -276,9 +281,10 @@ class TestListenerGroupEventBusIntegration:
         packet_queue = InMemoryPacketQueue()
         event_bus = InMemoryEventBus()
         online_users = OnlineUsersService(session_store)
+        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
 
         listeners = LifecycleListeners(
-            online_users=online_users,
+            online_users_query=online_users_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)

@@ -82,12 +82,24 @@ from osu_server.services.beatmap_mirror import (
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
+from osu_server.services.commands.identity import (
+    LoginCommandUseCase,
+    RefreshRoleAuthorizationCommandUseCase,
+    RefreshUserAuthorizationCommandUseCase,
+    RegisterUserCommandUseCase,
+)
 from osu_server.services.legacy_getscores_service import LegacyGetscoresService
 from osu_server.services.legacy_web_auth_service import LegacyWebAuthService
 from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.queries.identity import (
+    ComputePermissionsQueryUseCase,
+    ComputeSessionAuthorizationQueryUseCase,
+    LegacyWebAuthQueryUseCase,
+    ListOnlineUsersQueryUseCase,
+)
 from osu_server.services.score_authorization_service import ScoreAuthorizationService
 from osu_server.services.score_submission_service import ScoreSubmissionService
 from osu_server.services.session_authorization_service import (
@@ -305,6 +317,20 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     role_repo = await container.resolve(RoleRepository)
     permission_service = PermissionService(role_repo=role_repo)
     container.register_singleton(PermissionService, lambda: permission_service)
+    compute_permissions_query = ComputePermissionsQueryUseCase(
+        permission_service=permission_service,
+    )
+    container.register_singleton(
+        ComputePermissionsQueryUseCase,
+        lambda: compute_permissions_query,
+    )
+    compute_session_authorization_query = ComputeSessionAuthorizationQueryUseCase(
+        permission_service=permission_service,
+    )
+    container.register_singleton(
+        ComputeSessionAuthorizationQueryUseCase,
+        lambda: compute_session_authorization_query,
+    )
 
     # -- AuthService (singleton) ----------------------------------------------
     auth_service = AuthService(
@@ -316,6 +342,10 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         system_user_id=BANCHO_BOT_USER_ID,
     )
     container.register_singleton(AuthService, lambda: auth_service)
+    login_command = LoginCommandUseCase(auth_service=auth_service)
+    container.register_singleton(LoginCommandUseCase, lambda: login_command)
+    register_user_command = RegisterUserCommandUseCase(auth_service=auth_service)
+    container.register_singleton(RegisterUserCommandUseCase, lambda: register_user_command)
 
     # -- SessionAuthorizationService (singleton) ---------------------------------
     session_auth_service = SessionAuthorizationService(
@@ -327,10 +357,26 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         SessionAuthorizationService,
         lambda: session_auth_service,
     )
+    refresh_user_authorization_command = RefreshUserAuthorizationCommandUseCase(
+        session_authorization_service=session_auth_service,
+    )
+    container.register_singleton(
+        RefreshUserAuthorizationCommandUseCase,
+        lambda: refresh_user_authorization_command,
+    )
+    refresh_role_authorization_command = RefreshRoleAuthorizationCommandUseCase(
+        session_authorization_service=session_auth_service,
+    )
+    container.register_singleton(
+        RefreshRoleAuthorizationCommandUseCase,
+        lambda: refresh_role_authorization_command,
+    )
 
     # -- OnlineUsersService (singleton) -----------------------------------------
     online_users = OnlineUsersService(session_store=session_store)
     container.register_singleton(OnlineUsersService, lambda: online_users)
+    online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
+    container.register_singleton(ListOnlineUsersQueryUseCase, lambda: online_users_query)
 
     # -- ChannelStateStore (singleton, environment-based switching) -----------
     if config.environment == "test":
@@ -386,7 +432,7 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(LoginResponseBuilder, lambda: login_response_builder)
 
     login_workflow = LoginWorkflow(
-        auth_service=auth_service,
+        login_command=login_command,
         country_resolver=country_resolver,
         response_builder=login_response_builder,
     )
@@ -440,10 +486,10 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     chat_handlers.register_all(packet_dispatcher)
 
     # -- Listeners → EventBus --------------------------------------------------
-    setup_listeners(eventbus, packet_queue, online_users, broker, channel_state)
+    setup_listeners(eventbus, packet_queue, online_users_query, broker, channel_state)
 
     # -- RegistrationHandler (singleton) --------------------------------------
-    registration_handler = RegistrationHandler(auth_service=auth_service)
+    registration_handler = RegistrationHandler(register_user_command=register_user_command)
     container.register_singleton(RegistrationHandler, lambda: registration_handler)
 
     # -- LegacyWebAuthService (singleton) -------------------------------------
@@ -453,6 +499,10 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         session_store=session_store,
     )
     container.register_singleton(LegacyWebAuthService, lambda: legacy_web_auth_service)
+    legacy_web_auth_query = LegacyWebAuthQueryUseCase(
+        legacy_web_auth_service=legacy_web_auth_service,
+    )
+    container.register_singleton(LegacyWebAuthQueryUseCase, lambda: legacy_web_auth_query)
 
     # -- Getscores service / endpoint (singletons) ----------------------------
     getscores_service = LegacyGetscoresService(
@@ -462,7 +512,7 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(LegacyGetscoresService, lambda: getscores_service)
 
     getscores_handler = GetscoresHandler(
-        auth_service=legacy_web_auth_service,
+        auth_query=legacy_web_auth_query,
         getscores_service=getscores_service,
     )
     container.register_singleton(GetscoresHandler, lambda: getscores_handler)

@@ -13,13 +13,8 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
-from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
-from osu_server.services.auth_service import AuthService
 from osu_server.services.channel_service import ChannelService
-from osu_server.services.password_service import PasswordService
-from osu_server.services.permission_service import PermissionService
+from osu_server.services.commands.identity import LoginCommandInput, LoginCommandResult
 from osu_server.transports.bancho.protocol.s2c.login import login_reply
 from osu_server.transports.bancho.workflows import (
     LoginResponseBuilder,
@@ -57,36 +52,25 @@ class _RecordingCountryResolver:
 
 
 @final
-class _RecordingAuthService(AuthService):
-    """Auth service fake that records parsed login input."""
+class _RecordingLoginCommand:
+    """Login command fake that records parsed login input."""
 
     _result: LoginResponse | LoginResult
     login_request: LoginRequest | None
     country: str | None
 
     def __init__(self, result: LoginResponse | LoginResult) -> None:
-        role_repo = InMemoryRoleRepository()
-        super().__init__(
-            user_repo=InMemoryUserRepository(),
-            role_repo=role_repo,
-            password_service=PasswordService(hibp_client=None, banned_passwords=[]),
-            permission_service=PermissionService(role_repo=role_repo),
-            session_store=InMemorySessionStore(),
-        )
         self._result = result
         self.login_request = None
         self.country = None
 
-    @override
-    async def login(
+    async def execute(
         self,
-        login_request: LoginRequest,
-        *,
-        country: str,
-    ) -> LoginResponse | LoginResult:
-        self.login_request = login_request
-        self.country = country
-        return self._result
+        input_data: LoginCommandInput,
+    ) -> LoginCommandResult:
+        self.login_request = input_data.login_request
+        self.country = input_data.country
+        return LoginCommandResult(outcome=self._result)
 
 
 @final
@@ -163,21 +147,21 @@ def _make_workflow(
     response_builder: _RecordingLoginResponseBuilder | None = None,
 ) -> tuple[
     LoginWorkflow,
-    _RecordingAuthService,
+    _RecordingLoginCommand,
     _RecordingCountryResolver,
     _RecordingLoginResponseBuilder,
 ]:
-    auth_service = _RecordingAuthService(auth_result)
+    login_command = _RecordingLoginCommand(auth_result)
     resolver = country_resolver or _RecordingCountryResolver()
     builder = response_builder or _RecordingLoginResponseBuilder(
         channel_service=_make_channel_service()
     )
     workflow = LoginWorkflow(
-        auth_service=auth_service,
+        login_command=login_command,
         country_resolver=resolver,
         response_builder=builder,
     )
-    return workflow, auth_service, resolver, builder
+    return workflow, login_command, resolver, builder
 
 
 def _contextvars() -> Mapping[str, object]:
@@ -186,7 +170,7 @@ def _contextvars() -> Mapping[str, object]:
 
 class TestLoginWorkflow:
     async def test_parse_failure_returns_auth_failed_packet_without_token_and_logs(self) -> None:
-        workflow, auth_service, country_resolver, response_builder = _make_workflow(
+        workflow, login_command, country_resolver, response_builder = _make_workflow(
             auth_result=_login_response()
         )
         structlog.contextvars.clear_contextvars()
@@ -200,7 +184,7 @@ class TestLoginWorkflow:
             content=login_reply(LoginResult.AUTHENTICATION_FAILED),
             cho_token=None,
         )
-        assert auth_service.login_request is None
+        assert login_command.login_request is None
         assert country_resolver.headers is None
         assert response_builder.login_response is None
         parse_logs = [
@@ -216,7 +200,7 @@ class TestLoginWorkflow:
     async def test_auth_rejection_returns_login_result_packet_without_token(self) -> None:
         headers = {"x-real-ip": "203.0.113.10"}
         country_resolver = _RecordingCountryResolver(country="US")
-        workflow, auth_service, resolver, response_builder = _make_workflow(
+        workflow, login_command, resolver, response_builder = _make_workflow(
             auth_result=LoginResult.AUTHENTICATION_FAILED,
             country_resolver=country_resolver,
         )
@@ -230,9 +214,9 @@ class TestLoginWorkflow:
             content=login_reply(LoginResult.AUTHENTICATION_FAILED),
             cho_token=None,
         )
-        assert auth_service.login_request is not None
-        assert auth_service.login_request.username == "TestUser"
-        assert auth_service.country == "US"
+        assert login_command.login_request is not None
+        assert login_command.login_request.username == "TestUser"
+        assert login_command.country == "US"
         assert resolver.headers is headers
         assert response_builder.login_response is None
         assert "user" not in _contextvars()
@@ -245,7 +229,7 @@ class TestLoginWorkflow:
             channel_service=_make_channel_service(),
             content=_SUCCESS_STREAM,
         )
-        workflow, auth_service, resolver, builder = _make_workflow(
+        workflow, login_command, resolver, builder = _make_workflow(
             auth_result=login_response,
             response_builder=response_builder,
         )
@@ -260,9 +244,9 @@ class TestLoginWorkflow:
                 content=_SUCCESS_STREAM,
                 cho_token=login_response.token,
             )
-            assert auth_service.login_request is not None
-            assert auth_service.login_request.username == "TestUser"
-            assert auth_service.country == "JP"
+            assert login_command.login_request is not None
+            assert login_command.login_request.username == "TestUser"
+            assert login_command.country == "JP"
             assert resolver.headers is headers
             assert builder.login_response is login_response
             context = _contextvars()

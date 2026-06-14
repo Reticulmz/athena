@@ -2,8 +2,8 @@
 
 Validates:
 - Req 3.3: BanchoBot is never a USER_QUIT fan-out target
-- Req 3.4: LifecycleListeners uses OnlineUsersService.get_all_user_ids()
-  which returns active session IDs only — BanchoBot has no SessionData
+- Req 3.4: LifecycleListeners uses ListOnlineUsersQuery, which returns active
+  session IDs only — BanchoBot has no SessionData
 """
 
 from __future__ import annotations
@@ -16,20 +16,25 @@ import pytest
 from osu_server.domain.events.users import UserDisconnected
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue  # noqa: TC001
-from osu_server.services.online_users import OnlineUsersService  # noqa: TC001
+from osu_server.services.queries.identity import (
+    ListOnlineUsersQuery,
+    ListOnlineUsersQueryInput,
+    ListOnlineUsersQueryResult,
+)
 from osu_server.transports.bancho.listeners.lifecycle import LifecycleListeners
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.writer import write_packet
 
 
-class FakeOnlineUsersService:
-    """Fake that returns configurable user IDs (no BanchoBot)."""
+class FakeListOnlineUsersQuery:
+    """Fake query that returns configurable user IDs (no BanchoBot)."""
 
     def __init__(self) -> None:
         self.user_ids: list[int] = []
 
-    async def get_all_user_ids(self) -> list[int]:
-        return self.user_ids
+    async def execute(self, input_data: ListOnlineUsersQueryInput) -> ListOnlineUsersQueryResult:
+        _ = input_data
+        return ListOnlineUsersQueryResult(user_ids=tuple(self.user_ids))
 
 
 class FakePacketQueue:
@@ -44,9 +49,9 @@ class FakePacketQueue:
 
 
 @pytest.fixture
-def online_users() -> FakeOnlineUsersService:
-    """Fake OnlineUsersService."""
-    return FakeOnlineUsersService()
+def online_users() -> FakeListOnlineUsersQuery:
+    """Fake ListOnlineUsersQuery."""
+    return FakeListOnlineUsersQuery()
 
 
 @pytest.fixture
@@ -57,12 +62,15 @@ def packet_queue() -> FakePacketQueue:
 
 @pytest.fixture
 def listeners(
-    online_users: FakeOnlineUsersService,
+    online_users: FakeListOnlineUsersQuery,
     packet_queue: FakePacketQueue,
 ) -> LifecycleListeners:
     """LifecycleListeners instance with faked dependencies."""
     return LifecycleListeners(
-        online_users=typing.cast("OnlineUsersService", typing.cast("object", online_users)),
+        online_users_query=typing.cast(
+            "ListOnlineUsersQuery",
+            typing.cast("object", online_users),
+        ),
         packet_queue=typing.cast("PacketQueue", typing.cast("object", packet_queue)),
     )
 
@@ -75,7 +83,7 @@ def _expected_user_quit_packet(user_id: int) -> bytes:
 class TestBanchoBotNotInUserQuitFanOut:
     """Req 3.3, 3.4: USER_QUIT fan-out excludes BanchoBot.
 
-    LifecycleListeners uses OnlineUsersService.get_all_user_ids() to determine
+    LifecycleListeners uses ListOnlineUsersQuery to determine
     USER_QUIT broadcast targets.  Since BanchoBot has no SessionData and is not
     an active session, get_all_user_ids() never returns BanchoBot's ID.
     LifecycleListeners therefore never enqueues USER_QUIT for BanchoBot.
@@ -84,7 +92,7 @@ class TestBanchoBotNotInUserQuitFanOut:
     async def test_banchobot_not_in_fanout_with_multiple_users(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeOnlineUsersService,
+        online_users: FakeListOnlineUsersQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """BanchoBot ID is not among USER_QUIT recipients when multiple humans are online."""
@@ -105,7 +113,7 @@ class TestBanchoBotNotInUserQuitFanOut:
     async def test_banchobot_not_in_fanout_with_single_user(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeOnlineUsersService,
+        online_users: FakeListOnlineUsersQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """BanchoBot is not targeted even when only one other human is online."""
@@ -124,7 +132,7 @@ class TestBanchoBotNotInUserQuitFanOut:
     async def test_banchobot_not_in_fanout_no_other_users(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeOnlineUsersService,
+        online_users: FakeListOnlineUsersQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """No fan-out when only the disconnecting user is online -- BanchoBot not involved."""
@@ -141,7 +149,7 @@ class TestBanchoBotNotInUserQuitFanOut:
     async def test_banchobot_exclusion_preserves_user_quit_packet_format(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeOnlineUsersService,
+        online_users: FakeListOnlineUsersQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """USER_QUIT packets sent to humans have the correct format (user_id payload)."""
@@ -159,10 +167,10 @@ class TestBanchoBotNotInUserQuitFanOut:
 
 
 class TestBanchoBotSessionSeparationContract:
-    """Req 3.4: LifecycleListeners depends on OnlineUsersService for active session IDs.
+    """Req 3.4: LifecycleListeners depends on ListOnlineUsersQuery for active session IDs.
 
     BanchoBot is roster-visible but not an active session.  The separation is:
-    - OnlineUsersService.get_all_user_ids() → SessionStore active sessions
+    - ListOnlineUsersQuery → SessionStore active sessions
     - BanchoBot identity → LoginResponseBuilder roster packets only
     - No crossover: BanchoBot never flows through the lifecycle fan-out path
     """
@@ -170,17 +178,17 @@ class TestBanchoBotSessionSeparationContract:
     async def test_fan_out_uses_online_users_service_exclusively(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeOnlineUsersService,
+        online_users: FakeListOnlineUsersQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
-        """LifecycleListeners only fans out to IDs returned by OnlineUsersService."""
+        """LifecycleListeners only fans out to IDs returned by ListOnlineUsersQuery."""
         online_users.user_ids = [10, 20, 30]
 
         await listeners.on_user_disconnected(
             UserDisconnected(user_id=10),
         )
 
-        # All enqueued targets come from OnlineUsersService
+        # All enqueued targets come from ListOnlineUsersQuery
         target_ids = {uid for uid, _ in packet_queue.enqueued}
         assert target_ids == {20, 30}
         assert BANCHO_BOT_IDENTITY.user_id not in target_ids
@@ -188,7 +196,7 @@ class TestBanchoBotSessionSeparationContract:
     async def test_no_banchobot_leakage_from_empty_online_list(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeOnlineUsersService,
+        online_users: FakeListOnlineUsersQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """When no users are online, no fan-out occurs and BanchoBot is never added."""

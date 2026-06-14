@@ -9,6 +9,7 @@ import structlog
 import structlog.contextvars
 
 from osu_server.domain.identity.authentication import LoginResult
+from osu_server.services.commands.identity import LoginCommandInput
 from osu_server.transports.bancho.parsers.login import parse_login_request
 from osu_server.transports.bancho.protocol.s2c.login import login_reply
 
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from osu_server.infrastructure.country.interfaces import CountryResolver
-    from osu_server.services.auth_service import AuthService
+    from osu_server.services.commands.identity import LoginCommand
     from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -41,18 +42,18 @@ class LoginWorkflowResult:
 class LoginWorkflow:
     """Orchestrate login parsing, authentication, and success response building."""
 
-    _auth_service: AuthService
+    _login_command: LoginCommand
     _country_resolver: CountryResolver
     _response_builder: LoginResponseBuilder
 
     def __init__(
         self,
         *,
-        auth_service: AuthService,
+        login_command: LoginCommand,
         country_resolver: CountryResolver,
         response_builder: LoginResponseBuilder,
     ) -> None:
-        self._auth_service = auth_service
+        self._login_command = login_command
         self._country_resolver = country_resolver
         self._response_builder = response_builder
 
@@ -68,7 +69,10 @@ class LoginWorkflow:
             )
 
         country = self._country_resolver.resolve(workflow_input.headers)
-        result = await self._auth_service.login(login_request, country=country)
+        command_result = await self._login_command.execute(
+            LoginCommandInput(login_request=login_request, country=country),
+        )
+        result = command_result.outcome
 
         if isinstance(result, LoginResult):
             return LoginWorkflowResult(content=login_reply(result), cho_token=None)

@@ -16,11 +16,12 @@ from typing import TYPE_CHECKING
 from starlette.responses import Response
 
 from osu_server.domain.identity.authentication import RegistrationForm
+from osu_server.services.commands.identity import RegisterUserCommandInput
 
 if TYPE_CHECKING:
     from starlette.requests import Request
 
-    from osu_server.services.auth_service import AuthService
+    from osu_server.services.commands.identity import RegisterUserCommand
 
 _log = logging.getLogger(__name__)
 
@@ -32,13 +33,13 @@ class RegistrationHandler:
     endpoint via ``__call__``.
     """
 
-    _auth_service: AuthService
+    _register_user_command: RegisterUserCommand
 
-    def __init__(self, *, auth_service: AuthService) -> None:
-        self._auth_service = auth_service
+    def __init__(self, *, register_user_command: RegisterUserCommand) -> None:
+        self._register_user_command = register_user_command
 
     async def __call__(self, request: Request) -> Response:
-        """Parse form data and delegate to AuthService.register()."""
+        """Parse form data and execute the registration command use-case."""
         async with request.form() as form_data:
             username = str(form_data.get("user[username]", ""))
             email = str(form_data.get("user[user_email]", ""))
@@ -53,10 +54,13 @@ class RegistrationHandler:
             password=password,
         )
 
-        result = await self._auth_service.register(
-            form_data=registration_form,
-            check_only=check_only,
+        command_result = await self._register_user_command.execute(
+            RegisterUserCommandInput(
+                form_data=registration_form,
+                check_only=check_only,
+            ),
         )
+        result = command_result.outcome
 
         if result.success:
             return Response(content=b"ok", status_code=200)

@@ -15,6 +15,18 @@ from osu_server.infrastructure.storage.local import LocalBlobStorageBackend
 from osu_server.repositories.interfaces.blob_repository import BlobRepository
 from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
 from osu_server.services.blob_storage_service import BlobStorageService
+from osu_server.services.commands.identity import (
+    LoginCommandUseCase,
+    RefreshRoleAuthorizationCommandUseCase,
+    RefreshUserAuthorizationCommandUseCase,
+    RegisterUserCommandUseCase,
+)
+from osu_server.services.queries.identity import (
+    ComputePermissionsQueryUseCase,
+    ComputeSessionAuthorizationQueryUseCase,
+    LegacyWebAuthQueryUseCase,
+    ListOnlineUsersQueryUseCase,
+)
 from osu_server.services.session_authorization_service import (
     SessionAuthorizationService,
 )
@@ -93,6 +105,44 @@ async def test_register_services_resolves_session_authorization_service() -> Non
     svc = await container.resolve(SessionAuthorizationService)
 
     assert isinstance(svc, SessionAuthorizationService)
+
+
+@pytest.mark.asyncio
+async def test_register_services_resolves_identity_command_query_use_cases() -> None:
+    """Identity command/query use-cases are container-resolvable after registration."""
+    config = _make_config()
+    container = await build_container(config)
+    await register_services(container, config)
+
+    assert isinstance(await container.resolve(LoginCommandUseCase), LoginCommandUseCase)
+    assert isinstance(
+        await container.resolve(RegisterUserCommandUseCase),
+        RegisterUserCommandUseCase,
+    )
+    assert isinstance(
+        await container.resolve(RefreshUserAuthorizationCommandUseCase),
+        RefreshUserAuthorizationCommandUseCase,
+    )
+    assert isinstance(
+        await container.resolve(RefreshRoleAuthorizationCommandUseCase),
+        RefreshRoleAuthorizationCommandUseCase,
+    )
+    assert isinstance(
+        await container.resolve(ComputePermissionsQueryUseCase),
+        ComputePermissionsQueryUseCase,
+    )
+    assert isinstance(
+        await container.resolve(ComputeSessionAuthorizationQueryUseCase),
+        ComputeSessionAuthorizationQueryUseCase,
+    )
+    assert isinstance(
+        await container.resolve(ListOnlineUsersQueryUseCase),
+        ListOnlineUsersQueryUseCase,
+    )
+    assert isinstance(
+        await container.resolve(LegacyWebAuthQueryUseCase),
+        LegacyWebAuthQueryUseCase,
+    )
 
 
 @pytest.mark.asyncio

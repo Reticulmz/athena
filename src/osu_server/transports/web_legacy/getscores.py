@@ -19,13 +19,14 @@ import structlog
 from starlette.responses import Response
 
 from osu_server.domain.legacy_getscores import GetscoresOutcomeKind
+from osu_server.services.queries.identity import LegacyWebAuthQueryInput
 
 if TYPE_CHECKING:
     from starlette.requests import Request
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
     from osu_server.services.legacy_getscores_service import LegacyGetscoresService
-    from osu_server.services.legacy_web_auth_service import LegacyWebAuthService
+    from osu_server.services.queries.identity import LegacyWebAuthQuery
 
 _TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8"
 
@@ -45,10 +46,10 @@ class GetscoresHandler:
 
     def __init__(
         self,
-        auth_service: LegacyWebAuthService,
+        auth_query: LegacyWebAuthQuery,
         getscores_service: LegacyGetscoresService,
     ) -> None:
-        self._auth_service: LegacyWebAuthService = auth_service
+        self._auth_query: LegacyWebAuthQuery = auth_query
         self._getscores_service: LegacyGetscoresService = getscores_service
 
     async def __call__(self, request: Request) -> Response:
@@ -56,10 +57,13 @@ class GetscoresHandler:
         username = request.query_params.get("us")
         password_md5 = request.query_params.get("ha")
 
-        auth_result = await self._auth_service.authenticate(
-            username=username,
-            password_md5=password_md5,
+        auth_query_result = await self._auth_query.execute(
+            LegacyWebAuthQueryInput(
+                username=username,
+                password_md5=password_md5,
+            ),
         )
+        auth_result = auth_query_result.outcome
         if auth_result.failure is not None:
             logger.info(
                 "getscores_auth_failed",

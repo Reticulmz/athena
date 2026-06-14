@@ -23,6 +23,7 @@ from osu_server.repositories.memory.role_repository import InMemoryRoleRepositor
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
+from osu_server.services.commands.identity import RegisterUserCommandUseCase
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.transports.web_legacy.registration import RegistrationHandler
@@ -45,7 +46,7 @@ _BAD_REQUEST = HTTPStatus.BAD_REQUEST
 
 def _make_app() -> tuple[
     Starlette,
-    AuthService,
+    RegisterUserCommandUseCase,
     InMemoryUserRepository,
     InMemoryRoleRepository,
 ]:
@@ -65,12 +66,13 @@ def _make_app() -> tuple[
         session_store=session_store,
     )
 
-    handler = RegistrationHandler(auth_service=auth_service)
+    register_user_command = RegisterUserCommandUseCase(auth_service=auth_service)
+    handler = RegistrationHandler(register_user_command=register_user_command)
 
     # Starlette treats callable objects as ASGI apps, but we need
     # request_response wrapping. Pass the bound method instead.
     app = Starlette(routes=[Route("/users", handler.__call__, methods=["POST"])])
-    return app, auth_service, user_repo, role_repo
+    return app, register_user_command, user_repo, role_repo
 
 
 def _registration_form(

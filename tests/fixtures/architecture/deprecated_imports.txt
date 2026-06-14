@@ -133,11 +133,9 @@ src/osu_server/transports/bancho/handlers/chat.py	osu_server.services.chat_servi
 src/osu_server/transports/bancho/handlers/chat.py	osu_server.transports.bancho
 src/osu_server/transports/bancho/handlers/lifecycle.py	osu_server.repositories.interfaces.session_store
 src/osu_server/transports/bancho/handlers/lifecycle.py	osu_server.transports.bancho
-src/osu_server/transports/bancho/listeners/__init__.py	osu_server.services.online_users
 src/osu_server/transports/bancho/listeners/__init__.py	osu_server.transports.bancho
 src/osu_server/transports/bancho/listeners/base.py	osu_server.transports.bancho
 src/osu_server/transports/bancho/listeners/chat.py	osu_server.transports.bancho
-src/osu_server/transports/bancho/listeners/lifecycle.py	osu_server.services.online_users
 src/osu_server/transports/bancho/listeners/lifecycle.py	osu_server.transports.bancho
 src/osu_server/transports/bancho/protocol/__init__.py	osu_server.transports.bancho
 src/osu_server/transports/bancho/protocol/reader.py	osu_server.transports.bancho
@@ -146,7 +144,6 @@ src/osu_server/transports/bancho/protocol/s2c/login.py	osu_server.transports.ban
 src/osu_server/transports/bancho/protocol/types.py	osu_server.transports.bancho
 src/osu_server/transports/bancho/protocol/writer.py	osu_server.transports.bancho
 src/osu_server/transports/bancho/workflows/__init__.py	osu_server.transports.bancho
-src/osu_server/transports/bancho/workflows/login.py	osu_server.services.auth_service
 src/osu_server/transports/bancho/workflows/login.py	osu_server.transports.bancho
 src/osu_server/transports/bancho/workflows/login_response_builder.py	osu_server.domain.system_user
 src/osu_server/transports/bancho/workflows/login_response_builder.py	osu_server.services.channel_service
@@ -155,7 +152,5 @@ src/osu_server/transports/bancho/workflows/polling.py	osu_server.repositories.in
 src/osu_server/transports/bancho/workflows/polling.py	osu_server.transports.bancho
 src/osu_server/transports/web_legacy/getscores.py	osu_server.domain.legacy_getscores
 src/osu_server/transports/web_legacy/getscores.py	osu_server.services.legacy_getscores_service
-src/osu_server/transports/web_legacy/getscores.py	osu_server.services.legacy_web_auth_service
-src/osu_server/transports/web_legacy/registration.py	osu_server.services.auth_service
 src/osu_server/transports/web_legacy/score_submit.py	osu_server.services.score_submission_service
 src/osu_server/worker.py	osu_server.composition.worker_runtime
