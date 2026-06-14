@@ -101,7 +101,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/athena_test
-      REDIS_URL: redis://localhost:6379
+      VALKEY_URL: redis://localhost:6379
 
     steps:
       - name: Checkout
