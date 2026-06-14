@@ -51,6 +51,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+
       - name: Restore virtual environment
         uses: actions/cache/restore@v4
         with:
@@ -100,6 +103,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Restore virtual environment
         uses: actions/cache/restore@v4
