@@ -51,22 +51,30 @@ alembic revision --autogenerate -m "..."  # 新規マイグレーション生成
 
 ## アーキテクチャ
 
-### モジュラモノリス + ハイブリッド構造
+詳細は `.claude/rules/architecture.md` および `docs/architecture.md` を参照。
 
-外側はプロトコル別（bancho / web_legacy / api / signalr）、内側はドメイン別（services 層で共有）。
-
-### レイヤー（依存方向: 上→下のみ、逆方向禁止）
+### レイヤー構造
 
 ```
-Transports → Services → Domain → Repositories → Infrastructure → Shared
+Composition → Runtime Adapters → Command/Query Use-Cases → Repositories → Infrastructure
+                                  Command/Query Use-Cases → Domain → Shared
 ```
 
-- **Transports**: プロトコル別の入口。app プロセスのみ使用
-- **Services**: ビジネスロジック。両プロセス（app / worker）で共有
-- **Domain**: 純粋なドメインモデル（I/O 非依存）
-- **Repositories**: 永続化抽象（Protocol） + 実装（SQLAlchemy / memory）
-- **Infrastructure**: DB, Valkey, EventBus, JobQueue, DI コンテナ
-- **Shared**: errors, types, constants
+- **Composition**: Dishka による DI グラフ構築（`composition/providers/`）
+- **Runtime Adapters**: Starlette routes / taskiq tasks（thin adapters）
+- **Command Use-Cases**: 状態変更ワークフロー（`services/commands/`、UnitOfWork 経由）
+- **Query Use-Cases**: 読み取り専用ワークフロー（`services/queries/`、Query Repository 経由）
+- **Domain**: transport 非依存のビジネス言語（`domain/`、標準 dataclass）
+- **Repositories**: Command（UoW 参加）/ Query（読み取り最適化）に分離
+- **Infrastructure**: DB, Valkey, EventBus, JobQueue
+
+### 重要な設計規約
+
+- **Command/Query 責務分離**: 状態変更と読み取りを明確に分離
+- **UnitOfWork パターン**: Command 側はトランザクション境界を UoW で管理
+- **Transport は thin adapter**: use-case を呼び、SQLAlchemy / DB session を直接扱わない
+- **Domain は Pydantic を使わない**: 標準 dataclass のみ（バリデーションオーバーヘッド回避）
+- **import-linter で依存方向を機械的に検証**: CI で自動チェック
 
 ### 2プロセス構成
 
