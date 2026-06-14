@@ -19,9 +19,12 @@ from starlette.testclient import TestClient
 
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.memory.queries import (
+    InMemoryRoleQueryRepository,
+    InMemoryUserQueryRepository,
+)
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.auth_service import AuthService
 from osu_server.services.commands.identity import RegisterUserCommandUseCase
 from osu_server.services.password_service import PasswordService
@@ -47,20 +50,24 @@ _BAD_REQUEST = HTTPStatus.BAD_REQUEST
 def _make_app() -> tuple[
     Starlette,
     RegisterUserCommandUseCase,
-    InMemoryUserRepository,
-    InMemoryRoleRepository,
+    InMemoryUserQueryRepository,
+    InMemoryRoleQueryRepository,
 ]:
     """Build a Starlette app with RegistrationHandler wired to POST /users."""
-    user_repo = InMemoryUserRepository()
-    role_repo = InMemoryRoleRepository(seed_roles=[_ROLE_DEFAULT])
+    uow_factory = InMemoryUnitOfWorkFactory()
+    uow_factory.seed_roles([_ROLE_DEFAULT])
+
+    user_query_repo = InMemoryUserQueryRepository(uow_factory)
+    role_query_repo = InMemoryRoleQueryRepository(uow_factory)
     password_service = PasswordService(hibp_client=None, banned_passwords=[])
 
     session_store = InMemorySessionStore()
-    permission_service = PermissionService(role_repo=role_repo)
+    permission_service = PermissionService(role_repo=role_query_repo)
 
     auth_service = AuthService(
-        user_repo=user_repo,
-        role_repo=role_repo,
+        uow_factory=uow_factory,
+        user_query_repo=user_query_repo,
+        role_query_repo=role_query_repo,
         password_service=password_service,
         permission_service=permission_service,
         session_store=session_store,
@@ -72,7 +79,7 @@ def _make_app() -> tuple[
     # Starlette treats callable objects as ASGI apps, but we need
     # request_response wrapping. Pass the bound method instead.
     app = Starlette(routes=[Route("/users", handler.__call__, methods=["POST"])])
-    return app, register_user_command, user_repo, role_repo
+    return app, register_user_command, user_query_repo, role_query_repo
 
 
 def _registration_form(

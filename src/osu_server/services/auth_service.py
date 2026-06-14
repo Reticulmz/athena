@@ -20,9 +20,10 @@ from osu_server.domain.identity.users import User
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.authentication import LoginRequest
-    from osu_server.repositories.interfaces.role_repository import RoleRepository
+    from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
+    from osu_server.repositories.interfaces.queries.users import UserQueryRepository
     from osu_server.repositories.interfaces.session_store import SessionStore
-    from osu_server.repositories.interfaces.user_repository import UserRepository
+    from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
     from osu_server.services.password_service import PasswordService
     from osu_server.services.permission_service import PermissionService
 
@@ -52,11 +53,13 @@ class AuthService:
     """ログイン/登録オーケストレーション。
 
     register() はバリデーション → 重複チェック → HIBP → (check_only なら終了)
-    → パスワードハッシュ → ユーザー作成 → デフォルトロール付与の順で処理する。
+    → UoW 内でユーザー作成 + デフォルトロール付与を atomic に実行する。
+    login() は認証後、country 更新を UoW 経由で実行する。
     """
 
-    _user_repo: UserRepository
-    _role_repo: RoleRepository
+    _uow_factory: UnitOfWorkFactory
+    _user_query_repo: UserQueryRepository
+    _role_query_repo: RoleQueryRepository
     _password_service: PasswordService
     _permission_service: PermissionService
     _session_store: SessionStore
@@ -64,16 +67,18 @@ class AuthService:
 
     def __init__(
         self,
-        user_repo: UserRepository,
-        role_repo: RoleRepository,
+        uow_factory: UnitOfWorkFactory,
+        user_query_repo: UserQueryRepository,
+        role_query_repo: RoleQueryRepository,
         password_service: PasswordService,
         permission_service: PermissionService,
         session_store: SessionStore,
         *,
         system_user_id: int = 1,
     ) -> None:
-        self._user_repo = user_repo
-        self._role_repo = role_repo
+        self._uow_factory = uow_factory
+        self._user_query_repo = user_query_repo
+        self._role_query_repo = role_query_repo
         self._password_service = password_service
         self._permission_service = permission_service
         self._session_store = session_store
@@ -98,12 +103,12 @@ class AuthService:
         self._validate_password_format(form_data.password, errors)
         self._validate_email_format(form_data.email, errors)
 
-        # Phase 2: Uniqueness / disallowed checks (I/O)
+        # Phase 2: Uniqueness / disallowed checks (read-only, outside UoW)
         safe_username = User.normalize_username(form_data.username)
         await self._check_username_availability(safe_username, errors)
         await self._check_email_availability(form_data.email, errors)
 
-        # Phase 3: Password security (HIBP + custom banned list)
+        # Phase 3: Password security (HIBP + custom banned list, external I/O)
         await self._check_password_banned(form_data.password, errors)
 
         # Return early if any errors
@@ -120,10 +125,7 @@ class AuthService:
         if check_only:
             return RegistrationResult(success=True)
 
-        # Phase 4: Validate default role exists (fail fast before user creation)
-        default_role = await self._role_repo.get_default_role()
-
-        # Phase 5: Create account
+        # Phase 4: Prepare password hash (expensive CPU work, outside UoW)
         password_hash = await self._password_service.prepare_password(form_data.password)
         now = datetime.now(UTC)
 
@@ -137,8 +139,29 @@ class AuthService:
             created_at=now,
             updated_at=now,
         )
+
+        # Phase 5: Atomic user creation + role assignment inside UoW
         try:
-            created_user = await self._user_repo.create(user)
+            async with self._uow_factory() as uow:
+                # Validate default role exists (consistency check inside UoW)
+                default_role = await uow.roles.get_default_role()
+
+                # Create user
+                created_user = await uow.users.create(user)
+
+                # Assign default role
+                await uow.roles.assign_role(created_user.id, default_role.id)
+
+                # Atomic commit: both user and role assignment succeed or neither
+                await uow.commit()
+
+            logger.info(
+                "registration_success",
+                username=form_data.username,
+                user_id=created_user.id,
+            )
+            return RegistrationResult(success=True)
+
         except ValueError as exc:
             # DB unique constraint caught a concurrent duplicate registration
             msg = str(exc)
@@ -149,16 +172,6 @@ class AuthService:
             else:
                 errors.setdefault("username", []).append("Registration failed. Please try again.")
             return RegistrationResult(success=False, errors=errors)
-
-        # Phase 6: Assign default role
-        await self._role_repo.assign_role(created_user.id, default_role.id)
-
-        logger.info(
-            "registration_success",
-            username=form_data.username,
-            user_id=created_user.id,
-        )
-        return RegistrationResult(success=True)
 
     async def login(
         self,
@@ -193,9 +206,9 @@ class AuthService:
         country: str,
     ) -> LoginResponse | LoginResult:
         """login() の内部実装。例外は呼び出し元でキャッチする。"""
-        # 1. ユーザー検索
+        # 1. ユーザー検索 (read-only, outside UoW)
         safe_username = User.normalize_username(login_request.username)
-        user = await self._user_repo.get_by_safe_username(safe_username)
+        user = await self._user_query_repo.get_by_safe_username(safe_username)
         if user is None:
             logger.warning(
                 "login_failed",
@@ -213,7 +226,7 @@ class AuthService:
             )
             return LoginResult.AUTHENTICATION_FAILED
 
-        # 2. パスワード照合 (argon2id hash vs MD5 hex)
+        # 2. パスワード照合 (argon2id hash vs MD5 hex, CPU-intensive outside UoW)
         password_ok = await self._password_service.verify(
             user.password_hash,
             login_request.password_md5,
@@ -226,14 +239,16 @@ class AuthService:
             )
             return LoginResult.AUTHENTICATION_FAILED
 
-        # 3. 権限計算 (login と refresh で共有の snapshot)
+        # 3. 権限計算 (login と refresh で共有の snapshot, read-only outside UoW)
         auth_snapshot = await self._permission_service.compute_session_authorization(user.id)
         privileges = auth_snapshot.privileges
         role_ids = auth_snapshot.role_ids
 
-        # 4. 国コード (Transport 層で解決済み)
+        # 4. Country 更新 (mutation inside UoW if needed)
         if country not in ("XX", user.country):
-            await self._user_repo.update_country(user.id, country)
+            async with self._uow_factory() as uow:
+                await uow.users.update_country(user.id, country)
+                await uow.commit()
 
         # 5. トークン生成
         token = secrets.token_urlsafe(32)
@@ -328,12 +343,12 @@ class AuthService:
         safe_username: str,
         errors: dict[str, list[str]],
     ) -> None:
-        existing = await self._user_repo.get_by_safe_username(safe_username)
+        existing = await self._user_query_repo.get_by_safe_username(safe_username)
         if existing is not None:
             errors.setdefault("username", []).append("Username is already taken.")
             return
 
-        if await self._user_repo.is_username_disallowed(safe_username):
+        if await self._user_query_repo.is_username_disallowed(safe_username):
             errors.setdefault("username", []).append("This username is not allowed.")
 
     async def _check_email_availability(
@@ -341,7 +356,7 @@ class AuthService:
         email: str,
         errors: dict[str, list[str]],
     ) -> None:
-        existing = await self._user_repo.get_by_email(email)
+        existing = await self._user_query_repo.get_by_email(email)
         if existing is not None:
             errors.setdefault("email", []).append("Email address is already in use.")
 

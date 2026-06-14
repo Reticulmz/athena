@@ -40,11 +40,14 @@ from osu_server.repositories.interfaces.beatmap_repository import (
 from osu_server.repositories.interfaces.blob_repository import BlobRepository
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.chat_repository import ChatRepository
+from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
+from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.replay_repository import ReplayRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.score_repository import ScoreRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.submission_repository import ScoreSubmissionRepository
+from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
@@ -60,12 +63,15 @@ from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeat
 from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
 from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
 from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
+from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
+from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 from osu_server.repositories.sqlalchemy.replay_repository import SQLAlchemyReplayRepository
 from osu_server.repositories.sqlalchemy.role_repository import SQLAlchemyRoleRepository
 from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository
 from osu_server.repositories.sqlalchemy.submission_repository import (
     SQLAlchemyScoreSubmissionRepository,
 )
+from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWork
 from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
 from osu_server.services.auth_service import AuthService
@@ -228,6 +234,19 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     # -- Repositories (singleton, environment-based switching) ----------------
     _register_repositories(container, config, session_factory)
 
+    # -- UnitOfWorkFactory (singleton) ----------------------------------------
+    def create_uow() -> SQLAlchemyUnitOfWork:
+        return SQLAlchemyUnitOfWork(session_factory)
+
+    container.register_singleton(UnitOfWorkFactory, lambda: create_uow)
+
+    # -- Query Repositories (singleton) ---------------------------------------
+    user_query_repo = SQLAlchemyUserQueryRepository(session_factory)
+    container.register_singleton(UserQueryRepository, lambda: user_query_repo)
+
+    role_query_repo = SQLAlchemyRoleQueryRepository(session_factory)
+    container.register_singleton(RoleQueryRepository, lambda: role_query_repo)
+
     # -- BlobStorage backend/service (singleton) ------------------------------
     blob_backend = create_blob_storage_backend(config)
     await blob_backend.validate_configuration()
@@ -314,8 +333,7 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
         raise RuntimeError(msg) from exc
 
     # -- PermissionService (singleton) ----------------------------------------
-    role_repo = await container.resolve(RoleRepository)
-    permission_service = PermissionService(role_repo=role_repo)
+    permission_service = PermissionService(role_repo=role_query_repo)
     container.register_singleton(PermissionService, lambda: permission_service)
     compute_permissions_query = ComputePermissionsQueryUseCase(
         permission_service=permission_service,
@@ -333,9 +351,11 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     )
 
     # -- AuthService (singleton) ----------------------------------------------
+    uow_factory = await container.resolve(UnitOfWorkFactory)
     auth_service = AuthService(
-        user_repo=user_repo,
-        role_repo=role_repo,
+        uow_factory=uow_factory,
+        user_query_repo=user_query_repo,
+        role_query_repo=role_query_repo,
         password_service=password_service,
         permission_service=permission_service,
         session_store=session_store,
@@ -351,7 +371,7 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     session_auth_service = SessionAuthorizationService(
         permission_service=permission_service,
         session_store=session_store,
-        role_repository=role_repo,
+        role_repository=role_query_repo,
     )
     container.register_singleton(
         SessionAuthorizationService,

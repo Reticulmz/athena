@@ -22,3 +22,7 @@ class UserQueryRepository(Protocol):
     async def get_by_email(self, email: str) -> User | None:
         """Return the user with the email address."""
         ...
+
+    async def is_username_disallowed(self, safe_username: str) -> bool:
+        """Return whether the normalized username is reserved."""
+        ...

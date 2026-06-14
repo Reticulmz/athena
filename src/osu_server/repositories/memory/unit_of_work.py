@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Self, cast
 
 from osu_server.repositories.memory.commands import (
     InMemoryBeatmapCommandRepository,
@@ -17,7 +17,11 @@ from osu_server.repositories.memory.commands import (
 )
 
 if TYPE_CHECKING:
+    from contextlib import AbstractAsyncContextManager
     from types import TracebackType
+
+    from osu_server.domain.identity.roles import Role
+    from osu_server.repositories.interfaces.unit_of_work import UnitOfWork
 
 
 class InMemoryUnitOfWorkFactory:
@@ -26,14 +30,20 @@ class InMemoryUnitOfWorkFactory:
     def __init__(self, state: InMemoryCommandRepositoryState | None = None) -> None:
         self._state: InMemoryCommandRepositoryState = state or InMemoryCommandRepositoryState()
 
-    def __call__(self) -> InMemoryUnitOfWork:
-        return InMemoryUnitOfWork(self)
+    def __call__(self) -> AbstractAsyncContextManager[UnitOfWork]:
+        return cast("AbstractAsyncContextManager[UnitOfWork]", InMemoryUnitOfWork(self))
 
     def snapshot(self) -> InMemoryCommandRepositoryState:
         return self._state.clone()
 
     def commit_state(self, state: InMemoryCommandRepositoryState) -> None:
         self._state = state.clone()
+
+    def seed_roles(self, roles: list[Role]) -> None:
+        """Seed roles into factory state (test helper)."""
+        for role in roles:
+            self._state.roles_by_id[role.id] = role
+            self._state.role_id_by_name[role.name] = role.id
 
 
 class InMemoryUnitOfWork:

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from osu_server.domain.identity.sessions import SessionAuthorization
     from osu_server.domain.system_user import SystemUserIdentity
     from osu_server.infrastructure.security.hibp import HIBPClient
-    from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+    from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 
 
 class FakeHIBPClient:
@@ -41,13 +41,13 @@ _: HIBPClient = FakeHIBPClient()
 
 @final
 class ErrorRaisingUserRepository:
-    """UserRepository that raises on get_by_safe_username when armed.
+    """UserQueryRepository that raises on get_by_safe_username when armed.
 
-    Delegates all operations to an inner InMemoryUserRepository.
+    Delegates all operations to an inner UserQueryRepository.
     Used to simulate DB failures in tests without AsyncMock monkey-patching.
     """
 
-    def __init__(self, inner: InMemoryUserRepository, error: Exception) -> None:
+    def __init__(self, inner: UserQueryRepository, error: Exception) -> None:
         self._inner = inner
         self._error = error
         self._armed = False
@@ -55,9 +55,6 @@ class ErrorRaisingUserRepository:
     def arm(self) -> None:
         """Arm the repository to raise on get_by_safe_username calls."""
         self._armed = True
-
-    async def create(self, user: User) -> User:
-        return await self._inner.create(user)
 
     async def get_by_id(self, user_id: int) -> User | None:
         return await self._inner.get_by_id(user_id)
@@ -72,15 +69,6 @@ class ErrorRaisingUserRepository:
 
     async def is_username_disallowed(self, safe_username: str) -> bool:
         return await self._inner.is_username_disallowed(safe_username)
-
-    async def add_disallowed_username(self, safe_username: str) -> None:
-        await self._inner.add_disallowed_username(safe_username)
-
-    async def update_country(self, user_id: int, country: str) -> None:
-        await self._inner.update_country(user_id, country)
-
-    async def sync_system_user(self, identity: SystemUserIdentity) -> None:
-        await self._inner.sync_system_user(identity)
 
 
 @final

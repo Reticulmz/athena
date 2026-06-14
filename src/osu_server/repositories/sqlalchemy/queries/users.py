@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from osu_server.repositories.sqlalchemy.models.user import UserModel
+from osu_server.repositories.sqlalchemy.models.user import DisallowedUsernameModel, UserModel
 from osu_server.repositories.sqlalchemy.queries._shared import (
     SQLAlchemyQuerySessionFactory,
     user_to_domain,
@@ -44,3 +44,14 @@ class SQLAlchemyUserQueryRepository:
                 await session.execute(select(UserModel).where(UserModel.email == email.lower()))
             ).scalar_one_or_none()
             return user_to_domain(model) if isinstance(model, UserModel) else None
+
+    async def is_username_disallowed(self, safe_username: str) -> bool:
+        async with self._session_factory() as session:
+            model = (
+                await session.execute(
+                    select(DisallowedUsernameModel).where(
+                        DisallowedUsernameModel.safe_username == safe_username.lower()
+                    )
+                )
+            ).scalar_one_or_none()
+            return model is not None

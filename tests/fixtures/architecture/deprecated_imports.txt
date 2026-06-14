@@ -20,6 +20,7 @@ src/osu_server/composition/service_registry.py	osu_server.repositories.interface
 src/osu_server/composition/service_registry.py	osu_server.repositories.interfaces.score_repository
 src/osu_server/composition/service_registry.py	osu_server.repositories.interfaces.session_store
 src/osu_server/composition/service_registry.py	osu_server.repositories.interfaces.submission_repository
+src/osu_server/composition/service_registry.py	osu_server.repositories.interfaces.unit_of_work
 src/osu_server/composition/service_registry.py	osu_server.repositories.interfaces.user_repository
 src/osu_server/composition/service_registry.py	osu_server.repositories.memory.beatmap_repository
 src/osu_server/composition/service_registry.py	osu_server.repositories.memory.blob_repository
@@ -39,6 +40,7 @@ src/osu_server/composition/service_registry.py	osu_server.repositories.sqlalchem
 src/osu_server/composition/service_registry.py	osu_server.repositories.sqlalchemy.role_repository
 src/osu_server/composition/service_registry.py	osu_server.repositories.sqlalchemy.score_repository
 src/osu_server/composition/service_registry.py	osu_server.repositories.sqlalchemy.submission_repository
+src/osu_server/composition/service_registry.py	osu_server.repositories.sqlalchemy.unit_of_work
 src/osu_server/composition/service_registry.py	osu_server.repositories.sqlalchemy.user_repository
 src/osu_server/composition/service_registry.py	osu_server.services.auth_service
 src/osu_server/composition/service_registry.py	osu_server.services.bancho_bot
@@ -75,14 +77,16 @@ src/osu_server/repositories/interfaces/user_repository.py	osu_server.domain.syst
 src/osu_server/repositories/memory/beatmap_repository.py	osu_server.repositories.interfaces.beatmap_repository
 src/osu_server/repositories/memory/blob_repository.py	osu_server.repositories.interfaces.blob_repository
 src/osu_server/repositories/memory/chat_repository.py	osu_server.repositories.interfaces.chat_repository
+src/osu_server/repositories/memory/queries/roles.py	osu_server.repositories.memory.unit_of_work
+src/osu_server/repositories/memory/queries/users.py	osu_server.repositories.memory.unit_of_work
+src/osu_server/repositories/memory/unit_of_work.py	osu_server.repositories.interfaces.unit_of_work
 src/osu_server/repositories/memory/user_repository.py	osu_server.domain.system_user
 src/osu_server/repositories/sqlalchemy/beatmap_repository.py	osu_server.repositories.interfaces.beatmap_repository
 src/osu_server/repositories/sqlalchemy/blob_repository.py	osu_server.repositories.interfaces.blob_repository
 src/osu_server/repositories/sqlalchemy/chat_repository.py	osu_server.repositories.interfaces.chat_repository
 src/osu_server/repositories/sqlalchemy/user_repository.py	osu_server.domain.system_user
-src/osu_server/services/auth_service.py	osu_server.repositories.interfaces.role_repository
 src/osu_server/services/auth_service.py	osu_server.repositories.interfaces.session_store
-src/osu_server/services/auth_service.py	osu_server.repositories.interfaces.user_repository
+src/osu_server/services/auth_service.py	osu_server.repositories.interfaces.unit_of_work
 src/osu_server/services/auth_service.py	osu_server.services.password_service
 src/osu_server/services/auth_service.py	osu_server.services.permission_service
 src/osu_server/services/bancho_bot/__init__.py	osu_server.domain.bancho_bot
@@ -109,7 +113,6 @@ src/osu_server/services/legacy_web_auth_service.py	osu_server.repositories.inter
 src/osu_server/services/legacy_web_auth_service.py	osu_server.repositories.interfaces.user_repository
 src/osu_server/services/legacy_web_auth_service.py	osu_server.services.password_service
 src/osu_server/services/online_users.py	osu_server.repositories.interfaces.session_store
-src/osu_server/services/permission_service.py	osu_server.repositories.interfaces.role_repository
 src/osu_server/services/private_message_service.py	osu_server.repositories.interfaces.session_store
 src/osu_server/services/private_message_service.py	osu_server.repositories.interfaces.user_repository
 src/osu_server/services/score_authorization_service.py	osu_server.repositories.interfaces.session_store
@@ -119,7 +122,6 @@ src/osu_server/services/score_submission_service.py	osu_server.repositories.inte
 src/osu_server/services/score_submission_service.py	osu_server.repositories.interfaces.score_repository
 src/osu_server/services/score_submission_service.py	osu_server.repositories.interfaces.submission_repository
 src/osu_server/services/score_submission_service.py	osu_server.services.score_authorization_service
-src/osu_server/services/session_authorization_service.py	osu_server.repositories.interfaces.role_repository
 src/osu_server/services/session_authorization_service.py	osu_server.repositories.interfaces.session_store
 src/osu_server/services/session_authorization_service.py	osu_server.services.permission_service
 src/osu_server/transports/bancho/__init__.py	osu_server.transports.bancho

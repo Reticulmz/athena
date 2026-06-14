@@ -22,9 +22,12 @@ from osu_server.domain.identity.authentication import (
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import SessionData
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.memory.queries import (
+    InMemoryRoleQueryRepository,
+    InMemoryUserQueryRepository,
+)
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.auth_service import AuthService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
@@ -52,24 +55,34 @@ ROLE_DEFAULT = Role(
 def _make_service(
     *,
     banned_passwords: list[str] | None = None,
-) -> tuple[AuthService, InMemoryUserRepository, InMemoryRoleRepository]:
+) -> tuple[
+    AuthService,
+    InMemoryUserQueryRepository,
+    InMemoryRoleQueryRepository,
+    InMemoryUnitOfWorkFactory,
+]:
     """テスト用の AuthService + リポジトリを構築する。"""
-    user_repo = InMemoryUserRepository()
-    role_repo = InMemoryRoleRepository(seed_roles=[ROLE_DEFAULT])
+    uow_factory = InMemoryUnitOfWorkFactory()
+    uow_factory.seed_roles([ROLE_DEFAULT])
+
+    user_query_repo = InMemoryUserQueryRepository(uow_factory)
+    role_query_repo = InMemoryRoleQueryRepository(uow_factory)
     session_store = InMemorySessionStore()
     password_service = PasswordService(
         hibp_client=None,
         banned_passwords=banned_passwords or [],
     )
-    permission_service = PermissionService(role_repo=role_repo)
+    permission_service = PermissionService(role_repo=role_query_repo)
+
     svc = AuthService(
-        user_repo=user_repo,
-        role_repo=role_repo,
+        uow_factory=uow_factory,
+        user_query_repo=user_query_repo,
+        role_query_repo=role_query_repo,
         password_service=password_service,
         permission_service=permission_service,
         session_store=session_store,
     )
-    return svc, user_repo, role_repo
+    return svc, user_query_repo, role_query_repo, uow_factory
 
 
 def _valid_form(
@@ -292,15 +305,19 @@ class TestDisallowedUsername:
     """禁止ユーザー名チェック。"""
 
     async def test_disallowed_username(self) -> None:
-        svc, user_repo, _ = _make_service()
-        await user_repo.add_disallowed_username("banned_user")
+        svc, _, _, uow_factory = _make_service()
+        async with uow_factory() as uow:
+            await uow.users.add_disallowed_username("banned_user")
+            await uow.commit()
         result = await svc.register(_valid_form(username="Banned User", email="new@example.com"))
         assert result.success is False
         assert "username" in result.errors
 
     async def test_allowed_username_passes(self) -> None:
-        svc, user_repo, _ = _make_service()
-        await user_repo.add_disallowed_username("other_name")
+        svc, _, _, uow_factory = _make_service()
+        async with uow_factory() as uow:
+            await uow.users.add_disallowed_username("other_name")
+            await uow.commit()
         result = await svc.register(_valid_form(username="AllowedUser", email="new@example.com"))
         assert result.success is True
 
@@ -318,15 +335,18 @@ class TestPasswordBanned:
         assert "password" in result.errors
 
     async def test_password_banned_by_hibp(self) -> None:
-        user_repo = InMemoryUserRepository()
-        role_repo = InMemoryRoleRepository(seed_roles=[ROLE_DEFAULT])
+        uow_factory = InMemoryUnitOfWorkFactory()
+        uow_factory.seed_roles([ROLE_DEFAULT])
+        user_query_repo = InMemoryUserQueryRepository(uow_factory)
+        role_query_repo = InMemoryRoleQueryRepository(uow_factory)
         session_store = InMemorySessionStore()
         hibp_client = FakeHIBPClient(compromised_passwords={"SecurePass1234"})
         pw_svc = PasswordService(hibp_client=hibp_client, banned_passwords=[])
-        permission_service = PermissionService(role_repo=role_repo)
+        permission_service = PermissionService(role_repo=role_query_repo)
         svc = AuthService(
-            user_repo=user_repo,
-            role_repo=role_repo,
+            uow_factory=uow_factory,
+            user_query_repo=user_query_repo,
+            role_query_repo=role_query_repo,
             password_service=pw_svc,
             permission_service=permission_service,
             session_store=session_store,
@@ -368,7 +388,7 @@ class TestCheckOnlyMode:
     """check_only=True ではバリデーションのみ、アカウント作成しない。"""
 
     async def test_check_only_valid_no_user_created(self) -> None:
-        svc, user_repo, _ = _make_service()
+        svc, user_repo, _, _ = _make_service()
         result = await svc.register(_valid_form(), check_only=True)
         assert result.success is True
         assert result.errors == {}
@@ -400,7 +420,7 @@ class TestSuccessfulRegistration:
     """成功ケース: ユーザー作成 + デフォルトロール付与。"""
 
     async def test_user_created_in_repository(self) -> None:
-        svc, user_repo, _ = _make_service()
+        svc, user_repo, _, _ = _make_service()
         result = await svc.register(_valid_form(username="NewUser", email="new@example.com"))
         assert result.success is True
         assert result.errors == {}
@@ -411,7 +431,7 @@ class TestSuccessfulRegistration:
 
     async def test_safe_username_normalized(self) -> None:
         """safe_username は小文字化 + スペース→アンダースコア変換 (Req 1.3)。"""
-        svc, user_repo, _ = _make_service()
+        svc, user_repo, _, _ = _make_service()
         _ = await svc.register(_valid_form(username="My User", email="u@example.com"))
         user = await user_repo.get_by_safe_username("my_user")
         assert user is not None
@@ -419,7 +439,7 @@ class TestSuccessfulRegistration:
 
     async def test_password_stored_as_argon2id(self) -> None:
         """パスワードは MD5 → argon2id で保存 (Req 4.1)。"""
-        svc, user_repo, _ = _make_service()
+        svc, user_repo, _, _ = _make_service()
         _ = await svc.register(_valid_form(username="HashUser", email="h@example.com"))
         user = await user_repo.get_by_safe_username("hashuser")
         assert user is not None
@@ -427,7 +447,7 @@ class TestSuccessfulRegistration:
 
     async def test_default_role_assigned(self) -> None:
         """デフォルトロールが付与される (Req 1.2)。"""
-        svc, user_repo, role_repo = _make_service()
+        svc, user_repo, role_repo, _ = _make_service()
         _ = await svc.register(_valid_form(username="RoleUser", email="r@example.com"))
         user = await user_repo.get_by_safe_username("roleuser")
         assert user is not None
@@ -437,7 +457,7 @@ class TestSuccessfulRegistration:
 
     async def test_verified_flag_via_default_role(self) -> None:
         """デフォルトロールに VERIFIED が含まれ、即アクティブ (Req 8.7)。"""
-        svc, user_repo, role_repo = _make_service()
+        svc, user_repo, role_repo, _ = _make_service()
         _ = await svc.register(_valid_form(username="VerUser", email="v@example.com"))
         user = await user_repo.get_by_safe_username("veruser")
         assert user is not None
@@ -455,7 +475,7 @@ class TestSuccessfulRegistration:
 
     async def test_plaintext_password_not_stored(self) -> None:
         """平文パスワードが DB に保存されていないことを確認 (Req 4.3)。"""
-        svc, user_repo, _ = _make_service()
+        svc, user_repo, _, _ = _make_service()
         password = "SecurePass1234"
         _ = await svc.register(
             _valid_form(username="PlainUser", email="p@example.com", password=password)
@@ -497,21 +517,26 @@ def _login_request(
 
 async def _make_login_service() -> tuple[
     AuthService,
-    InMemoryUserRepository,
-    InMemoryRoleRepository,
+    InMemoryUserQueryRepository,
+    InMemoryRoleQueryRepository,
     InMemorySessionStore,
     PermissionService,
+    InMemoryUnitOfWorkFactory,
 ]:
     """login テスト用の AuthService + 依存を構築し、テストユーザーを登録する。"""
-    user_repo = InMemoryUserRepository()
-    role_repo = InMemoryRoleRepository(seed_roles=[ROLE_DEFAULT])
+    uow_factory = InMemoryUnitOfWorkFactory()
+    uow_factory.seed_roles([ROLE_DEFAULT])
+
+    user_query_repo = InMemoryUserQueryRepository(uow_factory)
+    role_query_repo = InMemoryRoleQueryRepository(uow_factory)
     session_store = InMemorySessionStore()
     password_service = PasswordService(hibp_client=None, banned_passwords=[])
-    permission_service = PermissionService(role_repo=role_repo)
+    permission_service = PermissionService(role_repo=role_query_repo)
 
     svc = AuthService(
-        user_repo=user_repo,
-        role_repo=role_repo,
+        uow_factory=uow_factory,
+        user_query_repo=user_query_repo,
+        role_query_repo=role_query_repo,
         password_service=password_service,
         permission_service=permission_service,
         session_store=session_store,
@@ -527,7 +552,7 @@ async def _make_login_service() -> tuple[
     )
     assert result.success is True
 
-    return svc, user_repo, role_repo, session_store, permission_service
+    return svc, user_query_repo, role_query_repo, session_store, permission_service, uow_factory
 
 
 # ── Login success (Req 5.1, 5.4, 5.5, 10.1) ──────────────────────────
@@ -589,7 +614,7 @@ class TestLoginSuccess:
         assert result.session_data.role_ids == (ROLE_DEFAULT.id,)
 
     async def test_session_stored_in_session_store(self) -> None:
-        svc, user_repo, _, session_store, _ = await _make_login_service()
+        svc, user_repo, _, session_store, _, _ = await _make_login_service()
         result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
         user = await user_repo.get_by_safe_username("testuser")
@@ -599,7 +624,7 @@ class TestLoginSuccess:
         assert stored.role_ids == result.role_ids
 
     async def test_session_retrievable_by_token(self) -> None:
-        svc, _, _, session_store, _ = await _make_login_service()
+        svc, _, _, session_store, _, _ = await _make_login_service()
         result = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(result, LoginResponse)
         stored = await session_store.get(result.token)
@@ -649,7 +674,7 @@ class TestLoginPasswordMismatch:
         assert result is LoginResult.AUTHENTICATION_FAILED
 
     async def test_no_session_created(self) -> None:
-        svc, user_repo, _, session_store, _ = await _make_login_service()
+        svc, user_repo, _, session_store, _, _ = await _make_login_service()
         _ = await svc.login(
             _login_request(password_md5="0" * 32),
             country=_DEFAULT_COUNTRY,
@@ -667,7 +692,7 @@ class TestLoginSessionReplacement:
     """再ログインで旧セッションが破棄され新セッションが作成される。"""
 
     async def test_old_session_replaced_by_new(self) -> None:
-        svc, _, _, session_store, _ = await _make_login_service()
+        svc, _, _, session_store, _, _ = await _make_login_service()
         first = await svc.login(_login_request(), country=_DEFAULT_COUNTRY)
         assert isinstance(first, LoginResponse)
         first_token = first.token
@@ -687,7 +712,7 @@ class TestLoginSessionReplacement:
 
     async def test_only_one_session_per_user(self) -> None:
         """同一ユーザーのセッションは常に1つだけ (Req 5.8)。"""
-        svc, user_repo, _, session_store, _ = await _make_login_service()
+        svc, user_repo, _, session_store, _, _ = await _make_login_service()
 
         # 3回ログイン
         last_result: LoginResponse | LoginResult | None = None
@@ -713,19 +738,22 @@ class TestLoginServerError:
     """予期しない例外で SERVER_ERROR を返す。"""
 
     async def test_unexpected_exception_returns_server_error(self) -> None:
-        inner_repo = InMemoryUserRepository()
+        uow_factory = InMemoryUnitOfWorkFactory()
+        uow_factory.seed_roles([ROLE_DEFAULT])
+        inner_repo = InMemoryUserQueryRepository(uow_factory)
         user_repo = ErrorRaisingUserRepository(
             inner=inner_repo,
             error=RuntimeError("DB connection lost"),
         )
-        role_repo = InMemoryRoleRepository(seed_roles=[ROLE_DEFAULT])
+        role_query_repo = InMemoryRoleQueryRepository(uow_factory)
         session_store = InMemorySessionStore()
         password_service = PasswordService(hibp_client=None, banned_passwords=[])
-        permission_service = PermissionService(role_repo=role_repo)
+        permission_service = PermissionService(role_repo=role_query_repo)
 
         svc = AuthService(
-            user_repo=user_repo,
-            role_repo=role_repo,
+            uow_factory=uow_factory,
+            user_query_repo=user_repo,
+            role_query_repo=role_query_repo,
             password_service=password_service,
             permission_service=permission_service,
             session_store=session_store,
@@ -839,19 +867,22 @@ class TestLoginLogging:
 
     async def test_login_server_error_emits_structured_log(self) -> None:
         """予期しない例外時に login_error イベントが structlog 形式で出力される。"""
-        inner_repo = InMemoryUserRepository()
+        uow_factory = InMemoryUnitOfWorkFactory()
+        uow_factory.seed_roles([ROLE_DEFAULT])
+        inner_repo = InMemoryUserQueryRepository(uow_factory)
         user_repo = ErrorRaisingUserRepository(
             inner=inner_repo,
             error=RuntimeError("DB connection lost"),
         )
-        role_repo = InMemoryRoleRepository(seed_roles=[ROLE_DEFAULT])
+        role_query_repo = InMemoryRoleQueryRepository(uow_factory)
         session_store = InMemorySessionStore()
         password_service = PasswordService(hibp_client=None, banned_passwords=[])
-        permission_service = PermissionService(role_repo=role_repo)
+        permission_service = PermissionService(role_repo=role_query_repo)
 
         svc = AuthService(
-            user_repo=user_repo,
-            role_repo=role_repo,
+            uow_factory=uow_factory,
+            user_query_repo=user_repo,
+            role_query_repo=role_query_repo,
             password_service=password_service,
             permission_service=permission_service,
             session_store=session_store,

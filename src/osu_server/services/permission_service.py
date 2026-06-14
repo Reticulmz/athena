@@ -10,7 +10,7 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionAuthorization
 
 if TYPE_CHECKING:
-    from osu_server.repositories.interfaces.role_repository import RoleRepository
+    from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -18,9 +18,9 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 class PermissionService:
     """ユーザーの全ロールから内部権限を計算する。"""
 
-    _role_repo: RoleRepository
+    _role_repo: RoleQueryRepository
 
-    def __init__(self, role_repo: RoleRepository) -> None:
+    def __init__(self, role_repo: RoleQueryRepository) -> None:
         self._role_repo = role_repo
 
     async def compute_permissions(self, user_id: int) -> Privileges:

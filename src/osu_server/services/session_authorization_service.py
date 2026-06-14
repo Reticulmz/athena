@@ -13,7 +13,7 @@ from osu_server.domain.identity.sessions import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.repositories.interfaces.role_repository import RoleRepository
+    from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.permission_service import PermissionService
 
@@ -25,14 +25,14 @@ class SessionAuthorizationService:
 
     _permission_service: PermissionService
     _session_store: SessionStore
-    _role_repository: RoleRepository
+    _role_repository: RoleQueryRepository
 
     def __init__(
         self,
         *,
         permission_service: PermissionService,
         session_store: SessionStore,
-        role_repository: RoleRepository,
+        role_repository: RoleQueryRepository,
     ) -> None:
         self._permission_service = permission_service
         self._session_store = session_store
