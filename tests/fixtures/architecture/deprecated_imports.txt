@@ -119,6 +119,7 @@ src/osu_server/services/legacy_web_auth_service.py	osu_server.services.password_
 src/osu_server/services/online_users.py	osu_server.repositories.interfaces.session_store
 src/osu_server/services/private_message_service.py	osu_server.repositories.interfaces.session_store
 src/osu_server/services/private_message_service.py	osu_server.repositories.interfaces.user_repository
+src/osu_server/services/queries/scores/legacy_getscores.py	osu_server.domain.legacy_getscores
 src/osu_server/services/score_authorization_service.py	osu_server.repositories.interfaces.session_store
 src/osu_server/services/score_authorization_service.py	osu_server.repositories.interfaces.user_repository
 src/osu_server/services/score_authorization_service.py	osu_server.services.password_service

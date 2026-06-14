@@ -40,6 +40,10 @@ from osu_server.repositories.interfaces.beatmap_repository import (
 from osu_server.repositories.interfaces.blob_repository import BlobRepository
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.chat_repository import ChatRepository
+from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
+from osu_server.repositories.interfaces.queries.legacy_getscores import (
+    LegacyGetscoresQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.replay_repository import ReplayRepository
@@ -54,6 +58,10 @@ from osu_server.repositories.memory.blob_repository import InMemoryBlobRepositor
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQueryRepository
+from osu_server.repositories.memory.queries.legacy_getscores import (
+    InMemoryLegacyGetscoresQueryRepository,
+)
 from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
@@ -67,6 +75,10 @@ from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeat
 from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
 from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
 from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
+from osu_server.repositories.sqlalchemy.queries.beatmaps import SQLAlchemyBeatmapQueryRepository
+from osu_server.repositories.sqlalchemy.queries.legacy_getscores import (
+    SQLAlchemyLegacyGetscoresQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 from osu_server.repositories.sqlalchemy.replay_repository import SQLAlchemyReplayRepository
@@ -98,18 +110,27 @@ from osu_server.services.commands.identity import (
     RefreshUserAuthorizationCommandUseCase,
     RegisterUserCommandUseCase,
 )
-from osu_server.services.legacy_getscores_service import LegacyGetscoresService
+from osu_server.services.legacy_getscores_service import (
+    GetscoresQueryParser,
+    GetscoresStatusMapper,
+    LegacyGetscoresService,
+)
 from osu_server.services.legacy_web_auth_service import LegacyWebAuthService
 from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.queries.beatmaps import (
+    ResolveBeatmapByChecksumQuery,
+    ResolveBeatmapByIdQuery,
+)
 from osu_server.services.queries.identity import (
     ComputePermissionsQueryUseCase,
     ComputeSessionAuthorizationQueryUseCase,
     LegacyWebAuthQueryUseCase,
     ListOnlineUsersQueryUseCase,
 )
+from osu_server.services.queries.scores import LegacyGetscoresQuery
 from osu_server.services.score_authorization_service import ScoreAuthorizationService
 from osu_server.services.score_submission_service import ScoreSubmissionService
 from osu_server.services.session_authorization_service import (
@@ -224,19 +245,38 @@ async def _register_query_repositories(
     container: Container,
     session_factory: async_sessionmaker[AsyncSession],
     memory_state: InMemoryCommandRepositoryState | None,
-) -> tuple[UserQueryRepository, RoleQueryRepository]:
+) -> tuple[
+    UserQueryRepository,
+    RoleQueryRepository,
+    BeatmapQueryRepository,
+    LegacyGetscoresQueryRepository,
+]:
     """Register query repositories for the active persistence backend."""
     if memory_state is not None:
         shared_uow_factory = InMemoryUnitOfWorkFactory(memory_state)
         user_query_repo = InMemoryUserQueryRepository(shared_uow_factory)
         role_query_repo = InMemoryRoleQueryRepository(shared_uow_factory)
+        beatmap_repo = await container.resolve(BeatmapRepository)
+        beatmap_query_repo = InMemoryBeatmapQueryRepository(beatmap_repo)
+        legacy_getscores_query_repo = InMemoryLegacyGetscoresQueryRepository(
+            beatmap_query_repo,
+        )
     else:
         user_query_repo = SQLAlchemyUserQueryRepository(session_factory)
         role_query_repo = SQLAlchemyRoleQueryRepository(session_factory)
+        beatmap_query_repo = SQLAlchemyBeatmapQueryRepository(session_factory)
+        legacy_getscores_query_repo = SQLAlchemyLegacyGetscoresQueryRepository(
+            session_factory,
+        )
 
     container.register_singleton(UserQueryRepository, lambda: user_query_repo)
     container.register_singleton(RoleQueryRepository, lambda: role_query_repo)
-    return user_query_repo, role_query_repo
+    container.register_singleton(BeatmapQueryRepository, lambda: beatmap_query_repo)
+    container.register_singleton(
+        LegacyGetscoresQueryRepository,
+        lambda: legacy_getscores_query_repo,
+    )
+    return user_query_repo, role_query_repo, beatmap_query_repo, legacy_getscores_query_repo
 
 
 async def register_services(container: Container, config: AppConfig) -> None:  # noqa: PLR0915
@@ -284,11 +324,29 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     _register_unit_of_work_factory(container, session_factory, memory_command_state)
 
     # -- Query Repositories (singleton) ---------------------------------------
-    user_query_repo, role_query_repo = await _register_query_repositories(
+    (
+        user_query_repo,
+        role_query_repo,
+        beatmap_query_repo,
+        legacy_getscores_query_repo,
+    ) = await _register_query_repositories(
         container,
         session_factory,
         memory_command_state,
     )
+
+    resolve_beatmap_by_id_query = ResolveBeatmapByIdQuery(beatmap_query_repo)
+    container.register_singleton(
+        ResolveBeatmapByIdQuery,
+        lambda: resolve_beatmap_by_id_query,
+    )
+    resolve_beatmap_by_checksum_query = ResolveBeatmapByChecksumQuery(beatmap_query_repo)
+    container.register_singleton(
+        ResolveBeatmapByChecksumQuery,
+        lambda: resolve_beatmap_by_checksum_query,
+    )
+    legacy_getscores_query = LegacyGetscoresQuery(legacy_getscores_query_repo)
+    container.register_singleton(LegacyGetscoresQuery, lambda: legacy_getscores_query)
 
     # -- BlobStorage backend/service (singleton) ------------------------------
     blob_backend = create_blob_storage_backend(config)
@@ -568,6 +626,11 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(LegacyWebAuthQueryUseCase, lambda: legacy_web_auth_query)
 
     # -- Getscores service / endpoint (singletons) ----------------------------
+    getscores_parser = GetscoresQueryParser()
+    container.register_singleton(GetscoresQueryParser, lambda: getscores_parser)
+    getscores_status_mapper = GetscoresStatusMapper()
+    container.register_singleton(GetscoresStatusMapper, lambda: getscores_status_mapper)
+
     getscores_service = LegacyGetscoresService(
         repository=beatmap_repo,
         mirror_resolve=mirror_service.resolve_by_checksum,
@@ -576,7 +639,9 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
 
     getscores_handler = GetscoresHandler(
         auth_query=legacy_web_auth_query,
-        getscores_service=getscores_service,
+        getscores_parser=getscores_parser,
+        getscores_query=legacy_getscores_query,
+        status_mapper=getscores_status_mapper,
     )
     container.register_singleton(GetscoresHandler, lambda: getscores_handler)
 

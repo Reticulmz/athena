@@ -25,8 +25,12 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
-    from osu_server.services.legacy_getscores_service import LegacyGetscoresService
+    from osu_server.services.legacy_getscores_service import (
+        GetscoresQueryParser,
+        GetscoresStatusMapper,
+    )
     from osu_server.services.queries.identity import LegacyWebAuthQuery
+    from osu_server.services.queries.scores import LegacyGetscoresQuery
 
 _TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8"
 
@@ -47,10 +51,14 @@ class GetscoresHandler:
     def __init__(
         self,
         auth_query: LegacyWebAuthQuery,
-        getscores_service: LegacyGetscoresService,
+        getscores_parser: GetscoresQueryParser,
+        getscores_query: LegacyGetscoresQuery,
+        status_mapper: GetscoresStatusMapper,
     ) -> None:
         self._auth_query: LegacyWebAuthQuery = auth_query
-        self._getscores_service: LegacyGetscoresService = getscores_service
+        self._getscores_parser: GetscoresQueryParser = getscores_parser
+        self._getscores_query: LegacyGetscoresQuery = getscores_query
+        self._status_mapper: GetscoresStatusMapper = status_mapper
 
     async def __call__(self, request: Request) -> Response:
         """Handle a getscores request, returning the stable wire body."""
@@ -71,7 +79,7 @@ class GetscoresHandler:
             )
             return Response(content=b"", status_code=HTTPStatus.UNAUTHORIZED)
 
-        parse_result = self._getscores_service.parse(request.query_params)
+        parse_result = self._getscores_parser.parse(request.query_params)
         if parse_result.error is not None or parse_result.request is None:
             error_value = parse_result.error.value if parse_result.error is not None else None
             logger.info(
@@ -94,7 +102,7 @@ class GetscoresHandler:
                 user_id=auth_result.user_id,
             )
 
-        outcome = await self._getscores_service.resolve(request_obj)
+        outcome = await self._getscores_query.resolve(request_obj)
 
         if outcome.kind is GetscoresOutcomeKind.UNAVAILABLE:
             logger.info(
@@ -114,7 +122,7 @@ class GetscoresHandler:
 
         # HEADER outcome
         assert outcome.header is not None  # invariant for HEADER outcomes
-        wire_status = self._getscores_service.map_header_status(outcome.header.beatmap)
+        wire_status = self._status_mapper.map_header_status(outcome.header.beatmap)
         if wire_status is None:
             logger.info(
                 "getscores_unavailable",

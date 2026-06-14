@@ -115,7 +115,7 @@
   - _Boundary: Command Use Cases - Chat, Query Use Cases - Chat_
   - _Depends: 3.5_
 
-- [ ] 4.3 (P) Migrate beatmap and getscores read workflows into query use-cases
+- [x] 4.3 (P) Migrate beatmap and getscores read workflows into query use-cases
   - Separate beatmap resolution, freshness reads, and legacy getscores display behavior from command-side beatmap refresh work.
   - Return explicit unavailable or empty query results when read data cannot satisfy a requested view.
   - Completion is observable when legacy getscores behavior is preserved through a query use-case and no command mutation is used to fill missing display data.
