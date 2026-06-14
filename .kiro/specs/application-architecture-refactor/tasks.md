@@ -107,7 +107,7 @@
   - Completion is observable when identity transports call clearly named command/query use-cases and existing identity tests still pass.
   - _Requirements: 1.1, 1.5, 3.1, 3.2, 3.3, 3.4, 3.6, 6.4_
 
-- [ ] 4.2 (P) Migrate chat workflows into command and query use-cases
+- [x] 4.2 (P) Migrate chat workflows into command and query use-cases
   - Separate message sending, message persistence, channel mutations, channel reads, and private-message reads by command/query responsibility.
   - Keep chat use-cases independent of stable, lazer, or first-party API package names.
   - Completion is observable when stable chat handlers and worker persistence can invoke chat use-cases without direct repository implementation access.

@@ -1,0 +1,142 @@
+"""Send channel message command use-case."""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import structlog
+
+from osu_server.domain.chat import ChannelMessageResult
+from osu_server.domain.events.channels import ChannelMessageSent
+
+if TYPE_CHECKING:
+    from osu_server.config import AppConfig
+    from osu_server.domain.chat import SendChannelMessageInput
+    from osu_server.infrastructure.messaging.interfaces import EventBus
+    from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+    from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.services.bancho_bot.command_service import CommandService
+    from osu_server.services.channel_service import ChannelService
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+
+
+@dataclass(frozen=True, slots=True)
+class SendChannelMessageCommand:
+    """Command to send a message to a channel."""
+
+    message: SendChannelMessageInput
+
+
+@dataclass(frozen=True, slots=True)
+class SendChannelMessageResult:
+    """Result of sending a channel message."""
+
+    result: ChannelMessageResult | None
+
+
+class SendChannelMessageUseCase:
+    """Use-case for sending messages to channels."""
+
+    def __init__(
+        self,
+        *,
+        channel_service: ChannelService,
+        command_service: CommandService,
+        session_store: SessionStore,
+        event_bus: EventBus,
+        rate_limiter: RateLimiter,
+        config: AppConfig,
+    ) -> None:
+        self._channel_service: ChannelService = channel_service
+        self._command_service: CommandService = command_service
+        self._session_store: SessionStore = session_store
+        self._event_bus: EventBus = event_bus
+        self._rate_limiter: RateLimiter = rate_limiter
+        self._config: AppConfig = config
+
+    async def execute(self, command: SendChannelMessageCommand) -> SendChannelMessageResult:
+        """Execute the send channel message command."""
+        message = command.message
+        sender = message.sender
+        destination = message.destination
+        authorization = message.authorization
+
+        # Check silence
+        if not await self._check_silence(sender.user_id):
+            return SendChannelMessageResult(result=None)
+
+        # Check rate limit
+        channel = await self._channel_service.get_channel(destination.name)
+        limit = self._config.rate_limit_messages
+        window = self._config.rate_limit_window
+        if channel:
+            if channel.rate_limit_messages is not None:
+                limit = channel.rate_limit_messages
+            if channel.rate_limit_window is not None:
+                window = channel.rate_limit_window
+
+        if not await self._rate_limiter.check(sender.user_id, limit, window):
+            logger.info("rate_limit_exceeded", sender_id=sender.user_id)
+            return SendChannelMessageResult(result=None)
+
+        # Validate message
+        valid_content = await self._validate_message(message.content)
+        if not valid_content:
+            return SendChannelMessageResult(result=None)
+
+        # Resolve delivery targets
+        targets = await self._channel_service.get_delivery_targets(
+            sender_id=sender.user_id,
+            user_privileges=authorization.privileges,
+            user_role_ids=list(authorization.role_ids),
+            channel_name=destination.name,
+        )
+        if targets is None:
+            return SendChannelMessageResult(result=None)
+
+        # Execute commands
+        command_responses = await self._command_service.execute(
+            sender.user_id,
+            sender.username,
+            destination.name,
+            valid_content,
+            authorization=authorization,
+        )
+
+        # Fire event for persistence
+        await self._event_bus.fire(
+            ChannelMessageSent(
+                sender_id=sender.user_id,
+                sender_name=sender.username,
+                channel_name=destination.name,
+                content=valid_content,
+            )
+        )
+
+        result = ChannelMessageResult(
+            delivered_to=targets,
+            content=valid_content,
+            command_responses=command_responses,
+        )
+        return SendChannelMessageResult(result=result)
+
+    async def _check_silence(self, sender_id: int) -> bool:
+        """Check if sender is silenced."""
+        session = await self._session_store.get_by_user(sender_id)
+        if not session:
+            return False
+        if session.silence_end and int(time.time()) < session.silence_end:
+            logger.info("silenced_user_message_rejected", sender_id=sender_id)
+            return False
+        return True
+
+    async def _validate_message(self, content: str) -> str | None:
+        """Validate message content."""
+        if not content:
+            return None
+        if len(content) > self._config.message_max_length:
+            return None
+        return content
