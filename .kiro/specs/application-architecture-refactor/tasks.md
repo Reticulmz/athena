@@ -262,7 +262,7 @@
   - Completion is observable when query tests cover unavailable/empty results and command repositories contain no presentation-only reads.
   - _Requirements: 3.2, 3.5, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 9.4 Run the full quality gate and resolve strict validation failures
+- [x] 9.4 Run the full quality gate and resolve strict validation failures
   - Run formatting, linting, type checking, dependency validation, and the relevant automated tests.
   - Resolve remaining strict typing, import boundary, old path, and regression failures without suppression-based workarounds.
   - Completion is observable when the full validation suite passes and no old/new architecture path pair remains supported for the same responsibility.
