@@ -26,20 +26,19 @@ from typing import TYPE_CHECKING, cast
 
 from starlette.testclient import TestClient
 
-from osu_server.app import create_app
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.repositories.interfaces.role_repository import RoleRepository
+from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID, ServerPacketID
+from tests.support.app import create_in_memory_app as create_app
+from tests.support.app import resolve_dependency_sync
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from starlette.applications import Starlette
-
-    from osu_server.infrastructure.di.container import Container
-    from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 
 # ── Constants ────────────────────────────────────────────────────────────
 
@@ -83,10 +82,9 @@ def _test_env() -> Generator[None]:
 
 def _seed_default_role(app: Starlette) -> None:
     """Seed the Default role into the InMemoryRoleRepository."""
-    container = cast("Container", app.state.container)
-    repo = cast("InMemoryRoleRepository", container.get_singleton(RoleRepository))
-    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
-    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
+    repo = resolve_dependency_sync(app, RoleRepository)
+    assert isinstance(repo, InMemoryRoleRepository)
+    repo.add_role(_DEFAULT_ROLE)
 
 
 def _login_body(
@@ -351,8 +349,7 @@ class TestExceptionIsolation:
 
                 # Register a handler that always raises for a specific packet ID.
                 # Use BEATMAP_INFO (68) — unlikely to have a real handler.
-                container = cast("Container", app.state.container)
-                dispatcher = container.get_singleton(PacketDispatcher)
+                dispatcher = resolve_dependency_sync(app, PacketDispatcher)
 
                 @dispatcher.register(ClientPacketID.BEATMAP_INFO)
                 async def _boom(_payload: bytes, _user_id: int) -> None:

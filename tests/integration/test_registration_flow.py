@@ -21,18 +21,17 @@ from typing import TYPE_CHECKING
 
 from starlette.testclient import TestClient
 
-from osu_server.app import create_app
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from tests.support.app import create_in_memory_app as create_app
+from tests.support.app import resolve_dependency_sync
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from starlette.applications import Starlette
-
-    from osu_server.infrastructure.di.container import Container
 
 # ── Seed data ────────────────────────────────────────────────────────────
 
@@ -65,12 +64,9 @@ def _seed_default_role(app: Starlette) -> None:
 
     Must be called after TestClient enters (lifespan has run).
     """
-    container: Container = app.state.container  # pyright: ignore[reportAny]  # Starlette State returns Any
-    registration = container._registrations[RoleRepository]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only DI introspection
-    repo = registration.instance
+    repo = resolve_dependency_sync(app, RoleRepository)
     assert isinstance(repo, InMemoryRoleRepository)
-    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
-    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+    repo.add_role(_DEFAULT_ROLE)
 
 
 def _registration_form(

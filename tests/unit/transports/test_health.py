@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from http import HTTPStatus
-from typing import TYPE_CHECKING, TypeVar, cast, final, override
+from typing import TYPE_CHECKING, TypeVar, cast, final
 from unittest.mock import patch
 
 from glide import GlideClient
@@ -22,7 +22,6 @@ from starlette.testclient import TestClient
 
 from osu_server.app import get_version_info, health_check_endpoint, health_endpoint
 from osu_server.config import AppConfig
-from osu_server.infrastructure.di.container import Container
 
 if TYPE_CHECKING:
     import pytest
@@ -80,19 +79,17 @@ class FakeValkey:
 
 
 @final
-class FakeContainer(Container):
+class FakeDishkaContainer:
     def __init__(self, engine: FakeEngine, valkey: FakeValkey) -> None:
-        super().__init__()
         self._engine = engine
         self._valkey = valkey
 
-    @override
-    async def resolve(self, interface: type[U]) -> U:
-        if interface is AsyncEngine:
+    async def get(self, dependency_type: type[U]) -> U:
+        if dependency_type is AsyncEngine:
             return cast("U", self._engine)
-        if interface is GlideClient:
+        if dependency_type is GlideClient:
             return cast("U", self._valkey)
-        raise KeyError(f"{interface!r} is not registered")
+        raise KeyError(f"{dependency_type!r} is not registered")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -198,10 +195,14 @@ class TestHealthCheckEndpoint:
     """GET /health returns infrastructure health with DB and Valkey checks."""
 
     @staticmethod
-    def _make_container(*, postgres_ok: bool = True, valkey_ok: bool = True) -> Container:
+    def _make_container(
+        *,
+        postgres_ok: bool = True,
+        valkey_ok: bool = True,
+    ) -> FakeDishkaContainer:
         engine = FakeEngine(should_fail=not postgres_ok)
         valkey = FakeValkey(should_fail=not valkey_ok)
-        return FakeContainer(engine, valkey)
+        return FakeDishkaContainer(engine, valkey)
 
     @classmethod
     def _make_app(
@@ -214,7 +215,10 @@ class TestHealthCheckEndpoint:
     ) -> Starlette:
         app = Starlette(routes=[Route("/health", health_check_endpoint, methods=["GET"])])
         app.state.version_info = (version, commit)
-        app.state.container = cls._make_container(postgres_ok=postgres_ok, valkey_ok=valkey_ok)
+        app.state.dishka_container = cls._make_container(
+            postgres_ok=postgres_ok,
+            valkey_ok=valkey_ok,
+        )
         return app
 
     def test_healthy_returns_200(self) -> None:

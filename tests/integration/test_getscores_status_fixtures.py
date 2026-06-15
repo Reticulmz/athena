@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING
 import pytest
 from starlette.testclient import TestClient
 
-from osu_server.app import create_app
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
@@ -46,13 +45,13 @@ from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.services.password_service import PasswordService
+from tests.support.app import create_in_memory_app as create_app
+from tests.support.app import resolve_dependency
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from starlette.applications import Starlette
-
-    from osu_server.infrastructure.di.container import Container
 
 
 _TEST_USERNAME = "TargetUsr"
@@ -81,10 +80,6 @@ def _test_env() -> Generator[None]:
             _ = os.environ.pop("DOMAIN", None)
         else:
             os.environ["DOMAIN"] = old_domain
-
-
-def _container(app: Starlette) -> Container:
-    return app.state.container  # pyright: ignore[reportAny]
 
 
 @dataclass(frozen=True)
@@ -169,10 +164,9 @@ _BELOW_RANKED_IDS = tuple(f.name for f in _BELOW_RANKED_FIXTURES)
 
 
 async def _seed_user_with_session(app: Starlette) -> int:
-    container = _container(app)
-    user_repo = await container.resolve(UserRepository)
-    password_service = await container.resolve(PasswordService)
-    session_store = await container.resolve(SessionStore)
+    user_repo = await resolve_dependency(app, UserRepository)
+    password_service = await resolve_dependency(app, PasswordService)
+    session_store = await resolve_dependency(app, SessionStore)
 
     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
     user = await user_repo.create(
@@ -206,8 +200,7 @@ async def _seed_user_with_session(app: Starlette) -> int:
 
 
 async def _seed_beatmap_for_fixture(app: Starlette, fixture: _StatusFixture) -> None:
-    container = _container(app)
-    beatmap_repo = await container.resolve(BeatmapRepository)
+    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
     assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
 
     beatmap = Beatmap(

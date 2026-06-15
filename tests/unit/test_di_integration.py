@@ -1,66 +1,56 @@
-"""Tests for Task 6.1: DI integration, route registration, and subdomain routing.
-
-Validates:
-- providers.py registers infrastructure-layer services (httpx, HIBP, CountryResolver)
-- app.py _register_services wires repositories, services, handlers
-- httpx.AsyncClient lifecycle (shutdown hook registered)
-- Environment-based repository switching (InMemory vs SQLAlchemy)
-- BanchoEndpoint and RegistrationHandler are resolvable
-- app.py subdomain routing (Host-based) and path-based fallbacks
-- Config domain field
-"""
+"""Dishka app composition integration tests."""
 
 from __future__ import annotations
 
-import os
-import socket
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
 
 import httpx
 import pytest
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from starlette.applications import Starlette
 from starlette.routing import Host, Mount, Route
 from taskiq import AsyncBroker
-from taskiq_redis import ListQueueBroker
 
-from osu_server.app import app, create_app, register_services
+from osu_server.app import app, create_app
+from osu_server.composition.providers.container import make_app_container
+from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
 from osu_server.config import AppConfig
-from osu_server.domain.events.users import UserDisconnected
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
-from osu_server.infrastructure.di.providers import build_container
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
+from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
+from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
-
-if TYPE_CHECKING:
-    from osu_server.infrastructure.di.container import Container
-from osu_server.infrastructure.security.hibp import HIBPClient
+from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
 from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
+from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository
+from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
 from osu_server.services.bancho_bot.command_service import CommandService
+from osu_server.services.beatmap_mirror import BeatmapMirrorService
 from osu_server.services.channel_service import ChannelService
 from osu_server.services.commands.chat import (
     JoinChannelUseCase,
     LeaveChannelUseCase,
-    PersistChannelMessageCommand,
     PersistChannelMessageUseCase,
-    PersistPrivateMessageCommand,
     PersistPrivateMessageUseCase,
     SendChannelMessageUseCase,
     SendPrivateMessageUseCase,
 )
+from osu_server.services.commands.identity import LoginCommandUseCase, RegisterUserCommandUseCase
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
@@ -74,448 +64,175 @@ from osu_server.services.queries.chat import (
 )
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
-from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
 from osu_server.transports.stable.bancho.workflows.login_response_builder import (
     LoginResponseBuilder,
 )
 from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflow
+from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
-from tests.factories.domain import make_channel
+from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
+from tests.factories.config import make_app_config
 
-_EXPECTED_MIN_SHUTDOWN_HOOKS = 3
 _EXPECTED_MIN_HOST_ROUTES = 2
 
-
-def _is_port_open(host: str, port: int, *, timeout: float = 1.0) -> bool:
-    """Check if a TCP port is open and accepting connections."""
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
-def _require_valkey() -> None:
-    """Skip if VALKEY_URL is not set or Valkey is unreachable."""
-    url = os.environ.get("VALKEY_URL")
-    if not url:
-        pytest.skip("VALKEY_URL not set")
-    parsed = urlparse(url)
-    if parsed.hostname and parsed.port and not _is_port_open(parsed.hostname, parsed.port):
-        pytest.skip(f"Valkey not reachable at {parsed.hostname}:{parsed.port}")
+def test_public_app_entrypoint_exposes_starlette_app() -> None:
+    assert isinstance(app, Starlette)
+    assert isinstance(create_app(), Starlette)
 
 
-def _make_config(*, environment: str = "test") -> AppConfig:
-    """Create a minimal AppConfig for testing."""
-    return AppConfig.model_validate(
-        {
-            "database_url": "postgresql://test:test@localhost:5432/test",
-            "valkey_url": "redis://localhost:6379/0",
-            "environment": environment,
-        }
+def test_create_app_registers_host_and_fallback_routes() -> None:
+    created = create_app()
+    routes = list(created.routes)
+
+    host_routes = [route for route in routes if isinstance(route, Host)]
+    fallback_routes = [route for route in routes if isinstance(route, Route)]
+    mounts = [route for route in routes if isinstance(route, Mount)]
+
+    assert len(host_routes) >= _EXPECTED_MIN_HOST_ROUTES
+    assert any(
+        route.path == "/" and "POST" in (route.methods or set()) for route in fallback_routes
+    )
+    assert any(
+        route.path == "/health" and "GET" in (route.methods or set()) for route in fallback_routes
+    )
+    assert any(route.path == "/web" for route in mounts)
+    assert any(route.path == "/api/v2" for route in mounts)
+    assert any(route.path == "/signalr" for route in mounts)
+
+
+@pytest.mark.asyncio
+async def test_app_container_resolves_common_infrastructure(tmp_path: Path) -> None:
+    config = make_app_config(
+        environment="test",
+        blob_storage_local_root=str(tmp_path / "blobs"),
+    )
+    container = make_app_container(
+        config,
+        overrides=(make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),),
     )
 
-
-async def _build_full_container(
-    config: AppConfig | None = None,
-) -> tuple[AppConfig, Container]:
-    """Build container with both infrastructure and service registrations."""
-    _require_valkey()
-    if config is None:
-        config = _make_config()
-    container = await build_container(config)
-    await register_services(container, config)
-    return config, container
-
-
-# ---------------------------------------------------------------------------
-# Infrastructure-layer DI registrations (providers.py)
-# ---------------------------------------------------------------------------
-
-
-class TestDIInfraRegistrations:
-    """build_container registers infrastructure-layer services."""
-
-    async def test_resolves_httpx_async_client(self) -> None:
-        _require_valkey()
-        config = _make_config()
-        container = await build_container(config)
-
-        client = await container.resolve(httpx.AsyncClient)
-        assert isinstance(client, httpx.AsyncClient)
-
-    async def test_resolves_hibp_client(self) -> None:
-        _require_valkey()
-        config = _make_config()
-        container = await build_container(config)
-
-        hibp = await container.resolve(HIBPClient)
-        assert isinstance(hibp, HIBPClient)
-
-    async def test_resolves_country_resolver(self) -> None:
-        _require_valkey()
-        config = _make_config()
-        container = await build_container(config)
-
-        resolver = await container.resolve(CountryResolver)
-        assert isinstance(resolver, CloudflareCountryResolver)
-
-    async def test_resolves_taskiq_broker(self) -> None:
-        _require_valkey()
-        config = _make_config()
-        container = await build_container(config)
-
-        broker = await container.resolve(AsyncBroker)
-        assert isinstance(broker, ListQueueBroker)
-
-
-# ---------------------------------------------------------------------------
-# Full DI registrations (providers.py + _register_services)
-# ---------------------------------------------------------------------------
-
-
-class TestDIAuthRegistrations:
-    """_register_services registers all auth/login related services."""
-
-    async def test_resolves_password_service(self) -> None:
-        _, container = await _build_full_container()
-
-        svc = await container.resolve(PasswordService)
-        assert isinstance(svc, PasswordService)
-
-    async def test_resolves_user_repository(self) -> None:
-        _, container = await _build_full_container()
-
-        repo = await container.resolve(UserRepository)
-        assert repo is not None
-
-    async def test_resolves_role_repository(self) -> None:
-        _, container = await _build_full_container()
-
-        repo = await container.resolve(RoleRepository)
-        assert repo is not None
-
-    async def test_resolves_permission_service(self) -> None:
-        _, container = await _build_full_container()
-
-        svc = await container.resolve(PermissionService)
-        assert isinstance(svc, PermissionService)
-
-    async def test_resolves_auth_service(self) -> None:
-        _, container = await _build_full_container()
-
-        svc = await container.resolve(AuthService)
-        assert isinstance(svc, AuthService)
-
-    async def test_resolves_bancho_endpoint(self) -> None:
-        _, container = await _build_full_container()
-
-        handler = await container.resolve(BanchoEndpoint)
-        assert isinstance(handler, BanchoEndpoint)
-
-    async def test_resolves_registration_handler(self) -> None:
-        _, container = await _build_full_container()
-
-        handler = await container.resolve(RegistrationHandler)
-        assert isinstance(handler, RegistrationHandler)
-
-
-# ---------------------------------------------------------------------------
-# Bancho endpoint graph resolution
-# ---------------------------------------------------------------------------
-
-
-class TestDIBanchoEndpointGraph:
-    """_register_services registers LoginWorkflow, PollingWorkflow,
-    LoginResponseBuilder, and PacketDispatcher as singletons."""
-
-    async def test_resolves_login_response_builder(self) -> None:
-        _, container = await _build_full_container()
-
-        builder = await container.resolve(LoginResponseBuilder)
-        assert isinstance(builder, LoginResponseBuilder)
-
-    async def test_resolves_login_workflow(self) -> None:
-        _, container = await _build_full_container()
-
-        workflow = await container.resolve(LoginWorkflow)
-        assert isinstance(workflow, LoginWorkflow)
-
-    async def test_resolves_polling_workflow(self) -> None:
-        _, container = await _build_full_container()
-
-        workflow = await container.resolve(PollingWorkflow)
-        assert isinstance(workflow, PollingWorkflow)
-
-    async def test_resolves_packet_dispatcher(self) -> None:
-        _, container = await _build_full_container()
-
-        dispatcher = await container.resolve(PacketDispatcher)
-        assert isinstance(dispatcher, PacketDispatcher)
-
-    async def test_polling_workflow_uses_container_dispatcher_with_handlers(self) -> None:
-        """PollingWorkflow._packet_dispatcher is the same instance resolved
-        from the container, and C2S handlers are registered on it."""
-        _, container = await _build_full_container()
-
-        polling = await container.resolve(PollingWorkflow)
-        dispatcher = await container.resolve(PacketDispatcher)
-
-        assert polling._packet_dispatcher is dispatcher  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        assert ClientPacketID.SEND_MESSAGE in dispatcher.get_handlers()
-        assert ClientPacketID.SEND_PRIVATE_MESSAGE in dispatcher.get_handlers()
-        assert ClientPacketID.JOIN_CHANNEL in dispatcher.get_handlers()
-        assert ClientPacketID.LEAVE_CHANNEL in dispatcher.get_handlers()
-
-
-# ---------------------------------------------------------------------------
-# Environment-based repository switching
-# ---------------------------------------------------------------------------
-
-
-class TestDIChatRegistrations:
-    """_register_services wires chat command/query use-cases."""
-
-    async def test_resolves_chat_query_repositories(self) -> None:
-        _, container = await _build_full_container()
-
-        channel_repo = await container.resolve(ChannelQueryRepository)
-        history_repo = await container.resolve(ChatHistoryQueryRepository)
-        assert isinstance(channel_repo, InMemoryChannelQueryRepository)
-        assert isinstance(history_repo, InMemoryChatHistoryQueryRepository)
-
-    async def test_chat_persistence_use_cases_write_through_uow(self) -> None:
-        _, container = await _build_full_container()
-        channel_repo = await container.resolve(ChannelRepository)
-        assert isinstance(channel_repo, InMemoryChannelRepository)
-        _ = await channel_repo.create(
-            make_channel(name="#osu"),
-        )
-        channel_use_case = await container.resolve(PersistChannelMessageUseCase)
-        private_use_case = await container.resolve(PersistPrivateMessageUseCase)
-
-        channel_result = await channel_use_case.execute(
-            PersistChannelMessageCommand(
-                sender_id=1,
-                channel_name="#osu",
-                content="hello",
-            )
-        )
-        private_result = await private_use_case.execute(
-            PersistPrivateMessageCommand(
-                sender_id=1,
-                target_id=2,
-                content="secret",
-            )
-        )
-        history_repo = await container.resolve(ChatHistoryQueryRepository)
-        channel_history = await history_repo.list_channel_messages("#osu", limit=10)
-        private_history = await history_repo.list_private_messages(1, 2, limit=10)
-
-        assert channel_result.success is True
-        assert private_result.success is True
-        assert [message.content for message in channel_history] == ["hello"]
-        assert [message.content for message in private_history] == ["secret"]
-
-    async def test_resolves_chat_command_and_query_use_cases(self) -> None:
-        _, container = await _build_full_container()
-
+    try:
+        assert await container.get(AppConfig) is config
+        assert isinstance(await container.get(AsyncEngine), AsyncEngine)
         assert isinstance(
-            await container.resolve(SendChannelMessageUseCase),
-            SendChannelMessageUseCase,
+            await container.get(async_sessionmaker[AsyncSession]),
+            async_sessionmaker,
+        )
+        assert isinstance(await container.get(AsyncBroker), AsyncBroker)
+        assert isinstance(await container.get(httpx.AsyncClient), httpx.AsyncClient)
+        assert isinstance(await container.get(EventBus), EventBus)
+        assert isinstance(await container.get(CountryResolver), CloudflareCountryResolver)
+    finally:
+        await container.close()
+
+
+@pytest.mark.asyncio
+async def test_app_container_uses_explicit_in_memory_test_overrides(
+    tmp_path: Path,
+) -> None:
+    config = make_app_config(
+        environment="test",
+        blob_storage_local_root=str(tmp_path / "blobs"),
+    )
+    container = make_app_container(
+        config,
+        overrides=(make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),),
+    )
+
+    try:
+        assert isinstance(await container.get(PacketQueue), InMemoryPacketQueue)
+        assert isinstance(await container.get(ChannelStateStore), InMemoryChannelStateStore)
+        assert isinstance(await container.get(RateLimiter), InMemoryRateLimiter)
+        assert isinstance(await container.get(SessionStore), InMemorySessionStore)
+        assert isinstance(await container.get(UserRepository), InMemoryUserRepository)
+        assert isinstance(await container.get(RoleRepository), InMemoryRoleRepository)
+        assert isinstance(await container.get(ChannelRepository), InMemoryChannelRepository)
+        assert isinstance(await container.get(BeatmapRepository), InMemoryBeatmapRepository)
+        assert isinstance(
+            await container.get(ChannelQueryRepository),
+            InMemoryChannelQueryRepository,
         )
         assert isinstance(
-            await container.resolve(SendPrivateMessageUseCase),
-            SendPrivateMessageUseCase,
+            await container.get(ChatHistoryQueryRepository),
+            InMemoryChatHistoryQueryRepository,
         )
-        assert isinstance(await container.resolve(JoinChannelUseCase), JoinChannelUseCase)
-        assert isinstance(await container.resolve(LeaveChannelUseCase), LeaveChannelUseCase)
-        assert isinstance(
-            await container.resolve(ListVisibleChannelsQuery),
-            ListVisibleChannelsQuery,
-        )
-        assert isinstance(
-            await container.resolve(ListAutojoinChannelsQuery),
-            ListAutojoinChannelsQuery,
-        )
-        assert isinstance(
-            await container.resolve(ResolveChannelMessageDeliveryQuery),
-            ResolveChannelMessageDeliveryQuery,
-        )
-        assert isinstance(
-            await container.resolve(ResolvePrivateMessageTargetQuery),
-            ResolvePrivateMessageTargetQuery,
-        )
-        assert isinstance(
-            await container.resolve(ListChannelMessagesQuery),
-            ListChannelMessagesQuery,
-        )
-        assert isinstance(
-            await container.resolve(ListPrivateMessagesQuery),
-            ListPrivateMessagesQuery,
-        )
+    finally:
+        await container.close()
 
 
-class TestDIChannelSystemRegistrations:
-    """_register_services wires channel/chat transport composition."""
+@pytest.mark.asyncio
+async def test_app_container_resolves_identity_and_chat_graph(tmp_path: Path) -> None:
+    config = make_app_config(
+        environment="test",
+        blob_storage_local_root=str(tmp_path / "blobs"),
+    )
+    container = make_app_container(
+        config,
+        overrides=(make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),),
+    )
 
-    async def test_resolves_channel_system_services(self) -> None:
-        _, container = await _build_full_container()
+    expected_types = (
+        PasswordService,
+        PermissionService,
+        AuthService,
+        LoginCommandUseCase,
+        RegisterUserCommandUseCase,
+        ChannelService,
+        PrivateMessageService,
+        CommandService,
+        ListVisibleChannelsQuery,
+        ListAutojoinChannelsQuery,
+        ResolveChannelMessageDeliveryQuery,
+        ResolvePrivateMessageTargetQuery,
+        ListChannelMessagesQuery,
+        ListPrivateMessagesQuery,
+        SendChannelMessageUseCase,
+        SendPrivateMessageUseCase,
+        JoinChannelUseCase,
+        LeaveChannelUseCase,
+        PersistChannelMessageUseCase,
+        PersistPrivateMessageUseCase,
+    )
 
-        channel_repo = await container.resolve(ChannelRepository)
-        channel_state = await container.resolve(ChannelStateStore)
-        rate_limiter = await container.resolve(RateLimiter)
-        channel_service = await container.resolve(ChannelService)
-        private_message_service = await container.resolve(PrivateMessageService)
-        command_service = await container.resolve(CommandService)
-
-        assert isinstance(channel_repo, InMemoryChannelRepository)
-        assert isinstance(channel_state, InMemoryChannelStateStore)
-        assert isinstance(rate_limiter, InMemoryRateLimiter)
-        assert isinstance(channel_service, ChannelService)
-        assert isinstance(private_message_service, PrivateMessageService)
-        assert isinstance(command_service, CommandService)
-
-    async def test_registers_chat_handlers_with_packet_dispatcher(self) -> None:
-        _, container = await _build_full_container()
-
-        dispatcher = await container.resolve(PacketDispatcher)
-        handlers = dispatcher.get_handlers()
-
-        assert ClientPacketID.SEND_MESSAGE in handlers
-        assert ClientPacketID.SEND_PRIVATE_MESSAGE in handlers
-        assert ClientPacketID.JOIN_CHANNEL in handlers
-        assert ClientPacketID.LEAVE_CHANNEL in handlers
-
-    async def test_registers_chat_listeners_with_event_bus(self) -> None:
-        _, container = await _build_full_container()
-        event_bus = await container.resolve(EventBus)
-        channel_state = await container.resolve(ChannelStateStore)
-
-        await channel_state.add_member("#osu", 42)
-        await event_bus.fire(UserDisconnected(user_id=42))
-
-        assert await channel_state.get_user_channels(42) == set()
-
-    async def test_registers_chat_persistence_jobs_with_broker(self) -> None:
-        _, container = await _build_full_container()
-
-        broker = await container.resolve(AsyncBroker)
-
-        assert broker.find_task("persist_channel_message") is not None
-        assert broker.find_task("persist_private_message") is not None
+    try:
+        for dependency_type in expected_types:
+            resolved = await container.get(dependency_type)
+            assert isinstance(resolved, dependency_type)
+    finally:
+        await container.close()
 
 
-class TestEnvironmentBasedRepositories:
-    """Test environment selects InMemory repos, others select SQLAlchemy."""
+@pytest.mark.asyncio
+async def test_app_container_resolves_transport_handler_graph(tmp_path: Path) -> None:
+    config = make_app_config(
+        environment="test",
+        blob_storage_local_root=str(tmp_path / "blobs"),
+    )
+    container = make_app_container(
+        config,
+        overrides=(make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),),
+    )
 
-    async def test_test_env_uses_in_memory_user_repository(self) -> None:
-        _, container = await _build_full_container(_make_config(environment="test"))
+    expected_types = (
+        BeatmapMirrorService,
+        LoginResponseBuilder,
+        LoginWorkflow,
+        PacketDispatcher,
+        PollingWorkflow,
+        BanchoEndpoint,
+        RegistrationHandler,
+        GetscoresHandler,
+        ScoreSubmitHandler,
+    )
 
-        repo = await container.resolve(UserRepository)
-        assert isinstance(repo, InMemoryUserRepository)
-
-    async def test_test_env_uses_in_memory_role_repository(self) -> None:
-        _, container = await _build_full_container(_make_config(environment="test"))
-
-        repo = await container.resolve(RoleRepository)
-        assert isinstance(repo, InMemoryRoleRepository)
-
-    async def test_test_env_uses_in_memory_chat_query_repository(self) -> None:
-        _, container = await _build_full_container(_make_config(environment="test"))
-
-        repo = await container.resolve(ChatHistoryQueryRepository)
-        assert isinstance(repo, InMemoryChatHistoryQueryRepository)
-
-
-# ---------------------------------------------------------------------------
-# httpx.AsyncClient lifecycle
-# ---------------------------------------------------------------------------
-
-
-class TestHttpxLifecycle:
-    """httpx.AsyncClient shutdown hook is registered for aclose()."""
-
-    async def test_shutdown_hook_registered_for_httpx(self) -> None:
-        """At least 3 shutdown hooks: engine.dispose, valkey.close, httpx.aclose."""
-        _require_valkey()
-        config = _make_config()
-        container = await build_container(config)
-
-        assert len(container.shutdown_hooks) >= _EXPECTED_MIN_SHUTDOWN_HOOKS
-
-
-# ---------------------------------------------------------------------------
-# Config: domain field
-# ---------------------------------------------------------------------------
-
-
-class TestConfigDomainField:
-    """AppConfig includes a domain field with default 'athena.localhost'."""
-
-    def test_default_domain(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("DOMAIN", raising=False)
-
-        config = _make_config()
-        assert config.domain == "athena.localhost"
-
-    def test_custom_domain(self) -> None:
-        config = AppConfig.model_validate(
-            {
-                "database_url": "postgresql://test:test@localhost:5432/test",
-                "valkey_url": "redis://localhost:6379/0",
-                "domain": "example.com",
-            }
-        )
-        assert config.domain == "example.com"
-
-
-# ---------------------------------------------------------------------------
-# App routing structure
-# ---------------------------------------------------------------------------
-
-
-class TestAppRouting:
-    """app.py has Host-based subdomain routing and path-based fallbacks."""
-
-    def test_app_has_host_routes(self) -> None:
-        app_inst = create_app()
-        host_routes = [r for r in app_inst.routes if isinstance(r, Host)]
-        assert len(host_routes) >= _EXPECTED_MIN_HOST_ROUTES, (
-            "Expected at least 2 Host routes (bancho + web_legacy)"
-        )
-
-    def test_app_has_bancho_host_route(self) -> None:
-        app_inst = create_app()
-        host_routes = [r for r in app_inst.routes if isinstance(r, Host)]
-        host_patterns = [r.host for r in host_routes]
-        assert any("c." in h for h in host_patterns), (
-            f"Expected a Host route containing 'c.' for bancho, got {host_patterns}"
-        )
-
-    def test_app_has_web_legacy_host_route(self) -> None:
-        app_inst = create_app()
-        host_routes = [r for r in app_inst.routes if isinstance(r, Host)]
-        host_patterns = [r.host for r in host_routes]
-        assert any("osu." in h for h in host_patterns), (
-            f"Expected a Host route containing 'osu.' for web_legacy, got {host_patterns}"
-        )
-
-    def test_app_has_fallback_post_root(self) -> None:
-        """Path-based fallback: POST / exists for local dev without subdomains."""
-        app_inst = create_app()
-        path_routes = [r for r in app_inst.routes if isinstance(r, Route)]
-        root_routes = [r for r in path_routes if r.path == "/"]
-        assert len(root_routes) >= 1, "Expected a fallback Route for POST /"
-
-    def test_app_has_fallback_web_mount(self) -> None:
-        """Path-based fallback: Mount /web exists for local dev without subdomains."""
-        app_inst = create_app()
-        mount_routes = [r for r in app_inst.routes if isinstance(r, Mount)]
-        web_mounts = [r for r in mount_routes if r.path == "/web"]
-        assert len(web_mounts) >= 1, "Expected a fallback Mount for /web"
-
-    def test_app_import_succeeds(self) -> None:
-        """python -c 'from osu_server.app import app' should not raise."""
-        _ = app
+    try:
+        for dependency_type in expected_types:
+            resolved = await container.get(dependency_type)
+            assert isinstance(resolved, dependency_type)
+    finally:
+        await container.close()

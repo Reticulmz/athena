@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING
 import pytest
 from starlette.testclient import TestClient
 
-from osu_server.app import create_app
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
@@ -52,13 +51,13 @@ from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.services.password_service import PasswordService
+from tests.support.app import create_in_memory_app as create_app
+from tests.support.app import resolve_dependency
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from starlette.applications import Starlette
-
-    from osu_server.infrastructure.di.container import Container
 
 
 _TEST_USERNAME = "TargetUsr"
@@ -102,15 +101,10 @@ def _test_env() -> Generator[None]:
             os.environ["DOMAIN"] = old_domain
 
 
-def _container(app: Starlette) -> Container:
-    return app.state.container  # pyright: ignore[reportAny]
-
-
 async def _seed_user_with_session(app: Starlette) -> int:
-    container = _container(app)
-    user_repo = await container.resolve(UserRepository)
-    password_service = await container.resolve(PasswordService)
-    session_store = await container.resolve(SessionStore)
+    user_repo = await resolve_dependency(app, UserRepository)
+    password_service = await resolve_dependency(app, PasswordService)
+    session_store = await resolve_dependency(app, SessionStore)
 
     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
     user = await user_repo.create(
@@ -202,8 +196,7 @@ def _build_beatmapset(
 
 
 async def _seed_known_ranked_beatmap(app: Starlette) -> None:
-    container = _container(app)
-    beatmap_repo = await container.resolve(BeatmapRepository)
+    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
     assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
     beatmap = _build_beatmap(
         beatmap_id=75,
@@ -222,8 +215,7 @@ async def _seed_known_ranked_beatmap(app: Starlette) -> None:
 
 
 async def _seed_not_submitted_beatmap(app: Starlette) -> None:
-    container = _container(app)
-    beatmap_repo = await container.resolve(BeatmapRepository)
+    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
     assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
     beatmap = _build_beatmap(
         beatmap_id=999,
@@ -242,8 +234,7 @@ async def _seed_not_submitted_beatmap(app: Starlette) -> None:
 
 
 async def _seed_converted_mode_ranked_beatmap(app: Starlette) -> None:
-    container = _container(app)
-    beatmap_repo = await container.resolve(BeatmapRepository)
+    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
     assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
     beatmap = _build_beatmap(
         beatmap_id=75,
@@ -291,8 +282,7 @@ async def _override_mirror_resolve(
     metadata_status: BeatmapFetchState,
 ) -> None:
     """Seed the new query-side fetch-state seam for an unknown checksum."""
-    container = _container(app)
-    beatmap_repo = await container.resolve(BeatmapRepository)
+    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
     assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
     target = BeatmapFetchTarget.metadata_by_checksum(_UNKNOWN_CHECKSUM)
     if metadata_status is BeatmapFetchState.PENDING_FETCH:
@@ -432,8 +422,7 @@ class TestUpdateAvailableBody:
 
                 async def _setup() -> None:
                     _ = await _seed_user_with_session(app)
-                    container = _container(app)
-                    beatmap_repo = await container.resolve(BeatmapRepository)
+                    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
                     assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
 
                     filename = "Camellia - Exit (Realazy) [Insane].osu"
@@ -541,9 +530,8 @@ class TestAuthDisclosureRegression:
             ) as client:
 
                 async def _seed_user_and_map_no_session() -> None:
-                    container = _container(app)
-                    user_repo = await container.resolve(UserRepository)
-                    password_service = await container.resolve(PasswordService)
+                    user_repo = await resolve_dependency(app, UserRepository)
+                    password_service = await resolve_dependency(app, PasswordService)
                     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
                     _ = await user_repo.create(
                         User(

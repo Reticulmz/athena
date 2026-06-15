@@ -9,11 +9,11 @@ from http import HTTPStatus
 from typing import cast
 
 import pytest
+from dishka import AsyncContainer
 from starlette.testclient import TestClient
 
 from osu_server.app import create_app
 from osu_server.config import AppConfig
-from osu_server.infrastructure.di.container import Container
 
 
 def _require_services() -> None:
@@ -36,14 +36,14 @@ class TestAppStartup:
             assert response.status_code == HTTPStatus.OK
 
     def test_lifespan_sets_state(self) -> None:
-        """After startup, app.state.container and app.state.config are set."""
+        """After startup, app.state.dishka_container and app.state.config are set."""
         _require_services()
         app = create_app()
         with TestClient(app, raise_server_exceptions=False):
             assert hasattr(app.state, "config")
-            assert hasattr(app.state, "container")
+            assert hasattr(app.state, "dishka_container")
             assert isinstance(cast("object", app.state.config), AppConfig)
-            assert isinstance(cast("object", app.state.container), Container)
+            assert isinstance(cast("object", app.state.dishka_container), AsyncContainer)
 
     def test_get_root_returns_ok(self) -> None:
         """GET / returns 200 — bancho handler accepts GET for connectivity probes."""

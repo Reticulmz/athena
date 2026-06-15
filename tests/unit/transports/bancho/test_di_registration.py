@@ -1,13 +1,11 @@
-"""Tests for PacketDispatcher DI registration and stable bancho public API.
+"""Tests for PacketDispatcher provider registration and stable bancho public API."""
 
-Validates:
-- Task 5.1: モジュールレベルの dispatcher インスタンスが存在する
-- Task 5.1: PacketDispatcher を DI コンテナにシングルトン登録・resolve できる
-- Task 5.1: stable bancho パッケージから PacketDispatcher/dispatcher を re-export する
-"""
+import pytest
 
-from osu_server.infrastructure.di.container import Container
+from osu_server.composition.providers.container import make_app_container
+from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from tests.factories.config import make_app_config
 
 
 class TestDispatcherModuleInstance:
@@ -47,21 +45,33 @@ class TestBanchoPublicAPI:
 
 
 class TestDIRegistration:
-    """PacketDispatcher can be registered and resolved via DI Container."""
+    """PacketDispatcher can be resolved via the Dishka app container."""
 
+    @pytest.mark.asyncio
     async def test_resolve_packet_dispatcher(self) -> None:
-        container = Container()
-        dp = PacketDispatcher()
-        container.register_singleton(PacketDispatcher, lambda: dp)
+        config = make_app_config(environment="test")
+        container = make_app_container(
+            config,
+            overrides=(make_in_memory_runtime_provider_set(),),
+        )
 
-        resolved = await container.resolve(PacketDispatcher)
-        assert resolved is dp
+        try:
+            resolved = await container.get(PacketDispatcher)
+            assert isinstance(resolved, PacketDispatcher)
+        finally:
+            await container.close()
 
+    @pytest.mark.asyncio
     async def test_resolve_returns_same_singleton(self) -> None:
-        container = Container()
-        dp = PacketDispatcher()
-        container.register_singleton(PacketDispatcher, lambda: dp)
+        config = make_app_config(environment="test")
+        container = make_app_container(
+            config,
+            overrides=(make_in_memory_runtime_provider_set(),),
+        )
 
-        first = await container.resolve(PacketDispatcher)
-        second = await container.resolve(PacketDispatcher)
-        assert first is second
+        try:
+            first = await container.get(PacketDispatcher)
+            second = await container.get(PacketDispatcher)
+            assert first is second
+        finally:
+            await container.close()

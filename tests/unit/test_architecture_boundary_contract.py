@@ -290,6 +290,12 @@ DEPRECATED_PACKAGE_REPLACEMENTS = {
     ("osu_server", "repositories", "memory"): (4, {"commands", "queries"}),
 }
 
+REMOVED_DEPENDENCY_COMPOSITION_ROOTS = (
+    "osu_server.infrastructure.di",
+    "osu_server.composition.service_registry",
+    "osu_server.composition.worker_runtime",
+)
+
 
 def load_pyproject() -> TomlTable:
     return cast("TomlTable", tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8")))
@@ -378,6 +384,21 @@ def current_deprecated_imports() -> list[str]:
             root = deprecated_import_root(module)
             if root is not None:
                 entries.add(f"{relative_path}\t{root}")
+
+    return sorted(entries)
+
+
+def current_removed_dependency_composition_imports() -> list[str]:
+    entries: set[str] = set()
+    for root in (SOURCE_ROOT, TEST_ROOT):
+        for path in root.rglob("*.py"):
+            if "__pycache__" in path.parts:
+                continue
+            relative_path = path.relative_to(PROJECT_ROOT).as_posix()
+            for module in imported_modules(path):
+                for removed_root in REMOVED_DEPENDENCY_COMPOSITION_ROOTS:
+                    if module_matches_root(module, removed_root):
+                        entries.add(f"{relative_path}\t{removed_root}")
 
     return sorted(entries)
 
@@ -605,3 +626,7 @@ def test_beatmap_fetch_job_adapter_does_not_build_runtime_dependencies() -> None
 
 def test_deprecated_architecture_imports_match_baseline() -> None:
     assert current_deprecated_imports() == expected_deprecated_imports()
+
+
+def test_removed_dependency_composition_entrypoints_are_not_imported() -> None:
+    assert current_removed_dependency_composition_imports() == []

@@ -13,9 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.responses import JSONResponse, PlainTextResponse
 
 if TYPE_CHECKING:
+    from dishka import AsyncContainer
     from starlette.requests import Request
-
-    from osu_server.infrastructure.di.container import Container
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()  # pyright: ignore[reportAny]
 
@@ -43,17 +42,17 @@ def get_version_info() -> tuple[str, str]:
     return version, commit
 
 
-async def check_infrastructure(container: Container) -> None:
+async def check_infrastructure(container: AsyncContainer) -> None:
     """Verify PostgreSQL and Valkey connectivity at startup.
 
     Raises on failure so the server refuses to start with broken dependencies.
     """
-    engine = await container.resolve(AsyncEngine)
+    engine = await container.get(AsyncEngine)
     async with engine.connect() as conn:
         _ = await conn.execute(text("SELECT 1"))
     logger.info("startup_health_check", service="postgresql", status="ok")
 
-    valkey = await container.resolve(GlideClient)
+    valkey = await container.get(GlideClient)
     _ = await valkey.ping()
     logger.info("startup_health_check", service="valkey", status="ok")
 
@@ -67,12 +66,12 @@ async def health_endpoint(request: Request) -> PlainTextResponse:
 async def health_check_endpoint(request: Request) -> JSONResponse:
     """Return infrastructure health status with DB and Valkey connectivity checks."""
     version, commit = request.app.state.version_info  # pyright: ignore[reportAny]
-    container: Container = request.app.state.container  # pyright: ignore[reportAny]
+    container: AsyncContainer = request.app.state.dishka_container  # pyright: ignore[reportAny]
 
     checks: dict[str, str] = {}
 
     try:
-        engine = await container.resolve(AsyncEngine)
+        engine = await container.get(AsyncEngine)
         async with engine.connect() as conn:
             _ = await conn.execute(text("SELECT 1"))
         checks["postgres"] = "ok"
@@ -80,7 +79,7 @@ async def health_check_endpoint(request: Request) -> JSONResponse:
         checks["postgres"] = "error"
 
     try:
-        valkey = await container.resolve(GlideClient)
+        valkey = await container.get(GlideClient)
         _ = await valkey.ping()
         checks["valkey"] = "ok"
     except Exception:

@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING
 
 from starlette.testclient import TestClient
 
-from osu_server.app import create_app
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
@@ -33,13 +32,13 @@ from osu_server.repositories.memory.channel_repository import InMemoryChannelRep
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
 from tests.factories.domain import make_channel, make_channel_role_override
+from tests.support.app import create_in_memory_app as create_app
+from tests.support.app import resolve_dependency_sync
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from starlette.applications import Starlette
-
-    from osu_server.infrastructure.di.container import Container
 
 # ── Constants ────────────────────────────────────────────────────────────
 
@@ -91,19 +90,14 @@ def _seed_default_role(app: Starlette) -> None:
 
     Must be called after TestClient enters (lifespan has run).
     """
-    container: Container = app.state.container  # pyright: ignore[reportAny]  # Starlette State returns Any
-    registration = container._registrations[RoleRepository]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only DI introspection
-    repo = registration.instance
+    repo = resolve_dependency_sync(app, RoleRepository)
     assert isinstance(repo, InMemoryRoleRepository)
-    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
-    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+    repo.add_role(_DEFAULT_ROLE)
 
 
 def _seed_default_channels(app: Starlette) -> None:
     """Seed login-visible channels into the InMemoryChannelRepository."""
-    container: Container = app.state.container  # pyright: ignore[reportAny]  # Starlette State returns Any
-    registration = container._registrations[ChannelRepository]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only DI introspection
-    repo = registration.instance
+    repo = resolve_dependency_sync(app, ChannelRepository)
     assert isinstance(repo, InMemoryChannelRepository)
 
     channel = asyncio.run(repo.create(make_channel(id=0)))

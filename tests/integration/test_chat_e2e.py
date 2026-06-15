@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 from caterpillar.model import pack
 from starlette.testclient import TestClient
 
-from osu_server.composition.application import create_app
 from osu_server.domain.identity.authentication import RegistrationForm
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
@@ -45,11 +44,11 @@ from osu_server.transports.stable.bancho.protocol.s2c.login import (
 )
 from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
 from tests.factories.domain import make_channel, make_channel_role_override
+from tests.support.app import create_in_memory_app as create_app
+from tests.support.app import resolve_dependency
 
 if TYPE_CHECKING:
     from starlette.applications import Starlette
-
-    from osu_server.infrastructure.di.container import Container
 
 _PASSWORD = "SecurePass1234"
 _PASSWORD_MD5 = hashlib.md5(_PASSWORD.encode()).hexdigest()
@@ -81,18 +80,16 @@ def _make_test_app() -> Starlette:
     return create_app()
 
 
-def _seed_default_role(container: Container) -> None:
+async def _seed_default_role(app: Starlette) -> None:
     """Seed the Default role into InMemoryRoleRepository after lifespan."""
-    registration = container._registrations[RoleRepository]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    repo = registration.instance
+    repo = await resolve_dependency(app, RoleRepository)
     assert isinstance(repo, InMemoryRoleRepository)
-    repo._roles_by_id[_DEFAULT_ROLE.id] = _DEFAULT_ROLE  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    repo._roles_by_name[_DEFAULT_ROLE.name] = _DEFAULT_ROLE.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    repo.add_role(_DEFAULT_ROLE)
 
 
-async def _seed_channels(container: Container) -> None:
+async def _seed_channels(app: Starlette) -> None:
     """Seed channels and role overrides into InMemoryChannelRepository."""
-    repo = await container.resolve(ChannelRepository)
+    repo = await resolve_dependency(app, ChannelRepository)
     assert isinstance(repo, InMemoryChannelRepository)
 
     osu_channel = await repo.create(
@@ -118,13 +115,12 @@ async def _resolve_services(
     app: Starlette,
 ) -> tuple[AuthService, SessionStore, ChannelStateStore]:
     """Resolve test-facing services from the container after lifespan."""
-    container: Container = app.state.container  # pyright: ignore[reportAny]
-    _seed_default_role(container)
-    await _seed_channels(container)
+    await _seed_default_role(app)
+    await _seed_channels(app)
     return (
-        await container.resolve(AuthService),
-        await container.resolve(SessionStore),
-        await container.resolve(ChannelStateStore),
+        await resolve_dependency(app, AuthService),
+        await resolve_dependency(app, SessionStore),
+        await resolve_dependency(app, ChannelStateStore),
     )
 
 

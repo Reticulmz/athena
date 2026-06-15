@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TypeVar, cast, final
+from pathlib import Path
+from typing import cast
 
 import pytest
 from starlette.applications import Starlette
@@ -14,33 +15,13 @@ from starlette_dishka import FromDishka, inject
 from tests.factories.config import make_app_config
 
 import osu_server.composition.lifespan as lifespan_module
-from osu_server.composition.lifespan import lifespan
+from osu_server.composition.lifespan import create_lifespan, lifespan
+from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
 from osu_server.composition.starlette_integration import dishka_middleware
 from osu_server.config import AppConfig
 
 # starlette-dishka evaluates endpoint annotations at runtime.
-_DISHKA_RUNTIME_HINTS = (Request,)
-
-T = TypeVar("T")
-
-
-@final
-class _FakeLegacyContainer:
-    initialized: bool
-    shutdown_called: bool
-
-    def __init__(self) -> None:
-        self.initialized = False
-        self.shutdown_called = False
-
-    async def initialize(self) -> None:
-        self.initialized = True
-
-    async def resolve(self, interface: type[T]) -> T:
-        return cast("T", _FakeHandler(interface.__name__))
-
-    async def shutdown(self) -> None:
-        self.shutdown_called = True
+_DISHKA_RUNTIME_HINTS = (Path, Request)
 
 
 class _FailingDishkaContainer:
@@ -58,14 +39,6 @@ class _FailingDishkaContainer:
         self.close_called = True
 
 
-@final
-class _FakeHandler:
-    name: str
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-
 @inject
 async def _injected_config_endpoint(
     request: Request,
@@ -76,36 +49,29 @@ async def _injected_config_endpoint(
     return PlainTextResponse(config.environment)
 
 
-@pytest.fixture
-def fake_legacy_container(monkeypatch: pytest.MonkeyPatch) -> _FakeLegacyContainer:
-    config = make_app_config(environment="test")
-    container = _FakeLegacyContainer()
-
-    async def build_container(_: AppConfig) -> _FakeLegacyContainer:
-        return container
-
-    async def register_services(
-        _container: _FakeLegacyContainer,
-        _config: AppConfig,
-    ) -> None:
-        return None
+def test_starlette_lifespan_attaches_dishka_container(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = make_app_config(
+        environment="test",
+        blob_storage_local_root=str(tmp_path / "blobs"),
+    )
 
     def setup_logging(_config: AppConfig) -> None:
         return None
 
     monkeypatch.setattr(lifespan_module, "load_config", lambda: config)
     monkeypatch.setattr(lifespan_module, "setup_logging", setup_logging)
-    monkeypatch.setattr(lifespan_module, "build_container", build_container)
-    monkeypatch.setattr(lifespan_module, "register_services", register_services)
-    return container
-
-
-def test_starlette_lifespan_attaches_and_closes_dishka_container(
-    fake_legacy_container: _FakeLegacyContainer,
-) -> None:
     app = Starlette(
         routes=[Route("/config", _injected_config_endpoint)],
-        lifespan=lifespan,
+        lifespan=create_lifespan(
+            (
+                make_in_memory_runtime_provider_set(
+                    blob_root=tmp_path / "blobs",
+                ),
+            )
+        ),
         middleware=[dishka_middleware()],
     )
 
@@ -116,9 +82,7 @@ def test_starlette_lifespan_attaches_and_closes_dishka_container(
         assert response.text == "test"
         assert hasattr(app.state, "dishka_container")
         assert isinstance(cast("object", app.state.config), AppConfig)
-        assert fake_legacy_container.initialized is True
-
-    assert fake_legacy_container.shutdown_called is True
+        assert not hasattr(app.state, "container")
 
 
 def test_starlette_lifespan_surfaces_dishka_startup_failure(
@@ -127,7 +91,12 @@ def test_starlette_lifespan_surfaces_dishka_startup_failure(
     config = make_app_config(environment="test")
     failing_container = _FailingDishkaContainer()
 
-    def make_app_container(_: AppConfig) -> _FailingDishkaContainer:
+    def make_app_container(
+        _config: AppConfig,
+        *,
+        overrides: object = (),
+    ) -> _FailingDishkaContainer:
+        _ = overrides
         return failing_container
 
     def setup_logging(_: AppConfig) -> None:

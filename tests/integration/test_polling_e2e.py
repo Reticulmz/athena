@@ -23,7 +23,6 @@ if TYPE_CHECKING:
 import pytest
 from starlette.testclient import TestClient
 
-from osu_server.composition.application import create_app
 from osu_server.domain.identity.authentication import LoginResult, RegistrationForm
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
@@ -34,9 +33,7 @@ from osu_server.repositories.memory.role_repository import InMemoryRoleRepositor
 from osu_server.services.auth_service import AuthService
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
-
-if TYPE_CHECKING:
-    from osu_server.infrastructure.di.container import Container
+from tests.support.app import create_in_memory_app, resolve_dependency
 
 # -- Constants -----------------------------------------------------------
 
@@ -82,29 +79,26 @@ def _make_test_app(
     os.environ["ENVIRONMENT"] = "test"
     os.environ["MAX_REQUEST_BODY_SIZE"] = str(max_request_body_size)
     os.environ["PACKET_QUEUE_MAX_SIZE"] = str(packet_queue_max_size)
-    return create_app()
+    return create_in_memory_app(packet_queue_max_size=packet_queue_max_size)
 
 
-def _seed_default_role(container: Container) -> None:
+async def _seed_default_role(app: Starlette) -> None:
     """Seed the Default role into InMemoryRoleRepository after lifespan."""
-    registration = container._registrations[RoleRepository]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    repo = registration.instance
+    repo = await resolve_dependency(app, RoleRepository)
     assert isinstance(repo, InMemoryRoleRepository)
-    repo._roles_by_id[_ROLE_DEFAULT.id] = _ROLE_DEFAULT  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    repo._roles_by_name[_ROLE_DEFAULT.name] = _ROLE_DEFAULT.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    repo.add_role(_ROLE_DEFAULT)
 
 
 async def _resolve_services(
     app: Starlette,
 ) -> tuple[PacketDispatcher, PacketQueue, SessionStore, AuthService]:
     """Resolve test-facing services from the container after lifespan."""
-    container: Container = app.state.container  # pyright: ignore[reportAny]
-    _seed_default_role(container)
+    await _seed_default_role(app)
     return (
-        await container.resolve(PacketDispatcher),
-        await container.resolve(PacketQueue),
-        await container.resolve(SessionStore),
-        await container.resolve(AuthService),
+        await resolve_dependency(app, PacketDispatcher),
+        await resolve_dependency(app, PacketQueue),
+        await resolve_dependency(app, SessionStore),
+        await resolve_dependency(app, AuthService),
     )
 
 

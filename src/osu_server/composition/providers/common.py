@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from typing import final
 
 import httpx
@@ -13,6 +14,11 @@ from taskiq import AsyncBroker
 from taskiq_redis import ListQueueBroker
 
 from osu_server.config import AppConfig
+from osu_server.domain.beatmaps import (
+    BeatmapFileProvider,
+    BeatmapFreshnessPolicy,
+    BeatmapMetadataProvider,
+)
 from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
@@ -32,6 +38,12 @@ from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimite
 from osu_server.infrastructure.storage import create_blob_storage_backend
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.jobs import register_all_jobs
+from osu_server.repositories.beatmaps.metadata_providers import (
+    CompositeBeatmapMetadataProvider,
+)
+from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
+from osu_server.repositories.interfaces.blob_repository import BlobRepository
+from osu_server.repositories.interfaces.channel_repository import ChannelRepository
 from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
@@ -42,6 +54,16 @@ from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepo
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
+from osu_server.repositories.interfaces.replay_repository import ReplayRepository
+from osu_server.repositories.interfaces.role_repository import RoleRepository
+from osu_server.repositories.interfaces.score_repository import ScoreRepository
+from osu_server.repositories.interfaces.session_store import SessionStore
+from osu_server.repositories.interfaces.submission_repository import ScoreSubmissionRepository
+from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
+from osu_server.repositories.interfaces.user_repository import UserRepository
+from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
+from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
+from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
 from osu_server.repositories.sqlalchemy.queries.beatmap_score_listing import (
     SQLAlchemyBeatmapScoreListingQueryRepository,
 )
@@ -54,7 +76,32 @@ from osu_server.repositories.sqlalchemy.queries.chat import (
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
 from osu_server.repositories.sqlalchemy.queries.scores import SQLAlchemyScoreQueryRepository
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
-from osu_server.services.commands.chat import JoinChannelUseCase, LeaveChannelUseCase
+from osu_server.repositories.sqlalchemy.replay_repository import SQLAlchemyReplayRepository
+from osu_server.repositories.sqlalchemy.role_repository import SQLAlchemyRoleRepository
+from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository
+from osu_server.repositories.sqlalchemy.submission_repository import (
+    SQLAlchemyScoreSubmissionRepository,
+)
+from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
+from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
+from osu_server.repositories.valkey.session_store import ValkeySessionStore
+from osu_server.services.beatmap_mirror import (
+    BeatmapEligibilityService,
+    BeatmapFileProviderService,
+    MirrorMetadataProviderService,
+    OsuApiMetadataProviderService,
+)
+from osu_server.services.blob_storage_service import BlobStorageService
+from osu_server.services.commands.beatmaps import (
+    FetchBeatmapFileUseCase,
+    FetchBeatmapMetadataUseCase,
+)
+from osu_server.services.commands.chat import (
+    JoinChannelUseCase,
+    LeaveChannelUseCase,
+    PersistChannelMessageUseCase,
+    PersistPrivateMessageUseCase,
+)
 from osu_server.services.queries.beatmaps import (
     ResolveBeatmapByChecksumQuery,
     ResolveBeatmapByIdQuery,
@@ -95,13 +142,34 @@ class CommonProviderSet(Provider):
             (self.country_resolver, CountryResolver),
             (self.hibp_client, HIBPClient),
             (self.blob_storage_backend, BlobStorageBackend),
+            (self.session_store, SessionStore),
+            (self.unit_of_work_factory, UnitOfWorkFactory),
+            (self.blob_storage_service, BlobStorageService),
+            (self.beatmap_freshness_policy, BeatmapFreshnessPolicy),
+            (self.beatmap_metadata_provider, BeatmapMetadataProvider),
+            (self.beatmap_file_provider, BeatmapFileProvider),
+            (self.beatmap_eligibility_service, BeatmapEligibilityService),
             (self.score_crypto_service, ScoreCryptoService),
             (self.stable_score_submit_mapper, StableScoreSubmitMapper),
         ):
             _ = self.provide(source, provides=provides, scope=Scope.APP)
 
+        self._provide_command_repositories()
         self._provide_query_repositories()
         self._provide_use_cases()
+
+    def _provide_command_repositories(self) -> None:
+        for source, provides in (
+            (self.user_repository, UserRepository),
+            (self.role_repository, RoleRepository),
+            (self.channel_repository, ChannelRepository),
+            (self.beatmap_repository, BeatmapRepository),
+            (self.blob_repository, BlobRepository),
+            (self.score_repository, ScoreRepository),
+            (self.replay_repository, ReplayRepository),
+            (self.score_submission_repository, ScoreSubmissionRepository),
+        ):
+            _ = self.provide(source, provides=provides, scope=Scope.APP)
 
     def _provide_query_repositories(self) -> None:
         for source, provides in (
@@ -128,6 +196,10 @@ class CommonProviderSet(Provider):
             (self.list_private_messages_query, ListPrivateMessagesQuery),
             (self.join_channel_use_case, JoinChannelUseCase),
             (self.leave_channel_use_case, LeaveChannelUseCase),
+            (self.persist_channel_message_use_case, PersistChannelMessageUseCase),
+            (self.persist_private_message_use_case, PersistPrivateMessageUseCase),
+            (self.fetch_beatmap_metadata_use_case, FetchBeatmapMetadataUseCase),
+            (self.fetch_beatmap_file_use_case, FetchBeatmapFileUseCase),
         ):
             _ = self.provide(source, provides=provides, scope=Scope.APP)
 
@@ -188,8 +260,67 @@ class CommonProviderSet(Provider):
     def hibp_client(self, http_client: httpx.AsyncClient) -> HIBPClient:
         return HTTPHIBPClient(http_client)
 
-    def blob_storage_backend(self, config: AppConfig) -> BlobStorageBackend:
-        return create_blob_storage_backend(config)
+    async def blob_storage_backend(self, config: AppConfig) -> BlobStorageBackend:
+        backend = create_blob_storage_backend(config)
+        await backend.validate_configuration()
+        return backend
+
+    def session_store(self, valkey: GlideClient, config: AppConfig) -> SessionStore:
+        return ValkeySessionStore(valkey, ttl=config.session_ttl)
+
+    def unit_of_work_factory(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> UnitOfWorkFactory:
+        return SQLAlchemyUnitOfWorkFactory(session_factory)
+
+    def blob_storage_service(
+        self,
+        blob_repo: BlobRepository,
+        backend: BlobStorageBackend,
+        config: AppConfig,
+    ) -> BlobStorageService:
+        return BlobStorageService(
+            blob_repo=blob_repo,
+            backend=backend,
+            storage_backend=config.blob_storage_backend,
+        )
+
+    def beatmap_freshness_policy(self, config: AppConfig) -> BeatmapFreshnessPolicy:
+        return BeatmapFreshnessPolicy(
+            ranked_refresh_interval=timedelta(
+                seconds=config.beatmap_ranked_refresh_interval_seconds
+            ),
+            pending_refresh_interval=timedelta(
+                seconds=config.beatmap_pending_refresh_interval_seconds
+            ),
+            graveyard_refresh_interval=timedelta(
+                seconds=config.beatmap_graveyard_refresh_interval_seconds
+            ),
+            mirror_refresh_interval=timedelta(
+                seconds=config.beatmap_mirror_refresh_interval_seconds
+            ),
+        )
+
+    def beatmap_metadata_provider(self, config: AppConfig) -> BeatmapMetadataProvider:
+        official = OsuApiMetadataProviderService(
+            client_id=config.beatmap_official_api_client_id,  # pyright: ignore[reportArgumentType]
+            client_secret=config.beatmap_official_api_client_secret,  # pyright: ignore[reportArgumentType]
+        )
+        mirror = MirrorMetadataProviderService(
+            base_urls=config.beatmap_metadata_mirror_base_urls,
+        )
+        return CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
+
+    def beatmap_file_provider(self, config: AppConfig) -> BeatmapFileProvider:
+        return BeatmapFileProviderService(
+            osu_current_url_template=config.beatmap_osu_current_url_template,
+            osu_legacy_url_template=config.beatmap_osu_legacy_url_template,
+            mirror_url_templates=list(config.beatmap_community_mirror_url_templates),
+        )
+
+    def beatmap_eligibility_service(self) -> BeatmapEligibilityService:
+        return BeatmapEligibilityService()
 
     def score_crypto_service(self) -> ScoreCryptoService:
         return ScoreCryptoService()
@@ -202,6 +333,54 @@ class CommonProviderSet(Provider):
                 text_field_size=config.score_submit_max_text_field_size,
             )
         )
+
+    def user_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> UserRepository:
+        return SQLAlchemyUserRepository(session_factory)
+
+    def role_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> RoleRepository:
+        return SQLAlchemyRoleRepository(session_factory)
+
+    def channel_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> ChannelRepository:
+        return SQLAlchemyChannelRepository(session_factory)
+
+    def beatmap_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> BeatmapRepository:
+        return SQLAlchemyBeatmapRepository(session_factory)
+
+    def blob_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> BlobRepository:
+        return SQLAlchemyBlobRepository(session_factory)
+
+    def score_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> ScoreRepository:
+        return SQLAlchemyScoreRepository(session_factory)
+
+    def replay_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> ReplayRepository:
+        return SQLAlchemyReplayRepository(session_factory)
+
+    def score_submission_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> ScoreSubmissionRepository:
+        return SQLAlchemyScoreSubmissionRepository(session_factory)
 
     def user_query_repository(
         self,
@@ -323,3 +502,37 @@ class CommonProviderSet(Provider):
 
     def leave_channel_use_case(self, channel_state: ChannelStateStore) -> LeaveChannelUseCase:
         return LeaveChannelUseCase(channel_state=channel_state)
+
+    def persist_channel_message_use_case(
+        self,
+        uow_factory: UnitOfWorkFactory,
+    ) -> PersistChannelMessageUseCase:
+        return PersistChannelMessageUseCase(uow_factory=uow_factory)
+
+    def persist_private_message_use_case(
+        self,
+        uow_factory: UnitOfWorkFactory,
+    ) -> PersistPrivateMessageUseCase:
+        return PersistPrivateMessageUseCase(uow_factory=uow_factory)
+
+    def fetch_beatmap_metadata_use_case(
+        self,
+        repository: BeatmapRepository,
+        metadata_provider: BeatmapMetadataProvider,
+    ) -> FetchBeatmapMetadataUseCase:
+        return FetchBeatmapMetadataUseCase(
+            repository=repository,
+            metadata_provider=metadata_provider,
+        )
+
+    def fetch_beatmap_file_use_case(
+        self,
+        repository: BeatmapRepository,
+        file_provider: BeatmapFileProvider,
+        blob_storage: BlobStorageService,
+    ) -> FetchBeatmapFileUseCase:
+        return FetchBeatmapFileUseCase(
+            repository=repository,
+            file_provider=file_provider,
+            blob_storage=blob_storage,
+        )

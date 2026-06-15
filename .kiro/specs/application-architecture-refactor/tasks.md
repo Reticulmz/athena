@@ -218,7 +218,7 @@
   - Completion is observable when tests prove provider replacement works and partial dependency graphs are rejected.
   - _Requirements: 2.4, 2.5, 2.6, 8.4, 9.5_
 
-- [ ] 7.5 Remove the custom dependency container and manual registries
+- [x] 7.5 Remove the custom dependency container and manual registries
   - Remove the legacy dependency container API and manual service registry as supported extension points.
   - Remove worker runtime composition that duplicates provider logic.
   - Completion is observable when production and test code no longer imports the legacy container, service registry, or worker runtime composition.
