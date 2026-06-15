@@ -8,7 +8,7 @@
   - 完了時には malformed identity と no identity の unit test が resolver 呼び出しなしの skip outcome と diagnostics を観測できる
   - _Requirements: 1.1, 1.3, 1.4, 1.5, 5.2, 5.3, 6.5_
 
-- [ ] 1.2 Warmup resolver orchestration と structured diagnostics を実装する
+- [x] 1.2 Warmup resolver orchestration と structured diagnostics を実装する
   - resolver には Beatmap File を要求し、stable request handling では file body download を待たない
   - Beatmap File が利用可能な場合は already available、既知 beatmap の file が未準備の場合は requested、checksum-only で beatmap が未解決の場合は metadata pending として扱う
   - resolver failure は stable transport へ例外を漏らさず failed outcome として返し、credential、raw payload、replay bytes を含まない structured log に残す

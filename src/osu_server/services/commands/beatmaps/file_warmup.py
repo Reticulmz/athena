@@ -140,21 +140,13 @@ class RequestBeatmapFileWarmupUseCase:
             )
 
         identity = policy_result.identity
-        if identity.beatmap_id is not None:
-            resolve_result = await self._resolver.resolve_by_beatmap_id(
-                identity.beatmap_id,
-                _WARMUP_RESOLVE_OPTIONS,
-            )
-        else:
-            if identity.checksum_md5 is None:
-                return self._skipped_result(
-                    request,
-                    BeatmapFileWarmupOutcome.SKIPPED_NO_IDENTITY,
-                    reason="no_beatmap_identity",
-                )
-            resolve_result = await self._resolver.resolve_by_checksum(
-                identity.checksum_md5,
-                _WARMUP_RESOLVE_OPTIONS,
+        try:
+            resolve_result = await self._resolve_identity(identity)
+        except Exception as exc:
+            return self._failed_result(
+                request,
+                identity,
+                exception_type=type(exc).__name__,
             )
 
         result = BeatmapFileWarmupResult(
@@ -166,6 +158,41 @@ class RequestBeatmapFileWarmupUseCase:
             reason=resolve_result.reason,
         )
         _log_result(result)
+        return result
+
+    async def _resolve_identity(
+        self,
+        identity: _NormalizedWarmupIdentity,
+    ) -> BeatmapResolveResult:
+        if identity.beatmap_id is not None:
+            return await self._resolver.resolve_by_beatmap_id(
+                identity.beatmap_id,
+                _WARMUP_RESOLVE_OPTIONS,
+            )
+        if identity.checksum_md5 is None:
+            msg = "valid warmup identity must include beatmap id or checksum"
+            raise RuntimeError(msg)
+        return await self._resolver.resolve_by_checksum(
+            identity.checksum_md5,
+            _WARMUP_RESOLVE_OPTIONS,
+        )
+
+    def _failed_result(
+        self,
+        request: BeatmapFileWarmupRequest,
+        identity: _NormalizedWarmupIdentity,
+        *,
+        exception_type: str,
+    ) -> BeatmapFileWarmupResult:
+        result = BeatmapFileWarmupResult(
+            outcome=BeatmapFileWarmupOutcome.FAILED,
+            entrance=request.entrance,
+            user_id=request.user_id,
+            beatmap_id=identity.beatmap_id,
+            checksum_md5=identity.checksum_md5,
+            reason="resolver_failure",
+        )
+        _log_result(result, exception_type=exception_type)
         return result
 
     def _skipped_result(
@@ -245,7 +272,11 @@ def _outcome_from_resolve_result(
     return BeatmapFileWarmupOutcome.REQUESTED
 
 
-def _log_result(result: BeatmapFileWarmupResult) -> None:
+def _log_result(
+    result: BeatmapFileWarmupResult,
+    *,
+    exception_type: str | None = None,
+) -> None:
     logger.info(
         "beatmap_file_warmup",
         outcome=result.outcome.value,
@@ -254,6 +285,7 @@ def _log_result(result: BeatmapFileWarmupResult) -> None:
         beatmap_id=result.beatmap_id,
         checksum_md5=result.checksum_md5,
         reason=result.reason,
+        exception_type=exception_type,
     )
 
 
