@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Foundation: dependency, architecture validation, and migration guardrails
+- [x] 1. Foundation: dependency, architecture validation, and migration guardrails
 - [x] 1.1 Add the DI runtime dependencies and architecture documentation baseline
   - Add the selected DI packages to the runtime dependency set and keep the lock state consistent.
   - Create the architecture guide with layer direction, composition responsibilities, command/query placement, UoW, transport families, jobs, and compatibility boundaries.
@@ -25,7 +25,7 @@
   - Completion is observable when new package roots import cleanly and no new compatibility facade is introduced.
   - _Requirements: 3.4, 7.7, 10.3, 10.6_
 
-- [ ] 2. Domain bounded contexts and compatibility language
+- [x] 2. Domain bounded contexts and compatibility language
 - [x] 2.1 (P) Move identity and authorization language into the identity domain
   - Move Role, Privilege, authorization policy, users, and session authorization snapshot concepts into the identity context.
   - Update authorization-sensitive behavior to use server-side privileges as the source of truth.
@@ -62,7 +62,7 @@
   - Completion is observable when the test suite and import validation no longer reference deprecated flat domain concepts.
   - _Requirements: 1.3, 6.1, 6.7, 10.3, 10.5, 10.6_
 
-- [ ] 3. Persistence boundaries: Unit of Work and CQRS repositories
+- [x] 3. Persistence boundaries: Unit of Work and CQRS repositories
 - [x] 3.1 Define command/query repository contracts and the Unit of Work boundary
   - Introduce command repository contracts for mutation and consistency checks.
   - Introduce query repository contracts for display, search, aggregation, and read-only compatibility workflows.
@@ -100,7 +100,7 @@
   - Completion is observable when persistence tests pass and import validation rejects low-level persistence access outside repository implementations.
   - _Requirements: 1.3, 4.1, 4.2, 4.5, 4.6, 5.5, 9.5_
 
-- [ ] 4. Command and query use-case split
+- [x] 4. Command and query use-case split
 - [x] 4.1 Migrate identity workflows into command and query use-cases
   - Separate login, registration, authorization refresh, session authorization, and online-user reads into command or query workflows based on mutation.
   - Preserve existing externally observable login, registration, session, and permission behavior.
@@ -137,7 +137,7 @@
   - Completion is observable when service imports and package names express business workflows rather than bancho, web legacy, lazer, or API families.
   - _Requirements: 3.4, 3.6, 7.4, 8.1, 10.3, 10.5_
 
-- [ ] 5. Transport family packages and mapper boundaries
+- [x] 5. Transport family packages and mapper boundaries
 - [x] 5.1 Move stable bancho and legacy web adapters into the stable transport family
   - Move binary protocol handling, packet workflows, legacy web endpoints, and route assembly into the stable family.
   - Preserve public route behavior, host routing, packet behavior, session behavior, and compatibility response shapes.
@@ -164,7 +164,7 @@
   - Completion is observable when route behavior remains unchanged and transport family isolation is enforced mechanically.
   - _Requirements: 1.1, 1.3, 1.5, 7.4, 7.5, 7.6, 7.7, 9.5, 10.4, 10.5_
 
-- [ ] 6. Background job adapter boundary
+- [x] 6. Background job adapter boundary
 - [x] 6.1 (P) Move beatmap fetch business behavior into command use-cases
   - Move metadata fetch, file fetch, idempotency, state transitions, and persistence consistency into beatmap command use-cases.
   - Keep external fetch waits outside write transactions unless they are part of the durable command mutation phase.
@@ -193,7 +193,7 @@
   - Completion is observable when worker job tests pass with taskiq adapters invoking use-cases through the composition boundary.
   - _Requirements: 1.2, 1.3, 1.5, 8.1, 8.4, 9.5_
 
-- [ ] 7. Dishka composition and runtime lifecycle integration
+- [x] 7. Dishka composition and runtime lifecycle integration
 - [x] 7.1 Build Composition Providers for configuration, infrastructure, repositories, and use-cases
   - Define common providers for config, DB engine, session factory, Valkey, broker, HTTP client, storage, state, repository implementations, UoW, command use-cases, and query use-cases.
   - Use APP and REQUEST scopes consistently and avoid custom scopes unless a verified lifecycle gap appears.
@@ -224,7 +224,7 @@
   - Completion is observable when production and test code no longer imports the legacy container, service registry, or worker runtime composition.
   - _Requirements: 2.5, 10.1, 10.2, 10.4, 10.6_
 
-- [ ] 8. Deprecated path cleanup and architecture sync
+- [x] 8. Deprecated path cleanup and architecture sync
 - [x] 8.1 Remove deprecated flat package entry points and unsupported facades
   - Remove old service, repository, domain, and transport package locations after all call sites use the new architecture paths.
   - Ensure no old and new package paths remain supported for the same responsibility.
@@ -243,7 +243,7 @@
   - Completion is observable when docs and automated dependency validation describe the same boundaries and pass together.
   - _Requirements: 9.2, 9.3, 10.4, 10.6_
 
-- [ ] 9. Regression and quality validation
+- [x] 9. Regression and quality validation
 - [x] 9.1 Run stable workflow regression and fix behavior drift
   - Verify login, polling, chat, registration, getscores, and score submit through the new transport and composition paths.
   - Fix any route, packet, session, or compatibility response drift caused by package movement.
