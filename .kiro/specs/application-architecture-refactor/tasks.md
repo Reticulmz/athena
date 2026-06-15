@@ -150,7 +150,7 @@
   - Completion is observable when stable permission flags and stable mod bitmasks are mapped at the stable boundary and never leak into core services as wire concepts.
   - _Requirements: 6.2, 6.3, 6.5, 6.6, 7.4, 7.5, 7.6_
 
-- [ ] 5.3 (P) Create lazer and first-party API transport families without adding product behavior
+- [x] 5.3 (P) Create lazer and first-party API transport families without adding product behavior
   - Establish lazer REST, lazer realtime, first-party public API, and first-party admin API adapter roots.
   - Keep future API mount points inert or behavior-equivalent to the current empty state.
   - Completion is observable when the new family roots exist, do not depend on each other, and do not introduce new client-facing behavior.

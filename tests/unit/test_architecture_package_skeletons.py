@@ -87,6 +87,19 @@ LEGACY_FACADE_ROOTS = (
     "osu_server.transports.signalr",
 )
 
+INERT_TRANSPORT_ROOTS = (
+    "osu_server.transports.lazer",
+    "osu_server.transports.lazer.api",
+    "osu_server.transports.lazer.api.mappers",
+    "osu_server.transports.lazer.signalr",
+    "osu_server.transports.lazer.signalr.mappers",
+    "osu_server.transports.api",
+    "osu_server.transports.api.public",
+    "osu_server.transports.api.public.mappers",
+    "osu_server.transports.api.admin",
+    "osu_server.transports.api.admin.mappers",
+)
+
 
 def test_new_architecture_package_roots_import_as_packages() -> None:
     for module_name in PACKAGE_ROOTS:
@@ -113,9 +126,33 @@ def test_new_package_roots_do_not_reexport_deprecated_paths() -> None:
     assert facade_imports == []
 
 
+def test_future_transport_family_roots_are_inert() -> None:
+    behavior_nodes = [
+        f"{path.relative_to(PROJECT_ROOT).as_posix()} contains {type(node).__name__}"
+        for module_name in INERT_TRANSPORT_ROOTS
+        for path in [_module_init_path(module_name)]
+        for node in _non_docstring_module_nodes(path)
+    ]
+
+    assert behavior_nodes == []
+
+
 def _module_init_path(module_name: str) -> Path:
     relative = Path(*module_name.split(".")[1:]) / "__init__.py"
     return SOURCE_ROOT / relative
+
+
+def _non_docstring_module_nodes(path: Path) -> list[ast.stmt]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
+    body = list(tree.body)
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        return body[1:]
+    return body
 
 
 def _absolute_imports(path: Path) -> set[str]:
