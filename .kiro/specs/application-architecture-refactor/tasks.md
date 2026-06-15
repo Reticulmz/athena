@@ -256,7 +256,7 @@
   - Completion is observable when worker regression tests and command transaction tests pass.
   - _Requirements: 1.2, 1.3, 4.1, 4.2, 4.3, 4.4, 8.1, 8.2, 8.3, 8.4, 8.5_
 
-- [ ] 9.3 Run query-side read and future-readiness validation
+- [x] 9.3 Run query-side read and future-readiness validation
   - Verify query workflows are read-only and do not open command transactions.
   - Verify future leaderboard, stats, and ranking placement can use query repository contracts without expanding command repositories.
   - Completion is observable when query tests cover unavailable/empty results and command repositories contain no presentation-only reads.
