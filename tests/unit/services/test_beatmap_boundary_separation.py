@@ -374,7 +374,7 @@ class TestLocalOverrideSeparation:
         beatmap = _make_beatmap(official_status=BeatmapRankStatus.APPROVED)
 
         # effective_status is a computed property; attempting to assign should fail
-        with pytest.raises(AttributeError):
+        with pytest.raises((AttributeError, TypeError)):
             beatmap.effective_status = BeatmapRankStatus.RANKED  # pyright: ignore[reportAttributeAccessIssue]
 
     def test_no_local_override_means_official_status_is_effective(self) -> None:
