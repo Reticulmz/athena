@@ -19,7 +19,8 @@ INTERNAL_AUTHORIZATION_MODULES = (
     SOURCE_ROOT / "services" / "queries" / "identity" / "permission_service.py",
     SOURCE_ROOT / "services" / "commands" / "identity" / "session_authorization_service.py",
     SOURCE_ROOT / "services" / "commands" / "identity" / "auth_service.py",
-    SOURCE_ROOT / "services" / "queries" / "chat" / "channel_service.py",
+    SOURCE_ROOT / "services" / "commands" / "chat" / "join_channel.py",
+    SOURCE_ROOT / "services" / "queries" / "chat" / "channels.py",
     SOURCE_ROOT / "services" / "commands" / "chat" / "bancho_bot" / "command_service.py",
 )
 

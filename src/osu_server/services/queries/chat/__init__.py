@@ -1,6 +1,5 @@
 """Chat query use-case package."""
 
-from osu_server.services.queries.chat.channel_service import ChannelService
 from osu_server.services.queries.chat.channels import (
     ChannelCatalogQueryInput,
     ChannelCatalogQueryResult,
@@ -30,7 +29,6 @@ from osu_server.services.queries.chat.private_messages import (
 __all__ = [
     "ChannelCatalogQueryInput",
     "ChannelCatalogQueryResult",
-    "ChannelService",
     "ChatHistoryQueryResult",
     "ListAutojoinChannelsQuery",
     "ListChannelMessagesQuery",

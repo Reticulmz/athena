@@ -108,8 +108,8 @@ Do not add compatibility facades for deprecated service, repository, domain, or 
 
 - Identity commands: `services/commands/identity/auth_service.py`, `services/commands/identity/registration.py`, `services/commands/identity/login.py`, and `services/commands/identity/session_authorization_service.py`.
 - Identity queries: `services/queries/identity/permission_service.py`, `services/queries/identity/password_service.py`, `services/queries/identity/online_users_service.py`, and `services/queries/identity/session_credentials.py`.
-- Chat commands: `services/commands/chat/send_channel_message.py`, `services/commands/chat/send_private_message.py`, and `services/commands/chat/bancho_bot/`.
-- Chat queries: `services/queries/chat/channel_service.py`, `services/queries/chat/private_message_service.py`, `services/queries/chat/channels.py`, and `services/queries/chat/messages.py`.
+- Chat commands: `services/commands/chat/join_channel.py`, `services/commands/chat/leave_channel.py`, `services/commands/chat/send_channel_message.py`, `services/commands/chat/send_private_message.py`, persistence commands, and `services/commands/chat/bancho_bot/`.
+- Chat queries: `services/queries/chat/channels.py`, `services/queries/chat/private_message_service.py`, `services/queries/chat/private_messages.py`, and `services/queries/chat/messages.py`.
 - Beatmap commands and queries: command-side fetch workflows live in `services/commands/beatmaps/`; mirror read/provider workflows live in `services/queries/beatmaps/mirror/`.
 - Storage commands: blob metadata and backend writes live in `services/commands/storage/blob_storage.py`.
 - Score commands and queries: score submission and authorization live in `services/commands/scores/`; legacy getscores display reads live in `services/queries/scores/`.

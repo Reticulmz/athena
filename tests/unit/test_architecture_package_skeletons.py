@@ -89,6 +89,7 @@ LEGACY_FACADE_ROOTS = (
     "osu_server.repositories.interfaces.chat_repository",
     "osu_server.repositories.memory.chat_repository",
     "osu_server.repositories.sqlalchemy.chat_repository",
+    "osu_server.services.queries.chat.channel_service",
     "osu_server.transports.bancho",
     "osu_server.transports.web_legacy",
     "osu_server.transports.signalr",

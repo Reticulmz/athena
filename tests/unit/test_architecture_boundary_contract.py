@@ -277,6 +277,7 @@ REMOVED_ARCHITECTURE_ENTRYPOINTS = (
     SOURCE_ROOT / "services" / "password_service.py",
     SOURCE_ROOT / "services" / "permission_service.py",
     SOURCE_ROOT / "services" / "private_message_service.py",
+    SOURCE_ROOT / "services" / "queries" / "chat" / "channel_service.py",
     SOURCE_ROOT / "services" / "score_authorization_service.py",
     SOURCE_ROOT / "services" / "session_authorization_service.py",
     SOURCE_ROOT / "transports" / "bancho",

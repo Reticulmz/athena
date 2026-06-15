@@ -4,4 +4,3 @@ src/osu_server/repositories/memory/chat_repository.py	osu_server.repositories.in
 src/osu_server/repositories/sqlalchemy/beatmap_repository.py	osu_server.repositories.interfaces.beatmap_repository
 src/osu_server/repositories/sqlalchemy/blob_repository.py	osu_server.repositories.interfaces.blob_repository
 src/osu_server/repositories/sqlalchemy/chat_repository.py	osu_server.repositories.interfaces.chat_repository
-src/osu_server/services/queries/chat/channel_service.py	osu_server.repositories.interfaces.channel_repository
