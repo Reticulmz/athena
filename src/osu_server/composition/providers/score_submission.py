@@ -11,6 +11,7 @@ from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
+from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
 from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase, SubmitScoreUseCase
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from osu_server.services.commands.storage.blob_storage import BlobStorageService
@@ -26,6 +27,7 @@ _DISHKA_RUNTIME_HINTS = (
     SessionStore,
     StableScorePayloadParser,
     SubmitScoreUseCase,
+    RequestBeatmapFileWarmupUseCase,
     UnitOfWorkFactory,
     UserQueryRepository,
 )
@@ -67,6 +69,7 @@ class ScoreSubmissionProviderSet(Provider):
         payload_parser: StableScorePayloadParser,
         auth_service: ScoreAuthorizationService,
         beatmap_resolver: BeatmapMirrorService,
+        beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
     ) -> ProcessScoreSubmissionUseCase:
         return ProcessScoreSubmissionUseCase(
             submit_score_use_case=submit_score_use_case,
@@ -75,4 +78,5 @@ class ScoreSubmissionProviderSet(Provider):
             payload_parser=payload_parser,
             auth_service=auth_service,
             beatmap_resolver=beatmap_resolver,
+            beatmap_file_warmup_use_case=beatmap_file_warmup,
         )

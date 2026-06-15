@@ -23,7 +23,6 @@ from osu_server.services.commands.chat import (
     SendPrivateMessageUseCase,
 )
 from osu_server.services.commands.identity import LoginCommandUseCase
-from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 from osu_server.services.queries.chat import (
     ListAutojoinChannelsQuery,
     ListVisibleChannelsQuery,
@@ -43,7 +42,6 @@ from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflo
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
-    BeatmapMirrorService,
     ChannelStateStore,
     CountryResolver,
     LocalEventBus,
@@ -54,6 +52,7 @@ _DISHKA_RUNTIME_HINTS = (
     ListVisibleChannelsQuery,
     LoginCommandUseCase,
     PacketQueue,
+    RequestBeatmapFileWarmupUseCase,
     SendChannelMessageUseCase,
     SendPrivateMessageUseCase,
     SessionStore,
@@ -130,10 +129,10 @@ class StableBanchoProviderSet(Provider):
     @provide
     def status_change_handlers(
         self,
-        beatmap_resolver: BeatmapMirrorService,
+        beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
     ) -> StatusChangeHandlers:
         return StatusChangeHandlers(
-            beatmap_file_warmup=RequestBeatmapFileWarmupUseCase(beatmap_resolver),
+            beatmap_file_warmup=beatmap_file_warmup,
         )
 
     @provide

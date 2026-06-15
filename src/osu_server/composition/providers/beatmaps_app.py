@@ -11,6 +11,7 @@ from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
 from osu_server.domain.beatmaps import BeatmapFetchTarget, BeatmapFreshnessPolicy
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
+from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
 from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
@@ -22,6 +23,7 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapFetchTarget,
     BeatmapFreshnessPolicy,
     BeatmapQueryRepository,
+    RequestBeatmapFileWarmupUseCase,
 )
 
 
@@ -48,6 +50,13 @@ class BeatmapAppProviderSet(Provider):
             official_sources_available=config.beatmap_official_sources_enabled,
             enqueue_refresh=lambda target: enqueue_beatmap_fetch(broker, target),
         )
+
+    @provide
+    def beatmap_file_warmup_use_case(
+        self,
+        beatmap_resolver: BeatmapMirrorService,
+    ) -> RequestBeatmapFileWarmupUseCase:
+        return RequestBeatmapFileWarmupUseCase(beatmap_resolver)
 
 
 async def enqueue_beatmap_fetch(broker: AsyncBroker, target: BeatmapFetchTarget) -> None:

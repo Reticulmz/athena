@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import httpx
 import pytest
 from dishka import AsyncContainer, Scope
@@ -57,6 +59,7 @@ from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQuery
 from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
     FetchBeatmapMetadataUseCase,
+    RequestBeatmapFileWarmupUseCase,
 )
 from osu_server.services.commands.chat import (
     ChatPersistenceWorkPublisher,
@@ -110,6 +113,7 @@ from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
+from osu_server.transports.stable.bancho.handlers.status import StatusChangeHandlers
 from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
 from osu_server.transports.stable.bancho.workflows.login_response_builder import (
     LoginResponseBuilder,
@@ -261,6 +265,7 @@ async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
         SendChannelMessageUseCase,
         SendPrivateMessageUseCase,
         BeatmapMirrorService,
+        RequestBeatmapFileWarmupUseCase,
         ScoreAuthorizationService,
         SubmitScoreUseCase,
         StableScorePayloadParser,
@@ -269,6 +274,7 @@ async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
         LoginWorkflow,
         LifecycleHandlers,
         ChatHandlers,
+        StatusChangeHandlers,
         PacketDispatcher,
         PollingWorkflow,
         BanchoEndpoint,
@@ -284,6 +290,44 @@ async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
         for dependency_type in expected_types:
             resolved = await container.get(dependency_type)
             assert isinstance(resolved, dependency_type)
+    finally:
+        await _close_common_dependencies(container)
+
+
+@pytest.mark.asyncio
+async def test_app_provider_graph_wires_single_warmup_use_case_into_stable_workflows() -> None:
+    config = make_app_config(environment="test")
+    container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
+
+    try:
+        warmup = await container.get(RequestBeatmapFileWarmupUseCase)
+        getscores = await container.get(GetscoresHandler)
+        status_handlers = await container.get(StatusChangeHandlers)
+        score_submission = await container.get(ProcessScoreSubmissionUseCase)
+        getscores_warmup = cast(
+            "RequestBeatmapFileWarmupUseCase",
+            object.__getattribute__(
+                getscores,
+                "_beatmap_file_warmup",
+            ),
+        )
+        status_warmup = cast(
+            "RequestBeatmapFileWarmupUseCase",
+            object.__getattribute__(
+                status_handlers,
+                "_beatmap_file_warmup",
+            ),
+        )
+        wired_warmup = cast(
+            "RequestBeatmapFileWarmupUseCase | None",
+            object.__getattribute__(
+                score_submission,
+                "_beatmap_file_warmup_use_case",
+            ),
+        )
+        assert getscores_warmup is warmup
+        assert status_warmup is warmup
+        assert wired_warmup is warmup
     finally:
         await _close_common_dependencies(container)
 

@@ -30,6 +30,7 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapScoreListingQuery,
     ProcessScoreSubmissionUseCase,
     RegisterUserCommandUseCase,
+    RequestBeatmapFileWarmupUseCase,
     SessionCredentialsQueryUseCase,
 )
 
@@ -63,6 +64,7 @@ class StableWebLegacyProviderSet(Provider):
         getscores_query: BeatmapScoreListingQuery,
         status_mapper: GetscoresStatusMapper,
         beatmap_resolver: BeatmapMirrorService,
+        beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
         config: AppConfig,
     ) -> GetscoresHandler:
         return GetscoresHandler(
@@ -71,7 +73,7 @@ class StableWebLegacyProviderSet(Provider):
             getscores_query=getscores_query,
             status_mapper=status_mapper,
             beatmap_resolver=beatmap_resolver,
-            beatmap_file_warmup=RequestBeatmapFileWarmupUseCase(beatmap_resolver),
+            beatmap_file_warmup=beatmap_file_warmup,
             beatmap_metadata_wait_seconds=config.beatmap_default_bounded_wait_seconds,
         )
 

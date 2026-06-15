@@ -48,7 +48,7 @@
   - _Depends: 1.2_
 
 - [ ] 3. Runtime wiring: DI graph と dispatcher registration を統合する
-- [ ] 3.1 Warmup use-case と stable handler dependencies を composition graph に接続する
+- [x] 3.1 Warmup use-case と stable handler dependencies を composition graph に接続する
   - beatmap app graph は existing BeatmapMirrorService を warmup resolver として提供する
   - stable web legacy graph は getscores handler に warmup use-case を渡す
   - stable bancho graph は STATUS_CHANGE handler を構築し、既存 packet dispatcher に登録する
