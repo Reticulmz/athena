@@ -206,7 +206,7 @@
   - Completion is observable when the Starlette app starts, handles existing routes through injected dependencies, and closes managed resources through the configured lifecycle.
   - _Requirements: 1.5, 2.1, 2.3, 2.6, 7.1, 7.2, 7.3_
 
-- [ ] 7.3 Integrate the worker runtime with taskiq lifecycle
+- [x] 7.3 Integrate the worker runtime with taskiq lifecycle
   - Install taskiq DI integration and compose worker dependencies before background tasks execute.
   - Remove manual taskiq state construction as the source of service dependencies.
   - Completion is observable when worker startup resolves task use-cases through the worker container and worker shutdown finalizes managed resources.

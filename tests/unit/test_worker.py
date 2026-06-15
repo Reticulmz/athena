@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from pathlib import Path
     from types import TracebackType
 
+    from dishka import AsyncContainer
+
     from osu_server.domain.beatmaps import BeatmapFetchTarget
 
 
@@ -49,6 +51,19 @@ class FakeValkeyClient:
 
     async def close(self) -> None:
         """Record client shutdown."""
+        self.close_calls += 1
+
+
+class FakeDishkaContainer:
+    """AsyncContainer test double that records close calls."""
+
+    close_calls: int
+
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    async def close(self) -> None:
+        """Record container close."""
         self.close_calls += 1
 
 
@@ -224,6 +239,11 @@ def _state_valkey(state: TaskiqState) -> FakeValkeyClient | None:
     return cast("FakeValkeyClient | None", getattr(state, "valkey", None))
 
 
+def _state_dishka_container(state: TaskiqState) -> AsyncContainer | None:
+    """Return typed worker Dishka container state for assertions."""
+    return cast("AsyncContainer | None", getattr(state, "dishka_container", None))
+
+
 def _state_persist_channel_message_use_case(state: TaskiqState) -> object | None:
     """Return typed worker channel persistence use-case state for assertions."""
     return cast("object | None", getattr(state, "persist_channel_message_use_case", None))
@@ -340,6 +360,7 @@ async def test_worker_startup_sets_chat_persistence_runtime_state(tmp_path: Path
     assert _state_engine(state) is engine
     assert _state_session_factory(state) is session_factory
     assert _state_valkey(state) is valkey
+    assert _state_dishka_container(state) is not None
     assert _state_persist_channel_message_use_case(state) is not None
     assert _state_persist_private_message_use_case(state) is not None
 
@@ -394,12 +415,14 @@ async def test_worker_shutdown_clears_chat_runtime_state() -> None:
     state = TaskiqState()
     engine = FakeEngine()
     valkey = FakeValkeyClient()
+    dishka_container = FakeDishkaContainer()
     channel_use_case = object()
     private_use_case = object()
     session_factory = object()
 
     state.engine = engine
     state.valkey = valkey
+    state.dishka_container = dishka_container
     state.persist_channel_message_use_case = channel_use_case
     state.persist_private_message_use_case = private_use_case
     state.session_factory = session_factory
@@ -411,8 +434,10 @@ async def test_worker_shutdown_clears_chat_runtime_state() -> None:
     assert _state_persist_channel_message_use_case(state) is None
     assert _state_persist_private_message_use_case(state) is None
     assert _state_valkey(state) is None
+    assert _state_dishka_container(state) is None
     assert engine.dispose_calls == 1
     assert valkey.close_calls == 1
+    assert dishka_container.close_calls == 1
 
 
 # ---------------------------------------------------------------------------
