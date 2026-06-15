@@ -20,6 +20,10 @@ from starlette.responses import Response
 
 from osu_server.domain.beatmaps import BeatmapResolveOptions
 from osu_server.domain.compatibility.stable.getscores import GetscoresOutcomeKind
+from osu_server.services.commands.beatmaps import (
+    BeatmapFileWarmupEntrance,
+    BeatmapFileWarmupRequest,
+)
 from osu_server.services.queries.identity import SessionCredentialsQueryInput
 
 if TYPE_CHECKING:
@@ -27,6 +31,7 @@ if TYPE_CHECKING:
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
     from osu_server.domain.compatibility.stable.getscores import GetscoresRequest
+    from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
     from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
     from osu_server.services.queries.identity import SessionCredentialsQuery
     from osu_server.services.queries.scores import BeatmapScoreListingQuery
@@ -58,6 +63,7 @@ class GetscoresHandler:
         getscores_query: BeatmapScoreListingQuery,
         status_mapper: GetscoresStatusMapper,
         beatmap_resolver: BeatmapMirrorService,
+        beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
         beatmap_metadata_wait_seconds: float,
     ) -> None:
         self._auth_query: SessionCredentialsQuery = auth_query
@@ -65,6 +71,7 @@ class GetscoresHandler:
         self._getscores_query: BeatmapScoreListingQuery = getscores_query
         self._status_mapper: GetscoresStatusMapper = status_mapper
         self._beatmap_resolver: BeatmapMirrorService = beatmap_resolver
+        self._beatmap_file_warmup: RequestBeatmapFileWarmupUseCase = beatmap_file_warmup
         self._beatmap_metadata_wait_seconds: float = beatmap_metadata_wait_seconds
 
     async def __call__(self, request: Request) -> Response:
@@ -86,13 +93,16 @@ class GetscoresHandler:
             )
             return Response(content=b"", status_code=HTTPStatus.UNAUTHORIZED)
 
+        user_id = auth_result.user_id
+        assert user_id is not None
+
         parse_result = self._getscores_parser.parse(request.query_params)
         if parse_result.error is not None or parse_result.request is None:
             error_value = parse_result.error.value if parse_result.error is not None else None
             logger.info(
                 "getscores_identity_invalid",
                 parse_error=error_value,
-                user_id=auth_result.user_id,
+                user_id=user_id,
             )
             return format_getscores_unavailable_response()
 
@@ -101,50 +111,54 @@ class GetscoresHandler:
             logger.info(
                 "getscores_parse_warning",
                 warnings=[w.value for w in request_obj.parse_warnings],
-                user_id=auth_result.user_id,
+                user_id=user_id,
             )
         if request_obj.anti_cheat_signal:
             logger.info(
                 "getscores_anti_cheat_signal",
-                user_id=auth_result.user_id,
+                user_id=user_id,
             )
 
-        await self._prepare_metadata(request_obj, user_id=auth_result.user_id)
+        await self._prepare_metadata(request_obj, user_id=user_id)
         outcome = await self._getscores_query.resolve(request_obj)
 
         if outcome.kind is GetscoresOutcomeKind.UNAVAILABLE:
+            await self._request_beatmap_file_warmup(
+                user_id=user_id,
+                checksum_md5=request_obj.checksum_md5,
+            )
             logger.info(
                 "getscores_unavailable",
                 resolve_reason=outcome.reason.value,
-                user_id=auth_result.user_id,
+                user_id=user_id,
             )
             return format_getscores_unavailable_response()
 
         if outcome.kind is GetscoresOutcomeKind.UPDATE_AVAILABLE:
             assert outcome.header is not None  # invariant for UPDATE_AVAILABLE outcomes
-            await self._prefetch_resolved_beatmap_file(
-                outcome.header.beatmap.id,
-                user_id=auth_result.user_id,
+            await self._request_beatmap_file_warmup(
+                user_id=user_id,
+                beatmap_id=outcome.header.beatmap.id,
             )
             logger.info(
                 "getscores_update_available",
                 resolve_reason=outcome.reason.value,
-                user_id=auth_result.user_id,
+                user_id=user_id,
             )
             return format_getscores_update_available_response()
 
         # HEADER outcome
         assert outcome.header is not None  # invariant for HEADER outcomes
-        await self._prefetch_resolved_beatmap_file(
-            outcome.header.beatmap.id,
-            user_id=auth_result.user_id,
+        await self._request_beatmap_file_warmup(
+            user_id=user_id,
+            beatmap_id=outcome.header.beatmap.id,
         )
         wire_status = self._status_mapper.map_header_status(outcome.header.beatmap)
         if wire_status is None:
             logger.info(
                 "getscores_unavailable",
                 resolve_reason=outcome.reason.value,
-                user_id=auth_result.user_id,
+                user_id=user_id,
             )
             return format_getscores_unavailable_response()
 
@@ -201,30 +215,32 @@ class GetscoresHandler:
                 has_checksum=request.checksum_md5 is not None,
             )
 
-    async def _prefetch_resolved_beatmap_file(
+    async def _request_beatmap_file_warmup(
         self,
-        beatmap_id: int,
         *,
-        user_id: int | None,
+        user_id: int,
+        beatmap_id: int | None = None,
+        checksum_md5: str | None = None,
     ) -> None:
-        """Request .osu prefetch for a resolved getscores beatmap."""
+        """Request .osu warmup without affecting getscores response selection."""
+        if beatmap_id is None and checksum_md5 is None:
+            return
+
         try:
-            result = await self._beatmap_resolver.resolve_by_beatmap_id(
-                beatmap_id,
-                BeatmapResolveOptions(require_osu_file=True, wait_timeout_seconds=0.0),
-            )
-            logger.info(
-                "getscores_beatmap_file_prefetch_requested",
-                user_id=user_id,
-                beatmap_id=beatmap_id,
-                file_status=result.file_status.value,
-                reason=result.reason,
+            _ = await self._beatmap_file_warmup.execute(
+                BeatmapFileWarmupRequest(
+                    entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
+                    user_id=user_id,
+                    beatmap_id=beatmap_id,
+                    checksum_md5=checksum_md5,
+                )
             )
         except Exception:
             logger.exception(
-                "getscores_beatmap_file_prefetch_failed",
+                "getscores_beatmap_file_warmup_failed",
                 user_id=user_id,
                 beatmap_id=beatmap_id,
+                has_checksum=checksum_md5 is not None,
             )
 
 

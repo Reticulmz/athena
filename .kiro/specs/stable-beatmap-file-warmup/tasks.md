@@ -17,7 +17,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.5, 4.2, 5.3, 5.4, 6.1, 6.2, 6.3, 6.4, 6.6, 7.4_
 
 - [ ] 2. Core integrations: stable の 3 入口から warmup を発火する
-- [ ] 2.1 (P) getscores warmup side effect を追加する
+- [x] 2.1 (P) getscores warmup side effect を追加する
   - 認証成功と parse 成功の後だけ warmup を呼び、auth failure と parse failure では fetch work を発火しない
   - known-header response では解決済み beatmap id を優先し、それ以外の parseable request では usable checksum を warmup input にする
   - unavailable、update-available、known-header の response body と status mapping は既存形式のまま維持する

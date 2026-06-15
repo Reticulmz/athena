@@ -318,6 +318,7 @@ class TestRequestDiagnostics:
         assert entry.get("parse_error") == "missing_identity"
         assert "ha" not in entry
         assert _no_credentials_leaked(entry)
+        assert _events_with(logs, "beatmap_file_warmup") == []
 
     def test_unknown_checksum_emits_unavailable(self) -> None:
         with _test_env():
@@ -347,6 +348,16 @@ class TestRequestDiagnostics:
         }
         assert "ha" not in entry
         assert _no_credentials_leaked(entry)
+
+        warmup_events = _events_with(logs, "beatmap_file_warmup")
+        assert len(warmup_events) == 1
+        warmup_entry = warmup_events[0]
+        assert warmup_entry.get("entrance") == "stable_getscores"
+        assert warmup_entry.get("outcome") == "metadata_pending"
+        assert warmup_entry.get("beatmap_id") is None
+        assert warmup_entry.get("checksum_md5") == "ff" * 16
+        assert "ha" not in warmup_entry
+        assert _no_credentials_leaked(warmup_entry)
 
     def test_update_available_emits_update_event(self) -> None:
         with _test_env():
@@ -423,6 +434,38 @@ class TestRequestDiagnostics:
         events = _events_with(logs, "getscores_anti_cheat_signal")
         assert len(events) == 1
         entry = events[0]
+        assert "ha" not in entry
+        assert _no_credentials_leaked(entry)
+
+    def test_known_header_emits_warmup_event_without_changing_body(self) -> None:
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+
+                async def _setup() -> None:
+                    _ = await _seed_user_with_session(app)
+                    await _seed_known_beatmap(app)
+
+                asyncio.run(_setup())
+                with structlog.testing.capture_logs() as logs:
+                    response = client.get(
+                        "/web/osu-osz2-getscores.php",
+                        params=_query(),
+                    )
+                    assert response.status_code == HTTPStatus.OK
+                    assert response.content.split(b"\n")[0] == b"2|false|75|1|0||"
+
+        warmup_events = _events_with(logs, "beatmap_file_warmup")
+        assert len(warmup_events) == 1
+        entry = warmup_events[0]
+        assert entry.get("entrance") == "stable_getscores"
+        assert entry.get("outcome") == "requested"
+        assert entry.get("beatmap_id") == 75
+        assert entry.get("checksum_md5") is None
         assert "ha" not in entry
         assert _no_credentials_leaked(entry)
 

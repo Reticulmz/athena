@@ -9,6 +9,7 @@ from dishka import Provider, Scope
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
 from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
+from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
 from osu_server.services.commands.identity import RegisterUserCommandUseCase
 from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase
 from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
@@ -70,6 +71,7 @@ class StableWebLegacyProviderSet(Provider):
             getscores_query=getscores_query,
             status_mapper=status_mapper,
             beatmap_resolver=beatmap_resolver,
+            beatmap_file_warmup=RequestBeatmapFileWarmupUseCase(beatmap_resolver),
             beatmap_metadata_wait_seconds=config.beatmap_default_bounded_wait_seconds,
         )
 

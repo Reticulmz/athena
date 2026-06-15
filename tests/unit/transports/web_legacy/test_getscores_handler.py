@@ -23,6 +23,13 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
 )
 from osu_server.domain.identity.authentication import LegacyWebAuthFailure, LegacyWebAuthResult
+from osu_server.services.commands.beatmaps import (
+    BeatmapFileWarmupEntrance,
+    BeatmapFileWarmupOutcome,
+    BeatmapFileWarmupRequest,
+    BeatmapFileWarmupResult,
+    RequestBeatmapFileWarmupUseCase,
+)
 from osu_server.services.queries.identity import (
     SessionCredentialsQueryInput,
     SessionCredentialsQueryResult,
@@ -149,14 +156,99 @@ class _RecordingBeatmapResolver:
         )
 
 
+@final
+class _UnavailableBeatmapResolver:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, bool, float]] = []
+
+    async def resolve_by_checksum(
+        self,
+        checksum_md5: str,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "checksum",
+                checksum_md5,
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        return _metadata_pending_result()
+
+    async def resolve_by_beatmap_id(
+        self,
+        beatmap_id: int,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "beatmap_id",
+                str(beatmap_id),
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        return _metadata_pending_result()
+
+    async def resolve_by_beatmapset_id(
+        self,
+        beatmapset_id: int,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapSetResolveResult:
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "beatmapset_id",
+                str(beatmapset_id),
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        return BeatmapSetResolveResult(
+            beatmapset=None,
+            metadata_status=BeatmapFetchState.PENDING_FETCH,
+            source=None,
+            verified=False,
+            last_fetched_at=None,
+            next_refresh_at=None,
+            reason="pending",
+        )
+
+
+@final
+class _RecordingWarmupUseCase:
+    def __init__(self, outcome: BeatmapFileWarmupOutcome) -> None:
+        self.outcome = outcome
+        self.requests: list[BeatmapFileWarmupRequest] = []
+
+    async def execute(
+        self,
+        request: BeatmapFileWarmupRequest,
+    ) -> BeatmapFileWarmupResult:
+        self.requests.append(request)
+        return BeatmapFileWarmupResult(
+            outcome=self.outcome,
+            entrance=request.entrance,
+            user_id=request.user_id,
+            beatmap_id=request.beatmap_id,
+            checksum_md5=request.checksum_md5,
+            reason="test",
+        )
+
+
 async def test_getscores_resolves_metadata_before_returning_not_found() -> None:
     repository = _ScoreListingRepository()
     beatmap = _make_beatmap()
     beatmapset = _make_beatmapset(beatmap=beatmap)
     resolver = _RecordingBeatmapResolver(repository, beatmap, beatmapset)
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.REQUESTED)
     handler = _make_handler(
         repository=repository,
         resolver=resolver,
+        warmup=warmup,
         auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
     )
 
@@ -166,7 +258,13 @@ async def test_getscores_resolves_metadata_before_returning_not_found() -> None:
     assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
     assert resolver.calls == [
         ("checksum", _CHECKSUM, False, 1.25),
-        ("beatmap_id", "75", True, 0.0),
+    ]
+    assert warmup.requests == [
+        BeatmapFileWarmupRequest(
+            entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
+            user_id=2,
+            beatmap_id=75,
+        )
     ]
 
 
@@ -175,9 +273,11 @@ async def test_getscores_auth_failure_does_not_request_metadata_fetch() -> None:
     beatmap = _make_beatmap()
     beatmapset = _make_beatmapset(beatmap=beatmap)
     resolver = _RecordingBeatmapResolver(repository, beatmap, beatmapset)
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.REQUESTED)
     handler = _make_handler(
         repository=repository,
         resolver=resolver,
+        warmup=warmup,
         auth_result=LegacyWebAuthResult(failure=LegacyWebAuthFailure.INVALID_CREDENTIALS),
     )
 
@@ -186,12 +286,92 @@ async def test_getscores_auth_failure_does_not_request_metadata_fetch() -> None:
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.body == b""
     assert resolver.calls == []
+    assert warmup.requests == []
+
+
+async def test_getscores_parse_failure_does_not_request_warmup() -> None:
+    repository = _ScoreListingRepository()
+    beatmap = _make_beatmap()
+    beatmapset = _make_beatmapset(beatmap=beatmap)
+    resolver = _RecordingBeatmapResolver(repository, beatmap, beatmapset)
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.REQUESTED)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        warmup=warmup,
+        auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
+    )
+
+    query = _query()
+    _ = query.pop("c")
+    _ = query.pop("f")
+    _ = query.pop("i")
+    response = await handler(_request(query))
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.body == b"-1|false"
+    assert resolver.calls == []
+    assert warmup.requests == []
+
+
+async def test_getscores_unavailable_uses_parsed_checksum_for_warmup() -> None:
+    repository = _ScoreListingRepository()
+    resolver = _UnavailableBeatmapResolver()
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.METADATA_PENDING)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        warmup=warmup,
+        auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
+    )
+
+    response = await handler(_request(_query()))
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.body == b"-1|false"
+    assert resolver.calls == [
+        ("checksum", _CHECKSUM, False, 1.25),
+    ]
+    assert warmup.requests == [
+        BeatmapFileWarmupRequest(
+            entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
+            user_id=2,
+            checksum_md5=_CHECKSUM,
+        )
+    ]
+
+
+async def test_getscores_warmup_failure_does_not_change_response_body() -> None:
+    repository = _ScoreListingRepository()
+    beatmap = _make_beatmap()
+    beatmapset = _make_beatmapset(beatmap=beatmap)
+    resolver = _RecordingBeatmapResolver(repository, beatmap, beatmapset)
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.FAILED)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        warmup=warmup,
+        auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
+    )
+
+    response = await handler(_request(_query()))
+
+    assert response.status_code == HTTPStatus.OK
+    assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
+    assert warmup.requests == [
+        BeatmapFileWarmupRequest(
+            entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
+            user_id=2,
+            beatmap_id=75,
+        )
+    ]
 
 
 def _make_handler(
     *,
     repository: _ScoreListingRepository,
-    resolver: _RecordingBeatmapResolver,
+    resolver: object,
+    warmup: _RecordingWarmupUseCase,
     auth_result: LegacyWebAuthResult,
 ) -> GetscoresHandler:
     return GetscoresHandler(
@@ -199,7 +379,11 @@ def _make_handler(
         getscores_parser=GetscoresQueryParser(),
         getscores_query=BeatmapScoreListingQuery(repository),
         status_mapper=GetscoresStatusMapper(),
-        beatmap_resolver=cast("BeatmapMirrorService", cast("object", resolver)),
+        beatmap_resolver=cast("BeatmapMirrorService", resolver),
+        beatmap_file_warmup=cast(
+            "RequestBeatmapFileWarmupUseCase",
+            cast("object", warmup),
+        ),
         beatmap_metadata_wait_seconds=1.25,
     )
 
@@ -304,4 +488,19 @@ def _resolve_result(beatmap: Beatmap, beatmapset: BeatmapSet) -> BeatmapResolveR
         last_fetched_at=beatmap.last_fetched_at,
         next_refresh_at=beatmap.next_refresh_at,
         reason="test",
+    )
+
+
+def _metadata_pending_result() -> BeatmapResolveResult:
+    return BeatmapResolveResult(
+        beatmap=None,
+        beatmapset=None,
+        eligibility=None,
+        metadata_status=BeatmapFetchState.PENDING_FETCH,
+        file_status=BeatmapFileState.MISSING,
+        source=None,
+        verified=False,
+        last_fetched_at=None,
+        next_refresh_at=None,
+        reason="pending",
     )
