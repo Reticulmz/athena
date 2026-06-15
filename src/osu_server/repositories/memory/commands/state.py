@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Self
 
 if TYPE_CHECKING:
@@ -21,6 +22,29 @@ if TYPE_CHECKING:
     from osu_server.domain.scores.score import Score
     from osu_server.domain.scores.submission import ScoreSubmission
     from osu_server.domain.storage.blobs import Blob
+
+
+@dataclass(slots=True, frozen=True)
+class InMemoryChannelMessageRecord:
+    """Committed channel chat history row for memory repositories."""
+
+    id: int
+    sender_id: int
+    channel_id: int
+    channel_name: str
+    content: str
+    created_at: datetime
+
+
+@dataclass(slots=True, frozen=True)
+class InMemoryPrivateMessageRecord:
+    """Committed private chat history row for memory repositories."""
+
+    id: int
+    sender_id: int
+    target_id: int
+    content: str
+    created_at: datetime
 
 
 @dataclass(slots=True)
@@ -43,6 +67,10 @@ class InMemoryCommandRepositoryState:
         default_factory=dict
     )
     next_channel_id: int = 1
+    channel_messages_by_id: dict[int, InMemoryChannelMessageRecord] = field(default_factory=dict)
+    private_messages_by_id: dict[int, InMemoryPrivateMessageRecord] = field(default_factory=dict)
+    next_channel_message_id: int = 1
+    next_private_message_id: int = 1
 
     scores_by_id: dict[int, Score] = field(default_factory=dict)
     score_id_by_online_checksum: dict[str, int] = field(default_factory=dict)
@@ -72,3 +100,8 @@ class InMemoryCommandRepositoryState:
     def clone(self) -> Self:
         """Return an isolated copy for a command transaction."""
         return deepcopy(self)
+
+
+def now_utc() -> datetime:
+    """Return the timestamp used by memory command repositories."""
+    return datetime.now(UTC)

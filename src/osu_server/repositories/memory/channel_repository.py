@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from osu_server.domain.chat.channels import ChannelType
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 if TYPE_CHECKING:
     from osu_server.domain.chat.channels import Channel, ChannelRoleOverride
@@ -18,11 +19,13 @@ class InMemoryChannelRepository:
     Not thread-safe — intended for single-threaded test environments only.
     """
 
-    def __init__(self) -> None:
-        self._channels_by_id: dict[int, Channel] = {}
-        self._id_by_name: dict[str, int] = {}
-        self._next_id: int = 1
-        self._overrides: dict[int, list[ChannelRoleOverride]] = {}
+    def __init__(self, *, state: InMemoryCommandRepositoryState | None = None) -> None:
+        self._state: InMemoryCommandRepositoryState = state or InMemoryCommandRepositoryState()
+        self._channels_by_id: dict[int, Channel] = self._state.channels_by_id
+        self._id_by_name: dict[str, int] = self._state.channel_id_by_name
+        self._overrides: dict[int, list[ChannelRoleOverride]] = (
+            self._state.channel_overrides_by_channel_id
+        )
 
     async def create(self, channel: Channel) -> Channel:
         """Persist a new channel with an auto-generated id.
@@ -33,8 +36,8 @@ class InMemoryChannelRepository:
             msg = f"channel name already exists: {channel.name}"
             raise ValueError(msg)
 
-        created = replace(channel, id=self._next_id)
-        self._next_id += 1
+        created = replace(channel, id=self._state.next_channel_id)
+        self._state.next_channel_id += 1
 
         self._channels_by_id[created.id] = created
         self._id_by_name[created.name] = created.id

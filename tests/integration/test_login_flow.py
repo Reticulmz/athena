@@ -14,6 +14,7 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import struct
@@ -105,10 +106,7 @@ def _seed_default_channels(app: Starlette) -> None:
     repo = registration.instance
     assert isinstance(repo, InMemoryChannelRepository)
 
-    channel = make_channel(id=repo._next_id)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
-    repo._next_id += 1  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
-    repo._channels_by_id[channel.id] = channel  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
-    repo._id_by_name[channel.name] = channel.id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # test-only seed
+    channel = asyncio.run(repo.create(make_channel(id=0)))
     repo.seed_override(
         make_channel_role_override(
             channel_id=channel.id,

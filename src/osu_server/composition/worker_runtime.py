@@ -1,16 +1,13 @@
 """Worker-side runtime composition.
 
-Builds services the taskiq worker process needs: ChatService persistence
-and beatmap fetch jobs (metadata + .osu file).
+Builds use-cases and jobs the taskiq worker process needs: chat persistence
+commands and beatmap fetch jobs (metadata + .osu file).
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from osu_server.infrastructure.messaging.memory import InMemoryEventBus
-from osu_server.infrastructure.state.valkey.channel_state_store import ValkeyChannelStateStore
-from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimiter
 from osu_server.infrastructure.storage import create_blob_storage_backend
 from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
@@ -18,62 +15,33 @@ from osu_server.repositories.beatmaps.metadata_providers import (
 )
 from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
 from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
-from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
-from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
-from osu_server.repositories.sqlalchemy.user_repository import SQLAlchemyUserRepository
-from osu_server.repositories.valkey.session_store import ValkeySessionStore
-from osu_server.services.bancho_bot.command_service import CommandService
-from osu_server.services.bancho_bot.commands import create_builtin_registry
+from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
 from osu_server.services.beatmap_mirror import (
     BeatmapFileProviderService,
     MirrorMetadataProviderService,
     OsuApiMetadataProviderService,
 )
 from osu_server.services.blob_storage_service import BlobStorageService
-from osu_server.services.channel_service import ChannelService
-from osu_server.services.chat_service import ChatService
-from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.commands.chat import (
+    PersistChannelMessageUseCase,
+    PersistPrivateMessageUseCase,
+)
 
 if TYPE_CHECKING:
-    from glide import GlideClient
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     from osu_server.config import AppConfig
 
 
-def create_worker_chat_service(
+def create_worker_chat_persistence_use_cases(
     *,
     session_factory: async_sessionmaker[AsyncSession],
-    valkey: GlideClient,
-    config: AppConfig,
-) -> ChatService:
-    """Build the worker-side ChatService persistence runtime."""
-    session_store = ValkeySessionStore(valkey, ttl=config.session_ttl)
-    channel_repo = SQLAlchemyChannelRepository(session_factory)
-    channel_state = ValkeyChannelStateStore(valkey)
-    channel_service = ChannelService(
-        channel_repo=channel_repo,
-        channel_state=channel_state,
-    )
-    user_repo = SQLAlchemyUserRepository(session_factory)
-    private_message_service = PrivateMessageService(
-        user_repo=user_repo,
-        session_store=session_store,
-    )
-    command_service = CommandService(create_builtin_registry())
-    event_bus = InMemoryEventBus()
-    rate_limiter = ValkeyRateLimiter(valkey)
-    chat_repository = SQLAlchemyChatRepository(session_factory)
-
-    return ChatService(
-        channel_service=channel_service,
-        private_message_service=private_message_service,
-        command_service=command_service,
-        session_store=session_store,
-        event_bus=event_bus,
-        rate_limiter=rate_limiter,
-        config=config,
-        chat_repository=chat_repository,
+) -> tuple[PersistChannelMessageUseCase, PersistPrivateMessageUseCase]:
+    """Build worker-side chat persistence command use-cases."""
+    uow_factory = SQLAlchemyUnitOfWorkFactory(session_factory)
+    return (
+        PersistChannelMessageUseCase(uow_factory=uow_factory),
+        PersistPrivateMessageUseCase(uow_factory=uow_factory),
     )
 
 
@@ -133,5 +101,5 @@ async def create_worker_beatmap_file_fetch(
 __all__ = [
     "create_worker_beatmap_file_fetch",
     "create_worker_beatmap_metadata_fetch",
-    "create_worker_chat_service",
+    "create_worker_chat_persistence_use_cases",
 ]

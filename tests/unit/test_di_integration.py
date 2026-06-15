@@ -39,20 +39,39 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.di.container import Container
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
-from osu_server.repositories.interfaces.chat_repository import ChatRepository
+from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
+from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
+from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
+from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.auth_service import AuthService
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.channel_service import ChannelService
-from osu_server.services.chat_service import ChatService
+from osu_server.services.commands.chat import (
+    JoinChannelUseCase,
+    LeaveChannelUseCase,
+    PersistChannelMessageCommand,
+    PersistChannelMessageUseCase,
+    PersistPrivateMessageCommand,
+    PersistPrivateMessageUseCase,
+    SendChannelMessageUseCase,
+    SendPrivateMessageUseCase,
+)
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
 from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.queries.chat import (
+    ListAutojoinChannelsQuery,
+    ListChannelMessagesQuery,
+    ListPrivateMessagesQuery,
+    ListVisibleChannelsQuery,
+    ResolveChannelMessageDeliveryQuery,
+    ResolvePrivateMessageTargetQuery,
+)
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
@@ -60,6 +79,7 @@ from osu_server.transports.bancho.workflows.login import LoginWorkflow
 from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
 from osu_server.transports.bancho.workflows.polling import PollingWorkflow
 from osu_server.transports.web_legacy.registration import RegistrationHandler
+from tests.factories.domain import make_channel
 
 _EXPECTED_MIN_SHUTDOWN_HOOKS = 3
 _EXPECTED_MIN_HOST_ROUTES = 2
@@ -253,35 +273,86 @@ class TestDIBanchoEndpointGraph:
 
 
 class TestDIChatRegistrations:
-    """_register_services wires ChatRepository into ChatService."""
+    """_register_services wires chat command/query use-cases."""
 
-    async def test_resolves_chat_repository(self) -> None:
+    async def test_resolves_chat_query_repositories(self) -> None:
         _, container = await _build_full_container()
 
-        repo = await container.resolve(ChatRepository)
-        assert isinstance(repo, InMemoryChatRepository)
+        channel_repo = await container.resolve(ChannelQueryRepository)
+        history_repo = await container.resolve(ChatHistoryQueryRepository)
+        assert isinstance(channel_repo, InMemoryChannelQueryRepository)
+        assert isinstance(history_repo, InMemoryChatHistoryQueryRepository)
 
-    async def test_chat_service_persistence_uses_registered_chat_repository(self) -> None:
+    async def test_chat_persistence_use_cases_write_through_uow(self) -> None:
         _, container = await _build_full_container()
-        repo = await container.resolve(ChatRepository)
-        assert isinstance(repo, InMemoryChatRepository)
+        channel_repo = await container.resolve(ChannelRepository)
+        assert isinstance(channel_repo, InMemoryChannelRepository)
+        _ = await channel_repo.create(
+            make_channel(name="#osu"),
+        )
+        channel_use_case = await container.resolve(PersistChannelMessageUseCase)
+        private_use_case = await container.resolve(PersistPrivateMessageUseCase)
 
-        service = await container.resolve(ChatService)
-        channel_result = await service.persist_channel_message(
-            sender_id=1,
-            channel_name="#osu",
-            content="hello",
+        channel_result = await channel_use_case.execute(
+            PersistChannelMessageCommand(
+                sender_id=1,
+                channel_name="#osu",
+                content="hello",
+            )
         )
-        private_result = await service.persist_private_message(
-            sender_id=1,
-            target_id=2,
-            content="secret",
+        private_result = await private_use_case.execute(
+            PersistPrivateMessageCommand(
+                sender_id=1,
+                target_id=2,
+                content="secret",
+            )
         )
+        history_repo = await container.resolve(ChatHistoryQueryRepository)
+        channel_history = await history_repo.list_channel_messages("#osu", limit=10)
+        private_history = await history_repo.list_private_messages(1, 2, limit=10)
 
         assert channel_result.success is True
         assert private_result.success is True
-        assert repo.channel_messages == ((1, "#osu", "hello"),)
-        assert repo.private_messages == ((1, 2, "secret"),)
+        assert [message.content for message in channel_history] == ["hello"]
+        assert [message.content for message in private_history] == ["secret"]
+
+    async def test_resolves_chat_command_and_query_use_cases(self) -> None:
+        _, container = await _build_full_container()
+
+        assert isinstance(
+            await container.resolve(SendChannelMessageUseCase),
+            SendChannelMessageUseCase,
+        )
+        assert isinstance(
+            await container.resolve(SendPrivateMessageUseCase),
+            SendPrivateMessageUseCase,
+        )
+        assert isinstance(await container.resolve(JoinChannelUseCase), JoinChannelUseCase)
+        assert isinstance(await container.resolve(LeaveChannelUseCase), LeaveChannelUseCase)
+        assert isinstance(
+            await container.resolve(ListVisibleChannelsQuery),
+            ListVisibleChannelsQuery,
+        )
+        assert isinstance(
+            await container.resolve(ListAutojoinChannelsQuery),
+            ListAutojoinChannelsQuery,
+        )
+        assert isinstance(
+            await container.resolve(ResolveChannelMessageDeliveryQuery),
+            ResolveChannelMessageDeliveryQuery,
+        )
+        assert isinstance(
+            await container.resolve(ResolvePrivateMessageTargetQuery),
+            ResolvePrivateMessageTargetQuery,
+        )
+        assert isinstance(
+            await container.resolve(ListChannelMessagesQuery),
+            ListChannelMessagesQuery,
+        )
+        assert isinstance(
+            await container.resolve(ListPrivateMessagesQuery),
+            ListPrivateMessagesQuery,
+        )
 
 
 class TestDIChannelSystemRegistrations:
@@ -349,11 +420,11 @@ class TestEnvironmentBasedRepositories:
         repo = await container.resolve(RoleRepository)
         assert isinstance(repo, InMemoryRoleRepository)
 
-    async def test_test_env_uses_in_memory_chat_repository(self) -> None:
+    async def test_test_env_uses_in_memory_chat_query_repository(self) -> None:
         _, container = await _build_full_container(_make_config(environment="test"))
 
-        repo = await container.resolve(ChatRepository)
-        assert isinstance(repo, InMemoryChatRepository)
+        repo = await container.resolve(ChatHistoryQueryRepository)
+        assert isinstance(repo, InMemoryChatHistoryQueryRepository)
 
 
 # ---------------------------------------------------------------------------

@@ -18,14 +18,24 @@ from osu_server.infrastructure.state.memory.channel_state_store import InMemoryC
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
+from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.channel_service import ChannelService
-from osu_server.services.chat_service import ChatService
-from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.commands.chat import (
+    JoinChannelUseCase,
+    LeaveChannelUseCase,
+    SendChannelMessageUseCase,
+    SendPrivateMessageUseCase,
+)
+from osu_server.services.queries.chat import (
+    ResolveChannelMessageDeliveryQuery,
+    ResolvePrivateMessageTargetQuery,
+)
 from osu_server.transports.bancho.dispatch import PacketDispatcher
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.bancho.listeners.chat import ChatListeners
@@ -93,9 +103,13 @@ def _channel_payload(channel_name: str) -> bytes:
 
 
 async def _setup_pipeline() -> ChatPipeline:
-    user_repo = InMemoryUserRepository()
+    command_state = InMemoryCommandRepositoryState()
+    uow_factory = InMemoryUnitOfWorkFactory(command_state)
+    user_repo = InMemoryUserRepository(state=command_state)
     session_store = InMemorySessionStore()
-    channel_repo = InMemoryChannelRepository()
+    channel_repo = InMemoryChannelRepository(state=command_state)
+    user_query_repo = InMemoryUserQueryRepository(uow_factory)
+    channel_query_repo = InMemoryChannelQueryRepository(uow_factory)
     channel_state = InMemoryChannelStateStore()
     packet_queue = InMemoryPacketQueue()
     event_bus = InMemoryEventBus()
@@ -127,16 +141,31 @@ async def _setup_pipeline() -> ChatPipeline:
     )
     chat_listeners.register_all(event_bus)
 
-    channel_service = ChannelService(
-        channel_repo=channel_repo,
+    channel_delivery_query = ResolveChannelMessageDeliveryQuery(
+        channel_repository=channel_query_repo,
         channel_state=channel_state,
     )
-    chat_service = ChatService(
-        channel_service=channel_service,
-        private_message_service=PrivateMessageService(
-            user_repo=user_repo,
-            session_store=session_store,
+    private_message_target_query = ResolvePrivateMessageTargetQuery(
+        user_repository=user_query_repo,
+        session_store=session_store,
+    )
+    command_service = CommandService(create_builtin_registry())
+    send_channel_message = SendChannelMessageUseCase(
+        channel_delivery_query=channel_delivery_query,
+        command_service=command_service,
+        session_store=session_store,
+        event_bus=event_bus,
+        rate_limiter=InMemoryRateLimiter(time_func=lambda: 0.0),
+        config=AppConfig(
+            database_url=PostgresDsn("postgresql+asyncpg://test"),
+            valkey_url=RedisDsn("redis://test"),
+            message_max_length=450,
+            rate_limit_messages=10,
+            rate_limit_window=10,
         ),
+    )
+    send_private_message = SendPrivateMessageUseCase(
+        target_query=private_message_target_query,
         command_service=CommandService(create_builtin_registry()),
         session_store=session_store,
         event_bus=event_bus,
@@ -148,13 +177,19 @@ async def _setup_pipeline() -> ChatPipeline:
             rate_limit_messages=10,
             rate_limit_window=10,
         ),
-        chat_repository=InMemoryChatRepository(),
     )
+    join_channel = JoinChannelUseCase(
+        channel_repository=channel_query_repo,
+        channel_state=channel_state,
+    )
+    leave_channel = LeaveChannelUseCase(channel_state=channel_state)
 
     dispatcher = PacketDispatcher()
     handlers = ChatHandlers(
-        chat_service=chat_service,
-        channel_service=channel_service,
+        send_channel_message=send_channel_message,
+        send_private_message=send_private_message,
+        join_channel=join_channel,
+        leave_channel=leave_channel,
         session_store=session_store,
         packet_queue=packet_queue,
     )

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY, SystemUserIdentity
 from osu_server.infrastructure.country.codes import country_code_to_id
+from osu_server.services.queries.chat import ChannelCatalogQueryInput
 from osu_server.transports.bancho.protocol import PROTOCOL_VERSION
 from osu_server.transports.bancho.protocol.s2c.login import (
     channel_available,
@@ -26,22 +27,28 @@ from osu_server.transports.stable.bancho.mappers.permissions import (
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.authentication import LoginResponse
-    from osu_server.services.channel_service import ChannelService
+    from osu_server.services.queries.chat import (
+        ListAutojoinChannelsQuery,
+        ListVisibleChannelsQuery,
+    )
 
 
 class LoginResponseBuilder:
     """Build the initial S2C packet stream for successful login."""
 
-    _channel_service: ChannelService
+    _visible_channels_query: ListVisibleChannelsQuery
+    _autojoin_channels_query: ListAutojoinChannelsQuery
     _bot_identity: SystemUserIdentity
 
     def __init__(
         self,
         *,
-        channel_service: ChannelService,
+        visible_channels_query: ListVisibleChannelsQuery,
+        autojoin_channels_query: ListAutojoinChannelsQuery,
         bot_identity: SystemUserIdentity | None = None,
     ) -> None:
-        self._channel_service = channel_service
+        self._visible_channels_query = visible_channels_query
+        self._autojoin_channels_query = autojoin_channels_query
         self._bot_identity = bot_identity or BANCHO_BOT_IDENTITY
 
     async def build(self, login_response: LoginResponse) -> bytes:
@@ -50,16 +57,16 @@ class LoginResponseBuilder:
         session = login_response.session_data
         authorization_output = map_stable_bancho_authorization(login_response.privileges)
         country_id = country_code_to_id(login_response.country)
-        role_ids = list(login_response.role_ids)
-
-        visible_channels = await self._channel_service.get_visible_channels(
+        channel_query_input = ChannelCatalogQueryInput(
             user_privileges=int(login_response.privileges),
-            user_role_ids=role_ids,
+            user_role_ids=login_response.role_ids,
         )
-        autojoin_channels = await self._channel_service.get_autojoin_channels(
-            user_privileges=int(login_response.privileges),
-            user_role_ids=role_ids,
-        )
+        visible_channels = (
+            await self._visible_channels_query.execute(channel_query_input)
+        ).channels
+        autojoin_channels = (
+            await self._autojoin_channels_query.execute(channel_query_input)
+        ).channels
 
         packets: list[bytes] = [
             login_reply(user.id),

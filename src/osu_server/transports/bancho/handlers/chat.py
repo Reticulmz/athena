@@ -23,6 +23,12 @@ from osu_server.domain.chat import (
     SendPrivateMessageInput,
 )
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
+from osu_server.services.commands.chat import (
+    JoinChannelCommand,
+    LeaveChannelCommand,
+    SendChannelMessageCommand,
+    SendPrivateMessageCommand,
+)
 from osu_server.transports.bancho.handlers.base import HandlerGroup, handles
 from osu_server.transports.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.bancho.protocol.s2c.chat import (
@@ -38,8 +44,12 @@ _MIN_MESSAGE_SIZE: int = 7
 if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
     from osu_server.repositories.interfaces.session_store import SessionStore
-    from osu_server.services.channel_service import ChannelService
-    from osu_server.services.chat_service import ChatService
+    from osu_server.services.commands.chat import (
+        JoinChannelUseCase,
+        LeaveChannelUseCase,
+        SendChannelMessageUseCase,
+        SendPrivateMessageUseCase,
+    )
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -48,25 +58,31 @@ class ChatHandlers(HandlerGroup):
     """C2S パケットハンドラ 4種。
 
     各ハンドラ: Caterpillar でペイロードをパース → SessionStore から
-    username/privileges 取得 → ChatService or ChannelService に委譲し、
+    username/privileges 取得 → chat command use-case に委譲し、
     S2C パケットを PacketQueue に enqueue する。
     """
 
-    _chat_service: ChatService
-    _channel_service: ChannelService
+    _send_channel_message: SendChannelMessageUseCase
+    _send_private_message: SendPrivateMessageUseCase
+    _join_channel: JoinChannelUseCase
+    _leave_channel: LeaveChannelUseCase
     _session_store: SessionStore
     _packet_queue: PacketQueue
 
     def __init__(
         self,
         *,
-        chat_service: ChatService,
-        channel_service: ChannelService,
+        send_channel_message: SendChannelMessageUseCase,
+        send_private_message: SendPrivateMessageUseCase,
+        join_channel: JoinChannelUseCase,
+        leave_channel: LeaveChannelUseCase,
         session_store: SessionStore,
         packet_queue: PacketQueue,
     ) -> None:
-        self._chat_service = chat_service
-        self._channel_service = channel_service
+        self._send_channel_message = send_channel_message
+        self._send_private_message = send_private_message
+        self._join_channel = join_channel
+        self._leave_channel = leave_channel
         self._session_store = session_store
         self._packet_queue = packet_queue
 
@@ -86,17 +102,20 @@ class ChatHandlers(HandlerGroup):
         if session is None:
             return
 
-        result = await self._chat_service.send_channel_message(
-            SendChannelMessageInput(
-                sender=ChatSender(user_id=user_id, username=session.username),
-                destination=ChannelChatDestination(name=msg.target),
-                content=msg.content,
-                authorization=ChatAuthorization(
-                    privileges=session.privileges,
-                    role_ids=session.role_ids,
-                ),
+        command_result = await self._send_channel_message.execute(
+            SendChannelMessageCommand(
+                message=SendChannelMessageInput(
+                    sender=ChatSender(user_id=user_id, username=session.username),
+                    destination=ChannelChatDestination(name=msg.target),
+                    content=msg.content,
+                    authorization=ChatAuthorization(
+                        privileges=session.privileges,
+                        role_ids=session.role_ids,
+                    ),
+                )
             )
         )
+        result = command_result.result
         if result is None or result.delivered_to is None:
             return
 
@@ -147,17 +166,20 @@ class ChatHandlers(HandlerGroup):
         if session is None:
             return
 
-        result = await self._chat_service.send_private_message(
-            SendPrivateMessageInput(
-                sender=ChatSender(user_id=user_id, username=session.username),
-                destination=PrivateChatDestination(username=msg.target),
-                content=msg.content,
-                authorization=ChatAuthorization(
-                    privileges=session.privileges,
-                    role_ids=session.role_ids,
-                ),
+        command_result = await self._send_private_message.execute(
+            SendPrivateMessageCommand(
+                message=SendPrivateMessageInput(
+                    sender=ChatSender(user_id=user_id, username=session.username),
+                    destination=PrivateChatDestination(username=msg.target),
+                    content=msg.content,
+                    authorization=ChatAuthorization(
+                        privileges=session.privileges,
+                        role_ids=session.role_ids,
+                    ),
+                )
             )
         )
+        result = command_result.result
         if result is None:
             return
 
@@ -192,13 +214,15 @@ class ChatHandlers(HandlerGroup):
         if session is None:
             return
 
-        joined = await self._channel_service.join(
-            user_id=user_id,
-            user_privileges=session.privileges,
-            user_role_ids=list(session.role_ids),
-            channel_name=channel_name,
+        result = await self._join_channel.execute(
+            JoinChannelCommand(
+                user_id=user_id,
+                user_privileges=session.privileges,
+                user_role_ids=session.role_ids,
+                channel_name=channel_name,
+            )
         )
-        if joined:
+        if result.joined:
             await self._packet_queue.enqueue(
                 user_id, channel_join_success(channel_name=channel_name)
             )
@@ -214,8 +238,10 @@ class ChatHandlers(HandlerGroup):
         if session is None:
             return
 
-        await self._channel_service.leave(
-            user_id=user_id,
-            channel_name=channel_name,
+        await self._leave_channel.execute(
+            LeaveChannelCommand(
+                user_id=user_id,
+                channel_name=channel_name,
+            )
         )
         await self._packet_queue.enqueue(user_id, channel_revoked(channel_name=channel_name))

@@ -1,10 +1,10 @@
 """Tests for ChatHandlers — C2S packet handlers 4種.
 
 Validates:
-- handle_send_message: Message struct パース → chat_service.send_channel_message()
-- handle_send_private_message: Message struct パース → chat_service.send_private_message()
-- handle_join_channel: BanchoString パース → channel_service.join()
-- handle_leave_channel: BanchoString パース → channel_service.leave()
+- handle_send_message: Message struct パース → SendChannelMessageUseCase
+- handle_send_private_message: Message struct パース → SendPrivateMessageUseCase
+- handle_join_channel: BanchoString パース → JoinChannelUseCase
+- handle_leave_channel: BanchoString パース → LeaveChannelUseCase
 """
 
 from __future__ import annotations
@@ -16,12 +16,19 @@ from osu_server.domain.chat import (
     ChannelMessageResult,
     ChatCommandResponse,
     PrivateMessageResult,
-    SendChannelMessageInput,
-    SendPrivateMessageInput,
 )
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
+from osu_server.services.commands.chat import (
+    JoinChannelCommand,
+    JoinChannelResult,
+    LeaveChannelCommand,
+    SendChannelMessageCommand,
+    SendChannelMessageResult,
+    SendPrivateMessageCommand,
+    SendPrivateMessageResult,
+)
 from osu_server.transports.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.bancho.protocol.s2c.chat import send_message
 from osu_server.transports.bancho.protocol.types import BanchoString, Message
@@ -29,22 +36,20 @@ from osu_server.transports.bancho.protocol.types import BanchoString, Message
 # ── Stubs ────────────────────────────────────────────────────────────────
 
 
-class StubChatService:
-    """ChatService スパイ。"""
+class StubSendChannelMessageUseCase:
+    """SendChannelMessageUseCase spy."""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
         self.channel_result: ChannelMessageResult | None = ChannelMessageResult(
             delivered_to={2, 3}, content="hello", command_responses=()
         )
-        self.private_result: PrivateMessageResult | None = PrivateMessageResult(
-            target_id=2, is_online=True, content="secret", command_responses=()
-        )
 
-    async def send_channel_message(
+    async def execute(
         self,
-        message: SendChannelMessageInput,
-    ) -> ChannelMessageResult | None:
+        command: SendChannelMessageCommand,
+    ) -> SendChannelMessageResult:
+        message = command.message
         self.calls.append(
             {
                 "method": "send_channel_message",
@@ -56,12 +61,23 @@ class StubChatService:
                 "user_role_ids": message.authorization.role_ids,
             }
         )
-        return self.channel_result
+        return SendChannelMessageResult(result=self.channel_result)
 
-    async def send_private_message(
+
+class StubSendPrivateMessageUseCase:
+    """SendPrivateMessageUseCase spy."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.private_result: PrivateMessageResult | None = PrivateMessageResult(
+            target_id=2, is_online=True, content="secret", command_responses=()
+        )
+
+    async def execute(
         self,
-        message: SendPrivateMessageInput,
-    ) -> PrivateMessageResult | None:
+        command: SendPrivateMessageCommand,
+    ) -> SendPrivateMessageResult:
+        message = command.message
         self.calls.append(
             {
                 "method": "send_private_message",
@@ -71,45 +87,46 @@ class StubChatService:
                 "content": message.content,
             }
         )
-        return self.private_result
+        return SendPrivateMessageResult(result=self.private_result)
 
 
-class StubChannelService:
-    """ChannelService スパイ。"""
+class StubJoinChannelUseCase:
+    """JoinChannelUseCase spy."""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
-    async def join(
+    async def execute(
         self,
-        *,
-        user_id: int,
-        user_privileges: int,
-        user_role_ids: list[int],
-        channel_name: str,
-    ) -> bool:
+        command: JoinChannelCommand,
+    ) -> JoinChannelResult:
         self.calls.append(
             {
                 "method": "join",
-                "user_id": user_id,
-                "user_privileges": user_privileges,
-                "user_role_ids": user_role_ids,
-                "channel_name": channel_name,
+                "user_id": command.user_id,
+                "user_privileges": command.user_privileges,
+                "user_role_ids": command.user_role_ids,
+                "channel_name": command.channel_name,
             }
         )
-        return True
+        return JoinChannelResult(joined=True)
 
-    async def leave(
+
+class StubLeaveChannelUseCase:
+    """LeaveChannelUseCase spy."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def execute(
         self,
-        *,
-        user_id: int,
-        channel_name: str,
+        command: LeaveChannelCommand,
     ) -> None:
         self.calls.append(
             {
                 "method": "leave",
-                "user_id": user_id,
-                "channel_name": channel_name,
+                "user_id": command.user_id,
+                "channel_name": command.channel_name,
             }
         )
 
@@ -157,13 +174,23 @@ def _build_banchostring_payload(value: str) -> bytes:
 
 
 @pytest.fixture
-def chat_service() -> StubChatService:
-    return StubChatService()
+def send_channel_message() -> StubSendChannelMessageUseCase:
+    return StubSendChannelMessageUseCase()
 
 
 @pytest.fixture
-def channel_service() -> StubChannelService:
-    return StubChannelService()
+def send_private_message() -> StubSendPrivateMessageUseCase:
+    return StubSendPrivateMessageUseCase()
+
+
+@pytest.fixture
+def join_channel() -> StubJoinChannelUseCase:
+    return StubJoinChannelUseCase()
+
+
+@pytest.fixture
+def leave_channel() -> StubLeaveChannelUseCase:
+    return StubLeaveChannelUseCase()
 
 
 @pytest.fixture
@@ -178,14 +205,18 @@ def packet_queue() -> InMemoryPacketQueue:
 
 @pytest.fixture
 def handlers(
-    chat_service: StubChatService,
-    channel_service: StubChannelService,
+    send_channel_message: StubSendChannelMessageUseCase,
+    send_private_message: StubSendPrivateMessageUseCase,
+    join_channel: StubJoinChannelUseCase,
+    leave_channel: StubLeaveChannelUseCase,
     session_store: StubSessionStore,
     packet_queue: InMemoryPacketQueue,
 ) -> ChatHandlers:
     return ChatHandlers(
-        chat_service=chat_service,  # pyright: ignore[reportArgumentType]
-        channel_service=channel_service,  # pyright: ignore[reportArgumentType]
+        send_channel_message=send_channel_message,  # pyright: ignore[reportArgumentType]
+        send_private_message=send_private_message,  # pyright: ignore[reportArgumentType]
+        join_channel=join_channel,  # pyright: ignore[reportArgumentType]
+        leave_channel=leave_channel,  # pyright: ignore[reportArgumentType]
         session_store=session_store,  # pyright: ignore[reportArgumentType]
         packet_queue=packet_queue,
     )
@@ -198,7 +229,7 @@ class TestSendMessage:
     async def test_parses_message_and_calls_send_channel_message(
         self,
         handlers: ChatHandlers,
-        chat_service: StubChatService,
+        send_channel_message: StubSendChannelMessageUseCase,
         session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> None:
         payload = _build_message_payload(
@@ -207,8 +238,8 @@ class TestSendMessage:
 
         await handlers.handle_send_message(payload, user_id=1)
 
-        assert len(chat_service.calls) == 1
-        call = chat_service.calls[0]
+        assert len(send_channel_message.calls) == 1
+        call = send_channel_message.calls[0]
         assert call["method"] == "send_channel_message"
         assert call["sender_id"] == 1
         assert call["sender_name"] == "test_user"
@@ -220,7 +251,7 @@ class TestSendMessage:
     async def test_passes_authorization_from_session(
         self,
         handlers: ChatHandlers,
-        chat_service: StubChatService,
+        send_channel_message: StubSendChannelMessageUseCase,
         session_store: StubSessionStore,
     ) -> None:
         session_store.session = SessionData(
@@ -239,13 +270,13 @@ class TestSendMessage:
 
         await handlers.handle_send_message(payload, user_id=1)
 
-        assert chat_service.calls[0]["user_privileges"] == 8
-        assert chat_service.calls[0]["user_role_ids"] == (1, 2)
+        assert send_channel_message.calls[0]["user_privileges"] == 8
+        assert send_channel_message.calls[0]["user_role_ids"] == (1, 2)
 
     async def test_sender_only_command_response_not_sent_to_channel_members(
         self,
         handlers: ChatHandlers,
-        chat_service: StubChatService,
+        send_channel_message: StubSendChannelMessageUseCase,
         packet_queue: InMemoryPacketQueue,
         session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> None:
@@ -253,7 +284,7 @@ class TestSendMessage:
         await packet_queue.refresh_ttl(1, ttl=60)
         await packet_queue.refresh_ttl(2, ttl=60)
         await packet_queue.refresh_ttl(3, ttl=60)
-        chat_service.channel_result = ChannelMessageResult(
+        send_channel_message.channel_result = ChannelMessageResult(
             delivered_to={2, 3},
             content="!ban user",
             command_responses=(
@@ -296,15 +327,19 @@ class TestSendMessage:
 
     async def test_session_not_found_does_nothing(
         self,
-        chat_service: StubChatService,
-        channel_service: StubChannelService,
+        send_channel_message: StubSendChannelMessageUseCase,
+        send_private_message: StubSendPrivateMessageUseCase,
+        join_channel: StubJoinChannelUseCase,
+        leave_channel: StubLeaveChannelUseCase,
         session_store: StubSessionStore,
         packet_queue: InMemoryPacketQueue,
     ) -> None:
         session_store.session = None
         handlers = ChatHandlers(
-            chat_service=chat_service,  # pyright: ignore[reportArgumentType]
-            channel_service=channel_service,  # pyright: ignore[reportArgumentType]
+            send_channel_message=send_channel_message,  # pyright: ignore[reportArgumentType]
+            send_private_message=send_private_message,  # pyright: ignore[reportArgumentType]
+            join_channel=join_channel,  # pyright: ignore[reportArgumentType]
+            leave_channel=leave_channel,  # pyright: ignore[reportArgumentType]
             session_store=session_store,  # pyright: ignore[reportArgumentType]
             packet_queue=packet_queue,
         )
@@ -313,7 +348,7 @@ class TestSendMessage:
 
         await handlers.handle_send_message(payload, user_id=999)
 
-        assert len(chat_service.calls) == 0
+        assert len(send_channel_message.calls) == 0
 
 
 # ── handle_send_private_message ──────────────────────────────────────────
@@ -323,7 +358,7 @@ class TestSendPrivateMessage:
     async def test_parses_message_and_calls_send_private_message(
         self,
         handlers: ChatHandlers,
-        chat_service: StubChatService,
+        send_private_message: StubSendPrivateMessageUseCase,
         session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> None:
         payload = _build_message_payload(
@@ -332,8 +367,8 @@ class TestSendPrivateMessage:
 
         await handlers.handle_send_private_message(payload, user_id=1)
 
-        assert len(chat_service.calls) == 1
-        call = chat_service.calls[0]
+        assert len(send_private_message.calls) == 1
+        call = send_private_message.calls[0]
         assert call["method"] == "send_private_message"
         assert call["sender_id"] == 1
         assert call["sender_name"] == "test_user"
@@ -343,7 +378,7 @@ class TestSendPrivateMessage:
     async def test_session_not_found_does_nothing(
         self,
         handlers: ChatHandlers,
-        chat_service: StubChatService,
+        send_private_message: StubSendPrivateMessageUseCase,
         session_store: StubSessionStore,
     ) -> None:
         session_store.session = None
@@ -352,7 +387,7 @@ class TestSendPrivateMessage:
 
         await handlers.handle_send_private_message(payload, user_id=999)
 
-        assert len(chat_service.calls) == 0
+        assert len(send_private_message.calls) == 0
 
 
 # ── handle_join_channel ──────────────────────────────────────────────────
@@ -362,7 +397,7 @@ class TestJoinChannel:
     async def test_parses_channel_name_and_calls_join(
         self,
         handlers: ChatHandlers,
-        channel_service: StubChannelService,
+        join_channel: StubJoinChannelUseCase,
         session_store: StubSessionStore,
     ) -> None:
         session_store.session = SessionData(
@@ -381,18 +416,18 @@ class TestJoinChannel:
 
         await handlers.handle_join_channel(payload, user_id=1)
 
-        assert len(channel_service.calls) == 1
-        call = channel_service.calls[0]
+        assert len(join_channel.calls) == 1
+        call = join_channel.calls[0]
         assert call["method"] == "join"
         assert call["user_id"] == 1
         assert call["channel_name"] == "#osu"
         assert call["user_privileges"] == 8
-        assert call["user_role_ids"] == [1, 2]
+        assert call["user_role_ids"] == (1, 2)
 
     async def test_session_not_found_does_nothing(
         self,
         handlers: ChatHandlers,
-        channel_service: StubChannelService,
+        join_channel: StubJoinChannelUseCase,
         session_store: StubSessionStore,
     ) -> None:
         session_store.session = None
@@ -401,7 +436,7 @@ class TestJoinChannel:
 
         await handlers.handle_join_channel(payload, user_id=999)
 
-        assert len(channel_service.calls) == 0
+        assert len(join_channel.calls) == 0
 
 
 # ── authorization refresh observation ──────────────────────────────────────
@@ -412,8 +447,10 @@ class TestAuthorizationRefreshObservation:
 
     async def test_updated_session_authorization_reflected_in_next_action(
         self,
-        chat_service: StubChatService,
-        channel_service: StubChannelService,
+        send_channel_message: StubSendChannelMessageUseCase,
+        send_private_message: StubSendPrivateMessageUseCase,
+        join_channel: StubJoinChannelUseCase,
+        leave_channel: StubLeaveChannelUseCase,
         packet_queue: InMemoryPacketQueue,
     ) -> None:
         """session 認可が更新された後、次の C2S action で新しい値が観測される。"""
@@ -432,16 +469,18 @@ class TestAuthorizationRefreshObservation:
             )
         )
         handlers = ChatHandlers(
-            chat_service=chat_service,  # pyright: ignore[reportArgumentType]
-            channel_service=channel_service,  # pyright: ignore[reportArgumentType]
+            send_channel_message=send_channel_message,  # pyright: ignore[reportArgumentType]
+            send_private_message=send_private_message,  # pyright: ignore[reportArgumentType]
+            join_channel=join_channel,  # pyright: ignore[reportArgumentType]
+            leave_channel=leave_channel,  # pyright: ignore[reportArgumentType]
             session_store=store,  # pyright: ignore[reportArgumentType]
             packet_queue=packet_queue,
         )
 
         # First action: initial authorization
         await handlers.handle_send_message(_build_message_payload(), user_id=1)
-        assert chat_service.calls[0]["user_privileges"] == 4
-        assert chat_service.calls[0]["user_role_ids"] == (1,)
+        assert send_channel_message.calls[0]["user_privileges"] == 4
+        assert send_channel_message.calls[0]["user_role_ids"] == (1,)
 
         # Simulate authorization refresh: role grant adds ADMIN privilege + new role
         store.session = SessionData(
@@ -459,8 +498,8 @@ class TestAuthorizationRefreshObservation:
 
         # Second action: sees updated authorization without re-login
         await handlers.handle_send_message(_build_message_payload(), user_id=1)
-        assert chat_service.calls[1]["user_privileges"] == 260
-        assert chat_service.calls[1]["user_role_ids"] == (1, 4)
+        assert send_channel_message.calls[1]["user_privileges"] == 260
+        assert send_channel_message.calls[1]["user_role_ids"] == (1, 4)
 
 
 # ── handle_leave_channel ─────────────────────────────────────────────────
@@ -470,15 +509,15 @@ class TestLeaveChannel:
     async def test_parses_channel_name_and_calls_leave(
         self,
         handlers: ChatHandlers,
-        channel_service: StubChannelService,
+        leave_channel: StubLeaveChannelUseCase,
         session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> None:
         payload = _build_banchostring_payload("#osu")
 
         await handlers.handle_leave_channel(payload, user_id=1)
 
-        assert len(channel_service.calls) == 1
-        call = channel_service.calls[0]
+        assert len(leave_channel.calls) == 1
+        call = leave_channel.calls[0]
         assert call["method"] == "leave"
         assert call["user_id"] == 1
         assert call["channel_name"] == "#osu"
@@ -486,7 +525,7 @@ class TestLeaveChannel:
     async def test_session_not_found_does_nothing(
         self,
         handlers: ChatHandlers,
-        channel_service: StubChannelService,
+        leave_channel: StubLeaveChannelUseCase,
         session_store: StubSessionStore,
     ) -> None:
         session_store.session = None
@@ -495,4 +534,4 @@ class TestLeaveChannel:
 
         await handlers.handle_leave_channel(payload, user_id=999)
 
-        assert len(channel_service.calls) == 0
+        assert len(leave_channel.calls) == 0

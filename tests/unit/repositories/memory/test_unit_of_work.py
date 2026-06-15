@@ -9,6 +9,7 @@ from osu_server.repositories.memory.commands import (
     InMemoryBeatmapCommandRepository,
     InMemoryBlobCommandRepository,
     InMemoryChannelCommandRepository,
+    InMemoryChatCommandRepository,
     InMemoryReplayCommandRepository,
     InMemoryRoleCommandRepository,
     InMemoryScoreCommandRepository,
@@ -84,6 +85,7 @@ async def test_unit_of_work_exposes_typed_command_repositories() -> None:
         assert isinstance(uow.users, InMemoryUserCommandRepository)
         assert isinstance(uow.roles, InMemoryRoleCommandRepository)
         assert isinstance(uow.channels, InMemoryChannelCommandRepository)
+        assert isinstance(uow.chat, InMemoryChatCommandRepository)
         assert isinstance(uow.scores, InMemoryScoreCommandRepository)
         assert isinstance(uow.submissions, InMemoryScoreSubmissionCommandRepository)
         assert isinstance(uow.replays, InMemoryReplayCommandRepository)

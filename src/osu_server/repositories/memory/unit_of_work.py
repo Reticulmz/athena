@@ -8,6 +8,7 @@ from osu_server.repositories.memory.commands import (
     InMemoryBeatmapCommandRepository,
     InMemoryBlobCommandRepository,
     InMemoryChannelCommandRepository,
+    InMemoryChatCommandRepository,
     InMemoryCommandRepositoryState,
     InMemoryReplayCommandRepository,
     InMemoryRoleCommandRepository,
@@ -73,6 +74,16 @@ class InMemoryUnitOfWorkFactory:
             committed.channel_overrides_by_channel_id,
         )
         self._state.next_channel_id = committed.next_channel_id
+        _replace_mapping(
+            self._state.channel_messages_by_id,
+            committed.channel_messages_by_id,
+        )
+        _replace_mapping(
+            self._state.private_messages_by_id,
+            committed.private_messages_by_id,
+        )
+        self._state.next_channel_message_id = committed.next_channel_message_id
+        self._state.next_private_message_id = committed.next_private_message_id
 
         _replace_mapping(self._state.scores_by_id, committed.scores_by_id)
         _replace_mapping(
@@ -119,6 +130,7 @@ class InMemoryUnitOfWork:
     users: InMemoryUserCommandRepository
     roles: InMemoryRoleCommandRepository
     channels: InMemoryChannelCommandRepository
+    chat: InMemoryChatCommandRepository
     scores: InMemoryScoreCommandRepository
     submissions: InMemoryScoreSubmissionCommandRepository
     replays: InMemoryReplayCommandRepository
@@ -156,6 +168,7 @@ class InMemoryUnitOfWork:
         self.users = InMemoryUserCommandRepository(self._state)
         self.roles = InMemoryRoleCommandRepository(self._state)
         self.channels = InMemoryChannelCommandRepository(self._state)
+        self.chat = InMemoryChatCommandRepository(self._state)
         self.scores = InMemoryScoreCommandRepository(self._state)
         self.submissions = InMemoryScoreSubmissionCommandRepository(self._state)
         self.replays = InMemoryReplayCommandRepository(self._state)

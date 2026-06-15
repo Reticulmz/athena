@@ -13,7 +13,7 @@ from osu_server.domain.chat import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.repositories.interfaces.commands.chat import ChatCommandRepository
+    from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -33,13 +33,13 @@ class PersistChannelMessageUseCase:
     def __init__(
         self,
         *,
-        chat_repository: ChatCommandRepository | None = None,
+        uow_factory: UnitOfWorkFactory | None = None,
     ) -> None:
-        self._chat_repository: ChatCommandRepository | None = chat_repository
+        self._uow_factory: UnitOfWorkFactory | None = uow_factory
 
     async def execute(self, command: PersistChannelMessageCommand) -> ChatPersistenceResult:
         """Execute the persist channel message command."""
-        if self._chat_repository is None:
+        if self._uow_factory is None:
             result = ChatPersistenceResult.failure(
                 ChatPersistenceFailureReason.RUNTIME_UNAVAILABLE
             )
@@ -51,11 +51,25 @@ class PersistChannelMessageUseCase:
             )
             return result
 
-        result = await self._chat_repository.save_channel_message(
-            sender_id=command.sender_id,
-            channel_name=command.channel_name,
-            content=command.content,
-        )
+        try:
+            async with self._uow_factory() as uow:
+                result = await uow.chat.save_channel_message(
+                    sender_id=command.sender_id,
+                    channel_name=command.channel_name,
+                    content=command.content,
+                )
+                if result.success:
+                    await uow.commit()
+                else:
+                    await uow.rollback()
+        except Exception:
+            logger.exception(
+                "chat_persistence_failed",
+                sender_id=command.sender_id,
+                channel_name=command.channel_name,
+                reason=ChatPersistenceFailureReason.STORAGE_ERROR.value,
+            )
+            return ChatPersistenceResult.failure(ChatPersistenceFailureReason.STORAGE_ERROR)
 
         if not result.success:
             event_name = "chat_persistence_failed"

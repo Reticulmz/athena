@@ -39,8 +39,9 @@ from osu_server.repositories.interfaces.beatmap_repository import (
 )
 from osu_server.repositories.interfaces.blob_repository import BlobRepository
 from osu_server.repositories.interfaces.channel_repository import ChannelRepository
-from osu_server.repositories.interfaces.chat_repository import ChatRepository
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
+from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
+from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
 from osu_server.repositories.interfaces.queries.legacy_getscores import (
     LegacyGetscoresQueryRepository,
 )
@@ -56,9 +57,10 @@ from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.repositories.memory.chat_repository import InMemoryChatRepository
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQueryRepository
+from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
+from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
 from osu_server.repositories.memory.queries.legacy_getscores import (
     InMemoryLegacyGetscoresQueryRepository,
 )
@@ -74,8 +76,9 @@ from osu_server.repositories.memory.user_repository import InMemoryUserRepositor
 from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
 from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
 from osu_server.repositories.sqlalchemy.channel_repository import SQLAlchemyChannelRepository
-from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
 from osu_server.repositories.sqlalchemy.queries.beatmaps import SQLAlchemyBeatmapQueryRepository
+from osu_server.repositories.sqlalchemy.queries.channels import SQLAlchemyChannelQueryRepository
+from osu_server.repositories.sqlalchemy.queries.chat import SQLAlchemyChatHistoryQueryRepository
 from osu_server.repositories.sqlalchemy.queries.legacy_getscores import (
     SQLAlchemyLegacyGetscoresQueryRepository,
 )
@@ -103,7 +106,14 @@ from osu_server.services.beatmap_mirror import (
 )
 from osu_server.services.blob_storage_service import BlobStorageService
 from osu_server.services.channel_service import ChannelService
-from osu_server.services.chat_service import ChatService
+from osu_server.services.commands.chat import (
+    JoinChannelUseCase,
+    LeaveChannelUseCase,
+    PersistChannelMessageUseCase,
+    PersistPrivateMessageUseCase,
+    SendChannelMessageUseCase,
+    SendPrivateMessageUseCase,
+)
 from osu_server.services.commands.identity import (
     LoginCommandUseCase,
     RefreshRoleAuthorizationCommandUseCase,
@@ -113,7 +123,6 @@ from osu_server.services.commands.identity import (
 from osu_server.services.legacy_getscores_service import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
-    LegacyGetscoresService,
 )
 from osu_server.services.legacy_web_auth_service import LegacyWebAuthService
 from osu_server.services.online_users import OnlineUsersService
@@ -123,6 +132,14 @@ from osu_server.services.private_message_service import PrivateMessageService
 from osu_server.services.queries.beatmaps import (
     ResolveBeatmapByChecksumQuery,
     ResolveBeatmapByIdQuery,
+)
+from osu_server.services.queries.chat import (
+    ListAutojoinChannelsQuery,
+    ListChannelMessagesQuery,
+    ListPrivateMessagesQuery,
+    ListVisibleChannelsQuery,
+    ResolveChannelMessageDeliveryQuery,
+    ResolvePrivateMessageTargetQuery,
 )
 from osu_server.services.queries.identity import (
     ComputePermissionsQueryUseCase,
@@ -178,8 +195,10 @@ def _register_repositories(
         container.register_singleton(BlobRepository, InMemoryBlobRepository)
         container.register_singleton(UserRepository, lambda: InMemoryUserRepository(state=state))
         container.register_singleton(RoleRepository, lambda: InMemoryRoleRepository(state=state))
-        container.register_singleton(ChannelRepository, InMemoryChannelRepository)
-        container.register_singleton(ChatRepository, InMemoryChatRepository)
+        container.register_singleton(
+            ChannelRepository,
+            lambda: InMemoryChannelRepository(state=state),
+        )
         container.register_singleton(BeatmapRepository, InMemoryBeatmapRepository)
         container.register_singleton(ScoreRepository, InMemoryScoreRepository)
         container.register_singleton(ReplayRepository, InMemoryReplayRepository)
@@ -201,10 +220,6 @@ def _register_repositories(
     container.register_singleton(
         ChannelRepository,
         lambda: SQLAlchemyChannelRepository(session_factory),
-    )
-    container.register_singleton(
-        ChatRepository,
-        lambda: SQLAlchemyChatRepository(session_factory),
     )
     container.register_singleton(
         BeatmapRepository,
@@ -248,6 +263,8 @@ async def _register_query_repositories(
 ) -> tuple[
     UserQueryRepository,
     RoleQueryRepository,
+    ChannelQueryRepository,
+    ChatHistoryQueryRepository,
     BeatmapQueryRepository,
     LegacyGetscoresQueryRepository,
 ]:
@@ -256,6 +273,8 @@ async def _register_query_repositories(
         shared_uow_factory = InMemoryUnitOfWorkFactory(memory_state)
         user_query_repo = InMemoryUserQueryRepository(shared_uow_factory)
         role_query_repo = InMemoryRoleQueryRepository(shared_uow_factory)
+        channel_query_repo = InMemoryChannelQueryRepository(shared_uow_factory)
+        chat_history_query_repo = InMemoryChatHistoryQueryRepository(shared_uow_factory)
         beatmap_repo = await container.resolve(BeatmapRepository)
         beatmap_query_repo = InMemoryBeatmapQueryRepository(beatmap_repo)
         legacy_getscores_query_repo = InMemoryLegacyGetscoresQueryRepository(
@@ -264,6 +283,8 @@ async def _register_query_repositories(
     else:
         user_query_repo = SQLAlchemyUserQueryRepository(session_factory)
         role_query_repo = SQLAlchemyRoleQueryRepository(session_factory)
+        channel_query_repo = SQLAlchemyChannelQueryRepository(session_factory)
+        chat_history_query_repo = SQLAlchemyChatHistoryQueryRepository(session_factory)
         beatmap_query_repo = SQLAlchemyBeatmapQueryRepository(session_factory)
         legacy_getscores_query_repo = SQLAlchemyLegacyGetscoresQueryRepository(
             session_factory,
@@ -271,12 +292,21 @@ async def _register_query_repositories(
 
     container.register_singleton(UserQueryRepository, lambda: user_query_repo)
     container.register_singleton(RoleQueryRepository, lambda: role_query_repo)
+    container.register_singleton(ChannelQueryRepository, lambda: channel_query_repo)
+    container.register_singleton(ChatHistoryQueryRepository, lambda: chat_history_query_repo)
     container.register_singleton(BeatmapQueryRepository, lambda: beatmap_query_repo)
     container.register_singleton(
         LegacyGetscoresQueryRepository,
         lambda: legacy_getscores_query_repo,
     )
-    return user_query_repo, role_query_repo, beatmap_query_repo, legacy_getscores_query_repo
+    return (
+        user_query_repo,
+        role_query_repo,
+        channel_query_repo,
+        chat_history_query_repo,
+        beatmap_query_repo,
+        legacy_getscores_query_repo,
+    )
 
 
 async def register_services(container: Container, config: AppConfig) -> None:  # noqa: PLR0915
@@ -327,6 +357,8 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     (
         user_query_repo,
         role_query_repo,
+        channel_query_repo,
+        chat_history_query_repo,
         beatmap_query_repo,
         legacy_getscores_query_repo,
     ) = await _register_query_repositories(
@@ -526,6 +558,44 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     )
     container.register_singleton(ChannelService, lambda: channel_service)
 
+    # -- Chat query use-cases (singletons) ------------------------------------
+    visible_channels_query = ListVisibleChannelsQuery(
+        channel_repository=channel_query_repo,
+        channel_state=channel_state,
+    )
+    autojoin_channels_query = ListAutojoinChannelsQuery(
+        channel_repository=channel_query_repo,
+        channel_state=channel_state,
+    )
+    channel_delivery_query = ResolveChannelMessageDeliveryQuery(
+        channel_repository=channel_query_repo,
+        channel_state=channel_state,
+    )
+    private_message_target_query = ResolvePrivateMessageTargetQuery(
+        user_repository=user_query_repo,
+        session_store=session_store,
+    )
+    list_channel_messages_query = ListChannelMessagesQuery(chat_history_query_repo)
+    list_private_messages_query = ListPrivateMessagesQuery(chat_history_query_repo)
+    container.register_singleton(ListVisibleChannelsQuery, lambda: visible_channels_query)
+    container.register_singleton(ListAutojoinChannelsQuery, lambda: autojoin_channels_query)
+    container.register_singleton(
+        ResolveChannelMessageDeliveryQuery,
+        lambda: channel_delivery_query,
+    )
+    container.register_singleton(
+        ResolvePrivateMessageTargetQuery,
+        lambda: private_message_target_query,
+    )
+    container.register_singleton(
+        ListChannelMessagesQuery,
+        lambda: list_channel_messages_query,
+    )
+    container.register_singleton(
+        ListPrivateMessagesQuery,
+        lambda: list_private_messages_query,
+    )
+
     # -- PrivateMessageService (singleton) -------------------------------------
     pm_service = PrivateMessageService(
         user_repo=user_repo,
@@ -545,9 +615,58 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     # -- BanchoEndpoint & Workflows (singletons) ------------------------------
     packet_queue = await container.resolve(PacketQueue)
     eventbus = await container.resolve(EventBus)
+    rate_limiter = await container.resolve(RateLimiter)
+
+    # -- Chat command use-cases (singletons) ----------------------------------
+    send_channel_message_use_case = SendChannelMessageUseCase(
+        channel_delivery_query=channel_delivery_query,
+        command_service=command_service,
+        session_store=session_store,
+        event_bus=eventbus,
+        rate_limiter=rate_limiter,
+        config=config,
+    )
+    send_private_message_use_case = SendPrivateMessageUseCase(
+        target_query=private_message_target_query,
+        command_service=command_service,
+        session_store=session_store,
+        event_bus=eventbus,
+        rate_limiter=rate_limiter,
+        config=config,
+    )
+    join_channel_use_case = JoinChannelUseCase(
+        channel_repository=channel_query_repo,
+        channel_state=channel_state,
+    )
+    leave_channel_use_case = LeaveChannelUseCase(channel_state=channel_state)
+    persist_channel_message_use_case = PersistChannelMessageUseCase(
+        uow_factory=uow_factory,
+    )
+    persist_private_message_use_case = PersistPrivateMessageUseCase(
+        uow_factory=uow_factory,
+    )
+    container.register_singleton(
+        SendChannelMessageUseCase,
+        lambda: send_channel_message_use_case,
+    )
+    container.register_singleton(
+        SendPrivateMessageUseCase,
+        lambda: send_private_message_use_case,
+    )
+    container.register_singleton(JoinChannelUseCase, lambda: join_channel_use_case)
+    container.register_singleton(LeaveChannelUseCase, lambda: leave_channel_use_case)
+    container.register_singleton(
+        PersistChannelMessageUseCase,
+        lambda: persist_channel_message_use_case,
+    )
+    container.register_singleton(
+        PersistPrivateMessageUseCase,
+        lambda: persist_private_message_use_case,
+    )
 
     login_response_builder = LoginResponseBuilder(
-        channel_service=channel_service,
+        visible_channels_query=visible_channels_query,
+        autojoin_channels_query=autojoin_channels_query,
         bot_identity=identity,
     )
     container.register_singleton(LoginResponseBuilder, lambda: login_response_builder)
@@ -577,29 +696,16 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     )
     container.register_singleton(BanchoEndpoint, lambda: bancho_endpoint)
 
-    # -- ChatService (singleton, requires EventBus) ---------------------------
-    rate_limiter = await container.resolve(RateLimiter)
-    chat_repo = await container.resolve(ChatRepository)
-    chat_service = ChatService(
-        channel_service=channel_service,
-        private_message_service=pm_service,
-        command_service=command_service,
-        session_store=session_store,
-        event_bus=eventbus,
-        rate_limiter=rate_limiter,
-        config=config,
-        chat_repository=chat_repo,
-    )
-    container.register_singleton(ChatService, lambda: chat_service)
-
     # -- Handlers → PacketDispatcher ------------------------------------------
     lifecycle_handlers = LifecycleHandlers(
         session_store=session_store,
         event_bus=eventbus,
     )
     chat_handlers = ChatHandlers(
-        chat_service=chat_service,
-        channel_service=channel_service,
+        send_channel_message=send_channel_message_use_case,
+        send_private_message=send_private_message_use_case,
+        join_channel=join_channel_use_case,
+        leave_channel=leave_channel_use_case,
         session_store=session_store,
         packet_queue=packet_queue,
     )
@@ -630,12 +736,6 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(GetscoresQueryParser, lambda: getscores_parser)
     getscores_status_mapper = GetscoresStatusMapper()
     container.register_singleton(GetscoresStatusMapper, lambda: getscores_status_mapper)
-
-    getscores_service = LegacyGetscoresService(
-        repository=beatmap_repo,
-        mirror_resolve=mirror_service.resolve_by_checksum,
-    )
-    container.register_singleton(LegacyGetscoresService, lambda: getscores_service)
 
     getscores_handler = GetscoresHandler(
         auth_query=legacy_web_auth_query,

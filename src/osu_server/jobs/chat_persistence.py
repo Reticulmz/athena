@@ -8,38 +8,49 @@ import structlog
 from taskiq import Context, TaskiqDepends
 
 from osu_server.infrastructure.jobs.registry import jobs
+from osu_server.services.commands.chat import (
+    PersistChannelMessageCommand,
+    PersistPrivateMessageCommand,
+)
 
 if TYPE_CHECKING:
     from taskiq import TaskiqState
 
-    from osu_server.repositories.interfaces.chat_repository import ChatPersistenceResult
+    from osu_server.domain.chat import ChatPersistenceResult
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 
-class ChatPersistenceService(Protocol):
-    """ChatService persistence use-case surface required by job adapters."""
+class ChannelMessagePersistenceUseCase(Protocol):
+    """Channel message persistence use-case surface required by job adapters."""
 
-    async def persist_channel_message(
-        self,
-        *,
-        sender_id: int,
-        channel_name: str,
-        content: str,
-    ) -> ChatPersistenceResult: ...
-
-    async def persist_private_message(
-        self,
-        *,
-        sender_id: int,
-        target_id: int,
-        content: str,
-    ) -> ChatPersistenceResult: ...
+    async def execute(self, command: PersistChannelMessageCommand) -> ChatPersistenceResult: ...
 
 
-def get_chat_service(state: TaskiqState) -> ChatPersistenceService | None:
-    """Return the ChatService persistence use-case stored in taskiq state."""
-    return cast("ChatPersistenceService | None", getattr(state, "chat_service", None))
+class PrivateMessagePersistenceUseCase(Protocol):
+    """Private message persistence use-case surface required by job adapters."""
+
+    async def execute(self, command: PersistPrivateMessageCommand) -> ChatPersistenceResult: ...
+
+
+def get_channel_message_persistence_use_case(
+    state: TaskiqState,
+) -> ChannelMessagePersistenceUseCase | None:
+    """Return the channel message persistence use-case from taskiq state."""
+    return cast(
+        "ChannelMessagePersistenceUseCase | None",
+        getattr(state, "persist_channel_message_use_case", None),
+    )
+
+
+def get_private_message_persistence_use_case(
+    state: TaskiqState,
+) -> PrivateMessagePersistenceUseCase | None:
+    """Return the private message persistence use-case from taskiq state."""
+    return cast(
+        "PrivateMessagePersistenceUseCase | None",
+        getattr(state, "persist_private_message_use_case", None),
+    )
 
 
 @jobs.register(task_name="persist_channel_message")
@@ -50,9 +61,9 @@ async def persist_channel_message(
     content: str,
     context: Annotated[Context, TaskiqDepends()],
 ) -> None:
-    """Delegate channel message persistence to ChatService."""
-    chat_service = get_chat_service(context.state)
-    if chat_service is None:
+    """Delegate channel message persistence to the command use-case."""
+    use_case = get_channel_message_persistence_use_case(context.state)
+    if use_case is None:
         logger.error(
             "chat_persistence_runtime_unavailable",
             task_name="persist_channel_message",
@@ -60,12 +71,15 @@ async def persist_channel_message(
             sender_name=sender_name,
             channel_name=channel_name,
         )
-        return
+        msg = "channel message persistence use-case is not registered"
+        raise RuntimeError(msg)
 
-    _ = await chat_service.persist_channel_message(
-        sender_id=sender_id,
-        channel_name=channel_name,
-        content=content,
+    _ = await use_case.execute(
+        PersistChannelMessageCommand(
+            sender_id=sender_id,
+            channel_name=channel_name,
+            content=content,
+        )
     )
 
 
@@ -78,9 +92,9 @@ async def persist_private_message(
     content: str,
     context: Annotated[Context, TaskiqDepends()],
 ) -> None:
-    """Delegate private message persistence to ChatService."""
-    chat_service = get_chat_service(context.state)
-    if chat_service is None:
+    """Delegate private message persistence to the command use-case."""
+    use_case = get_private_message_persistence_use_case(context.state)
+    if use_case is None:
         logger.error(
             "chat_persistence_runtime_unavailable",
             task_name="persist_private_message",
@@ -89,18 +103,23 @@ async def persist_private_message(
             target_id=target_id,
             target_name=target_name,
         )
-        return
+        msg = "private message persistence use-case is not registered"
+        raise RuntimeError(msg)
 
-    _ = await chat_service.persist_private_message(
-        sender_id=sender_id,
-        target_id=target_id,
-        content=content,
+    _ = await use_case.execute(
+        PersistPrivateMessageCommand(
+            sender_id=sender_id,
+            target_id=target_id,
+            content=content,
+        )
     )
 
 
 __all__ = [
-    "ChatPersistenceService",
-    "get_chat_service",
+    "ChannelMessagePersistenceUseCase",
+    "PrivateMessagePersistenceUseCase",
+    "get_channel_message_persistence_use_case",
+    "get_private_message_persistence_use_case",
     "persist_channel_message",
     "persist_private_message",
 ]

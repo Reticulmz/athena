@@ -10,6 +10,7 @@ import structlog
 
 from osu_server.domain.chat import PrivateMessageResult
 from osu_server.domain.events.channels import PrivateMessageSent
+from osu_server.services.queries.chat import ResolvePrivateMessageTargetQueryInput
 
 if TYPE_CHECKING:
     from osu_server.config import AppConfig
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.bancho_bot.command_service import CommandService
-    from osu_server.services.private_message_service import PrivateMessageService
+    from osu_server.services.queries.chat import ResolvePrivateMessageTargetQuery
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -43,14 +44,14 @@ class SendPrivateMessageUseCase:
     def __init__(
         self,
         *,
-        private_message_service: PrivateMessageService,
+        target_query: ResolvePrivateMessageTargetQuery,
         command_service: CommandService,
         session_store: SessionStore,
         event_bus: EventBus,
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> None:
-        self._private_message_service: PrivateMessageService = private_message_service
+        self._target_query: ResolvePrivateMessageTargetQuery = target_query
         self._command_service: CommandService = command_service
         self._session_store: SessionStore = session_store
         self._event_bus: EventBus = event_bus
@@ -91,11 +92,11 @@ class SendPrivateMessageUseCase:
         )
 
         # Resolve PM target
-        pm_result = await self._private_message_service.deliver_message(
-            target_name=destination.username,
+        pm_result = await self._target_query.execute(
+            ResolvePrivateMessageTargetQueryInput(target_name=destination.username),
         )
 
-        if not pm_result.success:
+        if not pm_result.exists:
             return SendPrivateMessageResult(
                 result=PrivateMessageResult(
                     target_id=None,

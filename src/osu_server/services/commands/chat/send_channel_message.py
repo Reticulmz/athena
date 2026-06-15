@@ -10,6 +10,7 @@ import structlog
 
 from osu_server.domain.chat import ChannelMessageResult
 from osu_server.domain.events.channels import ChannelMessageSent
+from osu_server.services.queries.chat import ResolveChannelMessageDeliveryQueryInput
 
 if TYPE_CHECKING:
     from osu_server.config import AppConfig
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.bancho_bot.command_service import CommandService
-    from osu_server.services.channel_service import ChannelService
+    from osu_server.services.queries.chat import ResolveChannelMessageDeliveryQuery
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -43,14 +44,14 @@ class SendChannelMessageUseCase:
     def __init__(
         self,
         *,
-        channel_service: ChannelService,
+        channel_delivery_query: ResolveChannelMessageDeliveryQuery,
         command_service: CommandService,
         session_store: SessionStore,
         event_bus: EventBus,
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> None:
-        self._channel_service: ChannelService = channel_service
+        self._channel_delivery_query: ResolveChannelMessageDeliveryQuery = channel_delivery_query
         self._command_service: CommandService = command_service
         self._session_store: SessionStore = session_store
         self._event_bus: EventBus = event_bus
@@ -68,33 +69,34 @@ class SendChannelMessageUseCase:
         if not await self._check_silence(sender.user_id):
             return SendChannelMessageResult(result=None)
 
-        # Check rate limit
-        channel = await self._channel_service.get_channel(destination.name)
-        limit = self._config.rate_limit_messages
-        window = self._config.rate_limit_window
-        if channel:
-            if channel.rate_limit_messages is not None:
-                limit = channel.rate_limit_messages
-            if channel.rate_limit_window is not None:
-                window = channel.rate_limit_window
-
-        if not await self._rate_limiter.check(sender.user_id, limit, window):
-            logger.info("rate_limit_exceeded", sender_id=sender.user_id)
-            return SendChannelMessageResult(result=None)
-
         # Validate message
         valid_content = await self._validate_message(message.content)
         if not valid_content:
             return SendChannelMessageResult(result=None)
 
-        # Resolve delivery targets
-        targets = await self._channel_service.get_delivery_targets(
-            sender_id=sender.user_id,
-            user_privileges=authorization.privileges,
-            user_role_ids=list(authorization.role_ids),
-            channel_name=destination.name,
+        # Resolve delivery targets and channel-specific rate-limit metadata.
+        delivery = await self._channel_delivery_query.execute(
+            ResolveChannelMessageDeliveryQueryInput(
+                sender_id=sender.user_id,
+                channel_name=destination.name,
+                user_privileges=authorization.privileges,
+                user_role_ids=authorization.role_ids,
+            )
         )
-        if targets is None:
+        if delivery.delivered_to is None:
+            return SendChannelMessageResult(result=None)
+
+        limit = self._config.rate_limit_messages
+        window = self._config.rate_limit_window
+        if delivery.channel is not None:
+            if delivery.channel.rate_limit_messages is not None:
+                limit = delivery.channel.rate_limit_messages
+            if delivery.channel.rate_limit_window is not None:
+                window = delivery.channel.rate_limit_window
+
+        # Check rate limit
+        if not await self._rate_limiter.check(sender.user_id, limit, window):
+            logger.info("rate_limit_exceeded", sender_id=sender.user_id)
             return SendChannelMessageResult(result=None)
 
         # Execute commands
@@ -117,7 +119,7 @@ class SendChannelMessageUseCase:
         )
 
         result = ChannelMessageResult(
-            delivered_to=targets,
+            delivered_to=set(delivery.delivered_to),
             content=valid_content,
             command_responses=command_responses,
         )

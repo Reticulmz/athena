@@ -15,6 +15,7 @@ from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyBeatmapCommandRepository,
     SQLAlchemyBlobCommandRepository,
     SQLAlchemyChannelCommandRepository,
+    SQLAlchemyChatCommandRepository,
     SQLAlchemyReplayCommandRepository,
     SQLAlchemyRoleCommandRepository,
     SQLAlchemyScoreCommandRepository,
@@ -201,6 +202,7 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
         assert isinstance(uow.users, SQLAlchemyUserCommandRepository)
         assert isinstance(uow.roles, SQLAlchemyRoleCommandRepository)
         assert isinstance(uow.channels, SQLAlchemyChannelCommandRepository)
+        assert isinstance(uow.chat, SQLAlchemyChatCommandRepository)
         assert isinstance(uow.scores, SQLAlchemyScoreCommandRepository)
         assert isinstance(uow.submissions, SQLAlchemyScoreSubmissionCommandRepository)
         assert isinstance(uow.replays, SQLAlchemyReplayCommandRepository)

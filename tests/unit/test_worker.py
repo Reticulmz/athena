@@ -62,11 +62,17 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     added: list[object]
     private_messages: list[RecordedPrivateMessage]
     commits: int
+    rollbacks: int
+    flushes: int
+    closed: bool
 
     def __init__(self) -> None:
         self.added = []
         self.private_messages = []
         self.commits = 0
+        self.rollbacks = 0
+        self.flushes = 0
+        self.closed = False
 
     @override
     async def __aenter__(self) -> FakeSession:
@@ -95,9 +101,21 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
                 )
             )
 
+    async def flush(self) -> None:
+        """Record flush calls."""
+        self.flushes += 1
+
     async def commit(self) -> None:
         """Record commit calls."""
         self.commits += 1
+
+    async def rollback(self) -> None:
+        """Record rollback calls."""
+        self.rollbacks += 1
+
+    async def close(self) -> None:
+        """Record session close."""
+        self.closed = True
 
 
 class FakeSessionFactory:
@@ -140,10 +158,10 @@ def _str_attr(instance: object, name: str) -> str:
     return value
 
 
-def _make_task_context(chat_service: object) -> Context:
+def _make_task_context(private_message_use_case: object) -> Context:
     """Create a taskiq context carrying worker runtime state."""
     broker = InMemoryBroker()
-    broker.state.chat_service = chat_service
+    broker.state.persist_private_message_use_case = private_message_use_case
     message = TaskiqMessage(
         task_id="worker-test-id",
         task_name="persist_private_message",
@@ -169,9 +187,14 @@ def _state_valkey(state: TaskiqState) -> FakeValkeyClient | None:
     return cast("FakeValkeyClient | None", getattr(state, "valkey", None))
 
 
-def _state_chat_service(state: TaskiqState) -> object | None:
-    """Return typed worker ChatService state for assertions."""
-    return cast("object | None", getattr(state, "chat_service", None))
+def _state_persist_channel_message_use_case(state: TaskiqState) -> object | None:
+    """Return typed worker channel persistence use-case state for assertions."""
+    return cast("object | None", getattr(state, "persist_channel_message_use_case", None))
+
+
+def _state_persist_private_message_use_case(state: TaskiqState) -> object | None:
+    """Return typed worker private persistence use-case state for assertions."""
+    return cast("object | None", getattr(state, "persist_private_message_use_case", None))
 
 
 def _state_beatmap_metadata_fetch(state: TaskiqState) -> object | None:
@@ -220,7 +243,11 @@ async def test_worker_startup_configures_logging(tmp_path: Path) -> None:
         patch("osu_server.worker.create_engine"),
         patch("osu_server.worker.create_session_factory"),
         patch("osu_server.worker.create_valkey_client", new=create_valkey_client, create=True),
-        patch("osu_server.worker.create_worker_chat_service", return_value=object(), create=True),
+        patch(
+            "osu_server.worker.create_worker_chat_persistence_use_cases",
+            return_value=(object(), object()),
+            create=True,
+        ),
         patch(
             "osu_server.worker.create_worker_beatmap_metadata_fetch",
             return_value=object(),
@@ -254,8 +281,8 @@ async def test_worker_startup_configures_logging(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_worker_startup_sets_chat_service_runtime_state(tmp_path: Path) -> None:
-    """Worker startup exposes ChatService persistence use-case through taskiq state."""
+async def test_worker_startup_sets_chat_persistence_runtime_state(tmp_path: Path) -> None:
+    """Worker startup exposes chat persistence use-cases through taskiq state."""
     state = TaskiqState()
     engine = FakeEngine()
     session = FakeSession()
@@ -276,12 +303,13 @@ async def test_worker_startup_sets_chat_service_runtime_state(tmp_path: Path) ->
     assert _state_engine(state) is engine
     assert _state_session_factory(state) is session_factory
     assert _state_valkey(state) is valkey
-    assert _state_chat_service(state) is not None
+    assert _state_persist_channel_message_use_case(state) is not None
+    assert _state_persist_private_message_use_case(state) is not None
 
 
 @pytest.mark.asyncio
-async def test_worker_runtime_chat_service_executes_persistence_task(tmp_path: Path) -> None:
-    """Persistence task resolves the startup ChatService from worker runtime state."""
+async def test_worker_runtime_chat_use_case_executes_persistence_task(tmp_path: Path) -> None:
+    """Persistence task resolves the startup use-case from worker runtime state."""
     state = TaskiqState()
     engine = FakeEngine()
     session = FakeSession()
@@ -299,9 +327,9 @@ async def test_worker_runtime_chat_service_executes_persistence_task(tmp_path: P
     ):
         _ = await startup(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
 
-    chat_service = _state_chat_service(state)
-    assert chat_service is not None
-    context = _make_task_context(chat_service)
+    private_message_use_case = _state_persist_private_message_use_case(state)
+    assert private_message_use_case is not None
+    context = _make_task_context(private_message_use_case)
     await persist_private_message(
         sender_id=1,
         target_id=2,
@@ -312,6 +340,8 @@ async def test_worker_runtime_chat_service_executes_persistence_task(tmp_path: P
     )
 
     assert session.commits == 1
+    assert session.flushes == 1
+    assert session.closed is True
     assert session.private_messages == [
         RecordedPrivateMessage(
             sender_id=1,
@@ -327,19 +357,22 @@ async def test_worker_shutdown_clears_chat_runtime_state() -> None:
     state = TaskiqState()
     engine = FakeEngine()
     valkey = FakeValkeyClient()
-    chat_service = object()
+    channel_use_case = object()
+    private_use_case = object()
     session_factory = object()
 
     state.engine = engine
     state.valkey = valkey
-    state.chat_service = chat_service
+    state.persist_channel_message_use_case = channel_use_case
+    state.persist_private_message_use_case = private_use_case
     state.session_factory = session_factory
 
     _ = await shutdown(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
 
     assert _state_engine(state) is None
     assert _state_session_factory(state) is None
-    assert _state_chat_service(state) is None
+    assert _state_persist_channel_message_use_case(state) is None
+    assert _state_persist_private_message_use_case(state) is None
     assert _state_valkey(state) is None
     assert engine.dispose_calls == 1
     assert valkey.close_calls == 1

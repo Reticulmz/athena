@@ -13,6 +13,7 @@ from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.country.codes import country_code_to_id
+from osu_server.services.queries.chat import ChannelCatalogQueryResult
 from osu_server.transports.bancho.protocol import PROTOCOL_VERSION
 from osu_server.transports.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.bancho.protocol.s2c.login import (
@@ -31,7 +32,10 @@ from osu_server.transports.stable.bancho.mappers.permissions import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.services.channel_service import ChannelService
+    from osu_server.services.queries.chat import (
+        ListAutojoinChannelsQuery,
+        ListVisibleChannelsQuery,
+    )
 
 # -- packet header parsing ----------------------------------------------------
 
@@ -52,37 +56,28 @@ def _extract_packet_ids(data: bytes) -> list[int]:
     return ids
 
 
-# -- typed stub for ChannelService --------------------------------------------
+# -- typed stubs for channel catalog query use-cases --------------------------
 
 
 @final
-class _FakeChannelService:
-    """ChannelService stub returning pre-configured channel lists.
+class _FakeChannelCatalogQuery:
+    """Channel catalog query stub returning pre-configured channel lists.
 
     Protocol-conformant stub per type-safety-policy: avoids untyped
     AsyncMock while keeping LoginResponseBuilder tests focused on
-    packet stream assembly rather than ChannelService ACL logic.
+    packet stream assembly rather than channel ACL logic.
     """
 
-    _visible: list[tuple[Channel, int]]
-    _autojoin: list[tuple[Channel, int]]
+    _channels: list[tuple[Channel, int]]
 
     def __init__(
         self,
-        *,
-        visible: list[tuple[Channel, int]] | None = None,
-        autojoin: list[tuple[Channel, int]] | None = None,
+        channels: list[tuple[Channel, int]] | None = None,
     ) -> None:
-        self._visible = visible or []
-        self._autojoin = autojoin or []
+        self._channels = channels or []
 
-    async def get_visible_channels(self, **_kwargs: object) -> list[tuple[Channel, int]]:
-        _ = _kwargs
-        return list(self._visible)
-
-    async def get_autojoin_channels(self, **_kwargs: object) -> list[tuple[Channel, int]]:
-        _ = _kwargs
-        return list(self._autojoin)
+    async def execute(self, _input_data: object) -> ChannelCatalogQueryResult:
+        return ChannelCatalogQueryResult(channels=tuple(self._channels))
 
 
 # -- helpers -----------------------------------------------------------------
@@ -151,8 +146,16 @@ def _make_builder(
     visible: list[tuple[Channel, int]] | None = None,
     autojoin: list[tuple[Channel, int]] | None = None,
 ) -> LoginResponseBuilder:
-    stub = _FakeChannelService(visible=visible, autojoin=autojoin)
-    return LoginResponseBuilder(channel_service=cast("ChannelService", cast("object", stub)))
+    return LoginResponseBuilder(
+        visible_channels_query=cast(
+            "ListVisibleChannelsQuery",
+            cast("object", _FakeChannelCatalogQuery(visible)),
+        ),
+        autojoin_channels_query=cast(
+            "ListAutojoinChannelsQuery",
+            cast("object", _FakeChannelCatalogQuery(autojoin)),
+        ),
+    )
 
 
 # -- base expected order constants --------------------------------------------

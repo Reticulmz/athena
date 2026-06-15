@@ -9,6 +9,7 @@ from osu_server.config import AppConfig
 from osu_server.domain.chat import (
     ChannelChatDestination,
     ChatAuthorization,
+    ChatPersistenceFailureReason,
     ChatSender,
     PrivateChatDestination,
     SendChannelMessageInput,
@@ -23,18 +24,27 @@ from osu_server.infrastructure.state.memory.channel_state_store import (
     InMemoryChannelStateStore,
 )
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
-from osu_server.repositories.interfaces.chat_repository import (
-    ChatPersistenceFailureReason,
-    ChatPersistenceResult,
-)
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
+from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.bancho_bot.command_service import CommandService
 from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.channel_service import ChannelService
 from osu_server.services.chat_service import ChatService
-from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.commands.chat import (
+    PersistChannelMessageUseCase,
+    PersistPrivateMessageCommand,
+    PersistPrivateMessageUseCase,
+    SendChannelMessageUseCase,
+    SendPrivateMessageUseCase,
+)
+from osu_server.services.queries.chat import (
+    ResolveChannelMessageDeliveryQuery,
+    ResolvePrivateMessageTargetQuery,
+)
 
 _NOW = datetime.now(UTC)
 _BYPASS_ACL = 1 << 9  # Privileges.BYPASS_CHANNEL_ACL
@@ -74,44 +84,19 @@ def _private_message_input(
     )
 
 
-class CapturingChatRepository:
-    """ChatRepository test double that records persistence calls."""
-
-    channel_result: ChatPersistenceResult
-    private_result: ChatPersistenceResult
-    channel_calls: list[tuple[int, str, str]]
-    private_calls: list[tuple[int, int, str]]
-
-    def __init__(self) -> None:
-        self.channel_result = ChatPersistenceResult.success_result()
-        self.private_result = ChatPersistenceResult.success_result()
-        self.channel_calls = []
-        self.private_calls = []
-
-    async def save_channel_message(
-        self,
-        *,
-        sender_id: int,
-        channel_name: str,
-        content: str,
-    ) -> ChatPersistenceResult:
-        self.channel_calls.append((sender_id, channel_name, content))
-        return self.channel_result
-
-    async def save_private_message(
-        self,
-        *,
-        sender_id: int,
-        target_id: int,
-        content: str,
-    ) -> ChatPersistenceResult:
-        self.private_calls.append((sender_id, target_id, content))
-        return self.private_result
+@pytest.fixture
+def command_state() -> InMemoryCommandRepositoryState:
+    return InMemoryCommandRepositoryState()
 
 
 @pytest.fixture
-def channel_repo() -> InMemoryChannelRepository:
-    return InMemoryChannelRepository()
+def uow_factory(command_state: InMemoryCommandRepositoryState) -> InMemoryUnitOfWorkFactory:
+    return InMemoryUnitOfWorkFactory(command_state)
+
+
+@pytest.fixture
+def channel_repo(command_state: InMemoryCommandRepositoryState) -> InMemoryChannelRepository:
+    return InMemoryChannelRepository(state=command_state)
 
 
 @pytest.fixture
@@ -120,8 +105,8 @@ def channel_state() -> InMemoryChannelStateStore:
 
 
 @pytest.fixture
-def user_repo() -> InMemoryUserRepository:
-    return InMemoryUserRepository()
+def user_repo(command_state: InMemoryCommandRepositoryState) -> InMemoryUserRepository:
+    return InMemoryUserRepository(state=command_state)
 
 
 @pytest.fixture
@@ -180,10 +165,11 @@ def config() -> AppConfig:
 
 
 @pytest.fixture
-async def channel_service(
+async def channel_delivery_query(
     channel_repo: InMemoryChannelRepository,
     channel_state: InMemoryChannelStateStore,
-) -> ChannelService:
+    uow_factory: InMemoryUnitOfWorkFactory,
+) -> ResolveChannelMessageDeliveryQuery:
     channel = Channel(
         id=0,  # auto-assigned by repository
         name="#osu",
@@ -202,15 +188,21 @@ async def channel_service(
     await channel_state.add_member("#osu", 2)
     await channel_state.add_member("#osu", 3)
 
-    return ChannelService(channel_repo=channel_repo, channel_state=channel_state)
+    return ResolveChannelMessageDeliveryQuery(
+        channel_repository=InMemoryChannelQueryRepository(uow_factory),
+        channel_state=channel_state,
+    )
 
 
 @pytest.fixture
-def private_message_service(
-    user_repo: InMemoryUserRepository,
+def private_message_target_query(
+    uow_factory: InMemoryUnitOfWorkFactory,
     session_store: InMemorySessionStore,
-) -> PrivateMessageService:
-    return PrivateMessageService(user_repo=user_repo, session_store=session_store)
+) -> ResolvePrivateMessageTargetQuery:
+    return ResolvePrivateMessageTargetQuery(
+        user_repository=InMemoryUserQueryRepository(uow_factory),
+        session_store=session_store,
+    )
 
 
 @pytest.fixture
@@ -219,37 +211,48 @@ def command_service() -> CommandService:
 
 
 @pytest.fixture
-def chat_repository() -> CapturingChatRepository:
-    return CapturingChatRepository()
-
-
-@pytest.fixture
 def chat_service(
-    channel_service: ChannelService,
-    private_message_service: PrivateMessageService,
+    channel_delivery_query: ResolveChannelMessageDeliveryQuery,
+    private_message_target_query: ResolvePrivateMessageTargetQuery,
     command_service: CommandService,
     session_store: InMemorySessionStore,
     event_bus: InMemoryEventBus,
     rate_limiter: InMemoryRateLimiter,
     config: AppConfig,
-    chat_repository: CapturingChatRepository,
+    uow_factory: InMemoryUnitOfWorkFactory,
 ) -> ChatService:
-    return ChatService(
-        channel_service=channel_service,
-        private_message_service=private_message_service,
+    send_channel = SendChannelMessageUseCase(
+        channel_delivery_query=channel_delivery_query,
         command_service=command_service,
         session_store=session_store,
         event_bus=event_bus,
         rate_limiter=rate_limiter,
         config=config,
-        chat_repository=chat_repository,
+    )
+    send_private = SendPrivateMessageUseCase(
+        target_query=private_message_target_query,
+        command_service=command_service,
+        session_store=session_store,
+        event_bus=event_bus,
+        rate_limiter=rate_limiter,
+        config=config,
+    )
+    return ChatService(
+        send_channel_message_use_case=send_channel,
+        send_private_message_use_case=send_private,
+        persist_channel_message_use_case=PersistChannelMessageUseCase(
+            uow_factory=uow_factory,
+        ),
+        persist_private_message_use_case=PersistPrivateMessageUseCase(
+            uow_factory=uow_factory,
+        ),
     )
 
 
 @pytest.mark.asyncio
-async def test_persist_channel_message_delegates_to_repository(
+async def test_persist_channel_message_writes_through_uow(
     chat_service: ChatService,
-    chat_repository: CapturingChatRepository,
+    command_state: InMemoryCommandRepositoryState,
 ) -> None:
     result = await chat_service.persist_channel_message(
         sender_id=1,
@@ -259,18 +262,17 @@ async def test_persist_channel_message_delegates_to_repository(
 
     assert result.success is True
     assert result.reason is None
-    assert chat_repository.channel_calls == [(1, "#osu", "hello")]
+    records = list(command_state.channel_messages_by_id.values())
+    assert [(record.sender_id, record.channel_name, record.content) for record in records] == [
+        (1, "#osu", "hello")
+    ]
 
 
 @pytest.mark.asyncio
-async def test_persist_channel_message_returns_repository_failure(
+async def test_persist_channel_message_returns_uow_repository_failure(
     chat_service: ChatService,
-    chat_repository: CapturingChatRepository,
+    command_state: InMemoryCommandRepositoryState,
 ) -> None:
-    chat_repository.channel_result = ChatPersistenceResult.failure(
-        ChatPersistenceFailureReason.CHANNEL_NOT_FOUND
-    )
-
     result = await chat_service.persist_channel_message(
         sender_id=1,
         channel_name="#missing",
@@ -279,13 +281,13 @@ async def test_persist_channel_message_returns_repository_failure(
 
     assert result.success is False
     assert result.reason is ChatPersistenceFailureReason.CHANNEL_NOT_FOUND
-    assert chat_repository.channel_calls == [(1, "#missing", "hello")]
+    assert command_state.channel_messages_by_id == {}
 
 
 @pytest.mark.asyncio
-async def test_persist_private_message_delegates_to_repository(
+async def test_persist_private_message_writes_through_uow(
     chat_service: ChatService,
-    chat_repository: CapturingChatRepository,
+    command_state: InMemoryCommandRepositoryState,
 ) -> None:
     result = await chat_service.persist_private_message(
         sender_id=1,
@@ -295,27 +297,26 @@ async def test_persist_private_message_delegates_to_repository(
 
     assert result.success is True
     assert result.reason is None
-    assert chat_repository.private_calls == [(1, 2, "secret")]
+    records = list(command_state.private_messages_by_id.values())
+    assert [(record.sender_id, record.target_id, record.content) for record in records] == [
+        (1, 2, "secret")
+    ]
 
 
 @pytest.mark.asyncio
-async def test_persist_private_message_returns_repository_failure(
-    chat_service: ChatService,
-    chat_repository: CapturingChatRepository,
-) -> None:
-    chat_repository.private_result = ChatPersistenceResult.failure(
-        ChatPersistenceFailureReason.STORAGE_ERROR
-    )
+async def test_persist_private_message_without_runtime_returns_failure() -> None:
+    use_case = PersistPrivateMessageUseCase()
 
-    result = await chat_service.persist_private_message(
-        sender_id=1,
-        target_id=2,
-        content="secret",
+    result = await use_case.execute(
+        PersistPrivateMessageCommand(
+            sender_id=1,
+            target_id=2,
+            content="secret",
+        )
     )
 
     assert result.success is False
-    assert result.reason is ChatPersistenceFailureReason.STORAGE_ERROR
-    assert chat_repository.private_calls == [(1, 2, "secret")]
+    assert result.reason is ChatPersistenceFailureReason.RUNTIME_UNAVAILABLE
 
 
 @pytest.mark.asyncio

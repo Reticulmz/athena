@@ -5,54 +5,63 @@ from __future__ import annotations
 import inspect
 import subprocess
 import sys
+from typing import TYPE_CHECKING
 
+import pytest
 import structlog.testing
 from taskiq import Context, InMemoryBroker, TaskiqMessage
 
+from osu_server.domain.chat import ChatPersistenceResult
 from osu_server.jobs import chat_persistence, register_all_jobs
 from osu_server.jobs.chat_persistence import (
     persist_channel_message,
     persist_private_message,
 )
-from osu_server.repositories.interfaces.chat_repository import ChatPersistenceResult
+
+if TYPE_CHECKING:
+    from osu_server.services.commands.chat import (
+        PersistChannelMessageCommand,
+        PersistPrivateMessageCommand,
+    )
 
 
-class StubChatService:
-    """ChatService test double that records persistence calls."""
+class StubChannelMessagePersistenceUseCase:
+    """Use-case test double that records channel persistence calls."""
 
     channel_calls: list[tuple[int, str, str]]
-    private_calls: list[tuple[int, int, str]]
 
     def __init__(self) -> None:
         self.channel_calls = []
+
+    async def execute(self, command: PersistChannelMessageCommand) -> ChatPersistenceResult:
+        self.channel_calls.append((command.sender_id, command.channel_name, command.content))
+        return ChatPersistenceResult.success_result()
+
+
+class StubPrivateMessagePersistenceUseCase:
+    """Use-case test double that records private persistence calls."""
+
+    private_calls: list[tuple[int, int, str]]
+
+    def __init__(self) -> None:
         self.private_calls = []
 
-    async def persist_channel_message(
-        self,
-        *,
-        sender_id: int,
-        channel_name: str,
-        content: str,
-    ) -> ChatPersistenceResult:
-        self.channel_calls.append((sender_id, channel_name, content))
-        return ChatPersistenceResult.success_result()
-
-    async def persist_private_message(
-        self,
-        *,
-        sender_id: int,
-        target_id: int,
-        content: str,
-    ) -> ChatPersistenceResult:
-        self.private_calls.append((sender_id, target_id, content))
+    async def execute(self, command: PersistPrivateMessageCommand) -> ChatPersistenceResult:
+        self.private_calls.append((command.sender_id, command.target_id, command.content))
         return ChatPersistenceResult.success_result()
 
 
-def make_context(chat_service: object | None = None) -> Context:
-    """Create a taskiq Context carrying optional ChatService runtime state."""
+def make_context(
+    *,
+    channel_use_case: object | None = None,
+    private_use_case: object | None = None,
+) -> Context:
+    """Create a taskiq Context carrying optional chat persistence use-cases."""
     broker = InMemoryBroker()
-    if chat_service is not None:
-        broker.state.chat_service = chat_service
+    if channel_use_case is not None:
+        broker.state.persist_channel_message_use_case = channel_use_case
+    if private_use_case is not None:
+        broker.state.persist_private_message_use_case = private_use_case
     message = TaskiqMessage(
         task_id="test-id",
         task_name="test-task",
@@ -64,9 +73,9 @@ def make_context(chat_service: object | None = None) -> Context:
 
 
 class TestPersistChannelMessage:
-    async def test_delegates_to_chat_service_persistence_use_case(self) -> None:
-        chat_service = StubChatService()
-        context = make_context(chat_service)
+    async def test_delegates_to_channel_persistence_use_case(self) -> None:
+        use_case = StubChannelMessagePersistenceUseCase()
+        context = make_context(channel_use_case=use_case)
 
         await persist_channel_message(
             sender_id=1,
@@ -76,13 +85,12 @@ class TestPersistChannelMessage:
             context=context,
         )
 
-        assert chat_service.channel_calls == [(1, "#osu", "hello")]
-        assert chat_service.private_calls == []
+        assert use_case.channel_calls == [(1, "#osu", "hello")]
 
     async def test_logs_missing_runtime_state(self) -> None:
         context = make_context()
 
-        with structlog.testing.capture_logs() as logs:
+        with structlog.testing.capture_logs() as logs, pytest.raises(RuntimeError):
             await persist_channel_message(
                 sender_id=1,
                 channel_name="#osu",
@@ -102,9 +110,9 @@ class TestPersistChannelMessage:
 
 
 class TestPersistPrivateMessage:
-    async def test_delegates_to_chat_service_persistence_use_case(self) -> None:
-        chat_service = StubChatService()
-        context = make_context(chat_service)
+    async def test_delegates_to_private_persistence_use_case(self) -> None:
+        use_case = StubPrivateMessagePersistenceUseCase()
+        context = make_context(private_use_case=use_case)
 
         await persist_private_message(
             sender_id=1,
@@ -115,13 +123,12 @@ class TestPersistPrivateMessage:
             context=context,
         )
 
-        assert chat_service.private_calls == [(1, 2, "secret")]
-        assert chat_service.channel_calls == []
+        assert use_case.private_calls == [(1, 2, "secret")]
 
     async def test_logs_missing_runtime_state(self) -> None:
         context = make_context()
 
-        with structlog.testing.capture_logs() as logs:
+        with structlog.testing.capture_logs() as logs, pytest.raises(RuntimeError):
             await persist_private_message(
                 sender_id=1,
                 target_id=2,

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
         BeatmapCommandRepository,
         BlobCommandRepository,
         ChannelCommandRepository,
+        ChatCommandRepository,
         ReplayCommandRepository,
         RoleCommandRepository,
         ScoreCommandRepository,
@@ -30,6 +31,7 @@ class UnitOfWork(Protocol):
     users: UserCommandRepository
     roles: RoleCommandRepository
     channels: ChannelCommandRepository
+    chat: ChatCommandRepository
     scores: ScoreCommandRepository
     submissions: ScoreSubmissionCommandRepository
     replays: ReplayCommandRepository

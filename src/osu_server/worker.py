@@ -18,7 +18,7 @@ from taskiq_redis import ListQueueBroker
 from osu_server.composition.worker_runtime import (
     create_worker_beatmap_file_fetch,
     create_worker_beatmap_metadata_fetch,
-    create_worker_chat_service,
+    create_worker_chat_persistence_use_cases,
 )
 from osu_server.config import load_config
 from osu_server.infrastructure.cache.valkey_client import create_valkey_client
@@ -61,10 +61,11 @@ async def startup(state: TaskiqState) -> None:
     state.engine = engine
     state.session_factory = session_factory
     state.valkey = valkey
-    state.chat_service = create_worker_chat_service(
+    (
+        state.persist_channel_message_use_case,
+        state.persist_private_message_use_case,
+    ) = create_worker_chat_persistence_use_cases(
         session_factory=session_factory,
-        valkey=valkey,
-        config=_config,
     )
     state.beatmap_metadata_fetch = create_worker_beatmap_metadata_fetch(
         session_factory=session_factory,
@@ -87,7 +88,8 @@ async def shutdown(state: TaskiqState) -> None:
     state.engine = None
     state.session_factory = None
     state.valkey = None
-    state.chat_service = None
+    state.persist_channel_message_use_case = None
+    state.persist_private_message_use_case = None
     state.beatmap_metadata_fetch = None
     state.beatmap_file_fetch = None
 

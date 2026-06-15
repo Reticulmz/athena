@@ -11,10 +11,8 @@ import structlog.testing
 from osu_server.domain.identity.authentication import LoginRequest, LoginResponse, LoginResult
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
-from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
-from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.services.channel_service import ChannelService
 from osu_server.services.commands.identity import LoginCommandInput, LoginCommandResult
+from osu_server.services.queries.chat import ChannelCatalogQueryResult
 from osu_server.transports.bancho.protocol.s2c.login import login_reply
 from osu_server.transports.bancho.workflows import (
     LoginResponseBuilder,
@@ -74,6 +72,12 @@ class _RecordingLoginCommand:
 
 
 @final
+class _EmptyChannelCatalogQuery:
+    async def execute(self, _input_data: object) -> ChannelCatalogQueryResult:
+        return ChannelCatalogQueryResult(channels=())
+
+
+@final
 class _RecordingLoginResponseBuilder(LoginResponseBuilder):
     """Login response builder fake that records successful responses."""
 
@@ -83,10 +87,13 @@ class _RecordingLoginResponseBuilder(LoginResponseBuilder):
     def __init__(
         self,
         *,
-        channel_service: ChannelService,
         content: bytes = _SUCCESS_STREAM,
     ) -> None:
-        super().__init__(channel_service=channel_service)
+        empty_query = _EmptyChannelCatalogQuery()
+        super().__init__(
+            visible_channels_query=cast("object", empty_query),  # pyright: ignore[reportArgumentType]
+            autojoin_channels_query=cast("object", empty_query),  # pyright: ignore[reportArgumentType]
+        )
         self._content = content
         self.login_response = None
 
@@ -108,13 +115,6 @@ def _build_login_body(
 ) -> bytes:
     client_info = f"{osu_version}|{utc_offset}|{display_city}|{client_hashes}|{pm_private}"
     return f"{username}\n{password_md5}\n{client_info}\n".encode()
-
-
-def _make_channel_service() -> ChannelService:
-    return ChannelService(
-        channel_repo=InMemoryChannelRepository(),
-        channel_state=InMemoryChannelStateStore(),
-    )
 
 
 def _login_response() -> LoginResponse:
@@ -153,9 +153,7 @@ def _make_workflow(
 ]:
     login_command = _RecordingLoginCommand(auth_result)
     resolver = country_resolver or _RecordingCountryResolver()
-    builder = response_builder or _RecordingLoginResponseBuilder(
-        channel_service=_make_channel_service()
-    )
+    builder = response_builder or _RecordingLoginResponseBuilder()
     workflow = LoginWorkflow(
         login_command=login_command,
         country_resolver=resolver,
@@ -226,7 +224,6 @@ class TestLoginWorkflow:
         login_response = _login_response()
         headers = {"x-real-ip": "203.0.113.20"}
         response_builder = _RecordingLoginResponseBuilder(
-            channel_service=_make_channel_service(),
             content=_SUCCESS_STREAM,
         )
         workflow, login_command, resolver, builder = _make_workflow(

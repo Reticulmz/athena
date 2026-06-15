@@ -10,6 +10,7 @@ from osu_server.repositories.sqlalchemy.commands.blobs import (
     SQLAlchemyBlobCommandRepository,
 )
 from osu_server.repositories.sqlalchemy.commands.channels import SQLAlchemyChannelCommandRepository
+from osu_server.repositories.sqlalchemy.commands.chat import SQLAlchemyChatCommandRepository
 from osu_server.repositories.sqlalchemy.commands.replays import SQLAlchemyReplayCommandRepository
 from osu_server.repositories.sqlalchemy.commands.roles import SQLAlchemyRoleCommandRepository
 from osu_server.repositories.sqlalchemy.commands.scores import SQLAlchemyScoreCommandRepository
@@ -25,6 +26,7 @@ __all__ = [
     "SQLAlchemyBeatmapCommandRepository",
     "SQLAlchemyBlobCommandRepository",
     "SQLAlchemyChannelCommandRepository",
+    "SQLAlchemyChatCommandRepository",
     "SQLAlchemyReplayCommandRepository",
     "SQLAlchemyRoleCommandRepository",
     "SQLAlchemyScoreCommandRepository",

@@ -37,11 +37,11 @@ from osu_server.app import create_app
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileAttachment,
     BeatmapFileState,
     BeatmapMetadataSource,
     BeatmapRankStatus,
-    BeatmapResolveResult,
     BeatmapSet,
     BeatmapSourceVerification,
 )
@@ -51,7 +51,6 @@ from osu_server.repositories.interfaces.beatmap_repository import BeatmapReposit
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.user_repository import UserRepository
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.legacy_getscores_service import GetscoresResolver
 from osu_server.services.password_service import PasswordService
 
 if TYPE_CHECKING:
@@ -291,29 +290,18 @@ async def _override_mirror_resolve(
     *,
     metadata_status: BeatmapFetchState,
 ) -> None:
-    """Inject a stub mirror callable that returns the requested metadata state."""
+    """Seed the new query-side fetch-state seam for an unknown checksum."""
     container = _container(app)
-    resolver = await container.resolve(GetscoresResolver)
-
-    async def _stub(
-        _checksum: str,
-        _options: object,
-    ) -> BeatmapResolveResult:
-        del _checksum, _options
-        return BeatmapResolveResult(
-            beatmap=None,
-            beatmapset=None,
-            eligibility=None,
-            metadata_status=metadata_status,
-            file_status=BeatmapFileState.MISSING,
-            source=None,
-            verified=False,
-            last_fetched_at=None,
-            next_refresh_at=None,
-            reason=None,
-        )
-
-    resolver._mirror_resolve = _stub  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    beatmap_repo = await container.resolve(BeatmapRepository)
+    assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
+    target = BeatmapFetchTarget.metadata_by_checksum(_UNKNOWN_CHECKSUM)
+    if metadata_status is BeatmapFetchState.PENDING_FETCH:
+        _ = await beatmap_repo.try_mark_fetch_pending(target, _NOW)
+        return
+    if metadata_status is BeatmapFetchState.FAILED:
+        await beatmap_repo.mark_fetch_failed(target, "test metadata failure", _NOW)
+        return
+    await beatmap_repo.mark_fetch_succeeded(target, _NOW)
 
 
 # ---------------------------------------------------------------------------

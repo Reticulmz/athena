@@ -10,10 +10,11 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from osu_server.domain.chat.policies import ChannelPermission, has_channel_permission
 from osu_server.domain.identity.authorization import Privileges, has_privilege
 
 if TYPE_CHECKING:
-    from osu_server.domain.chat.channels import Channel, ChannelRoleOverride
+    from osu_server.domain.chat.channels import Channel
     from osu_server.infrastructure.state.interfaces.channel_state_store import (
         ChannelStateStore,
     )
@@ -102,7 +103,12 @@ class ChannelService:
         # ACL check: BYPASS_CHANNEL_ACL or role-based override (can_read)
         if not has_privilege(user_privileges, Privileges.BYPASS_CHANNEL_ACL):
             overrides = await self._channel_repo.get_overrides_for_channel(channel.id)
-            if not self._check_acl(overrides, user_role_ids, permission="read"):
+            if not has_channel_permission(
+                user_privileges=user_privileges,
+                user_role_ids=user_role_ids,
+                overrides=overrides,
+                permission=ChannelPermission.READ,
+            ):
                 logger.warning(
                     "join_failed",
                     user_id=user_id,
@@ -165,7 +171,12 @@ class ChannelService:
                 return None
 
             overrides = await self._channel_repo.get_overrides_for_channel(channel.id)
-            if not self._check_acl(overrides, user_role_ids, permission="write"):
+            if not has_channel_permission(
+                user_privileges=user_privileges,
+                user_role_ids=user_role_ids,
+                overrides=overrides,
+                permission=ChannelPermission.WRITE,
+            ):
                 logger.warning(
                     "deliver_rejected",
                     sender_id=sender_id,
@@ -233,10 +244,11 @@ class ChannelService:
             visible = [
                 ch
                 for ch in channels
-                if self._check_acl(
-                    overrides_map.get(ch.id, []),
-                    user_role_ids,
-                    permission="read",
+                if has_channel_permission(
+                    user_privileges=user_privileges,
+                    user_role_ids=user_role_ids,
+                    overrides=overrides_map.get(ch.id, []),
+                    permission=ChannelPermission.READ,
                 )
             ]
 
@@ -245,23 +257,3 @@ class ChannelService:
             count = await self._channel_state.get_member_count(ch.name)
             result.append((ch, count))
         return result
-
-    @staticmethod
-    def _check_acl(
-        overrides: list[ChannelRoleOverride],
-        user_role_ids: list[int],
-        *,
-        permission: str,
-    ) -> bool:
-        """ロール別オーバーライドでアクセス権を判定する (fail-closed)。"""
-        if not overrides:
-            return False  # fail-closed
-
-        user_role_set = set(user_role_ids)
-        for override in overrides:
-            if override.role_id in user_role_set:
-                if permission == "read" and override.can_read:
-                    return True
-                if permission == "write" and override.can_write:
-                    return True
-        return False
