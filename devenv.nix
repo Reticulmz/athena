@@ -65,15 +65,15 @@ in
   };
 
   env = {
-    DATABASE_URL = "postgresql://localhost:${pg_port}/${db_name}";
-    VALKEY_URL = "redis://localhost:${valkey_port}";
-    ENVIRONMENT = "development";
-    SERVER_HOST = "0.0.0.0";
-    SERVER_PORT = "8000";
-    DOMAIN = "example.com";
-    LOG_LEVEL = "DEBUG";
-    LOG_JSON_ENABLED = "true";
-    LOG_JSON_PATH = "logs/athena.jsonl";
+    # DATABASE_URL = "postgresql://localhost:${pg_port}/${db_name}";
+    # VALKEY_URL = "redis://localhost:${valkey_port}";
+    # ENVIRONMENT = "development";
+    # SERVER_HOST = "0.0.0.0";
+    # SERVER_PORT = "8000";
+    # DOMAIN = "example.com";
+    # LOG_LEVEL = "DEBUG";
+    # LOG_JSON_ENABLED = "true";
+    # LOG_JSON_PATH = "logs/athena.jsonl";
   };
 
   git-hooks.hooks = {
