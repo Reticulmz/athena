@@ -1,17 +1,30 @@
-"""Common Dishka provider graph tests."""
+"""Dishka provider graph tests for shared and app-only provider groups."""
 
 from __future__ import annotations
 
 import httpx
 import pytest
 from dishka import AsyncContainer, Scope
+from dishka.exceptions import NoFactoryError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from taskiq import AsyncBroker
 from tests.factories.config import make_app_config
 
+from osu_server.composition.providers.app import AppProviderGraph
 from osu_server.composition.providers.container import make_app_container, make_worker_container
-from osu_server.composition.providers.test import TestProviderSet, replace_value
+from osu_server.composition.providers.test import (
+    TestProviderSet,
+    make_in_memory_runtime_provider_set,
+    replace_value,
+)
+from osu_server.composition.providers.worker import WorkerProviderGraph
 from osu_server.config import AppConfig
+from osu_server.domain.beatmaps import (
+    BeatmapFileProvider,
+    BeatmapFreshnessPolicy,
+    BeatmapMetadataProvider,
+)
+from osu_server.domain.identity.system_users import SystemUserIdentity
 from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
@@ -41,10 +54,37 @@ from osu_server.repositories.sqlalchemy.queries.chat import SQLAlchemyChatHistor
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
 from osu_server.repositories.sqlalchemy.queries.scores import SQLAlchemyScoreQueryRepository
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
-from osu_server.services.commands.chat import JoinChannelUseCase, LeaveChannelUseCase
+from osu_server.services.commands.beatmaps import (
+    FetchBeatmapFileUseCase,
+    FetchBeatmapMetadataUseCase,
+)
+from osu_server.services.commands.chat import (
+    JoinChannelUseCase,
+    LeaveChannelUseCase,
+    SendChannelMessageUseCase,
+    SendPrivateMessageUseCase,
+)
+from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
+from osu_server.services.commands.identity import (
+    LoginCommandUseCase,
+    RefreshRoleAuthorizationCommandUseCase,
+    RefreshUserAuthorizationCommandUseCase,
+    RegisterUserCommandUseCase,
+)
+from osu_server.services.commands.identity.auth_service import AuthService
+from osu_server.services.commands.identity.session_authorization_service import (
+    SessionAuthorizationService,
+)
+from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase, SubmitScoreUseCase
+from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
+from osu_server.services.commands.storage.blob_storage import BlobStorageService
 from osu_server.services.queries.beatmaps import (
     ResolveBeatmapByChecksumQuery,
     ResolveBeatmapByIdQuery,
+)
+from osu_server.services.queries.beatmaps.mirror import (
+    BeatmapEligibilityService,
+    BeatmapMirrorService,
 )
 from osu_server.services.queries.chat import (
     ListAutojoinChannelsQuery,
@@ -52,9 +92,37 @@ from osu_server.services.queries.chat import (
     ListPrivateMessagesQuery,
     ListVisibleChannelsQuery,
     ResolveChannelMessageDeliveryQuery,
+    ResolvePrivateMessageTargetQuery,
 )
+from osu_server.services.queries.chat.private_message_service import PrivateMessageService
+from osu_server.services.queries.identity import (
+    ComputePermissionsQueryUseCase,
+    ComputeSessionAuthorizationQueryUseCase,
+    ListOnlineUsersQueryUseCase,
+    SessionCredentialsQueryUseCase,
+)
+from osu_server.services.queries.identity.online_users_service import OnlineUsersService
+from osu_server.services.queries.identity.password_service import PasswordService
+from osu_server.services.queries.identity.permission_service import PermissionService
 from osu_server.services.queries.scores import BeatmapScoreListingQuery
-from osu_server.transports.stable.web_legacy.mappers import StableScoreSubmitMapper
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
+from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
+from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
+from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
+from osu_server.transports.stable.bancho.workflows.login_response_builder import (
+    LoginResponseBuilder,
+)
+from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflow
+from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
+from osu_server.transports.stable.web_legacy.mappers import (
+    GetscoresQueryParser,
+    GetscoresStatusMapper,
+    StableScorePayloadParser,
+    StableScoreSubmitMapper,
+)
+from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
+from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 
 def _runtime_state_overrides() -> TestProviderSet:
@@ -70,7 +138,7 @@ async def _close_common_dependencies(container: AsyncContainer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_app_provider_graph_resolves_common_runtime_dependencies() -> None:
+async def test_app_provider_graph_resolves_shared_infrastructure_dependencies() -> None:
     config = make_app_config(environment="development")
     container = make_app_container(config, overrides=(_runtime_state_overrides(),))
 
@@ -82,8 +150,6 @@ async def test_app_provider_graph_resolves_common_runtime_dependencies() -> None
         http_client = await container.get(httpx.AsyncClient)
         blob_backend = await container.get(BlobStorageBackend)
         event_bus = await container.get(EventBus)
-        score_crypto = await container.get(ScoreCryptoService)
-        stable_score_submit_mapper = await container.get(StableScoreSubmitMapper)
 
         assert resolved_config is config
         assert isinstance(engine, AsyncEngine)
@@ -95,8 +161,6 @@ async def test_app_provider_graph_resolves_common_runtime_dependencies() -> None
         assert isinstance(http_client, httpx.AsyncClient)
         assert blob_backend is not None
         assert event_bus is not None
-        assert isinstance(score_crypto, ScoreCryptoService)
-        assert isinstance(stable_score_submit_mapper, StableScoreSubmitMapper)
     finally:
         await _close_common_dependencies(container)
 
@@ -134,13 +198,21 @@ async def test_app_provider_graph_resolves_query_repositories() -> None:
 
 
 @pytest.mark.asyncio
-async def test_app_provider_graph_resolves_query_and_lightweight_command_use_cases() -> None:
+async def test_app_provider_graph_resolves_shared_provider_groups() -> None:
     config = make_app_config(environment="development")
     container = make_app_container(config, overrides=(_runtime_state_overrides(),))
 
     expected_types = (
+        BlobStorageService,
+        BeatmapFreshnessPolicy,
+        BeatmapMetadataProvider,
+        BeatmapFileProvider,
+        BeatmapEligibilityService,
         ResolveBeatmapByIdQuery,
         ResolveBeatmapByChecksumQuery,
+        FetchBeatmapMetadataUseCase,
+        FetchBeatmapFileUseCase,
+        ScoreCryptoService,
         BeatmapScoreListingQuery,
         ListVisibleChannelsQuery,
         ListAutojoinChannelsQuery,
@@ -160,14 +232,71 @@ async def test_app_provider_graph_resolves_query_and_lightweight_command_use_cas
 
 
 @pytest.mark.asyncio
-async def test_worker_provider_graph_uses_same_common_dependencies() -> None:
+async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
+    config = make_app_config(environment="test")
+    container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
+
+    expected_types = (
+        AppProviderGraph,
+        SystemUserIdentity,
+        PasswordService,
+        PermissionService,
+        ComputePermissionsQueryUseCase,
+        ComputeSessionAuthorizationQueryUseCase,
+        AuthService,
+        LoginCommandUseCase,
+        RegisterUserCommandUseCase,
+        SessionAuthorizationService,
+        RefreshUserAuthorizationCommandUseCase,
+        RefreshRoleAuthorizationCommandUseCase,
+        OnlineUsersService,
+        ListOnlineUsersQueryUseCase,
+        SessionCredentialsQueryUseCase,
+        ResolvePrivateMessageTargetQuery,
+        PrivateMessageService,
+        CommandService,
+        SendChannelMessageUseCase,
+        SendPrivateMessageUseCase,
+        BeatmapMirrorService,
+        ScoreAuthorizationService,
+        SubmitScoreUseCase,
+        StableScorePayloadParser,
+        ProcessScoreSubmissionUseCase,
+        LoginResponseBuilder,
+        LoginWorkflow,
+        LifecycleHandlers,
+        ChatHandlers,
+        PacketDispatcher,
+        PollingWorkflow,
+        BanchoEndpoint,
+        RegistrationHandler,
+        GetscoresQueryParser,
+        GetscoresStatusMapper,
+        GetscoresHandler,
+        StableScoreSubmitMapper,
+        ScoreSubmitHandler,
+    )
+
+    try:
+        for dependency_type in expected_types:
+            resolved = await container.get(dependency_type)
+            assert isinstance(resolved, dependency_type)
+    finally:
+        await _close_common_dependencies(container)
+
+
+@pytest.mark.asyncio
+async def test_worker_provider_graph_uses_shared_dependencies_without_app_only_groups() -> None:
     config = make_app_config(environment="production")
     container = make_worker_container(config, overrides=(_runtime_state_overrides(),))
 
     try:
+        assert isinstance(await container.get(WorkerProviderGraph), WorkerProviderGraph)
         assert isinstance(await container.get(ResolveBeatmapByIdQuery), ResolveBeatmapByIdQuery)
         assert isinstance(await container.get(BeatmapScoreListingQuery), BeatmapScoreListingQuery)
         assert isinstance(await container.get(ListVisibleChannelsQuery), ListVisibleChannelsQuery)
         assert isinstance(await container.get(JoinChannelUseCase), JoinChannelUseCase)
+        with pytest.raises(NoFactoryError):
+            _ = await container.get(BanchoEndpoint)
     finally:
         await _close_common_dependencies(container)

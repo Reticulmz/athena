@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from tests.factories.config import make_app_config
 
-from osu_server.composition.providers.app import enqueue_beatmap_fetch
+from osu_server.composition.providers.beatmaps_app import enqueue_beatmap_fetch
 from osu_server.composition.providers.container import make_app_container
 from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
 from osu_server.domain.beatmaps import (
