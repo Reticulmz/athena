@@ -9,15 +9,14 @@ import structlog
 from starlette.responses import Response
 
 from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits, ParseError, parse
-from osu_server.services.score_submission_service import (
+from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
+    ProcessScoreSubmissionUseCase,
     SubmissionOutcome,
 )
 
 if TYPE_CHECKING:
     from starlette.requests import Request
-
-    from osu_server.services.score_submission_service import ScoreSubmissionService
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -30,10 +29,10 @@ class ScoreSubmitHandler:
 
     def __init__(
         self,
-        service: ScoreSubmissionService,
+        submit_score_command: ProcessScoreSubmissionUseCase,
         limits: MultipartLimits | None = None,
     ) -> None:
-        self._service: ScoreSubmissionService = service
+        self._submit_score_command: ProcessScoreSubmissionUseCase = submit_score_command
         self._limits: MultipartLimits = limits or MultipartLimits()
 
     async def __call__(self, request: Request) -> Response:
@@ -74,7 +73,7 @@ class ScoreSubmitHandler:
             submission_metadata=parsed.submission_metadata,
         )
 
-        result = await self._service.submit_score(input_data)
+        result = await self._submit_score_command.execute(input_data)
 
         if result.outcome == SubmissionOutcome.COMPLETED:
             return _format_completed_response(

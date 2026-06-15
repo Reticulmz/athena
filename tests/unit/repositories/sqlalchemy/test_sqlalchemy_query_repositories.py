@@ -36,10 +36,10 @@ from osu_server.repositories.sqlalchemy.models.score import ScoreModel
 from osu_server.repositories.sqlalchemy.models.user import UserModel
 from osu_server.repositories.sqlalchemy.queries import (
     SQLAlchemyBeatmapQueryRepository,
+    SQLAlchemyBeatmapScoreListingQueryRepository,
     SQLAlchemyBlobQueryRepository,
     SQLAlchemyChannelQueryRepository,
     SQLAlchemyChatHistoryQueryRepository,
-    SQLAlchemyLegacyGetscoresQueryRepository,
     SQLAlchemyRoleQueryRepository,
     SQLAlchemyScoreQueryRepository,
     SQLAlchemyUserQueryRepository,
@@ -53,10 +53,10 @@ if TYPE_CHECKING:
 
     from osu_server.repositories.interfaces.queries import (
         BeatmapQueryRepository,
+        BeatmapScoreListingQueryRepository,
         BlobQueryRepository,
         ChannelQueryRepository,
         ChatHistoryQueryRepository,
-        LegacyGetscoresQueryRepository,
         RoleQueryRepository,
         ScoreQueryRepository,
         UserQueryRepository,
@@ -269,8 +269,8 @@ async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
     fixture = _score_blob_beatmap_fixture()
     session_factory = cast("SQLAlchemyQuerySessionFactory", cast("object", fixture.factory))
     beatmaps: BeatmapQueryRepository = SQLAlchemyBeatmapQueryRepository(session_factory)
-    legacy_getscores: LegacyGetscoresQueryRepository = SQLAlchemyLegacyGetscoresQueryRepository(
-        session_factory
+    legacy_getscores: BeatmapScoreListingQueryRepository = (
+        SQLAlchemyBeatmapScoreListingQueryRepository(session_factory)
     )
 
     beatmap_by_id = await beatmaps.get_beatmap(fixture.beatmap.id)

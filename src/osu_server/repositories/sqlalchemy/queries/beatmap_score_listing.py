@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from osu_server.repositories.sqlalchemy.queries._shared import SQLAlchemyQuerySessionFactory
 
 
-class SQLAlchemyLegacyGetscoresQueryRepository:
+class SQLAlchemyBeatmapScoreListingQueryRepository:
     """Read-only stable getscores lookup adapter."""
 
     _beatmaps: SQLAlchemyBeatmapQueryRepository

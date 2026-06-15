@@ -1,5 +1,14 @@
 """Score command use-case package."""
 
+from osu_server.services.commands.scores.process_submission import (
+    ParsedSubmissionInput,
+    ProcessScoreSubmissionUseCase,
+    SubmissionOutcome,
+    SubmissionResult,
+    generate_submission_fingerprint,
+    generate_submission_request_hash,
+    hash_submission_metadata,
+)
 from osu_server.services.commands.scores.submit_score import (
     SubmitScoreCommand,
     SubmitScoreCommandOutcome,
@@ -8,8 +17,15 @@ from osu_server.services.commands.scores.submit_score import (
 )
 
 __all__ = [
+    "ParsedSubmissionInput",
+    "ProcessScoreSubmissionUseCase",
+    "SubmissionOutcome",
+    "SubmissionResult",
     "SubmitScoreCommand",
     "SubmitScoreCommandOutcome",
     "SubmitScoreCommandResult",
     "SubmitScoreUseCase",
+    "generate_submission_fingerprint",
+    "generate_submission_request_hash",
+    "hash_submission_metadata",
 ]

@@ -193,6 +193,14 @@ IDENTITY_TRANSPORT_USE_CASE_RULES = (
     ),
 )
 
+SERVICE_TRANSPORT_NAMED_PATH_FRAGMENTS = (
+    "legacy_getscores",
+    "legacy_web_auth",
+    "web_legacy",
+    "lazer",
+    "signalr",
+)
+
 DEPRECATED_EXACT_ROOTS = (
     "osu_server.infrastructure.di",
     "osu_server.composition.service_registry",
@@ -424,6 +432,22 @@ def test_identity_transports_use_command_or_query_use_case_boundaries() -> None:
         for module in sorted(imported_modules(path))
         for forbidden_root in rule.forbidden_roots
         if module_matches_root(module, forbidden_root)
+    ]
+
+    assert violations == []
+
+
+def test_service_paths_do_not_encode_transport_family_names() -> None:
+    service_paths = [
+        path.relative_to(SOURCE_ROOT / "services").as_posix()
+        for path in sorted((SOURCE_ROOT / "services").rglob("*.py"))
+        if "__pycache__" not in path.parts
+    ]
+    violations = [
+        path
+        for path in service_paths
+        for fragment in SERVICE_TRANSPORT_NAMED_PATH_FRAGMENTS
+        if fragment in path
     ]
 
     assert violations == []

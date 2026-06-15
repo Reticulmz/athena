@@ -27,8 +27,8 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
+from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase
 from osu_server.services.score_authorization_service import AuthorizationContext
-from osu_server.services.score_submission_service import ScoreSubmissionService
 from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
@@ -178,9 +178,11 @@ def _score_payload_decryptor() -> StubScorePayloadDecryptor:
     )
 
 
-def _make_score_submission_service(*, auth_service: object) -> ScoreSubmissionService:
+def _make_process_score_submission_use_case(
+    *, auth_service: object
+) -> ProcessScoreSubmissionUseCase:
     uow_factory = InMemoryUnitOfWorkFactory()
-    return ScoreSubmissionService(
+    return ProcessScoreSubmissionUseCase(
         submit_score_use_case=make_submit_score_use_case(uow_factory),
         replay_blob_storage=StubBlobStorageService(),
         payload_decryptor=_score_payload_decryptor(),
@@ -195,7 +197,7 @@ async def test_e2e_score_submit_completed_response() -> None:
     # Arrange
     auth_service = MockAuthService()
 
-    service = _make_score_submission_service(auth_service=auth_service)
+    service = _make_process_score_submission_use_case(auth_service=auth_service)
     handler = ScoreSubmitHandler(service)
 
     body, content_type = _create_valid_multipart_body()
@@ -229,7 +231,7 @@ async def test_e2e_score_submit_terminal_reject_format() -> None:
                 payload_identity_match=False,
             )
 
-    service = _make_score_submission_service(auth_service=FailingAuthService())
+    service = _make_process_score_submission_use_case(auth_service=FailingAuthService())
     handler = ScoreSubmitHandler(service)
 
     body, content_type = _create_valid_multipart_body()

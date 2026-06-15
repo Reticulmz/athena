@@ -131,7 +131,7 @@
   - _Boundary: Command Use Cases - Scores_
   - _Depends: 2.3, 3.3_
 
-- [ ] 4.5 Normalize service organization and use-case invocation boundaries
+- [x] 4.5 Normalize service organization and use-case invocation boundaries
   - Remove transport-family naming from service organization.
   - Update transports and jobs to invoke distinguishable command or query use-cases.
   - Completion is observable when service imports and package names express business workflows rather than bancho, web legacy, lazer, or API families.

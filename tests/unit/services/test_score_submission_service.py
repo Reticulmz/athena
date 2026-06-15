@@ -1,4 +1,4 @@
-"""Unit tests for ScoreSubmissionService."""
+"""Unit tests for ProcessScoreSubmissionUseCase."""
 
 import hashlib
 from dataclasses import dataclass, replace
@@ -23,9 +23,9 @@ from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.domain.scores.submission import ScoreSubmission
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
-from osu_server.services.score_submission_service import (
+from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
-    ScoreSubmissionService,
+    ProcessScoreSubmissionUseCase,
     SubmissionOutcome,
     generate_submission_fingerprint,
     generate_submission_request_hash,
@@ -179,10 +179,10 @@ def service(
     beatmap_resolver: FakeBeatmapResolver,
     blob_storage: StubBlobStorageService,
     score_decryptor: StubScorePayloadDecryptor,
-) -> ScoreSubmissionService:
+) -> ProcessScoreSubmissionUseCase:
     """Create service with in-memory repositories."""
     auth_service = make_score_authorization_service()
-    return ScoreSubmissionService(
+    return ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         blob_storage,
         score_decryptor,
@@ -230,7 +230,7 @@ def _fingerprint_for(
 
 @pytest.mark.asyncio
 async def test_happy_path_valid_submission_creates_score(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
@@ -245,7 +245,7 @@ async def test_happy_path_valid_submission_creates_score(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -271,7 +271,7 @@ async def test_happy_path_valid_submission_creates_score(
 
 @pytest.mark.asyncio
 async def test_client_server_grade_discrepancy_is_preserved(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
@@ -290,7 +290,7 @@ async def test_client_server_grade_discrepancy_is_preserved(
     score_decryptor.set_factory(mock_decrypt)
 
     with structlog.testing.capture_logs() as cap_logs:
-        result = await service.submit_score(valid_input)
+        result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     submission = await submission_repo.get_by_fingerprint(
@@ -312,7 +312,7 @@ async def test_client_server_grade_discrepancy_is_preserved(
 
 @pytest.mark.asyncio
 async def test_crypto_checksum_invalid_is_terminal_reject(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
@@ -328,7 +328,7 @@ async def test_crypto_checksum_invalid_is_terminal_reject(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason == "crypto_checksum_invalid"
@@ -337,7 +337,7 @@ async def test_crypto_checksum_invalid_is_terminal_reject(
 
 @pytest.mark.asyncio
 async def test_failed_play_handling(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
@@ -352,7 +352,7 @@ async def test_failed_play_handling(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -363,7 +363,7 @@ async def test_failed_play_handling(
 
 @pytest.mark.asyncio
 async def test_failed_play_without_replay_is_accepted_without_blob_write(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
@@ -382,7 +382,7 @@ async def test_failed_play_without_replay_is_accepted_without_blob_write(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(input_without_replay)
+    result = await service.execute(input_without_replay)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -394,7 +394,7 @@ async def test_failed_play_without_replay_is_accepted_without_blob_write(
 
 @pytest.mark.asyncio
 async def test_passed_play_without_replay_is_accepted_without_blob_write(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
@@ -413,7 +413,7 @@ async def test_passed_play_without_replay_is_accepted_without_blob_write(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(input_without_replay)
+    result = await service.execute(input_without_replay)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -423,7 +423,7 @@ async def test_passed_play_without_replay_is_accepted_without_blob_write(
 
 @pytest.mark.asyncio
 async def test_replay_attachment(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
@@ -438,7 +438,7 @@ async def test_replay_attachment(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
 
@@ -452,7 +452,7 @@ async def test_replay_attachment(
 
 @pytest.mark.asyncio
 async def test_online_checksum_duplicate_rejection(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
@@ -467,7 +467,7 @@ async def test_online_checksum_duplicate_rejection(
     score_decryptor.set_factory(mock_decrypt)
 
     # First submission
-    result1 = await service.submit_score(valid_input)
+    result1 = await service.execute(valid_input)
     assert result1.outcome == SubmissionOutcome.COMPLETED
 
     # Second submission (different fingerprint but same online checksum)
@@ -482,7 +482,7 @@ async def test_online_checksum_duplicate_rejection(
         beatmap_id=valid_input.beatmap_id,
         submitted_at=datetime.now(UTC),  # Different timestamp
     )
-    result2 = await service.submit_score(input2)
+    result2 = await service.execute(input2)
     assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result2.score_id is None
     assert result2.error_reason == "duplicate_online_checksum"
@@ -494,7 +494,7 @@ async def test_online_checksum_duplicate_rejection(
 
 @pytest.mark.asyncio
 async def test_replay_checksum_duplicate_rejection(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -523,7 +523,7 @@ async def test_replay_checksum_duplicate_rejection(
         beatmap_id=1,
         submitted_at=datetime.now(UTC),
     )
-    result1 = await service.submit_score(input1)
+    result1 = await service.execute(input1)
     assert result1.outcome == SubmissionOutcome.COMPLETED
 
     # Second submission (same replay)
@@ -538,7 +538,7 @@ async def test_replay_checksum_duplicate_rejection(
         beatmap_id=1,
         submitted_at=datetime.now(UTC),
     )
-    result2 = await service.submit_score(input2)
+    result2 = await service.execute(input2)
     assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result2.error_reason is not None
     assert "duplicate_replay_checksum" in result2.error_reason
@@ -546,7 +546,7 @@ async def test_replay_checksum_duplicate_rejection(
 
 @pytest.mark.asyncio
 async def test_submission_fingerprint_idempotency(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -562,14 +562,14 @@ async def test_submission_fingerprint_idempotency(
     score_decryptor.set_factory(mock_decrypt)
 
     # First submission
-    result1 = await service.submit_score(valid_input)
+    result1 = await service.execute(valid_input)
     assert result1.outcome == SubmissionOutcome.COMPLETED
     score_id1 = result1.score_id
 
     resent_input = replace(valid_input, submitted_at=datetime.now(UTC))
 
     # Second submission has a different server receive time but identical request content.
-    result2 = await service.submit_score(resent_input)
+    result2 = await service.execute(resent_input)
     assert result2.outcome == SubmissionOutcome.COMPLETED
     assert result2.score_id == score_id1  # Same score ID
     assert decrypt_call_count == 2
@@ -577,7 +577,7 @@ async def test_submission_fingerprint_idempotency(
 
 @pytest.mark.asyncio
 async def test_in_progress_retry_returns_accepted_pending(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
@@ -603,7 +603,7 @@ async def test_in_progress_retry_returns_accepted_pending(
         )
     )
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.ACCEPTED_PENDING
     assert result.error_reason == "accepted_pending"
@@ -611,7 +611,7 @@ async def test_in_progress_retry_returns_accepted_pending(
 
 @pytest.mark.asyncio
 async def test_authorization_failure_terminal_reject(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -636,7 +636,7 @@ async def test_authorization_failure_terminal_reject(
         submitted_at=valid_input.submitted_at,
     )
 
-    result = await service.submit_score(invalid_input)
+    result = await service.execute(invalid_input)
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
     assert "authorization_failed" in result.error_reason
@@ -644,7 +644,7 @@ async def test_authorization_failure_terminal_reject(
 
 @pytest.mark.asyncio
 async def test_beatmap_ineligibility_terminal_reject(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
     score_decryptor: StubScorePayloadDecryptor,
@@ -659,7 +659,7 @@ async def test_beatmap_ineligibility_terminal_reject(
 
     beatmap_resolver.eligibility = _ineligible_beatmap()
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
     assert "beatmap_ineligible" in result.error_reason
@@ -667,7 +667,7 @@ async def test_beatmap_ineligibility_terminal_reject(
 
 @pytest.mark.asyncio
 async def test_validation_failure_terminal_reject(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -680,7 +680,7 @@ async def test_validation_failure_terminal_reject(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
     assert "validation_failed" in result.error_reason
@@ -688,7 +688,7 @@ async def test_validation_failure_terminal_reject(
 
 @pytest.mark.asyncio
 async def test_metrics_logged_on_success(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -701,7 +701,7 @@ async def test_metrics_logged_on_success(
     score_decryptor.set_factory(mock_decrypt)
 
     with structlog.testing.capture_logs() as cap_logs:
-        result = await service.submit_score(valid_input)
+        result = await service.execute(valid_input)
     assert result.outcome == SubmissionOutcome.COMPLETED
 
     logged_metrics = next(

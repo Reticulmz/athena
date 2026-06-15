@@ -21,10 +21,10 @@ from osu_server.repositories.interfaces.commands import (
 )
 from osu_server.repositories.interfaces.queries import (
     BeatmapQueryRepository,
+    BeatmapScoreListingQueryRepository,
     BlobQueryRepository,
     ChannelQueryRepository,
     ChatHistoryQueryRepository,
-    LegacyGetscoresQueryRepository,
     RoleQueryRepository,
     ScoreQueryRepository,
     UserQueryRepository,
@@ -70,7 +70,7 @@ QUERY_REPOSITORIES = (
     BeatmapQueryRepository,
     BlobQueryRepository,
     ChatHistoryQueryRepository,
-    LegacyGetscoresQueryRepository,
+    BeatmapScoreListingQueryRepository,
 )
 
 FORBIDDEN_INTERFACE_IMPORT_ROOTS = (
@@ -179,7 +179,7 @@ def test_query_repository_contracts_are_read_only() -> None:
 
         assert mutation_methods == [], repository.__name__
 
-    assert _public_async_methods(LegacyGetscoresQueryRepository) == {
+    assert _public_async_methods(BeatmapScoreListingQueryRepository) == {
         "find_by_checksum",
         "find_by_filename_in_beatmapset",
         "get_beatmapset",

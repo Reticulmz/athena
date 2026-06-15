@@ -20,10 +20,10 @@ from osu_server.domain.legacy_getscores import (
     GetscoresRequest,
     GetscoresResolveReason,
 )
-from osu_server.services.queries.scores.legacy_getscores import LegacyGetscoresQuery
+from osu_server.services.queries.scores.beatmap_score_listing import BeatmapScoreListingQuery
 
 
-class LegacyGetscoresQueryRepositoryStub:
+class BeatmapScoreListingQueryRepositoryStub:
     """Typed read-only getscores repository test double."""
 
     def __init__(self) -> None:
@@ -44,9 +44,9 @@ class LegacyGetscoresQueryRepositoryStub:
 
 
 @pytest.fixture
-def getscores_repo() -> LegacyGetscoresQueryRepositoryStub:
+def getscores_repo() -> BeatmapScoreListingQueryRepositoryStub:
     """Typed getscores query repository stub."""
-    return LegacyGetscoresQueryRepositoryStub()
+    return BeatmapScoreListingQueryRepositoryStub()
 
 
 @pytest.fixture
@@ -98,14 +98,14 @@ def sample_beatmapset() -> BeatmapSet:
     )
 
 
-class TestLegacyGetscoresQuery:
+class TestBeatmapScoreListingQuery:
     """Tests for legacy getscores query use-case."""
 
     async def test_returns_unavailable_when_beatmap_not_found_by_checksum(
-        self, getscores_repo: LegacyGetscoresQueryRepositoryStub
+        self, getscores_repo: BeatmapScoreListingQueryRepositoryStub
     ) -> None:
         """Query returns unavailable when beatmap not found."""
-        query = LegacyGetscoresQuery(getscores_repo)
+        query = BeatmapScoreListingQuery(getscores_repo)
         result = await query.resolve_by_checksum(checksum_md5="a" * 32)
 
         assert result.kind == GetscoresOutcomeKind.UNAVAILABLE
@@ -114,7 +114,7 @@ class TestLegacyGetscoresQuery:
 
     async def test_returns_header_when_beatmap_found_by_checksum(
         self,
-        getscores_repo: LegacyGetscoresQueryRepositoryStub,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
@@ -122,7 +122,7 @@ class TestLegacyGetscoresQuery:
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        query = LegacyGetscoresQuery(getscores_repo)
+        query = BeatmapScoreListingQuery(getscores_repo)
         result = await query.resolve_by_checksum(checksum_md5="a" * 32)
 
         assert result.kind == GetscoresOutcomeKind.HEADER
@@ -133,13 +133,13 @@ class TestLegacyGetscoresQuery:
 
     async def test_returns_unavailable_when_beatmapset_not_found(
         self,
-        getscores_repo: LegacyGetscoresQueryRepositoryStub,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
         sample_beatmap: Beatmap,
     ) -> None:
         """Query returns unavailable when beatmapset is missing."""
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
 
-        query = LegacyGetscoresQuery(getscores_repo)
+        query = BeatmapScoreListingQuery(getscores_repo)
         result = await query.resolve_by_checksum(checksum_md5="a" * 32)
 
         assert result.kind == GetscoresOutcomeKind.UNAVAILABLE
@@ -148,7 +148,7 @@ class TestLegacyGetscoresQuery:
 
     async def test_returns_unavailable_for_not_submitted_status(
         self,
-        getscores_repo: LegacyGetscoresQueryRepositoryStub,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
@@ -185,7 +185,7 @@ class TestLegacyGetscoresQuery:
         )
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        query = LegacyGetscoresQuery(getscores_repo)
+        query = BeatmapScoreListingQuery(getscores_repo)
         result = await query.resolve_by_checksum(checksum_md5="a" * 32)
 
         assert result.kind == GetscoresOutcomeKind.UNAVAILABLE
@@ -194,7 +194,7 @@ class TestLegacyGetscoresQuery:
 
     async def test_resolve_returns_update_available_for_checksum_miss_with_filename_match(
         self,
-        getscores_repo: LegacyGetscoresQueryRepositoryStub,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
@@ -205,7 +205,7 @@ class TestLegacyGetscoresQuery:
         )
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        query = LegacyGetscoresQuery(getscores_repo)
+        query = BeatmapScoreListingQuery(getscores_repo)
         result = await query.resolve(
             GetscoresRequest(
                 checksum_md5="b" * 32,

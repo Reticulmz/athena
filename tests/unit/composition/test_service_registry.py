@@ -24,8 +24,8 @@ from osu_server.services.commands.identity import (
 from osu_server.services.queries.identity import (
     ComputePermissionsQueryUseCase,
     ComputeSessionAuthorizationQueryUseCase,
-    LegacyWebAuthQueryUseCase,
     ListOnlineUsersQueryUseCase,
+    SessionCredentialsQueryUseCase,
 )
 from osu_server.services.session_authorization_service import (
     SessionAuthorizationService,
@@ -140,8 +140,8 @@ async def test_register_services_resolves_identity_command_query_use_cases() -> 
         ListOnlineUsersQueryUseCase,
     )
     assert isinstance(
-        await container.resolve(LegacyWebAuthQueryUseCase),
-        LegacyWebAuthQueryUseCase,
+        await container.resolve(SessionCredentialsQueryUseCase),
+        SessionCredentialsQueryUseCase,
     )
 
 

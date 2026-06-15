@@ -30,14 +30,14 @@ from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
-from osu_server.services.score_authorization_service import ScoreAuthorizationService
-from osu_server.services.score_submission_service import (
+from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
-    ScoreSubmissionService,
+    ProcessScoreSubmissionUseCase,
     SubmissionOutcome,
     generate_submission_fingerprint,
     generate_submission_request_hash,
 )
+from osu_server.services.score_authorization_service import ScoreAuthorizationService
 from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,
@@ -134,15 +134,15 @@ class FakeBeatmapResolver:
         )
 
 
-def _make_score_submission_service(
+def _make_process_score_submission_use_case(
     *,
     resolver: FakeBeatmapResolver,
     score_decryptor: StubScorePayloadDecryptor,
     auth_service: ScoreAuthorizationService,
-) -> tuple[ScoreSubmissionService, UowScoreSubmissionRepositoryView]:
+) -> tuple[ProcessScoreSubmissionUseCase, UowScoreSubmissionRepositoryView]:
     uow_factory = InMemoryUnitOfWorkFactory()
     _, submission_repo, _ = make_score_repository_views(uow_factory)
-    service = ScoreSubmissionService(
+    service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
         score_decryptor,
@@ -181,7 +181,7 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service, _ = _make_score_submission_service(
+    service, _ = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -220,7 +220,7 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
         )
 
     monkeypatch.setattr(
-        "osu_server.services.score_submission_service.parse",
+        "osu_server.services.commands.scores.process_submission.parse",
         mock_parse,
     )
 
@@ -239,7 +239,7 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
 
     # Capture actual log output
     with structlog.testing.capture_logs() as cap_logs:
-        result = await service.submit_score(input_data)
+        result = await service.execute(input_data)
 
     # Verify rejection
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
@@ -294,7 +294,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
         )
     )
     score_decryptor = StubScorePayloadDecryptor()
-    service, _ = _make_score_submission_service(
+    service, _ = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -332,7 +332,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
 
     score_decryptor.set_factory(mock_decrypt)
     monkeypatch.setattr(
-        "osu_server.services.score_submission_service.parse",
+        "osu_server.services.commands.scores.process_submission.parse",
         mock_parse,
     )
 
@@ -349,7 +349,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
     )
 
     with structlog.testing.capture_logs() as cap_logs:
-        result = await service.submit_score(input_data)
+        result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
@@ -378,7 +378,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
         )
     )
     score_decryptor2 = StubScorePayloadDecryptor()
-    service2, _ = _make_score_submission_service(
+    service2, _ = _make_process_score_submission_use_case(
         resolver=ineligible_resolver,
         score_decryptor=score_decryptor2,
         auth_service=auth_service,
@@ -398,7 +398,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
     )
 
     with structlog.testing.capture_logs() as cap_logs2:
-        result2 = await service2.submit_score(valid_input)
+        result2 = await service2.execute(valid_input)
 
     assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result2.error_reason is not None
@@ -437,7 +437,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service, submission_repo = _make_score_submission_service(
+    service, submission_repo = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -475,7 +475,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
 
     score_decryptor.set_factory(mock_decrypt)
     monkeypatch.setattr(
-        "osu_server.services.score_submission_service.parse",
+        "osu_server.services.commands.scores.process_submission.parse",
         mock_parse,
     )
 
@@ -501,7 +501,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
         submission_metadata=opaque_fields,
     )
 
-    result = await service.submit_score(input_data)
+    result = await service.execute(input_data)
     assert result.outcome == SubmissionOutcome.COMPLETED
 
     # Verify submission was recorded
@@ -546,7 +546,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service, _ = _make_score_submission_service(
+    service, _ = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -588,7 +588,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
 
     score_decryptor.set_factory(mock_decrypt)
     monkeypatch.setattr(
-        "osu_server.services.score_submission_service.parse",
+        "osu_server.services.commands.scores.process_submission.parse",
         mock_parse,
     )
 
@@ -607,7 +607,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
 
     # Capture actual log output
     with structlog.testing.capture_logs() as cap_logs:
-        result = await service.submit_score(input_data)
+        result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
 
@@ -648,7 +648,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service, submission_repo = _make_score_submission_service(
+    service, submission_repo = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -686,7 +686,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
 
     score_decryptor.set_factory(mock_decrypt)
     monkeypatch.setattr(
-        "osu_server.services.score_submission_service.parse",
+        "osu_server.services.commands.scores.process_submission.parse",
         mock_parse,
     )
 
@@ -702,7 +702,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
         submitted_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
     )
 
-    result = await service.submit_score(input_data)
+    result = await service.execute(input_data)
 
     # Verify submission was recorded
     assert result.outcome == SubmissionOutcome.COMPLETED

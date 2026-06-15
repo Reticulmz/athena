@@ -10,17 +10,17 @@ from osu_server.services.queries.identity.authorization import (
     ComputeSessionAuthorizationQueryResult,
     ComputeSessionAuthorizationQueryUseCase,
 )
-from osu_server.services.queries.identity.legacy_web_auth import (
-    LegacyWebAuthQuery,
-    LegacyWebAuthQueryInput,
-    LegacyWebAuthQueryResult,
-    LegacyWebAuthQueryUseCase,
-)
 from osu_server.services.queries.identity.online_users import (
     ListOnlineUsersQuery,
     ListOnlineUsersQueryInput,
     ListOnlineUsersQueryResult,
     ListOnlineUsersQueryUseCase,
+)
+from osu_server.services.queries.identity.session_credentials import (
+    SessionCredentialsQuery,
+    SessionCredentialsQueryInput,
+    SessionCredentialsQueryResult,
+    SessionCredentialsQueryUseCase,
 )
 
 __all__ = [
@@ -32,12 +32,12 @@ __all__ = [
     "ComputeSessionAuthorizationQueryInput",
     "ComputeSessionAuthorizationQueryResult",
     "ComputeSessionAuthorizationQueryUseCase",
-    "LegacyWebAuthQuery",
-    "LegacyWebAuthQueryInput",
-    "LegacyWebAuthQueryResult",
-    "LegacyWebAuthQueryUseCase",
     "ListOnlineUsersQuery",
     "ListOnlineUsersQueryInput",
     "ListOnlineUsersQueryResult",
     "ListOnlineUsersQueryUseCase",
+    "SessionCredentialsQuery",
+    "SessionCredentialsQueryInput",
+    "SessionCredentialsQueryResult",
+    "SessionCredentialsQueryUseCase",
 ]

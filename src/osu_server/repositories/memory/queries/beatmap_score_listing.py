@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 
 
-class InMemoryLegacyGetscoresQueryRepository:
+class InMemoryBeatmapScoreListingQueryRepository:
     """Read-only getscores adapter over an in-memory beatmap query repository."""
 
     def __init__(self, beatmaps: BeatmapQueryRepository) -> None:

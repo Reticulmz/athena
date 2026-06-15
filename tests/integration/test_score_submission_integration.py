@@ -1,4 +1,4 @@
-"""Integration tests for ScoreSubmissionService with real PostgreSQL.
+"""Integration tests for ProcessScoreSubmissionUseCase with real PostgreSQL.
 
 Tests E2E flow: multipart → decrypt → validate → persist → response.
 Requirements: R1-R12 (all Wave 1 requirements)
@@ -45,11 +45,11 @@ from osu_server.repositories.sqlalchemy.submission_repository import (
     SQLAlchemyScoreSubmissionRepository,
 )
 from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
-from osu_server.services.commands.scores import SubmitScoreUseCase
-from osu_server.services.score_submission_service import (
+from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
-    ScoreSubmissionService,
+    ProcessScoreSubmissionUseCase,
     SubmissionOutcome,
+    SubmitScoreUseCase,
     generate_submission_fingerprint,
     generate_submission_request_hash,
 )
@@ -267,14 +267,14 @@ def score_decryptor() -> StubScorePayloadDecryptor:
 def service(
     session_factory: async_sessionmaker[AsyncSession],
     score_decryptor: StubScorePayloadDecryptor,
-) -> ScoreSubmissionService:
-    """Create ScoreSubmissionService with SQLAlchemy repositories."""
+) -> ProcessScoreSubmissionUseCase:
+    """Create ProcessScoreSubmissionUseCase with SQLAlchemy repositories."""
     auth_service = make_score_authorization_service()
     beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap())
     submit_score_use_case = SubmitScoreUseCase(
         unit_of_work_factory=SQLAlchemyUnitOfWorkFactory(session_factory)
     )
-    return ScoreSubmissionService(
+    return ProcessScoreSubmissionUseCase(
         submit_score_use_case,
         SQLAlchemyBlobStorageStub(session_factory),
         score_decryptor,
@@ -301,7 +301,7 @@ def valid_input() -> ParsedSubmissionInput:
 
 @pytest.mark.asyncio
 async def test_e2e_valid_submission_persists_to_database(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     session_factory: async_sessionmaker[AsyncSession],
     score_decryptor: StubScorePayloadDecryptor,
@@ -316,7 +316,7 @@ async def test_e2e_valid_submission_persists_to_database(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -354,7 +354,7 @@ async def test_e2e_valid_submission_persists_to_database(
 
 @pytest.mark.asyncio
 async def test_e2e_database_transaction_handling(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -380,7 +380,7 @@ async def test_e2e_database_transaction_handling(
         submitted_at=datetime.now(UTC),
     )
 
-    result = await service.submit_score(input_data)
+    result = await service.execute(input_data)
     assert result.outcome == SubmissionOutcome.COMPLETED
 
     # Verify all records are committed
@@ -397,7 +397,7 @@ async def test_e2e_database_transaction_handling(
 
 @pytest.mark.asyncio
 async def test_e2e_concurrent_submission_handling(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -430,7 +430,7 @@ async def test_e2e_concurrent_submission_handling(
         for i in range(3)
     ]
 
-    results = await asyncio.gather(*[service.submit_score(inp) for inp in inputs])
+    results = await asyncio.gather(*[service.execute(inp) for inp in inputs])
 
     # All submissions should succeed
     assert all(r.outcome == SubmissionOutcome.COMPLETED for r in results)
@@ -450,7 +450,7 @@ async def test_e2e_concurrent_submission_handling(
 
 @pytest.mark.asyncio
 async def test_e2e_duplicate_online_checksum_rejected_in_db(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -474,7 +474,7 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
         beatmap_id=1,
         submitted_at=datetime.now(UTC),
     )
-    result1 = await service.submit_score(input1)
+    result1 = await service.execute(input1)
     assert result1.outcome == SubmissionOutcome.COMPLETED
 
     # Second submission (different fingerprint, same online checksum)
@@ -489,7 +489,7 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
         beatmap_id=1,
         submitted_at=datetime.now(UTC),
     )
-    result2 = await service.submit_score(input2)
+    result2 = await service.execute(input2)
     assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result2.score_id is None
     assert result2.error_reason == "duplicate_online_checksum"
@@ -505,7 +505,7 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
 
 @pytest.mark.asyncio
 async def test_e2e_failed_play_persists_to_database(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -530,7 +530,7 @@ async def test_e2e_failed_play_persists_to_database(
         submitted_at=datetime.now(UTC),
     )
 
-    result = await service.submit_score(input_data)
+    result = await service.execute(input_data)
     assert result.outcome == SubmissionOutcome.COMPLETED
 
     # Verify failed score persisted in DB
@@ -545,7 +545,7 @@ async def test_e2e_failed_play_persists_to_database(
 
 @pytest.mark.asyncio
 async def test_e2e_idempotent_retry_returns_cached_result(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -570,14 +570,14 @@ async def test_e2e_idempotent_retry_returns_cached_result(
     )
 
     # First submission
-    result1 = await service.submit_score(input_data)
+    result1 = await service.execute(input_data)
     assert result1.outcome == SubmissionOutcome.COMPLETED
     score_id1 = result1.score_id
 
     resent_input = replace(input_data, submitted_at=datetime.now(UTC))
 
     # Second submission has the same request content and a different receive time.
-    result2 = await service.submit_score(resent_input)
+    result2 = await service.execute(resent_input)
     assert result2.outcome == SubmissionOutcome.COMPLETED
     assert result2.score_id == score_id1
 

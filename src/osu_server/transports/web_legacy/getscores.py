@@ -19,18 +19,18 @@ import structlog
 from starlette.responses import Response
 
 from osu_server.domain.legacy_getscores import GetscoresOutcomeKind
-from osu_server.services.queries.identity import LegacyWebAuthQueryInput
+from osu_server.services.queries.identity import SessionCredentialsQueryInput
 
 if TYPE_CHECKING:
     from starlette.requests import Request
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
-    from osu_server.services.legacy_getscores_service import (
+    from osu_server.services.queries.identity import SessionCredentialsQuery
+    from osu_server.services.queries.scores import BeatmapScoreListingQuery
+    from osu_server.transports.web_legacy.mappers import (
         GetscoresQueryParser,
         GetscoresStatusMapper,
     )
-    from osu_server.services.queries.identity import LegacyWebAuthQuery
-    from osu_server.services.queries.scores import LegacyGetscoresQuery
 
 _TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8"
 
@@ -50,14 +50,14 @@ class GetscoresHandler:
 
     def __init__(
         self,
-        auth_query: LegacyWebAuthQuery,
+        auth_query: SessionCredentialsQuery,
         getscores_parser: GetscoresQueryParser,
-        getscores_query: LegacyGetscoresQuery,
+        getscores_query: BeatmapScoreListingQuery,
         status_mapper: GetscoresStatusMapper,
     ) -> None:
-        self._auth_query: LegacyWebAuthQuery = auth_query
+        self._auth_query: SessionCredentialsQuery = auth_query
         self._getscores_parser: GetscoresQueryParser = getscores_parser
-        self._getscores_query: LegacyGetscoresQuery = getscores_query
+        self._getscores_query: BeatmapScoreListingQuery = getscores_query
         self._status_mapper: GetscoresStatusMapper = status_mapper
 
     async def __call__(self, request: Request) -> Response:
@@ -66,7 +66,7 @@ class GetscoresHandler:
         password_md5 = request.query_params.get("ha")
 
         auth_query_result = await self._auth_query.execute(
-            LegacyWebAuthQueryInput(
+            SessionCredentialsQueryInput(
                 username=username,
                 password_md5=password_md5,
             ),

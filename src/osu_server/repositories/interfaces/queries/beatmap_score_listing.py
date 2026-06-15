@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
 
 
-class LegacyGetscoresQueryRepository(Protocol):
+class BeatmapScoreListingQueryRepository(Protocol):
     """Read-only beatmap resolution port for stable getscores responses."""
 
     async def find_by_checksum(self, checksum_md5: str) -> Beatmap | None:

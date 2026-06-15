@@ -1,4 +1,4 @@
-"""Unit tests for ScoreSubmissionService playstyle validation (Task 17.1)."""
+"""Unit tests for ProcessScoreSubmissionUseCase playstyle validation (Task 17.1)."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,9 +18,9 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
-from osu_server.services.score_submission_service import (
+from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
-    ScoreSubmissionService,
+    ProcessScoreSubmissionUseCase,
     SubmissionOutcome,
 )
 from tests.support.fakes import (
@@ -144,10 +144,10 @@ def service(
     uow_factory: InMemoryUnitOfWorkFactory,
     beatmap_resolver: FakeBeatmapResolver,
     score_decryptor: StubScorePayloadDecryptor,
-) -> ScoreSubmissionService:
+) -> ProcessScoreSubmissionUseCase:
     """Create service with in-memory repositories."""
     auth_service = make_score_authorization_service()
-    return ScoreSubmissionService(
+    return ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
         score_decryptor,
@@ -174,7 +174,7 @@ def valid_input() -> ParsedSubmissionInput:
 
 @pytest.mark.asyncio
 async def test_relax_mod_terminal_reject(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -191,7 +191,7 @@ async def test_relax_mod_terminal_reject(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
@@ -200,7 +200,7 @@ async def test_relax_mod_terminal_reject(
 
 @pytest.mark.asyncio
 async def test_autopilot_mod_terminal_reject(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -217,7 +217,7 @@ async def test_autopilot_mod_terminal_reject(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
@@ -226,7 +226,7 @@ async def test_autopilot_mod_terminal_reject(
 
 @pytest.mark.asyncio
 async def test_relax_and_autopilot_combined_terminal_reject(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -246,7 +246,7 @@ async def test_relax_and_autopilot_combined_terminal_reject(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
@@ -255,7 +255,7 @@ async def test_relax_and_autopilot_combined_terminal_reject(
 
 @pytest.mark.asyncio
 async def test_vanilla_mod_accepted(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -272,7 +272,7 @@ async def test_vanilla_mod_accepted(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -281,7 +281,7 @@ async def test_vanilla_mod_accepted(
 
 @pytest.mark.asyncio
 async def test_other_mods_accepted(
-    service: ScoreSubmissionService,
+    service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -300,7 +300,7 @@ async def test_other_mods_accepted(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.submit_score(valid_input)
+    result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None

@@ -1,4 +1,4 @@
-"""Score submission service orchestrating the full submission pipeline."""
+"""Score submission command use-case orchestrating the full submission pipeline."""
 
 import hashlib
 import time
@@ -17,7 +17,7 @@ from osu_server.domain.scores.payload_parser import ParseError, parse
 from osu_server.domain.scores.score import Playstyle, Ruleset, Score
 from osu_server.domain.scores.validator import ValidationError, validate_hit_counts
 from osu_server.domain.storage.blobs import BlobStoreResult
-from osu_server.services.commands.scores import (
+from osu_server.services.commands.scores.submit_score import (
     SubmitScoreCommand,
     SubmitScoreCommandOutcome,
     SubmitScoreCommandResult,
@@ -195,8 +195,8 @@ def _submission_result_from_command(result: SubmitScoreCommandResult) -> Submiss
     )
 
 
-class ScoreSubmissionService:
-    """Orchestrate score submission use-case.
+class ProcessScoreSubmissionUseCase:
+    """Orchestrate the score submission command workflow.
 
     Requirements: R1-R12 (all Wave 1 requirements)
     """
@@ -215,7 +215,7 @@ class ScoreSubmissionService:
         self._auth_service: ScoreAuthorizationService = auth_service
         self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
 
-    async def submit_score(  # noqa: PLR0911, PLR0912, PLR0915
+    async def execute(  # noqa: PLR0911, PLR0912, PLR0915
         self, input_data: ParsedSubmissionInput
     ) -> SubmissionResult:
         """Submit a score with full validation and persistence.

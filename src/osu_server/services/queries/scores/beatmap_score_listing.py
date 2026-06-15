@@ -1,8 +1,8 @@
-"""Legacy getscores query use-case.
+"""Beatmap score listing query use-case.
 
-Query-side legacy getscores resolution for stable client compatibility.
-This use-case provides read-only beatmap resolution without triggering
-command-side mutations or background fetch workflows.
+Query-side beatmap resolution for score listing compatibility. This use-case
+provides read-only beatmap resolution without triggering command-side mutations
+or background fetch workflows.
 """
 
 from __future__ import annotations
@@ -20,31 +20,28 @@ from osu_server.domain.legacy_getscores import (
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap
-    from osu_server.repositories.interfaces.queries.legacy_getscores import (
-        LegacyGetscoresQueryRepository,
+    from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
+        BeatmapScoreListingQueryRepository,
     )
 
 
-# Status mapping for stable wire format
-_STATUS_TO_WIRE: dict[BeatmapRankStatus, int | None] = {
-    BeatmapRankStatus.NOT_SUBMITTED: None,
-    BeatmapRankStatus.UNKNOWN: None,
-    BeatmapRankStatus.PENDING: 0,
-    BeatmapRankStatus.WIP: 0,
-    BeatmapRankStatus.GRAVEYARD: 0,
-    BeatmapRankStatus.RANKED: 2,
-    BeatmapRankStatus.APPROVED: 3,
-    BeatmapRankStatus.QUALIFIED: 4,
-    BeatmapRankStatus.LOVED: 5,
+_DISPLAYABLE_STATUSES = {
+    BeatmapRankStatus.PENDING,
+    BeatmapRankStatus.WIP,
+    BeatmapRankStatus.GRAVEYARD,
+    BeatmapRankStatus.RANKED,
+    BeatmapRankStatus.APPROVED,
+    BeatmapRankStatus.QUALIFIED,
+    BeatmapRankStatus.LOVED,
 }
 
 
-class LegacyGetscoresQuery:
-    """Legacy getscores resolution query use-case (read-only)."""
+class BeatmapScoreListingQuery:
+    """Score listing beatmap resolution query use-case (read-only)."""
 
-    _repository: LegacyGetscoresQueryRepository
+    _repository: BeatmapScoreListingQueryRepository
 
-    def __init__(self, repository: LegacyGetscoresQueryRepository) -> None:
+    def __init__(self, repository: BeatmapScoreListingQueryRepository) -> None:
         self._repository = repository
 
     async def resolve(self, request: GetscoresRequest) -> GetscoresResolveOutcome:
@@ -120,8 +117,7 @@ class LegacyGetscoresQuery:
         if beatmapset is None:
             return _unavailable(GetscoresResolveReason.NOT_FOUND)
 
-        # Check if beatmap status is displayable in stable getscores
-        if _map_header_status(beatmap) is None:
+        if not _is_displayable_in_score_listing(beatmap):
             return _unavailable(GetscoresResolveReason.NOT_SUBMITTED)
 
         return GetscoresResolveOutcome(
@@ -157,7 +153,7 @@ class LegacyGetscoresQuery:
         if beatmapset is None:
             return _unavailable(GetscoresResolveReason.NOT_FOUND)
 
-        if _map_header_status(beatmap) is None:
+        if not _is_displayable_in_score_listing(beatmap):
             return _unavailable(GetscoresResolveReason.NOT_SUBMITTED)
 
         return GetscoresResolveOutcome(
@@ -169,10 +165,6 @@ class LegacyGetscoresQuery:
             reason=GetscoresResolveReason.UPDATE_AVAILABLE,
         )
 
-    def map_header_status(self, beatmap: Beatmap) -> int | None:
-        """Map a query result beatmap to stable getscores header status."""
-        return _map_header_status(beatmap)
-
 
 def _unavailable(reason: GetscoresResolveReason) -> GetscoresResolveOutcome:
     """Build an unavailable outcome."""
@@ -183,9 +175,6 @@ def _unavailable(reason: GetscoresResolveReason) -> GetscoresResolveOutcome:
     )
 
 
-def _map_header_status(beatmap: Beatmap) -> int | None:
-    """Map beatmap effective status to stable wire status.
-
-    Returns None for statuses that should not be displayed in getscores.
-    """
-    return _STATUS_TO_WIRE.get(beatmap.effective_status)
+def _is_displayable_in_score_listing(beatmap: Beatmap) -> bool:
+    """Return whether the beatmap can produce a score listing header."""
+    return beatmap.effective_status in _DISPLAYABLE_STATUSES

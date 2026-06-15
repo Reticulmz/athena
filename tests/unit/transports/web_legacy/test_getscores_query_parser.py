@@ -17,7 +17,7 @@ from osu_server.domain.legacy_getscores import (
     GetscoresParseResult,
     GetscoresParseWarning,
 )
-from osu_server.services.legacy_getscores_service import GetscoresQueryParser
+from osu_server.transports.web_legacy.mappers import GetscoresQueryParser
 
 
 def _parse(query: dict[str, str]) -> GetscoresParseResult:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import final
 
 from osu_server.domain.identity.authentication import (
@@ -17,8 +18,10 @@ from osu_server.domain.identity.sessions import (
     AuthorizationRefreshStatus,
     RoleAuthorizationRefreshResult,
     SessionAuthorization,
+    SessionData,
     UserAuthorizationRefreshResult,
 )
+from osu_server.domain.identity.users import User
 from osu_server.services.commands.identity import (
     LoginCommandInput,
     LoginCommandUseCase,
@@ -34,10 +37,10 @@ from osu_server.services.queries.identity import (
     ComputePermissionsQueryUseCase,
     ComputeSessionAuthorizationQueryInput,
     ComputeSessionAuthorizationQueryUseCase,
-    LegacyWebAuthQueryInput,
-    LegacyWebAuthQueryUseCase,
     ListOnlineUsersQueryInput,
     ListOnlineUsersQueryUseCase,
+    SessionCredentialsQueryInput,
+    SessionCredentialsQueryUseCase,
 )
 
 
@@ -120,19 +123,105 @@ class FakeOnlineUsersService:
 
 
 @final
-class FakeLegacyWebAuthService:
-    inputs: list[tuple[str | None, str | None]]
+class FakeSessionCredentialUserRepository:
+    inputs: list[str]
+
+    def __init__(self) -> None:
+        self.inputs = []
+        now = datetime(2026, 6, 15, tzinfo=UTC)
+        self.user = User(
+            id=7,
+            username="TestUser",
+            safe_username="testuser",
+            email="test@example.com",
+            password_hash="hashed-password",
+            country="JP",
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def get_by_safe_username(self, safe_username: str) -> User | None:
+        self.inputs.append(safe_username)
+        if safe_username != self.user.safe_username:
+            return None
+        return self.user
+
+    async def get_by_id(self, user_id: int) -> User | None:
+        return self.user if user_id == self.user.id else None
+
+    async def get_by_email(self, email: str) -> User | None:
+        return self.user if email == self.user.email else None
+
+    async def is_username_disallowed(self, safe_username: str) -> bool:
+        return safe_username == "banchobot"
+
+
+@final
+class FakePasswordVerifier:
+    inputs: list[tuple[str, str]]
 
     def __init__(self) -> None:
         self.inputs = []
 
-    async def authenticate(
+    async def verify(self, hashed: str, password: str) -> bool:
+        self.inputs.append((hashed, password))
+        return hashed == "hashed-password" and password == "md5"
+
+
+@final
+class FakeCredentialSessionStore:
+    inputs: list[int]
+
+    def __init__(self) -> None:
+        self.inputs = []
+
+    async def get_by_user(self, user_id: int) -> SessionData | None:
+        self.inputs.append(user_id)
+        if user_id != 7:
+            return None
+        return SessionData(
+            user_id=user_id,
+            username="TestUser",
+            privileges=0,
+            country="JP",
+            osu_version="20231111",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="hashes",
+            pm_private=False,
+        )
+
+    async def create(self, user_id: int, token: str, data: SessionData) -> None:
+        _ = (user_id, token, data)
+
+    async def get(self, token: str) -> SessionData | None:
+        _ = token
+        return None
+
+    async def delete(self, token: str) -> None:
+        _ = token
+
+    async def exists(self, token: str) -> bool:
+        _ = token
+        return False
+
+    async def refresh(self, token: str) -> bool:
+        _ = token
+        return False
+
+    async def delete_by_user(self, user_id: int) -> None:
+        _ = user_id
+
+    async def update_authorization(
         self,
-        username: str | None,
-        password_md5: str | None,
-    ) -> LegacyWebAuthResult:
-        self.inputs.append((username, password_md5))
-        return LegacyWebAuthResult(user_id=7, username="TestUser")
+        user_id: int,
+        authorization: SessionAuthorization,
+    ) -> bool:
+        _ = (user_id, authorization)
+        return False
+
+    async def get_all_user_ids(self) -> list[int]:
+        return [7]
 
 
 def _login_request() -> LoginRequest:
@@ -227,13 +316,21 @@ async def test_list_online_users_query_returns_snapshot_tuple() -> None:
     assert result.user_ids == (3, 1, 2)
 
 
-async def test_legacy_web_auth_query_preserves_optional_credentials() -> None:
-    service = FakeLegacyWebAuthService()
-    use_case = LegacyWebAuthQueryUseCase(legacy_web_auth_service=service)
+async def test_session_credentials_query_reads_credentials_and_active_session() -> None:
+    user_repository = FakeSessionCredentialUserRepository()
+    password_service = FakePasswordVerifier()
+    session_store = FakeCredentialSessionStore()
+    use_case = SessionCredentialsQueryUseCase(
+        user_repository=user_repository,
+        password_service=password_service,
+        session_store=session_store,
+    )
 
     result = await use_case.execute(
-        LegacyWebAuthQueryInput(username="TestUser", password_md5="md5"),
+        SessionCredentialsQueryInput(username="TestUser", password_md5="md5"),
     )
 
     assert result.outcome == LegacyWebAuthResult(user_id=7, username="TestUser")
-    assert service.inputs == [("TestUser", "md5")]
+    assert user_repository.inputs == ["testuser"]
+    assert password_service.inputs == [("hashed-password", "md5")]
+    assert session_store.inputs == [7]

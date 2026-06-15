@@ -10,7 +10,7 @@ import structlog.testing
 from starlette.datastructures import Headers
 from starlette.responses import Response
 
-from osu_server.services.score_submission_service import (
+from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
     SubmissionOutcome,
     SubmissionResult,
@@ -18,20 +18,20 @@ from osu_server.services.score_submission_service import (
 from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
 
 
-class ScoreSubmissionServiceProtocol(Protocol):
+class ProcessScoreSubmissionUseCaseProtocol(Protocol):
     """Protocol for score submission service."""
 
-    async def submit_score(self, input_data: ParsedSubmissionInput) -> SubmissionResult: ...
+    async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult: ...
 
 
-class StubScoreSubmissionService:
+class StubProcessScoreSubmissionUseCase:
     """Stub service for testing."""
 
     def __init__(self, result: SubmissionResult) -> None:
         self._result: SubmissionResult = result
         self.last_input: ParsedSubmissionInput | None = None
 
-    async def submit_score(self, input_data: ParsedSubmissionInput) -> SubmissionResult:
+    async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult:
         self.last_input = input_data
         return self._result
 
@@ -97,7 +97,7 @@ def mock_request(valid_multipart_body: bytes) -> StubRequest:
 @pytest.mark.asyncio
 async def test_handle_score_submit_completed(mock_request: StubRequest) -> None:
     """Test completed response format."""
-    service = StubScoreSubmissionService(
+    service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(
             outcome=SubmissionOutcome.COMPLETED,
             score_id=12345,
@@ -119,7 +119,7 @@ async def test_handle_score_submit_completed(mock_request: StubRequest) -> None:
 @pytest.mark.asyncio
 async def test_handle_score_submit_terminal_reject(mock_request: StubRequest) -> None:
     """Test terminal reject response format."""
-    service = StubScoreSubmissionService(
+    service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(
             outcome=SubmissionOutcome.TERMINAL_REJECTED,
             error_reason="authorization_failure",
@@ -143,7 +143,7 @@ async def test_handle_score_submit_terminal_reject(mock_request: StubRequest) ->
 @pytest.mark.asyncio
 async def test_handle_score_submit_retryable(mock_request: StubRequest) -> None:
     """Test retryable response format."""
-    service = StubScoreSubmissionService(
+    service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(
             outcome=SubmissionOutcome.RETRYABLE,
             error_reason="temporary_error",
@@ -161,7 +161,7 @@ async def test_handle_score_submit_retryable(mock_request: StubRequest) -> None:
 @pytest.mark.asyncio
 async def test_handle_score_submit_parsing_error(valid_multipart_body: bytes) -> None:
     """Test parsing error returns terminal reject."""
-    service = StubScoreSubmissionService(
+    service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(outcome=SubmissionOutcome.COMPLETED, score_id=1)
     )
     handler = ScoreSubmitHandler(service)
