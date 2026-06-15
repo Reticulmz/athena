@@ -1,19 +1,19 @@
 # Implementation Plan
 
-- [ ] 1. Foundation: BanchoBot identity configuration and contracts
-- [ ] 1.1 Add configurable BanchoBot display-name validation
+- [x] 1. Foundation: BanchoBot identity configuration and contracts
+- [x] 1.1 Add configurable BanchoBot display-name validation
   - Add a startup config field for the BanchoBot display name with `BanchoBot` as the default.
   - Enforce 2-15 characters and only alphanumeric characters, spaces, underscores, and hyphens.
   - Confirm invalid names fail during config construction and do not fall back to the default.
   - _Requirements: 1.1, 1.5, 2.1, 2.2, 2.3, 2.4, 2.6, 4.7_
-- [ ] 1.2 Define runtime BanchoBot identity creation
+- [x] 1.2 Define runtime BanchoBot identity creation
   - Preserve `user_id=1` as the only BanchoBot protocol ID.
   - Provide a runtime identity built from the validated display name without making the domain layer depend on config or persistence.
   - Confirm the default identity remains `user_id=1`, `username=BanchoBot` when no display name is configured.
   - _Requirements: 1.1, 1.3, 1.4, 1.5_
 
-- [ ] 2. Persistence and account-boundary behavior
-- [ ] 2.1 Implement system user record synchronization
+- [x] 2. Persistence and account-boundary behavior
+- [x] 2.1 Implement system user record synchronization
   - Ensure `users.id=1` exists as the BanchoBot system user record when it is absent or already represents BanchoBot.
   - Synchronize its username and safe username to the current runtime identity.
   - Fail startup synchronization when `users.id=1` cannot be treated as the BanchoBot system user record, and do not overwrite a normal user into a Bot record.
@@ -21,39 +21,39 @@
   - Confirm repeated synchronization is idempotent and leaves `users.id=1` usable for persistence references.
   - _Requirements: 2.5, 3.4, 4.1, 4.2, 4.3, 4.4, 5.4_
   - _Boundary: UserRepository System User Sync_
-- [ ] 2.2 Implement BanchoBot reserved-name persistence
+- [x] 2.2 Implement BanchoBot reserved-name persistence
   - Reserve both the permanent `BanchoBot` safe username and the currently configured Bot safe username during system-user synchronization.
   - Do not auto-reserve historical configured Bot names.
   - Confirm reservation is idempotent and records only the permanent default name plus the current configured safe username.
   - _Requirements: 3.1, 3.2, 3.4, 3.5_
   - _Boundary: UserRepository System User Sync_
-- [ ] 2.3 Enforce reserved names in normal registration
+- [x] 2.3 Enforce reserved names in normal registration
   - Ensure normal registration rejects usernames whose safe username is already reserved.
   - Confirm `BanchoBot`, the configured Bot name, and normalized variants are rejected through the existing registration flow.
   - _Requirements: 3.3, 3.4_
   - _Boundary: AuthService_
   - _Depends: 2.2_
-- [ ] 2.4 Protect normal user creation from reserved ID allocation
+- [x] 2.4 Protect normal user creation from reserved ID allocation
   - Ensure normal user creation never receives `user_id=1` after BanchoBot system user synchronization.
   - Confirm created normal users receive IDs greater than `1` in both repository implementations.
   - _Requirements: 4.5_
   - _Boundary: UserRepository System User Sync_
   - _Depends: 2.1_
-- [ ] 2.5 Reject system user login without exposing special state
+- [x] 2.5 Reject system user login without exposing special state
   - Ensure login for the BanchoBot system user returns normal authentication failure and creates no session.
   - Confirm the failure does not reveal special system-user state.
   - _Requirements: 4.6_
   - _Boundary: AuthService System User Guard_
   - _Depends: 1.2, 2.1_
 
-- [ ] 3. Runtime identity consumers
-- [ ] 3.1 Update login response identity usage
+- [x] 3. Runtime identity consumers
+- [x] 3.1 Update login response identity usage
   - Use the injected runtime identity for BanchoBot presence and roster entries.
   - Confirm login responses include the configured username with fixed `user_id=1`.
   - _Requirements: 1.2, 1.3, 1.4, 5.1_
   - _Boundary: Bancho Identity Consumers_
   - _Depends: 1.2_
-- [ ] 3.2 Update command response identity usage
+- [x] 3.2 Update command response identity usage
   - Use the injected runtime identity for command response sender name and sender ID.
   - Remove reliance on class-level copied BanchoBot username state.
   - Confirm channel and private-message command responses use the configured username and `sender_id=1`.
@@ -61,8 +61,8 @@
   - _Boundary: Bancho Identity Consumers_
   - _Depends: 1.2_
 
-- [ ] 4. Composition integration
-- [ ] 4.1 Wire startup bootstrap and dependency injection
+- [x] 4. Composition integration
+- [x] 4.1 Wire startup bootstrap and dependency injection
   - Build the runtime identity from AppConfig during service registration.
   - Run repository synchronization before constructing services that emit BanchoBot packets.
   - Inject the same identity into authentication, login response, and command-response components.
@@ -71,21 +71,21 @@
   - _Boundary: ServiceRegistry Bootstrap_
   - _Depends: 1.1, 1.2, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2_
 
-- [ ] 5. Validation and regression coverage
-- [ ] 5.1 Verify in-memory repository system-user contract
+- [x] 5. Validation and regression coverage
+- [x] 5.1 Verify in-memory repository system-user contract
   - Cover creation, update, conflict, reservation, idempotency, and normal-user ID allocation in the in-memory repository.
   - Confirm in-memory tests prove the shared contract without AsyncMock-based type degradation.
   - _Requirements: 2.5, 3.1, 3.2, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 5.4_
-- [ ] 5.2 Verify SQLAlchemy repository system-user parity
+- [x] 5.2 Verify SQLAlchemy repository system-user parity
   - Cover creation, update, conflict, reservation, idempotency, and sequence behavior in the SQLAlchemy-backed repository.
   - Confirm SQLAlchemy tests match the in-memory contract and preserve persistence references to `users.id=1`.
   - _Requirements: 2.5, 3.1, 3.2, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 5.4_
-- [ ] 5.3 Verify bancho-visible identity consistency end to end
+- [x] 5.3 Verify bancho-visible identity consistency end to end
   - Exercise login response and command response flows with a custom Bot display name.
   - Confirm every BanchoBot-visible packet uses the configured username and fixed `user_id=1`.
   - Confirm internal concept names and event names are not required to change.
   - _Requirements: 1.2, 5.1, 5.2, 5.3, 5.5_
-- [ ] 5.4 Run quality gates for the completed feature
+- [x] 5.4 Run quality gates for the completed feature
   - Run type checking, linting, formatting checks, and relevant unit/integration tests for the touched areas.
   - Confirm checks pass without type suppressions or skipped tests added for this feature.
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 5.1, 5.2, 5.3, 5.4, 5.5_
