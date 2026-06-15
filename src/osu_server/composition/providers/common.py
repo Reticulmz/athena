@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import final
 
 import httpx
@@ -68,6 +69,9 @@ from osu_server.services.queries.chat import (
 from osu_server.services.queries.scores import BeatmapScoreListingQuery
 from osu_server.transports.stable.web_legacy.mappers import StableScoreSubmitMapper
 
+# Dishka evaluates provider return annotations at runtime.
+_DISHKA_RUNTIME_HINTS = (AsyncIterator,)
+
 
 @final
 class CommonProviderSet(Provider):
@@ -130,8 +134,12 @@ class CommonProviderSet(Provider):
     def config(self) -> AppConfig:
         return self._config
 
-    def engine(self, config: AppConfig) -> AsyncEngine:
-        return create_engine(str(config.database_url))
+    async def engine(self, config: AppConfig) -> AsyncIterator[AsyncEngine]:
+        engine = create_engine(str(config.database_url))
+        try:
+            yield engine
+        finally:
+            await engine.dispose()
 
     def session_factory(
         self,
@@ -139,16 +147,24 @@ class CommonProviderSet(Provider):
     ) -> async_sessionmaker[AsyncSession]:
         return create_session_factory(engine)
 
-    async def valkey(self, config: AppConfig) -> GlideClient:
-        return await create_valkey_client(str(config.valkey_url))
+    async def valkey(self, config: AppConfig) -> AsyncIterator[GlideClient]:
+        valkey = await create_valkey_client(str(config.valkey_url))
+        try:
+            yield valkey
+        finally:
+            await valkey.close()
 
-    def broker(self, config: AppConfig) -> AsyncBroker:
+    async def broker(self, config: AppConfig) -> AsyncIterator[AsyncBroker]:
         broker: AsyncBroker = ListQueueBroker(url=str(config.valkey_url))
         register_all_jobs(broker)
-        return broker
+        try:
+            yield broker
+        finally:
+            await broker.shutdown()
 
-    def http_client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient()
+    async def http_client(self) -> AsyncIterator[httpx.AsyncClient]:
+        async with httpx.AsyncClient() as client:
+            yield client
 
     def event_bus(self) -> EventBus:
         return InMemoryEventBus()

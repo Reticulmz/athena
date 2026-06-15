@@ -17,6 +17,7 @@ from osu_server.composition.endpoints import (
 from osu_server.composition.health import health_check_endpoint, health_endpoint
 from osu_server.composition.lifespan import lifespan
 from osu_server.composition.middleware import RequestLoggingMiddleware
+from osu_server.composition.starlette_integration import dishka_middleware
 from osu_server.transports.stable.web_legacy.bancho_connect import bancho_connect_endpoint
 
 
@@ -90,5 +91,8 @@ def create_app() -> Starlette:
     return Starlette(
         routes=routes,
         lifespan=lifespan,
-        middleware=[Middleware(RequestLoggingMiddleware)],
+        middleware=[
+            dishka_middleware(),
+            Middleware(RequestLoggingMiddleware),
+        ],
     )

@@ -66,9 +66,6 @@ def _runtime_state_overrides() -> TestProviderSet:
 
 
 async def _close_common_dependencies(container: AsyncContainer) -> None:
-    await (await container.get(httpx.AsyncClient)).aclose()
-    await (await container.get(AsyncBroker)).shutdown()
-    await (await container.get(AsyncEngine)).dispose()
     await container.close()
 
 

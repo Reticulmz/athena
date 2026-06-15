@@ -200,7 +200,7 @@
   - Completion is observable when the shared provider graph can be constructed without using the legacy container.
   - _Requirements: 2.1, 2.2, 2.3, 2.6, 4.6_
 
-- [ ] 7.2 Integrate Runtime Lifecycle with Starlette request handling
+- [x] 7.2 Integrate Runtime Lifecycle with Starlette request handling
   - Install the Starlette DI integration and ensure app dependencies are composed before serving.
   - Finalize managed app dependencies during shutdown and make shutdown failures observable.
   - Completion is observable when the Starlette app starts, handles existing routes through injected dependencies, and closes managed resources through the configured lifecycle.
