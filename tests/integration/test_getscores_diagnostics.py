@@ -22,6 +22,7 @@ from starlette.testclient import TestClient
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
+    BeatmapFileAttachment,
     BeatmapFileState,
     BeatmapMetadataSource,
     BeatmapRankStatus,
@@ -34,7 +35,7 @@ from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.services.queries.identity.password_service import PasswordService
 from tests.support.app import create_in_memory_app as create_app
 from tests.support.app import resolve_dependency
-from tests.support.persistence import seed_beatmapset, seed_user
+from tests.support.persistence import attach_beatmap_file, seed_beatmapset, seed_user
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -47,6 +48,7 @@ _TEST_USERNAME = "TargetUsr"
 _TEST_PASSWORD_PLAIN = "ExamplePass1234"  # gitleaks:allow
 _TEST_PASSWORD_MD5 = hashlib.md5(_TEST_PASSWORD_PLAIN.encode()).hexdigest()
 _KNOWN_CHECKSUM = "0123456789abcdef0123456789abcdef"
+_KNOWN_FILENAME = "Camellia - Exit This Earth's Atomosphere (Realazy) [Insane].osu"
 _NOW = datetime(2026, 6, 7, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
 
@@ -320,6 +322,32 @@ class TestRequestDiagnostics:
         assert _no_credentials_leaked(entry)
         assert _events_with(logs, "beatmap_file_warmup") == []
 
+    def test_malformed_identity_does_not_request_warmup_or_log_raw_query(self) -> None:
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+                _ = asyncio.run(_seed_user_with_session(app))
+                with structlog.testing.capture_logs() as logs:
+                    response = client.get(
+                        "/web/osu-osz2-getscores.php",
+                        params=_query(checksum="not-a-valid-md5"),
+                    )
+                    assert response.status_code == HTTPStatus.OK
+                    assert response.content == b"-1|false"
+
+        events = _events_with(logs, "getscores_identity_invalid")
+        assert len(events) == 1
+        entry = events[0]
+        assert entry.get("parse_error") == "invalid_checksum"
+        assert "not-a-valid-md5" not in entry.values()
+        assert "ha" not in entry
+        assert _no_credentials_leaked(entry)
+        assert _events_with(logs, "beatmap_file_warmup") == []
+
     def test_unknown_checksum_emits_unavailable(self) -> None:
         with _test_env():
             app = create_app()
@@ -359,7 +387,7 @@ class TestRequestDiagnostics:
         assert "ha" not in warmup_entry
         assert _no_credentials_leaked(warmup_entry)
 
-    def test_update_available_emits_update_event(self) -> None:
+    def test_update_available_emits_warmup_event_without_changing_short_body(self) -> None:
         with _test_env():
             app = create_app()
             with TestClient(
@@ -371,6 +399,18 @@ class TestRequestDiagnostics:
                 async def _setup() -> None:
                     _ = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
+                    _ = await attach_beatmap_file(
+                        app,
+                        BeatmapFileAttachment(
+                            beatmap_id=75,
+                            blob_id=1,
+                            checksum_md5=_KNOWN_CHECKSUM,
+                            source="legacy_official",
+                            original_filename=_KNOWN_FILENAME,
+                            fetched_at=_NOW,
+                            verified_at=_NOW,
+                        ),
+                    )
 
                 asyncio.run(_setup())
                 with structlog.testing.capture_logs() as logs:
@@ -379,18 +419,28 @@ class TestRequestDiagnostics:
                         "/web/osu-osz2-getscores.php",
                         params=_query(
                             checksum="aa" * 16,
-                            extra={"f": "Camellia - Exit (Realazy) [Insane].osu", "i": "1"},
+                            extra={
+                                "f": _KNOWN_FILENAME,
+                                "i": "1",
+                            },
                         ),
                     )
                     assert response.status_code == HTTPStatus.OK
+                    assert response.content == b"1|false"
 
         events = _events_with(logs, "getscores_update_available")
-        # We only assert the event exists when the resolver indeed produces
-        # UPDATE_AVAILABLE; if the body was b"-1|false" the path differed.
-        if response.content == b"1|false":
-            assert len(events) == 1
-            assert "ha" not in events[0]
-            assert _no_credentials_leaked(events[0])
+        assert len(events) == 1
+        assert "ha" not in events[0]
+        assert _no_credentials_leaked(events[0])
+        warmup_events = _events_with(logs, "beatmap_file_warmup")
+        assert len(warmup_events) == 1
+        warmup_entry = warmup_events[0]
+        assert warmup_entry.get("entrance") == "stable_getscores"
+        assert warmup_entry.get("outcome") == "already_available"
+        assert warmup_entry.get("beatmap_id") == 75
+        assert warmup_entry.get("checksum_md5") is None
+        assert "ha" not in warmup_entry
+        assert _no_credentials_leaked(warmup_entry)
 
     def test_parse_warning_emits_event_for_malformed_field(self) -> None:
         with _test_env():

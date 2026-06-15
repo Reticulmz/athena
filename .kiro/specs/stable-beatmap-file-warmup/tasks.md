@@ -59,7 +59,7 @@
   - _Depends: 2.1, 2.2, 2.3_
 
 - [ ] 4. Validation: compatibility、diagnostics、quality gates を固定する
-- [ ] 4.1 (P) getscores compatibility と diagnostics を integration test で検証する
+- [x] 4.1 (P) getscores compatibility と diagnostics を integration test で検証する
   - authenticated known-header request は warmup requested diagnostics を出しつつ response body を byte-for-byte 維持する
   - auth failure、parse failure、malformed identity は fetch work を発火せず、credential や raw query string を log に含めない
   - unavailable と update-available の短い response は warmup success / failure によって変化しない
