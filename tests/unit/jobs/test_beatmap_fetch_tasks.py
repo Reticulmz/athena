@@ -3,13 +3,15 @@
 Covers:
 - Job registry registration (task names are registered).
 - Task functions resolve their service from taskiq state and delegate to execute.
-- Task functions log runtime_unavailable instead of raising when state is missing.
+- Task functions fail observably when required runtime state is missing.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+import structlog.testing
 from taskiq import Context, InMemoryBroker, TaskiqMessage, TaskiqState
 
 from osu_server.infrastructure.jobs.registry import jobs
@@ -75,51 +77,85 @@ class TestBeatmapFetchTaskRegistration:
 
 
 class TestBeatmapFetchTaskRuntimeUnavailable:
-    """Task functions log runtime_unavailable when the service is not in state."""
+    """Task functions raise and log runtime_unavailable when state is missing."""
 
-    async def test_metadata_task_returns_none_when_runtime_missing(self) -> None:
-        """Calling fetch_beatmap_metadata without a service in state returns
-        without raising."""
+    async def test_metadata_task_raises_when_runtime_missing(self) -> None:
         context = _make_context()
-        result = await fetch_beatmap_metadata(
-            target_type="metadata:beatmap",
-            target_key="2000",
-            context=context,
-        )
-        assert result is None
 
-    async def test_file_task_returns_none_when_runtime_missing(self) -> None:
-        """Calling fetch_beatmap_file without a service in state returns
-        without raising."""
+        with (
+            structlog.testing.capture_logs() as logs,
+            pytest.raises(
+                RuntimeError,
+                match="beatmap metadata fetch use-case is not registered",
+            ),
+        ):
+            await fetch_beatmap_metadata(
+                target_type="metadata:beatmap",
+                target_key="2000",
+                context=context,
+            )
+
+        entries = [
+            entry
+            for entry in logs
+            if entry.get("event") == "beatmap_metadata_fetch_runtime_unavailable"
+        ]
+        assert len(entries) == 1
+        assert entries[0]["task_name"] == "fetch_beatmap_metadata"
+        assert entries[0]["target_type"] == "metadata:beatmap"
+        assert entries[0]["target_key"] == "2000"
+        assert entries[0]["log_level"] == "error"
+
+    async def test_file_task_raises_when_runtime_missing(self) -> None:
         context = _make_context()
-        result = await fetch_beatmap_file(
-            target_type="file:beatmap",
-            target_key="2000",
-            context=context,
-        )
-        assert result is None
+
+        with (
+            structlog.testing.capture_logs() as logs,
+            pytest.raises(
+                RuntimeError,
+                match="beatmap file fetch use-case is not registered",
+            ),
+        ):
+            await fetch_beatmap_file(
+                target_type="file:beatmap",
+                target_key="2000",
+                context=context,
+            )
+
+        entries = [
+            entry
+            for entry in logs
+            if entry.get("event") == "beatmap_file_fetch_runtime_unavailable"
+        ]
+        assert len(entries) == 1
+        assert entries[0]["task_name"] == "fetch_beatmap_file"
+        assert entries[0]["target_type"] == "file:beatmap"
+        assert entries[0]["target_key"] == "2000"
+        assert entries[0]["log_level"] == "error"
 
     async def test_metadata_task_does_not_call_job_when_runtime_missing(self) -> None:
         """When runtime is missing, the fake job is never called."""
         fake = _FakeJob()
         # Attach the fake under a *different* key so the task does not find it.
         context = _make_context(wrong_key=fake)
-        await fetch_beatmap_metadata(
-            target_type="metadata:beatmap",
-            target_key="2000",
-            context=context,
-        )
+        with pytest.raises(RuntimeError):
+            await fetch_beatmap_metadata(
+                target_type="metadata:beatmap",
+                target_key="2000",
+                context=context,
+            )
         assert len(fake.calls) == 0
 
     async def test_file_task_does_not_call_job_when_runtime_missing(self) -> None:
         """When runtime is missing, the fake job is never called."""
         fake = _FakeJob()
         context = _make_context(wrong_key=fake)
-        await fetch_beatmap_file(
-            target_type="file:beatmap",
-            target_key="2000",
-            context=context,
-        )
+        with pytest.raises(RuntimeError):
+            await fetch_beatmap_file(
+                target_type="file:beatmap",
+                target_key="2000",
+                context=context,
+            )
         assert len(fake.calls) == 0
 
 

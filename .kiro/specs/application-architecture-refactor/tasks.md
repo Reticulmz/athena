@@ -181,7 +181,7 @@
   - _Boundary: Command Use Cases - Chat_
   - _Depends: 4.2_
 
-- [ ] 6.3 Thin Job Adapters to input adapters and outcome reporters
+- [x] 6.3 Thin Job Adapters to input adapters and outcome reporters
   - Convert taskiq task functions to payload adaptation, use-case invocation, and structured outcome reporting only.
   - Make missing dependency resolution an observable task failure instead of a silent bypass.
   - Completion is observable when job modules no longer import concrete SQLAlchemy repositories, database resources, persistence models, or business-rule classes.
