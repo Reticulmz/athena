@@ -187,7 +187,7 @@
   - Completion is observable when job modules no longer import concrete SQLAlchemy repositories, database resources, persistence models, or business-rule classes.
   - _Requirements: 1.2, 1.5, 8.1, 8.2, 8.4, 8.5_
 
-- [ ] 6.4 Add worker job regression tests for task names and outcomes
+- [x] 6.4 Add worker job regression tests for task names and outcomes
   - Preserve existing task names and externally observable task outcomes.
   - Cover dependency resolution failure and successful invocation through worker composition.
   - Completion is observable when worker job tests pass with taskiq adapters invoking use-cases through the composition boundary.

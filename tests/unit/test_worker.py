@@ -14,6 +14,7 @@ import structlog
 from taskiq import Context, InMemoryBroker, TaskiqMessage, TaskiqState
 
 from osu_server.config import AppConfig
+from osu_server.jobs.beatmap_fetch import fetch_beatmap_file, fetch_beatmap_metadata
 from osu_server.jobs.chat_persistence import persist_private_message
 from osu_server.worker import shutdown, startup
 
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
     from types import TracebackType
+
+    from osu_server.domain.beatmaps import BeatmapFetchTarget
 
 
 class FakeEngine:
@@ -130,6 +133,18 @@ class FakeSessionFactory:
         return self._session
 
 
+class FakeBeatmapFetchUseCase:
+    """Beatmap fetch use-case fake that records task adapter calls."""
+
+    calls: list[BeatmapFetchTarget]
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def execute(self, target: BeatmapFetchTarget) -> None:
+        self.calls.append(target)
+
+
 def _make_config(tmp_path: Path) -> AppConfig:
     """Create worker config for unit tests."""
     return AppConfig.model_validate(
@@ -165,6 +180,28 @@ def _make_task_context(private_message_use_case: object) -> Context:
     message = TaskiqMessage(
         task_id="worker-test-id",
         task_name="persist_private_message",
+        labels={},
+        args=[],
+        kwargs={},
+    )
+    return Context(message, broker)
+
+
+def _make_beatmap_task_context(
+    *,
+    task_name: str,
+    metadata_fetch: object | None = None,
+    file_fetch: object | None = None,
+) -> Context:
+    """Create a taskiq context carrying worker beatmap runtime state."""
+    broker = InMemoryBroker()
+    if metadata_fetch is not None:
+        broker.state.beatmap_metadata_fetch = metadata_fetch
+    if file_fetch is not None:
+        broker.state.beatmap_file_fetch = file_fetch
+    message = TaskiqMessage(
+        task_id="worker-beatmap-test-id",
+        task_name=task_name,
         labels={},
         args=[],
         kwargs={},
@@ -417,6 +454,68 @@ async def test_worker_startup_sets_beatmap_fetch_runtime_state(tmp_path: Path) -
 
     assert _state_beatmap_metadata_fetch(state) is fake_metadata_job
     assert _state_beatmap_file_fetch(state) is fake_file_job
+
+
+@pytest.mark.asyncio
+async def test_worker_runtime_beatmap_tasks_use_startup_use_cases(tmp_path: Path) -> None:
+    """Beatmap tasks resolve the startup use-cases through worker runtime state."""
+    state = TaskiqState()
+    engine = FakeEngine()
+    session = FakeSession()
+    session_factory = FakeSessionFactory(session)
+    valkey = FakeValkeyClient()
+    metadata_use_case = FakeBeatmapFetchUseCase()
+    file_use_case = FakeBeatmapFetchUseCase()
+
+    async def create_valkey_client(_: str) -> FakeValkeyClient:
+        return valkey
+
+    with (
+        patch("osu_server.worker.create_engine", return_value=engine),
+        patch("osu_server.worker.create_session_factory", return_value=session_factory),
+        patch("osu_server.worker.create_valkey_client", new=create_valkey_client, create=True),
+        patch("osu_server.worker._config", _make_config(tmp_path)),
+        patch(
+            "osu_server.worker.create_worker_beatmap_metadata_fetch",
+            return_value=metadata_use_case,
+            create=True,
+        ),
+        patch(
+            "osu_server.worker.create_worker_beatmap_file_fetch",
+            return_value=file_use_case,
+            create=True,
+        ),
+    ):
+        _ = await startup(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
+
+    metadata_fetch = _state_beatmap_metadata_fetch(state)
+    file_fetch = _state_beatmap_file_fetch(state)
+    assert metadata_fetch is metadata_use_case
+    assert file_fetch is file_use_case
+
+    await fetch_beatmap_metadata(
+        target_type="metadata:beatmap",
+        target_key="2000",
+        context=_make_beatmap_task_context(
+            task_name="fetch_beatmap_metadata",
+            metadata_fetch=metadata_fetch,
+        ),
+    )
+    await fetch_beatmap_file(
+        target_type="file:beatmap",
+        target_key="2000",
+        context=_make_beatmap_task_context(
+            task_name="fetch_beatmap_file",
+            file_fetch=file_fetch,
+        ),
+    )
+
+    assert [(target.target_type, target.target_key) for target in metadata_use_case.calls] == [
+        ("metadata:beatmap", "2000")
+    ]
+    assert [(target.target_type, target.target_key) for target in file_use_case.calls] == [
+        ("file:beatmap", "2000")
+    ]
 
 
 @pytest.mark.asyncio

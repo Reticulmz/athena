@@ -155,6 +155,8 @@ def test_register_all_jobs_attaches_loaded_chat_persistence_tasks_to_broker() ->
 
     assert broker.find_task("persist_channel_message") is not None
     assert broker.find_task("persist_private_message") is not None
+    assert broker.find_task("fetch_beatmap_metadata") is not None
+    assert broker.find_task("fetch_beatmap_file") is not None
 
 
 def test_register_all_jobs_loads_chat_persistence_tasks_in_fresh_process() -> None:
@@ -166,6 +168,8 @@ broker = InMemoryBroker()
 register_all_jobs(broker)
 assert broker.find_task("persist_channel_message") is not None
 assert broker.find_task("persist_private_message") is not None
+assert broker.find_task("fetch_beatmap_metadata") is not None
+assert broker.find_task("fetch_beatmap_file") is not None
 """
 
     result = subprocess.run(
