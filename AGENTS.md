@@ -1,216 +1,286 @@
-# Agentic SDLC and Spec-Driven Development
+# AGENTS.md
 
-Kiro-style Spec-Driven Development on an agentic SDLC
+Guidance for Codex and other coding agents working in this repository.
 
-## Project Memory
-Project memory keeps persistent guidance (steering, specs notes, component docs) so Codex honors your standards each run. Treat it as the long-lived source of truth for patterns, conventions, and decisions.
+## Highest Priority
 
-- Use `.kiro/steering/` for project-wide policies: architecture principles, naming schemes, security constraints, tech stack decisions, api standards, etc.
-- Use local `AGENTS.md` files for feature or library context (e.g. `src/lib/payments/AGENTS.md`): describe domain assumptions, API contracts, or testing conventions specific to that folder. Codex auto-loads these when working in the matching path.
-- Specs notes stay with each spec (under `.kiro/specs/`) to guide specification-level workflows.
+- Read existing files before writing. Do not guess APIs, versions, flags, commit SHAs, or package names.
+- Read `.claude/rules/*.md` before making architectural, implementation, validation, or operational decisions.
+- Keep user-facing output concise and lead with the conclusion.
+- Do not use emoji or em dashes.
+- Skip files larger than 100 KB unless they are necessary.
+- Ask before irreversible or broad actions such as DB drops, mass deletion, force pushes, or large config rewrites.
 
-## Project Context
+## Project Overview
 
-### Paths
-- Steering: `.kiro/steering/`
-- Specs: `.kiro/specs/`
+`athena` is an osu! bancho-compatible private server.
 
-### Steering vs Specification
+- stable clients are supported through the bancho binary protocol and legacy `/web/*.php` endpoints.
+- lazer clients are supported through REST API v2 and SignalR boundaries.
+- The app must preserve externally observable stable client and worker behavior while internal ownership boundaries are refactored.
 
-**Steering** (`.kiro/steering/`) - Guide AI with project-wide rules and context
-**Specs** (`.kiro/specs/`) - Formalize development process for individual features
+## Tech Stack
 
-### Active Specifications
-- Check `.kiro/specs/` for active specifications
-- Use `$kiro-spec-status [feature-name]` to check progress
+- Python 3.14+
+- Package management: `uv`
+- Environment: Nix / devenv
+- ASGI: uvicorn, Starlette, FastAPI
+- Binary protocol: Caterpillar
+- API I/O: Pydantic v2
+- Domain models: standard `@dataclass(slots=True)`; do not use Pydantic in domain code
+- ORM: SQLAlchemy 2.0 async + Alembic
+- State / cache / pub-sub: Valkey with `valkey-glide`
+- Jobs: taskiq + taskiq-redis
+- DI: Dishka composition graph
+- Type checking: basedpyright strict mode
+- Lint / format: ruff
+- Tests: pytest + pytest-asyncio
+- Import rules: import-linter
 
-## Development Guidelines
-- Think in English, generate responses in English. All Markdown content written to project files (e.g., requirements.md, design.md, tasks.md, research.md, validation reports) MUST be written in the target language configured for this specification (see spec.json.language).
-
-## Minimal Workflow
-- Phase 0 (optional): `$kiro-steering`, `$kiro-steering-custom`
-- Discovery: `$kiro-discovery "idea"` — determines action path, writes brief.md + roadmap.md for multi-spec projects
-- Phase 1 (Specification):
-  - Single spec: `$kiro-spec-quick {feature} [--auto]` or step by step:
-    - `$kiro-spec-init "description"`
-    - `$kiro-spec-requirements {feature}`
-    - `$kiro-validate-gap {feature}` (optional: for existing codebase)
-    - `$kiro-spec-design {feature} [-y]`
-    - `$kiro-validate-design {feature}` (optional: design review)
-    - `$kiro-spec-tasks {feature} [-y]`
-  - Multi-spec: `$kiro-spec-batch` — creates all specs from roadmap.md in parallel by dependency wave
-- Phase 2 (Implementation): `$kiro-impl {feature} [tasks]`
-  - Without task numbers: autonomous mode (subagent per task + independent review + final validation)
-  - With task numbers: manual mode (selected tasks in main context, still reviewer-gated before completion)
-  - `$kiro-validate-impl {feature}` (standalone re-validation)
-- Progress check: `$kiro-spec-status {feature}` (use anytime)
-
-## Skills Structure
-Skills are located in `.agents/skills/kiro-*/SKILL.md`
-- Each skill is a directory with a `SKILL.md` file
-- Use `/skills` to inspect currently available skills
-- Invoke a skill directly with `$kiro-<skill-name>`
-- `kiro-review` — task-local adversarial review protocol used by reviewer subagents
-- `kiro-debug` — root-cause-first debug protocol used by debugger subagents
-- `kiro-verify-completion` — fresh-evidence gate before success or completion claims
-- **If there is even a 1% chance a skill applies to the current task, invoke it.** Do not skip skills because the task seems simple.
-
-## Collaboration Modes (Optional)
-Enable collaboration modes in `~/.codex/config.toml` to let Codex choose focused execution modes for longer tasks:
-
-```toml
-[features]
-collaboration_modes = true
-```
-
-## Multi-Agent (Experimental)
-If multi-agent is available, use it to parallelize independent research and validation within skills. Enable in `~/.codex/config.toml`:
-
-```toml
-[features]
-multi_agent = true
-```
-
-Skills with "Parallel Research" sections list independent work items that benefit from sub-agent spawning when this feature is active.
-
-## Development Rules
-- 3-phase approval workflow: Requirements → Design → Tasks → Implementation
-- Human review required each phase; use `-y` only for intentional fast-track
-- Keep steering current and verify alignment with `$kiro-spec-status`
-- Follow the user's instructions precisely, and within that scope act autonomously: gather the necessary context and complete the requested work end-to-end in this run, asking questions only when essential information is missing or the instructions are critically ambiguous.
-
-## Steering Configuration
-- Load entire `.kiro/steering/` as project memory
-- Default files: `product.md`, `tech.md`, `structure.md`
-- Custom files are supported (managed via `$kiro-steering-custom`)
-
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## プロジェクト概要
-
-**athena** — osu! bancho 互換プライベートサーバー。stable クライアント（bancho バイナリプロトコル）と lazer クライアント（REST API v2 + SignalR）の両方をサポートする。
-
-## 技術スタック
-
-- **Python 3.14+** / パッケージ管理: **uv**
-- **ASGI**: uvicorn + Starlette（bancho / web_legacy / signalr） + FastAPI（api）
-- **バイナリプロトコル**: Caterpillar（宣言的定義、parse + build 双方向）
-- **API I/O**: Pydantic v2
-- **ドメインモデル**: 標準 `@dataclass(slots=True)`（Pydantic は使わない）
-- **ORM**: SQLAlchemy 2.0 async + Alembic
-- **キャッシュ / ステート / Pub/Sub**: Valkey（valkey-glide クライアント）
-- **ジョブキュー**: taskiq + taskiq-redis（redis-py 経由で Valkey に接続、async ネイティブ）
-- **DI**: 自前の軽量コンテナ（フレームワーク非依存）
-- **型チェック**: basedpyright（厳格モード）
-- **Lint / Format**: ruff
-- **テスト**: pytest + pytest-asyncio
-- **import 規則検証**: import-linter
-- **環境構築**: devenv または flake.nix（Nix ベース）
-
-## コマンド
+## Core Commands
 
 ```bash
-# 環境
-devenv shell                              # Nix 開発環境に入る
-uv sync                                   # 依存インストール
+# Environment
+devenv shell
+uv sync
 
-# 実行
-uvicorn osu_server.app:app --reload       # app プロセス（HTTP/WS）
-taskiq worker osu_server.worker:broker      # worker プロセス（ジョブ実行）
-python -m osu_server                      # __main__.py 経由の起動
+# App / worker
+uvicorn osu_server.app:app --reload
+taskiq worker osu_server.worker:broker
+python -m osu_server
 
-# 品質
-ruff check src/                           # lint
-ruff format src/                          # format
-basedpyright src/                         # 型チェック
-pytest tests/                             # 全テスト
-pytest tests/unit/                        # ユニットテストのみ
-pytest tests/unit/test_chat.py::test_send # 単一テスト
-import-linter                             # レイヤー依存違反チェック
+# Quality
+ruff check src/
+ruff format --check src/
+basedpyright src/
+pytest tests/
+import-linter
 
-# マイグレーション
-alembic upgrade head                      # DB マイグレーション適用
-alembic revision --autogenerate -m "..."  # 新規マイグレーション生成
+# Project gates
+./scripts/ci.sh quality
+./scripts/ci.sh test
+
+# Migrations
+alembic upgrade head
+alembic revision --autogenerate -m "..."
 ```
 
-## アーキテクチャ
+Before reporting implementation work as complete, run the relevant tests and quality checks. For broad changes, prefer the project gates: `./scripts/ci.sh quality` and `./scripts/ci.sh test`.
 
-### モジュラモノリス + ハイブリッド構造
+## Architecture
 
-外側はプロトコル別（bancho / web_legacy / api / signalr）、内側はドメイン別（services 層で共有）。
+Athena is a layered modular monolith with hexagonal adapters, command/query use-case split, and Unit of Work for command-side persistence.
 
-### レイヤー（依存方向: 上→下のみ、逆方向禁止）
+Production dependency direction:
 
-```
-Transports → Services → Domain → Repositories → Infrastructure → Shared
-```
-
-- **Transports**: プロトコル別の入口。app プロセスのみ使用
-- **Services**: ビジネスロジック。両プロセス（app / worker）で共有
-- **Domain**: 純粋なドメインモデル（I/O 非依存）
-- **Repositories**: 永続化抽象（Protocol） + 実装（SQLAlchemy / memory）
-- **Infrastructure**: DB, Valkey, EventBus, JobQueue, DI コンテナ
-- **Shared**: errors, types, constants
-
-### 2プロセス構成
-
-- **app プロセス**（uvicorn）: 即時応答 — 認証、チャット配信、スコア受付
-- **worker プロセス**（taskiq）: 重い処理 — PP 計算、リーダーボード更新、メダル付与
-
-### 揮発的ステート
-
-セッション・プレゼンス・チャンネル状態・マッチ状態・パケットキューは全て Valkey に集約。プロセス再起動でもセッション消失しない。
-
-### ディレクトリ構造（src/osu_server/）
-
-```
-src/osu_server/
-├── app.py              # Starlette ルートアプリ組み立て
-├── worker.py           # taskiq ワーカーエントリ
-├── config.py           # pydantic-settings
-├── transports/
-│   ├── bancho/         # stable 用 bancho バイナリプロトコル
-│   │   ├── protocol/   # パケット定義（c2s/ s2c/ 方向別）
-│   │   └── handlers/   # C2S パケットハンドラ
-│   ├── web_legacy/     # /web/*.php 互換エンドポイント
-│   ├── api/            # FastAPI /api/v2/*
-│   └── signalr/        # lazer 用 SignalR ハブ
-├── services/           # ドメイン別ビジネスロジック
-├── domain/             # dataclass ベースのドメインモデル
-├── repositories/       # interfaces/ + sqlalchemy/ + memory/
-├── infrastructure/     # DB, cache, state, messaging, jobs, DI
-└── shared/             # errors, types, constants
+```text
+composition -> runtime adapters -> command/query use-cases -> repositories -> infrastructure
+                                    command/query use-cases -> domain -> shared
 ```
 
-## 設計上の重要な規約
+- `composition`: Dishka providers and runtime graph construction.
+- Runtime adapters: Starlette routes and taskiq tasks. Keep them thin.
+- Command use-cases: state-changing workflows under `src/osu_server/services/commands/`.
+- Query use-cases: read-only workflows under `src/osu_server/services/queries/`.
+- Domain: transport-independent business language under `src/osu_server/domain/`.
+- Repositories: command and query persistence ports plus concrete implementations.
+- Infrastructure: DB, Valkey, storage, messaging, jobs, and low-level adapters.
+- Shared: primitive shared errors, constants, and types.
 
-- **C2S / S2C パケット ID は方向別に名前空間を分離** — `ClientPacketID` と `ServerPacketID` は別 enum
-- **パケットハンドラ追加は3点セット**: パケット定義 + ハンドラ関数 + デコレータ登録
-- **ドメイン層に Pydantic を使わない** — バリデーションオーバーヘッド回避、不変条件はメソッドで表現
-- **Service の public use-case method は入力モデルを優先**。sender / destination / authorization / payload など複数概念を受け取る場合や primitive 引数が増える場合は、`domain` 層の `@dataclass(slots=True, frozen=True)` input/value object にまとめる。`ChannelService.get_delivery_targets()` のような collaborator query や小さく凝集した内部境界 method は無理に dataclass 化しない
-- **DB アクセスは SQLAlchemy 2.0 async + Repository パターンに統一** — Protocol は `repositories/interfaces`、SQLAlchemy 実装は `repositories/sqlalchemy` に置く
-- **services / transports / jobs は SQLAlchemy model、DB session、raw SQL を直接扱わない** — 永続化は Repository に委譲する
-- **現行 production target は PostgreSQL + asyncpg** — MySQL 等の別 dialect は spec で明示し、driver / migration / model compatibility を検証して導入する
-- **unit test のためだけに SQLite / aiosqlite 等の別 DB driver を暗黙導入しない** — DB 不要な範囲は typed fake / stub / in-memory 実装で検証する
-- **EventBus**（fire-and-forget）と **JobQueue**（配信保証あり）を使い分ける
-- **import-linter でレイヤー違反を CI で機械的に検出**する
+### Composition Rules
 
-## プロトコル仕様リファレンス
+- Dishka owns dependency composition.
+- App, worker, and test graphs live in `src/osu_server/composition/providers/`.
+- APP scope owns config, DB engines, Valkey clients, taskiq broker, storage, HTTP clients, and long-lived adapters.
+- REQUEST scope owns per-request dependencies and Unit of Work factories when they must not become global state.
+- Use explicit provider overrides for tests. Do not branch production providers on `config.environment == "test"`.
+- Services, domain objects, and repository interfaces must not import Dishka or provider types.
 
-bancho バイナリプロトコルの仕様は **[Lekuruu/bancho-documentation Wiki](https://github.com/Lekuruu/bancho-documentation/wiki)** を参照。主要な内容:
+### Command / Query Rules
 
-- **Protocol**: パケット構造（ヘッダ: PacketID u16 + Compression bool + ContentSize u32 + Content）、リトルエンディアン
-- **Login**: ログインフロー（HTTP POST `/` でクレデンシャル送信 → レスポンスでパケットストリーム返却）
-- **PacketEnums**: 全パケット ID 一覧（C2S / S2C 共通番号、方向はコンテキストで区別）
-- **Types**: BanchoString, Message, Match, Status, UserPresence, UserStats, ReplayFrameBundle, ScoreFrame 等のワイヤフォーマット定義
-- **Packets**: 各パケット ID ごとの詳細仕様（Client/ Server/ サブディレクトリ）
+- Commands own business rules, authorization, idempotency, mutation workflows, and transaction timing.
+- Commands may open Unit of Work only around durable consistency checks and mutations.
+- Queries use query repositories, do not open command Unit of Work, and do not mutate durable state.
+- Missing read data should be represented as unavailable or empty results, not repaired by query use-cases.
+- Use typed dataclass inputs and results for command/query boundaries.
+- Transport wire types, packet structs, form/query payloads, taskiq context objects, SQLAlchemy models, and DB sessions must not cross into use-case input types.
 
-## 詳細設計
+### Persistence Rules
 
-`bancho_server_design.md` に全セクションの詳細仕様あり（Valkey ステート設計、SignalR 互換層、スコアパイプライン等）。
+- Command persistence is owned by Unit of Work contracts in `repositories/interfaces/unit_of_work.py`.
+- Command repositories live under `repositories/interfaces/commands/`, `repositories/sqlalchemy/commands/`, and `repositories/memory/commands/`.
+- SQLAlchemy command repositories receive the Unit of Work-owned session and do not commit or roll back themselves.
+- Query repositories live under `repositories/interfaces/queries/`, `repositories/sqlalchemy/queries/`, and `repositories/memory/queries/`.
+- Query repositories expose read-only, read-optimized methods and do not require command Unit of Work.
+- Services, transports, and jobs must not directly use SQLAlchemy models, DB sessions, or raw SQL.
+- Production DB target is PostgreSQL + asyncpg. Do not add SQLite / aiosqlite just for unit tests.
 
-## rules
-@.claude/rules/*.md
-.claude/rules/*.mdを必ず読んでください
+### Domain Rules
+
+Domain packages use standard `@dataclass(slots=True)` models, value objects, enums, and policies.
+
+Domain code must not import:
+
+- Pydantic
+- SQLAlchemy
+- Valkey clients
+- taskiq
+- Starlette / FastAPI
+- HTTP clients
+- repository implementations
+- services
+- transports
+- jobs
+
+Refactor target contexts:
+
+- `domain/identity`
+- `domain/chat`
+- `domain/beatmaps`
+- `domain/scores`
+- `domain/storage`
+- `domain/events`
+- `domain/compatibility/stable`
+
+Shared concepts used by stable, lazer, and first-party APIs belong in domain contexts before mapping to client-family representations.
+
+### Transport Rules
+
+- Stable bancho binary protocol belongs under `transports/stable/bancho`.
+- Stable legacy PHP-compatible endpoints belong under `transports/stable/web_legacy`.
+- Lazer REST and realtime adapters belong under `transports/lazer/api` and `transports/lazer/signalr`.
+- Athena-owned public/admin APIs belong under `transports/api/public` and `transports/api/admin`.
+- Stable, lazer, and first-party API implementations must not import each other's implementation details.
+- Transport mappers stay local to the family they adapt.
+- Wire parsing/building stays in transport packages.
+- Stable-only compatibility semantics belong in `domain/compatibility/stable` or a stable mapper when purely adapter-local.
+
+### Background Job Rules
+
+- `jobs/` contains taskiq adapters.
+- Job functions keep existing task names and observable outcomes.
+- Jobs validate task payload primitives, map to command/query inputs, resolve use-cases through Dishka taskiq integration, invoke them, and report success/failure.
+- Business rules, idempotency, persistence consistency, repository construction, SQLAlchemy access, and low-level infrastructure access do not live in jobs.
+
+## Bancho Protocol Reference
+
+Use the Lekuruu bancho documentation wiki as the stable protocol reference:
+
+- Packet header: PacketID `u16`, compression bool, content size `u32`, content; little-endian.
+- Login: HTTP POST `/` with credentials; response is a packet stream.
+- C2S and S2C packet IDs must be modeled with separate enums: `ClientPacketID` and `ServerPacketID`.
+- Adding a packet handler requires packet definition, handler function, and decorator registration.
+
+`bancho_server_design.md` contains detailed Athena design notes including Valkey state, SignalR compatibility, and the score pipeline.
+
+## Code Quality Rules
+
+- Prefer established project patterns and architecture.
+- Prefer idiomatic Python and async-first designs.
+- Make intent explicit; avoid magic numbers and opaque conditionals.
+- Diagnose root causes instead of adding workarounds.
+- Do not hardcode credentials. Use `AppConfig` / pydantic-settings or environment variables.
+- Use library-first judgment, but get user approval before adding dependencies with `uv add`.
+- Avoid unnecessary abstraction, but do not preserve bad structure just because it exists.
+- When design quality is in question, reason from the ideal design first, then describe any migration path.
+
+## Type Safety And Lint Policy
+
+Do not suppress pyright or ruff issues as a shortcut.
+
+Forbidden unless every structural alternative has been exhausted and a reason is documented:
+
+- file-level `# pyright: reportXxx=false`
+- broad `# type: ignore`
+- casual `# noqa`
+- inline `# pyright: ignore[...]`
+- using `AsyncMock` to hide `Any`
+- changing linter/type-checker config to silence errors
+
+For tests, prefer typed in-memory implementations or Protocol-compliant stubs over untyped mocks. Test code follows the same type-safety standard as production code.
+
+When type stubs are needed, check existing community stubs first, then generate or maintain local stubs under `typings/` only when necessary.
+
+## Testing And Completion
+
+Before claiming done:
+
+1. Review the change as a code reviewer.
+2. Check logic, edge cases, security, layer boundaries, type safety, readability, and test coverage.
+3. Run relevant tests.
+4. Run relevant lint/type/import checks.
+5. Fix issues and repeat until clean.
+
+When tests fail, suspect the implementation first. Do not casually disable or rewrite tests. If a spec change requires test updates, confirm with the user first.
+
+## Configuration Policy
+
+Do not edit project-wide config without explicit user approval:
+
+- `pyproject.toml`
+- `uv.lock`
+- `.python-version`
+- `alembic.ini`
+- `devenv.nix`
+- `flake.nix`
+- CI, hook, linter, type-checker, or import-linter configuration
+
+Dependency additions also require approval. After approved environment/config changes, run the appropriate sync/update command.
+
+## Git And Commit Rules
+
+Use Conventional Commits:
+
+```text
+<type>[optional scope]: <description>
+```
+
+- Type must be English: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `build`, `ci`, `revert`.
+- Description is Japanese, max 70 chars, no trailing period.
+- Avoid vague descriptions such as `update`, `fix`, `change`, `modify`, `更新`, `修正`, `変更`, `対応`, or `wip`.
+- No emoji or slang.
+- Do not bypass hooks with `--no-verify`, `--no-gpg-sign`, or `-n`.
+- Before committing, run `prek run --all-files`.
+- If a coding agent creates a commit, include footer `Agent-Model: <agent product> (<model name>)`.
+
+When proposing a commit, include file count summary and file list so staging can be verified.
+
+## Spec-Driven Development
+
+Project memory and specs:
+
+- Steering: `.kiro/steering/`
+- Specs: `.kiro/specs/`
+- Check active specs before feature work.
+- Keep steering aligned with implementation decisions.
+
+Workflow:
+
+- Discovery: `$kiro-discovery "idea"`
+- Single spec quick path: `$kiro-spec-quick {feature} [--auto]`
+- Step-by-step spec path:
+  - `$kiro-spec-init "description"`
+  - `$kiro-spec-requirements {feature}`
+  - `$kiro-validate-gap {feature}`
+  - `$kiro-spec-design {feature} [-y]`
+  - `$kiro-validate-design {feature}`
+  - `$kiro-spec-tasks {feature} [-y]`
+- Multi-spec path: `$kiro-spec-batch`
+- Implementation: `$kiro-impl {feature} [tasks]`
+- Validation: `$kiro-validate-impl {feature}`
+- Progress: `$kiro-spec-status {feature}`
+
+Use the 3-phase approval workflow: Requirements -> Design -> Tasks -> Implementation. Human review is required for each phase unless the user intentionally requests a fast-track option.
+
+Skills live in `.agents/skills/kiro-*/SKILL.md`. If there is even a 1% chance a skill applies, invoke it.
+
+All Markdown content written to spec files must use the language configured in that spec's `spec.json.language`.
+
+## Operational Conduct
+
+- Report executed actions and verification results.
+- If work remains unverified, say so explicitly.
+- On errors, explain cause and fix together.
+- If a plan is flawed, revise it rather than repeating the same approach.
+- Follow the user's requested scope first; suggest improvements separately.
+- If a task is interrupted by error or abort, restore the codebase to a clean state when possible.
