@@ -194,7 +194,7 @@
   - _Requirements: 1.2, 1.3, 1.5, 8.1, 8.4, 9.5_
 
 - [ ] 7. Dishka composition and runtime lifecycle integration
-- [ ] 7.1 Build Composition Providers for configuration, infrastructure, repositories, and use-cases
+- [x] 7.1 Build Composition Providers for configuration, infrastructure, repositories, and use-cases
   - Define common providers for config, DB engine, session factory, Valkey, broker, HTTP client, storage, state, repository implementations, UoW, command use-cases, and query use-cases.
   - Use APP and REQUEST scopes consistently and avoid custom scopes unless a verified lifecycle gap appears.
   - Completion is observable when the shared provider graph can be constructed without using the legacy container.
