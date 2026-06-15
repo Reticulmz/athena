@@ -3,7 +3,7 @@
 import hashlib
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import cast
+from typing import cast, override
 
 import pytest
 import structlog.testing
@@ -22,7 +22,14 @@ from osu_server.domain.beatmaps import (
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.storage.blobs import BlobStored
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
+from osu_server.services.commands.beatmaps.file_warmup import (
+    BeatmapFileWarmupEntrance,
+    BeatmapFileWarmupOutcome,
+    BeatmapFileWarmupRequest,
+    BeatmapFileWarmupResult,
+)
 from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
     ProcessScoreSubmissionUseCase,
@@ -146,6 +153,44 @@ class FakeBeatmapResolver:
             next_refresh_at=None,
             reason=None,
         )
+
+
+class RecordingWarmupUseCase:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        outcome: BeatmapFileWarmupOutcome = BeatmapFileWarmupOutcome.REQUESTED,
+    ) -> None:
+        self.events: list[str] = events
+        self.outcome: BeatmapFileWarmupOutcome = outcome
+        self.requests: list[BeatmapFileWarmupRequest] = []
+
+    async def execute(
+        self,
+        request: BeatmapFileWarmupRequest,
+    ) -> BeatmapFileWarmupResult:
+        self.events.append("warmup")
+        self.requests.append(request)
+        return BeatmapFileWarmupResult(
+            outcome=self.outcome,
+            entrance=request.entrance,
+            user_id=request.user_id,
+            beatmap_id=request.beatmap_id,
+            checksum_md5=request.checksum_md5,
+            reason=None,
+        )
+
+
+class RecordingBlobStorageService(StubBlobStorageService):
+    def __init__(self, events: list[str], *, fail_writes: bool = False) -> None:
+        super().__init__(fail_writes=fail_writes)
+        self.events: list[str] = events
+
+    @override
+    async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
+        self.events.append("blob_storage")
+        return await super().put_bytes(data, content_type=content_type)
 
 
 @pytest.fixture
@@ -450,6 +495,130 @@ async def test_replay_attachment(
     assert await replay_repo.exists_by_checksum(replay_checksum)
     assert blob_storage.writes == [valid_input.replay_data]
     assert blob_storage.stored[0].sha256 == replay_checksum
+
+
+@pytest.mark.asyncio
+async def test_score_submit_fallback_warmup_runs_before_replay_blob_storage(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Accepted submissions ignore warmup result and warm before replay storage."""
+    events: list[str] = []
+    warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
+    blob_storage = RecordingBlobStorageService(events)
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        blob_storage,
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        beatmap_file_warmup_use_case=warmup,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = "1000:test_user:abc123:online_checksum_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    input_data = replace(valid_input, beatmap_id=42)
+    result = await service.execute(input_data)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.beatmap_id == 42
+    assert events == ["warmup", "blob_storage"]
+    assert warmup.requests == [
+        BeatmapFileWarmupRequest(
+            entrance=BeatmapFileWarmupEntrance.STABLE_SCORE_SUBMIT_FALLBACK,
+            user_id=1000,
+            beatmap_id=42,
+            checksum_md5="abc123",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_score_submit_fallback_warmup_precedes_retryable_replay_storage_failure(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Replay storage retryable failures happen after fallback warmup is requested."""
+    events: list[str] = []
+    warmup = RecordingWarmupUseCase(events)
+    blob_storage = RecordingBlobStorageService(events, fail_writes=True)
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        blob_storage,
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        beatmap_file_warmup_use_case=warmup,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_warmup_retry:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.RETRYABLE
+    assert result.error_reason == "replay_blob_store_failed"
+    assert events == ["warmup", "blob_storage"]
+    assert warmup.requests == [
+        BeatmapFileWarmupRequest(
+            entrance=BeatmapFileWarmupEntrance.STABLE_SCORE_SUBMIT_FALLBACK,
+            user_id=1000,
+            beatmap_id=1,
+            checksum_md5="abc123",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_score_submit_terminal_reject_does_not_request_fallback_warmup(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Terminal rejects before hit validation do not trigger score submit fallback warmup."""
+    events: list[str] = []
+    warmup = RecordingWarmupUseCase(events)
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        beatmap_file_warmup_use_case=warmup,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_warmup_reject:0:0:0:0:0:0:0:0:500000:0:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
+    assert result.error_reason is not None
+    assert "validation_failed" in result.error_reason
+    assert events == []
+    assert warmup.requests == []
 
 
 @pytest.mark.asyncio

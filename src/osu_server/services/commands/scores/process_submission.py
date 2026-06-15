@@ -17,6 +17,11 @@ from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.domain.scores.score import Playstyle, Ruleset, Score
 from osu_server.domain.scores.validator import ValidationError, validate_hit_counts
 from osu_server.domain.storage.blobs import BlobStoreResult
+from osu_server.services.commands.beatmaps import (
+    BeatmapFileWarmupEntrance,
+    BeatmapFileWarmupRequest,
+    BeatmapFileWarmupResult,
+)
 from osu_server.services.commands.scores.authorization import (
     AuthorizationContext,
     ScoreAuthorizationService,
@@ -90,6 +95,13 @@ class ScorePayloadDecryptor(Protocol):
 
 class ScorePayloadParser(Protocol):
     def parse(self, payload: str) -> ParsedScore: ...
+
+
+class BeatmapFileWarmupUseCase(Protocol):
+    async def execute(
+        self,
+        request: BeatmapFileWarmupRequest,
+    ) -> BeatmapFileWarmupResult: ...
 
 
 class SubmissionOutcome(Enum):
@@ -213,6 +225,7 @@ class ProcessScoreSubmissionUseCase:
         payload_parser: ScorePayloadParser,
         auth_service: ScoreAuthorizationService,
         beatmap_resolver: BeatmapEligibilityResolver,
+        beatmap_file_warmup_use_case: BeatmapFileWarmupUseCase | None = None,
     ) -> None:
         self._submit_score_use_case: SubmitScoreUseCase = submit_score_use_case
         self._replay_blob_storage: ReplayBlobStorage = replay_blob_storage
@@ -220,6 +233,9 @@ class ProcessScoreSubmissionUseCase:
         self._payload_parser: ScorePayloadParser = payload_parser
         self._auth_service: ScoreAuthorizationService = auth_service
         self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
+        self._beatmap_file_warmup_use_case: BeatmapFileWarmupUseCase | None = (
+            beatmap_file_warmup_use_case
+        )
 
     async def execute(  # noqa: PLR0911, PLR0912, PLR0915
         self, input_data: ParsedSubmissionInput
@@ -463,6 +479,18 @@ class ProcessScoreSubmissionUseCase:
                 server_grade=grade_discrepancy["server_grade"],
             )
 
+        resolved_beatmap_id = input_data.beatmap_id or beatmap_result.beatmap.id
+        resolved_beatmapset_id = (
+            beatmap_result.beatmapset.id if beatmap_result.beatmapset is not None else 0
+        )
+        beatmap_status_at_submission = beatmap_result.beatmap.effective_status.value
+
+        await self._request_score_submit_fallback_warmup(
+            user_id=auth_ctx.user_id,
+            beatmap_id=resolved_beatmap_id,
+            checksum_md5=parsed.beatmap_checksum,
+        )
+
         # 8. Derive replay identity before durable mutation.
         replay_data = input_data.replay_data
         replay_checksum: str | None = None
@@ -491,12 +519,6 @@ class ProcessScoreSubmissionUseCase:
                     error_reason="replay_blob_store_failed",
                     opaque_field_hashes=opaque_field_hashes,
                 )
-
-        resolved_beatmap_id = input_data.beatmap_id or beatmap_result.beatmap.id
-        resolved_beatmapset_id = (
-            beatmap_result.beatmapset.id if beatmap_result.beatmapset is not None else 0
-        )
-        beatmap_status_at_submission = beatmap_result.beatmap.effective_status.value
 
         # 9. Persist score (R7.1-7.5, R12.1-12.4)
         score = Score(
@@ -585,6 +607,33 @@ class ProcessScoreSubmissionUseCase:
             beatmap_id=resolved_beatmap_id,
             beatmapset_id=resolved_beatmapset_id,
         )
+
+    async def _request_score_submit_fallback_warmup(
+        self,
+        *,
+        user_id: int,
+        beatmap_id: int,
+        checksum_md5: str,
+    ) -> None:
+        if self._beatmap_file_warmup_use_case is None:
+            return
+
+        try:
+            _ = await self._beatmap_file_warmup_use_case.execute(
+                BeatmapFileWarmupRequest(
+                    entrance=BeatmapFileWarmupEntrance.STABLE_SCORE_SUBMIT_FALLBACK,
+                    user_id=user_id,
+                    beatmap_id=beatmap_id,
+                    checksum_md5=checksum_md5,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "score_submit_beatmap_file_warmup_failed",
+                user_id=user_id,
+                beatmap_id=beatmap_id,
+                has_checksum=checksum_md5 != "",
+            )
 
     async def _record_terminal_reject(
         self,

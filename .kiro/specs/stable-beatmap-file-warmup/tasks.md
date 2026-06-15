@@ -37,7 +37,7 @@
   - _Boundary: Stable bancho status handler_
   - _Depends: 1.2_
 
-- [ ] 2.3 (P) score submit fallback warmup を追加する
+- [x] 2.3 (P) score submit fallback warmup を追加する
   - fallback は認証、beatmap resolution、eligibility、empty replay、hit validation の通過後、replay blob storage より前に実行する
   - resolved beatmap id と parsed checksum を warmup input に渡し、warmup result は score submission outcome の選択に使わない
   - terminal reject、accepted score、retryable replay storage failure、duplicate online checksum、duplicate replay checksum の既存 behavior を維持する
