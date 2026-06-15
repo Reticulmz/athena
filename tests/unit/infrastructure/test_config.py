@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from osu_server.config import AppConfig, load_config
+from osu_server.config import AppConfig, load_config, load_routing_config
 
 _TEST_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/osu"
 _TEST_VALKEY_URL = "redis://localhost:6379/0"
@@ -97,6 +97,25 @@ class TestAppConfigEnvVarReading:
         assert str(config.database_url) == test_database_url
         assert str(config.valkey_url) == test_valkey_url
         assert config.environment == "test"
+
+    def test_load_routing_config_reads_development_domain_without_required_services(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("DOMAIN", raising=False)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("VALKEY_URL", raising=False)
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        _ = (tmp_path / ".env.development").write_text(
+            "DOMAIN=example.test\n",
+            encoding="utf-8",
+        )
+
+        config = load_routing_config()
+
+        assert config.domain == "example.test"
 
 
 class TestAppConfigValidation:

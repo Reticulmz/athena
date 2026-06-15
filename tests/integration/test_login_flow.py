@@ -51,6 +51,7 @@ _LOGIN_PERMISSIONS_ID = int(ServerPacketID.LOGIN_PERMISSIONS)
 _PACKET_HEADER_SIZE = 7  # 2 (id) + 1 (compression) + 4 (content_length)
 
 _AUTH_FAILED_USER_ID = -1
+_BANCHO_URL = "http://c.athena.localhost/"
 
 _DEFAULT_ROLE = Role(
     id=1,
@@ -68,17 +69,23 @@ _EXPECTED_MIN_PACKETS = 10
 @contextmanager
 def _test_env() -> Generator[None]:
     """Temporarily set ENVIRONMENT=test for the duration of the block."""
-    old = os.environ.get("ENVIRONMENT")
+    old_environment = os.environ.get("ENVIRONMENT")
+    old_domain = os.environ.get("DOMAIN")
     os.environ["ENVIRONMENT"] = "test"
+    os.environ["DOMAIN"] = "athena.localhost"
     _ = os.environ.setdefault("DATABASE_URL", "postgresql://localhost:5432/athena")
     _ = os.environ.setdefault("VALKEY_URL", "redis://localhost:6379")
     try:
         yield
     finally:
-        if old is None:
+        if old_environment is None:
             _ = os.environ.pop("ENVIRONMENT", None)
         else:
-            os.environ["ENVIRONMENT"] = old
+            os.environ["ENVIRONMENT"] = old_environment
+        if old_domain is None:
+            _ = os.environ.pop("DOMAIN", None)
+        else:
+            os.environ["DOMAIN"] = old_domain
 
 
 def _seed_default_role(app: Starlette) -> None:
@@ -170,6 +177,34 @@ def _find_packet(
     return None
 
 
+# ── Test: Bancho routing ────────────────────────────────────────────────
+
+
+class TestBanchoRouting:
+    """Bancho POST traffic is routed by stable client hostnames."""
+
+    def test_numbered_and_ce_hosts_reach_bancho_endpoint(self) -> None:
+        """cN.$DOMAIN and ce.$DOMAIN hosts reach POST /."""
+        with _test_env():
+            app = create_app()
+            with TestClient(app, raise_server_exceptions=False) as client:
+                for url in (
+                    "http://c4.athena.localhost/",
+                    "http://c6.athena.localhost/",
+                    "http://ce.athena.localhost/",
+                ):
+                    response = client.post(url)
+                    assert response.status_code == HTTPStatus.OK
+
+    def test_post_root_requires_bancho_host(self) -> None:
+        """POST / without a bancho host is not a path fallback."""
+        with _test_env():
+            app = create_app()
+            with TestClient(app, raise_server_exceptions=False) as client:
+                response = client.post("/")
+                assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+
+
 # ── Test: Full registration + login flow ─────────────────────────────────
 
 
@@ -184,7 +219,7 @@ class TestRegisterAndLoginFlow:
                 _seed_test_data(app)
                 _register_user(client)
 
-                response = client.post("/", content=_login_body())
+                response = client.post(_BANCHO_URL, content=_login_body())
 
                 assert response.status_code == HTTPStatus.OK
                 assert "cho-token" in response.headers
@@ -198,7 +233,7 @@ class TestRegisterAndLoginFlow:
                 _seed_test_data(app)
                 _register_user(client)
 
-                response = client.post("/", content=_login_body())
+                response = client.post(_BANCHO_URL, content=_login_body())
 
                 assert response.status_code == HTTPStatus.OK
                 assert len(response.content) > _PACKET_HEADER_SIZE
@@ -218,7 +253,7 @@ class TestLoginSuccessPackets:
                 _seed_test_data(app)
                 _register_user(client)
 
-                response = client.post("/", content=_login_body())
+                response = client.post(_BANCHO_URL, content=_login_body())
                 packets = _parse_packets(response.content)
 
                 assert len(packets) > 0
@@ -235,7 +270,7 @@ class TestLoginSuccessPackets:
                 _seed_test_data(app)
                 _register_user(client)
 
-                response = client.post("/", content=_login_body())
+                response = client.post(_BANCHO_URL, content=_login_body())
                 packets = _parse_packets(response.content)
 
                 content = _find_packet(packets, _PROTOCOL_VERSION_ID)
@@ -251,7 +286,7 @@ class TestLoginSuccessPackets:
                 _seed_test_data(app)
                 _register_user(client)
 
-                response = client.post("/", content=_login_body())
+                response = client.post(_BANCHO_URL, content=_login_body())
                 packets = _parse_packets(response.content)
 
                 content = _find_packet(packets, _LOGIN_PERMISSIONS_ID)
@@ -265,7 +300,7 @@ class TestLoginSuccessPackets:
                 _seed_test_data(app)
                 _register_user(client)
 
-                response = client.post("/", content=_login_body())
+                response = client.post(_BANCHO_URL, content=_login_body())
                 packets = _parse_packets(response.content)
 
                 assert len(packets) >= _EXPECTED_MIN_PACKETS, (
@@ -287,10 +322,10 @@ class TestPollingStub:
                 _seed_test_data(app)
                 _register_user(client)
 
-                login_resp = client.post("/", content=_login_body())
+                login_resp = client.post(_BANCHO_URL, content=_login_body())
                 token = login_resp.headers["cho-token"]
 
-                poll_resp = client.post("/", headers={"osu-token": token})
+                poll_resp = client.post(_BANCHO_URL, headers={"osu-token": token})
 
                 assert poll_resp.status_code == HTTPStatus.OK
                 assert poll_resp.content == b""
@@ -310,10 +345,10 @@ class TestReLogin:
                 _seed_test_data(app)
                 _register_user(client)
 
-                resp1 = client.post("/", content=_login_body())
+                resp1 = client.post(_BANCHO_URL, content=_login_body())
                 token1 = resp1.headers["cho-token"]
 
-                resp2 = client.post("/", content=_login_body())
+                resp2 = client.post(_BANCHO_URL, content=_login_body())
                 token2 = resp2.headers["cho-token"]
 
                 assert token1 != token2
@@ -326,14 +361,14 @@ class TestReLogin:
                 _seed_test_data(app)
                 _register_user(client)
 
-                resp1 = client.post("/", content=_login_body())
+                resp1 = client.post(_BANCHO_URL, content=_login_body())
                 old_token = resp1.headers["cho-token"]
 
                 # Re-login
-                _ = client.post("/", content=_login_body())
+                _ = client.post(_BANCHO_URL, content=_login_body())
 
                 # Poll with old token — should get authentication failure
-                poll_resp = client.post("/", headers={"osu-token": old_token})
+                poll_resp = client.post(_BANCHO_URL, headers={"osu-token": old_token})
                 packets = _parse_packets(poll_resp.content)
 
                 assert len(packets) > 0
@@ -350,12 +385,12 @@ class TestReLogin:
                 _seed_test_data(app)
                 _register_user(client)
 
-                _ = client.post("/", content=_login_body())
+                _ = client.post(_BANCHO_URL, content=_login_body())
 
-                resp2 = client.post("/", content=_login_body())
+                resp2 = client.post(_BANCHO_URL, content=_login_body())
                 new_token = resp2.headers["cho-token"]
 
-                poll_resp = client.post("/", headers={"osu-token": new_token})
+                poll_resp = client.post(_BANCHO_URL, headers={"osu-token": new_token})
 
                 assert poll_resp.status_code == HTTPStatus.OK
                 assert poll_resp.content == b""
@@ -373,7 +408,7 @@ class TestAuthenticationFailure:
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
                 response = client.post(
-                    "/",
+                    _BANCHO_URL,
                     content=_login_body(username="NonExistentUser"),
                 )
 
@@ -396,7 +431,7 @@ class TestAuthenticationFailure:
 
                 wrong_md5 = hashlib.md5(b"wrongpassword").hexdigest()
                 response = client.post(
-                    "/",
+                    _BANCHO_URL,
                     content=_login_body(password_md5=wrong_md5),
                 )
 

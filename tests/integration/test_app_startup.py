@@ -13,7 +13,9 @@ from dishka import AsyncContainer
 from starlette.testclient import TestClient
 
 from osu_server.app import create_app
-from osu_server.config import AppConfig
+from osu_server.config import AppConfig, load_routing_config
+
+_BANCHO_URL = f"http://c.{load_routing_config().domain}/"
 
 
 def _require_services() -> None:
@@ -28,11 +30,11 @@ class TestAppStartup:
     """E2E tests for application lifecycle via Starlette TestClient."""
 
     def test_app_starts_and_responds(self) -> None:
-        """POST / returns 200 when the app is running."""
+        """POST / on the bancho host returns 200 when the app is running."""
         _require_services()
         app = create_app()
         with TestClient(app, raise_server_exceptions=False) as client:
-            response = client.post("/")
+            response = client.post(_BANCHO_URL)
             assert response.status_code == HTTPStatus.OK
 
     def test_lifespan_sets_state(self) -> None:

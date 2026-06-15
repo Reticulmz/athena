@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 from starlette.applications import Starlette
@@ -19,6 +18,7 @@ from osu_server.composition.health import health_check_endpoint, health_endpoint
 from osu_server.composition.lifespan import create_lifespan
 from osu_server.composition.middleware import RequestLoggingMiddleware
 from osu_server.composition.starlette_integration import dishka_middleware
+from osu_server.config import load_routing_config
 from osu_server.transports.stable.web_legacy.bancho_connect import bancho_connect_endpoint
 
 if TYPE_CHECKING:
@@ -30,17 +30,19 @@ if TYPE_CHECKING:
 def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
     """Create and return the Starlette root application.
 
-    Routing (domain from ``DOMAIN`` env var, default ``athena.localhost``):
+    Routing (domain from ``DOMAIN`` env var or ``.env.$ENVIRONMENT``,
+    default ``athena.localhost``):
         - ``Host("c.$domain")`` -> bancho (POST /, GET /, GET /health)
+        - ``Host("c<digits>.$domain")`` -> bancho stable fallback hosts
+        - ``Host("ce.$domain")`` -> bancho stable fallback host
         - ``Host("osu.$domain")`` -> web_legacy (POST /users, GET /, GET /health)
         - ``GET /health`` -> DB/Redis health check (all routes)
         - Path-based fallbacks for local dev without DNS/subdomains:
-            - ``POST /`` -> bancho handler
             - ``GET /`` -> version info
             - ``GET /health`` -> health check
             - ``POST /web/users`` -> registration handler
     """
-    domain = os.environ.get("DOMAIN", "athena.localhost")
+    domain = load_routing_config().domain
 
     # bancho routes (c.$DOMAIN)
     bancho_routes = Router(
@@ -78,9 +80,10 @@ def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
     routes: list[Route | Mount | Host] = [
         # Subdomain-based routing
         Host(f"c.{domain}", app=bancho_routes),
+        Host(f"c{{server:int}}.{domain}", app=bancho_routes),
+        Host(f"ce.{domain}", app=bancho_routes),
         Host(f"osu.{domain}", app=web_routes),
         # Path-based fallbacks for local dev
-        Route("/", endpoint=bancho_endpoint, methods=["POST"]),
         Route("/", endpoint=health_endpoint, methods=["GET"]),
         Route("/health", endpoint=health_check_endpoint, methods=["GET"]),
         Mount(

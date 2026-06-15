@@ -51,6 +51,7 @@ _TEST_PASSWORD_MD5 = hashlib.md5(_TEST_PASSWORD.encode()).hexdigest()
 _TEST_CLIENT_INFO = "b20240101.1|9|1|abc:def:ghi:jkl:mno|0"
 
 _PACKET_HEADER_SIZE = 7  # 2 (id) + 1 (compression) + 4 (content_length)
+_BANCHO_URL = "http://c.athena.localhost/"
 
 _DEFAULT_ROLE = Role(
     id=1,
@@ -66,17 +67,23 @@ _DEFAULT_ROLE = Role(
 @contextmanager
 def _test_env() -> Generator[None]:
     """Temporarily set ENVIRONMENT=test for the duration of the block."""
-    old = os.environ.get("ENVIRONMENT")
+    old_environment = os.environ.get("ENVIRONMENT")
+    old_domain = os.environ.get("DOMAIN")
     os.environ["ENVIRONMENT"] = "test"
+    os.environ["DOMAIN"] = "athena.localhost"
     _ = os.environ.setdefault("DATABASE_URL", "postgresql://localhost:5432/athena")
     _ = os.environ.setdefault("VALKEY_URL", "redis://localhost:6379")
     try:
         yield
     finally:
-        if old is None:
+        if old_environment is None:
             _ = os.environ.pop("ENVIRONMENT", None)
         else:
-            os.environ["ENVIRONMENT"] = old
+            os.environ["ENVIRONMENT"] = old_environment
+        if old_domain is None:
+            _ = os.environ.pop("DOMAIN", None)
+        else:
+            os.environ["DOMAIN"] = old_domain
 
 
 def _seed_default_role(app: Starlette) -> None:
@@ -112,14 +119,14 @@ def _register_user(client: TestClient, *, username: str, email: str) -> None:
 
 def _login_user(client: TestClient, *, username: str) -> str:
     """Login and return the cho-token."""
-    resp = client.post("/", content=_login_body(username=username))
+    resp = client.post(_BANCHO_URL, content=_login_body(username=username))
     assert resp.status_code == HTTPStatus.OK
     token = resp.headers["cho-token"]
     assert len(token) > 0
 
     # Drain the initial login packet queue (login response packets may be
     # enqueued for this user; the first poll clears them).
-    drain_resp = client.post("/", headers={"osu-token": token})
+    drain_resp = client.post(_BANCHO_URL, headers={"osu-token": token})
     assert drain_resp.status_code == HTTPStatus.OK
 
     return token
@@ -180,14 +187,14 @@ class TestExitUserQuitBroadcast:
                 # User A sends EXIT packet
                 exit_packet = _build_c2s_packet(ClientPacketID.EXIT)
                 exit_resp = client.post(
-                    "/",
+                    _BANCHO_URL,
                     content=exit_packet,
                     headers={"osu-token": token_a},
                 )
                 assert exit_resp.status_code == HTTPStatus.OK
 
                 # User B polls — should receive USER_QUIT for user A
-                poll_resp = client.post("/", headers={"osu-token": token_b})
+                poll_resp = client.post(_BANCHO_URL, headers={"osu-token": token_b})
                 assert poll_resp.status_code == HTTPStatus.OK
 
                 packets = _parse_s2c_packets(poll_resp.content)
@@ -219,7 +226,7 @@ class TestExitUserQuitBroadcast:
                 # only other queued packets, but not a USER_QUIT for user A.
                 exit_packet = _build_c2s_packet(ClientPacketID.EXIT)
                 exit_resp = client.post(
-                    "/",
+                    _BANCHO_URL,
                     content=exit_packet,
                     headers={"osu-token": token_a},
                 )
@@ -254,7 +261,7 @@ class TestPongAcceptance:
                 # Send PONG packet
                 pong_packet = _build_c2s_packet(ClientPacketID.PONG)
                 resp = client.post(
-                    "/",
+                    _BANCHO_URL,
                     content=pong_packet,
                     headers={"osu-token": token},
                 )
@@ -280,7 +287,7 @@ class TestPongAcceptance:
                     + _build_c2s_packet(ClientPacketID.PONG)
                 )
                 resp = client.post(
-                    "/",
+                    _BANCHO_URL,
                     content=body,
                     headers={"osu-token": token},
                 )
@@ -318,7 +325,7 @@ class TestExceptionIsolation:
                 body = bad_packet + pong_packet
 
                 resp = client.post(
-                    "/",
+                    _BANCHO_URL,
                     content=body,
                     headers={"osu-token": token},
                 )
@@ -361,7 +368,7 @@ class TestExceptionIsolation:
                 body = bad_packet + exit_packet
 
                 resp = client.post(
-                    "/",
+                    _BANCHO_URL,
                     content=body,
                     headers={"osu-token": token_a},
                 )
@@ -370,7 +377,7 @@ class TestExceptionIsolation:
 
                 # Verify EXIT was still processed despite BEATMAP_INFO failure:
                 # User B should see USER_QUIT for user A
-                poll_resp = client.post("/", headers={"osu-token": token_b})
+                poll_resp = client.post(_BANCHO_URL, headers={"osu-token": token_b})
                 assert poll_resp.status_code == HTTPStatus.OK
 
                 packets = _parse_s2c_packets(poll_resp.content)

@@ -50,6 +50,7 @@ if TYPE_CHECKING:
 _PASSWORD = "SecurePass1234"
 _PASSWORD_MD5 = hashlib.md5(_PASSWORD.encode()).hexdigest()
 _CLIENT_INFO = "20231111|9|1|hash1:hash2:hash3|0"
+_BANCHO_URL = "http://c.athena.localhost/"
 
 _DEFAULT_ROLE = Role(
     id=1,
@@ -74,6 +75,7 @@ _ = os.environ.setdefault("VALKEY_URL", "redis://localhost:6379")
 def _make_test_app() -> Starlette:
     """Create the Starlette app with full DI container and BanchoEndpoint."""
     os.environ["ENVIRONMENT"] = "test"
+    os.environ["DOMAIN"] = "athena.localhost"
     return create_app()
 
 
@@ -150,13 +152,13 @@ async def _register_user(auth_service: AuthService, username: str, email: str) -
 
 
 def _login(client: TestClient, username: str) -> str:
-    response = client.post("/", content=_login_body(username))
+    response = client.post(_BANCHO_URL, content=_login_body(username))
     assert response.status_code == HTTPStatus.OK
     return response.headers["cho-token"]
 
 
 def _poll(client: TestClient, token: str, content: bytes = b"") -> bytes:
-    response = client.post("/", headers={"osu-token": token}, content=content)
+    response = client.post(_BANCHO_URL, headers={"osu-token": token}, content=content)
     assert response.status_code == HTTPStatus.OK
     return response.content
 
@@ -294,7 +296,7 @@ class TestLoginChannelListE2E:
             await channel_state.add_member("#osu", 101)
             await channel_state.add_member("#announce", 202)
 
-            response = client.post("/", content=_login_body("Sender"))
+            response = client.post(_BANCHO_URL, content=_login_body("Sender"))
 
         assert response.status_code == HTTPStatus.OK
         assert (
@@ -340,7 +342,7 @@ class TestBanchoBotIdentityE2E:
             auth_service, _, _ = await _resolve_services(app)
             await _register_user(auth_service, "Sender", "sender@example.com")
 
-            response = client.post("/", content=_login_body("Sender"))
+            response = client.post(_BANCHO_URL, content=_login_body("Sender"))
 
         assert response.status_code == HTTPStatus.OK
         banchobot_presence = user_presence(
@@ -365,7 +367,7 @@ class TestBanchoBotIdentityE2E:
             auth_service, session_store, _ = await _resolve_services(app)
             await _register_user(auth_service, "Sender", "sender@example.com")
 
-            response = client.post("/", content=_login_body("Sender"))
+            response = client.post(_BANCHO_URL, content=_login_body("Sender"))
             user_id = await _user_id_for_token(session_store, response.headers["cho-token"])
 
         assert response.status_code == HTTPStatus.OK
@@ -382,7 +384,7 @@ class TestBanchoBotIdentityE2E:
             auth_service, _, _ = await _resolve_services(app)
             await _register_user(auth_service, "Sender", "sender@example.com")
 
-            response = client.post("/", content=_login_body("Sender"))
+            response = client.post(_BANCHO_URL, content=_login_body("Sender"))
 
         assert response.status_code == HTTPStatus.OK
         banchobot_presence = user_presence(
@@ -412,7 +414,7 @@ class TestBanchoBotIdentityE2E:
             auth_service, session_store, _ = await _resolve_services(app)
             await _register_user(auth_service, "Sender", "sender@example.com")
 
-            response = client.post("/", content=_login_body("Sender"))
+            response = client.post(_BANCHO_URL, content=_login_body("Sender"))
             user_id = await _user_id_for_token(session_store, response.headers["cho-token"])
 
         assert response.status_code == HTTPStatus.OK

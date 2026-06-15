@@ -46,6 +46,7 @@ _ROLE_DEFAULT = Role(
 )
 _OK = HTTPStatus.OK
 _HEADER_SIZE = 7
+_BANCHO_URL = "http://c.athena.localhost/"
 
 # Module-level env defaults for test DI container
 _ = os.environ.setdefault("DATABASE_URL", "postgresql://localhost:5432/athena")
@@ -76,6 +77,7 @@ def _make_test_app(
 ) -> Starlette:
     """Create the Starlette app with full DI container and BanchoEndpoint."""
     os.environ["ENVIRONMENT"] = "test"
+    os.environ["DOMAIN"] = "athena.localhost"
     os.environ["MAX_REQUEST_BODY_SIZE"] = str(max_request_body_size)
     os.environ["PACKET_QUEUE_MAX_SIZE"] = str(packet_queue_max_size)
     return create_in_memory_app(packet_queue_max_size=packet_queue_max_size)
@@ -111,7 +113,7 @@ async def _login_and_get_token(
     _ = await auth_service.register(
         RegistrationForm(username="TestUser", email="t@e.com", password=_PASSWORD),
     )
-    resp = client.post("/", content=_build_login_body())
+    resp = client.post(_BANCHO_URL, content=_build_login_body())
     assert resp.status_code == _OK
     return resp.headers["cho-token"]
 
@@ -142,7 +144,7 @@ class TestPollingE2EFlow:
 
             token = await _login_and_get_token(auth_service, client)
             # First poll to activate queue
-            _ = client.post("/", headers={"osu-token": token})
+            _ = client.post(_BANCHO_URL, headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None
@@ -150,7 +152,7 @@ class TestPollingE2EFlow:
 
             # Second poll with C2S packet
             body = _build_c2s_packet(ClientPacketID.SEND_MESSAGE, b"\x01")
-            resp = client.post("/", headers={"osu-token": token}, content=body)
+            resp = client.post(_BANCHO_URL, headers={"osu-token": token}, content=body)
             assert resp.content == b"\xca\xfe"
 
 
@@ -163,7 +165,7 @@ class TestSessionTTLRefresh:
         with TestClient(app, raise_server_exceptions=False) as client:
             _, _, session_store, auth_service = await _resolve_services(app)
             token = await _login_and_get_token(auth_service, client)
-            _ = client.post("/", headers={"osu-token": token})
+            _ = client.post(_BANCHO_URL, headers={"osu-token": token})
             assert await session_store.exists(token) is True
 
 
@@ -175,7 +177,7 @@ class TestInvalidTokenRejection:
 
         with TestClient(app, raise_server_exceptions=False) as client:
             _ = await _resolve_services(app)
-            resp = client.post("/", headers={"osu-token": "bogus"})
+            resp = client.post(_BANCHO_URL, headers={"osu-token": "bogus"})
             value = _extract_login_reply(resp.content)
             assert value == LoginResult.AUTHENTICATION_FAILED
 
@@ -195,7 +197,7 @@ class TestNoTokenFallsBackToLogin:
                     password=_PASSWORD,
                 ),
             )
-            resp = client.post("/", content=_build_login_body())
+            resp = client.post(_BANCHO_URL, content=_build_login_body())
             assert "cho-token" in resp.headers
             assert _extract_login_reply(resp.content) > 0
 
@@ -210,7 +212,7 @@ class TestBodySizeLimitE2E:
             _, _, _, auth_service = await _resolve_services(app)
             token = await _login_and_get_token(auth_service, client)
             resp = client.post(
-                "/",
+                _BANCHO_URL,
                 headers={"osu-token": token},
                 content=b"\x00" * 20,
             )
@@ -231,7 +233,7 @@ class TestCorruptPacketEdgeCase:
         with TestClient(app, raise_server_exceptions=False) as client:
             _, packet_queue, session_store, auth_service = await _resolve_services(app)
             token = await _login_and_get_token(auth_service, client)
-            _ = client.post("/", headers={"osu-token": token})
+            _ = client.post(_BANCHO_URL, headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None
@@ -239,7 +241,7 @@ class TestCorruptPacketEdgeCase:
             await packet_queue.enqueue(user_id, b"\xab")
 
             resp = client.post(
-                "/",
+                _BANCHO_URL,
                 headers={"osu-token": token},
                 content=b"\xff\xff",  # corrupt header
             )
@@ -274,7 +276,7 @@ class TestHandlerExceptionEdgeCase:
                 ClientPacketID.JOIN_CHANNEL,
                 b"\x00",
             ) + _build_c2s_packet(ClientPacketID.SEND_MESSAGE, b"\x00")
-            _ = client.post("/", headers={"osu-token": token}, content=body)
+            _ = client.post(_BANCHO_URL, headers={"osu-token": token}, content=body)
 
         assert results == ["ok"]
 
@@ -288,7 +290,7 @@ class TestQueueSizeLimit:
         with TestClient(app, raise_server_exceptions=False) as client:
             _, packet_queue, session_store, auth_service = await _resolve_services(app)
             token = await _login_and_get_token(auth_service, client)
-            _ = client.post("/", headers={"osu-token": token})
+            _ = client.post(_BANCHO_URL, headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None
@@ -297,7 +299,7 @@ class TestQueueSizeLimit:
             for i in range(5):
                 await packet_queue.enqueue(user_id, bytes([i]))
 
-            resp = client.post("/", headers={"osu-token": token})
+            resp = client.post(_BANCHO_URL, headers={"osu-token": token})
             assert resp.content == b"\x02\x03\x04"
 
 

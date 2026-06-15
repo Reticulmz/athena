@@ -14,7 +14,7 @@ from taskiq import AsyncBroker
 from osu_server.app import app, create_app
 from osu_server.composition.providers.container import make_app_container
 from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
-from osu_server.config import AppConfig
+from osu_server.config import AppConfig, load_routing_config
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.local import LocalEventBus
@@ -75,7 +75,7 @@ from osu_server.transports.stable.web_legacy.registration import RegistrationHan
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 from tests.factories.config import make_app_config
 
-_EXPECTED_MIN_HOST_ROUTES = 2
+_EXPECTED_MIN_HOST_ROUTES = 4
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -89,13 +89,20 @@ def test_public_app_entrypoint_exposes_starlette_app() -> None:
 def test_create_app_registers_host_and_fallback_routes() -> None:
     created = create_app()
     routes = list(created.routes)
+    domain = load_routing_config().domain
 
     host_routes = [route for route in routes if isinstance(route, Host)]
     fallback_routes = [route for route in routes if isinstance(route, Route)]
     mounts = [route for route in routes if isinstance(route, Mount)]
 
     assert len(host_routes) >= _EXPECTED_MIN_HOST_ROUTES
-    assert any(
+    assert {route.host for route in host_routes} >= {
+        f"c.{domain}",
+        f"c{{server:int}}.{domain}",
+        f"ce.{domain}",
+        f"osu.{domain}",
+    }
+    assert not any(
         route.path == "/" and "POST" in (route.methods or set()) for route in fallback_routes
     )
     assert any(
@@ -104,6 +111,31 @@ def test_create_app_registers_host_and_fallback_routes() -> None:
     assert any(route.path == "/web" for route in mounts)
     assert any(route.path == "/api/v2" for route in mounts)
     assert any(route.path == "/signalr" for route in mounts)
+
+
+def test_create_app_reads_route_domain_from_environment_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DOMAIN", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("VALKEY_URL", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    _ = (tmp_path / ".env.development").write_text(
+        "DOMAIN=example.test\n",
+        encoding="utf-8",
+    )
+
+    created = create_app()
+    host_routes = [route for route in created.routes if isinstance(route, Host)]
+
+    assert {route.host for route in host_routes} >= {
+        "c.example.test",
+        "c{server:int}.example.test",
+        "ce.example.test",
+        "osu.example.test",
+    }
 
 
 @pytest.mark.asyncio

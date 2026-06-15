@@ -293,7 +293,25 @@ class AppConfig(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="")
 
 
+class RoutingConfig(BaseSettings):
+    """Routing configuration needed before application lifespan startup."""
+
+    environment: str = "development"
+    domain: str = "athena.localhost"
+
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix="",
+        extra="ignore",
+    )
+
+
 def load_config() -> AppConfig:
     """Factory function to create AppConfig from environment variables."""
     environment = os.environ.get(_ENVIRONMENT_VARIABLE, _DEFAULT_ENVIRONMENT).lower()
     return AppConfig(_env_file=f".env.{environment}")  # pyright: ignore[reportCallIssue]
+
+
+def load_routing_config() -> RoutingConfig:
+    """Load routing configuration before full application startup."""
+    environment = os.environ.get(_ENVIRONMENT_VARIABLE, _DEFAULT_ENVIRONMENT).lower()
+    return RoutingConfig(_env_file=f".env.{environment}")  # pyright: ignore[reportCallIssue]
