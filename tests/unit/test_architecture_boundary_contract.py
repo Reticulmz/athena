@@ -260,6 +260,30 @@ STABLE_TRANSPORT_RUNTIME_FILES = (
     SOURCE_ROOT / "transports" / "stable" / "web_legacy" / "score_submit.py",
 )
 
+REMOVED_ARCHITECTURE_ENTRYPOINTS = (
+    SOURCE_ROOT / "infrastructure" / "di",
+    SOURCE_ROOT / "composition" / "service_registry.py",
+    SOURCE_ROOT / "composition" / "worker_runtime.py",
+    SOURCE_ROOT / "domain" / "bancho_bot.py",
+    SOURCE_ROOT / "domain" / "legacy_getscores.py",
+    SOURCE_ROOT / "domain" / "system_user.py",
+    SOURCE_ROOT / "services" / "auth_service.py",
+    SOURCE_ROOT / "services" / "bancho_bot",
+    SOURCE_ROOT / "services" / "beatmap_mirror",
+    SOURCE_ROOT / "services" / "blob_storage_service.py",
+    SOURCE_ROOT / "services" / "channel_service.py",
+    SOURCE_ROOT / "services" / "chat_service.py",
+    SOURCE_ROOT / "services" / "online_users.py",
+    SOURCE_ROOT / "services" / "password_service.py",
+    SOURCE_ROOT / "services" / "permission_service.py",
+    SOURCE_ROOT / "services" / "private_message_service.py",
+    SOURCE_ROOT / "services" / "score_authorization_service.py",
+    SOURCE_ROOT / "services" / "session_authorization_service.py",
+    SOURCE_ROOT / "transports" / "bancho",
+    SOURCE_ROOT / "transports" / "signalr",
+    SOURCE_ROOT / "transports" / "web_legacy",
+)
+
 BEATMAP_FETCH_JOB_ADAPTER_FILE = SOURCE_ROOT / "jobs" / "beatmap_fetch.py"
 BEATMAP_FETCH_JOB_FORBIDDEN_IMPORT_ROOTS = (
     "osu_server.infrastructure.storage",
@@ -273,7 +297,6 @@ DEPRECATED_EXACT_ROOTS = (
     "osu_server.infrastructure.di",
     "osu_server.composition.service_registry",
     "osu_server.composition.worker_runtime",
-    "osu_server.transports.api",
     "osu_server.transports.bancho",
     "osu_server.transports.signalr",
     "osu_server.transports.web_legacy",
@@ -285,9 +308,18 @@ DEPRECATED_PACKAGE_REPLACEMENTS = {
         "osu_server",
         "domain",
     ): (3, {"beatmaps", "chat", "compatibility", "events", "identity", "scores", "storage"}),
-    ("osu_server", "repositories", "interfaces"): (4, {"commands", "queries"}),
-    ("osu_server", "repositories", "sqlalchemy"): (4, {"commands", "queries", "models"}),
-    ("osu_server", "repositories", "memory"): (4, {"commands", "queries"}),
+    ("osu_server", "repositories", "interfaces"): (
+        4,
+        {"commands", "queries", "session_store", "unit_of_work"},
+    ),
+    ("osu_server", "repositories", "sqlalchemy"): (
+        4,
+        {"commands", "queries", "models", "unit_of_work"},
+    ),
+    ("osu_server", "repositories", "memory"): (
+        4,
+        {"commands", "queries", "session_store", "unit_of_work"},
+    ),
 }
 
 REMOVED_DEPENDENCY_COMPOSITION_ROOTS = (
@@ -401,6 +433,16 @@ def current_removed_dependency_composition_imports() -> list[str]:
                         entries.add(f"{relative_path}\t{removed_root}")
 
     return sorted(entries)
+
+
+def path_has_python_sources(path: Path) -> bool:
+    if path.is_file():
+        return path.suffix == ".py"
+    if not path.is_dir():
+        return False
+    return any(
+        child.suffix == ".py" and "__pycache__" not in child.parts for child in path.rglob("*.py")
+    )
 
 
 def expected_deprecated_imports() -> list[str]:
@@ -611,6 +653,16 @@ def test_stable_transport_runtime_sources_live_in_stable_family() -> None:
     assert missing_runtime_files == []
     assert old_root_sources == []
     assert old_root_packages == []
+
+
+def test_removed_architecture_entrypoints_have_no_python_sources() -> None:
+    remaining = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for path in REMOVED_ARCHITECTURE_ENTRYPOINTS
+        if path_has_python_sources(path)
+    ]
+
+    assert remaining == []
 
 
 def test_beatmap_fetch_job_adapter_does_not_build_runtime_dependencies() -> None:

@@ -237,7 +237,7 @@
   - Completion is observable when docs and tests no longer reference deprecated placement as supported architecture.
   - _Requirements: 6.7, 9.1, 9.3, 9.4, 10.5_
 
-- [ ] 8.3 Align import-linter contracts with the finalized architecture document
+- [x] 8.3 Align import-linter contracts with the finalized architecture document
   - Compare the architecture document with dependency validation rules and resolve any mismatch.
   - Add final residual checks for old dependency container, registry, flat services, flat repositories, flat domain modules, and old root transport packages.
   - Completion is observable when docs and automated dependency validation describe the same boundaries and pass together.
