@@ -99,6 +99,7 @@ src/osu_server/services/commands/chat/send_channel_message.py	osu_server.reposit
 src/osu_server/services/commands/chat/send_channel_message.py	osu_server.services.bancho_bot
 src/osu_server/services/commands/chat/send_private_message.py	osu_server.repositories.interfaces.session_store
 src/osu_server/services/commands/chat/send_private_message.py	osu_server.services.bancho_bot
+src/osu_server/services/commands/scores/submit_score.py	osu_server.repositories.interfaces.unit_of_work
 src/osu_server/services/legacy_getscores_service.py	osu_server.domain.legacy_getscores
 src/osu_server/services/legacy_getscores_service.py	osu_server.repositories.interfaces.beatmap_repository
 src/osu_server/services/legacy_web_auth_service.py	osu_server.repositories.interfaces.session_store
@@ -112,9 +113,6 @@ src/osu_server/services/queries/scores/legacy_getscores.py	osu_server.domain.leg
 src/osu_server/services/score_authorization_service.py	osu_server.repositories.interfaces.session_store
 src/osu_server/services/score_authorization_service.py	osu_server.repositories.interfaces.user_repository
 src/osu_server/services/score_authorization_service.py	osu_server.services.password_service
-src/osu_server/services/score_submission_service.py	osu_server.repositories.interfaces.replay_repository
-src/osu_server/services/score_submission_service.py	osu_server.repositories.interfaces.score_repository
-src/osu_server/services/score_submission_service.py	osu_server.repositories.interfaces.submission_repository
 src/osu_server/services/score_submission_service.py	osu_server.services.score_authorization_service
 src/osu_server/services/session_authorization_service.py	osu_server.repositories.interfaces.session_store
 src/osu_server/services/session_authorization_service.py	osu_server.services.permission_service

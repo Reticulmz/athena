@@ -9,14 +9,19 @@ from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.storage.blobs import Blob, BlobStored
+from osu_server.services.commands.scores import SubmitScoreUseCase
 from osu_server.services.password_service import PasswordService
 from osu_server.services.score_authorization_service import ScoreAuthorizationService
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.sessions import SessionAuthorization
+    from osu_server.domain.scores.replay import Replay
+    from osu_server.domain.scores.score import Score
+    from osu_server.domain.scores.submission import ScoreSubmission
     from osu_server.domain.system_user import SystemUserIdentity
     from osu_server.infrastructure.security.hibp import HIBPClient
     from osu_server.repositories.interfaces.queries.users import UserQueryRepository
+    from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 
 
 class FakeHIBPClient:
@@ -211,6 +216,98 @@ def make_score_authorization_service(
         password_service=StaticPasswordService(password_md5),
         session_store=StaticSessionStore(session),
     )
+
+
+class UowScoreRepositoryView:
+    """Compatibility view over score command state for tests."""
+
+    def __init__(self, unit_of_work_factory: InMemoryUnitOfWorkFactory) -> None:
+        self._unit_of_work_factory: InMemoryUnitOfWorkFactory = unit_of_work_factory
+
+    async def create(self, score: Score) -> Score:
+        async with self._unit_of_work_factory() as uow:
+            created = await uow.scores.create(score)
+            await uow.commit()
+            return created
+
+    async def exists_by_online_checksum(self, checksum: str) -> bool:
+        async with self._unit_of_work_factory() as uow:
+            return await uow.scores.exists_by_online_checksum(checksum)
+
+    async def get_by_online_checksum(self, checksum: str) -> Score | None:
+        async with self._unit_of_work_factory() as uow:
+            return await uow.scores.get_by_online_checksum(checksum)
+
+    async def get_by_id(self, score_id: int) -> Score | None:
+        async with self._unit_of_work_factory() as uow:
+            return await uow.scores.get_by_id(score_id)
+
+
+class UowScoreSubmissionRepositoryView:
+    """Compatibility view over score submission command state for tests."""
+
+    def __init__(self, unit_of_work_factory: InMemoryUnitOfWorkFactory) -> None:
+        self._unit_of_work_factory: InMemoryUnitOfWorkFactory = unit_of_work_factory
+
+    async def create(self, submission: ScoreSubmission) -> ScoreSubmission:
+        async with self._unit_of_work_factory() as uow:
+            created = await uow.submissions.create(submission)
+            await uow.commit()
+            return created
+
+    async def get_by_fingerprint(self, fingerprint: str) -> ScoreSubmission | None:
+        async with self._unit_of_work_factory() as uow:
+            return await uow.submissions.get_by_fingerprint(fingerprint)
+
+    async def update_state(
+        self,
+        submission_id: int,
+        state: str,
+        result_snapshot: dict[str, object] | None = None,
+    ) -> None:
+        async with self._unit_of_work_factory() as uow:
+            await uow.submissions.update_state(submission_id, state, result_snapshot)
+            await uow.commit()
+
+
+class UowReplayRepositoryView:
+    """Compatibility view over replay command state for tests."""
+
+    def __init__(self, unit_of_work_factory: InMemoryUnitOfWorkFactory) -> None:
+        self._unit_of_work_factory: InMemoryUnitOfWorkFactory = unit_of_work_factory
+
+    async def create(self, replay: Replay) -> Replay:
+        async with self._unit_of_work_factory() as uow:
+            created = await uow.replays.create(replay)
+            await uow.commit()
+            return created
+
+    async def exists_by_checksum(self, checksum: str) -> bool:
+        async with self._unit_of_work_factory() as uow:
+            return await uow.replays.exists_by_checksum(checksum)
+
+
+type ScoreRepositoryViews = tuple[
+    UowScoreRepositoryView,
+    UowScoreSubmissionRepositoryView,
+    UowReplayRepositoryView,
+]
+
+
+def make_score_repository_views(
+    unit_of_work_factory: InMemoryUnitOfWorkFactory,
+) -> ScoreRepositoryViews:
+    return (
+        UowScoreRepositoryView(unit_of_work_factory),
+        UowScoreSubmissionRepositoryView(unit_of_work_factory),
+        UowReplayRepositoryView(unit_of_work_factory),
+    )
+
+
+def make_submit_score_use_case(
+    unit_of_work_factory: InMemoryUnitOfWorkFactory,
+) -> SubmitScoreUseCase:
+    return SubmitScoreUseCase(unit_of_work_factory=unit_of_work_factory)
 
 
 class StubBlobStorageService:

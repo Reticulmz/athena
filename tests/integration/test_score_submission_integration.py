@@ -44,6 +44,8 @@ from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreR
 from osu_server.repositories.sqlalchemy.submission_repository import (
     SQLAlchemyScoreSubmissionRepository,
 )
+from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
+from osu_server.services.commands.scores import SubmitScoreUseCase
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
@@ -267,15 +269,13 @@ def service(
     score_decryptor: StubScorePayloadDecryptor,
 ) -> ScoreSubmissionService:
     """Create ScoreSubmissionService with SQLAlchemy repositories."""
-    score_repo = SQLAlchemyScoreRepository(session_factory)
-    submission_repo = SQLAlchemyScoreSubmissionRepository(session_factory)
-    replay_repo = SQLAlchemyReplayRepository(session_factory)
     auth_service = make_score_authorization_service()
     beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap())
+    submit_score_use_case = SubmitScoreUseCase(
+        unit_of_work_factory=SQLAlchemyUnitOfWorkFactory(session_factory)
+    )
     return ScoreSubmissionService(
-        score_repo,
-        submission_repo,
-        replay_repo,
+        submit_score_use_case,
         SQLAlchemyBlobStorageStub(session_factory),
         score_decryptor,
         auth_service,

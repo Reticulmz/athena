@@ -123,7 +123,7 @@
   - _Boundary: Query Use Cases_
   - _Depends: 3.4_
 
-- [ ] 4.4 (P) Migrate score submission into a command use-case with bounded transaction timing
+- [x] 4.4 (P) Migrate score submission into a command use-case with bounded transaction timing
   - Move score submission mutation, idempotency, replay persistence, uniqueness checks, and result snapshot updates behind a command use-case.
   - Keep decryption, parsing, beatmap lookup, and external I/O waits outside the write transaction unless they are part of the durable command outcome.
   - Completion is observable when score submission commits submission, score, replay, and state update as one command outcome or leaves no partial command outcome.

@@ -22,9 +22,7 @@ from osu_server.domain.beatmaps import (
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.domain.scores.submission import ScoreSubmission
-from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
-from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
-from osu_server.repositories.memory.submission_repository import InMemoryScoreSubmissionRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
@@ -33,9 +31,12 @@ from osu_server.services.score_submission_service import (
     generate_submission_request_hash,
 )
 from tests.support.fakes import (
+    ScoreRepositoryViews,
     StubBlobStorageService,
     StubScorePayloadDecryptor,
     make_score_authorization_service,
+    make_score_repository_views,
+    make_submit_score_use_case,
 )
 
 
@@ -146,21 +147,15 @@ class FakeBeatmapResolver:
         )
 
 
-type ScoreRepos = tuple[
-    InMemoryScoreRepository,
-    InMemoryScoreSubmissionRepository,
-    InMemoryReplayRepository,
-]
+@pytest.fixture
+def uow_factory() -> InMemoryUnitOfWorkFactory:
+    return InMemoryUnitOfWorkFactory()
 
 
 @pytest.fixture
-def repos() -> ScoreRepos:
+def repos(uow_factory: InMemoryUnitOfWorkFactory) -> ScoreRepositoryViews:
     """Create in-memory repositories."""
-    return (
-        InMemoryScoreRepository(),
-        InMemoryScoreSubmissionRepository(),
-        InMemoryReplayRepository(),
-    )
+    return make_score_repository_views(uow_factory)
 
 
 @pytest.fixture
@@ -180,18 +175,15 @@ def score_decryptor() -> StubScorePayloadDecryptor:
 
 @pytest.fixture
 def service(
-    repos: ScoreRepos,
+    uow_factory: InMemoryUnitOfWorkFactory,
     beatmap_resolver: FakeBeatmapResolver,
     blob_storage: StubBlobStorageService,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> ScoreSubmissionService:
     """Create service with in-memory repositories."""
-    score_repo, submission_repo, replay_repo = repos
     auth_service = make_score_authorization_service()
     return ScoreSubmissionService(
-        score_repo,
-        submission_repo,
-        replay_repo,
+        make_submit_score_use_case(uow_factory),
         blob_storage,
         score_decryptor,
         auth_service,
@@ -240,7 +232,7 @@ def _fingerprint_for(
 async def test_happy_path_valid_submission_creates_score(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Happy path: valid submission creates score record."""
@@ -281,7 +273,7 @@ async def test_happy_path_valid_submission_creates_score(
 async def test_client_server_grade_discrepancy_is_preserved(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Client/server grade mismatches are logged and stored for diagnostics."""
@@ -322,7 +314,7 @@ async def test_client_server_grade_discrepancy_is_preserved(
 async def test_crypto_checksum_invalid_is_terminal_reject(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Crypto checksum mismatch is rejected before parsing or persistence."""
@@ -347,7 +339,7 @@ async def test_crypto_checksum_invalid_is_terminal_reject(
 async def test_failed_play_handling(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Failed play (passed=0) is stored."""
@@ -373,7 +365,7 @@ async def test_failed_play_handling(
 async def test_failed_play_without_replay_is_accepted_without_blob_write(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -404,7 +396,7 @@ async def test_failed_play_without_replay_is_accepted_without_blob_write(
 async def test_passed_play_without_replay_is_accepted_without_blob_write(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -433,7 +425,7 @@ async def test_passed_play_without_replay_is_accepted_without_blob_write(
 async def test_replay_attachment(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
@@ -462,7 +454,7 @@ async def test_replay_attachment(
 async def test_online_checksum_duplicate_rejection(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Duplicate online checksum rejects a different submission."""
@@ -503,7 +495,7 @@ async def test_online_checksum_duplicate_rejection(
 @pytest.mark.asyncio
 async def test_replay_checksum_duplicate_rejection(
     service: ScoreSubmissionService,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Duplicate replay checksum is rejected."""
@@ -587,7 +579,7 @@ async def test_submission_fingerprint_idempotency(
 async def test_in_progress_retry_returns_accepted_pending(
     service: ScoreSubmissionService,
     valid_input: ParsedSubmissionInput,
-    repos: ScoreRepos,
+    repos: ScoreRepositoryViews,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Same fingerprint in processing state returns accepted_pending."""

@@ -17,11 +17,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
 )
 from osu_server.domain.scores.decryption import DecryptedPayload
-from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
-from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
-from osu_server.repositories.memory.submission_repository import (
-    InMemoryScoreSubmissionRepository,
-)
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
@@ -31,6 +27,7 @@ from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,
     make_score_authorization_service,
+    make_submit_score_use_case,
 )
 
 # Mod bit constants (from osu! stable protocol)
@@ -127,21 +124,9 @@ class FakeBeatmapResolver:
         )
 
 
-type ScoreRepos = tuple[
-    InMemoryScoreRepository,
-    InMemoryScoreSubmissionRepository,
-    InMemoryReplayRepository,
-]
-
-
 @pytest.fixture
-def repos() -> ScoreRepos:
-    """Create in-memory repositories."""
-    return (
-        InMemoryScoreRepository(),
-        InMemoryScoreSubmissionRepository(),
-        InMemoryReplayRepository(),
-    )
+def uow_factory() -> InMemoryUnitOfWorkFactory:
+    return InMemoryUnitOfWorkFactory()
 
 
 @pytest.fixture
@@ -156,17 +141,14 @@ def score_decryptor() -> StubScorePayloadDecryptor:
 
 @pytest.fixture
 def service(
-    repos: ScoreRepos,
+    uow_factory: InMemoryUnitOfWorkFactory,
     beatmap_resolver: FakeBeatmapResolver,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> ScoreSubmissionService:
     """Create service with in-memory repositories."""
-    score_repo, submission_repo, replay_repo = repos
     auth_service = make_score_authorization_service()
     return ScoreSubmissionService(
-        score_repo,
-        submission_repo,
-        replay_repo,
+        make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
         score_decryptor,
         auth_service,

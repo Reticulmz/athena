@@ -29,9 +29,8 @@ from osu_server.domain.beatmaps import (
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore
-from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
-from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
-from osu_server.repositories.memory.submission_repository import InMemoryScoreSubmissionRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
+from osu_server.services.score_authorization_service import ScoreAuthorizationService
 from osu_server.services.score_submission_service import (
     ParsedSubmissionInput,
     ScoreSubmissionService,
@@ -42,7 +41,10 @@ from osu_server.services.score_submission_service import (
 from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,
+    UowScoreSubmissionRepositoryView,
     make_score_authorization_service,
+    make_score_repository_views,
+    make_submit_score_use_case,
 )
 
 
@@ -132,6 +134,24 @@ class FakeBeatmapResolver:
         )
 
 
+def _make_score_submission_service(
+    *,
+    resolver: FakeBeatmapResolver,
+    score_decryptor: StubScorePayloadDecryptor,
+    auth_service: ScoreAuthorizationService,
+) -> tuple[ScoreSubmissionService, UowScoreSubmissionRepositoryView]:
+    uow_factory = InMemoryUnitOfWorkFactory()
+    _, submission_repo, _ = make_score_repository_views(uow_factory)
+    service = ScoreSubmissionService(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        auth_service,
+        resolver,
+    )
+    return service, submission_repo
+
+
 @pytest.mark.asyncio
 async def test_authorization_failure_does_not_log_raw_password_md5(
     monkeypatch: pytest.MonkeyPatch,
@@ -141,9 +161,6 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
     Verify that actual log output does not contain raw password-md5 when
     authorization fails. Instead, a SHA-256 hash should be logged.
     """
-    score_repo = InMemoryScoreRepository()
-    submission_repo = InMemoryScoreSubmissionRepository()
-    replay_repo = InMemoryReplayRepository()
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
         eligibility=BeatmapEligibility(
@@ -164,14 +181,10 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service = ScoreSubmissionService(
-        score_repo,
-        submission_repo,
-        replay_repo,
-        StubBlobStorageService(),
-        score_decryptor,
-        auth_service,
-        resolver,
+    service, _ = _make_score_submission_service(
+        resolver=resolver,
+        score_decryptor=score_decryptor,
+        auth_service=auth_service,
     )
 
     def mock_decrypt(
@@ -260,9 +273,6 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
     - beatmap_ineligibility
     - score_validation_failure
     """
-    score_repo = InMemoryScoreRepository()
-    submission_repo = InMemoryScoreSubmissionRepository()
-    replay_repo = InMemoryReplayRepository()
     auth_service = make_score_authorization_service()
 
     # Test 1: Authorization failure category
@@ -284,14 +294,10 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
         )
     )
     score_decryptor = StubScorePayloadDecryptor()
-    service = ScoreSubmissionService(
-        score_repo,
-        submission_repo,
-        replay_repo,
-        StubBlobStorageService(),
-        score_decryptor,
-        auth_service,
-        resolver,
+    service, _ = _make_score_submission_service(
+        resolver=resolver,
+        score_decryptor=score_decryptor,
+        auth_service=auth_service,
     )
 
     def mock_decrypt(
@@ -372,14 +378,10 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
         )
     )
     score_decryptor2 = StubScorePayloadDecryptor()
-    service2 = ScoreSubmissionService(
-        score_repo,
-        submission_repo,
-        replay_repo,
-        StubBlobStorageService(),
-        score_decryptor2,
-        auth_service,
-        ineligible_resolver,
+    service2, _ = _make_score_submission_service(
+        resolver=ineligible_resolver,
+        score_decryptor=score_decryptor2,
+        auth_service=auth_service,
     )
     score_decryptor2.set_factory(mock_decrypt)
 
@@ -415,9 +417,6 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
 
     Raw opaque field values must not be stored in result_snapshot.
     """
-    score_repo = InMemoryScoreRepository()
-    submission_repo = InMemoryScoreSubmissionRepository()
-    replay_repo = InMemoryReplayRepository()
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
         eligibility=BeatmapEligibility(
@@ -438,14 +437,10 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service = ScoreSubmissionService(
-        score_repo,
-        submission_repo,
-        replay_repo,
-        StubBlobStorageService(),
-        score_decryptor,
-        auth_service,
-        resolver,
+    service, submission_repo = _make_score_submission_service(
+        resolver=resolver,
+        score_decryptor=score_decryptor,
+        auth_service=auth_service,
     )
 
     def mock_decrypt(
@@ -531,9 +526,6 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
     Verify that actual log output does not contain sensitive fields during
     normal submission flow.
     """
-    score_repo = InMemoryScoreRepository()
-    submission_repo = InMemoryScoreSubmissionRepository()
-    replay_repo = InMemoryReplayRepository()
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
         eligibility=BeatmapEligibility(
@@ -554,14 +546,10 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service = ScoreSubmissionService(
-        score_repo,
-        submission_repo,
-        replay_repo,
-        StubBlobStorageService(),
-        score_decryptor,
-        auth_service,
-        resolver,
+    service, _ = _make_score_submission_service(
+        resolver=resolver,
+        score_decryptor=score_decryptor,
+        auth_service=auth_service,
     )
 
     secret_password = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -640,9 +628,6 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
     - Submission fingerprint (for idempotency)
     - Result snapshot (score_id for observability)
     """
-    score_repo = InMemoryScoreRepository()
-    submission_repo = InMemoryScoreSubmissionRepository()
-    replay_repo = InMemoryReplayRepository()
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
         eligibility=BeatmapEligibility(
@@ -663,14 +648,10 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service = ScoreSubmissionService(
-        score_repo,
-        submission_repo,
-        replay_repo,
-        StubBlobStorageService(),
-        score_decryptor,
-        auth_service,
-        resolver,
+    service, submission_repo = _make_score_submission_service(
+        resolver=resolver,
+        score_decryptor=score_decryptor,
+        auth_service=auth_service,
     )
 
     def mock_decrypt(

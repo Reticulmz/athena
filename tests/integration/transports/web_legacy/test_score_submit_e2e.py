@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 from starlette.datastructures import Headers
-from tests.support.fakes import StubBlobStorageService, StubScorePayloadDecryptor
+from tests.support.fakes import (
+    StubBlobStorageService,
+    StubScorePayloadDecryptor,
+    make_submit_score_use_case,
+)
 
 from osu_server.domain.beatmaps import (
     Beatmap,
@@ -22,11 +26,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
 )
 from osu_server.domain.scores.decryption import DecryptedPayload
-from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
-from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
-from osu_server.repositories.memory.submission_repository import (
-    InMemoryScoreSubmissionRepository,
-)
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.score_authorization_service import AuthorizationContext
 from osu_server.services.score_submission_service import ScoreSubmissionService
 from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
@@ -178,25 +178,24 @@ def _score_payload_decryptor() -> StubScorePayloadDecryptor:
     )
 
 
+def _make_score_submission_service(*, auth_service: object) -> ScoreSubmissionService:
+    uow_factory = InMemoryUnitOfWorkFactory()
+    return ScoreSubmissionService(
+        submit_score_use_case=make_submit_score_use_case(uow_factory),
+        replay_blob_storage=StubBlobStorageService(),
+        payload_decryptor=_score_payload_decryptor(),
+        auth_service=auth_service,
+        beatmap_resolver=MockBeatmapResolver(),
+    )
+
+
 @pytest.mark.asyncio
 async def test_e2e_score_submit_completed_response() -> None:
     """E2E test: POST with real multipart data returns completed response."""
     # Arrange
-    score_repo = InMemoryScoreRepository()
-    submission_repo = InMemoryScoreSubmissionRepository()
-    replay_repo = InMemoryReplayRepository()
     auth_service = MockAuthService()
-    beatmap_resolver = MockBeatmapResolver()
 
-    service = ScoreSubmissionService(
-        score_repo=score_repo,
-        submission_repo=submission_repo,
-        replay_repo=replay_repo,
-        replay_blob_storage=StubBlobStorageService(),
-        payload_decryptor=_score_payload_decryptor(),
-        auth_service=auth_service,
-        beatmap_resolver=beatmap_resolver,
-    )
+    service = _make_score_submission_service(auth_service=auth_service)
     handler = ScoreSubmitHandler(service)
 
     body, content_type = _create_valid_multipart_body()
@@ -215,11 +214,8 @@ async def test_e2e_score_submit_completed_response() -> None:
 @pytest.mark.asyncio
 async def test_e2e_score_submit_terminal_reject_format() -> None:
     """E2E test: authorization failure returns terminal reject format."""
-    # Arrange
-    score_repo = InMemoryScoreRepository()
-    submission_repo = InMemoryScoreSubmissionRepository()
-    replay_repo = InMemoryReplayRepository()
 
+    # Arrange
     # Mock auth service that always fails
     class FailingAuthService:
         async def authorize_submission(
@@ -233,15 +229,7 @@ async def test_e2e_score_submit_terminal_reject_format() -> None:
                 payload_identity_match=False,
             )
 
-    service = ScoreSubmissionService(
-        score_repo=score_repo,
-        submission_repo=submission_repo,
-        replay_repo=replay_repo,
-        replay_blob_storage=StubBlobStorageService(),
-        payload_decryptor=_score_payload_decryptor(),
-        auth_service=FailingAuthService(),
-        beatmap_resolver=MockBeatmapResolver(),
-    )
+    service = _make_score_submission_service(auth_service=FailingAuthService())
     handler = ScoreSubmitHandler(service)
 
     body, content_type = _create_valid_multipart_body()

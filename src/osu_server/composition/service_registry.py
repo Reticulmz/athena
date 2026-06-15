@@ -120,6 +120,7 @@ from osu_server.services.commands.identity import (
     RefreshUserAuthorizationCommandUseCase,
     RegisterUserCommandUseCase,
 )
+from osu_server.services.commands.scores import SubmitScoreUseCase
 from osu_server.services.legacy_getscores_service import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
@@ -746,10 +747,6 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(GetscoresHandler, lambda: getscores_handler)
 
     # -- ScoreSubmissionService (singleton) -----------------------------------
-    score_repo = await container.resolve(ScoreRepository)
-    replay_repo = await container.resolve(ReplayRepository)
-    submission_repo = await container.resolve(ScoreSubmissionRepository)
-
     score_auth_service = ScoreAuthorizationService(
         user_repo=user_repo,
         password_service=password_service,
@@ -758,11 +755,11 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(ScoreAuthorizationService, lambda: score_auth_service)
     score_crypto_service = ScoreCryptoService()
     container.register_singleton(ScoreCryptoService, lambda: score_crypto_service)
+    submit_score_command = SubmitScoreUseCase(unit_of_work_factory=uow_factory)
+    container.register_singleton(SubmitScoreUseCase, lambda: submit_score_command)
 
     score_submission_service = ScoreSubmissionService(
-        score_repo=score_repo,
-        submission_repo=submission_repo,
-        replay_repo=replay_repo,
+        submit_score_use_case=submit_score_command,
         replay_blob_storage=blob_storage_service,
         payload_decryptor=score_crypto_service,
         auth_service=score_auth_service,
