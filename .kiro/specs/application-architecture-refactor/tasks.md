@@ -244,7 +244,7 @@
   - _Requirements: 9.2, 9.3, 10.4, 10.6_
 
 - [ ] 9. Regression and quality validation
-- [ ] 9.1 Run stable workflow regression and fix behavior drift
+- [x] 9.1 Run stable workflow regression and fix behavior drift
   - Verify login, polling, chat, registration, getscores, and score submit through the new transport and composition paths.
   - Fix any route, packet, session, or compatibility response drift caused by package movement.
   - Completion is observable when existing stable integration tests pass without external behavior changes.
