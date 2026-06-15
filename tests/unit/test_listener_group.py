@@ -15,7 +15,7 @@ from typing import final
 import structlog
 import structlog.testing
 
-from osu_server.infrastructure.messaging.memory import InMemoryEventBus
+from osu_server.infrastructure.messaging.memory import InMemoryLocalEventBus
 from osu_server.transports.stable.bancho.handlers.base import HandlerGroup
 from osu_server.transports.stable.bancho.listeners.base import ListenerGroup, listens
 from osu_server.transports.stable.bancho.routing import RouteGroup, route
@@ -58,7 +58,7 @@ class TestRegisterAll:
             async def on_fake(self, event: FakeEvent) -> None:
                 received.append(event)
 
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         group = MyListeners()
         group.register_all(event_bus)
 
@@ -82,7 +82,7 @@ class TestRegisterAll:
             async def on_another(self, event: AnotherEvent) -> None:
                 another_received.append(event)
 
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         group = MyListeners()
         group.register_all(event_bus)
 
@@ -105,7 +105,7 @@ class TestRegisterAll:
             async def on_fake(self, event: FakeEvent) -> None:
                 results.append(event.value * self.multiplier)
 
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         group = MyListeners(multiplier=10)
         group.register_all(event_bus)
 
@@ -124,7 +124,7 @@ class TestRegisterAllLogging:
             async def on_fake(self, event: FakeEvent) -> None:
                 _ = event
 
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         group = MyListeners()
 
         with structlog.testing.capture_logs() as logs:
@@ -147,7 +147,7 @@ class TestRegisterAllLogging:
             async def on_another(self, event: AnotherEvent) -> None:
                 _ = event
 
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         group = MultiListeners()
 
         with structlog.testing.capture_logs() as logs:
@@ -162,7 +162,7 @@ class TestRegisterAllLogging:
         class EmptyListeners(ListenerGroup):
             pass
 
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         group = EmptyListeners()
 
         with structlog.testing.capture_logs() as logs:

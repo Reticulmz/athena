@@ -9,16 +9,16 @@ from typing import TYPE_CHECKING
 import structlog
 
 from osu_server.domain.chat import PrivateMessageResult
-from osu_server.domain.events.channels import PrivateMessageSent
+from osu_server.services.commands.chat.persistence_work import PrivateMessagePersistenceWork
 from osu_server.services.queries.chat import ResolvePrivateMessageTargetQueryInput
 
 if TYPE_CHECKING:
     from osu_server.config import AppConfig
     from osu_server.domain.chat import SendPrivateMessageInput
-    from osu_server.infrastructure.messaging.interfaces import EventBus
     from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
     from osu_server.repositories.interfaces.session_store import SessionStore
     from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
+    from osu_server.services.commands.chat.persistence_work import ChatPersistenceWorkPublisher
     from osu_server.services.queries.chat import ResolvePrivateMessageTargetQuery
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -47,14 +47,14 @@ class SendPrivateMessageUseCase:
         target_query: ResolvePrivateMessageTargetQuery,
         command_service: CommandService,
         session_store: SessionStore,
-        event_bus: EventBus,
+        persistence_publisher: ChatPersistenceWorkPublisher,
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> None:
         self._target_query: ResolvePrivateMessageTargetQuery = target_query
         self._command_service: CommandService = command_service
         self._session_store: SessionStore = session_store
-        self._event_bus: EventBus = event_bus
+        self._persistence_publisher: ChatPersistenceWorkPublisher = persistence_publisher
         self._rate_limiter: RateLimiter = rate_limiter
         self._config: AppConfig = config
 
@@ -106,11 +106,11 @@ class SendPrivateMessageUseCase:
                 )
             )
 
-        # Fire event for persistence (success guarantees target_id is not None)
+        # Success guarantees target_id is not None.
         assert pm_result.target_id is not None
         target_id: int = pm_result.target_id
-        await self._event_bus.fire(
-            PrivateMessageSent(
+        await self._persistence_publisher.publish_private_message(
+            PrivateMessagePersistenceWork(
                 sender_id=sender.user_id,
                 sender_name=sender.username,
                 target_id=target_id,

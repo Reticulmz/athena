@@ -1,4 +1,4 @@
-"""Tests for EventBus Protocol + InMemoryEventBus."""
+"""Tests for local event fanout."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from osu_server.infrastructure.messaging.interfaces import EventBus
-from osu_server.infrastructure.messaging.memory import InMemoryEventBus
+from osu_server.infrastructure.messaging.local import LocalEventBus
+from osu_server.infrastructure.messaging.memory import InMemoryLocalEventBus
 
 
 @dataclass(slots=True)
@@ -22,17 +22,17 @@ class _ChatMessageSent:
 
 
 @pytest.fixture
-def bus() -> InMemoryEventBus:
-    return InMemoryEventBus()
+def bus() -> InMemoryLocalEventBus:
+    return InMemoryLocalEventBus()
 
 
 class TestProtocolCompliance:
-    def test_is_event_bus(self, bus: InMemoryEventBus) -> None:
-        assert isinstance(bus, EventBus)
+    def test_is_local_event_bus(self, bus: InMemoryLocalEventBus) -> None:
+        assert isinstance(bus, LocalEventBus)
 
 
 class TestFireAndSubscribe:
-    async def test_handler_receives_event(self, bus: InMemoryEventBus) -> None:
+    async def test_handler_receives_event(self, bus: InMemoryLocalEventBus) -> None:
         received: list[_UserLoggedIn] = []
 
         async def on_login(event: _UserLoggedIn) -> None:
@@ -44,10 +44,13 @@ class TestFireAndSubscribe:
         assert len(received) == 1
         assert received[0].user_id == 1
 
-    async def test_fire_without_subscribers_is_noop(self, bus: InMemoryEventBus) -> None:
+    async def test_fire_without_subscribers_is_noop(self, bus: InMemoryLocalEventBus) -> None:
         await bus.fire(_UserLoggedIn(user_id=1))
 
-    async def test_handler_only_receives_subscribed_type(self, bus: InMemoryEventBus) -> None:
+    async def test_handler_only_receives_subscribed_type(
+        self,
+        bus: InMemoryLocalEventBus,
+    ) -> None:
         received: list[object] = []
 
         async def on_login(event: _UserLoggedIn) -> None:
@@ -60,7 +63,7 @@ class TestFireAndSubscribe:
 
 
 class TestMultipleHandlers:
-    async def test_multiple_handlers_called_in_order(self, bus: InMemoryEventBus) -> None:
+    async def test_multiple_handlers_called_in_order(self, bus: InMemoryLocalEventBus) -> None:
         order: list[str] = []
 
         async def first(_event: _UserLoggedIn) -> None:
@@ -80,7 +83,7 @@ class TestMultipleHandlers:
 
         assert order == ["first", "second", "third"]
 
-    async def test_multiple_event_types(self, bus: InMemoryEventBus) -> None:
+    async def test_multiple_event_types(self, bus: InMemoryLocalEventBus) -> None:
         logins: list[_UserLoggedIn] = []
         chats: list[_ChatMessageSent] = []
 
@@ -101,7 +104,10 @@ class TestMultipleHandlers:
 
 
 class TestExceptionIsolation:
-    async def test_handler_exception_does_not_stop_others(self, bus: InMemoryEventBus) -> None:
+    async def test_handler_exception_does_not_stop_others(
+        self,
+        bus: InMemoryLocalEventBus,
+    ) -> None:
         results: list[str] = []
 
         async def failing(_event: _UserLoggedIn) -> None:
@@ -120,7 +126,7 @@ class TestExceptionIsolation:
 
     async def test_handler_exception_is_logged(
         self,
-        bus: InMemoryEventBus,
+        bus: InMemoryLocalEventBus,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         async def failing(_event: _UserLoggedIn) -> None:
@@ -134,3 +140,9 @@ class TestExceptionIsolation:
 
         assert any("failing" in record.message for record in caplog.records)
         assert any(record.exc_info is not None for record in caplog.records)
+
+
+class TestLocalOnlyContract:
+    def test_contract_names_local_scope(self) -> None:
+        assert LocalEventBus.__name__ == "LocalEventBus"
+        assert "cross-replica" in (LocalEventBus.__doc__ or "")

@@ -17,6 +17,11 @@ from osu_server.services.commands.chat.persist_private_message import (
     PersistPrivateMessageCommand,
     PersistPrivateMessageUseCase,
 )
+from osu_server.services.commands.chat.persistence_work import (
+    ChannelMessagePersistenceWork,
+    ChatPersistenceWorkPublisher,
+    PrivateMessagePersistenceWork,
+)
 from osu_server.services.commands.chat.send_channel_message import (
     SendChannelMessageCommand,
     SendChannelMessageResult,
@@ -29,6 +34,8 @@ from osu_server.services.commands.chat.send_private_message import (
 )
 
 __all__ = [
+    "ChannelMessagePersistenceWork",
+    "ChatPersistenceWorkPublisher",
     "JoinChannelCommand",
     "JoinChannelResult",
     "JoinChannelUseCase",
@@ -38,6 +45,7 @@ __all__ = [
     "PersistChannelMessageUseCase",
     "PersistPrivateMessageCommand",
     "PersistPrivateMessageUseCase",
+    "PrivateMessagePersistenceWork",
     "SendChannelMessageCommand",
     "SendChannelMessageResult",
     "SendChannelMessageUseCase",

@@ -1,6 +1,6 @@
 """E2E tests for C2S packet handlers: EXIT, PONG, and exception isolation.
 
-Tests the full HTTP POST → C2S dispatch → EventBus → S2C response pipeline
+Tests the full HTTP POST → C2S dispatch → LocalEventBus → S2C response pipeline
 using the real Starlette app with in-memory stores (ENVIRONMENT=test).
 
 Requirements coverage:

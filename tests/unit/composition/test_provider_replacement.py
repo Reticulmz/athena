@@ -31,8 +31,8 @@ from osu_server.composition.providers.container import make_app_container, make_
 from osu_server.composition.providers.test import TestProviderSet, replace_value
 from osu_server.composition.providers.worker import WorkerProviderGraph
 from osu_server.config import AppConfig
-from osu_server.infrastructure.messaging.interfaces import EventBus
-from osu_server.infrastructure.messaging.memory import InMemoryEventBus
+from osu_server.infrastructure.messaging.local import LocalEventBus
+from osu_server.infrastructure.messaging.memory import InMemoryLocalEventBus
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.interfaces.session_store import SessionStore
@@ -96,14 +96,14 @@ async def test_app_container_accepts_test_provider_replacements_without_test_env
 @pytest.mark.asyncio
 async def test_worker_container_accepts_test_provider_replacements_without_test_env() -> None:
     config = make_app_config(environment="production")
-    event_bus: EventBus = InMemoryEventBus()
+    event_bus: LocalEventBus = InMemoryLocalEventBus()
     packet_queue: PacketQueue = InMemoryPacketQueue(max_size=1)
 
     container = make_worker_container(
         config,
         overrides=(
             TestProviderSet(
-                replace_value(EventBus, event_bus, scope=Scope.APP),
+                replace_value(LocalEventBus, event_bus, scope=Scope.APP),
                 replace_value(PacketQueue, packet_queue, scope=Scope.APP),
             ),
         ),
@@ -112,7 +112,7 @@ async def test_worker_container_accepts_test_provider_replacements_without_test_
     try:
         resolved_config = await container.get(AppConfig)
         resolved_graph = await container.get(WorkerProviderGraph)
-        resolved_event_bus = await container.get(EventBus)
+        resolved_event_bus = await container.get(LocalEventBus)
         resolved_queue = await container.get(PacketQueue)
 
         assert resolved_config.environment == "production"

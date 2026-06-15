@@ -6,13 +6,12 @@ from dataclasses import dataclass
 from typing import final
 
 from dishka import Provider, Scope
-from taskiq import AsyncBroker
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
 from osu_server.domain.identity.system_users import SystemUserIdentity
 from osu_server.infrastructure.country.interfaces import CountryResolver
-from osu_server.infrastructure.messaging.interfaces import EventBus
+from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.repositories.interfaces.session_store import SessionStore
@@ -41,10 +40,9 @@ from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflo
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
-    AsyncBroker,
     ChannelStateStore,
     CountryResolver,
-    EventBus,
+    LocalEventBus,
     JoinChannelUseCase,
     LeaveChannelUseCase,
     ListAutojoinChannelsQuery,
@@ -102,7 +100,7 @@ class StableBanchoProviderSet(Provider):
     def lifecycle_handlers(
         self,
         session_store: SessionStore,
-        event_bus: EventBus,
+        event_bus: LocalEventBus,
     ) -> LifecycleHandlers:
         return LifecycleHandlers(session_store=session_store, event_bus=event_bus)
 
@@ -128,13 +126,12 @@ class StableBanchoProviderSet(Provider):
     @provide
     def app_event_listeners(
         self,
-        event_bus: EventBus,
+        event_bus: LocalEventBus,
         packet_queue: PacketQueue,
         online_users_query: ListOnlineUsersQueryUseCase,
-        broker: AsyncBroker,
         channel_state: ChannelStateStore,
     ) -> AppEventListeners:
-        setup_listeners(event_bus, packet_queue, online_users_query, broker, channel_state)
+        setup_listeners(event_bus, packet_queue, online_users_query, channel_state)
         return AppEventListeners()
 
     @provide

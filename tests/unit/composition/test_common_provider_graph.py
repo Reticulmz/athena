@@ -26,7 +26,7 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.identity.system_users import SystemUserIdentity
 from osu_server.infrastructure.crypto import ScoreCryptoService
-from osu_server.infrastructure.messaging.interfaces import EventBus
+from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
@@ -59,6 +59,7 @@ from osu_server.services.commands.beatmaps import (
     FetchBeatmapMetadataUseCase,
 )
 from osu_server.services.commands.chat import (
+    ChatPersistenceWorkPublisher,
     JoinChannelUseCase,
     LeaveChannelUseCase,
     SendChannelMessageUseCase,
@@ -149,7 +150,8 @@ async def test_app_provider_graph_resolves_shared_infrastructure_dependencies() 
         broker = await container.get(AsyncBroker)
         http_client = await container.get(httpx.AsyncClient)
         blob_backend = await container.get(BlobStorageBackend)
-        event_bus = await container.get(EventBus)
+        event_bus = await container.get(LocalEventBus)
+        chat_publisher = await container.get(ChatPersistenceWorkPublisher)
 
         assert resolved_config is config
         assert isinstance(engine, AsyncEngine)
@@ -161,6 +163,7 @@ async def test_app_provider_graph_resolves_shared_infrastructure_dependencies() 
         assert isinstance(http_client, httpx.AsyncClient)
         assert blob_backend is not None
         assert event_bus is not None
+        assert chat_publisher is not None
     finally:
         await _close_common_dependencies(container)
 

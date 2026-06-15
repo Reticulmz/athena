@@ -19,8 +19,8 @@ from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolv
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
-from osu_server.infrastructure.messaging.interfaces import EventBus
-from osu_server.infrastructure.messaging.memory import InMemoryEventBus
+from osu_server.infrastructure.messaging.local import LocalEventBus
+from osu_server.infrastructure.messaging.memory import InMemoryLocalEventBus
 from osu_server.infrastructure.security.hibp import HIBPClient, HTTPHIBPClient
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
@@ -43,7 +43,7 @@ _DISHKA_RUNTIME_HINTS = (
     BlobStorageBackend,
     ChannelStateStore,
     CountryResolver,
-    EventBus,
+    LocalEventBus,
     GlideClient,
     HIBPClient,
     PacketQueue,
@@ -106,8 +106,8 @@ class InfrastructureProviderSet(Provider):
             yield client
 
     @provide
-    def event_bus(self) -> EventBus:
-        return InMemoryEventBus()
+    def event_bus(self) -> LocalEventBus:
+        return InMemoryLocalEventBus()
 
     @provide
     def packet_queue(self, valkey: GlideClient, config: AppConfig) -> PacketQueue:

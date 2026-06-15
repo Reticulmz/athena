@@ -1,7 +1,4 @@
-"""ChatListeners — メッセージ永続化ジョブ enqueue + 切断時チャンネル掃除。
-
-ChannelMessageSent / PrivateMessageSent イベントで taskiq ジョブを
-enqueue し、UserDisconnected イベントで全チャンネルからメンバーを除去する。
+"""Chat local listeners - best-effort disconnect cleanup.
 
 設計: ChatListeners セクション (channel-system design.md)
 要件: 6.1, 6.2, 6.5, 12.1, 12.2, 12.3
@@ -11,82 +8,29 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import structlog
-
-from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.events.users import UserDisconnected
 from osu_server.transports.stable.bancho.listeners.base import ListenerGroup, listens
 
 if TYPE_CHECKING:
-    from taskiq import AsyncBroker
-
     from osu_server.infrastructure.state.interfaces.channel_state_store import (
         ChannelStateStore,
     )
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
-
 
 class ChatListeners(ListenerGroup):
-    """ドメインイベントリスナー: メッセージ永続化 enqueue + 切断掃除。
+    """Local listener for best-effort channel membership cleanup.
 
-    - on_channel_message_sent: persist_channel_message ジョブを enqueue
-    - on_private_message_sent: persist_private_message ジョブを enqueue
-    - on_user_disconnected: 全チャンネルからメンバーを除去
+    Chat history persistence is Durable Work and is not triggered here.
     """
 
-    _broker: AsyncBroker
     _channel_state: ChannelStateStore
 
     def __init__(
         self,
         *,
-        broker: AsyncBroker,
         channel_state: ChannelStateStore,
     ) -> None:
-        self._broker = broker
         self._channel_state = channel_state
-
-    @listens(ChannelMessageSent)
-    async def on_channel_message_sent(self, event: ChannelMessageSent) -> None:
-        """persist_channel_message ジョブを Valkey キューに enqueue。"""
-        task = self._broker.find_task("persist_channel_message")
-        if task is None:
-            logger.error(
-                "chat_persistence_task_not_registered",
-                task_name="persist_channel_message",
-                sender_id=event.sender_id,
-                channel_name=event.channel_name,
-            )
-            return
-
-        _ = await task.kiq(
-            event.sender_id,
-            event.channel_name,
-            event.sender_name,
-            event.content,
-        )
-
-    @listens(PrivateMessageSent)
-    async def on_private_message_sent(self, event: PrivateMessageSent) -> None:
-        """persist_private_message ジョブを Valkey キューに enqueue。"""
-        task = self._broker.find_task("persist_private_message")
-        if task is None:
-            logger.error(
-                "chat_persistence_task_not_registered",
-                task_name="persist_private_message",
-                sender_id=event.sender_id,
-                target_id=event.target_id,
-            )
-            return
-
-        _ = await task.kiq(
-            event.sender_id,
-            event.target_id,
-            event.sender_name,
-            event.target_name,
-            event.content,
-        )
 
     @listens(UserDisconnected)
     async def on_user_disconnected(self, event: UserDisconnected) -> None:

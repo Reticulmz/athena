@@ -18,7 +18,9 @@
 ### Phase 1: クライアント基本動作
 
 1. **channel-system** — チャットチャンネル管理（#osu 等）。Valkey でチャンネル状態・参加者リスト・メッセージ配信を管理（実装中）
-2. **presence-status** — ユーザーのオンライン状態・プレイ情報（Action/BeatmapID/Mods）の管理と他ユーザーへの配信
+2. **event-boundary-refactor** — 水平スケーリング前提で Local Event / Distributed Event / Durable Work を分離する。既存 EventBus を production-critical workflow の source of truth にしない
+3. **presence-status** — ユーザーのオンライン状態・プレイ情報（Action/BeatmapID/Mods）の管理と他ユーザーへの配信。Disconnect Notification は一時的通知とし、TTL / heartbeat で stale state から回復する
+4. **chat-persistence-durability** — Chat Persistence Work を Durable Work として扱い、queue signal だけに依存しない未処理 work の source of truth と retry / 重複収束を設計する
 
 ### Phase 2: ゲームプレイ
 
@@ -40,7 +42,7 @@
 
 ## メモ
 
-- Phase 1 の 1→2→3 を順に進めればチャットが動くようになり、サーバーの基本動作が確認できる
+- Phase 1 の 1→2→3→4 を順に進めればチャットと presence の基本動作を水平スケーリング前提へ寄せられる
 - Phase 2 はゲームプレイに必須だが、PP 計算（rosu-pp-py）やビートマップ取得の外部依存が増える
 - Phase 3 はプロダクション運用に向けた機能
 - ログ writer パイプラインは現行のファイルロック方式を置き換える可能性があるが、Valkey / writer の起動順・障害時にもログを失わないことを最優先の設計条件にする

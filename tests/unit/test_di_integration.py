@@ -17,7 +17,7 @@ from osu_server.composition.providers.test import make_in_memory_runtime_provide
 from osu_server.config import AppConfig
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
-from osu_server.infrastructure.messaging.interfaces import EventBus
+from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
@@ -126,7 +126,7 @@ async def test_app_container_resolves_common_infrastructure(tmp_path: Path) -> N
         )
         assert isinstance(await container.get(AsyncBroker), AsyncBroker)
         assert isinstance(await container.get(httpx.AsyncClient), httpx.AsyncClient)
-        assert isinstance(await container.get(EventBus), EventBus)
+        assert isinstance(await container.get(LocalEventBus), LocalEventBus)
         assert isinstance(await container.get(CountryResolver), CloudflareCountryResolver)
     finally:
         await container.close()

@@ -2,21 +2,21 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from caterpillar.model import pack
 from pydantic import PostgresDsn, RedisDsn
 
 from osu_server.config import AppConfig
-from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.events.users import UserDisconnected
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
-from osu_server.infrastructure.messaging.memory import InMemoryEventBus
+from osu_server.infrastructure.messaging.memory import InMemoryLocalEventBus
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.jobs.chat_persistence_publisher import TaskiqChatPersistenceWorkPublisher
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
@@ -49,6 +49,7 @@ from tests.factories.domain import make_channel, make_user
 
 if TYPE_CHECKING:
     import pytest
+    from taskiq import AsyncBroker
 
 
 class SpyTask:
@@ -77,7 +78,6 @@ class ChatPipeline:
     packet_queue: InMemoryPacketQueue
     channel_state: InMemoryChannelStateStore
     broker: SpyBroker
-    captured_events: list[object]
     sender_id: int
     target_id: int
     offline_id: int
@@ -115,9 +115,10 @@ async def _setup_pipeline() -> ChatPipeline:
     channel_query_repo = InMemoryChannelQueryRepository(uow_factory)
     channel_state = InMemoryChannelStateStore()
     packet_queue = InMemoryPacketQueue()
-    event_bus = InMemoryEventBus()
     broker = SpyBroker()
-    captured_events: list[object] = []
+    persistence_publisher = TaskiqChatPersistenceWorkPublisher(
+        cast("AsyncBroker", cast("object", broker))
+    )
 
     await user_repo.sync_system_user(BANCHO_BOT_IDENTITY)
     sender = await user_repo.create(make_user(username="Sender", email="sender@example.com"))
@@ -133,17 +134,6 @@ async def _setup_pipeline() -> ChatPipeline:
     _ = await channel_repo.create(make_channel(name="#osu", auto_join=False))
     await channel_state.add_member("#osu", target.id)
 
-    async def capture_event(event: object) -> None:
-        captured_events.append(event)
-
-    event_bus.subscribe(ChannelMessageSent, capture_event)
-    event_bus.subscribe(PrivateMessageSent, capture_event)
-    chat_listeners = ChatListeners(
-        broker=broker,  # pyright: ignore[reportArgumentType]
-        channel_state=channel_state,
-    )
-    chat_listeners.register_all(event_bus)
-
     channel_delivery_query = ResolveChannelMessageDeliveryQuery(
         channel_repository=channel_query_repo,
         channel_state=channel_state,
@@ -157,7 +147,7 @@ async def _setup_pipeline() -> ChatPipeline:
         channel_delivery_query=channel_delivery_query,
         command_service=command_service,
         session_store=session_store,
-        event_bus=event_bus,
+        persistence_publisher=persistence_publisher,
         rate_limiter=InMemoryRateLimiter(time_func=lambda: 0.0),
         config=AppConfig(
             database_url=PostgresDsn("postgresql+asyncpg://test"),
@@ -171,7 +161,7 @@ async def _setup_pipeline() -> ChatPipeline:
         target_query=private_message_target_query,
         command_service=CommandService(create_builtin_registry()),
         session_store=session_store,
-        event_bus=event_bus,
+        persistence_publisher=persistence_publisher,
         rate_limiter=InMemoryRateLimiter(time_func=lambda: 0.0),
         config=AppConfig(
             database_url=PostgresDsn("postgresql+asyncpg://test"),
@@ -203,7 +193,6 @@ async def _setup_pipeline() -> ChatPipeline:
         packet_queue=packet_queue,
         channel_state=channel_state,
         broker=broker,
-        captured_events=captured_events,
         sender_id=sender.id,
         target_id=target.id,
         offline_id=offline.id,
@@ -240,7 +229,6 @@ class TestChannelMessagePipeline:
             target="#osu",
             sender_id=pipeline.sender_id,
         )
-        assert isinstance(pipeline.captured_events[-1], ChannelMessageSent)
         task = pipeline.broker.find_task("persist_channel_message")
         assert task.calls[-1][0] == (
             pipeline.sender_id,
@@ -272,7 +260,6 @@ class TestPrivateMessagePipeline:
             target="Target",
             sender_id=pipeline.sender_id,
         )
-        assert isinstance(pipeline.captured_events[-1], PrivateMessageSent)
         task = pipeline.broker.find_task("persist_private_message")
         assert task.calls[-1][0] == (
             pipeline.sender_id,
@@ -298,7 +285,6 @@ class TestPrivateMessagePipeline:
 
         offline_packets = await pipeline.packet_queue.dequeue_all(pipeline.offline_id)
         assert offline_packets == b""
-        assert isinstance(pipeline.captured_events[-1], PrivateMessageSent)
         task = pipeline.broker.find_task("persist_private_message")
         assert task.calls[-1][0] == (
             pipeline.sender_id,
@@ -368,9 +354,8 @@ class TestDisconnectCleanupPipeline:
         await pipeline.channel_state.add_member("#announce", pipeline.sender_id)
         await pipeline.channel_state.add_member("#osu", pipeline.sender_id)
 
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         chat_listeners = ChatListeners(
-            broker=pipeline.broker,  # pyright: ignore[reportArgumentType]
             channel_state=pipeline.channel_state,
         )
         chat_listeners.register_all(event_bus)

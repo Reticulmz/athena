@@ -5,14 +5,16 @@ from __future__ import annotations
 from typing import final
 
 from dishka import Provider, Scope
+from taskiq import AsyncBroker
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
-from osu_server.infrastructure.messaging.interfaces import EventBus
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.jobs.chat_persistence_publisher import TaskiqChatPersistenceWorkPublisher
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.services.commands.chat import (
+    ChatPersistenceWorkPublisher,
     SendChannelMessageUseCase,
     SendPrivateMessageUseCase,
 )
@@ -26,7 +28,8 @@ from osu_server.services.queries.chat.private_message_service import PrivateMess
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
-    EventBus,
+    AsyncBroker,
+    ChatPersistenceWorkPublisher,
     RateLimiter,
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,
@@ -65,12 +68,19 @@ class ChatAppProviderSet(Provider):
         return CommandService(create_builtin_registry())
 
     @provide
+    def chat_persistence_work_publisher(
+        self,
+        broker: AsyncBroker,
+    ) -> ChatPersistenceWorkPublisher:
+        return TaskiqChatPersistenceWorkPublisher(broker)
+
+    @provide
     def send_channel_message_use_case(
         self,
         channel_delivery_query: ResolveChannelMessageDeliveryQuery,
         command_service: CommandService,
         session_store: SessionStore,
-        event_bus: EventBus,
+        persistence_publisher: ChatPersistenceWorkPublisher,
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> SendChannelMessageUseCase:
@@ -78,7 +88,7 @@ class ChatAppProviderSet(Provider):
             channel_delivery_query=channel_delivery_query,
             command_service=command_service,
             session_store=session_store,
-            event_bus=event_bus,
+            persistence_publisher=persistence_publisher,
             rate_limiter=rate_limiter,
             config=config,
         )
@@ -89,7 +99,7 @@ class ChatAppProviderSet(Provider):
         target_query: ResolvePrivateMessageTargetQuery,
         command_service: CommandService,
         session_store: SessionStore,
-        event_bus: EventBus,
+        persistence_publisher: ChatPersistenceWorkPublisher,
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> SendPrivateMessageUseCase:
@@ -97,7 +107,7 @@ class ChatAppProviderSet(Provider):
             target_query=target_query,
             command_service=command_service,
             session_store=session_store,
-            event_bus=event_bus,
+            persistence_publisher=persistence_publisher,
             rate_limiter=rate_limiter,
             config=config,
         )

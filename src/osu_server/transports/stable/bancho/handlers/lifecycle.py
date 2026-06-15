@@ -15,7 +15,7 @@ from osu_server.transports.stable.bancho.handlers.base import HandlerGroup, hand
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 
 if TYPE_CHECKING:
-    from osu_server.infrastructure.messaging.interfaces import EventBus
+    from osu_server.infrastructure.messaging.local import LocalEventBus
     from osu_server.repositories.interfaces.session_store import SessionStore
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -33,12 +33,12 @@ class LifecycleHandlers(HandlerGroup):
     """
 
     _session_store: SessionStore
-    _event_bus: EventBus
+    _event_bus: LocalEventBus
 
     def __init__(
         self,
         session_store: SessionStore,
-        event_bus: EventBus,
+        event_bus: LocalEventBus,
     ) -> None:
         self._session_store = session_store
         self._event_bus = event_bus

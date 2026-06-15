@@ -3,10 +3,10 @@
 Tests the full handler/listener integration with real (in-memory)
 implementations — no mocks.
 
-1. EXIT pipeline: LifecycleHandlers.handle_exit -> InMemoryEventBus
+1. EXIT pipeline: LifecycleHandlers.handle_exit -> InMemoryLocalEventBus
    -> LifecycleListeners.on_user_disconnected -> InMemoryPacketQueue
 2. HandlerGroup + PacketDispatcher: register_all -> dispatch
-3. ListenerGroup + EventBus: register_all -> fire
+3. ListenerGroup + LocalEventBus: register_all -> fire
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import struct
 from osu_server.domain.events.base import Event
 from osu_server.domain.events.users import UserDisconnected
 from osu_server.domain.identity.sessions import SessionData
-from osu_server.infrastructure.messaging.memory import InMemoryEventBus
+from osu_server.infrastructure.messaging.memory import InMemoryLocalEventBus
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.services.queries.identity import ListOnlineUsersQueryUseCase
@@ -61,14 +61,14 @@ def _parse_s2c_header(data: bytes) -> tuple[int, int]:
 
 
 class TestExitPipelineIntegration:
-    """EXIT handler -> EventBus -> Listener -> PacketQueue (Req 9.2)."""
+    """EXIT handler -> LocalEventBus -> Listener -> PacketQueue (Req 9.2)."""
 
     async def test_exit_broadcasts_user_quit_to_other_users(self) -> None:
         """When user 1 exits, user 2 and user 3 receive USER_QUIT packets
         with user 1's ID. User 1's queue receives nothing."""
         # Arrange: wire real components
         session_store = InMemorySessionStore()
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         packet_queue = InMemoryPacketQueue()
         online_users = OnlineUsersService(session_store)
         online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
@@ -101,7 +101,7 @@ class TestExitPipelineIntegration:
             assert payload_size == 4
 
             payload = data[_HEADER_FMT.size :]
-            quit_user_id: int = _INT32_FMT.unpack(payload)[0]  # pyright: ignore[reportAny]
+            quit_user_id = int.from_bytes(payload, byteorder="little", signed=True)
             assert quit_user_id == 1
 
         # User 1 should NOT receive their own USER_QUIT
@@ -111,7 +111,7 @@ class TestExitPipelineIntegration:
     async def test_exit_deletes_session(self) -> None:
         """EXIT handler deletes the disconnecting user's session."""
         session_store = InMemorySessionStore()
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         packet_queue = InMemoryPacketQueue()
         online_users = OnlineUsersService(session_store)
         online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
@@ -137,7 +137,7 @@ class TestExitPipelineIntegration:
     async def test_exit_user_excluded_from_online_list_after_disconnect(self) -> None:
         """After EXIT, the disconnected user no longer appears in online users."""
         session_store = InMemorySessionStore()
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         packet_queue = InMemoryPacketQueue()
         online_users = OnlineUsersService(session_store)
         online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
@@ -175,7 +175,7 @@ class TestHandlerGroupDispatcherIntegration:
     async def test_dispatch_calls_registered_handler(self) -> None:
         """After register_all, dispatching PONG and EXIT calls the correct handlers."""
         session_store = InMemorySessionStore()
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         dispatcher = PacketDispatcher()
 
         handlers = LifecycleHandlers(
@@ -198,7 +198,7 @@ class TestHandlerGroupDispatcherIntegration:
     async def test_unregistered_packet_is_ignored(self) -> None:
         """Dispatching a packet with no registered handler does not raise."""
         session_store = InMemorySessionStore()
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         dispatcher = PacketDispatcher()
 
         handlers = LifecycleHandlers(
@@ -213,7 +213,7 @@ class TestHandlerGroupDispatcherIntegration:
     async def test_all_lifecycle_handlers_registered(self) -> None:
         """register_all registers exactly PONG and EXIT."""
         session_store = InMemorySessionStore()
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         dispatcher = PacketDispatcher()
 
         handlers = LifecycleHandlers(
@@ -229,18 +229,18 @@ class TestHandlerGroupDispatcherIntegration:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Test 3: ListenerGroup + EventBus Integration
+# Test 3: ListenerGroup + LocalEventBus Integration
 # ═══════════════════════════════════════════════════════════════════
 
 
-class TestListenerGroupEventBusIntegration:
-    """register_all wires listeners so EventBus.fire calls them."""
+class TestListenerGroupLocalEventBusIntegration:
+    """register_all wires listeners so LocalEventBus.fire calls them."""
 
     async def test_fire_calls_registered_listener(self) -> None:
         """After register_all, firing UserDisconnected triggers the listener."""
         session_store = InMemorySessionStore()
         packet_queue = InMemoryPacketQueue()
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         online_users = OnlineUsersService(session_store)
         online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
 
@@ -265,12 +265,12 @@ class TestListenerGroupEventBusIntegration:
         assert packet_id == ServerPacketID.USER_QUIT
 
         payload = data[_HEADER_FMT.size :]
-        quit_user_id: int = _INT32_FMT.unpack(payload)[0]  # pyright: ignore[reportAny]
+        quit_user_id = int.from_bytes(payload, byteorder="little", signed=True)
         assert quit_user_id == 99
 
     async def test_unsubscribed_event_type_is_ignored(self) -> None:
         """Firing an event type with no listener does not raise."""
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
 
         # No listeners registered — fire should be a no-op
         await event_bus.fire(UserDisconnected(user_id=1))
@@ -279,7 +279,7 @@ class TestListenerGroupEventBusIntegration:
         """LifecycleListeners only responds to UserDisconnected, not others."""
         session_store = InMemorySessionStore()
         packet_queue = InMemoryPacketQueue()
-        event_bus = InMemoryEventBus()
+        event_bus = InMemoryLocalEventBus()
         online_users = OnlineUsersService(session_store)
         online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
 

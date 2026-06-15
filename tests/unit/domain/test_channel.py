@@ -1,11 +1,9 @@
-"""Tests for Channel domain model, ChannelType enum, and channel-related domain events.
+"""Tests for Channel domain model and ChannelType enum.
 
 Validates:
 - Req 1.1: Channel dataclass with required fields
 - Req 1.3: Channel name validation (# + [a-z0-9_-])
 - Req 1.5: ChannelType enum with PUBLIC and reserved variants
-- Req 6.1: ChannelMessageSent domain event
-- Req 6.2: PrivateMessageSent domain event
 """
 
 # ruff: noqa: A002
@@ -18,14 +16,11 @@ from enum import Enum
 import pytest
 
 from osu_server.domain.chat.channels import Channel, ChannelRoleOverride, ChannelType
-from osu_server.domain.events import Event
-from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 from tests.factories.domain import make_channel
-from tests.support import assert_rejects_setattr
 
 _NOW = datetime(2025, 1, 1, tzinfo=UTC)
 
@@ -167,152 +162,6 @@ class TestChannelNameValidation:
     def test_digits_allowed(self) -> None:
         ch = _make_channel(name="#room42")
         assert ch.name == "#room42"
-
-
-# ===========================================================================
-# ChannelMessageSent event
-# ===========================================================================
-
-
-class TestChannelMessageSent:
-    """Req 6.1: ChannelMessageSent domain event."""
-
-    def test_is_subclass_of_event(self) -> None:
-        assert issubclass(ChannelMessageSent, Event)
-
-    def test_instance_is_event(self) -> None:
-        event = ChannelMessageSent(
-            sender_id=1,
-            sender_name="Player",
-            channel_name="#osu",
-            content="hello",
-        )
-        assert isinstance(event, Event)
-
-    def test_frozen(self) -> None:
-        event = ChannelMessageSent(
-            sender_id=1,
-            sender_name="Player",
-            channel_name="#osu",
-            content="hello",
-        )
-        assert_rejects_setattr(event, "sender_id", 2)
-
-    def test_slots_enabled(self) -> None:
-        assert hasattr(ChannelMessageSent, "__slots__")
-
-    def test_fields(self) -> None:
-        field_names = {f.name for f in fields(ChannelMessageSent)}
-        assert field_names == {"sender_id", "sender_name", "channel_name", "content"}
-
-    def test_field_values(self) -> None:
-        event = ChannelMessageSent(
-            sender_id=42,
-            sender_name="TestPlayer",
-            channel_name="#osu",
-            content="hello world",
-        )
-        assert event.sender_id == 42
-        assert event.sender_name == "TestPlayer"
-        assert event.channel_name == "#osu"
-        assert event.content == "hello world"
-
-    def test_equality(self) -> None:
-        a = ChannelMessageSent(sender_id=1, sender_name="P", channel_name="#osu", content="hi")
-        b = ChannelMessageSent(sender_id=1, sender_name="P", channel_name="#osu", content="hi")
-        assert a == b
-
-    def test_inequality(self) -> None:
-        a = ChannelMessageSent(sender_id=1, sender_name="P", channel_name="#osu", content="hi")
-        b = ChannelMessageSent(sender_id=2, sender_name="P", channel_name="#osu", content="hi")
-        assert a != b
-
-
-# ===========================================================================
-# PrivateMessageSent event
-# ===========================================================================
-
-
-class TestPrivateMessageSent:
-    """Req 6.2: PrivateMessageSent domain event."""
-
-    def test_is_subclass_of_event(self) -> None:
-        assert issubclass(PrivateMessageSent, Event)
-
-    def test_instance_is_event(self) -> None:
-        event = PrivateMessageSent(
-            sender_id=1,
-            sender_name="Sender",
-            target_id=2,
-            target_name="Target",
-            content="hello",
-        )
-        assert isinstance(event, Event)
-
-    def test_frozen(self) -> None:
-        event = PrivateMessageSent(
-            sender_id=1,
-            sender_name="Sender",
-            target_id=2,
-            target_name="Target",
-            content="hello",
-        )
-        assert_rejects_setattr(event, "sender_id", 2)
-
-    def test_slots_enabled(self) -> None:
-        assert hasattr(PrivateMessageSent, "__slots__")
-
-    def test_fields(self) -> None:
-        field_names = {f.name for f in fields(PrivateMessageSent)}
-        assert field_names == {"sender_id", "sender_name", "target_id", "target_name", "content"}
-
-    def test_field_values(self) -> None:
-        event = PrivateMessageSent(
-            sender_id=10,
-            sender_name="Alice",
-            target_id=20,
-            target_name="Bob",
-            content="private hello",
-        )
-        assert event.sender_id == 10
-        assert event.sender_name == "Alice"
-        assert event.target_id == 20
-        assert event.target_name == "Bob"
-        assert event.content == "private hello"
-
-    def test_equality(self) -> None:
-        a = PrivateMessageSent(
-            sender_id=1,
-            sender_name="A",
-            target_id=2,
-            target_name="B",
-            content="hi",
-        )
-        b = PrivateMessageSent(
-            sender_id=1,
-            sender_name="A",
-            target_id=2,
-            target_name="B",
-            content="hi",
-        )
-        assert a == b
-
-    def test_inequality(self) -> None:
-        a = PrivateMessageSent(
-            sender_id=1,
-            sender_name="A",
-            target_id=2,
-            target_name="B",
-            content="hi",
-        )
-        b = PrivateMessageSent(
-            sender_id=1,
-            sender_name="A",
-            target_id=3,
-            target_name="C",
-            content="hi",
-        )
-        assert a != b
 
 
 # ===========================================================================

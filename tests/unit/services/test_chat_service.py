@@ -1,7 +1,7 @@
 import random
 import time
 from datetime import UTC, datetime
-from typing import final
+from typing import final, override
 
 import pytest
 from pydantic import PostgresDsn, RedisDsn
@@ -20,10 +20,8 @@ from osu_server.domain.chat import (
     SendPrivateMessageInput,
 )
 from osu_server.domain.chat.channels import Channel, ChannelType
-from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
-from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.memory.channel_state_store import (
     InMemoryChannelStateStore,
 )
@@ -36,10 +34,13 @@ from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.commands.chat import (
+    ChannelMessagePersistenceWork,
+    ChatPersistenceWorkPublisher,
     PersistChannelMessageCommand,
     PersistChannelMessageUseCase,
     PersistPrivateMessageCommand,
     PersistPrivateMessageUseCase,
+    PrivateMessagePersistenceWork,
     SendChannelMessageCommand,
     SendChannelMessageUseCase,
     SendPrivateMessageCommand,
@@ -137,21 +138,30 @@ async def session_store() -> InMemorySessionStore:
     return store
 
 
-@pytest.fixture
-def captured_events() -> list[object]:
-    return []
+@final
+class FakeChatPersistenceWorkPublisher(ChatPersistenceWorkPublisher):
+    def __init__(self) -> None:
+        self.channel_messages: list[ChannelMessagePersistenceWork] = []
+        self.private_messages: list[PrivateMessagePersistenceWork] = []
+
+    @override
+    async def publish_channel_message(
+        self,
+        work: ChannelMessagePersistenceWork,
+    ) -> None:
+        self.channel_messages.append(work)
+
+    @override
+    async def publish_private_message(
+        self,
+        work: PrivateMessagePersistenceWork,
+    ) -> None:
+        self.private_messages.append(work)
 
 
 @pytest.fixture
-def event_bus(captured_events: list[object]) -> InMemoryEventBus:
-    bus = InMemoryEventBus()
-
-    async def capture(event: object) -> None:
-        captured_events.append(event)
-
-    bus.subscribe(ChannelMessageSent, capture)
-    bus.subscribe(PrivateMessageSent, capture)
-    return bus
+def persistence_publisher() -> FakeChatPersistenceWorkPublisher:
+    return FakeChatPersistenceWorkPublisher()
 
 
 @pytest.fixture
@@ -282,7 +292,7 @@ def chat_service(
     private_message_target_query: ResolvePrivateMessageTargetQuery,
     command_service: CommandService,
     session_store: InMemorySessionStore,
-    event_bus: InMemoryEventBus,
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
     rate_limiter: InMemoryRateLimiter,
     config: AppConfig,
     uow_factory: InMemoryUnitOfWorkFactory,
@@ -291,7 +301,7 @@ def chat_service(
         channel_delivery_query=channel_delivery_query,
         command_service=command_service,
         session_store=session_store,
-        event_bus=event_bus,
+        persistence_publisher=persistence_publisher,
         rate_limiter=rate_limiter,
         config=config,
     )
@@ -299,7 +309,7 @@ def chat_service(
         target_query=private_message_target_query,
         command_service=command_service,
         session_store=session_store,
-        event_bus=event_bus,
+        persistence_publisher=persistence_publisher,
         rate_limiter=rate_limiter,
         config=config,
     )
@@ -388,7 +398,7 @@ async def test_persist_private_message_without_runtime_returns_failure() -> None
 @pytest.mark.asyncio
 async def test_send_channel_message_success(
     chat_service: ChatUseCaseHarness,
-    captured_events: list[object],
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
     res = await chat_service.send_channel_message(_channel_message_input())
 
@@ -397,12 +407,15 @@ async def test_send_channel_message_success(
     assert res.content == "hello"
     assert not res.command_responses
 
-    assert len(captured_events) == 1
-    event = captured_events[0]
-    assert isinstance(event, ChannelMessageSent)
-    assert event.content == "hello"
-    assert event.sender_id == 1
-    assert event.channel_name == "#osu"
+    assert persistence_publisher.channel_messages == [
+        ChannelMessagePersistenceWork(
+            sender_id=1,
+            sender_name="sender",
+            channel_name="#osu",
+            content="hello",
+        )
+    ]
+    assert persistence_publisher.private_messages == []
 
 
 @pytest.mark.asyncio
@@ -410,7 +423,7 @@ async def test_send_private_message_success(
     chat_service: ChatUseCaseHarness,
     user_repo: InMemoryUserRepository,
     session_store: InMemorySessionStore,
-    captured_events: list[object],
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
     # Seed sender user (consumes id=1) then target user (id=2)
     sender = User(
@@ -463,19 +476,23 @@ async def test_send_private_message_success(
     assert res.content == "hello PM"
     assert not res.command_responses
 
-    assert len(captured_events) == 1
-    event = captured_events[0]
-    assert isinstance(event, PrivateMessageSent)
-    assert event.content == "hello PM"
-    assert event.sender_id == 1
-    assert event.target_id == created_target.id
+    assert persistence_publisher.private_messages == [
+        PrivateMessagePersistenceWork(
+            sender_id=1,
+            sender_name="sender",
+            target_id=created_target.id,
+            target_name="target",
+            content="hello PM",
+        )
+    ]
+    assert persistence_publisher.channel_messages == []
 
 
 @pytest.mark.asyncio
 async def test_silenced_user_rejected(
     chat_service: ChatUseCaseHarness,
     session_store: InMemorySessionStore,
-    captured_events: list[object],
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
     # Overwrite sender session with silenced status
     await session_store.create(
@@ -497,7 +514,8 @@ async def test_silenced_user_rejected(
 
     res = await chat_service.send_channel_message(_channel_message_input())
     assert res is None
-    assert len(captured_events) == 0
+    assert persistence_publisher.channel_messages == []
+    assert persistence_publisher.private_messages == []
 
 
 @pytest.mark.asyncio
@@ -505,7 +523,7 @@ async def test_rate_limited_rejected(
     chat_service: ChatUseCaseHarness,
     rate_limiter: InMemoryRateLimiter,
     config: AppConfig,
-    captured_events: list[object],
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
     # Pre-fill rate limiter to exhaust the limit
     limit = config.rate_limit_messages  # 10
@@ -515,58 +533,63 @@ async def test_rate_limited_rejected(
 
     res = await chat_service.send_channel_message(_channel_message_input())
     assert res is None
-    assert len(captured_events) == 0
+    assert persistence_publisher.channel_messages == []
+    assert persistence_publisher.private_messages == []
 
 
 @pytest.mark.asyncio
-async def test_channel_delivery_rejected_does_not_fire_event(
+async def test_channel_delivery_rejected_does_not_publish_work(
     chat_service: ChatUseCaseHarness,
-    captured_events: list[object],
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
     res = await chat_service.send_channel_message(_channel_message_input(user_privileges=0))
 
     assert res is None
-    assert len(captured_events) == 0
+    assert persistence_publisher.channel_messages == []
+    assert persistence_publisher.private_messages == []
 
 
 @pytest.mark.asyncio
-async def test_private_target_not_found_does_not_fire_event(
+async def test_private_target_not_found_does_not_publish_work(
     chat_service: ChatUseCaseHarness,
-    captured_events: list[object],
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
     res = await chat_service.send_private_message(_private_message_input(target_name="missing"))
 
     assert res is not None
     assert res.target_id is None
-    assert len(captured_events) == 0
+    assert persistence_publisher.channel_messages == []
+    assert persistence_publisher.private_messages == []
 
 
 @pytest.mark.asyncio
 async def test_empty_message_rejected(
     chat_service: ChatUseCaseHarness,
-    captured_events: list[object],
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
     res = await chat_service.send_channel_message(_channel_message_input(content=""))
     assert res is None
-    assert len(captured_events) == 0
+    assert persistence_publisher.channel_messages == []
+    assert persistence_publisher.private_messages == []
 
 
 @pytest.mark.asyncio
 async def test_long_message_rejected(
     chat_service: ChatUseCaseHarness,
-    captured_events: list[object],
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
     long_msg = "a" * 100
     res = await chat_service.send_channel_message(_channel_message_input(content=long_msg))
 
     assert res is None
-    assert len(captured_events) == 0
+    assert persistence_publisher.channel_messages == []
+    assert persistence_publisher.private_messages == []
 
 
 @pytest.mark.asyncio
 async def test_command_execution(
     chat_service: ChatUseCaseHarness,
-    captured_events: list[object],
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def mock_randint(_a: int, _b: int) -> int:
@@ -582,10 +605,12 @@ async def test_command_execution(
     assert res.command_responses[0].target == "#osu"
     assert res.command_responses[0].content == "sender rolls 50 point(s)"
 
-    # Command messages are also delivered to channel members (Req 8.2)
-    assert len(captured_events) == 1
-    event = captured_events[0]
-    assert isinstance(event, ChannelMessageSent)
-    assert event.content == "!roll 100"
-    assert event.sender_id == 1
-    assert event.channel_name == "#osu"
+    assert persistence_publisher.channel_messages == [
+        ChannelMessagePersistenceWork(
+            sender_id=1,
+            sender_name="sender",
+            channel_name="#osu",
+            content="!roll 100",
+        )
+    ]
+    assert persistence_publisher.private_messages == []
