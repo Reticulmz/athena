@@ -214,8 +214,57 @@ def test_parse_rejects_text_field_over_configured_limit():
         _ = parse(body, content_type, limits)
 
 
-def test_parse_rejects_encrypted_score_payload_over_configured_text_limit():
-    """Text field size limit should reject the first score field."""
+def test_parse_allows_token_over_configured_text_limit_when_under_opaque_limit():
+    """Opaque token field should not use the strict text field limit."""
+    boundary = "----boundary"
+    fields = [
+        ("score", SCORE_B64),
+        ("iv", IV_B64),
+        ("pass", b"pass_hash"),
+        ("x", b"client_hash"),
+        ("osuver", b"20260412"),
+        ("token", b"t" * 131_898),
+    ]
+    body = make_multipart_body(boundary, fields)
+    content_type = f"multipart/form-data; boundary={boundary}"
+    limits = MultipartLimits(
+        total_body_size=262_144,
+        replay_size=1024,
+        text_field_size=64,
+        opaque_field_size=262_144,
+    )
+
+    result = parse(body, content_type, limits)
+
+    assert result.submission_metadata["token"] == "t" * 131_898
+
+
+def test_parse_rejects_token_over_configured_opaque_limit():
+    """Opaque token field size limit should still reject oversized values."""
+    boundary = "----boundary"
+    fields = [
+        ("score", SCORE_B64),
+        ("iv", IV_B64),
+        ("pass", b"pass_hash"),
+        ("x", b"client_hash"),
+        ("osuver", b"20260412"),
+        ("token", b"t" * 80),
+    ]
+    body = make_multipart_body(boundary, fields)
+    content_type = f"multipart/form-data; boundary={boundary}"
+    limits = MultipartLimits(
+        total_body_size=1024,
+        replay_size=1024,
+        text_field_size=64,
+        opaque_field_size=32,
+    )
+
+    with pytest.raises(ParseError, match="field 'token' size exceeds limit"):
+        _ = parse(body, content_type, limits)
+
+
+def test_parse_rejects_encrypted_score_payload_over_configured_score_payload_limit():
+    """Score payload field size limit should reject the first score field."""
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -226,7 +275,12 @@ def test_parse_rejects_encrypted_score_payload_over_configured_text_limit():
     ]
     body = make_multipart_body(boundary, fields)
     content_type = f"multipart/form-data; boundary={boundary}"
-    limits = MultipartLimits(total_body_size=1024, replay_size=1024, text_field_size=4)
+    limits = MultipartLimits(
+        total_body_size=1024,
+        replay_size=1024,
+        text_field_size=64,
+        score_payload_field_size=4,
+    )
 
     with pytest.raises(ParseError, match="field 'score' size exceeds limit"):
         _ = parse(body, content_type, limits)

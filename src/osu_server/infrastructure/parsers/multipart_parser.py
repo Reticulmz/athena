@@ -11,6 +11,9 @@ _RIJNDAEL_IV_SIZE = 32
 _DEFAULT_TOTAL_BODY_SIZE = 1_048_576
 _DEFAULT_REPLAY_SIZE = 1_048_576
 _DEFAULT_TEXT_FIELD_SIZE = 65_536
+_DEFAULT_SCORE_PAYLOAD_FIELD_SIZE = 262_144
+_DEFAULT_OPAQUE_FIELD_SIZE = 262_144
+_OPAQUE_METADATA_FIELDS = ("fs", "bmk", "sbk", "c1", "st", "i", "token")
 
 
 class ParseError(Exception):
@@ -24,6 +27,8 @@ class MultipartLimits:
     total_body_size: int = _DEFAULT_TOTAL_BODY_SIZE
     replay_size: int = _DEFAULT_REPLAY_SIZE
     text_field_size: int = _DEFAULT_TEXT_FIELD_SIZE
+    score_payload_field_size: int = _DEFAULT_SCORE_PAYLOAD_FIELD_SIZE
+    opaque_field_size: int = _DEFAULT_OPAQUE_FIELD_SIZE
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,8 +89,22 @@ def _validate_field_sizes(fields: dict[str, list[bytes]], limits: MultipartLimit
             if field_name == "score":
                 if index == _REPLAY_FIELD_INDEX:
                     _enforce_size_limit("replay", len(value), limits.replay_size)
+                elif index == 0:
+                    _enforce_size_limit(
+                        "field 'score'",
+                        len(value),
+                        limits.score_payload_field_size,
+                    )
                 else:
                     _enforce_size_limit("field 'score'", len(value), limits.text_field_size)
+                continue
+
+            if field_name in _OPAQUE_METADATA_FIELDS:
+                _enforce_size_limit(
+                    f"field {field_name!r}",
+                    len(value),
+                    limits.opaque_field_size,
+                )
                 continue
 
             _enforce_size_limit(f"field {field_name!r}", len(value), limits.text_field_size)
@@ -93,8 +112,7 @@ def _validate_field_sizes(fields: dict[str, list[bytes]], limits: MultipartLimit
 
 def _extract_optional_metadata(fields: dict[str, list[bytes]]) -> dict[str, str]:
     submission_metadata: dict[str, str] = {}
-    optional_fields = ["fs", "bmk", "sbk", "c1", "st", "i", "token"]
-    for field_name in optional_fields:
+    for field_name in _OPAQUE_METADATA_FIELDS:
         field_values = fields.get(field_name)
         if field_values:
             try:
