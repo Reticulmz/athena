@@ -15,9 +15,9 @@ Validates:
 import pytest
 import structlog.testing
 
-from osu_server.transports.bancho.dispatch import QUIET_C2S_PACKETS, PacketDispatcher
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.protocol.errors import DuplicateHandlerError
+from osu_server.transports.stable.bancho.dispatch import QUIET_C2S_PACKETS, PacketDispatcher
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.errors import DuplicateHandlerError
 
 
 class TestRegister:

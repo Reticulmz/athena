@@ -10,15 +10,17 @@ import structlog.contextvars
 
 from osu_server.domain.identity.authentication import LoginResult
 from osu_server.services.commands.identity import LoginCommandInput
-from osu_server.transports.bancho.parsers.login import parse_login_request
-from osu_server.transports.bancho.protocol.s2c.login import login_reply
+from osu_server.transports.stable.bancho.parsers.login import parse_login_request
+from osu_server.transports.stable.bancho.protocol.s2c.login import login_reply
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from osu_server.infrastructure.country.interfaces import CountryResolver
     from osu_server.services.commands.identity import LoginCommand
-    from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
+    from osu_server.transports.stable.bancho.workflows.login_response_builder import (
+        LoginResponseBuilder,
+    )
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 

@@ -29,7 +29,7 @@ from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase
 from osu_server.services.score_authorization_service import AuthorizationContext
-from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
+from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import BeatmapResolveOptions

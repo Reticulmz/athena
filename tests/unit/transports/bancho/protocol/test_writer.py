@@ -11,8 +11,8 @@ from typing import cast
 
 import structlog.testing
 
-from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.writer import (
+from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.stable.bancho.protocol.writer import (
     _HEADER_FMT,  # pyright: ignore[reportPrivateUsage]  # testing internal header format
     QUIET_S2C_PACKETS,
     write_packet,

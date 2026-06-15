@@ -9,8 +9,8 @@ Validates:
 import struct as pystruct
 from typing import cast
 
-from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.s2c.chat import (
+from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.stable.bancho.protocol.s2c.chat import (
     channel_join_success,
     channel_revoked,
     send_message,

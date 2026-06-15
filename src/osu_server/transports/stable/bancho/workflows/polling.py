@@ -9,14 +9,14 @@ from typing import TYPE_CHECKING
 import structlog
 
 from osu_server.domain.identity.authentication import LoginResult
-from osu_server.transports.bancho.protocol.errors import PacketReadError
-from osu_server.transports.bancho.protocol.reader import read_packets
-from osu_server.transports.bancho.protocol.s2c.login import login_reply
+from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
+from osu_server.transports.stable.bancho.protocol.reader import read_packets
+from osu_server.transports.stable.bancho.protocol.s2c.login import login_reply
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
     from osu_server.repositories.interfaces.session_store import SessionStore
-    from osu_server.transports.bancho.dispatch import PacketDispatcher
+    from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 

@@ -9,7 +9,7 @@ Validates:
 
 from caterpillar.model import pack, unpack
 
-from osu_server.transports.bancho.protocol.header import HEADER_SIZE, PacketHeader
+from osu_server.transports.stable.bancho.protocol.header import HEADER_SIZE, PacketHeader
 
 
 class TestHeaderSize:

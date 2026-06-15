@@ -30,14 +30,14 @@ from osu_server.services.queries.identity import (
 from osu_server.services.session_authorization_service import (
     SessionAuthorizationService,
 )
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.endpoint import BanchoEndpoint
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.workflows.login import LoginWorkflow
-from osu_server.transports.bancho.workflows.login_response_builder import (
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
+from osu_server.transports.stable.bancho.workflows.login_response_builder import (
     LoginResponseBuilder,
 )
-from osu_server.transports.bancho.workflows.polling import PollingWorkflow
+from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflow
 
 if TYPE_CHECKING:
     from pathlib import Path

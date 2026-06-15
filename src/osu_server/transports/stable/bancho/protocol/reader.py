@@ -11,9 +11,9 @@ from caterpillar.context import this
 from caterpillar.fields import Bytes, boolean, uint16, uint32
 from caterpillar.model import struct, unpack
 
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.protocol.errors import PacketReadError
-from osu_server.transports.bancho.protocol.header import HEADER_SIZE
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
+from osu_server.transports.stable.bancho.protocol.header import HEADER_SIZE
 
 
 @struct(order=LittleEndian)

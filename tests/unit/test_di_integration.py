@@ -72,13 +72,15 @@ from osu_server.services.queries.chat import (
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,
 )
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.endpoint import BanchoEndpoint
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.workflows.login import LoginWorkflow
-from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
-from osu_server.transports.bancho.workflows.polling import PollingWorkflow
-from osu_server.transports.web_legacy.registration import RegistrationHandler
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
+from osu_server.transports.stable.bancho.workflows.login_response_builder import (
+    LoginResponseBuilder,
+)
+from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflow
+from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
 from tests.factories.domain import make_channel
 
 _EXPECTED_MIN_SHUTDOWN_HOOKS = 3

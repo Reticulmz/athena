@@ -15,7 +15,7 @@ from osu_server.services.commands.scores import (
     SubmissionOutcome,
     SubmissionResult,
 )
-from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
+from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 
 class ProcessScoreSubmissionUseCaseProtocol(Protocol):

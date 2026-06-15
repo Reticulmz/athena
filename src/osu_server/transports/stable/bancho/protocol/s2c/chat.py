@@ -10,9 +10,9 @@ Design ref: S2C Chat Builders in channel-system design.md
 from caterpillar.byteorder import LittleEndian
 from caterpillar.model import pack
 
-from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.types import BanchoString, Message
-from osu_server.transports.bancho.protocol.writer import write_packet
+from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
+from osu_server.transports.stable.bancho.protocol.writer import write_packet
 
 
 def send_message(*, sender: str, content: str, target: str, sender_id: int) -> bytes:

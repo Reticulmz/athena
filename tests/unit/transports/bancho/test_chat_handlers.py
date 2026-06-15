@@ -29,9 +29,9 @@ from osu_server.services.commands.chat import (
     SendPrivateMessageCommand,
     SendPrivateMessageResult,
 )
-from osu_server.transports.bancho.handlers.chat import ChatHandlers
-from osu_server.transports.bancho.protocol.s2c.chat import send_message
-from osu_server.transports.bancho.protocol.types import BanchoString, Message
+from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
+from osu_server.transports.stable.bancho.protocol.s2c.chat import send_message
+from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
 
 # ── Stubs ────────────────────────────────────────────────────────────────
 

@@ -15,7 +15,7 @@ import structlog
 
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.events.users import UserDisconnected
-from osu_server.transports.bancho.listeners.base import ListenerGroup, listens
+from osu_server.transports.stable.bancho.listeners.base import ListenerGroup, listens
 
 if TYPE_CHECKING:
     from taskiq import AsyncBroker

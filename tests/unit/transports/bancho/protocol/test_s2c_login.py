@@ -18,8 +18,8 @@ Validates:
 import struct as pystruct
 from typing import cast
 
-from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.s2c.login import (
+from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.stable.bancho.protocol.s2c.login import (
     channel_available,
     channel_available_autojoin,
     channel_info_complete,

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from osu_server.transports.bancho.listeners.chat import ChatListeners
-from osu_server.transports.bancho.listeners.lifecycle import LifecycleListeners
+from osu_server.transports.stable.bancho.listeners.chat import ChatListeners
+from osu_server.transports.stable.bancho.listeners.lifecycle import LifecycleListeners
 
 if TYPE_CHECKING:
     from taskiq import AsyncBroker

@@ -21,10 +21,10 @@ from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQu
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.queries.identity import ListOnlineUsersQueryUseCase
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.handlers.lifecycle import LifecycleHandlers
-from osu_server.transports.bancho.listeners.lifecycle import LifecycleListeners
-from osu_server.transports.bancho.protocol.enums import ClientPacketID, ServerPacketID
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
+from osu_server.transports.stable.bancho.listeners.lifecycle import LifecycleListeners
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID, ServerPacketID
 
 # ── Constants ───────────────────────────────────────────────────────
 

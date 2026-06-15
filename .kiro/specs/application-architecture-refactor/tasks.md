@@ -138,7 +138,7 @@
   - _Requirements: 3.4, 3.6, 7.4, 8.1, 10.3, 10.5_
 
 - [ ] 5. Transport family packages and mapper boundaries
-- [ ] 5.1 Move stable bancho and legacy web adapters into the stable transport family
+- [x] 5.1 Move stable bancho and legacy web adapters into the stable transport family
   - Move binary protocol handling, packet workflows, legacy web endpoints, and route assembly into the stable family.
   - Preserve public route behavior, host routing, packet behavior, session behavior, and compatibility response shapes.
   - Completion is observable when existing stable login, polling, chat, registration, getscores, and score submit tests pass through the new stable transport package.

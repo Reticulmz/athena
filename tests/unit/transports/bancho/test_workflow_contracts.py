@@ -6,15 +6,15 @@ from dataclasses import FrozenInstanceError, fields, is_dataclass
 
 import pytest
 
-from osu_server.transports.bancho import workflows
-from osu_server.transports.bancho.workflows import (
+from osu_server.transports.stable.bancho import workflows
+from osu_server.transports.stable.bancho.workflows import (
     LoginWorkflowInput,
     LoginWorkflowResult,
     PollingWorkflowInput,
     PollingWorkflowResult,
 )
-from osu_server.transports.bancho.workflows import login as login_workflow_module
-from osu_server.transports.bancho.workflows import polling as polling_workflow_module
+from osu_server.transports.stable.bancho.workflows import login as login_workflow_module
+from osu_server.transports.stable.bancho.workflows import polling as polling_workflow_module
 
 
 def _try_set_attribute(instance: object, name: str, value: object) -> None:

@@ -8,10 +8,10 @@ if TYPE_CHECKING:
     from starlette.requests import Request
     from starlette.responses import Response
 
-    from osu_server.transports.bancho.endpoint import BanchoEndpoint
-    from osu_server.transports.web_legacy.getscores import GetscoresHandler
-    from osu_server.transports.web_legacy.registration import RegistrationHandler
-    from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
+    from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
+    from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
+    from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
+    from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 
 async def bancho_endpoint(request: Request) -> Response:

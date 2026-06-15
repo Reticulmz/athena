@@ -20,7 +20,7 @@ from caterpillar.exception import DynamicSizeError
 from caterpillar.fields import FieldStruct, int16, int32, uint8, uint16
 from caterpillar.model import struct
 
-from osu_server.transports.bancho.protocol.errors import PacketReadError
+from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
 
 _PRESENCE_EMPTY: int = 0x00
 _PRESENCE_STRING: int = 0x0B

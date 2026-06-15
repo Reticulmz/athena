@@ -31,7 +31,7 @@ from osu_server.repositories.interfaces.channel_repository import ChannelReposit
 from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
-from osu_server.transports.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
 from tests.factories.domain import make_channel, make_channel_role_override
 
 if TYPE_CHECKING:

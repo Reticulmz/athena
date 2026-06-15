@@ -10,10 +10,10 @@ from osu_server.composition.service_registry import register_services
 from osu_server.config import load_config
 from osu_server.infrastructure.di.providers import build_container
 from osu_server.infrastructure.logging import setup_logging
-from osu_server.transports.bancho.endpoint import BanchoEndpoint
-from osu_server.transports.web_legacy.getscores import GetscoresHandler
-from osu_server.transports.web_legacy.registration import RegistrationHandler
-from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
+from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
+from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
+from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
+from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator

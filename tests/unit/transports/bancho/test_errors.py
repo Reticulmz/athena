@@ -12,11 +12,11 @@ import caterpillar
 import pytest
 from caterpillar.py import boolean, struct, uint16, uint32
 
-import osu_server.transports.bancho.handlers
-import osu_server.transports.bancho.protocol
-import osu_server.transports.bancho.protocol.c2s
-import osu_server.transports.bancho.protocol.s2c
-from osu_server.transports.bancho.protocol import (
+import osu_server.transports.stable.bancho.handlers
+import osu_server.transports.stable.bancho.protocol
+import osu_server.transports.stable.bancho.protocol.c2s
+import osu_server.transports.stable.bancho.protocol.s2c
+from osu_server.transports.stable.bancho.protocol import (
     DuplicateHandlerError,
     PacketError,
     PacketReadError,
@@ -75,16 +75,16 @@ class TestPackageStructure:
     """Verify the bancho transport package structure is importable."""
 
     def test_bancho_protocol_package_importable(self) -> None:
-        assert osu_server.transports.bancho.protocol is not None
+        assert osu_server.transports.stable.bancho.protocol is not None
 
     def test_bancho_protocol_c2s_package_importable(self) -> None:
-        assert osu_server.transports.bancho.protocol.c2s is not None
+        assert osu_server.transports.stable.bancho.protocol.c2s is not None
 
     def test_bancho_protocol_s2c_package_importable(self) -> None:
-        assert osu_server.transports.bancho.protocol.s2c is not None
+        assert osu_server.transports.stable.bancho.protocol.s2c is not None
 
     def test_bancho_handlers_package_importable(self) -> None:
-        assert osu_server.transports.bancho.handlers is not None
+        assert osu_server.transports.stable.bancho.handlers is not None
 
     def test_error_classes_importable_from_protocol_init(self) -> None:
         assert PacketError is not None

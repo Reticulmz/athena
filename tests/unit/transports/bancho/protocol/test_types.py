@@ -16,7 +16,7 @@ from caterpillar.byteorder import LittleEndian
 from caterpillar.fields import uint8
 from caterpillar.model import pack, struct, unpack
 
-from osu_server.transports.bancho.protocol.types import (
+from osu_server.transports.stable.bancho.protocol.types import (
     BanchoString,
     BanchoStringT,
     Channel,

@@ -7,8 +7,11 @@ from typing import TYPE_CHECKING
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY, SystemUserIdentity
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.services.queries.chat import ChannelCatalogQueryInput
-from osu_server.transports.bancho.protocol import PROTOCOL_VERSION
-from osu_server.transports.bancho.protocol.s2c.login import (
+from osu_server.transports.stable.bancho.mappers.permissions import (
+    map_stable_bancho_authorization,
+)
+from osu_server.transports.stable.bancho.protocol import PROTOCOL_VERSION
+from osu_server.transports.stable.bancho.protocol.s2c.login import (
     channel_available,
     channel_available_autojoin,
     channel_info_complete,
@@ -20,9 +23,6 @@ from osu_server.transports.bancho.protocol.s2c.login import (
     user_presence,
     user_presence_bundle,
     user_stats,
-)
-from osu_server.transports.stable.bancho.mappers.permissions import (
-    map_stable_bancho_authorization,
 )
 
 if TYPE_CHECKING:

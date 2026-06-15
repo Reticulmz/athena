@@ -31,16 +31,19 @@ from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.services.auth_service import AuthService
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.protocol.s2c.chat import channel_join_success, send_message
-from osu_server.transports.bancho.protocol.s2c.login import (
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.s2c.chat import (
+    channel_join_success,
+    send_message,
+)
+from osu_server.transports.stable.bancho.protocol.s2c.login import (
     channel_available,
     channel_available_autojoin,
     channel_info_complete,
     user_presence,
     user_presence_bundle,
 )
-from osu_server.transports.bancho.protocol.types import BanchoString, Message
+from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
 from tests.factories.domain import make_channel, make_channel_role_override
 
 if TYPE_CHECKING:

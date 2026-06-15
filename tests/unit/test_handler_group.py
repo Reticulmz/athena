@@ -14,11 +14,11 @@ import pytest
 import structlog
 import structlog.testing
 
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.handlers.base import HandlerGroup, handles
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.protocol.errors import DuplicateHandlerError
-from osu_server.transports.bancho.routing import RouteGroup, route
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.handlers.base import HandlerGroup, handles
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.errors import DuplicateHandlerError
+from osu_server.transports.stable.bancho.routing import RouteGroup, route
 
 
 class TestHandlerGroupIsRouteGroup:

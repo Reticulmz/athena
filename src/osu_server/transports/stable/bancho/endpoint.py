@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Protocol
 
 from starlette.responses import Response
 
-from osu_server.transports.bancho.protocol import PROTOCOL_VERSION
-from osu_server.transports.bancho.workflows import (
+from osu_server.transports.stable.bancho.protocol import PROTOCOL_VERSION
+from osu_server.transports.stable.bancho.workflows import (
     LoginWorkflowInput,
     LoginWorkflowResult,
     PollingWorkflowInput,

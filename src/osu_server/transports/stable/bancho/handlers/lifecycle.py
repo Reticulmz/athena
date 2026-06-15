@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 import structlog
 
 from osu_server.domain.events.users import UserDisconnected
-from osu_server.transports.bancho.handlers.base import HandlerGroup, handles
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.handlers.base import HandlerGroup, handles
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.messaging.interfaces import EventBus

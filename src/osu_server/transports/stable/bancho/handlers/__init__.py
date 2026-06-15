@@ -1,1 +1,1 @@
-"""Stable bancho handler package."""
+"""C2S packet handlers (registered via PacketDispatcher decorator)."""

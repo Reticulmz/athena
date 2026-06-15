@@ -36,12 +36,15 @@ from osu_server.services.queries.chat import (
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,
 )
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.handlers.chat import ChatHandlers
-from osu_server.transports.bancho.listeners.chat import ChatListeners
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.protocol.s2c.chat import channel_join_success, send_message
-from osu_server.transports.bancho.protocol.types import BanchoString, Message
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
+from osu_server.transports.stable.bancho.listeners.chat import ChatListeners
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.s2c.chat import (
+    channel_join_success,
+    send_message,
+)
+from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
 from tests.factories.domain import make_channel, make_user
 
 if TYPE_CHECKING:

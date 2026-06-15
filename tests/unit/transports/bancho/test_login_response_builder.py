@@ -14,9 +14,12 @@ from osu_server.domain.identity.users import User
 from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.services.queries.chat import ChannelCatalogQueryResult
-from osu_server.transports.bancho.protocol import PROTOCOL_VERSION
-from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.s2c.login import (
+from osu_server.transports.stable.bancho.mappers.permissions import (
+    map_stable_bancho_authorization,
+)
+from osu_server.transports.stable.bancho.protocol import PROTOCOL_VERSION
+from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.stable.bancho.protocol.s2c.login import (
     login_permissions,
     login_reply,
     protocol_version,
@@ -24,11 +27,8 @@ from osu_server.transports.bancho.protocol.s2c.login import (
     user_presence_bundle,
     user_stats,
 )
-from osu_server.transports.bancho.workflows.login_response_builder import (
+from osu_server.transports.stable.bancho.workflows.login_response_builder import (
     LoginResponseBuilder,
-)
-from osu_server.transports.stable.bancho.mappers.permissions import (
-    map_stable_bancho_authorization,
 )
 
 if TYPE_CHECKING:

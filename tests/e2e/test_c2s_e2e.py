@@ -30,8 +30,8 @@ from osu_server.app import create_app
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.repositories.interfaces.role_repository import RoleRepository
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.protocol.enums import ClientPacketID, ServerPacketID
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID, ServerPacketID
 
 if TYPE_CHECKING:
     from collections.abc import Generator

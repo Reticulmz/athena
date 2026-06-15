@@ -11,9 +11,9 @@ import struct as pystruct
 
 import pytest
 
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.protocol.errors import PacketReadError
-from osu_server.transports.bancho.protocol.reader import read_packets
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
+from osu_server.transports.stable.bancho.protocol.reader import read_packets
 
 
 def _build_packet(packet_id: int, payload: bytes = b"") -> bytes:

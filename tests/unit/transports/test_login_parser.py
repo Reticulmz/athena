@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from osu_server.domain.identity.authentication import ClientInfo, LoginRequest
-from osu_server.transports.bancho.parsers.login import (
+from osu_server.transports.stable.bancho.parsers.login import (
     parse_client_info,
     parse_login_request,
 )

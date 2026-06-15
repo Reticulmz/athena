@@ -9,8 +9,8 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from osu_server.transports.bancho.endpoint import BanchoEndpoint
-from osu_server.transports.bancho.workflows import (
+from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
+from osu_server.transports.stable.bancho.workflows import (
     LoginWorkflowInput,
     LoginWorkflowResult,
     PollingWorkflowInput,

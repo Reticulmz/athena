@@ -29,7 +29,7 @@ from osu_server.services.auth_service import AuthService
 from osu_server.services.commands.identity import RegisterUserCommandUseCase
 from osu_server.services.password_service import PasswordService
 from osu_server.services.permission_service import PermissionService
-from osu_server.transports.web_legacy.registration import RegistrationHandler
+from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
 
 # ── Seed data ────────────────────────────────────────────────────────
 

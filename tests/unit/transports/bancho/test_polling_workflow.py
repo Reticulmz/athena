@@ -11,10 +11,10 @@ from osu_server.domain.identity.authentication import LoginResult
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.protocol.s2c.login import login_reply
-from osu_server.transports.bancho.workflows import PollingWorkflow, PollingWorkflowInput
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.s2c.login import login_reply
+from osu_server.transports.stable.bancho.workflows import PollingWorkflow, PollingWorkflowInput
 
 _TOKEN = "poll-token"
 _USER_ID = 101

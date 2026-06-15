@@ -19,7 +19,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
-from osu_server.transports.web_legacy.getscores import (
+from osu_server.transports.stable.web_legacy.getscores import (
     format_getscores_header_response,
     format_getscores_unavailable_response,
     format_getscores_update_available_response,

@@ -214,10 +214,9 @@ forbidden_modules = [
 name = "Transport family packages stay independent"
 type = "independence"
 modules = [
-    "osu_server.transports.bancho",
-    "osu_server.transports.web_legacy",
+    "osu_server.transports.stable",
+    "osu_server.transports.lazer",
     "osu_server.transports.api",
-    "osu_server.transports.signalr",
 ]
 
 [[tool.importlinter.contracts]]

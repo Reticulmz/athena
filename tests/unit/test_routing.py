@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import types
 
-from osu_server.transports.bancho.routing import RouteGroup, get_route_registry, route
+from osu_server.transports.stable.bancho.routing import RouteGroup, get_route_registry, route
 
 
 class TestRouteDecorator:

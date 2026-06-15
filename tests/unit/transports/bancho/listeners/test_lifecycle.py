@@ -21,9 +21,9 @@ from osu_server.services.queries.identity import (
     ListOnlineUsersQueryInput,
     ListOnlineUsersQueryResult,
 )
-from osu_server.transports.bancho.listeners.lifecycle import LifecycleListeners
-from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.writer import write_packet
+from osu_server.transports.stable.bancho.listeners.lifecycle import LifecycleListeners
+from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.stable.bancho.protocol.writer import write_packet
 
 
 class FakeListOnlineUsersQuery:

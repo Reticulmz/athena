@@ -20,9 +20,9 @@ import pytest
 from osu_server.domain.events.users import UserDisconnected
 from osu_server.infrastructure.messaging.interfaces import EventBus  # noqa: TC001
 from osu_server.repositories.interfaces.session_store import SessionStore  # noqa: TC001
-from osu_server.transports.bancho.dispatch import QUIET_C2S_PACKETS
-from osu_server.transports.bancho.handlers.lifecycle import LifecycleHandlers
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.dispatch import QUIET_C2S_PACKETS
+from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 
 
 class FakeSessionStore:

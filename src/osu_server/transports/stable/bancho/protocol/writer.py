@@ -9,7 +9,7 @@ import struct
 
 import structlog
 
-from osu_server.transports.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 

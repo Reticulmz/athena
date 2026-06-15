@@ -148,18 +148,23 @@ from osu_server.services.score_authorization_service import ScoreAuthorizationSe
 from osu_server.services.session_authorization_service import (
     SessionAuthorizationService,
 )
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.endpoint import BanchoEndpoint
-from osu_server.transports.bancho.handlers.chat import ChatHandlers
-from osu_server.transports.bancho.handlers.lifecycle import LifecycleHandlers
-from osu_server.transports.bancho.listeners import setup_listeners
-from osu_server.transports.bancho.workflows.login import LoginWorkflow
-from osu_server.transports.bancho.workflows.login_response_builder import LoginResponseBuilder
-from osu_server.transports.bancho.workflows.polling import PollingWorkflow
-from osu_server.transports.web_legacy.getscores import GetscoresHandler
-from osu_server.transports.web_legacy.mappers import GetscoresQueryParser, GetscoresStatusMapper
-from osu_server.transports.web_legacy.registration import RegistrationHandler
-from osu_server.transports.web_legacy.score_submit import ScoreSubmitHandler
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
+from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
+from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
+from osu_server.transports.stable.bancho.listeners import setup_listeners
+from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
+from osu_server.transports.stable.bancho.workflows.login_response_builder import (
+    LoginResponseBuilder,
+)
+from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflow
+from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
+from osu_server.transports.stable.web_legacy.mappers import (
+    GetscoresQueryParser,
+    GetscoresStatusMapper,
+)
+from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
+from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
     from osu_server.config import AppConfig

@@ -9,8 +9,8 @@ from collections.abc import Awaitable, Callable
 
 import structlog
 
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.protocol.errors import DuplicateHandlerError
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.errors import DuplicateHandlerError
 
 type PacketHandler = Callable[[bytes, int], Awaitable[None]]
 

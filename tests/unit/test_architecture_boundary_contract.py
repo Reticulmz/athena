@@ -201,6 +201,15 @@ SERVICE_TRANSPORT_NAMED_PATH_FRAGMENTS = (
     "signalr",
 )
 
+STABLE_TRANSPORT_RUNTIME_FILES = (
+    SOURCE_ROOT / "transports" / "stable" / "bancho" / "endpoint.py",
+    SOURCE_ROOT / "transports" / "stable" / "bancho" / "dispatch.py",
+    SOURCE_ROOT / "transports" / "stable" / "bancho" / "protocol" / "reader.py",
+    SOURCE_ROOT / "transports" / "stable" / "web_legacy" / "getscores.py",
+    SOURCE_ROOT / "transports" / "stable" / "web_legacy" / "registration.py",
+    SOURCE_ROOT / "transports" / "stable" / "web_legacy" / "score_submit.py",
+)
+
 DEPRECATED_EXACT_ROOTS = (
     "osu_server.infrastructure.di",
     "osu_server.composition.service_registry",
@@ -376,10 +385,9 @@ def test_import_linter_contracts_cover_new_architecture_boundaries() -> None:
     } <= forbidden_relations
 
     assert {
-        "osu_server.transports.bancho",
-        "osu_server.transports.web_legacy",
+        "osu_server.transports.stable",
+        "osu_server.transports.lazer",
         "osu_server.transports.api",
-        "osu_server.transports.signalr",
     } <= independence_modules
 
 
@@ -451,6 +459,30 @@ def test_service_paths_do_not_encode_transport_family_names() -> None:
     ]
 
     assert violations == []
+
+
+def test_stable_transport_runtime_sources_live_in_stable_family() -> None:
+    missing_runtime_files = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for path in STABLE_TRANSPORT_RUNTIME_FILES
+        if not path.exists()
+    ]
+    old_root_sources = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for package in ("bancho", "web_legacy")
+        for path in sorted((SOURCE_ROOT / "transports" / package).rglob("*.py"))
+        if "__pycache__" not in path.parts
+    ]
+    old_root_packages = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for package in ("bancho", "web_legacy")
+        for path in [SOURCE_ROOT / "transports" / package]
+        if path.exists()
+    ]
+
+    assert missing_runtime_files == []
+    assert old_root_sources == []
+    assert old_root_packages == []
 
 
 def test_deprecated_architecture_imports_match_baseline() -> None:

@@ -29,14 +29,14 @@ from osu_server.services.commands.chat import (
     SendChannelMessageCommand,
     SendPrivateMessageCommand,
 )
-from osu_server.transports.bancho.handlers.base import HandlerGroup, handles
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.bancho.protocol.s2c.chat import (
+from osu_server.transports.stable.bancho.handlers.base import HandlerGroup, handles
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.s2c.chat import (
     channel_join_success,
     channel_revoked,
     send_message,
 )
-from osu_server.transports.bancho.protocol.types import BanchoString, Message
+from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
 
 # Minimum wire size of a Message: 3 empty BanchoStrings (1 byte each) + int32 sender_id (4 bytes)
 _MIN_MESSAGE_SIZE: int = 7

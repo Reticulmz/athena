@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
     from osu_server.services.queries.identity import SessionCredentialsQuery
     from osu_server.services.queries.scores import BeatmapScoreListingQuery
-    from osu_server.transports.web_legacy.mappers import (
+    from osu_server.transports.stable.web_legacy.mappers import (
         GetscoresQueryParser,
         GetscoresStatusMapper,
     )

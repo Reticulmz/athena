@@ -9,7 +9,7 @@ Validates:
 
 from enum import IntEnum
 
-from osu_server.transports.bancho.protocol.enums import (
+from osu_server.transports.stable.bancho.protocol.enums import (
     ClientPacketID,
     ServerPacketID,
 )

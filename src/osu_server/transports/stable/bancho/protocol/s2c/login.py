@@ -15,14 +15,14 @@ from caterpillar.fields import float32, int32, int64, uint8, uint16
 from caterpillar.model import pack
 from caterpillar.model import struct as cpstruct
 
-from osu_server.transports.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.bancho.protocol.types import (
+from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
+from osu_server.transports.stable.bancho.protocol.types import (
     BanchoString,
     BanchoStringT,
     Channel,
     IntList,
 )
-from osu_server.transports.bancho.protocol.writer import write_packet
+from osu_server.transports.stable.bancho.protocol.writer import write_packet
 
 _INT32_FMT = struct.Struct("<i")
 

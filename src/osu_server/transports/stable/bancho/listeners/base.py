@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.transports.bancho.routing import RouteGroup, route
+from osu_server.transports.stable.bancho.routing import RouteGroup, route
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.messaging.interfaces import EventBus

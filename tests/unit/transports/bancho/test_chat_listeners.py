@@ -7,7 +7,7 @@ import structlog.testing
 
 from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessageSent
 from osu_server.domain.events.users import UserDisconnected
-from osu_server.transports.bancho.listeners.chat import ChatListeners
+from osu_server.transports.stable.bancho.listeners.chat import ChatListeners
 
 # ── Stubs ────────────────────────────────────────────────────────────────
 

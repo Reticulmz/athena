@@ -13,8 +13,8 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.services.commands.identity import LoginCommandInput, LoginCommandResult
 from osu_server.services.queries.chat import ChannelCatalogQueryResult
-from osu_server.transports.bancho.protocol.s2c.login import login_reply
-from osu_server.transports.bancho.workflows import (
+from osu_server.transports.stable.bancho.protocol.s2c.login import login_reply
+from osu_server.transports.stable.bancho.workflows import (
     LoginResponseBuilder,
     LoginWorkflow,
     LoginWorkflowInput,

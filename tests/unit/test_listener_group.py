@@ -16,9 +16,9 @@ import structlog
 import structlog.testing
 
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
-from osu_server.transports.bancho.handlers.base import HandlerGroup
-from osu_server.transports.bancho.listeners.base import ListenerGroup, listens
-from osu_server.transports.bancho.routing import RouteGroup, route
+from osu_server.transports.stable.bancho.handlers.base import HandlerGroup
+from osu_server.transports.stable.bancho.listeners.base import ListenerGroup, listens
+from osu_server.transports.stable.bancho.routing import RouteGroup, route
 
 
 @dataclass(frozen=True, slots=True)

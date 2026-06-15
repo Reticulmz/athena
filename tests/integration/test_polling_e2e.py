@@ -32,8 +32,8 @@ from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.services.auth_service import AuthService
-from osu_server.transports.bancho.dispatch import PacketDispatcher
-from osu_server.transports.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.di.container import Container
