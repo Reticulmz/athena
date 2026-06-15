@@ -18,6 +18,7 @@ import pytest
 
 from osu_server.domain.beatmaps import (
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileSource,
     BeatmapFileState,
     BeatmapFreshnessPolicy,
@@ -30,15 +31,17 @@ from osu_server.domain.beatmaps import (
     OsuFileFetchResult,
 )
 from osu_server.domain.storage.blobs import Blob
-from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
-from osu_server.repositories.interfaces.beatmap_repository import BeatmapFetchTarget
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.services.beatmap_mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
+)
+from osu_server.services.commands.beatmaps import (
+    FetchBeatmapFileUseCase,
+    FetchBeatmapMetadataUseCase,
 )
 
 if TYPE_CHECKING:
@@ -230,7 +233,7 @@ async def _save_beatmap_metadata(
         official=metadata_provider,
         mirror=StubMetadataProvider(),
     )
-    metadata_job = FetchBeatmapMetadataJob(repository=repo, metadata_provider=composite)
+    metadata_job = FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
     target = BeatmapFetchTarget.metadata_by_beatmap_id(beatmap_id)
     await metadata_job.execute(target)
 
@@ -270,7 +273,7 @@ class TestFileResolutionE2E:
         fetch_result = _make_osu_file_result()
         file_provider = StubFileProvider(by_beatmap_id={_BEATMAP_ID: fetch_result})
         blob_storage = StubBlobStorageService()
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=file_provider,
             blob_storage=blob_storage,
@@ -366,7 +369,7 @@ class TestFileChecksumVerificationE2E:
         fetch_result = _make_osu_file_result(body=mismatched_body)
         file_provider = StubFileProvider(by_beatmap_id={_BEATMAP_ID: fetch_result})
         blob_storage = StubBlobStorageService()
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=file_provider,
             blob_storage=blob_storage,
@@ -403,7 +406,7 @@ class TestFileChecksumVerificationE2E:
         mismatched_body = b"completely different content\n"
         fetch_result = _make_osu_file_result(body=mismatched_body)
         file_provider = StubFileProvider(by_beatmap_id={_BEATMAP_ID: fetch_result})
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=file_provider,
             blob_storage=StubBlobStorageService(),
@@ -447,7 +450,7 @@ class TestFileMirrorFallbackE2E:
         )
         file_provider = StubFileProvider(by_beatmap_id={_BEATMAP_ID: fetch_result})
         blob_storage = StubBlobStorageService()
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=file_provider,
             blob_storage=blob_storage,
@@ -485,7 +488,7 @@ class TestFileMirrorFallbackE2E:
             source=BeatmapFileSource.COMMUNITY_MIRROR,
         )
         file_provider = StubFileProvider(by_beatmap_id={_BEATMAP_ID: fetch_result})
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=file_provider,
             blob_storage=StubBlobStorageService(),
@@ -528,7 +531,7 @@ class TestFileMirrorFallbackE2E:
         # First attempt: provider fails (simulating rate limit on all direct sources)
         failing_provider = StubFileProvider(exception=RuntimeError("429 Too Many Requests"))
         blob_storage = StubBlobStorageService()
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=failing_provider,
             blob_storage=blob_storage,
@@ -545,7 +548,7 @@ class TestFileMirrorFallbackE2E:
         # since it is not already pending.
         mirror_result = _make_osu_file_result(source=BeatmapFileSource.COMMUNITY_MIRROR)
         mirror_provider = StubFileProvider(by_beatmap_id={_BEATMAP_ID: mirror_result})
-        mirror_job = FetchBeatmapFileJob(
+        mirror_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=mirror_provider,
             blob_storage=StubBlobStorageService(),
@@ -592,7 +595,7 @@ class TestFileBlobStorageIntegrationE2E:
 
         fetch_result = _make_osu_file_result()
         blob_storage = StubBlobStorageService()
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=StubFileProvider(by_beatmap_id={_BEATMAP_ID: fetch_result}),
             blob_storage=blob_storage,
@@ -635,7 +638,7 @@ class TestFileSourceTrackingE2E:
         file_target = BeatmapFetchTarget.file_by_beatmap_id(_BEATMAP_ID)
         fetch_result = _make_osu_file_result(source=BeatmapFileSource.OSU_CURRENT)
         file_provider = StubFileProvider(by_beatmap_id={_BEATMAP_ID: fetch_result})
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=file_provider,
             blob_storage=StubBlobStorageService(),
@@ -656,7 +659,7 @@ class TestFileSourceTrackingE2E:
         file_target = BeatmapFetchTarget.file_by_beatmap_id(_BEATMAP_ID)
         fetch_result = _make_osu_file_result(source=BeatmapFileSource.OSU_LEGACY)
         file_provider = StubFileProvider(by_beatmap_id={_BEATMAP_ID: fetch_result})
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=file_provider,
             blob_storage=StubBlobStorageService(),
@@ -677,7 +680,7 @@ class TestFileSourceTrackingE2E:
         file_target = BeatmapFetchTarget.file_by_beatmap_id(_BEATMAP_ID)
         fetch_result = _make_osu_file_result(source=BeatmapFileSource.COMMUNITY_MIRROR)
         file_provider = StubFileProvider(by_beatmap_id={_BEATMAP_ID: fetch_result})
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=file_provider,
             blob_storage=StubBlobStorageService(),
@@ -711,7 +714,7 @@ class TestFileProviderFailureE2E:
         file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
 
         failing_provider = StubFileProvider(exception=RuntimeError("network error"))
-        file_job = FetchBeatmapFileJob(
+        file_job = FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=failing_provider,
             blob_storage=StubBlobStorageService(),

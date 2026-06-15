@@ -1,7 +1,7 @@
 """Worker-side runtime composition.
 
-Builds use-cases and jobs the taskiq worker process needs: chat persistence
-commands and beatmap fetch jobs (metadata + .osu file).
+Builds use-cases the taskiq worker process needs: chat persistence commands
+and beatmap fetch commands (metadata + .osu file).
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from osu_server.infrastructure.storage import create_blob_storage_backend
-from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
@@ -22,6 +21,10 @@ from osu_server.services.beatmap_mirror import (
     OsuApiMetadataProviderService,
 )
 from osu_server.services.blob_storage_service import BlobStorageService
+from osu_server.services.commands.beatmaps import (
+    FetchBeatmapFileUseCase,
+    FetchBeatmapMetadataUseCase,
+)
 from osu_server.services.commands.chat import (
     PersistChannelMessageUseCase,
     PersistPrivateMessageUseCase,
@@ -49,8 +52,8 @@ def create_worker_beatmap_metadata_fetch(
     *,
     session_factory: async_sessionmaker[AsyncSession],
     config: AppConfig,
-) -> FetchBeatmapMetadataJob:
-    """Build the worker-side beatmap metadata fetch job.
+) -> FetchBeatmapMetadataUseCase:
+    """Build the worker-side beatmap metadata fetch command.
 
     Uses the real (non-test) metadata providers: official API first,
     mirror fallback second.
@@ -64,15 +67,15 @@ def create_worker_beatmap_metadata_fetch(
         base_urls=config.beatmap_metadata_mirror_base_urls,
     )
     metadata_provider = CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
-    return FetchBeatmapMetadataJob(repository=repo, metadata_provider=metadata_provider)
+    return FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=metadata_provider)
 
 
 async def create_worker_beatmap_file_fetch(
     *,
     session_factory: async_sessionmaker[AsyncSession],
     config: AppConfig,
-) -> FetchBeatmapFileJob:
-    """Build the worker-side beatmap file fetch job.
+) -> FetchBeatmapFileUseCase:
+    """Build the worker-side beatmap file fetch command.
 
     Uses the composite file provider for .osu file sources and a
     ``BlobStorageService`` backed by the configured blob storage backend.
@@ -91,7 +94,7 @@ async def create_worker_beatmap_file_fetch(
         backend=blob_backend,
         storage_backend=config.blob_storage_backend,
     )
-    return FetchBeatmapFileJob(
+    return FetchBeatmapFileUseCase(
         repository=repo,
         file_provider=file_provider,
         blob_storage=blob_storage,

@@ -21,7 +21,7 @@ from osu_server.jobs.beatmap_fetch import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.repositories.interfaces.beatmap_repository import BeatmapFetchTarget
+    from osu_server.domain.beatmaps import BeatmapFetchTarget
 
 
 # ---------------------------------------------------------------------------

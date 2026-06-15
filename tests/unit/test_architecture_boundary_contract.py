@@ -260,6 +260,15 @@ STABLE_TRANSPORT_RUNTIME_FILES = (
     SOURCE_ROOT / "transports" / "stable" / "web_legacy" / "score_submit.py",
 )
 
+BEATMAP_FETCH_JOB_ADAPTER_FILE = SOURCE_ROOT / "jobs" / "beatmap_fetch.py"
+BEATMAP_FETCH_JOB_FORBIDDEN_IMPORT_ROOTS = (
+    "osu_server.infrastructure.storage",
+    "osu_server.repositories",
+    "osu_server.services.beatmap_mirror",
+    "osu_server.services.blob_storage_service",
+    "osu_server.services.commands.beatmaps",
+)
+
 DEPRECATED_EXACT_ROOTS = (
     "osu_server.infrastructure.di",
     "osu_server.composition.service_registry",
@@ -581,6 +590,17 @@ def test_stable_transport_runtime_sources_live_in_stable_family() -> None:
     assert missing_runtime_files == []
     assert old_root_sources == []
     assert old_root_packages == []
+
+
+def test_beatmap_fetch_job_adapter_does_not_build_runtime_dependencies() -> None:
+    violations = [
+        f"{BEATMAP_FETCH_JOB_ADAPTER_FILE.relative_to(PROJECT_ROOT).as_posix()} imports {module}"
+        for module in sorted(imported_modules(BEATMAP_FETCH_JOB_ADAPTER_FILE))
+        for root in BEATMAP_FETCH_JOB_FORBIDDEN_IMPORT_ROOTS
+        if module_matches_root(module, root)
+    ]
+
+    assert violations == []
 
 
 def test_deprecated_architecture_imports_match_baseline() -> None:

@@ -1,8 +1,8 @@
 """Structured logging tests for beatmap fetch jobs.
 
 Covers:
-- ``FetchBeatmapMetadataJob`` start, success, failure, mirror fallback events.
-- ``FetchBeatmapFileJob`` start, success, failure, checksum mismatch events.
+- ``FetchBeatmapMetadataUseCase`` start, success, failure, mirror fallback events.
+- ``FetchBeatmapFileUseCase`` start, success, failure, checksum mismatch events.
 - Redaction of sensitive values (API credentials, authorization) from log fields.
 
 All tests use ``structlog.testing.capture_logs()`` to verify event names
@@ -21,6 +21,7 @@ from structlog.testing import capture_logs
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileSource,
     BeatmapFileState,
     BeatmapMetadataSource,
@@ -32,14 +33,14 @@ from osu_server.domain.beatmaps import (
     OsuFileFetchResult,
 )
 from osu_server.domain.storage.blobs import Blob, BlobStored
-from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
-from osu_server.repositories.interfaces.beatmap_repository import (
-    BeatmapFetchTarget,
-)
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
+from osu_server.services.commands.beatmaps import (
+    FetchBeatmapFileUseCase,
+    FetchBeatmapMetadataUseCase,
+)
 
 _NOW = datetime(2026, 6, 5, tzinfo=UTC)
 _THIRTY_DAYS = timedelta(days=30)
@@ -47,7 +48,7 @@ _DEFAULT_CHECKSUM = "0123456789abcdef0123456789abcdef"
 
 
 # ---------------------------------------------------------------------------
-# Stub providers (same pattern as test_beatmap_fetch.py)
+# Stub providers (same pattern as test_fetch.py)
 # ---------------------------------------------------------------------------
 
 
@@ -208,18 +209,18 @@ _FILE_BODY_MISMATCH = b"osu file format v14\n[General]\nAudioFilename: wrong.mp3
 
 
 class TestMetadataFetchJobLogging:
-    """Structured observability for ``FetchBeatmapMetadataJob``."""
+    """Structured observability for ``FetchBeatmapMetadataUseCase``."""
 
     @staticmethod
     def _make_job(
         repo: InMemoryBeatmapRepository,
         official: StubMetadataProvider | None = None,
         mirror: StubMetadataProvider | None = None,
-    ) -> FetchBeatmapMetadataJob:
+    ) -> FetchBeatmapMetadataUseCase:
         _official = official or StubMetadataProvider()
         _mirror = mirror or StubMetadataProvider()
         composite = CompositeBeatmapMetadataProvider(official=_official, mirror=_mirror)
-        return FetchBeatmapMetadataJob(repository=repo, metadata_provider=composite)
+        return FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
 
     async def test_logs_start_and_success_for_beatmap_id(self) -> None:
         """Metadata fetch logs started and succeeded events with target and source."""
@@ -384,7 +385,7 @@ class TestMetadataFetchJobLogging:
 
 
 class TestFileFetchJobLogging:
-    """Structured observability for ``FetchBeatmapFileJob``."""
+    """Structured observability for ``FetchBeatmapFileUseCase``."""
 
     @staticmethod
     async def _setup_repo_with_beatmap(
@@ -440,10 +441,10 @@ class TestFileFetchJobLogging:
         repo: InMemoryBeatmapRepository,
         file_provider: StubFileProvider | None = None,
         blob_storage: StubBlobStorageService | None = None,
-    ) -> FetchBeatmapFileJob:
+    ) -> FetchBeatmapFileUseCase:
         _provider = file_provider or StubFileProvider()
         _blob = blob_storage or StubBlobStorageService()
-        return FetchBeatmapFileJob(
+        return FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=_provider,
             blob_storage=_blob,

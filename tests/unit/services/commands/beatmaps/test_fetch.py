@@ -1,8 +1,8 @@
 """Tests for beatmap fetch jobs.
 
 Covers:
-- ``FetchBeatmapMetadataJob`` idempotent background metadata fetch.
-- ``FetchBeatmapFileJob`` idempotent .osu file fetch.
+- ``FetchBeatmapMetadataUseCase`` idempotent background metadata fetch.
+- ``FetchBeatmapFileUseCase`` idempotent .osu file fetch.
 - taskiq job adapter registration and runtime-unavailable handling.
 """
 
@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from osu_server.domain.beatmaps import (
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileSource,
     BeatmapFileState,
     BeatmapMetadataSource,
@@ -27,14 +28,14 @@ from osu_server.domain.beatmaps import (
     OsuFileFetchResult,
 )
 from osu_server.domain.storage.blobs import Blob
-from osu_server.jobs.beatmap_fetch import FetchBeatmapFileJob, FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
-from osu_server.repositories.interfaces.beatmap_repository import (
-    BeatmapFetchTarget,
-)
 from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
+from osu_server.services.commands.beatmaps import (
+    FetchBeatmapFileUseCase,
+    FetchBeatmapMetadataUseCase,
+)
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap, BeatmapMetadataProvider
@@ -158,11 +159,11 @@ def _make_mirror_snapshot(**kwargs: object) -> BeatmapsetSnapshot:
 
 
 # ---------------------------------------------------------------------------
-# FetchBeatmapMetadataJob tests
+# FetchBeatmapMetadataUseCase tests
 # ---------------------------------------------------------------------------
 
 
-class TestFetchBeatmapMetadataJob:
+class TestFetchBeatmapMetadataUseCase:
     """Idempotent metadata fetch job behaviour."""
 
     @staticmethod
@@ -170,11 +171,11 @@ class TestFetchBeatmapMetadataJob:
         repo: InMemoryBeatmapRepository,
         official: StubMetadataProvider | None = None,
         mirror: StubMetadataProvider | None = None,
-    ) -> FetchBeatmapMetadataJob:
+    ) -> FetchBeatmapMetadataUseCase:
         _official: BeatmapMetadataProvider = official or StubMetadataProvider()
         _mirror: BeatmapMetadataProvider = mirror or StubMetadataProvider()
         composite = CompositeBeatmapMetadataProvider(official=_official, mirror=_mirror)
-        return FetchBeatmapMetadataJob(repository=repo, metadata_provider=composite)
+        return FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
 
     # --- success path --------------------------------------------------------
 
@@ -471,7 +472,7 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
 
 
 # ---------------------------------------------------------------------------
-# FetchBeatmapFileJob tests
+# FetchBeatmapFileUseCase tests
 # ---------------------------------------------------------------------------
 
 
@@ -585,7 +586,7 @@ _FILE_BODY_MD5 = "c76db67ba86527673e81495b1602f24b"
 _FILE_BODY_MISMATCH = b"osu file format v14\n[General]\nAudioFilename: wrong.mp3\n"
 
 
-class TestFetchBeatmapFileJob:
+class TestFetchBeatmapFileUseCase:
     """Idempotent .osu file fetch job behaviour."""
 
     @staticmethod
@@ -593,10 +594,10 @@ class TestFetchBeatmapFileJob:
         repo: InMemoryBeatmapRepository,
         file_provider: StubFileProvider | None = None,
         blob_storage: StubBlobStorageService | None = None,
-    ) -> FetchBeatmapFileJob:
+    ) -> FetchBeatmapFileUseCase:
         _provider: StubFileProvider = file_provider or StubFileProvider()
         _blob: StubBlobStorageService = blob_storage or StubBlobStorageService()
-        return FetchBeatmapFileJob(
+        return FetchBeatmapFileUseCase(
             repository=repo,
             file_provider=_provider,
             blob_storage=_blob,

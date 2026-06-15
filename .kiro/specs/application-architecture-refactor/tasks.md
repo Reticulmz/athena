@@ -165,7 +165,7 @@
   - _Requirements: 1.1, 1.3, 1.5, 7.4, 7.5, 7.6, 7.7, 9.5, 10.4, 10.5_
 
 - [ ] 6. Background job adapter boundary
-- [ ] 6.1 (P) Move beatmap fetch business behavior into command use-cases
+- [x] 6.1 (P) Move beatmap fetch business behavior into command use-cases
   - Move metadata fetch, file fetch, idempotency, state transitions, and persistence consistency into beatmap command use-cases.
   - Keep external fetch waits outside write transactions unless they are part of the durable command mutation phase.
   - Completion is observable when beatmap fetch behavior can run from a use-case without taskiq context or concrete repository construction in the job adapter.

@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
 
 import pytest
 
 from osu_server.domain.beatmaps import (
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileState,
     BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
@@ -26,7 +26,6 @@ from osu_server.domain.beatmaps import (
     BeatmapSnapshot,
     BeatmapSourceVerification,
 )
-from osu_server.jobs.beatmap_fetch import FetchBeatmapMetadataJob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
@@ -36,9 +35,7 @@ from osu_server.services.beatmap_mirror import (
     BeatmapMirrorService,
     InMemoryBeatmapMetadataProvider,
 )
-
-if TYPE_CHECKING:
-    from osu_server.repositories.interfaces.beatmap_repository import BeatmapFetchTarget
+from osu_server.services.commands.beatmaps import FetchBeatmapMetadataUseCase
 
 _NOW = datetime(2026, 6, 6, tzinfo=UTC)
 _ONE_HOUR = timedelta(hours=1)
@@ -146,7 +143,7 @@ def _build_service_with_job(
     official_provider: InMemoryBeatmapMetadataProvider,
     *,
     mirror_trust_enabled: bool = False,
-) -> tuple[BeatmapMirrorService, FetchBeatmapMetadataJob, list[BeatmapFetchTarget]]:
+) -> tuple[BeatmapMirrorService, FetchBeatmapMetadataUseCase, list[BeatmapFetchTarget]]:
     """Wire a service with a spy-based enqueue and a metadata job.
 
     The enqueue_refresh callback records the target for later inspection
@@ -157,7 +154,7 @@ def _build_service_with_job(
         official=official_provider,
         mirror=InMemoryBeatmapMetadataProvider(),
     )
-    job = FetchBeatmapMetadataJob(repository=repo, metadata_provider=composite)
+    job = FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
     enqueued: list[BeatmapFetchTarget] = []
 
     async def _enqueue(target: BeatmapFetchTarget) -> None:
@@ -241,7 +238,7 @@ class TestMetadataResolutionByBeatmapIdE2E:
             official=InMemoryBeatmapMetadataProvider(),
             mirror=mirror,
         )
-        job = FetchBeatmapMetadataJob(repository=repo, metadata_provider=composite)
+        job = FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
         enqueued: list[BeatmapFetchTarget] = []
 
         async def _enqueue(target: BeatmapFetchTarget) -> None:
@@ -425,7 +422,7 @@ class TestMetadataResolutionBoundedWaitE2E:
             official=official,
             mirror=InMemoryBeatmapMetadataProvider(),
         )
-        job = FetchBeatmapMetadataJob(repository=repo, metadata_provider=composite)
+        job = FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
         enqueued: list[BeatmapFetchTarget] = []
 
         async def _enqueue(target: BeatmapFetchTarget) -> None:
