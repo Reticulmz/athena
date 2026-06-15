@@ -158,7 +158,7 @@
   - _Boundary: Transport Families_
   - _Depends: 1.4_
 
-- [ ] 5.4 Update transport regression tests and import boundaries
+- [x] 5.4 Update transport regression tests and import boundaries
   - Update endpoint, packet, route, mapper, and integration tests to use new transport family paths.
   - Add checks that packet structs, binary builders, protocol parsers, and client-family mappers do not appear in domain or service packages.
   - Completion is observable when route behavior remains unchanged and transport family isolation is enforced mechanically.

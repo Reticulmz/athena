@@ -11,6 +11,7 @@ from typing import cast
 PROJECT_ROOT = Path(__file__).parents[2]
 PYPROJECT_PATH = PROJECT_ROOT / "pyproject.toml"
 SOURCE_ROOT = PROJECT_ROOT / "src" / "osu_server"
+TEST_ROOT = PROJECT_ROOT / "tests"
 DEPRECATED_IMPORT_BASELINE = (
     PROJECT_ROOT / "tests" / "fixtures" / "architecture" / "deprecated_imports.txt"
 )
@@ -201,6 +202,55 @@ SERVICE_TRANSPORT_NAMED_PATH_FRAGMENTS = (
     "signalr",
 )
 
+CORE_DOMAIN_AND_SERVICE_ROOTS = (
+    SOURCE_ROOT / "domain" / "beatmaps",
+    SOURCE_ROOT / "domain" / "chat",
+    SOURCE_ROOT / "domain" / "events",
+    SOURCE_ROOT / "domain" / "identity",
+    SOURCE_ROOT / "domain" / "scores",
+    SOURCE_ROOT / "domain" / "storage",
+    SOURCE_ROOT / "services",
+)
+
+CLIENT_FAMILY_WIRE_IMPORT_ROOTS = (
+    "osu_server.transports.stable.bancho.protocol",
+    "osu_server.transports.stable.bancho.parsers",
+    "osu_server.transports.stable.bancho.mappers",
+    "osu_server.transports.stable.web_legacy.mappers",
+    "osu_server.transports.lazer.api.mappers",
+    "osu_server.transports.lazer.signalr.mappers",
+    "osu_server.transports.api.public.mappers",
+    "osu_server.transports.api.admin.mappers",
+)
+
+CLIENT_FAMILY_WIRE_NAMES = frozenset(
+    {
+        "BanchoClientPermission",
+        "BanchoString",
+        "ClientPacketID",
+        "GetscoresQueryParser",
+        "GetscoresStatusMapper",
+        "PacketHeader",
+        "ServerPacketID",
+        "StableBanchoAuthorizationOutput",
+        "StableScorePayloadParser",
+        "StableScoreSubmitMapper",
+        "map_stable_bancho_authorization",
+        "mod_combination_to_stable_bitmask",
+        "parse_client_info",
+        "parse_login_body",
+        "read_packets",
+        "stable_mod_bitmask_to_mod_combination",
+        "write_packet",
+    }
+)
+
+DEPRECATED_TRANSPORT_IMPORT_ROOTS = (
+    "osu_server.transports.bancho",
+    "osu_server.transports.signalr",
+    "osu_server.transports.web_legacy",
+)
+
 STABLE_TRANSPORT_RUNTIME_FILES = (
     SOURCE_ROOT / "transports" / "stable" / "bancho" / "endpoint.py",
     SOURCE_ROOT / "transports" / "stable" / "bancho" / "dispatch.py",
@@ -273,6 +323,19 @@ def imported_modules(path: Path) -> set[str]:
             )
 
     return modules
+
+
+def referenced_names(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
+    names: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.add(node.attr)
+
+    return names
 
 
 def module_matches_root(module: str, root: str) -> bool:
@@ -456,6 +519,41 @@ def test_service_paths_do_not_encode_transport_family_names() -> None:
         for path in service_paths
         for fragment in SERVICE_TRANSPORT_NAMED_PATH_FRAGMENTS
         if fragment in path
+    ]
+
+    assert violations == []
+
+
+def test_core_domain_and_services_do_not_reference_client_family_wire_concepts() -> None:
+    import_violations = [
+        f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {module}"
+        for root in CORE_DOMAIN_AND_SERVICE_ROOTS
+        for path in sorted(root.rglob("*.py"))
+        if "__pycache__" not in path.parts
+        for module in imported_modules(path)
+        for forbidden_root in CLIENT_FAMILY_WIRE_IMPORT_ROOTS
+        if module_matches_root(module, forbidden_root)
+    ]
+    name_violations = [
+        f"{path.relative_to(PROJECT_ROOT).as_posix()} references {name}"
+        for root in CORE_DOMAIN_AND_SERVICE_ROOTS
+        for path in sorted(root.rglob("*.py"))
+        if "__pycache__" not in path.parts
+        for name in sorted(referenced_names(path) & CLIENT_FAMILY_WIRE_NAMES)
+    ]
+
+    assert import_violations == []
+    assert name_violations == []
+
+
+def test_transport_regression_tests_use_transport_family_paths() -> None:
+    violations = [
+        f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {module}"
+        for path in sorted(TEST_ROOT.rglob("*.py"))
+        if "__pycache__" not in path.parts
+        for module in imported_modules(path)
+        for root in DEPRECATED_TRANSPORT_IMPORT_ROOTS
+        if module_matches_root(module, root)
     ]
 
     assert violations == []
