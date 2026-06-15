@@ -11,16 +11,14 @@ from osu_server.composition.providers.app import enqueue_beatmap_fetch
 from osu_server.composition.providers.container import make_app_container
 from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
 from osu_server.domain.beatmaps import (
+    BeatmapFetchTarget,
     BeatmapFileProvider,
     BeatmapFreshnessPolicy,
     BeatmapMetadataProvider,
 )
-from osu_server.repositories.interfaces.beatmap_repository import (
-    BeatmapFetchTarget,
-    BeatmapRepository,
-)
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.beatmap_mirror import (
+from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
+from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQueryRepository
+from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
     BeatmapFileProviderService,
     BeatmapMirrorService,
@@ -67,7 +65,10 @@ async def test_beatmap_mirror_dependencies_resolve_from_app_container(
     )
 
     try:
-        assert isinstance(await container.get(BeatmapRepository), InMemoryBeatmapRepository)
+        assert isinstance(
+            await container.get(BeatmapQueryRepository),
+            InMemoryBeatmapQueryRepository,
+        )
         assert isinstance(await container.get(BeatmapMirrorService), BeatmapMirrorService)
         assert isinstance(await container.get(BeatmapMetadataProvider), BeatmapMetadataProvider)
         assert isinstance(await container.get(BeatmapFileProvider), BeatmapFileProviderService)

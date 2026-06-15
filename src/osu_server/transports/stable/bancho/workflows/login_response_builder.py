@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY, SystemUserIdentity
+from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY, SystemUserIdentity
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.services.queries.chat import ChannelCatalogQueryInput
 from osu_server.transports.stable.bancho.mappers.permissions import (

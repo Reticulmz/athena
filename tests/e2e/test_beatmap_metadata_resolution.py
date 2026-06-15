@@ -29,13 +29,13 @@ from osu_server.domain.beatmaps import (
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.beatmap_mirror import (
+from osu_server.services.commands.beatmaps import FetchBeatmapMetadataUseCase
+from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
     InMemoryBeatmapMetadataProvider,
 )
-from osu_server.services.commands.beatmaps import FetchBeatmapMetadataUseCase
+from tests.support.beatmaps import InMemoryBeatmapStore
 
 _NOW = datetime(2026, 6, 6, tzinfo=UTC)
 _ONE_HOUR = timedelta(hours=1)
@@ -139,7 +139,7 @@ def _make_freshness_policy() -> BeatmapFreshnessPolicy:
 
 
 def _build_service_with_job(
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapStore,
     official_provider: InMemoryBeatmapMetadataProvider,
     *,
     mirror_trust_enabled: bool = False,
@@ -154,14 +154,14 @@ def _build_service_with_job(
         official=official_provider,
         mirror=InMemoryBeatmapMetadataProvider(),
     )
-    job = FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
+    job = FetchBeatmapMetadataUseCase(uow_factory=repo.uow_factory, metadata_provider=composite)
     enqueued: list[BeatmapFetchTarget] = []
 
     async def _enqueue(target: BeatmapFetchTarget) -> None:
         enqueued.append(target)
 
     service = BeatmapMirrorService(
-        repository=repo,
+        repository=repo.query_repository,
         eligibility_service=BeatmapEligibilityService(),
         freshness_policy=_make_freshness_policy(),
         mirror_trust_enabled=mirror_trust_enabled,
@@ -181,7 +181,7 @@ class TestMetadataResolutionByBeatmapIdE2E:
         """Resolve unknown beatmap by id: first call returns pending fetch
         state and enqueues a metadata job; after the job stores the snapshot,
         the second call returns fresh resolved metadata."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = InMemoryBeatmapMetadataProvider()
         official.add_snapshot(snapshot)
@@ -229,7 +229,7 @@ class TestMetadataResolutionByBeatmapIdE2E:
         """When the official provider has no data but the mirror does,
         the job saves a mirror-sourced unverified snapshot, and the service
         reports the mirror source and denies eligibility by default."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         mirror_snapshot = _make_mirror_snapshot()
         mirror = InMemoryBeatmapMetadataProvider()
         mirror.add_snapshot(mirror_snapshot)
@@ -238,14 +238,17 @@ class TestMetadataResolutionByBeatmapIdE2E:
             official=InMemoryBeatmapMetadataProvider(),
             mirror=mirror,
         )
-        job = FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
+        job = FetchBeatmapMetadataUseCase(
+            uow_factory=repo.uow_factory,
+            metadata_provider=composite,
+        )
         enqueued: list[BeatmapFetchTarget] = []
 
         async def _enqueue(target: BeatmapFetchTarget) -> None:
             enqueued.append(target)
 
         service = BeatmapMirrorService(
-            repository=repo,
+            repository=repo.query_repository,
             eligibility_service=BeatmapEligibilityService(),
             freshness_policy=_make_freshness_policy(),
             enqueue_refresh=_enqueue,
@@ -279,7 +282,7 @@ class TestMetadataResolutionByBeatmapsetIdE2E:
     async def test_missing_beatmapset_transitions_from_pending_to_fresh(self) -> None:
         """Resolve unknown beatmapset by id: first call is pending, after the
         job stores the snapshot the second call returns fresh metadata."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot(beatmapset_id=_ALT_BEATMAPSET_ID, beatmap_id=_ALT_BEATMAP_ID)
         official = InMemoryBeatmapMetadataProvider()
         official.add_snapshot(snapshot)
@@ -317,7 +320,7 @@ class TestMetadataResolutionByChecksumE2E:
     async def test_missing_beatmap_by_checksum_transitions_from_pending_to_fresh(self) -> None:
         """Resolve unknown beatmap by checksum: first pending, then fresh after
         the job completes."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         checksum = _ALT_CHECKSUM
         snapshot = _make_snapshot(beatmap_id=_ALT_BEATMAP_ID, checksum_md5=checksum)
         official = InMemoryBeatmapMetadataProvider()
@@ -359,7 +362,7 @@ class TestMetadataResolutionIdempotencyE2E:
     ) -> None:
         """Two concurrent resolve calls for the same missing beatmap produce
         the same pending fetch state and only one enqueue."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = InMemoryBeatmapMetadataProvider()
         official.add_snapshot(snapshot)
@@ -381,7 +384,7 @@ class TestMetadataResolutionIdempotencyE2E:
     async def test_re_resolve_after_cached_does_not_enqueue(self) -> None:
         """After metadata is cached, re-resolving the same beatmap does not
         trigger a new enqueue (the data is fresh)."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = InMemoryBeatmapMetadataProvider()
         official.add_snapshot(snapshot)
@@ -413,7 +416,7 @@ class TestMetadataResolutionBoundedWaitE2E:
         """With a bounded wait timeout, the service polls the repository and
         returns fresh metadata when a background populate task saves the data
         within the wait window."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = InMemoryBeatmapMetadataProvider()
         official.add_snapshot(snapshot)
@@ -422,14 +425,17 @@ class TestMetadataResolutionBoundedWaitE2E:
             official=official,
             mirror=InMemoryBeatmapMetadataProvider(),
         )
-        job = FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
+        job = FetchBeatmapMetadataUseCase(
+            uow_factory=repo.uow_factory,
+            metadata_provider=composite,
+        )
         enqueued: list[BeatmapFetchTarget] = []
 
         async def _enqueue(target: BeatmapFetchTarget) -> None:
             enqueued.append(target)
 
         service = BeatmapMirrorService(
-            repository=repo,
+            repository=repo.query_repository,
             eligibility_service=BeatmapEligibilityService(),
             freshness_policy=_make_freshness_policy(),
             enqueue_refresh=_enqueue,
@@ -459,7 +465,7 @@ class TestMetadataResolutionBoundedWaitE2E:
     async def test_bounded_wait_returns_pending_on_timeout(self) -> None:
         """When no data arrives within the wait timeout, the service returns
         a pending fetch result (not an exception)."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         official = InMemoryBeatmapMetadataProvider()
         service, _job, _enqueued = _build_service_with_job(repo, official)
 
@@ -483,7 +489,7 @@ class TestMetadataResolutionFailureE2E:
     async def test_all_providers_fail_produces_failed_state(self) -> None:
         """When both official and mirror providers return nothing, the job
         marks fetch state as failed and the service reports the failure."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         # Both providers are empty -- no snapshot preloaded
         service, job, enqueued = _build_service_with_job(repo, InMemoryBeatmapMetadataProvider())
 
@@ -514,7 +520,7 @@ class TestBeatmapIdentityAfterResolutionE2E:
     async def test_resolved_beatmap_exposes_full_identity(self) -> None:
         """After successful metadata resolution, a beatmap exposes beatmap id,
         beatmapset id, checksum/md5, game mode, and difficulty identity."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = InMemoryBeatmapMetadataProvider()
         official.add_snapshot(snapshot)

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from structlog.testing import capture_logs
+from tests.support.beatmaps import InMemoryBeatmapStore
 
 from osu_server.domain.beatmaps import (
     Beatmap,
@@ -36,7 +37,6 @@ from osu_server.domain.storage.blobs import Blob, BlobStored
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
     FetchBeatmapMetadataUseCase,
@@ -213,18 +213,21 @@ class TestMetadataFetchJobLogging:
 
     @staticmethod
     def _make_job(
-        repo: InMemoryBeatmapRepository,
+        repo: InMemoryBeatmapStore,
         official: StubMetadataProvider | None = None,
         mirror: StubMetadataProvider | None = None,
     ) -> FetchBeatmapMetadataUseCase:
         _official = official or StubMetadataProvider()
         _mirror = mirror or StubMetadataProvider()
         composite = CompositeBeatmapMetadataProvider(official=_official, mirror=_mirror)
-        return FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
+        return FetchBeatmapMetadataUseCase(
+            uow_factory=repo.uow_factory,
+            metadata_provider=composite,
+        )
 
     async def test_logs_start_and_success_for_beatmap_id(self) -> None:
         """Metadata fetch logs started and succeeded events with target and source."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
         job = self._make_job(repo, official=official)
@@ -247,7 +250,7 @@ class TestMetadataFetchJobLogging:
 
     async def test_logs_start_and_success_for_checksum(self) -> None:
         """Metadata fetch logs started and succeeded events for checksum lookup."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         checksum = _DEFAULT_CHECKSUM
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_checksum={checksum: snapshot})
@@ -264,7 +267,7 @@ class TestMetadataFetchJobLogging:
 
     async def test_logs_failure_when_all_sources_fail(self) -> None:
         """Metadata fetch logs a failure event when no provider returns a result."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         official = StubMetadataProvider()
         mirror = StubMetadataProvider()
         job = self._make_job(repo, official=official, mirror=mirror)
@@ -281,7 +284,7 @@ class TestMetadataFetchJobLogging:
 
     async def test_logs_failure_when_all_providers_raise(self) -> None:
         """Metadata fetch logs a failure event when all providers raise."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         official = StubMetadataProvider(exception=RuntimeError("official down"))
         mirror = StubMetadataProvider(exception=RuntimeError("mirror down"))
         job = self._make_job(repo, official=official, mirror=mirror)
@@ -295,7 +298,7 @@ class TestMetadataFetchJobLogging:
 
     async def test_logs_mirror_fallback_when_official_returns_none(self) -> None:
         """Mirror fallback is logged when official returns None and mirror succeeds."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         mirror_snapshot = _make_mirror_snapshot()
         official = StubMetadataProvider()
         mirror = StubMetadataProvider(by_beatmap_id={2000: mirror_snapshot})
@@ -313,7 +316,7 @@ class TestMetadataFetchJobLogging:
 
     async def test_logs_mirror_fallback_when_official_raises(self) -> None:
         """Mirror fallback is logged when official raises and mirror succeeds."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         mirror_snapshot = _make_mirror_snapshot()
         official = StubMetadataProvider(exception=RuntimeError("official down"))
         mirror = StubMetadataProvider(by_beatmap_id={2000: mirror_snapshot})
@@ -329,7 +332,7 @@ class TestMetadataFetchJobLogging:
 
     async def test_does_not_log_mirror_fallback_when_official_succeeds(self) -> None:
         """No mirror fallback event when official provider succeeds."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
         mirror = StubMetadataProvider()
@@ -344,7 +347,7 @@ class TestMetadataFetchJobLogging:
 
     async def test_no_api_credentials_in_logs(self) -> None:
         """Log events must not include API credentials, tokens, or authorization values."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
         job = self._make_job(repo, official=official)
@@ -389,7 +392,7 @@ class TestFileFetchJobLogging:
 
     @staticmethod
     async def _setup_repo_with_beatmap(
-        repo: InMemoryBeatmapRepository,
+        repo: InMemoryBeatmapStore,
         *,
         beatmap_id: int = 2000,
         beatmapset_id: int = 1000,
@@ -438,21 +441,21 @@ class TestFileFetchJobLogging:
 
     @staticmethod
     def _make_job(
-        repo: InMemoryBeatmapRepository,
+        repo: InMemoryBeatmapStore,
         file_provider: StubFileProvider | None = None,
         blob_storage: StubBlobStorageService | None = None,
     ) -> FetchBeatmapFileUseCase:
         _provider = file_provider or StubFileProvider()
         _blob = blob_storage or StubBlobStorageService()
         return FetchBeatmapFileUseCase(
-            repository=repo,
+            uow_factory=repo.uow_factory,
             file_provider=_provider,
             blob_storage=_blob,
         )
 
     async def test_logs_start_and_success(self) -> None:
         """File fetch logs started and succeeded events with target and source."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         await self._setup_repo_with_beatmap(repo, checksum_md5=_FILE_BODY_MD5)
         fetch_result = OsuFileFetchResult(
             beatmap_id=2000,
@@ -481,7 +484,7 @@ class TestFileFetchJobLogging:
 
     async def test_logs_failure_when_provider_raises(self) -> None:
         """File fetch logs a failure event when the file provider raises."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         await self._setup_repo_with_beatmap(repo)
         file_provider = StubFileProvider(exception=RuntimeError("mirror down"))
         job = self._make_job(repo, file_provider=file_provider)
@@ -498,7 +501,7 @@ class TestFileFetchJobLogging:
 
     async def test_logs_checksum_mismatch(self) -> None:
         """File fetch logs a checksum mismatch event when fetched bytes don't match."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         await self._setup_repo_with_beatmap(repo, checksum_md5=_DEFAULT_CHECKSUM)
         fetch_result = OsuFileFetchResult(
             beatmap_id=2000,
@@ -526,7 +529,7 @@ class TestFileFetchJobLogging:
 
     async def test_logs_failure_when_beatmap_not_found(self) -> None:
         """File fetch logs failure when beatmap does not exist in repo."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         file_provider = StubFileProvider()
         job = self._make_job(repo, file_provider=file_provider)
         target = BeatmapFetchTarget.file_by_beatmap_id(2000)

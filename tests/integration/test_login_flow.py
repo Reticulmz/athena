@@ -26,14 +26,10 @@ from starlette.testclient import TestClient
 
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
-from osu_server.repositories.interfaces.channel_repository import ChannelRepository
-from osu_server.repositories.interfaces.role_repository import RoleRepository
-from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
 from tests.factories.domain import make_channel, make_channel_role_override
 from tests.support.app import create_in_memory_app as create_app
-from tests.support.app import resolve_dependency_sync
+from tests.support.persistence import seed_channel, seed_channel_override, seed_role_sync
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -86,27 +82,27 @@ def _test_env() -> Generator[None]:
 
 
 def _seed_default_role(app: Starlette) -> None:
-    """Seed the Default role into the InMemoryRoleRepository.
+    """Seed the Default role into command-side in-memory persistence.
 
     Must be called after TestClient enters (lifespan has run).
     """
-    repo = resolve_dependency_sync(app, RoleRepository)
-    assert isinstance(repo, InMemoryRoleRepository)
-    repo.add_role(_DEFAULT_ROLE)
+    seed_role_sync(app, _DEFAULT_ROLE)
 
 
 def _seed_default_channels(app: Starlette) -> None:
-    """Seed login-visible channels into the InMemoryChannelRepository."""
-    repo = resolve_dependency_sync(app, ChannelRepository)
-    assert isinstance(repo, InMemoryChannelRepository)
+    """Seed login-visible channels into command-side in-memory persistence."""
 
-    channel = asyncio.run(repo.create(make_channel(id=0)))
-    repo.seed_override(
-        make_channel_role_override(
-            channel_id=channel.id,
-            role_id=_DEFAULT_ROLE.id,
+    async def _seed() -> None:
+        channel = await seed_channel(app, make_channel(id=0))
+        await seed_channel_override(
+            app,
+            make_channel_role_override(
+                channel_id=channel.id,
+                role_id=_DEFAULT_ROLE.id,
+            ),
         )
-    )
+
+    asyncio.run(_seed())
 
 
 def _seed_test_data(app: Starlette) -> None:

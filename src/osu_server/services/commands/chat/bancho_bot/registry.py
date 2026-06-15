@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from osu_server.domain.bancho_bot import (
+from osu_server.domain.chat.commands import (
     CommandArgument,
     CommandContext,
     CommandDestination,

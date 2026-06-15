@@ -30,13 +30,11 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
-from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
-from osu_server.repositories.interfaces.user_repository import UserRepository
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.password_service import PasswordService
+from osu_server.services.queries.identity.password_service import PasswordService
 from tests.support.app import create_in_memory_app as create_app
 from tests.support.app import resolve_dependency
+from tests.support.persistence import seed_beatmapset, seed_user
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -75,12 +73,12 @@ def _test_env() -> Generator[None]:
 
 
 async def _seed_user_with_session(app: Starlette) -> int:
-    user_repo = await resolve_dependency(app, UserRepository)
     password_service = await resolve_dependency(app, PasswordService)
     session_store = await resolve_dependency(app, SessionStore)
 
     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
-    user = await user_repo.create(
+    user = await seed_user(
+        app,
         User(
             id=0,
             username=_TEST_USERNAME,
@@ -90,7 +88,7 @@ async def _seed_user_with_session(app: Starlette) -> int:
             country="JP",
             created_at=_NOW,
             updated_at=_NOW,
-        )
+        ),
     )
     await session_store.create(
         user.id,
@@ -111,9 +109,6 @@ async def _seed_user_with_session(app: Starlette) -> int:
 
 
 async def _seed_known_beatmap(app: Starlette) -> None:
-    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
-    assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
-
     beatmap = Beatmap(
         id=75,
         beatmapset_id=1,
@@ -153,7 +148,7 @@ async def _seed_known_beatmap(app: Starlette) -> None:
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
     )
-    await beatmap_repo.save_beatmapset_snapshot(beatmapset)
+    await seed_beatmapset(app, beatmapset)
 
 
 def _query(
@@ -260,10 +255,10 @@ class TestAuthFailureDiagnostics:
             ) as client:
 
                 async def _seed_user_only() -> None:
-                    user_repo = await resolve_dependency(app, UserRepository)
                     password_service = await resolve_dependency(app, PasswordService)
                     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
-                    _ = await user_repo.create(
+                    _ = await seed_user(
+                        app,
                         User(
                             id=0,
                             username=_TEST_USERNAME,
@@ -273,7 +268,7 @@ class TestAuthFailureDiagnostics:
                             country="JP",
                             created_at=_NOW,
                             updated_at=_NOW,
-                        )
+                        ),
                     )
 
                 asyncio.run(_seed_user_only())

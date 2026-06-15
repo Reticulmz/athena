@@ -12,15 +12,15 @@ from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.domain.storage.blobs import Blob, BlobStored
 from osu_server.services.commands.scores import SubmitScoreUseCase
-from osu_server.services.password_service import PasswordService
-from osu_server.services.score_authorization_service import ScoreAuthorizationService
+from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
+from osu_server.services.queries.identity.password_service import PasswordService
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.sessions import SessionAuthorization
+    from osu_server.domain.identity.system_users import SystemUserIdentity
     from osu_server.domain.scores.replay import Replay
     from osu_server.domain.scores.score import Score
     from osu_server.domain.scores.submission import ScoreSubmission
-    from osu_server.domain.system_user import SystemUserIdentity
     from osu_server.infrastructure.security.hibp import HIBPClient
     from osu_server.repositories.interfaces.queries.users import UserQueryRepository
     from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory

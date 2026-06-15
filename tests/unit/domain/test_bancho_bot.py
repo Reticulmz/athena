@@ -14,7 +14,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from osu_server.domain.bancho_bot import (
+from osu_server.domain.chat.commands import (
     CommandArgument,
     CommandContext,
     CommandDestination,

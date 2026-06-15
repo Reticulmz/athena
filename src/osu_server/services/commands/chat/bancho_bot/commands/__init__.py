@@ -6,8 +6,8 @@ deterministically ordered registry of builtin player-visible commands.
 
 from __future__ import annotations
 
-from osu_server.services.bancho_bot.commands.general import setup_general
-from osu_server.services.bancho_bot.registry import CommandRegistry
+from osu_server.services.commands.chat.bancho_bot.commands.general import setup_general
+from osu_server.services.commands.chat.bancho_bot.registry import CommandRegistry
 
 
 def create_builtin_registry() -> CommandRegistry:

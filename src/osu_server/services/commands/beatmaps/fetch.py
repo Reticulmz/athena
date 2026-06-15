@@ -24,7 +24,7 @@ if TYPE_CHECKING:
         BeatmapsetSnapshot,
     )
     from osu_server.domain.storage.blobs import BlobStoreResult
-    from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
+    from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -46,17 +46,20 @@ class FetchBeatmapMetadataUseCase:
     def __init__(
         self,
         *,
-        repository: BeatmapCommandRepository,
+        uow_factory: UnitOfWorkFactory,
         metadata_provider: BeatmapMetadataProvider,
     ) -> None:
-        self._repo: BeatmapCommandRepository = repository
+        self._uow_factory: UnitOfWorkFactory = uow_factory
         self._provider: BeatmapMetadataProvider = metadata_provider
 
     async def execute(self, target: BeatmapFetchTarget) -> None:
         """Run the idempotent metadata fetch cycle for *target*."""
         now = datetime.now(UTC)
 
-        acquired = await self._repo.try_mark_fetch_pending(target, now)
+        async with self._uow_factory() as uow:
+            acquired = await uow.beatmaps.try_mark_fetch_pending(target, now)
+            if acquired:
+                await uow.commit()
         if not acquired:
             logger.debug(
                 "beatmap_fetch_already_pending",
@@ -74,10 +77,10 @@ class FetchBeatmapMetadataUseCase:
         snapshot = await self._lookup(target)
 
         if snapshot is None:
-            await self._repo.mark_fetch_failed(
-                target,
-                "all configured metadata providers returned no result",
-                now,
+            await self._mark_failed(
+                target=target,
+                error="all configured metadata providers returned no result",
+                now=now,
             )
             logger.error(
                 "beatmap_metadata_fetch_failed",
@@ -88,8 +91,10 @@ class FetchBeatmapMetadataUseCase:
             return
 
         beatmapset = _snapshot_to_beatmapset(snapshot)
-        await self._repo.save_beatmapset_snapshot(beatmapset)
-        await self._repo.mark_fetch_succeeded(target, now)
+        async with self._uow_factory() as uow:
+            await uow.beatmaps.save_beatmapset_snapshot(beatmapset)
+            await uow.beatmaps.mark_fetch_succeeded(target, now)
+            await uow.commit()
 
         logger.info(
             "beatmap_metadata_fetch_succeeded",
@@ -110,6 +115,17 @@ class FetchBeatmapMetadataUseCase:
             return await self._provider.lookup_by_checksum(target.target_key)
         raise ValueError(f"unsupported metadata fetch target type: {target_type}")
 
+    async def _mark_failed(
+        self,
+        *,
+        target: BeatmapFetchTarget,
+        error: str,
+        now: datetime,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            await uow.beatmaps.mark_fetch_failed(target, error, now)
+            await uow.commit()
+
 
 class FetchBeatmapFileUseCase:
     """Fetch and verify a .osu file idempotently, then attach it as a blob."""
@@ -117,11 +133,11 @@ class FetchBeatmapFileUseCase:
     def __init__(
         self,
         *,
-        repository: BeatmapCommandRepository,
+        uow_factory: UnitOfWorkFactory,
         file_provider: BeatmapFileProvider,
         blob_storage: BeatmapBlobStorage,
     ) -> None:
-        self._repo: BeatmapCommandRepository = repository
+        self._uow_factory: UnitOfWorkFactory = uow_factory
         self._provider: BeatmapFileProvider = file_provider
         self._blob: BeatmapBlobStorage = blob_storage
 
@@ -129,7 +145,10 @@ class FetchBeatmapFileUseCase:
         """Run the idempotent file fetch cycle for *target*."""
         now = datetime.now(UTC)
 
-        acquired = await self._repo.try_mark_fetch_pending(target, now)
+        async with self._uow_factory() as uow:
+            acquired = await uow.beatmaps.try_mark_fetch_pending(target, now)
+            if acquired:
+                await uow.commit()
         if not acquired:
             logger.debug(
                 "beatmap_file_fetch_already_pending",
@@ -145,10 +164,10 @@ class FetchBeatmapFileUseCase:
         )
 
         if target.target_type != "file:beatmap":
-            await self._repo.mark_fetch_failed(
-                target,
-                f"unsupported file fetch target type: {target.target_type}",
-                now,
+            await self._mark_failed(
+                target=target,
+                error=f"unsupported file fetch target type: {target.target_type}",
+                now=now,
             )
             logger.error(
                 "beatmap_file_fetch_failed",
@@ -160,12 +179,13 @@ class FetchBeatmapFileUseCase:
 
         beatmap_id = int(target.target_key)
 
-        beatmap = await self._repo.get_beatmap(beatmap_id)
+        async with self._uow_factory() as uow:
+            beatmap = await uow.beatmaps.get_beatmap(beatmap_id)
         if beatmap is None:
-            await self._repo.mark_fetch_failed(
-                target,
-                f"beatmap {beatmap_id} not found in repository",
-                now,
+            await self._mark_failed(
+                target=target,
+                error=f"beatmap {beatmap_id} not found in repository",
+                now=now,
             )
             logger.error(
                 "beatmap_file_fetch_failed",
@@ -177,9 +197,10 @@ class FetchBeatmapFileUseCase:
             return
 
         expected_md5 = beatmap.checksum_md5
-        existing_attachment = await self._repo.get_current_file_attachment(beatmap_id)
+        async with self._uow_factory() as uow:
+            existing_attachment = await uow.beatmaps.get_current_file_attachment(beatmap_id)
         if existing_attachment is not None and existing_attachment.checksum_md5 == expected_md5:
-            await self._repo.mark_fetch_succeeded(target, now)
+            await self._mark_succeeded(target=target, now=now)
             logger.info(
                 "beatmap_file_fetch_succeeded",
                 target_type=target.target_type,
@@ -192,10 +213,10 @@ class FetchBeatmapFileUseCase:
         try:
             result = await self._provider.fetch_osu_file(beatmap_id)
         except Exception as exc:
-            await self._repo.mark_fetch_failed(
-                target,
-                f"{type(exc).__name__}: {exc}",
-                now,
+            await self._mark_failed(
+                target=target,
+                error=f"{type(exc).__name__}: {exc}",
+                now=now,
             )
             logger.error(
                 "beatmap_file_fetch_failed",
@@ -210,10 +231,10 @@ class FetchBeatmapFileUseCase:
         fetched_md5 = hashlib.md5(result.body, usedforsecurity=False).hexdigest()
 
         if fetched_md5 != expected_md5:
-            await self._repo.mark_fetch_failed(
-                target,
-                f"checksum mismatch: expected {expected_md5}, got {fetched_md5}",
-                now,
+            await self._mark_failed(
+                target=target,
+                error=f"checksum mismatch: expected {expected_md5}, got {fetched_md5}",
+                now=now,
             )
             logger.error(
                 "beatmap_file_checksum_mismatch",
@@ -243,8 +264,10 @@ class FetchBeatmapFileUseCase:
             fetched_at=now,
             verified_at=now,
         )
-        _ = await self._repo.attach_osu_file(attachment)
-        await self._repo.mark_fetch_succeeded(target, now)
+        async with self._uow_factory() as uow:
+            _ = await uow.beatmaps.attach_osu_file(attachment)
+            await uow.beatmaps.mark_fetch_succeeded(target, now)
+            await uow.commit()
 
         logger.info(
             "beatmap_file_fetch_succeeded",
@@ -253,6 +276,22 @@ class FetchBeatmapFileUseCase:
             beatmap_id=beatmap_id,
             source=result.source.value,
         )
+
+    async def _mark_failed(
+        self,
+        *,
+        target: BeatmapFetchTarget,
+        error: str,
+        now: datetime,
+    ) -> None:
+        async with self._uow_factory() as uow:
+            await uow.beatmaps.mark_fetch_failed(target, error, now)
+            await uow.commit()
+
+    async def _mark_succeeded(self, *, target: BeatmapFetchTarget, now: datetime) -> None:
+        async with self._uow_factory() as uow:
+            await uow.beatmaps.mark_fetch_succeeded(target, now)
+            await uow.commit()
 
 
 def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:

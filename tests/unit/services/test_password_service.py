@@ -4,7 +4,7 @@ import hashlib
 
 from structlog.testing import capture_logs
 
-from osu_server.services.password_service import PasswordService
+from osu_server.services.queries.identity.password_service import PasswordService
 from tests.support import FakeHIBPClient
 
 

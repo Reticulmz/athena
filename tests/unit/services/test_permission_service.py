@@ -8,7 +8,7 @@ from osu_server.domain.identity.sessions import SessionAuthorization
 from osu_server.repositories.memory.role_repository import (
     InMemoryRoleRepository,
 )
-from osu_server.services.permission_service import PermissionService
+from osu_server.services.queries.identity.permission_service import PermissionService
 
 # ── Seed data ────────────────────────────────────────────────────────
 

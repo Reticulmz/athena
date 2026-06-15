@@ -22,7 +22,7 @@ from osu_server.domain.chat import (
     SendChannelMessageInput,
     SendPrivateMessageInput,
 )
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
+from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.services.commands.chat import (
     JoinChannelCommand,
     LeaveChannelCommand,

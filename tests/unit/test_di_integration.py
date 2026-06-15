@@ -24,24 +24,22 @@ from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
-from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
-from osu_server.repositories.interfaces.channel_repository import ChannelRepository
+from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
+from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
 from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
 from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
-from osu_server.repositories.interfaces.role_repository import RoleRepository
+from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
+from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
-from osu_server.repositories.interfaces.user_repository import UserRepository
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
+from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
+from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQueryRepository
+from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryRepository
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
+from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
-from osu_server.services.auth_service import AuthService
-from osu_server.services.bancho_bot.command_service import CommandService
-from osu_server.services.beatmap_mirror import BeatmapMirrorService
-from osu_server.services.channel_service import ChannelService
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.chat import (
     JoinChannelUseCase,
     LeaveChannelUseCase,
@@ -50,10 +48,10 @@ from osu_server.services.commands.chat import (
     SendChannelMessageUseCase,
     SendPrivateMessageUseCase,
 )
+from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
 from osu_server.services.commands.identity import LoginCommandUseCase, RegisterUserCommandUseCase
-from osu_server.services.password_service import PasswordService
-from osu_server.services.permission_service import PermissionService
-from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.commands.identity.auth_service import AuthService
+from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 from osu_server.services.queries.chat import (
     ListAutojoinChannelsQuery,
     ListChannelMessagesQuery,
@@ -62,6 +60,9 @@ from osu_server.services.queries.chat import (
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,
 )
+from osu_server.services.queries.chat.private_message_service import PrivateMessageService
+from osu_server.services.queries.identity.password_service import PasswordService
+from osu_server.services.queries.identity.permission_service import PermissionService
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
@@ -149,14 +150,18 @@ async def test_app_container_uses_explicit_in_memory_test_overrides(
         assert isinstance(await container.get(ChannelStateStore), InMemoryChannelStateStore)
         assert isinstance(await container.get(RateLimiter), InMemoryRateLimiter)
         assert isinstance(await container.get(SessionStore), InMemorySessionStore)
-        assert isinstance(await container.get(UserRepository), InMemoryUserRepository)
-        assert isinstance(await container.get(RoleRepository), InMemoryRoleRepository)
-        assert isinstance(await container.get(ChannelRepository), InMemoryChannelRepository)
-        assert isinstance(await container.get(BeatmapRepository), InMemoryBeatmapRepository)
+        assert isinstance(await container.get(UnitOfWorkFactory), InMemoryUnitOfWorkFactory)
+        assert isinstance(await container.get(UserQueryRepository), InMemoryUserQueryRepository)
+        assert isinstance(await container.get(RoleQueryRepository), InMemoryRoleQueryRepository)
         assert isinstance(
             await container.get(ChannelQueryRepository),
             InMemoryChannelQueryRepository,
         )
+        assert isinstance(
+            await container.get(BeatmapQueryRepository),
+            InMemoryBeatmapQueryRepository,
+        )
+        assert isinstance(await container.get(BlobQueryRepository), InMemoryBlobQueryRepository)
         assert isinstance(
             await container.get(ChatHistoryQueryRepository),
             InMemoryChatHistoryQueryRepository,
@@ -182,7 +187,6 @@ async def test_app_container_resolves_identity_and_chat_graph(tmp_path: Path) ->
         AuthService,
         LoginCommandUseCase,
         RegisterUserCommandUseCase,
-        ChannelService,
         PrivateMessageService,
         CommandService,
         ListVisibleChannelsQuery,

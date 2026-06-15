@@ -15,7 +15,7 @@ from osu_server.repositories.sqlalchemy.models.user import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.domain.system_user import SystemUserIdentity
+    from osu_server.domain.identity.system_users import SystemUserIdentity
 
 _BANCHO_BOT_USER_ID = 1
 

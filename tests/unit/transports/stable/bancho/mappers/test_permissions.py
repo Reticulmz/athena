@@ -15,11 +15,11 @@ PROJECT_ROOT = Path(__file__).parents[6]
 SOURCE_ROOT = PROJECT_ROOT / "src" / "osu_server"
 
 INTERNAL_AUTHORIZATION_MODULES = (
-    SOURCE_ROOT / "services" / "permission_service.py",
-    SOURCE_ROOT / "services" / "session_authorization_service.py",
-    SOURCE_ROOT / "services" / "auth_service.py",
-    SOURCE_ROOT / "services" / "channel_service.py",
-    SOURCE_ROOT / "services" / "bancho_bot" / "command_service.py",
+    SOURCE_ROOT / "services" / "queries" / "identity" / "permission_service.py",
+    SOURCE_ROOT / "services" / "commands" / "identity" / "session_authorization_service.py",
+    SOURCE_ROOT / "services" / "commands" / "identity" / "auth_service.py",
+    SOURCE_ROOT / "services" / "queries" / "chat" / "channel_service.py",
+    SOURCE_ROOT / "services" / "commands" / "chat" / "bancho_bot" / "command_service.py",
 )
 
 

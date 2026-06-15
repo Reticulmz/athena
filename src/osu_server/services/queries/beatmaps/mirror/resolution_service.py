@@ -30,8 +30,8 @@ from osu_server.domain.beatmaps import (
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
-    from osu_server.services.beatmap_mirror.eligibility_service import (
+    from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
+    from osu_server.services.queries.beatmaps.mirror.eligibility_service import (
         BeatmapEligibilityService,
     )
 
@@ -44,14 +44,14 @@ _POLL_INTERVAL: float = 0.05
 class BeatmapMirrorService:
     """Cache-first beatmap resolver.
 
-    Depends on ``BeatmapRepository`` for persistence lookups,
+    Depends on ``BeatmapQueryRepository`` for persistence lookups,
     ``BeatmapEligibilityService`` for eligibility projection, and
     ``BeatmapFreshnessPolicy`` for staleness decisions.  An optional
     ``enqueue_refresh`` callback can be wired in later (task 5.2) to
     trigger background metadata / file fetches.
     """
 
-    _repository: BeatmapRepository
+    _repository: BeatmapQueryRepository
     _eligibility: BeatmapEligibilityService
     _freshness: BeatmapFreshnessPolicy
     _mirror_trust_enabled: bool
@@ -60,7 +60,7 @@ class BeatmapMirrorService:
 
     def __init__(
         self,
-        repository: BeatmapRepository,
+        repository: BeatmapQueryRepository,
         eligibility_service: BeatmapEligibilityService,
         freshness_policy: BeatmapFreshnessPolicy,
         *,

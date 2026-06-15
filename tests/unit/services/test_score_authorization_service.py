@@ -9,11 +9,11 @@ from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
-from osu_server.services.password_service import PasswordService
-from osu_server.services.score_authorization_service import (
+from osu_server.services.commands.scores.authorization import (
     AuthorizationContext,
     ScoreAuthorizationService,
 )
+from osu_server.services.queries.identity.password_service import PasswordService
 from tests.support.fakes import make_score_authorization_service
 
 _NOW = datetime(2026, 6, 12, tzinfo=UTC)

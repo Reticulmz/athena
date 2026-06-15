@@ -14,10 +14,10 @@ from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import AuthorizationRefreshStatus, SessionData
 from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.services.permission_service import PermissionService
-from osu_server.services.session_authorization_service import (
+from osu_server.services.commands.identity.session_authorization_service import (
     SessionAuthorizationService,
 )
+from osu_server.services.queries.identity.permission_service import PermissionService
 
 # ── Seed data ────────────────────────────────────────────────────────────
 

@@ -12,7 +12,7 @@ from osu_server.domain.events.channels import ChannelMessageSent, PrivateMessage
 from osu_server.domain.events.users import UserDisconnected
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
+from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
@@ -24,14 +24,14 @@ from osu_server.repositories.memory.queries.users import InMemoryUserQueryReposi
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
-from osu_server.services.bancho_bot.command_service import CommandService
-from osu_server.services.bancho_bot.commands import create_builtin_registry
 from osu_server.services.commands.chat import (
     JoinChannelUseCase,
     LeaveChannelUseCase,
     SendChannelMessageUseCase,
     SendPrivateMessageUseCase,
 )
+from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
+from osu_server.services.commands.chat.bancho_bot.commands import create_builtin_registry
 from osu_server.services.queries.chat import (
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,

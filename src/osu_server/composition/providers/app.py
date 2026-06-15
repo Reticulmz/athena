@@ -9,8 +9,8 @@ from dishka import Provider, Scope
 from taskiq import AsyncBroker
 
 from osu_server.config import AppConfig
-from osu_server.domain.beatmaps import BeatmapFreshnessPolicy
-from osu_server.domain.system_user import (
+from osu_server.domain.beatmaps import BeatmapFetchTarget, BeatmapFreshnessPolicy
+from osu_server.domain.identity.system_users import (
     BANCHO_BOT_USER_ID,
     SystemUserIdentity,
     create_bancho_bot_identity,
@@ -22,59 +22,53 @@ from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
-from osu_server.repositories.interfaces.beatmap_repository import (
-    BeatmapFetchTarget,
-    BeatmapRepository,
-)
-from osu_server.repositories.interfaces.channel_repository import ChannelRepository
+from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
-from osu_server.repositories.interfaces.user_repository import UserRepository
-from osu_server.services.auth_service import AuthService
-from osu_server.services.bancho_bot.command_service import CommandService
-from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.beatmap_mirror import (
-    BeatmapEligibilityService,
-    BeatmapMirrorService,
-)
-from osu_server.services.blob_storage_service import BlobStorageService
-from osu_server.services.channel_service import ChannelService
 from osu_server.services.commands.chat import (
     JoinChannelUseCase,
     LeaveChannelUseCase,
     SendChannelMessageUseCase,
     SendPrivateMessageUseCase,
 )
+from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
+from osu_server.services.commands.chat.bancho_bot.commands import create_builtin_registry
 from osu_server.services.commands.identity import (
     LoginCommandUseCase,
     RefreshRoleAuthorizationCommandUseCase,
     RefreshUserAuthorizationCommandUseCase,
     RegisterUserCommandUseCase,
 )
+from osu_server.services.commands.identity.auth_service import AuthService
+from osu_server.services.commands.identity.session_authorization_service import (
+    SessionAuthorizationService,
+)
 from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase, SubmitScoreUseCase
-from osu_server.services.online_users import OnlineUsersService
-from osu_server.services.password_service import PasswordService
-from osu_server.services.permission_service import PermissionService
-from osu_server.services.private_message_service import PrivateMessageService
+from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
+from osu_server.services.commands.storage.blob_storage import BlobStorageService
+from osu_server.services.queries.beatmaps.mirror import (
+    BeatmapEligibilityService,
+    BeatmapMirrorService,
+)
 from osu_server.services.queries.chat import (
     ListAutojoinChannelsQuery,
     ListVisibleChannelsQuery,
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,
 )
+from osu_server.services.queries.chat.private_message_service import PrivateMessageService
 from osu_server.services.queries.identity import (
     ComputePermissionsQueryUseCase,
     ComputeSessionAuthorizationQueryUseCase,
     ListOnlineUsersQueryUseCase,
     SessionCredentialsQueryUseCase,
 )
+from osu_server.services.queries.identity.online_users_service import OnlineUsersService
+from osu_server.services.queries.identity.password_service import PasswordService
+from osu_server.services.queries.identity.permission_service import PermissionService
 from osu_server.services.queries.scores import BeatmapScoreListingQuery
-from osu_server.services.score_authorization_service import ScoreAuthorizationService
-from osu_server.services.session_authorization_service import (
-    SessionAuthorizationService,
-)
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
@@ -101,9 +95,8 @@ _DISHKA_RUNTIME_HINTS = (
     AsyncBroker,
     BeatmapFetchTarget,
     BeatmapFreshnessPolicy,
-    BeatmapRepository,
+    BeatmapQueryRepository,
     BlobStorageService,
-    ChannelRepository,
     ChannelStateStore,
     CountryResolver,
     EventBus,
@@ -115,7 +108,6 @@ _DISHKA_RUNTIME_HINTS = (
     SessionStore,
     UnitOfWorkFactory,
     UserQueryRepository,
-    UserRepository,
     BeatmapScoreListingQuery,
 )
 
@@ -155,7 +147,6 @@ class AppProviderSet(Provider):
             (self.refresh_role_authorization_command, RefreshRoleAuthorizationCommandUseCase),
             (self.online_users_service, OnlineUsersService),
             (self.online_users_query, ListOnlineUsersQueryUseCase),
-            (self.channel_service, ChannelService),
             (self.private_message_target_query, ResolvePrivateMessageTargetQuery),
             (self.private_message_service, PrivateMessageService),
             (self.command_service, CommandService),
@@ -189,11 +180,13 @@ class AppProviderSet(Provider):
     async def system_user_identity(
         self,
         config: AppConfig,
-        user_repository: UserRepository,
+        uow_factory: UnitOfWorkFactory,
     ) -> SystemUserIdentity:
         identity = create_bancho_bot_identity(config.bancho_bot_username)
         try:
-            await user_repository.sync_system_user(identity)
+            async with uow_factory() as uow:
+                await uow.users.sync_system_user(identity)
+                await uow.commit()
         except ValueError as exc:
             msg = f"BanchoBot system user sync failed: {exc}"
             raise RuntimeError(msg) from exc
@@ -288,13 +281,6 @@ class AppProviderSet(Provider):
     ) -> ListOnlineUsersQueryUseCase:
         return ListOnlineUsersQueryUseCase(online_users_service=online_users_service)
 
-    def channel_service(
-        self,
-        channel_repo: ChannelRepository,
-        channel_state: ChannelStateStore,
-    ) -> ChannelService:
-        return ChannelService(channel_repo=channel_repo, channel_state=channel_state)
-
     def private_message_target_query(
         self,
         user_repository: UserQueryRepository,
@@ -307,7 +293,7 @@ class AppProviderSet(Provider):
 
     def private_message_service(
         self,
-        user_repo: UserRepository,
+        user_repo: UserQueryRepository,
         session_store: SessionStore,
     ) -> PrivateMessageService:
         return PrivateMessageService(user_repo=user_repo, session_store=session_store)
@@ -353,7 +339,7 @@ class AppProviderSet(Provider):
 
     def beatmap_mirror_service(
         self,
-        repository: BeatmapRepository,
+        repository: BeatmapQueryRepository,
         eligibility_service: BeatmapEligibilityService,
         freshness_policy: BeatmapFreshnessPolicy,
         broker: AsyncBroker,
@@ -505,7 +491,7 @@ class AppProviderSet(Provider):
 
     def score_authorization_service(
         self,
-        user_repo: UserRepository,
+        user_repo: UserQueryRepository,
         password_service: PasswordService,
         session_store: SessionStore,
     ) -> ScoreAuthorizationService:

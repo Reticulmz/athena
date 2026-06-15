@@ -12,7 +12,7 @@ from osu_server.domain.identity.sessions import (
     RoleAuthorizationRefreshResult,
     SessionAuthorization,
 )
-from osu_server.services.session_authorization_service import (
+from osu_server.services.commands.identity.session_authorization_service import (
     SessionAuthorizationService,
 )
 

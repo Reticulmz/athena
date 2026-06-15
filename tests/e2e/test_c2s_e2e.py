@@ -28,12 +28,11 @@ from starlette.testclient import TestClient
 
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
-from osu_server.repositories.interfaces.role_repository import RoleRepository
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID, ServerPacketID
 from tests.support.app import create_in_memory_app as create_app
 from tests.support.app import resolve_dependency_sync
+from tests.support.persistence import seed_role_sync
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -81,10 +80,8 @@ def _test_env() -> Generator[None]:
 
 
 def _seed_default_role(app: Starlette) -> None:
-    """Seed the Default role into the InMemoryRoleRepository."""
-    repo = resolve_dependency_sync(app, RoleRepository)
-    assert isinstance(repo, InMemoryRoleRepository)
-    repo.add_role(_DEFAULT_ROLE)
+    """Seed the Default role into command-side in-memory persistence."""
+    seed_role_sync(app, _DEFAULT_ROLE)
 
 
 def _login_body(

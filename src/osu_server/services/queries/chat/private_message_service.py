@@ -15,8 +15,8 @@ import structlog
 from osu_server.domain.identity.users import User
 
 if TYPE_CHECKING:
+    from osu_server.repositories.interfaces.queries.users import UserQueryRepository
     from osu_server.repositories.interfaces.session_store import SessionStore
-    from osu_server.repositories.interfaces.user_repository import UserRepository
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -37,13 +37,13 @@ class PrivateMessageService:
     判定する。実際のパケット配信はトランスポート層が担当する。
     """
 
-    _user_repo: UserRepository
+    _user_repo: UserQueryRepository
     _session_store: SessionStore
 
     def __init__(
         self,
         *,
-        user_repo: UserRepository,
+        user_repo: UserQueryRepository,
         session_store: SessionStore,
     ) -> None:
         self._user_repo = user_repo

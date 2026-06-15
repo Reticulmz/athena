@@ -17,15 +17,15 @@ from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.domain.scores.score import Playstyle, Ruleset, Score
 from osu_server.domain.scores.validator import ValidationError, validate_hit_counts
 from osu_server.domain.storage.blobs import BlobStoreResult
+from osu_server.services.commands.scores.authorization import (
+    AuthorizationContext,
+    ScoreAuthorizationService,
+)
 from osu_server.services.commands.scores.submit_score import (
     SubmitScoreCommand,
     SubmitScoreCommandOutcome,
     SubmitScoreCommandResult,
     SubmitScoreUseCase,
-)
-from osu_server.services.score_authorization_service import (
-    AuthorizationContext,
-    ScoreAuthorizationService,
 )
 from osu_server.shared.errors import DecryptionError
 

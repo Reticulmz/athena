@@ -25,10 +25,10 @@ from osu_server.repositories.memory.queries import (
 )
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
-from osu_server.services.auth_service import AuthService
 from osu_server.services.commands.identity import RegisterUserCommandUseCase
-from osu_server.services.password_service import PasswordService
-from osu_server.services.permission_service import PermissionService
+from osu_server.services.commands.identity.auth_service import AuthService
+from osu_server.services.queries.identity.password_service import PasswordService
+from osu_server.services.queries.identity.permission_service import PermissionService
 from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
 
 # ── Seed data ────────────────────────────────────────────────────────

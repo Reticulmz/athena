@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
+from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.repositories.interfaces.session_store import SessionStore
-from osu_server.services.online_users import OnlineUsersService
+from osu_server.services.queries.identity.online_users_service import OnlineUsersService
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.sessions import SessionData

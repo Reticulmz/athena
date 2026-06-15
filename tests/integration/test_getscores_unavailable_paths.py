@@ -46,13 +46,16 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
-from osu_server.repositories.interfaces.beatmap_repository import BeatmapRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
-from osu_server.repositories.interfaces.user_repository import UserRepository
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
-from osu_server.services.password_service import PasswordService
+from osu_server.services.queries.identity.password_service import PasswordService
 from tests.support.app import create_in_memory_app as create_app
 from tests.support.app import resolve_dependency
+from tests.support.persistence import (
+    attach_beatmap_file,
+    seed_beatmap_fetch_state,
+    seed_beatmapset,
+    seed_user,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -102,12 +105,12 @@ def _test_env() -> Generator[None]:
 
 
 async def _seed_user_with_session(app: Starlette) -> int:
-    user_repo = await resolve_dependency(app, UserRepository)
     password_service = await resolve_dependency(app, PasswordService)
     session_store = await resolve_dependency(app, SessionStore)
 
     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
-    user = await user_repo.create(
+    user = await seed_user(
+        app,
         User(
             id=0,
             username=_TEST_USERNAME,
@@ -117,7 +120,7 @@ async def _seed_user_with_session(app: Starlette) -> int:
             country="JP",
             created_at=_NOW,
             updated_at=_NOW,
-        )
+        ),
     )
     await session_store.create(
         user.id,
@@ -196,8 +199,6 @@ def _build_beatmapset(
 
 
 async def _seed_known_ranked_beatmap(app: Starlette) -> None:
-    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
-    assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
     beatmap = _build_beatmap(
         beatmap_id=75,
         beatmapset_id=1,
@@ -211,12 +212,10 @@ async def _seed_known_ranked_beatmap(app: Starlette) -> None:
         beatmap=beatmap,
         official_status=BeatmapRankStatus.RANKED,
     )
-    await beatmap_repo.save_beatmapset_snapshot(beatmapset)
+    await seed_beatmapset(app, beatmapset)
 
 
 async def _seed_not_submitted_beatmap(app: Starlette) -> None:
-    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
-    assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
     beatmap = _build_beatmap(
         beatmap_id=999,
         beatmapset_id=99,
@@ -230,12 +229,10 @@ async def _seed_not_submitted_beatmap(app: Starlette) -> None:
         beatmap=beatmap,
         official_status=BeatmapRankStatus.NOT_SUBMITTED,
     )
-    await beatmap_repo.save_beatmapset_snapshot(beatmapset)
+    await seed_beatmapset(app, beatmapset)
 
 
 async def _seed_converted_mode_ranked_beatmap(app: Starlette) -> None:
-    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
-    assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
     beatmap = _build_beatmap(
         beatmap_id=75,
         beatmapset_id=_FIXTURE_SET_ID,
@@ -249,7 +246,7 @@ async def _seed_converted_mode_ranked_beatmap(app: Starlette) -> None:
         beatmap=beatmap,
         official_status=BeatmapRankStatus.RANKED,
     )
-    await beatmap_repo.save_beatmapset_snapshot(beatmapset)
+    await seed_beatmapset(app, beatmapset)
 
 
 def _query(
@@ -282,16 +279,8 @@ async def _override_mirror_resolve(
     metadata_status: BeatmapFetchState,
 ) -> None:
     """Seed the new query-side fetch-state seam for an unknown checksum."""
-    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
-    assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
     target = BeatmapFetchTarget.metadata_by_checksum(_UNKNOWN_CHECKSUM)
-    if metadata_status is BeatmapFetchState.PENDING_FETCH:
-        _ = await beatmap_repo.try_mark_fetch_pending(target, _NOW)
-        return
-    if metadata_status is BeatmapFetchState.FAILED:
-        await beatmap_repo.mark_fetch_failed(target, "test metadata failure", _NOW)
-        return
-    await beatmap_repo.mark_fetch_succeeded(target, _NOW)
+    await seed_beatmap_fetch_state(app, target, metadata_status, _NOW)
 
 
 # ---------------------------------------------------------------------------
@@ -422,8 +411,6 @@ class TestUpdateAvailableBody:
 
                 async def _setup() -> None:
                     _ = await _seed_user_with_session(app)
-                    beatmap_repo = await resolve_dependency(app, BeatmapRepository)
-                    assert isinstance(beatmap_repo, InMemoryBeatmapRepository)
 
                     filename = "Camellia - Exit (Realazy) [Insane].osu"
                     attachment_checksum = _KNOWN_CHECKSUM
@@ -459,11 +446,12 @@ class TestUpdateAvailableBody:
                         beatmap=beatmap,
                         official_status=BeatmapRankStatus.RANKED,
                     )
-                    await beatmap_repo.save_beatmapset_snapshot(beatmapset)
+                    await seed_beatmapset(app, beatmapset)
 
                     # Attach the .osu with the filename so the filename-in-set
                     # lookup succeeds independently of mirror availability.
-                    _ = await beatmap_repo.attach_osu_file(
+                    _ = await attach_beatmap_file(
+                        app,
                         BeatmapFileAttachment(
                             beatmap_id=75,
                             blob_id=1,
@@ -472,7 +460,7 @@ class TestUpdateAvailableBody:
                             original_filename=filename,
                             fetched_at=_NOW,
                             verified_at=_NOW,
-                        )
+                        ),
                     )
 
                 asyncio.run(_setup())
@@ -530,10 +518,10 @@ class TestAuthDisclosureRegression:
             ) as client:
 
                 async def _seed_user_and_map_no_session() -> None:
-                    user_repo = await resolve_dependency(app, UserRepository)
                     password_service = await resolve_dependency(app, PasswordService)
                     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
-                    _ = await user_repo.create(
+                    _ = await seed_user(
+                        app,
                         User(
                             id=0,
                             username=_TEST_USERNAME,
@@ -543,7 +531,7 @@ class TestAuthDisclosureRegression:
                             country="JP",
                             created_at=_NOW,
                             updated_at=_NOW,
-                        )
+                        ),
                     )
                     await _seed_known_ranked_beatmap(app)
 

@@ -10,8 +10,8 @@ from osu_server.domain.chat.channels import Channel, ChannelType
 from osu_server.domain.identity.authentication import LoginResponse
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
+from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.domain.identity.users import User
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.services.queries.chat import ChannelCatalogQueryResult
 from osu_server.transports.stable.bancho.mappers.permissions import (

@@ -23,7 +23,7 @@ from osu_server.infrastructure.state.memory.channel_state_store import (
     InMemoryChannelStateStore,
 )
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.services.channel_service import ChannelService
+from osu_server.services.queries.chat.channel_service import ChannelService
 
 # -- Constants ----------------------------------------------------------------
 

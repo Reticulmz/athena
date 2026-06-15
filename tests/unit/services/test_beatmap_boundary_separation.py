@@ -28,7 +28,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
     LocalBeatmapStatus,
 )
-from osu_server.services.beatmap_mirror import (
+from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
     BeatmapStatusResolver,
@@ -45,8 +45,8 @@ _CHECKSUM = "0123456789abcdef0123456789abcdef"
 # All modules that belong to the beatmap-mirror feature boundary.
 _BEATMAP_MODULES: tuple[str, ...] = (
     "osu_server.domain.beatmaps",
-    "osu_server.services.beatmap_mirror.file_provider_service",
-    "osu_server.services.beatmap_mirror.metadata_provider_service",
+    "osu_server.services.queries.beatmaps.mirror.file_provider_service",
+    "osu_server.services.queries.beatmaps.mirror.metadata_provider_service",
     "osu_server.repositories.beatmaps.mappers",
     "osu_server.repositories.beatmaps.metadata_providers",
     "osu_server.repositories.interfaces.beatmap_repository",

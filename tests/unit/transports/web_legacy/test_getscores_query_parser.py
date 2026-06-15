@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-from osu_server.domain.legacy_getscores import (
+from osu_server.domain.compatibility.stable.getscores import (
     GetscoresParseError,
     GetscoresParseResult,
     GetscoresParseWarning,

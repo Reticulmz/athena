@@ -177,18 +177,18 @@ IDENTITY_TRANSPORT_USE_CASE_RULES = (
     BoundaryRule(
         name="bancho login identity use-case boundary",
         source_path=SOURCE_ROOT / "transports" / "bancho" / "workflows",
-        forbidden_roots=("osu_server.services.auth_service",),
+        forbidden_roots=("osu_server.services.commands.identity.auth_service",),
     ),
     BoundaryRule(
         name="bancho lifecycle identity query boundary",
         source_path=SOURCE_ROOT / "transports" / "bancho" / "listeners",
-        forbidden_roots=("osu_server.services.online_users",),
+        forbidden_roots=("osu_server.services.queries.identity.online_users_service",),
     ),
     BoundaryRule(
         name="legacy web identity use-case boundary",
         source_path=SOURCE_ROOT / "transports" / "web_legacy",
         forbidden_roots=(
-            "osu_server.services.auth_service",
+            "osu_server.services.commands.identity.auth_service",
             "osu_server.services.legacy_web_auth_service",
         ),
     ),
@@ -264,8 +264,8 @@ BEATMAP_FETCH_JOB_ADAPTER_FILE = SOURCE_ROOT / "jobs" / "beatmap_fetch.py"
 BEATMAP_FETCH_JOB_FORBIDDEN_IMPORT_ROOTS = (
     "osu_server.infrastructure.storage",
     "osu_server.repositories",
-    "osu_server.services.beatmap_mirror",
-    "osu_server.services.blob_storage_service",
+    "osu_server.services.queries.beatmaps.mirror",
+    "osu_server.services.commands.storage.blob_storage",
     "osu_server.services.commands.beatmaps",
 )
 

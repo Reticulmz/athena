@@ -18,7 +18,7 @@ from osu_server.domain.chat import (
     PrivateMessageResult,
 )
 from osu_server.domain.identity.sessions import SessionData
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
+from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.services.commands.chat import (
     JoinChannelCommand,

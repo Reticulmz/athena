@@ -20,7 +20,7 @@ from osu_server.domain.beatmaps import (
     OsuFileFetchResult,
 )
 from osu_server.infrastructure.http import BeatmapHttpClient
-from osu_server.services.beatmap_mirror import (
+from osu_server.services.queries.beatmaps.mirror import (
     BeatmapFileProviderService,
 )
 

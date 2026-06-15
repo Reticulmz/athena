@@ -19,8 +19,8 @@ from osu_server.domain.identity.sessions import SessionData
 from osu_server.infrastructure.messaging.memory import InMemoryEventBus
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.services.online_users import OnlineUsersService
 from osu_server.services.queries.identity import ListOnlineUsersQueryUseCase
+from osu_server.services.queries.identity.online_users_service import OnlineUsersService
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
 from osu_server.transports.stable.bancho.listeners.lifecycle import LifecycleListeners

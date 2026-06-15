@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import hashlib
 from inspect import signature
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, cast, override
 
 import pytest
 from structlog.testing import capture_logs
 
 from osu_server.domain.storage.blobs import BlobDeduplicated, BlobStored
 from osu_server.infrastructure.storage.errors import BackendWriteError, BlobContentMissingError
-from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
-from osu_server.services.blob_storage_service import (
+from osu_server.repositories.memory.commands.blobs import InMemoryBlobCommandRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
+from osu_server.services.commands.storage.blob_storage import (
     BlobContentTypeError,
     BlobContentUnavailableError,
     BlobStorageService,
@@ -18,10 +21,13 @@ from osu_server.services.blob_storage_service import (
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+    from contextlib import AbstractAsyncContextManager
+    from types import TracebackType
 
-    from osu_server.domain.storage.blobs import Blob
+    from osu_server.domain.storage.blobs import Blob, NewBlob
     from osu_server.infrastructure.storage.interfaces import ByteChunks, StagedBlobWrite
-    from osu_server.repositories.interfaces.blob_repository import BlobRepository, NewBlob
+    from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
+    from osu_server.repositories.interfaces.unit_of_work import UnitOfWork, UnitOfWorkFactory
 
 
 async def _chunks(*chunks: bytes) -> AsyncIterator[bytes]:
@@ -116,26 +122,66 @@ class RecordingStagedWrite:
         self.discarded = True
 
 
-class FailingCreateBlobRepository(InMemoryBlobRepository):
+class FailingCreateBlobCommandRepository(InMemoryBlobCommandRepository):
     @override
     async def create(self, blob: NewBlob) -> Blob:
         _ = blob
         raise RuntimeError("forced metadata create failure")
 
 
+class FailingCreateUnitOfWork:
+    blobs: FailingCreateBlobCommandRepository
+
+    def __init__(self, state: InMemoryCommandRepositoryState) -> None:
+        self.blobs = FailingCreateBlobCommandRepository(state)
+
+    async def __aenter__(self) -> UnitOfWork:
+        return cast("UnitOfWork", cast("object", self))
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        _ = exc_type
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+
+class FailingCreateUnitOfWorkFactory:
+    _state: InMemoryCommandRepositoryState
+
+    def __init__(self, state: InMemoryCommandRepositoryState) -> None:
+        self._state = state
+
+    def __call__(self) -> AbstractAsyncContextManager[UnitOfWork]:
+        return FailingCreateUnitOfWork(self._state)
+
+
 def _make_service(
     *,
-    repo: BlobRepository | None = None,
+    uow_factory: UnitOfWorkFactory | None = None,
+    query_repo: BlobQueryRepository | None = None,
     backend: RecordingBackend | None = None,
-) -> tuple[BlobStorageService, BlobRepository, RecordingBackend]:
-    selected_repo = repo or InMemoryBlobRepository()
+) -> tuple[BlobStorageService, BlobQueryRepository, RecordingBackend]:
+    command_state = InMemoryCommandRepositoryState()
+    selected_uow_factory = uow_factory or InMemoryUnitOfWorkFactory(command_state)
+    selected_query_repo = query_repo or InMemoryBlobQueryRepository(
+        InMemoryUnitOfWorkFactory(command_state)
+    )
     selected_backend = backend or RecordingBackend()
     service = BlobStorageService(
-        blob_repo=selected_repo,
+        blob_query_repo=selected_query_repo,
+        uow_factory=selected_uow_factory,
         backend=selected_backend,
         storage_backend="local",
     )
-    return service, selected_repo, selected_backend
+    return service, selected_query_repo, selected_backend
 
 
 async def test_put_stream_stores_new_blob_with_integrity_metadata() -> None:
@@ -262,9 +308,13 @@ async def test_put_stream_discards_staging_and_logs_when_finalize_fails() -> Non
 
 
 async def test_put_stream_does_not_discard_after_finalize_when_metadata_create_fails() -> None:
-    repo = FailingCreateBlobRepository()
+    command_state = InMemoryCommandRepositoryState()
     backend = RecordingBackend()
-    service, _repo, _backend = _make_service(repo=repo, backend=backend)
+    service, _repo, _backend = _make_service(
+        uow_factory=FailingCreateUnitOfWorkFactory(command_state),
+        query_repo=InMemoryBlobQueryRepository(InMemoryUnitOfWorkFactory(command_state)),
+        backend=backend,
+    )
     content = b"metadata create failure"
 
     with (

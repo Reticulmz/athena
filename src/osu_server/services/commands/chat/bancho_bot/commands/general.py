@@ -8,11 +8,11 @@ from __future__ import annotations
 import random
 from typing import TYPE_CHECKING
 
-from osu_server.domain.bancho_bot import CommandArgument
+from osu_server.domain.chat.commands import CommandArgument
 
 if TYPE_CHECKING:
-    from osu_server.domain.bancho_bot import CommandContext
-    from osu_server.services.bancho_bot.registry import CommandRegistry
+    from osu_server.domain.chat.commands import CommandContext
+    from osu_server.services.commands.chat.bancho_bot.registry import CommandRegistry
 
 
 def setup_general(registry: CommandRegistry) -> None:

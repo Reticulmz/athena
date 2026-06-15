@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from osu_server.domain.legacy_getscores import (
+from osu_server.domain.compatibility.stable.getscores import (
     GetscoresOutcomeKind,
     GetscoresRequest,
     GetscoresResolveReason,

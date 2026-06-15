@@ -1,5 +1,9 @@
 """Score command use-case package."""
 
+from osu_server.services.commands.scores.authorization import (
+    AuthorizationContext,
+    ScoreAuthorizationService,
+)
 from osu_server.services.commands.scores.process_submission import (
     ParsedSubmissionInput,
     ProcessScoreSubmissionUseCase,
@@ -18,8 +22,10 @@ from osu_server.services.commands.scores.submit_score import (
 )
 
 __all__ = [
+    "AuthorizationContext",
     "ParsedSubmissionInput",
     "ProcessScoreSubmissionUseCase",
+    "ScoreAuthorizationService",
     "ScorePayloadParser",
     "SubmissionOutcome",
     "SubmissionResult",

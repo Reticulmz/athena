@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING
 from osu_server.domain.identity.users import User
 
 if TYPE_CHECKING:
+    from osu_server.repositories.interfaces.queries.users import UserQueryRepository
     from osu_server.repositories.interfaces.session_store import SessionStore
-    from osu_server.repositories.interfaces.user_repository import UserRepository
-    from osu_server.services.password_service import PasswordService
+    from osu_server.services.queries.identity.password_service import PasswordService
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +47,7 @@ class ScoreAuthorizationService:
     explicit test doubles at the composition boundary.
     """
 
-    _user_repo: UserRepository
+    _user_repo: UserQueryRepository
     _password_service: PasswordService
     _session_store: SessionStore
 
@@ -56,7 +56,7 @@ class ScoreAuthorizationService:
     def __init__(
         self,
         *,
-        user_repo: UserRepository,
+        user_repo: UserQueryRepository,
         password_service: PasswordService,
         session_store: SessionStore,
     ) -> None:

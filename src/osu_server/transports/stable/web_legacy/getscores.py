@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import structlog
 from starlette.responses import Response
 
-from osu_server.domain.legacy_getscores import GetscoresOutcomeKind
+from osu_server.domain.compatibility.stable.getscores import GetscoresOutcomeKind
 from osu_server.services.queries.identity import SessionCredentialsQueryInput
 
 if TYPE_CHECKING:

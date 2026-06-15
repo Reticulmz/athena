@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from tests.support.beatmaps import InMemoryBeatmapStore
+
 from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFetchTarget,
@@ -31,7 +33,6 @@ from osu_server.domain.storage.blobs import Blob
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
 from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
     FetchBeatmapMetadataUseCase,
@@ -168,21 +169,24 @@ class TestFetchBeatmapMetadataUseCase:
 
     @staticmethod
     def _make_job(
-        repo: InMemoryBeatmapRepository,
+        repo: InMemoryBeatmapStore,
         official: StubMetadataProvider | None = None,
         mirror: StubMetadataProvider | None = None,
     ) -> FetchBeatmapMetadataUseCase:
         _official: BeatmapMetadataProvider = official or StubMetadataProvider()
         _mirror: BeatmapMetadataProvider = mirror or StubMetadataProvider()
         composite = CompositeBeatmapMetadataProvider(official=_official, mirror=_mirror)
-        return FetchBeatmapMetadataUseCase(repository=repo, metadata_provider=composite)
+        return FetchBeatmapMetadataUseCase(
+            uow_factory=repo.uow_factory,
+            metadata_provider=composite,
+        )
 
     # --- success path --------------------------------------------------------
 
     async def test_successful_official_fetch_saves_snapshot(self) -> None:
         """Official provider returns a snapshot; it is saved and fetch is marked
         succeeded."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
         job = self._make_job(repo, official=official)
@@ -201,7 +205,7 @@ class TestFetchBeatmapMetadataUseCase:
 
     async def test_mirror_fallback_when_official_returns_none(self) -> None:
         """When the official provider returns None, fall back to mirror."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         mirror_snapshot = _make_mirror_snapshot()
         official = StubMetadataProvider()
         mirror = StubMetadataProvider(by_beatmap_id={2000: mirror_snapshot})
@@ -218,7 +222,7 @@ class TestFetchBeatmapMetadataUseCase:
 
     async def test_mirror_fallback_when_official_raises(self) -> None:
         """When the official provider raises, fall back to mirror."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         mirror_snapshot = _make_mirror_snapshot()
         official = StubMetadataProvider(exception=RuntimeError("official down"))
         mirror = StubMetadataProvider(by_beatmap_id={2000: mirror_snapshot})
@@ -234,7 +238,7 @@ class TestFetchBeatmapMetadataUseCase:
 
     async def test_mark_failed_when_all_providers_return_none(self) -> None:
         """When both providers return None, the fetch is marked failed."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         official = StubMetadataProvider()
         mirror = StubMetadataProvider()
         job = self._make_job(repo, official=official, mirror=mirror)
@@ -249,7 +253,7 @@ class TestFetchBeatmapMetadataUseCase:
 
     async def test_mark_failed_when_all_providers_raise(self) -> None:
         """When both providers raise, the fetch is marked failed."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         official = StubMetadataProvider(exception=RuntimeError("official down"))
         mirror = StubMetadataProvider(exception=RuntimeError("mirror down"))
         job = self._make_job(repo, official=official, mirror=mirror)
@@ -266,7 +270,7 @@ class TestFetchBeatmapMetadataUseCase:
     async def test_already_pending_skips_fetch(self) -> None:
         """When the target is already in PENDING_FETCH state, the job returns
         without contacting any provider."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
         # Pre-mark as pending so the job sees it is already claimed.
         _ = await repo.try_mark_fetch_pending(target, _NOW)
@@ -283,7 +287,7 @@ class TestFetchBeatmapMetadataUseCase:
     async def test_concurrent_calls_only_one_proceeds(self) -> None:
         """Two concurrent calls for the same target: the second should see
         the pending state and exit without fetching."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(
             by_beatmap_id={2000: snapshot},
@@ -311,7 +315,7 @@ class TestFetchBeatmapMetadataUseCase:
         official metadata does not clear it."""
         from osu_server.domain.beatmaps import LocalBeatmapStatus  # noqa: PLC0415
 
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         # Save initial snapshot with local override set on the beatmap.
         initial_snapshot = _make_snapshot()
         initial_beatset = _snapshot_to_beatmapset(initial_snapshot)
@@ -333,7 +337,7 @@ class TestFetchBeatmapMetadataUseCase:
 
     async def test_mirror_snapshot_saved_as_unverified(self) -> None:
         """Mirror-sourced snapshots are saved with unverified status per-beatmap."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         mirror_snapshot = _make_mirror_snapshot()
         mirror = StubMetadataProvider(by_beatmap_id={2000: mirror_snapshot})
         job = self._make_job(repo, mirror=mirror)
@@ -349,7 +353,7 @@ class TestFetchBeatmapMetadataUseCase:
 
     async def test_official_source_tracked_in_saved_snapshot(self) -> None:
         """Official fetch records the source in the saved beatmap metadata."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot(
             official_status_source=BeatmapMetadataSource.OFFICIAL,
         )
@@ -368,7 +372,7 @@ class TestFetchBeatmapMetadataUseCase:
     async def test_re_fetch_after_fresh_state_marks_succeeded(self) -> None:
         """After a successful fetch, a subsequent fetch still proceeds
         (state is FRESH, not PENDING_FETCH) and succeeds normally."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
         job = self._make_job(repo, official=official)
@@ -388,7 +392,7 @@ class TestFetchBeatmapMetadataUseCase:
     async def test_lookup_by_beatmapset_id(self) -> None:
         """The job resolves metadata:beatmapset targets via the provider's
         beatmapset_id lookup."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot(beatmapset_id=5678)
         official = StubMetadataProvider(by_beatmapset_id={5678: snapshot})
         job = self._make_job(repo, official=official)
@@ -405,7 +409,7 @@ class TestFetchBeatmapMetadataUseCase:
     async def test_lookup_by_checksum(self) -> None:
         """The job resolves metadata:checksum targets via the provider's
         checksum lookup."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         checksum = _DEFAULT_CHECKSUM
         official = StubMetadataProvider(by_checksum={checksum: snapshot})
@@ -522,7 +526,7 @@ class StubBlobStorageService:
 
 
 async def _setup_repo_with_beatmap(
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapStore,
     *,
     beatmap_id: int = 2000,
     beatmapset_id: int = 1000,
@@ -591,14 +595,14 @@ class TestFetchBeatmapFileUseCase:
 
     @staticmethod
     def _make_job(
-        repo: InMemoryBeatmapRepository,
+        repo: InMemoryBeatmapStore,
         file_provider: StubFileProvider | None = None,
         blob_storage: StubBlobStorageService | None = None,
     ) -> FetchBeatmapFileUseCase:
         _provider: StubFileProvider = file_provider or StubFileProvider()
         _blob: StubBlobStorageService = blob_storage or StubBlobStorageService()
         return FetchBeatmapFileUseCase(
-            repository=repo,
+            uow_factory=repo.uow_factory,
             file_provider=_provider,
             blob_storage=_blob,
         )
@@ -607,7 +611,7 @@ class TestFetchBeatmapFileUseCase:
 
     async def test_successful_file_fetch_verifies_and_attaches(self) -> None:
         """File is fetched, md5 verified, blob stored, and attachment attached."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         _ = await _setup_repo_with_beatmap(repo, checksum_md5=_FILE_BODY_MD5)
         expected_md5 = _FILE_BODY_MD5
         fetch_result = OsuFileFetchResult(
@@ -651,7 +655,7 @@ class TestFetchBeatmapFileUseCase:
     async def test_checksum_mismatch_marks_failed(self) -> None:
         """When fetched bytes don't match expected md5, fetch is marked failed
         and no blob is stored."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         _ = await _setup_repo_with_beatmap(repo, checksum_md5=_DEFAULT_CHECKSUM)
         # _FILE_BODY_MISMATCH has a different md5 than _DEFAULT_CHECKSUM
         fetch_result = OsuFileFetchResult(
@@ -691,7 +695,7 @@ class TestFetchBeatmapFileUseCase:
     async def test_already_pending_skips_fetch(self) -> None:
         """When the target is already in PENDING_FETCH state, the job returns
         without contacting the file provider."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         _ = await _setup_repo_with_beatmap(repo)
         target = BeatmapFetchTarget.file_by_beatmap_id(2000)
         # Pre-mark as pending
@@ -713,7 +717,7 @@ class TestFetchBeatmapFileUseCase:
 
     async def test_duplicate_verified_file_reuses_existing_attachment(self) -> None:
         """Existing verified attachment marks the fetch succeeded without storing again."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         _ = await _setup_repo_with_beatmap(repo, checksum_md5=_FILE_BODY_MD5)
         fetch_result = OsuFileFetchResult(
             beatmap_id=2000,
@@ -731,7 +735,8 @@ class TestFetchBeatmapFileUseCase:
         await job.execute(target)
         second_attachment = await repo.get_current_file_attachment(2000)
 
-        assert first_attachment is second_attachment
+        assert first_attachment is not None
+        assert second_attachment == first_attachment
         assert len(file_provider.calls) == 1
         assert len(blob_storage.stored) == 1
         fetch_record = await repo.get_fetch_state(target)
@@ -740,7 +745,7 @@ class TestFetchBeatmapFileUseCase:
 
     async def test_concurrent_calls_only_one_proceeds(self) -> None:
         """Two concurrent calls for the same target: the second skips."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         _ = await _setup_repo_with_beatmap(repo, checksum_md5=_FILE_BODY_MD5)
         fetch_result = OsuFileFetchResult(
             beatmap_id=2000,
@@ -772,7 +777,7 @@ class TestFetchBeatmapFileUseCase:
     async def test_beatmap_not_found_marks_failed(self) -> None:
         """When the beatmap doesn't exist in the repository, the fetch is marked
         failed without contacting the file provider."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         # Do NOT set up any beatmap
         fetch_result = OsuFileFetchResult(
             beatmap_id=2000,
@@ -797,7 +802,7 @@ class TestFetchBeatmapFileUseCase:
     async def test_file_provider_raises_marks_failed(self) -> None:
         """When the file provider raises, the fetch is marked failed and no blob
         is stored."""
-        repo = InMemoryBeatmapRepository()
+        repo = InMemoryBeatmapStore()
         _ = await _setup_repo_with_beatmap(repo)
         file_provider = StubFileProvider(exception=RuntimeError("mirror down"))
         blob_storage = StubBlobStorageService()

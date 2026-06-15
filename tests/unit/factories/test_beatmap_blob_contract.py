@@ -7,8 +7,10 @@ from tests.factories.beatmap import (
     store_beatmap_file_body_blob,
 )
 
-from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
-from osu_server.services.blob_storage_service import BlobStorageService
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
+from osu_server.services.commands.storage.blob_storage import BlobStorageService
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -56,8 +58,11 @@ class RecordingStagedBlobWrite:
 
 def _make_blob_service() -> tuple[BlobStorageService, RecordingBlobBackend]:
     backend = RecordingBlobBackend()
+    command_state = InMemoryCommandRepositoryState()
+    uow_factory = InMemoryUnitOfWorkFactory(command_state)
     service = BlobStorageService(
-        blob_repo=InMemoryBlobRepository(),
+        blob_query_repo=InMemoryBlobQueryRepository(uow_factory),
+        uow_factory=uow_factory,
         backend=backend,
         storage_backend="local",
     )

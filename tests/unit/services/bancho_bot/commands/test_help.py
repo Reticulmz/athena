@@ -11,13 +11,16 @@ from __future__ import annotations
 
 import pytest
 
-from osu_server.domain.bancho_bot import (
+from osu_server.domain.chat.commands import (
     CommandContext,
     CommandDestination,
     CommandMetadata,
 )
-from osu_server.services.bancho_bot.commands.general import setup_general
-from osu_server.services.bancho_bot.registry import CommandDefinition, CommandRegistry
+from osu_server.services.commands.chat.bancho_bot.commands.general import setup_general
+from osu_server.services.commands.chat.bancho_bot.registry import (
+    CommandDefinition,
+    CommandRegistry,
+)
 
 
 @pytest.fixture

@@ -76,7 +76,7 @@ LEGACY_FACADE_ROOTS = (
     "osu_server.composition.service_registry",
     "osu_server.composition.worker_runtime",
     "osu_server.infrastructure.di",
-    "osu_server.services.auth_service",
+    "osu_server.services.commands.identity.auth_service",
     "osu_server.services.chat_service",
     "osu_server.services.score_submission_service",
     "osu_server.repositories.interfaces.chat_repository",

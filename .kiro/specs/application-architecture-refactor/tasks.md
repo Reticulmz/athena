@@ -225,7 +225,7 @@
   - _Requirements: 2.5, 10.1, 10.2, 10.4, 10.6_
 
 - [ ] 8. Deprecated path cleanup and architecture sync
-- [ ] 8.1 Remove deprecated flat package entry points and unsupported facades
+- [x] 8.1 Remove deprecated flat package entry points and unsupported facades
   - Remove old service, repository, domain, and transport package locations after all call sites use the new architecture paths.
   - Ensure no old and new package paths remain supported for the same responsibility.
   - Completion is observable when deprecated imports fail or are caught by automated validation and no compatibility facade remains.

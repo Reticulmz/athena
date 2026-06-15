@@ -37,7 +37,7 @@ from osu_server.services.commands.scores import (
     generate_submission_fingerprint,
     generate_submission_request_hash,
 )
-from osu_server.services.score_authorization_service import ScoreAuthorizationService
+from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,

@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from unittest import mock
 
-from osu_server.domain.bancho_bot import CommandContext, CommandDestination
+from osu_server.domain.chat.commands import CommandContext, CommandDestination
 from osu_server.domain.identity.authorization import Privileges
-from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.bancho_bot.registry import CommandRegistry
+from osu_server.services.commands.chat.bancho_bot.commands import create_builtin_registry
+from osu_server.services.commands.chat.bancho_bot.registry import CommandRegistry
 
 
 def _make_help_ctx(registry: CommandRegistry) -> CommandContext:

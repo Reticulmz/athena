@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from osu_server.domain.storage.blobs import Blob
-    from osu_server.services.blob_storage_service import BlobStorageService
+    from osu_server.services.commands.storage.blob_storage import BlobStorageService
 
 _DEFAULT_BEATMAP_ID = 2_000
 _DEFAULT_BEATMAPSET_ID = 1_000

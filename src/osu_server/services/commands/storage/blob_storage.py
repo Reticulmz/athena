@@ -7,9 +7,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.storage.blobs import BlobDeduplicated, BlobStored, BlobStoreResult
+from osu_server.domain.storage.blobs import BlobDeduplicated, BlobStored, BlobStoreResult, NewBlob
 from osu_server.infrastructure.storage.errors import BlobContentMissingError
-from osu_server.repositories.interfaces.blob_repository import DuplicateBlobError, NewBlob
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.storage.interfaces import (
@@ -17,7 +16,8 @@ if TYPE_CHECKING:
         ByteChunks,
         StagedBlobWrite,
     )
-    from osu_server.repositories.interfaces.blob_repository import BlobRepository
+    from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
+    from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -37,18 +37,21 @@ class BlobStorageWriteError(RuntimeError):
 class BlobStorageService:
     """Coordinate staged blob writes with SHA-256 metadata and deduplication."""
 
-    _blob_repo: BlobRepository
+    _blob_query_repo: BlobQueryRepository
+    _uow_factory: UnitOfWorkFactory
     _backend: BlobStorageBackend
     _storage_backend: str
 
     def __init__(
         self,
         *,
-        blob_repo: BlobRepository,
+        blob_query_repo: BlobQueryRepository,
+        uow_factory: UnitOfWorkFactory,
         backend: BlobStorageBackend,
         storage_backend: str,
     ) -> None:
-        self._blob_repo = blob_repo
+        self._blob_query_repo = blob_query_repo
+        self._uow_factory = uow_factory
         self._backend = backend
         self._storage_backend = storage_backend
 
@@ -89,7 +92,7 @@ class BlobStorageService:
 
             digest = digest_builder.hexdigest()
             storage_key = _storage_key_for_sha256(digest)
-            existing = await self._blob_repo.get_by_sha256(digest)
+            existing = await self._blob_query_repo.get_by_sha256(digest)
             if existing is not None:
                 await staged.discard()
                 logger.debug(
@@ -105,17 +108,19 @@ class BlobStorageService:
             await staged.finalize(storage_key)
             finalized = True
             try:
-                created = await self._blob_repo.create(
-                    NewBlob(
-                        sha256=digest,
-                        byte_size=byte_size,
-                        content_type=normalized_content_type,
-                        storage_backend=self._storage_backend,
-                        storage_key=storage_key,
+                async with self._uow_factory() as uow:
+                    created = await uow.blobs.create(
+                        NewBlob(
+                            sha256=digest,
+                            byte_size=byte_size,
+                            content_type=normalized_content_type,
+                            storage_backend=self._storage_backend,
+                            storage_key=storage_key,
+                        )
                     )
-                )
-            except DuplicateBlobError:
-                duplicate = await self._blob_repo.get_by_sha256(digest)
+                    await uow.commit()
+            except ValueError:
+                duplicate = await self._blob_query_repo.get_by_sha256(digest)
                 if duplicate is not None:
                     logger.debug(
                         "blob_write_deduplicated",
@@ -156,7 +161,7 @@ class BlobStorageService:
 
     async def stream_read(self, blob_id: int) -> ByteChunks:
         """Open a backend chunk stream for existing blob metadata."""
-        blob = await self._blob_repo.get_by_id(blob_id)
+        blob = await self._blob_query_repo.get_by_id(blob_id)
         if blob is None:
             logger.warning("blob_read_failed", blob_id=blob_id, reason="BlobMetadataMissing")
             raise BlobContentUnavailableError(f"blob content is unavailable: {blob_id}")

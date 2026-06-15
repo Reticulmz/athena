@@ -27,13 +27,12 @@ from osu_server.domain.identity.authentication import LoginResult, RegistrationF
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
-from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
-from osu_server.services.auth_service import AuthService
+from osu_server.services.commands.identity.auth_service import AuthService
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 from tests.support.app import create_in_memory_app, resolve_dependency
+from tests.support.persistence import seed_role
 
 # -- Constants -----------------------------------------------------------
 
@@ -83,10 +82,8 @@ def _make_test_app(
 
 
 async def _seed_default_role(app: Starlette) -> None:
-    """Seed the Default role into InMemoryRoleRepository after lifespan."""
-    repo = await resolve_dependency(app, RoleRepository)
-    assert isinstance(repo, InMemoryRoleRepository)
-    repo.add_role(_ROLE_DEFAULT)
+    """Seed the Default role into command-side in-memory persistence."""
+    await seed_role(app, _ROLE_DEFAULT)
 
 
 async def _resolve_services(

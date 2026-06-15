@@ -1,6 +1,7 @@
 import random
 import time
 from datetime import UTC, datetime
+from typing import final
 
 import pytest
 from pydantic import PostgresDsn, RedisDsn
@@ -8,10 +9,13 @@ from pydantic import PostgresDsn, RedisDsn
 from osu_server.config import AppConfig
 from osu_server.domain.chat import (
     ChannelChatDestination,
+    ChannelMessageResult,
     ChatAuthorization,
     ChatPersistenceFailureReason,
+    ChatPersistenceResult,
     ChatSender,
     PrivateChatDestination,
+    PrivateMessageResult,
     SendChannelMessageInput,
     SendPrivateMessageInput,
 )
@@ -31,16 +35,18 @@ from osu_server.repositories.memory.queries.users import InMemoryUserQueryReposi
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.repositories.memory.user_repository import InMemoryUserRepository
-from osu_server.services.bancho_bot.command_service import CommandService
-from osu_server.services.bancho_bot.commands import create_builtin_registry
-from osu_server.services.chat_service import ChatService
 from osu_server.services.commands.chat import (
+    PersistChannelMessageCommand,
     PersistChannelMessageUseCase,
     PersistPrivateMessageCommand,
     PersistPrivateMessageUseCase,
+    SendChannelMessageCommand,
     SendChannelMessageUseCase,
+    SendPrivateMessageCommand,
     SendPrivateMessageUseCase,
 )
+from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
+from osu_server.services.commands.chat.bancho_bot.commands import create_builtin_registry
 from osu_server.services.queries.chat import (
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,
@@ -210,6 +216,66 @@ def command_service() -> CommandService:
     return CommandService(create_builtin_registry())
 
 
+@final
+class ChatUseCaseHarness:
+    def __init__(
+        self,
+        *,
+        send_channel_message_use_case: SendChannelMessageUseCase,
+        send_private_message_use_case: SendPrivateMessageUseCase,
+        persist_channel_message_use_case: PersistChannelMessageUseCase,
+        persist_private_message_use_case: PersistPrivateMessageUseCase,
+    ) -> None:
+        self._send_channel_msg = send_channel_message_use_case
+        self._send_private_msg = send_private_message_use_case
+        self._persist_channel_msg = persist_channel_message_use_case
+        self._persist_private_msg = persist_private_message_use_case
+
+    async def send_channel_message(
+        self,
+        message: SendChannelMessageInput,
+    ) -> ChannelMessageResult | None:
+        result = await self._send_channel_msg.execute(SendChannelMessageCommand(message=message))
+        return result.result
+
+    async def send_private_message(
+        self,
+        message: SendPrivateMessageInput,
+    ) -> PrivateMessageResult | None:
+        result = await self._send_private_msg.execute(SendPrivateMessageCommand(message=message))
+        return result.result
+
+    async def persist_channel_message(
+        self,
+        *,
+        sender_id: int,
+        channel_name: str,
+        content: str,
+    ) -> ChatPersistenceResult:
+        return await self._persist_channel_msg.execute(
+            PersistChannelMessageCommand(
+                sender_id=sender_id,
+                channel_name=channel_name,
+                content=content,
+            )
+        )
+
+    async def persist_private_message(
+        self,
+        *,
+        sender_id: int,
+        target_id: int,
+        content: str,
+    ) -> ChatPersistenceResult:
+        return await self._persist_private_msg.execute(
+            PersistPrivateMessageCommand(
+                sender_id=sender_id,
+                target_id=target_id,
+                content=content,
+            )
+        )
+
+
 @pytest.fixture
 def chat_service(
     channel_delivery_query: ResolveChannelMessageDeliveryQuery,
@@ -220,7 +286,7 @@ def chat_service(
     rate_limiter: InMemoryRateLimiter,
     config: AppConfig,
     uow_factory: InMemoryUnitOfWorkFactory,
-) -> ChatService:
+) -> ChatUseCaseHarness:
     send_channel = SendChannelMessageUseCase(
         channel_delivery_query=channel_delivery_query,
         command_service=command_service,
@@ -237,7 +303,7 @@ def chat_service(
         rate_limiter=rate_limiter,
         config=config,
     )
-    return ChatService(
+    return ChatUseCaseHarness(
         send_channel_message_use_case=send_channel,
         send_private_message_use_case=send_private,
         persist_channel_message_use_case=PersistChannelMessageUseCase(
@@ -251,7 +317,7 @@ def chat_service(
 
 @pytest.mark.asyncio
 async def test_persist_channel_message_writes_through_uow(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     command_state: InMemoryCommandRepositoryState,
 ) -> None:
     result = await chat_service.persist_channel_message(
@@ -270,7 +336,7 @@ async def test_persist_channel_message_writes_through_uow(
 
 @pytest.mark.asyncio
 async def test_persist_channel_message_returns_uow_repository_failure(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     command_state: InMemoryCommandRepositoryState,
 ) -> None:
     result = await chat_service.persist_channel_message(
@@ -286,7 +352,7 @@ async def test_persist_channel_message_returns_uow_repository_failure(
 
 @pytest.mark.asyncio
 async def test_persist_private_message_writes_through_uow(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     command_state: InMemoryCommandRepositoryState,
 ) -> None:
     result = await chat_service.persist_private_message(
@@ -321,7 +387,7 @@ async def test_persist_private_message_without_runtime_returns_failure() -> None
 
 @pytest.mark.asyncio
 async def test_send_channel_message_success(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     captured_events: list[object],
 ) -> None:
     res = await chat_service.send_channel_message(_channel_message_input())
@@ -341,7 +407,7 @@ async def test_send_channel_message_success(
 
 @pytest.mark.asyncio
 async def test_send_private_message_success(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     user_repo: InMemoryUserRepository,
     session_store: InMemorySessionStore,
     captured_events: list[object],
@@ -407,7 +473,7 @@ async def test_send_private_message_success(
 
 @pytest.mark.asyncio
 async def test_silenced_user_rejected(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     session_store: InMemorySessionStore,
     captured_events: list[object],
 ) -> None:
@@ -436,7 +502,7 @@ async def test_silenced_user_rejected(
 
 @pytest.mark.asyncio
 async def test_rate_limited_rejected(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     rate_limiter: InMemoryRateLimiter,
     config: AppConfig,
     captured_events: list[object],
@@ -454,7 +520,7 @@ async def test_rate_limited_rejected(
 
 @pytest.mark.asyncio
 async def test_channel_delivery_rejected_does_not_fire_event(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     captured_events: list[object],
 ) -> None:
     res = await chat_service.send_channel_message(_channel_message_input(user_privileges=0))
@@ -465,7 +531,7 @@ async def test_channel_delivery_rejected_does_not_fire_event(
 
 @pytest.mark.asyncio
 async def test_private_target_not_found_does_not_fire_event(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     captured_events: list[object],
 ) -> None:
     res = await chat_service.send_private_message(_private_message_input(target_name="missing"))
@@ -477,7 +543,7 @@ async def test_private_target_not_found_does_not_fire_event(
 
 @pytest.mark.asyncio
 async def test_empty_message_rejected(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     captured_events: list[object],
 ) -> None:
     res = await chat_service.send_channel_message(_channel_message_input(content=""))
@@ -487,7 +553,7 @@ async def test_empty_message_rejected(
 
 @pytest.mark.asyncio
 async def test_long_message_rejected(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     captured_events: list[object],
 ) -> None:
     long_msg = "a" * 100
@@ -499,7 +565,7 @@ async def test_long_message_rejected(
 
 @pytest.mark.asyncio
 async def test_command_execution(
-    chat_service: ChatService,
+    chat_service: ChatUseCaseHarness,
     captured_events: list[object],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -15,7 +15,7 @@ from osu_server.domain.identity.sessions import (
 if TYPE_CHECKING:
     from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
     from osu_server.repositories.interfaces.session_store import SessionStore
-    from osu_server.services.permission_service import PermissionService
+    from osu_server.services.queries.identity.permission_service import PermissionService
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 

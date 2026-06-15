@@ -22,14 +22,10 @@ from starlette.testclient import TestClient
 from osu_server.domain.identity.authentication import RegistrationForm
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY
+from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
-from osu_server.repositories.interfaces.channel_repository import ChannelRepository
-from osu_server.repositories.interfaces.role_repository import RoleRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
-from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
-from osu_server.services.auth_service import AuthService
+from osu_server.services.commands.identity.auth_service import AuthService
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.stable.bancho.protocol.s2c.chat import (
     channel_join_success,
@@ -46,6 +42,7 @@ from osu_server.transports.stable.bancho.protocol.types import BanchoString, Mes
 from tests.factories.domain import make_channel, make_channel_role_override
 from tests.support.app import create_in_memory_app as create_app
 from tests.support.app import resolve_dependency
+from tests.support.persistence import seed_channel, seed_channel_override, seed_role
 
 if TYPE_CHECKING:
     from starlette.applications import Starlette
@@ -81,27 +78,29 @@ def _make_test_app() -> Starlette:
 
 
 async def _seed_default_role(app: Starlette) -> None:
-    """Seed the Default role into InMemoryRoleRepository after lifespan."""
-    repo = await resolve_dependency(app, RoleRepository)
-    assert isinstance(repo, InMemoryRoleRepository)
-    repo.add_role(_DEFAULT_ROLE)
+    """Seed the Default role into command-side in-memory persistence."""
+    await seed_role(app, _DEFAULT_ROLE)
 
 
 async def _seed_channels(app: Starlette) -> None:
-    """Seed channels and role overrides into InMemoryChannelRepository."""
-    repo = await resolve_dependency(app, ChannelRepository)
-    assert isinstance(repo, InMemoryChannelRepository)
-
-    osu_channel = await repo.create(
+    """Seed channels and role overrides into command-side in-memory persistence."""
+    osu_channel = await seed_channel(
+        app,
         make_channel(name="#osu", topic="General discussion", auto_join=True),
     )
-    announce_channel = await repo.create(
+    announce_channel = await seed_channel(
+        app,
         make_channel(name="#announce", topic="Announcements", auto_join=False),
     )
-    repo.seed_override(
-        make_channel_role_override(channel_id=osu_channel.id, role_id=_DEFAULT_ROLE.id),
+    await seed_channel_override(
+        app,
+        make_channel_role_override(
+            channel_id=osu_channel.id,
+            role_id=_DEFAULT_ROLE.id,
+        ),
     )
-    repo.seed_override(
+    await seed_channel_override(
+        app,
         make_channel_role_override(
             channel_id=announce_channel.id,
             role_id=_DEFAULT_ROLE.id,

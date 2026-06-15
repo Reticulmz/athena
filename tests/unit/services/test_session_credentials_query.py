@@ -11,11 +11,11 @@ from osu_server.domain.identity.authentication import LegacyWebAuthFailure, Lega
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.services.password_service import PasswordService
 from osu_server.services.queries.identity import (
     SessionCredentialsQueryInput,
     SessionCredentialsQueryUseCase,
 )
+from osu_server.services.queries.identity.password_service import PasswordService
 
 _NOW = datetime(2026, 6, 7, tzinfo=UTC)
 _PLAIN_PASSWORD = "test_password"

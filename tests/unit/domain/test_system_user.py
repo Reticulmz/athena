@@ -4,7 +4,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from osu_server.domain.system_user import BANCHO_BOT_IDENTITY, SystemUserIdentity
+from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY, SystemUserIdentity
 
 
 class TestSystemUserIdentityDataclass:

@@ -22,6 +22,9 @@ from osu_server.services.commands.identity.session_authorization import (
     RefreshUserAuthorizationCommandResult,
     RefreshUserAuthorizationCommandUseCase,
 )
+from osu_server.services.commands.identity.session_authorization_service import (
+    SessionAuthorizationService,
+)
 
 __all__ = [
     "LoginCommand",
@@ -40,4 +43,5 @@ __all__ = [
     "RegisterUserCommandInput",
     "RegisterUserCommandResult",
     "RegisterUserCommandUseCase",
+    "SessionAuthorizationService",
 ]
