@@ -183,7 +183,7 @@ async def test_sqlalchemy_score_repository_preserves_all_fields(
 
     score = _make_score(online_checksum="test_checksum_005")
     score.ruleset = Ruleset.TAIKO
-    score.mods = ModCombination.from_stable_bitmask(72)  # HD+DT
+    score.mods = ModCombination.from_bitmask(72)  # HD+DT
     score.perfect = True
 
     created = await repo.create(score)
@@ -193,7 +193,7 @@ async def test_sqlalchemy_score_repository_preserves_all_fields(
 
     assert retrieved is not None
     assert retrieved.ruleset == Ruleset.TAIKO
-    assert retrieved.mods == ModCombination.from_stable_bitmask(72)
+    assert retrieved.mods == ModCombination.from_bitmask(72)
     assert retrieved.perfect is True
     assert retrieved.n300 == score.n300
     assert retrieved.n100 == score.n100

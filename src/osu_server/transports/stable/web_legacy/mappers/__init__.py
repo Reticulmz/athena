@@ -4,8 +4,18 @@ from osu_server.transports.stable.web_legacy.mappers.getscores import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
 )
+from osu_server.transports.stable.web_legacy.mappers.score_submit import (
+    MultipartParseError,
+    StableScorePayloadParser,
+    StableScoreSubmitCommandMapping,
+    StableScoreSubmitMapper,
+)
 
 __all__ = [
     "GetscoresQueryParser",
     "GetscoresStatusMapper",
+    "MultipartParseError",
+    "StableScorePayloadParser",
+    "StableScoreSubmitCommandMapping",
+    "StableScoreSubmitMapper",
 ]

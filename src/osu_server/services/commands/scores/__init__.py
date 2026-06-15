@@ -3,6 +3,7 @@
 from osu_server.services.commands.scores.process_submission import (
     ParsedSubmissionInput,
     ProcessScoreSubmissionUseCase,
+    ScorePayloadParser,
     SubmissionOutcome,
     SubmissionResult,
     generate_submission_fingerprint,
@@ -19,6 +20,7 @@ from osu_server.services.commands.scores.submit_score import (
 __all__ = [
     "ParsedSubmissionInput",
     "ProcessScoreSubmissionUseCase",
+    "ScorePayloadParser",
     "SubmissionOutcome",
     "SubmissionResult",
     "SubmitScoreCommand",

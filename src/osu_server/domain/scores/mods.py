@@ -62,10 +62,6 @@ class ModCombination:
         return cls(Mod(bitmask))
 
     @classmethod
-    def from_stable_bitmask(cls, bitmask: int) -> Self:
-        return cls.from_bitmask(bitmask)
-
-    @classmethod
     def from_persistence_bitmask(cls, bitmask: int) -> Self:
         return cls.from_bitmask(bitmask)
 

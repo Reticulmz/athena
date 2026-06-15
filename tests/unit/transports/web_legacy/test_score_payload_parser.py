@@ -1,9 +1,14 @@
-"""Unit tests for Score Payload Parser."""
+"""Unit tests for stable score payload mapper."""
 
 import pytest
 
 from osu_server.domain.scores.mods import ModCombination
-from osu_server.domain.scores.payload_parser import ParsedScore, ParseError, parse
+from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
+from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
+
+
+def _parse(payload: str) -> ParsedScore:
+    return StableScorePayloadParser().parse(payload)
 
 
 def test_parse_valid_payload() -> None:
@@ -12,7 +17,7 @@ def test_parse_valid_payload() -> None:
     #         :n300:n100:n50:geki:katu:miss:score:max_combo:perfect:passed
     payload = "100:testuser:abc123:xyz789:0:0:300:50:10:0:0:5:500000:350:0:1"
 
-    result = parse(payload)
+    result = _parse(payload)
 
     assert isinstance(result, ParsedScore)
     assert result.user_id == 100
@@ -41,7 +46,7 @@ def test_parse_stable_client_payload() -> None:
         "943904:1264:False:S:0:True:3:260610132044:20260412:50695543"
     )
 
-    result = parse(payload)
+    result = _parse(payload)
 
     assert result.user_id == 0
     assert result.username == "PlayerOne"
@@ -69,7 +74,7 @@ def test_parse_with_perfect_flag() -> None:
     """Perfect flag (1) を正しくparseする。"""
     payload = "100:user:abc:xyz:0:0:300:0:0:0:0:0:500000:300:1:1"
 
-    result = parse(payload)
+    result = _parse(payload)
 
     assert result.perfect is True
 
@@ -78,7 +83,7 @@ def test_parse_failed_score() -> None:
     """Failed score (passed=0) を正しくparseする。"""
     payload = "100:user:abc:xyz:0:0:100:50:30:0:0:20:200000:150:0:0"
 
-    result = parse(payload)
+    result = _parse(payload)
 
     assert result.passed is False
 
@@ -87,9 +92,9 @@ def test_parse_with_mods() -> None:
     """Mods値を正しくparseする。"""
     payload = "100:user:abc:xyz:0:72:300:0:0:0:0:0:500000:300:0:1"
 
-    result = parse(payload)
+    result = _parse(payload)
 
-    assert result.mods == ModCombination.from_stable_bitmask(72)  # HD+DT
+    assert result.mods == ModCombination.from_bitmask(72)  # HD+DT
 
 
 def test_parse_different_rulesets() -> None:
@@ -97,7 +102,7 @@ def test_parse_different_rulesets() -> None:
     for ruleset_id in [0, 1, 2, 3]:
         payload = f"100:user:abc:xyz:{ruleset_id}:0:100:50:10:0:0:5:300000:200:0:1"
 
-        result = parse(payload)
+        result = _parse(payload)
 
         assert result.ruleset == ruleset_id
 
@@ -107,7 +112,7 @@ def test_parse_invalid_field_count() -> None:
     payload = "100:user:abc:xyz:0:0"  # Too few fields
 
     with pytest.raises(ParseError) as exc_info:
-        _ = parse(payload)
+        _ = _parse(payload)
 
     assert "fields" in str(exc_info.value).lower()
 
@@ -117,7 +122,7 @@ def test_parse_invalid_integer() -> None:
     payload = "invalid:user:abc:xyz:0:0:300:50:10:0:0:5:500000:350:0:1"
 
     with pytest.raises(ParseError) as exc_info:
-        _ = parse(payload)
+        _ = _parse(payload)
 
     assert "user_id" in str(exc_info.value).lower() or "integer" in str(exc_info.value).lower()
 
@@ -125,13 +130,13 @@ def test_parse_invalid_integer() -> None:
 def test_parse_empty_payload() -> None:
     """Empty payloadでParseErrorを発生させる。"""
     with pytest.raises(ParseError):
-        _ = parse("")
+        _ = _parse("")
 
 
 def test_parse_username_with_special_characters() -> None:
     """特殊文字を含むusernameを正しくparseする。"""
     payload = "100:test_user-123:abc:xyz:0:0:300:50:10:0:0:5:500000:350:0:1"
 
-    result = parse(payload)
+    result = _parse(payload)
 
     assert result.username == "test_user-123"

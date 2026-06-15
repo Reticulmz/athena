@@ -26,6 +26,7 @@ from osu_server.services.commands.scores import (
 from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,
+    StubScorePayloadParser,
     make_score_authorization_service,
     make_submit_score_use_case,
 )
@@ -151,6 +152,7 @@ def service(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
         score_decryptor,
+        StubScorePayloadParser(),
         auth_service,
         beatmap_resolver,
     )

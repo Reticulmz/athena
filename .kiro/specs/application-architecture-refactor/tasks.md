@@ -144,7 +144,7 @@
   - Completion is observable when existing stable login, polling, chat, registration, getscores, and score submit tests pass through the new stable transport package.
   - _Requirements: 1.1, 1.3, 1.5, 7.1, 7.7, 10.5_
 
-- [ ] 5.2 Add Transport Mappers for stable authorization, mods, score submit, and getscores
+- [x] 5.2 Add Transport Mappers for stable authorization, mods, score submit, and getscores
   - Convert stable packet, form, query, and text inputs into use-case inputs before service invocation.
   - Convert use-case results back into stable packet, text, or legacy web responses at the transport boundary.
   - Completion is observable when stable permission flags and stable mod bitmasks are mapped at the stable boundary and never leak into core services as wire concepts.

@@ -105,7 +105,8 @@ async def test_handle_score_submit_completed(mock_request: StubRequest) -> None:
     )
     handler = ScoreSubmitHandler(service)
 
-    response = await handler(mock_request)
+    with structlog.testing.capture_logs() as cap_logs:
+        response = await handler(mock_request)
 
     assert isinstance(response, Response)
     assert response.status_code == 200
@@ -114,6 +115,13 @@ async def test_handle_score_submit_completed(mock_request: StubRequest) -> None:
     assert service.last_input is not None
     assert service.last_input.beatmap_id is None
     assert service.last_input.submission_metadata == {"token": "session_token"}
+    assert any(
+        entry["event"] == "score_submission_multipart_parsed"
+        and entry["score_field_count"] == 2
+        and entry["replay_present"] is True
+        and entry["replay_byte_size"] == len(b"replay_binary_data")
+        for entry in cap_logs
+    )
 
 
 @pytest.mark.asyncio

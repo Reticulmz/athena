@@ -41,6 +41,7 @@ from osu_server.services.score_authorization_service import ScoreAuthorizationSe
 from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,
+    StubScorePayloadParser,
     UowScoreSubmissionRepositoryView,
     make_score_authorization_service,
     make_score_repository_views,
@@ -139,23 +140,27 @@ def _make_process_score_submission_use_case(
     resolver: FakeBeatmapResolver,
     score_decryptor: StubScorePayloadDecryptor,
     auth_service: ScoreAuthorizationService,
-) -> tuple[ProcessScoreSubmissionUseCase, UowScoreSubmissionRepositoryView]:
+) -> tuple[
+    ProcessScoreSubmissionUseCase,
+    UowScoreSubmissionRepositoryView,
+    StubScorePayloadParser,
+]:
     uow_factory = InMemoryUnitOfWorkFactory()
     _, submission_repo, _ = make_score_repository_views(uow_factory)
+    payload_parser = StubScorePayloadParser()
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
         score_decryptor,
+        payload_parser,
         auth_service,
         resolver,
     )
-    return service, submission_repo
+    return service, submission_repo, payload_parser
 
 
 @pytest.mark.asyncio
-async def test_authorization_failure_does_not_log_raw_password_md5(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_authorization_failure_does_not_log_raw_password_md5() -> None:
     """R11.1: Authorization failures must not log raw password-md5.
 
     Verify that actual log output does not contain raw password-md5 when
@@ -181,7 +186,7 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service, _ = _make_process_score_submission_use_case(
+    service, _, payload_parser = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -219,10 +224,7 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
             passed=True,
         )
 
-    monkeypatch.setattr(
-        "osu_server.services.commands.scores.process_submission.parse",
-        mock_parse,
-    )
+    payload_parser.set_factory(mock_parse)
 
     invalid_password = "invalid_password_md5_hash_12345"
     input_data = ParsedSubmissionInput(
@@ -262,7 +264,7 @@ async def test_authorization_failure_does_not_log_raw_password_md5(
 
 
 @pytest.mark.asyncio
-async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_failure_categories_are_logged() -> None:
     """R11.2: Failure categories must be recorded for diagnostics.
 
     Verify that terminal rejections include specific failure categories:
@@ -294,7 +296,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
         )
     )
     score_decryptor = StubScorePayloadDecryptor()
-    service, _ = _make_process_score_submission_use_case(
+    service, _, payload_parser = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -331,10 +333,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
         )
 
     score_decryptor.set_factory(mock_decrypt)
-    monkeypatch.setattr(
-        "osu_server.services.commands.scores.process_submission.parse",
-        mock_parse,
-    )
+    payload_parser.set_factory(mock_parse)
 
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted",
@@ -378,12 +377,13 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
         )
     )
     score_decryptor2 = StubScorePayloadDecryptor()
-    service2, _ = _make_process_score_submission_use_case(
+    service2, _, payload_parser2 = _make_process_score_submission_use_case(
         resolver=ineligible_resolver,
         score_decryptor=score_decryptor2,
         auth_service=auth_service,
     )
     score_decryptor2.set_factory(mock_decrypt)
+    payload_parser2.set_factory(mock_parse)
 
     valid_input = ParsedSubmissionInput(
         encrypted_payload=b"encrypted",
@@ -410,9 +410,7 @@ async def test_failure_categories_are_logged(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.asyncio
-async def test_opaque_fields_stored_as_sha256_hashes_only(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_opaque_fields_stored_as_sha256_hashes_only() -> None:
     """R11.3: Opaque fields must be stored as SHA-256 hashes only.
 
     Raw opaque field values must not be stored in result_snapshot.
@@ -437,7 +435,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service, submission_repo = _make_process_score_submission_use_case(
+    service, submission_repo, payload_parser = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -474,10 +472,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
         )
 
     score_decryptor.set_factory(mock_decrypt)
-    monkeypatch.setattr(
-        "osu_server.services.commands.scores.process_submission.parse",
-        mock_parse,
-    )
+    payload_parser.set_factory(mock_parse)
 
     opaque_fields = {
         "fs": "fullscreen_flag",
@@ -520,7 +515,7 @@ async def test_opaque_fields_stored_as_sha256_hashes_only(
 
 
 @pytest.mark.asyncio
-async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_no_raw_credentials_in_logs() -> None:
     """R11.4: No raw password-md5, token, or encrypted payload in logs.
 
     Verify that actual log output does not contain sensitive fields during
@@ -546,7 +541,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service, _ = _make_process_score_submission_use_case(
+    service, _, payload_parser = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -587,10 +582,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
         )
 
     score_decryptor.set_factory(mock_decrypt)
-    monkeypatch.setattr(
-        "osu_server.services.commands.scores.process_submission.parse",
-        mock_parse,
-    )
+    payload_parser.set_factory(mock_parse)
 
     input_data = ParsedSubmissionInput(
         encrypted_payload=secret_payload,
@@ -619,9 +611,7 @@ async def test_no_raw_credentials_in_logs(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.asyncio
-async def test_submission_fingerprint_and_result_snapshot_recorded(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_submission_fingerprint_and_result_snapshot_recorded() -> None:
     """R11.5: Submission fingerprint and result snapshot must be recorded.
 
     Verify that successful submissions record:
@@ -648,7 +638,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
     )
 
     score_decryptor = StubScorePayloadDecryptor()
-    service, submission_repo = _make_process_score_submission_use_case(
+    service, submission_repo, payload_parser = _make_process_score_submission_use_case(
         resolver=resolver,
         score_decryptor=score_decryptor,
         auth_service=auth_service,
@@ -685,10 +675,7 @@ async def test_submission_fingerprint_and_result_snapshot_recorded(
         )
 
     score_decryptor.set_factory(mock_decrypt)
-    monkeypatch.setattr(
-        "osu_server.services.commands.scores.process_submission.parse",
-        mock_parse,
-    )
+    payload_parser.set_factory(mock_parse)
 
     input_data = ParsedSubmissionInput(
         encrypted_payload=b"encrypted",

@@ -13,7 +13,7 @@ import structlog
 from osu_server.domain.beatmaps import BeatmapResolveOptions, BeatmapResolveResult
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import Mod, ModCombination
-from osu_server.domain.scores.payload_parser import ParseError, parse
+from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.domain.scores.score import Playstyle, Ruleset, Score
 from osu_server.domain.scores.validator import ValidationError, validate_hit_counts
 from osu_server.domain.storage.blobs import BlobStoreResult
@@ -86,6 +86,10 @@ class ScorePayloadDecryptor(Protocol):
         iv: bytes,
         osu_version: str | None,
     ) -> DecryptedPayload: ...
+
+
+class ScorePayloadParser(Protocol):
+    def parse(self, payload: str) -> ParsedScore: ...
 
 
 class SubmissionOutcome(Enum):
@@ -206,12 +210,14 @@ class ProcessScoreSubmissionUseCase:
         submit_score_use_case: SubmitScoreUseCase,
         replay_blob_storage: ReplayBlobStorage,
         payload_decryptor: ScorePayloadDecryptor,
+        payload_parser: ScorePayloadParser,
         auth_service: ScoreAuthorizationService,
         beatmap_resolver: BeatmapEligibilityResolver,
     ) -> None:
         self._submit_score_use_case: SubmitScoreUseCase = submit_score_use_case
         self._replay_blob_storage: ReplayBlobStorage = replay_blob_storage
         self._payload_decryptor: ScorePayloadDecryptor = payload_decryptor
+        self._payload_parser: ScorePayloadParser = payload_parser
         self._auth_service: ScoreAuthorizationService = auth_service
         self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
 
@@ -282,7 +288,7 @@ class ProcessScoreSubmissionUseCase:
 
         # 4. Parse payload (R5.1)
         try:
-            parsed = parse(decrypted.plaintext)
+            parsed = self._payload_parser.parse(decrypted.plaintext)
         except ParseError as e:
             logger.warning(
                 "score_submission_failed",

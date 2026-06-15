@@ -29,6 +29,7 @@ from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase
 from osu_server.services.score_authorization_service import AuthorizationContext
+from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
@@ -186,6 +187,7 @@ def _make_process_score_submission_use_case(
         submit_score_use_case=make_submit_score_use_case(uow_factory),
         replay_blob_storage=StubBlobStorageService(),
         payload_decryptor=_score_payload_decryptor(),
+        payload_parser=StableScorePayloadParser(),
         auth_service=auth_service,
         beatmap_resolver=MockBeatmapResolver(),
     )

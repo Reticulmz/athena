@@ -34,6 +34,7 @@ from tests.support.fakes import (
     ScoreRepositoryViews,
     StubBlobStorageService,
     StubScorePayloadDecryptor,
+    StubScorePayloadParser,
     make_score_authorization_service,
     make_score_repository_views,
     make_submit_score_use_case,
@@ -186,6 +187,7 @@ def service(
         make_submit_score_use_case(uow_factory),
         blob_storage,
         score_decryptor,
+        StubScorePayloadParser(),
         auth_service,
         beatmap_resolver,
     )

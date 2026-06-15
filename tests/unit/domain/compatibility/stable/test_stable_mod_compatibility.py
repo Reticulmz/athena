@@ -13,14 +13,14 @@ from osu_server.domain.scores.mods import Mod, ModCombination
 def test_stable_bitmask_canonicalizes_to_mod_combination() -> None:
     combination = stable_mod_bitmask_to_mod_combination(72)
 
-    assert combination == ModCombination.from_stable_bitmask(72)
+    assert combination == ModCombination.from_bitmask(72)
     assert combination.has(Mod.HIDDEN)
     assert combination.has(Mod.DOUBLE_TIME)
 
 
 def test_supported_canonical_mod_combination_maps_back_to_stable_bitmask() -> None:
     result = mod_combination_to_stable_bitmask(
-        ModCombination.from_stable_bitmask(72),
+        ModCombination.from_bitmask(72),
     )
 
     assert result.status == StableModMappingStatus.SUPPORTED

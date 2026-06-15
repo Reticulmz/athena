@@ -17,7 +17,6 @@ from osu_server.domain.scores import (
     ScoreSubmission,
     ValidationError,
     ValidationResult,
-    parse,
     validate_hit_counts,
 )
 
@@ -62,7 +61,6 @@ def test_score_domain_concepts_import_from_scores_context() -> None:
     assert ScoreSubmission.__name__ == "ScoreSubmission"
     assert ValidationError.__name__ == "ValidationError"
     assert ValidationResult.__name__ == "ValidationResult"
-    assert parse.__name__ == "parse"
     assert validate_hit_counts.__name__ == "validate_hit_counts"
 
 

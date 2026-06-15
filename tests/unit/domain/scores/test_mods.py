@@ -7,12 +7,12 @@ from inspect import get_annotations
 from typing import get_type_hints
 
 from osu_server.domain.scores.mods import Mod, ModCombination
-from osu_server.domain.scores.payload_parser import ParsedScore, parse
+from osu_server.domain.scores.payload_parser import ParsedScore
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 
 
-def test_mod_combination_preserves_stable_bitmask_for_persistence() -> None:
-    combination = ModCombination.from_stable_bitmask(72)
+def test_mod_combination_preserves_bitmask_for_persistence() -> None:
+    combination = ModCombination.from_bitmask(72)
 
     assert combination.has(Mod.HIDDEN)
     assert combination.has(Mod.DOUBLE_TIME)
@@ -21,14 +21,18 @@ def test_mod_combination_preserves_stable_bitmask_for_persistence() -> None:
 
 
 def test_score_and_parsed_score_use_canonical_mod_combination() -> None:
-    parsed_hints = get_type_hints(ParsedScore)
+    parsed_hints = get_type_hints(ParsedScore, globalns={"ModCombination": ModCombination})
 
     assert get_annotations(Score)["mods"] == "ModCombination"
     assert parsed_hints["mods"] is ModCombination
 
 
+def test_mod_combination_does_not_own_stable_bitmask_mapping() -> None:
+    assert not hasattr(ModCombination, "from_stable_bitmask")
+
+
 def test_score_keeps_canonical_mods_while_storage_can_use_integer_bitmask() -> None:
-    mods = ModCombination.from_stable_bitmask(88)
+    mods = ModCombination.from_bitmask(88)
     score = Score(
         id=None,
         user_id=1,
@@ -56,13 +60,3 @@ def test_score_keeps_canonical_mods_while_storage_can_use_integer_bitmask() -> N
 
     assert score.mods == mods
     assert score.mods.to_persistence_bitmask() == 88
-
-
-def test_stable_payload_parser_returns_canonical_mod_combination() -> None:
-    payload = (
-        "beatmap_md5:TestUser:online_md5:300:50:10:0:0:1:"
-        "123456:500:0:A:72:1:0:2024-01-01:20240101:client_checksum"
-    )
-    parsed = parse(payload)
-
-    assert parsed.mods == ModCombination.from_stable_bitmask(72)

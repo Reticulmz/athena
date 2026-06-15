@@ -162,6 +162,8 @@ from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
+    StableScorePayloadParser,
+    StableScoreSubmitMapper,
 )
 from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
@@ -753,11 +755,14 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     container.register_singleton(ScoreCryptoService, lambda: score_crypto_service)
     submit_score_command = SubmitScoreUseCase(unit_of_work_factory=uow_factory)
     container.register_singleton(SubmitScoreUseCase, lambda: submit_score_command)
+    stable_score_payload_parser = StableScorePayloadParser()
+    container.register_singleton(StableScorePayloadParser, lambda: stable_score_payload_parser)
 
     process_score_submission = ProcessScoreSubmissionUseCase(
         submit_score_use_case=submit_score_command,
         replay_blob_storage=blob_storage_service,
         payload_decryptor=score_crypto_service,
+        payload_parser=stable_score_payload_parser,
         auth_service=score_auth_service,
         beatmap_resolver=mirror_service,  # Pass the entire service, not just the method
     )
@@ -767,12 +772,16 @@ async def register_services(container: Container, config: AppConfig) -> None:  #
     )
 
     # -- ScoreSubmitHandler (singleton) ---------------------------------------
-    score_submit_handler = ScoreSubmitHandler(
-        submit_score_command=process_score_submission,
+    score_submit_mapper = StableScoreSubmitMapper(
         limits=MultipartLimits(
             total_body_size=config.max_request_body_size,
             replay_size=config.score_submit_max_replay_size,
             text_field_size=config.score_submit_max_text_field_size,
-        ),
+        )
+    )
+    container.register_singleton(StableScoreSubmitMapper, lambda: score_submit_mapper)
+    score_submit_handler = ScoreSubmitHandler(
+        submit_score_command=process_score_submission,
+        mapper=score_submit_mapper,
     )
     container.register_singleton(ScoreSubmitHandler, lambda: score_submit_handler)

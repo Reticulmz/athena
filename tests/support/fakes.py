@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, final, override
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
 from osu_server.domain.scores.decryption import DecryptedPayload
+from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.domain.storage.blobs import Blob, BlobStored
 from osu_server.services.commands.scores import SubmitScoreUseCase
 from osu_server.services.password_service import PasswordService
@@ -338,6 +340,7 @@ class StubBlobStorageService:
 
 
 type ScorePayloadDecryptFactory = Callable[[bytes, bytes, str | None], DecryptedPayload]
+type ScorePayloadParseFactory = Callable[[str], ParsedScore]
 
 
 class StubScorePayloadDecryptor:
@@ -372,3 +375,111 @@ class StubScorePayloadDecryptor:
         if self._result is None:
             raise AssertionError("StubScorePayloadDecryptor result was not configured")
         return self._result
+
+
+class StubScorePayloadParser:
+    """Typed fake for command tests that need parsed score payload values."""
+
+    def __init__(
+        self,
+        result: ParsedScore | None = None,
+        *,
+        factory: ScorePayloadParseFactory | None = None,
+    ) -> None:
+        self._result: ParsedScore | None = result
+        self._factory: ScorePayloadParseFactory | None = factory
+        self.calls: list[str] = []
+
+    def set_result(self, result: ParsedScore) -> None:
+        self._result = result
+        self._factory = None
+
+    def set_factory(self, factory: ScorePayloadParseFactory) -> None:
+        self._factory = factory
+
+    def parse(self, payload: str) -> ParsedScore:
+        self.calls.append(payload)
+        if self._factory is not None:
+            return self._factory(payload)
+        if self._result is not None:
+            return self._result
+        return _parse_test_score_payload(payload)
+
+
+def _parse_test_score_payload(payload: str) -> ParsedScore:
+    fields = payload.split(":")
+    if len(fields) == 16 and _is_int(fields[0]):
+        return _parse_test_legacy_score_payload(fields)
+    if 16 <= len(fields) <= 19:
+        return _parse_test_stable_score_payload(fields)
+    raise ParseError(f"Unsupported test score payload field count: {len(fields)}")
+
+
+def _parse_test_legacy_score_payload(fields: list[str]) -> ParsedScore:
+    try:
+        return ParsedScore(
+            user_id=int(fields[0]),
+            username=fields[1],
+            beatmap_checksum=fields[2],
+            online_checksum=fields[3],
+            ruleset=int(fields[4]),
+            mods=ModCombination.from_bitmask(int(fields[5])),
+            n300=int(fields[6]),
+            n100=int(fields[7]),
+            n50=int(fields[8]),
+            geki=int(fields[9]),
+            katu=int(fields[10]),
+            miss=int(fields[11]),
+            score=int(fields[12]),
+            max_combo=int(fields[13]),
+            perfect=_parse_test_bool(fields[14]),
+            passed=_parse_test_bool(fields[15]),
+        )
+    except ValueError as exc:
+        raise ParseError(f"Failed to parse test score payload: {exc}") from exc
+
+
+def _parse_test_stable_score_payload(fields: list[str]) -> ParsedScore:
+    try:
+        return ParsedScore(
+            user_id=0,
+            username=fields[1],
+            beatmap_checksum=fields[0],
+            online_checksum=fields[2],
+            n300=int(fields[3]),
+            n100=int(fields[4]),
+            n50=int(fields[5]),
+            geki=int(fields[6]),
+            katu=int(fields[7]),
+            miss=int(fields[8]),
+            score=int(fields[9]),
+            max_combo=int(fields[10]),
+            perfect=_parse_test_bool(fields[11]),
+            client_grade=fields[12],
+            mods=ModCombination.from_bitmask(int(fields[13])),
+            passed=_parse_test_bool(fields[14]),
+            ruleset=int(fields[15]),
+            client_submitted_at=fields[16] if len(fields) > 16 else None,
+            client_version=fields[17] if len(fields) > 17 else None,
+            client_checksum=fields[18] if len(fields) > 18 else None,
+        )
+    except ValueError as exc:
+        raise ParseError(f"Failed to parse test score payload: {exc}") from exc
+
+
+def _is_int(value: str) -> bool:
+    try:
+        _ = int(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _parse_test_bool(value: str) -> bool:
+    match value:
+        case "1" | "True" | "true":
+            return True
+        case "0" | "False" | "false":
+            return False
+        case _:
+            raise ValueError(f"invalid boolean value: {value}")

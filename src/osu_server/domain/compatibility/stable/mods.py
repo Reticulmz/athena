@@ -72,7 +72,7 @@ class StableModMappingResult:
 
 def stable_mod_bitmask_to_mod_combination(bitmask: int) -> ModCombination:
     """Convert a stable client bitmask into canonical mods."""
-    return ModCombination.from_stable_bitmask(bitmask)
+    return ModCombination.from_bitmask(bitmask)
 
 
 def mod_combination_to_stable_bitmask(mods: ModCombination) -> StableModMappingResult:

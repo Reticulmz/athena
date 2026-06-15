@@ -53,6 +53,7 @@ from osu_server.services.commands.scores import (
     generate_submission_fingerprint,
     generate_submission_request_hash,
 )
+from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
 from tests.support.fakes import StubScorePayloadDecryptor, make_score_authorization_service
 
 if TYPE_CHECKING:
@@ -278,6 +279,7 @@ def service(
         submit_score_use_case,
         SQLAlchemyBlobStorageStub(session_factory),
         score_decryptor,
+        StableScorePayloadParser(),
         auth_service,
         beatmap_resolver,
     )
