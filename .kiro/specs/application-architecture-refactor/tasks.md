@@ -250,7 +250,7 @@
   - Completion is observable when existing stable integration tests pass without external behavior changes.
   - _Requirements: 1.1, 1.3, 1.4, 1.5, 7.1, 7.4, 7.5_
 
-- [ ] 9.2 Run worker and command persistence regression
+- [x] 9.2 Run worker and command persistence regression
   - Verify existing worker tasks preserve task names and externally observable outcomes.
   - Verify command-side multi-step persistence commits atomically or rolls back consistently.
   - Completion is observable when worker regression tests and command transaction tests pass.
