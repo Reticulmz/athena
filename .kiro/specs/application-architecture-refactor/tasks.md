@@ -173,7 +173,7 @@
   - _Boundary: Command Use Cases - Beatmaps_
   - _Depends: 4.5_
 
-- [ ] 6.2 (P) Move chat persistence behavior into command use-cases
+- [x] 6.2 (P) Move chat persistence behavior into command use-cases
   - Move channel and private-message persistence behavior out of task adapters.
   - Keep task payload adaptation separate from persistence and business decisions.
   - Completion is observable when chat persistence can be invoked by app or worker use-case callers with the same command behavior.
