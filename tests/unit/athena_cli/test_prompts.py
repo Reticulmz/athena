@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import pytest
+
 from athena_cli.env.dsn import DatabaseConnectionParts, ValkeyConnectionParts
+from athena_cli.errors import CliUserError
 from athena_cli.prompts import InitSection, OsuApiPromptResult, PromptAdapter, PromptChoice
 
 if TYPE_CHECKING:
@@ -107,6 +110,30 @@ def test_confirm_returns_bool() -> None:
     adapter = PromptAdapter(provider=FakePromptProvider(confirm_results=[True]))
 
     assert adapter.confirm("overwrite?") is True
+
+
+def test_collect_confirmed_secret_returns_secret_when_values_match() -> None:
+    adapter = PromptAdapter(
+        provider=FakePromptProvider(secret_results=["new-password", "new-password"])
+    )
+
+    assert (
+        adapter.collect_confirmed_secret(
+            message="New password",
+            confirmation_message="Confirm new password",
+        )
+        == "new-password"
+    )
+
+
+def test_collect_confirmed_secret_rejects_mismatched_values() -> None:
+    adapter = PromptAdapter(provider=FakePromptProvider(secret_results=["one", "two"]))
+
+    with pytest.raises(CliUserError, match=r"Secret confirmation did not match\."):
+        _ = adapter.collect_confirmed_secret(
+            message="New password",
+            confirmation_message="Confirm new password",
+        )
 
 
 def test_prompt_choices_are_typed() -> None:

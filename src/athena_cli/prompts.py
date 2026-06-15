@@ -110,6 +110,18 @@ class PromptAdapter:
             raise CliUserError("Confirmation prompt returned a non-boolean value.")
         return raw_result
 
+    def collect_confirmed_secret(
+        self,
+        *,
+        message: str,
+        confirmation_message: str,
+    ) -> str:
+        secret = _coerce_string(self.provider.secret(message=message))
+        confirmation = _coerce_string(self.provider.secret(message=confirmation_message))
+        if secret != confirmation:
+            raise CliUserError("Secret confirmation did not match.")
+        return secret
+
 
 def _coerce_section(value: str) -> InitSection:
     if value not in _INIT_SECTIONS:

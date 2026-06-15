@@ -4,12 +4,13 @@ from typing import Annotated
 
 import typer
 
-from athena_cli.commands import config, db, env, test
+from athena_cli.commands import config, db, dev, env, test
 
 app = typer.Typer(name="athena", help="Athena management CLI.")
 app.add_typer(env.app, name="env")
 app.add_typer(db.app, name="db")
 app.add_typer(config.app, name="config")
+app.add_typer(dev.app, name="dev")
 
 
 @app.callback()

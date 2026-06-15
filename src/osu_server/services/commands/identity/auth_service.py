@@ -15,6 +15,10 @@ from osu_server.domain.identity.authentication import (
     RegistrationForm,
     RegistrationResult,
 )
+from osu_server.domain.identity.passwords import (
+    PASSWORD_COMPROMISED_MESSAGE,
+    validate_plain_password,
+)
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
 
@@ -35,17 +39,10 @@ _USERNAME_MIN = 2
 _USERNAME_MAX = 15
 _USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_ -]+$")
 
-_PASSWORD_MIN = 8
-_PASSWORD_MAX = 32
-_PASSWORD_UNIQUE_MIN = 4
-
 _EMAIL_PATTERN = re.compile(r"^[^@\s]{1,200}@[^@\s.]{1,30}\.[^@.\s]{1,24}$")
 
 _MSG_USERNAME_CHARS = (
     "Username may only contain alphanumeric characters, spaces, underscores, and hyphens."
-)
-_MSG_PASSWORD_COMPROMISED = (
-    "This password has been compromised in a data breach. Please choose a different password."
 )
 
 
@@ -315,18 +312,7 @@ class AuthService:
         password: str,
         errors: dict[str, list[str]],
     ) -> None:
-        msgs: list[str] = []
-
-        if len(password) < _PASSWORD_MIN or len(password) > _PASSWORD_MAX:
-            msgs.append(
-                f"Password must be between {_PASSWORD_MIN} and {_PASSWORD_MAX} characters."
-            )
-
-        if len(set(password)) < _PASSWORD_UNIQUE_MIN:
-            msgs.append(
-                f"Password must contain at least {_PASSWORD_UNIQUE_MIN} unique characters."
-            )
-
+        msgs = list(validate_plain_password(password))
         if msgs:
             errors["password"] = msgs
 
@@ -366,4 +352,4 @@ class AuthService:
         errors: dict[str, list[str]],
     ) -> None:
         if await self._password_service.is_password_banned(password):
-            errors.setdefault("password", []).append(_MSG_PASSWORD_COMPROMISED)
+            errors.setdefault("password", []).append(PASSWORD_COMPROMISED_MESSAGE)

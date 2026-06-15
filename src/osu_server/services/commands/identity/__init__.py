@@ -1,5 +1,12 @@
 """Identity command use-case package."""
 
+from osu_server.services.commands.identity.change_password import (
+    ChangeUserPasswordCommand,
+    ChangeUserPasswordCommandInput,
+    ChangeUserPasswordCommandResult,
+    ChangeUserPasswordCommandUseCase,
+    ChangeUserPasswordStatus,
+)
 from osu_server.services.commands.identity.login import (
     LoginCommand,
     LoginCommandInput,
@@ -27,6 +34,11 @@ from osu_server.services.commands.identity.session_authorization_service import 
 )
 
 __all__ = [
+    "ChangeUserPasswordCommand",
+    "ChangeUserPasswordCommandInput",
+    "ChangeUserPasswordCommandResult",
+    "ChangeUserPasswordCommandUseCase",
+    "ChangeUserPasswordStatus",
     "LoginCommand",
     "LoginCommandInput",
     "LoginCommandResult",

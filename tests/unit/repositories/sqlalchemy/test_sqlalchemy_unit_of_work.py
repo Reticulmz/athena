@@ -71,8 +71,13 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     closed: bool
     _next_user_id: int
     _next_channel_id: int
+    _get_results: dict[tuple[type[object], object], object]
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        get_results: dict[tuple[type[object], object], object] | None = None,
+    ) -> None:
         self.added = []
         self.commits = 0
         self.rollbacks = 0
@@ -81,6 +86,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         self.closed = False
         self._next_user_id = 10
         self._next_channel_id = 20
+        self._get_results = get_results or {}
 
     @override
     async def __aenter__(self) -> FakeSession:
@@ -99,9 +105,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         await self.close()
 
     async def get(self, model_type: type[object], identity: object) -> object | None:
-        _ = model_type
-        _ = identity
-        return None
+        return self._get_results.get((model_type, identity))
 
     async def execute(self, statement: Executable) -> FakeResult:
         _ = statement
@@ -208,6 +212,27 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
         assert isinstance(uow.replays, SQLAlchemyReplayCommandRepository)
         assert isinstance(uow.blobs, SQLAlchemyBlobCommandRepository)
         assert isinstance(uow.beatmaps, SQLAlchemyBeatmapCommandRepository)
+
+
+async def test_user_command_repository_updates_password_hash_without_commit() -> None:
+    user = UserModel(
+        id=3,
+        username="SQLUser",
+        safe_username="sqluser",
+        email="sql@example.com",
+        password_hash="old-hash",
+        country="JP",
+    )
+    session = FakeSession(get_results={(UserModel, 3): user})
+    repo = SQLAlchemyUserCommandRepository(cast("AsyncSession", cast("object", session)))
+
+    updated = await repo.update_password_hash(3, "new-hash")
+
+    assert updated is True
+    assert user.password_hash == "new-hash"
+    assert session.flushes == 1
+    assert session.commits == 0
+    assert session.rollbacks == 0
 
 
 def test_sqlalchemy_command_repositories_do_not_commit_or_rollback_per_method() -> None:

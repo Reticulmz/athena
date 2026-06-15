@@ -19,6 +19,7 @@ from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.identity import (
+    ChangeUserPasswordCommandUseCase,
     LoginCommandUseCase,
     RefreshRoleAuthorizationCommandUseCase,
     RefreshUserAuthorizationCommandUseCase,
@@ -128,6 +129,20 @@ class IdentityProviderSet(Provider):
     @provide
     def register_user_command(self, auth_service: AuthService) -> RegisterUserCommandUseCase:
         return RegisterUserCommandUseCase(auth_service=auth_service)
+
+    @provide
+    def change_user_password_command(
+        self,
+        uow_factory: UnitOfWorkFactory,
+        user_query_repo: UserQueryRepository,
+        password_service: PasswordService,
+    ) -> ChangeUserPasswordCommandUseCase:
+        return ChangeUserPasswordCommandUseCase(
+            uow_factory=uow_factory,
+            user_query_repository=user_query_repo,
+            password_service=password_service,
+            system_user_id=BANCHO_BOT_USER_ID,
+        )
 
     @provide
     def session_authorization_service(

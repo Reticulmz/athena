@@ -36,6 +36,10 @@ class UserCommandRepository(Protocol):
         """Persist a user's country code."""
         ...
 
+    async def update_password_hash(self, user_id: int, password_hash: str) -> bool:
+        """Persist a user's password hash and return whether the user existed."""
+        ...
+
     async def sync_system_user(self, identity: SystemUserIdentity) -> None:
         """Ensure the configured system user record and reservations exist."""
         ...

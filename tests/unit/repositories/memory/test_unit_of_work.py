@@ -78,6 +78,27 @@ async def test_uncommitted_consistency_checks_are_scoped_to_active_unit_of_work(
         assert await observer_uow.users.get_by_safe_username("pending_user") is not None
 
 
+async def test_user_password_hash_update_commits_through_unit_of_work() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+
+    async with factory() as uow:
+        created = await uow.users.create(
+            make_user(username="Password User", email="password@example.com")
+        )
+        await uow.commit()
+
+    async with factory() as uow:
+        updated = await uow.users.update_password_hash(created.id, "new-hash")
+        await uow.commit()
+
+    async with factory() as uow:
+        user = await uow.users.get_by_safe_username("password_user")
+
+    assert updated is True
+    assert user is not None
+    assert user.password_hash == "new-hash"
+
+
 async def test_unit_of_work_exposes_typed_command_repositories() -> None:
     factory = InMemoryUnitOfWorkFactory()
 

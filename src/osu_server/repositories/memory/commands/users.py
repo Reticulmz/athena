@@ -7,10 +7,10 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from osu_server.domain.identity.users import User
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState, now_utc
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.system_users import SystemUserIdentity
-    from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 _BANCHO_BOT_USER_ID = 1
 
@@ -63,6 +63,17 @@ class InMemoryUserCommandRepository:
         existing = self._state.users_by_id.get(user_id)
         if existing is not None:
             self._state.users_by_id[user_id] = replace(existing, country=country)
+
+    async def update_password_hash(self, user_id: int, password_hash: str) -> bool:
+        existing = self._state.users_by_id.get(user_id)
+        if existing is None:
+            return False
+        self._state.users_by_id[user_id] = replace(
+            existing,
+            password_hash=password_hash,
+            updated_at=now_utc(),
+        )
+        return True
 
     async def sync_system_user(self, identity: SystemUserIdentity) -> None:
         safe_username = User.normalize_username(identity.username)

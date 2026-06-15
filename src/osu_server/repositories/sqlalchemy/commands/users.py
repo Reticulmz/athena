@@ -108,6 +108,14 @@ class SQLAlchemyUserCommandRepository:
             model.country = country
             await self._session.flush()
 
+    async def update_password_hash(self, user_id: int, password_hash: str) -> bool:
+        model = await self._session.get(UserModel, user_id)
+        if not isinstance(model, UserModel):
+            return False
+        model.password_hash = password_hash
+        await self._session.flush()
+        return True
+
     async def sync_system_user(self, identity: SystemUserIdentity) -> None:
         safe_username = User.normalize_username(identity.username)
         conflict = (
