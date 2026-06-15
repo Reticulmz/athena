@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. Foundation: Beatmap File Warmup の command boundary を定義する
-- [ ] 1.1 Warmup request / result と identity policy を実装する
+- [x] 1.1 Warmup request / result と identity policy を実装する
   - stable の 3 entrance を識別できる authenticated warmup request と diagnostics 用 outcome を typed contract として扱う
   - beatmap id は正の値だけを、checksum は normalized 32 hex だけを resolver input として受け付ける
   - beatmap id と checksum が両方ある場合は beatmap id を優先し、identity がない場合や malformed の場合は fetch work を作らず skip outcome にする
