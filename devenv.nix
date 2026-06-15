@@ -40,7 +40,7 @@ in
   };
 
   processes.app = {
-    exec = "uv run uvicorn osu_server.app:app --reload --reload-dir src --host $SERVER_HOST --port $SERVER_PORT --no-access-log";
+    exec = "uv run python -m osu_server";
     after = [ "devenv:processes:postgres" "devenv:processes:redis" ];
 #    ready = {
 #      http.get = {
