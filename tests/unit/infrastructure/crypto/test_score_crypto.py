@@ -9,7 +9,7 @@ from osu_server.infrastructure.crypto.score_crypto import (
     decrypt_score_payload as decrypt_score_payload_wrapper,
 )
 
-EXPECTED_PLAINTEXT_LENGTH = 160
+EXPECTED_PLAINTEXT_LENGTH = 153
 RIJNDAEL_BLOCK_SIZE = 32
 
 
@@ -27,15 +27,17 @@ def test_decrypt_real_payload() -> None:
     iv = base64.b64decode(iv_b64)
     encrypted = base64.b64decode(score_b64)
 
-    plaintext, _ = athena_crypto.decrypt_score_payload(encrypted, iv, osuver)
+    plaintext, checksum_valid = athena_crypto.decrypt_score_payload(encrypted, iv, osuver)
 
     assert isinstance(plaintext, str)
+    assert checksum_valid is True
     assert len(plaintext) == EXPECTED_PLAINTEXT_LENGTH
     assert plaintext.startswith("8119fb28af74b9445f4a685f8b09eec2:")
+    assert "\x07" not in plaintext
 
 
-def test_wrapper_strips_pkcs7_padding_from_real_payload() -> None:
-    """Python wrapper accepts a real payload with PKCS#7 padding."""
+def test_wrapper_preserves_crypto_result_from_real_payload() -> None:
+    """Python wrapper accepts the Rust crypto result for a real payload."""
     iv_b64 = "l5++m1KWx1SO2vg8d1TDCOgnU01NLUUSC9DOlJ5F/HI="
     score_b64 = (
         "k+JrPEaEO6bYw97BJ5IrYhhjBF61T7RjekI2ZETLKwJPdct8wy2mngloX73XoZOUw+Yxc9j3qDDmHFQIven+i"
@@ -54,10 +56,10 @@ def test_wrapper_strips_pkcs7_padding_from_real_payload() -> None:
     assert "\x07" not in result.plaintext
 
 
-def test_wrapper_rejects_payload_without_pkcs7_padding(
+def test_wrapper_preserves_failed_crypto_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Python wrapper rejects decrypted payloads without PKCS#7 padding."""
+    """Python wrapper preserves failed validation from the crypto adapter."""
 
     def decrypt_without_padding(
         _encrypted: bytes,

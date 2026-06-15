@@ -5,8 +5,6 @@ import athena_crypto
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.shared.errors import DecryptionError
 
-_RIJNDAEL_BLOCK_SIZE = 32
-
 
 class ScoreCryptoService:
     """Infrastructure adapter for score payload cryptography."""
@@ -18,21 +16,6 @@ class ScoreCryptoService:
         osu_version: str | None,
     ) -> DecryptedPayload:
         return decrypt_score_payload(encrypted, iv, osu_version)
-
-
-def _strip_pkcs7_padding(plaintext: str) -> tuple[str, bool]:
-    if not plaintext:
-        return plaintext, False
-
-    padding_size = ord(plaintext[-1])
-    if padding_size < 1 or padding_size > _RIJNDAEL_BLOCK_SIZE:
-        return plaintext, False
-
-    padding = chr(padding_size) * padding_size
-    if not plaintext.endswith(padding):
-        return plaintext, False
-
-    return plaintext[:-padding_size], True
 
 
 def decrypt_score_payload(
@@ -48,7 +31,7 @@ def decrypt_score_payload(
     Errors: DecryptionError if decryption fails
     """
     try:
-        plaintext, _legacy_checksum_valid = athena_crypto.decrypt_score_payload(
+        plaintext, checksum_valid = athena_crypto.decrypt_score_payload(
             encrypted,
             iv,
             osu_version,
@@ -56,8 +39,7 @@ def decrypt_score_payload(
     except ValueError as e:
         raise DecryptionError(f"Decryption failed: {e}") from e
 
-    plaintext, padding_valid = _strip_pkcs7_padding(plaintext)
     return DecryptedPayload(
         plaintext=plaintext,
-        checksum_valid=padding_valid,
+        checksum_valid=checksum_valid,
     )
