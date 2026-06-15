@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import structlog.stdlib
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -11,6 +12,7 @@ from osu_server.domain.chat import (
     ChatPersistenceFailureReason,
     ChatPersistenceResult,
 )
+from osu_server.repositories.sqlalchemy.commands.error_details import sqlalchemy_error_details
 from osu_server.repositories.sqlalchemy.models.channel import (
     ChannelMessageModel,
     ChannelModel,
@@ -19,6 +21,8 @@ from osu_server.repositories.sqlalchemy.models.channel import (
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+logger: structlog.stdlib.BoundLogger = structlog.stdlib.get_logger(__name__)
 
 
 class SQLAlchemyChatCommandRepository:
@@ -50,7 +54,15 @@ class SQLAlchemyChatCommandRepository:
                 )
             )
             await self._session.flush()
-        except SQLAlchemyError:
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "chat_persistence_storage_error",
+                operation="save_channel_message",
+                sender_id=sender_id,
+                channel_name=channel_name,
+                reason=ChatPersistenceFailureReason.STORAGE_ERROR.value,
+                **sqlalchemy_error_details(exc),
+            )
             return ChatPersistenceResult.failure(ChatPersistenceFailureReason.STORAGE_ERROR)
 
         return ChatPersistenceResult.success_result()
@@ -72,7 +84,15 @@ class SQLAlchemyChatCommandRepository:
                 )
             )
             await self._session.flush()
-        except SQLAlchemyError:
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "chat_persistence_storage_error",
+                operation="save_private_message",
+                sender_id=sender_id,
+                target_id=target_id,
+                reason=ChatPersistenceFailureReason.STORAGE_ERROR.value,
+                **sqlalchemy_error_details(exc),
+            )
             return ChatPersistenceResult.failure(ChatPersistenceFailureReason.STORAGE_ERROR)
 
         return ChatPersistenceResult.success_result()

@@ -5,7 +5,8 @@ from __future__ import annotations
 from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING, override
 
-from sqlalchemy.exc import SQLAlchemyError
+import structlog.testing
+from sqlalchemy.exc import SQLAlchemyError, StatementError
 
 from osu_server.repositories.interfaces.chat_repository import ChatPersistenceFailureReason
 from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
@@ -100,6 +101,16 @@ def make_repo(session: FakeSession) -> SQLAlchemyChatRepository:
     return SQLAlchemyChatRepository(FakeSessionFactory(session))
 
 
+def make_statement_error(message: str) -> StatementError:
+    """Create a SQLAlchemy statement error with details visible in logs."""
+    return StatementError(
+        message,
+        "insert into private_messages",
+        {"sender_id": 1, "target_user_id": 2, "content": "secret"},
+        ValueError("foreign key violation"),
+    )
+
+
 class TestSaveChannelMessage:
     """save_channel_message() persists accepted public chat history."""
 
@@ -166,15 +177,37 @@ class TestSavePrivateMessage:
         assert message.content == "secret"
 
     async def test_storage_error_returns_failure(self) -> None:
-        session = FakeSession(commit_error=SQLAlchemyError("storage failed"))
+        session = FakeSession(commit_error=make_statement_error("storage failed"))
         repo = make_repo(session)
 
-        result = await repo.save_private_message(
-            sender_id=1,
-            target_id=2,
-            content="secret",
-        )
+        with structlog.testing.capture_logs() as logs:
+            result = await repo.save_private_message(
+                sender_id=1,
+                target_id=2,
+                content="secret",
+            )
 
         assert result.success is False
         assert result.reason is ChatPersistenceFailureReason.STORAGE_ERROR
         assert session.commits == 0
+
+        entries = [
+            entry for entry in logs if entry.get("event") == "chat_persistence_storage_error"
+        ]
+        assert len(entries) == 1
+        assert entries[0]["operation"] == "save_private_message"
+        assert entries[0]["sender_id"] == 1
+        assert entries[0]["target_id"] == 2
+        assert entries[0]["reason"] == "storage_error"
+        assert entries[0]["error_type"] == "StatementError"
+        assert "storage failed" in entries[0]["error_message"]
+        assert "StatementError" in entries[0]["error_repr"]
+        assert entries[0]["sqlalchemy_code"] is None
+        assert entries[0]["sqlalchemy_statement"] == "insert into private_messages"
+        assert (
+            entries[0]["sqlalchemy_params_repr"]
+            == "{'sender_id': 1, 'target_user_id': 2, 'content': 'secret'}"
+        )
+        assert entries[0]["sqlalchemy_ismulti"] is None
+        assert entries[0]["original_error_type"] == "ValueError"
+        assert entries[0]["original_error_message"] == "foreign key violation"
