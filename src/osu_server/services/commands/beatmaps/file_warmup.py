@@ -155,7 +155,7 @@ class RequestBeatmapFileWarmupUseCase:
             user_id=request.user_id,
             beatmap_id=identity.beatmap_id,
             checksum_md5=identity.checksum_md5,
-            reason=resolve_result.reason,
+            reason=_reason_from_resolve_result(resolve_result),
         )
         _log_result(result)
         return result
@@ -270,6 +270,12 @@ def _outcome_from_resolve_result(
     if resolve_result.file_status is BeatmapFileState.AVAILABLE:
         return BeatmapFileWarmupOutcome.ALREADY_AVAILABLE
     return BeatmapFileWarmupOutcome.REQUESTED
+
+
+def _reason_from_resolve_result(resolve_result: BeatmapResolveResult) -> str | None:
+    if resolve_result.file_status is BeatmapFileState.AVAILABLE:
+        return "file_available"
+    return resolve_result.reason
 
 
 def _log_result(

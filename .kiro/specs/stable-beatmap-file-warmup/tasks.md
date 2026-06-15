@@ -68,7 +68,7 @@
   - _Boundary: Stable web legacy integration tests_
   - _Depends: 3.1_
 
-- [ ] 4.2 (P) STATUS_CHANGE と existing fetch queue の E2E behavior を検証する
+- [x] 4.2 (P) STATUS_CHANGE と existing fetch queue の E2E behavior を検証する
   - authenticated polling の STATUS_CHANGE packet は beatmap id または checksum から warmup を要求する
   - repeated STATUS_CHANGE は existing fetch pending idempotency に収束し、conflicting warmup outcome を作らない
   - file already available の beatmap は no-op skip reason を diagnostics に出し、file unavailable の known beatmap は existing file fetch task へ接続される

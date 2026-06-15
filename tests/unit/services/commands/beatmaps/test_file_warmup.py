@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import final
 
 from structlog.testing import capture_logs
@@ -188,6 +189,31 @@ async def test_available_file_maps_to_already_available_noop() -> None:
     assert result.reason == "file_available"
     assert len(resolver.calls) == 1
 
+    events = [entry for entry in logs if entry["event"] == "beatmap_file_warmup"]
+    assert len(events) == 1
+    assert events[0]["outcome"] == "already_available"
+    assert events[0]["reason"] == "file_available"
+
+
+async def test_available_file_uses_noop_reason_when_metadata_is_stale() -> None:
+    resolver = RecordingWarmupResolver()
+    resolver.result = replace(
+        _known_result(beatmap_id=42, file_status=BeatmapFileState.AVAILABLE),
+        reason="stale",
+    )
+    use_case = RequestBeatmapFileWarmupUseCase(resolver)
+
+    with capture_logs() as logs:
+        result = await use_case.execute(
+            BeatmapFileWarmupRequest(
+                entrance=BeatmapFileWarmupEntrance.STABLE_STATUS_CHANGE,
+                user_id=6,
+                beatmap_id=42,
+            )
+        )
+
+    assert result.outcome is BeatmapFileWarmupOutcome.ALREADY_AVAILABLE
+    assert result.reason == "file_available"
     events = [entry for entry in logs if entry["event"] == "beatmap_file_warmup"]
     assert len(events) == 1
     assert events[0]["outcome"] == "already_available"
