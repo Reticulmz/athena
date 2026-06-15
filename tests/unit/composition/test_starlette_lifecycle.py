@@ -43,6 +43,21 @@ class _FakeLegacyContainer:
         self.shutdown_called = True
 
 
+class _FailingDishkaContainer:
+    close_called: bool
+
+    def __init__(self) -> None:
+        self.close_called = False
+
+    async def get(self, dependency_type: object) -> object:
+        _ = dependency_type
+        msg = "dishka startup dependency is unavailable"
+        raise RuntimeError(msg)
+
+    async def close(self) -> None:
+        self.close_called = True
+
+
 @final
 class _FakeHandler:
     name: str
@@ -104,3 +119,27 @@ def test_starlette_lifespan_attaches_and_closes_dishka_container(
         assert fake_legacy_container.initialized is True
 
     assert fake_legacy_container.shutdown_called is True
+
+
+def test_starlette_lifespan_surfaces_dishka_startup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = make_app_config(environment="test")
+    failing_container = _FailingDishkaContainer()
+
+    def make_app_container(_: AppConfig) -> _FailingDishkaContainer:
+        return failing_container
+
+    def setup_logging(_: AppConfig) -> None:
+        return None
+
+    monkeypatch.setattr(lifespan_module, "load_config", lambda: config)
+    monkeypatch.setattr(lifespan_module, "setup_logging", setup_logging)
+    monkeypatch.setattr(lifespan_module, "make_app_container", make_app_container)
+
+    app = Starlette(lifespan=lifespan)
+
+    with pytest.raises(RuntimeError, match="startup dependency"), TestClient(app):
+        pass
+
+    assert failing_container.close_called is True

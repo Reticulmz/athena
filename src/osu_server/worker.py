@@ -70,56 +70,81 @@ def _get_dishka_container(state: TaskiqState) -> AsyncContainer | None:
     return cast("AsyncContainer | None", getattr(state, "dishka_container", None))
 
 
+def _clear_worker_runtime_state(state: TaskiqState) -> None:
+    state.engine = None
+    state.session_factory = None
+    state.valkey = None
+    state.dishka_container = None
+    state.persist_channel_message_use_case = None
+    state.persist_private_message_use_case = None
+    state.beatmap_metadata_fetch = None
+    state.beatmap_file_fetch = None
+
+
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def startup(state: TaskiqState) -> None:
     """Initialise worker runtime state for task execution."""
     setup_logging(_config)
-    engine = create_engine(str(_config.database_url))
-    session_factory = create_session_factory(engine)
-    valkey = await create_valkey_client(str(_config.valkey_url))
+    engine: AsyncEngine | None = None
+    valkey: GlideClient | None = None
+    worker_container: AsyncContainer | None = None
 
-    state.engine = engine
-    state.session_factory = session_factory
-    state.valkey = valkey
+    try:
+        engine = create_engine(str(_config.database_url))
+        session_factory = create_session_factory(engine)
+        valkey = await create_valkey_client(str(_config.valkey_url))
 
-    (
-        persist_channel_message_use_case,
-        persist_private_message_use_case,
-    ) = create_worker_chat_persistence_use_cases(
-        session_factory=session_factory,
-    )
-    beatmap_metadata_fetch = create_worker_beatmap_metadata_fetch(
-        session_factory=session_factory,
-        config=_config,
-    )
-    beatmap_file_fetch = await create_worker_beatmap_file_fetch(
-        session_factory=session_factory,
-        config=_config,
-    )
-    worker_container = make_worker_container(
-        _config,
-        overrides=(
-            WorkerRuntimeProviderSet(
-                WorkerRuntimeUseCases(
-                    persist_channel_message=persist_channel_message_use_case,
-                    persist_private_message=persist_private_message_use_case,
-                    fetch_beatmap_metadata=beatmap_metadata_fetch,
-                    fetch_beatmap_file=beatmap_file_fetch,
-                )
+        state.engine = engine
+        state.session_factory = session_factory
+        state.valkey = valkey
+
+        (
+            persist_channel_message_use_case,
+            persist_private_message_use_case,
+        ) = create_worker_chat_persistence_use_cases(
+            session_factory=session_factory,
+        )
+        beatmap_metadata_fetch = create_worker_beatmap_metadata_fetch(
+            session_factory=session_factory,
+            config=_config,
+        )
+        beatmap_file_fetch = await create_worker_beatmap_file_fetch(
+            session_factory=session_factory,
+            config=_config,
+        )
+        worker_container = make_worker_container(
+            _config,
+            overrides=(
+                WorkerRuntimeProviderSet(
+                    WorkerRuntimeUseCases(
+                        persist_channel_message=persist_channel_message_use_case,
+                        persist_private_message=persist_private_message_use_case,
+                        fetch_beatmap_metadata=beatmap_metadata_fetch,
+                        fetch_beatmap_file=beatmap_file_fetch,
+                    )
+                ),
             ),
-        ),
-    )
-    setup_taskiq_dishka(worker_container, broker)
+        )
+        setup_taskiq_dishka(worker_container, broker)
 
-    state.dishka_container = worker_container
-    state.persist_channel_message_use_case = await worker_container.get(
-        PersistChannelMessageUseCase
-    )
-    state.persist_private_message_use_case = await worker_container.get(
-        PersistPrivateMessageUseCase
-    )
-    state.beatmap_metadata_fetch = await worker_container.get(FetchBeatmapMetadataUseCase)
-    state.beatmap_file_fetch = await worker_container.get(FetchBeatmapFileUseCase)
+        state.dishka_container = worker_container
+        state.persist_channel_message_use_case = await worker_container.get(
+            PersistChannelMessageUseCase
+        )
+        state.persist_private_message_use_case = await worker_container.get(
+            PersistPrivateMessageUseCase
+        )
+        state.beatmap_metadata_fetch = await worker_container.get(FetchBeatmapMetadataUseCase)
+        state.beatmap_file_fetch = await worker_container.get(FetchBeatmapFileUseCase)
+    except Exception:
+        _clear_worker_runtime_state(state)
+        if worker_container is not None:
+            await worker_container.close()
+        if engine is not None:
+            await engine.dispose()
+        if valkey is not None:
+            await valkey.close()
+        raise
 
     logger.info("worker_started")
 
@@ -131,14 +156,7 @@ async def shutdown(state: TaskiqState) -> None:
     valkey = _get_valkey(state)
     dishka_container = _get_dishka_container(state)
 
-    state.engine = None
-    state.session_factory = None
-    state.valkey = None
-    state.dishka_container = None
-    state.persist_channel_message_use_case = None
-    state.persist_private_message_use_case = None
-    state.beatmap_metadata_fetch = None
-    state.beatmap_file_fetch = None
+    _clear_worker_runtime_state(state)
 
     if engine is not None:
         await engine.dispose()

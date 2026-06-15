@@ -366,6 +366,54 @@ async def test_worker_startup_sets_chat_persistence_runtime_state(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_worker_startup_failure_closes_runtime_dependencies(tmp_path: Path) -> None:
+    """Worker startup failure closes partially constructed runtime dependencies."""
+    state = TaskiqState()
+    engine = FakeEngine()
+    session = FakeSession()
+    session_factory = FakeSessionFactory(session)
+    valkey = FakeValkeyClient()
+
+    async def create_valkey_client(_: str) -> FakeValkeyClient:
+        return valkey
+
+    async def create_worker_beatmap_file_fetch(
+        *,
+        session_factory: FakeSessionFactory,
+        config: AppConfig,
+    ) -> object:
+        _ = session_factory
+        _ = config
+        msg = "beatmap file fetch unavailable"
+        raise RuntimeError(msg)
+
+    with (
+        patch("osu_server.worker.create_engine", return_value=engine),
+        patch("osu_server.worker.create_session_factory", return_value=session_factory),
+        patch("osu_server.worker.create_valkey_client", new=create_valkey_client, create=True),
+        patch("osu_server.worker._config", _make_config(tmp_path)),
+        patch(
+            "osu_server.worker.create_worker_beatmap_file_fetch",
+            new=create_worker_beatmap_file_fetch,
+            create=True,
+        ),
+        pytest.raises(RuntimeError, match="beatmap file fetch unavailable"),
+    ):
+        _ = await startup(state)  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType]
+
+    assert _state_engine(state) is None
+    assert _state_session_factory(state) is None
+    assert _state_valkey(state) is None
+    assert _state_dishka_container(state) is None
+    assert _state_persist_channel_message_use_case(state) is None
+    assert _state_persist_private_message_use_case(state) is None
+    assert _state_beatmap_metadata_fetch(state) is None
+    assert _state_beatmap_file_fetch(state) is None
+    assert engine.dispose_calls == 1
+    assert valkey.close_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_worker_runtime_chat_use_case_executes_persistence_task(tmp_path: Path) -> None:
     """Persistence task resolves the startup use-case from worker runtime state."""
     state = TaskiqState()

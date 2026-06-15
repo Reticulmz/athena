@@ -212,7 +212,7 @@
   - Completion is observable when worker startup resolves task use-cases through the worker container and worker shutdown finalizes managed resources.
   - _Requirements: 1.2, 2.2, 2.3, 2.6, 8.1, 8.4_
 
-- [ ] 7.4 Add provider replacement tests and startup failure tests
+- [x] 7.4 Add provider replacement tests and startup failure tests
   - Cover app and worker test providers replacing runtime dependencies without production code branches.
   - Cover missing required dependency behavior as startup or task-resolution failure.
   - Completion is observable when tests prove provider replacement works and partial dependency graphs are rejected.
