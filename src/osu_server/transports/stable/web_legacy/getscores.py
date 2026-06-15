@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 import structlog
 from starlette.responses import Response
 
+from osu_server.domain.beatmaps import BeatmapResolveOptions
 from osu_server.domain.compatibility.stable.getscores import GetscoresOutcomeKind
 from osu_server.services.queries.identity import SessionCredentialsQueryInput
 
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
+    from osu_server.domain.compatibility.stable.getscores import GetscoresRequest
+    from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
     from osu_server.services.queries.identity import SessionCredentialsQuery
     from osu_server.services.queries.scores import BeatmapScoreListingQuery
     from osu_server.transports.stable.web_legacy.mappers import (
@@ -54,11 +57,15 @@ class GetscoresHandler:
         getscores_parser: GetscoresQueryParser,
         getscores_query: BeatmapScoreListingQuery,
         status_mapper: GetscoresStatusMapper,
+        beatmap_resolver: BeatmapMirrorService,
+        beatmap_metadata_wait_seconds: float,
     ) -> None:
         self._auth_query: SessionCredentialsQuery = auth_query
         self._getscores_parser: GetscoresQueryParser = getscores_parser
         self._getscores_query: BeatmapScoreListingQuery = getscores_query
         self._status_mapper: GetscoresStatusMapper = status_mapper
+        self._beatmap_resolver: BeatmapMirrorService = beatmap_resolver
+        self._beatmap_metadata_wait_seconds: float = beatmap_metadata_wait_seconds
 
     async def __call__(self, request: Request) -> Response:
         """Handle a getscores request, returning the stable wire body."""
@@ -102,6 +109,7 @@ class GetscoresHandler:
                 user_id=auth_result.user_id,
             )
 
+        await self._prepare_metadata(request_obj, user_id=auth_result.user_id)
         outcome = await self._getscores_query.resolve(request_obj)
 
         if outcome.kind is GetscoresOutcomeKind.UNAVAILABLE:
@@ -113,6 +121,11 @@ class GetscoresHandler:
             return format_getscores_unavailable_response()
 
         if outcome.kind is GetscoresOutcomeKind.UPDATE_AVAILABLE:
+            assert outcome.header is not None  # invariant for UPDATE_AVAILABLE outcomes
+            await self._prefetch_resolved_beatmap_file(
+                outcome.header.beatmap.id,
+                user_id=auth_result.user_id,
+            )
             logger.info(
                 "getscores_update_available",
                 resolve_reason=outcome.reason.value,
@@ -122,6 +135,10 @@ class GetscoresHandler:
 
         # HEADER outcome
         assert outcome.header is not None  # invariant for HEADER outcomes
+        await self._prefetch_resolved_beatmap_file(
+            outcome.header.beatmap.id,
+            user_id=auth_result.user_id,
+        )
         wire_status = self._status_mapper.map_header_status(outcome.header.beatmap)
         if wire_status is None:
             logger.info(
@@ -136,6 +153,79 @@ class GetscoresHandler:
             beatmap=outcome.header.beatmap,
             beatmapset=outcome.header.beatmapset,
         )
+
+    async def _prepare_metadata(
+        self,
+        request: GetscoresRequest,
+        *,
+        user_id: int | None,
+    ) -> None:
+        """Request metadata fetch before resolving the stable response."""
+        try:
+            if request.checksum_md5 is not None:
+                result = await self._beatmap_resolver.resolve_by_checksum(
+                    request.checksum_md5,
+                    BeatmapResolveOptions(
+                        wait_timeout_seconds=self._beatmap_metadata_wait_seconds,
+                    ),
+                )
+                logger.info(
+                    "getscores_metadata_resolved",
+                    user_id=user_id,
+                    beatmap_id=result.beatmap.id if result.beatmap is not None else None,
+                    metadata_status=result.metadata_status.value,
+                    file_status=result.file_status.value,
+                    reason=result.reason,
+                )
+                return
+
+            if request.beatmapset_id_hint is not None:
+                result = await self._beatmap_resolver.resolve_by_beatmapset_id(
+                    request.beatmapset_id_hint,
+                    BeatmapResolveOptions(
+                        wait_timeout_seconds=self._beatmap_metadata_wait_seconds,
+                    ),
+                )
+                logger.info(
+                    "getscores_metadata_resolved",
+                    user_id=user_id,
+                    beatmapset_id=request.beatmapset_id_hint,
+                    metadata_status=result.metadata_status.value,
+                    reason=result.reason,
+                )
+        except Exception:
+            logger.exception(
+                "getscores_metadata_resolve_failed",
+                user_id=user_id,
+                beatmapset_id=request.beatmapset_id_hint,
+                has_checksum=request.checksum_md5 is not None,
+            )
+
+    async def _prefetch_resolved_beatmap_file(
+        self,
+        beatmap_id: int,
+        *,
+        user_id: int | None,
+    ) -> None:
+        """Request .osu prefetch for a resolved getscores beatmap."""
+        try:
+            result = await self._beatmap_resolver.resolve_by_beatmap_id(
+                beatmap_id,
+                BeatmapResolveOptions(require_osu_file=True, wait_timeout_seconds=0.0),
+            )
+            logger.info(
+                "getscores_beatmap_file_prefetch_requested",
+                user_id=user_id,
+                beatmap_id=beatmap_id,
+                file_status=result.file_status.value,
+                reason=result.reason,
+            )
+        except Exception:
+            logger.exception(
+                "getscores_beatmap_file_prefetch_failed",
+                user_id=user_id,
+                beatmap_id=beatmap_id,
+            )
 
 
 def format_getscores_unavailable_response() -> Response:

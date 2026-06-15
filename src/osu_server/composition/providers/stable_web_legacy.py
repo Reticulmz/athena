@@ -11,6 +11,7 @@ from osu_server.config import AppConfig
 from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
 from osu_server.services.commands.identity import RegisterUserCommandUseCase
 from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase
+from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 from osu_server.services.queries.identity import SessionCredentialsQueryUseCase
 from osu_server.services.queries.scores import BeatmapScoreListingQuery
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
@@ -24,6 +25,7 @@ from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHand
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
+    BeatmapMirrorService,
     BeatmapScoreListingQuery,
     ProcessScoreSubmissionUseCase,
     RegisterUserCommandUseCase,
@@ -59,12 +61,16 @@ class StableWebLegacyProviderSet(Provider):
         getscores_parser: GetscoresQueryParser,
         getscores_query: BeatmapScoreListingQuery,
         status_mapper: GetscoresStatusMapper,
+        beatmap_resolver: BeatmapMirrorService,
+        config: AppConfig,
     ) -> GetscoresHandler:
         return GetscoresHandler(
             auth_query=auth_query,
             getscores_parser=getscores_parser,
             getscores_query=getscores_query,
             status_mapper=status_mapper,
+            beatmap_resolver=beatmap_resolver,
+            beatmap_metadata_wait_seconds=config.beatmap_default_bounded_wait_seconds,
         )
 
     @provide

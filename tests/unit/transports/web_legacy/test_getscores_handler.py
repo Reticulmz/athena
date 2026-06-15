@@ -1,0 +1,307 @@
+"""Getscores handler metadata fetch and warmup behavior tests."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
+from typing import TYPE_CHECKING, cast, final
+from urllib.parse import urlencode
+
+from starlette.requests import Request
+
+from osu_server.domain.beatmaps import (
+    Beatmap,
+    BeatmapEligibility,
+    BeatmapFetchState,
+    BeatmapFileState,
+    BeatmapMetadataSource,
+    BeatmapRankStatus,
+    BeatmapResolveOptions,
+    BeatmapResolveResult,
+    BeatmapSet,
+    BeatmapSetResolveResult,
+    BeatmapSourceVerification,
+)
+from osu_server.domain.identity.authentication import LegacyWebAuthFailure, LegacyWebAuthResult
+from osu_server.services.queries.identity import (
+    SessionCredentialsQueryInput,
+    SessionCredentialsQueryResult,
+)
+from osu_server.services.queries.scores import BeatmapScoreListingQuery
+from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
+from osu_server.transports.stable.web_legacy.mappers import (
+    GetscoresQueryParser,
+    GetscoresStatusMapper,
+)
+
+if TYPE_CHECKING:
+    from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
+
+_NOW = datetime(2026, 6, 15, tzinfo=UTC)
+_NEXT_REFRESH = _NOW + timedelta(days=30)
+_CHECKSUM = "3b0aecd99eba50ffc7bff8da117d0e06"
+
+
+@final
+class _AuthQuery:
+    def __init__(self, result: LegacyWebAuthResult) -> None:
+        self.result = result
+        self.inputs: list[SessionCredentialsQueryInput] = []
+
+    async def execute(
+        self,
+        input_data: SessionCredentialsQueryInput,
+    ) -> SessionCredentialsQueryResult:
+        self.inputs.append(input_data)
+        return SessionCredentialsQueryResult(outcome=self.result)
+
+
+@final
+class _ScoreListingRepository:
+    def __init__(self) -> None:
+        self.beatmaps_by_checksum: dict[str, Beatmap] = {}
+        self.beatmapsets_by_id: dict[int, BeatmapSet] = {}
+
+    async def find_by_checksum(self, checksum_md5: str) -> Beatmap | None:
+        return self.beatmaps_by_checksum.get(checksum_md5)
+
+    async def find_by_filename_in_beatmapset(
+        self,
+        beatmapset_id: int,
+        original_filename: str,
+    ) -> Beatmap | None:
+        _ = (beatmapset_id, original_filename)
+        return None
+
+    async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
+        return self.beatmapsets_by_id.get(beatmapset_id)
+
+
+@final
+class _RecordingBeatmapResolver:
+    def __init__(
+        self,
+        repository: _ScoreListingRepository,
+        beatmap: Beatmap,
+        beatmapset: BeatmapSet,
+    ) -> None:
+        self.repository = repository
+        self.beatmap = beatmap
+        self.beatmapset = beatmapset
+        self.calls: list[tuple[str, str, bool, float]] = []
+
+    async def resolve_by_checksum(
+        self,
+        checksum_md5: str,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "checksum",
+                checksum_md5,
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        self.repository.beatmaps_by_checksum[checksum_md5] = self.beatmap
+        self.repository.beatmapsets_by_id[self.beatmapset.id] = self.beatmapset
+        return _resolve_result(self.beatmap, self.beatmapset)
+
+    async def resolve_by_beatmap_id(
+        self,
+        beatmap_id: int,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "beatmap_id",
+                str(beatmap_id),
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        return _resolve_result(self.beatmap, self.beatmapset)
+
+    async def resolve_by_beatmapset_id(
+        self,
+        beatmapset_id: int,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapSetResolveResult:
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "beatmapset_id",
+                str(beatmapset_id),
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        return BeatmapSetResolveResult(
+            beatmapset=None,
+            metadata_status=BeatmapFetchState.PENDING_FETCH,
+            source=None,
+            verified=False,
+            last_fetched_at=None,
+            next_refresh_at=None,
+            reason="pending",
+        )
+
+
+async def test_getscores_resolves_metadata_before_returning_not_found() -> None:
+    repository = _ScoreListingRepository()
+    beatmap = _make_beatmap()
+    beatmapset = _make_beatmapset(beatmap=beatmap)
+    resolver = _RecordingBeatmapResolver(repository, beatmap, beatmapset)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
+    )
+
+    response = await handler(_request(_query()))
+
+    assert response.status_code == HTTPStatus.OK
+    assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
+    assert resolver.calls == [
+        ("checksum", _CHECKSUM, False, 1.25),
+        ("beatmap_id", "75", True, 0.0),
+    ]
+
+
+async def test_getscores_auth_failure_does_not_request_metadata_fetch() -> None:
+    repository = _ScoreListingRepository()
+    beatmap = _make_beatmap()
+    beatmapset = _make_beatmapset(beatmap=beatmap)
+    resolver = _RecordingBeatmapResolver(repository, beatmap, beatmapset)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        auth_result=LegacyWebAuthResult(failure=LegacyWebAuthFailure.INVALID_CREDENTIALS),
+    )
+
+    response = await handler(_request(_query()))
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.body == b""
+    assert resolver.calls == []
+
+
+def _make_handler(
+    *,
+    repository: _ScoreListingRepository,
+    resolver: _RecordingBeatmapResolver,
+    auth_result: LegacyWebAuthResult,
+) -> GetscoresHandler:
+    return GetscoresHandler(
+        auth_query=_AuthQuery(auth_result),
+        getscores_parser=GetscoresQueryParser(),
+        getscores_query=BeatmapScoreListingQuery(repository),
+        status_mapper=GetscoresStatusMapper(),
+        beatmap_resolver=cast("BeatmapMirrorService", cast("object", resolver)),
+        beatmap_metadata_wait_seconds=1.25,
+    )
+
+
+def _request(params: dict[str, str]) -> Request:
+    return Request(
+        scope={
+            "type": "http",
+            "method": "GET",
+            "path": "/web/osu-osz2-getscores.php",
+            "query_string": urlencode(params).encode(),
+            "headers": [],
+        }
+    )
+
+
+def _query() -> dict[str, str]:
+    return {
+        "s": "0",
+        "vv": "4",
+        "v": "1",
+        "c": _CHECKSUM,
+        "f": "KIRA & Heartbreaker - B.B.F (hypercyte) [Hard].osu",
+        "m": "0",
+        "i": "955866",
+        "mods": "0",
+        "h": "",
+        "a": "0",
+        "us": "PlayerOne",
+        "ha": "cccccccccccccccccccccccccccccccc",
+    }
+
+
+def _make_beatmap() -> Beatmap:
+    return Beatmap(
+        id=75,
+        beatmapset_id=955866,
+        checksum_md5=_CHECKSUM,
+        mode="osu",
+        version="Hard",
+        total_length=240,
+        hit_length=220,
+        max_combo=1234,
+        bpm=180.0,
+        cs=4.0,
+        od=8.5,
+        ar=9.4,
+        hp=6.5,
+        difficulty_rating=5.67,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        local_status_override=None,
+        metadata_fetch_state=BeatmapFetchState.FRESH,
+        file_state=BeatmapFileState.MISSING,
+        file_attachment=None,
+        last_fetched_at=_NOW,
+        next_refresh_at=_NEXT_REFRESH,
+    )
+
+
+def _make_beatmapset(*, beatmap: Beatmap) -> BeatmapSet:
+    return BeatmapSet(
+        id=955866,
+        artist="KIRA & Heartbreaker",
+        title="B.B.F",
+        creator="hypercyte",
+        artist_unicode=None,
+        title_unicode=None,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        beatmaps=(beatmap,),
+        last_fetched_at=_NOW,
+        next_refresh_at=_NEXT_REFRESH,
+    )
+
+
+def _resolve_result(beatmap: Beatmap, beatmapset: BeatmapSet) -> BeatmapResolveResult:
+    return BeatmapResolveResult(
+        beatmap=beatmap,
+        beatmapset=beatmapset,
+        eligibility=BeatmapEligibility(
+            accepts_scores=True,
+            has_leaderboard=True,
+            awards_ranked_pp=True,
+            awards_loved_pp=False,
+            requires_osu_file_for_pp=True,
+            is_officially_verified=True,
+            is_mirror_derived=False,
+            accepts_failed_scores=True,
+            failed_scores_have_leaderboard=True,
+            failed_scores_update_best_score=False,
+            failed_scores_award_ranked_pp=False,
+            failed_scores_award_loved_pp=False,
+            denial_reason=None,
+        ),
+        metadata_status=BeatmapFetchState.FRESH,
+        file_status=beatmap.file_state,
+        source=beatmap.official_status_source,
+        verified=True,
+        last_fetched_at=beatmap.last_fetched_at,
+        next_refresh_at=beatmap.next_refresh_at,
+        reason="test",
+    )
