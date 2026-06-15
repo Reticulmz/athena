@@ -48,7 +48,7 @@ def decrypt_score_payload(
     Errors: DecryptionError if decryption fails
     """
     try:
-        plaintext, checksum_valid = athena_crypto.decrypt_score_payload(
+        plaintext, _legacy_checksum_valid = athena_crypto.decrypt_score_payload(
             encrypted,
             iv,
             osu_version,
@@ -59,5 +59,5 @@ def decrypt_score_payload(
     plaintext, padding_valid = _strip_pkcs7_padding(plaintext)
     return DecryptedPayload(
         plaintext=plaintext,
-        checksum_valid=checksum_valid and padding_valid,
+        checksum_valid=padding_valid,
     )

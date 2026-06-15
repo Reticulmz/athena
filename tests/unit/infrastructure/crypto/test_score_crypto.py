@@ -49,22 +49,24 @@ def test_wrapper_strips_pkcs7_padding_from_real_payload() -> None:
         "20260412",
     )
 
-    assert result.checksum_valid is False
+    assert result.checksum_valid is True
     assert result.plaintext.endswith(":50695543")
     assert "\x07" not in result.plaintext
 
 
-def test_wrapper_honors_crypto_checksum_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Python wrapper preserves athena_crypto checksum failures."""
+def test_wrapper_rejects_payload_without_pkcs7_padding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Python wrapper rejects decrypted payloads without PKCS#7 padding."""
 
-    def decrypt_with_bad_checksum(
+    def decrypt_without_padding(
         _encrypted: bytes,
         _iv: bytes,
         _osu_version: str | None,
     ) -> tuple[str, bool]:
-        return "payload" + chr(1), False
+        return "payload", False
 
-    monkeypatch.setattr(athena_crypto, "decrypt_score_payload", decrypt_with_bad_checksum)
+    monkeypatch.setattr(athena_crypto, "decrypt_score_payload", decrypt_without_padding)
 
     result = decrypt_score_payload_wrapper(b"encrypted", b"0" * RIJNDAEL_BLOCK_SIZE, "20260412")
 

@@ -74,6 +74,28 @@ def test_parse_duplicate_score_field_order_preservation():
     assert result.score_field_count == 2
 
 
+def test_parse_empty_replay_score_field_as_absent_replay():
+    """Empty second score field means no replay body was submitted."""
+    boundary = "----boundary"
+    encrypted_payload = b"encrypted_payload"
+    fields = [
+        ("score", base64.b64encode(encrypted_payload)),
+        ("score", b""),
+        ("iv", IV_B64),
+        ("pass", b"pass_hash"),
+        ("x", b"client_hash"),
+        ("osuver", b"20260412"),
+    ]
+    body = make_multipart_body(boundary, fields)
+    content_type = f"multipart/form-data; boundary={boundary}"
+
+    result = parse(body, content_type)
+
+    assert result.encrypted_payload == encrypted_payload
+    assert result.replay_data is None
+    assert result.score_field_count == 2
+
+
 def test_parse_with_optional_fields():
     """Optional fields should be preserved in submission_metadata."""
     boundary = "----boundary"

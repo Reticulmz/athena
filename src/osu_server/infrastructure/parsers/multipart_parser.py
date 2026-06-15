@@ -131,9 +131,9 @@ def _extract_required_fields(
         raise ParseError("Missing required field: score")
 
     encrypted_payload = _decode_base64_field("score", score_fields[0])
-    replay_data = (
-        score_fields[_REPLAY_FIELD_INDEX] if len(score_fields) > _REPLAY_FIELD_INDEX else None
-    )
+    replay_data = None
+    if len(score_fields) > _REPLAY_FIELD_INDEX and score_fields[_REPLAY_FIELD_INDEX]:
+        replay_data = score_fields[_REPLAY_FIELD_INDEX]
     score_field_count = len(score_fields)
 
     iv = _decode_base64_field("iv", fields["iv"][0])
