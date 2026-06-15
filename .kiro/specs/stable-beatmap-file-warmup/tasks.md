@@ -27,7 +27,7 @@
   - _Boundary: Stable web legacy getscores_
   - _Depends: 1.2_
 
-- [ ] 2.2 (P) STATUS_CHANGE warmup handler を追加する
+- [x] 2.2 (P) STATUS_CHANGE warmup handler を追加する
   - authenticated polling session から渡された user id だけを warmup request の user context として扱う
   - STATUS_CHANGE payload は既存 packet type として decode し、beatmap id が正なら id を優先、id が使えない場合だけ 32 hex checksum を fallback identity にする
   - beatmap identity がない payload、malformed payload、warmup failure は client disconnect の原因にせず diagnostics に残す

@@ -15,6 +15,7 @@ from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.repositories.interfaces.session_store import SessionStore
+from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
 from osu_server.services.commands.chat import (
     JoinChannelUseCase,
     LeaveChannelUseCase,
@@ -22,6 +23,7 @@ from osu_server.services.commands.chat import (
     SendPrivateMessageUseCase,
 )
 from osu_server.services.commands.identity import LoginCommandUseCase
+from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 from osu_server.services.queries.chat import (
     ListAutojoinChannelsQuery,
     ListVisibleChannelsQuery,
@@ -31,6 +33,7 @@ from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
+from osu_server.transports.stable.bancho.handlers.status import StatusChangeHandlers
 from osu_server.transports.stable.bancho.listeners import setup_listeners
 from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
 from osu_server.transports.stable.bancho.workflows.login_response_builder import (
@@ -40,6 +43,7 @@ from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflo
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
+    BeatmapMirrorService,
     ChannelStateStore,
     CountryResolver,
     LocalEventBus,
@@ -124,6 +128,15 @@ class StableBanchoProviderSet(Provider):
         )
 
     @provide
+    def status_change_handlers(
+        self,
+        beatmap_resolver: BeatmapMirrorService,
+    ) -> StatusChangeHandlers:
+        return StatusChangeHandlers(
+            beatmap_file_warmup=RequestBeatmapFileWarmupUseCase(beatmap_resolver),
+        )
+
+    @provide
     def app_event_listeners(
         self,
         event_bus: LocalEventBus,
@@ -139,12 +152,14 @@ class StableBanchoProviderSet(Provider):
         self,
         lifecycle_handlers: LifecycleHandlers,
         chat_handlers: ChatHandlers,
+        status_change_handlers: StatusChangeHandlers,
         listeners: AppEventListeners,
     ) -> PacketDispatcher:
         _ = listeners
         dispatcher = PacketDispatcher()
         lifecycle_handlers.register_all(dispatcher)
         chat_handlers.register_all(dispatcher)
+        status_change_handlers.register_all(dispatcher)
         return dispatcher
 
     @provide

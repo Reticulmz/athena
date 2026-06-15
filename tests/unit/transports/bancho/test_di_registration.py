@@ -5,6 +5,7 @@ import pytest
 from osu_server.composition.providers.container import make_app_container
 from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 from tests.factories.config import make_app_config
 
 
@@ -73,5 +74,19 @@ class TestDIRegistration:
             first = await container.get(PacketDispatcher)
             second = await container.get(PacketDispatcher)
             assert first is second
+        finally:
+            await container.close()
+
+    @pytest.mark.asyncio
+    async def test_resolved_dispatcher_registers_status_change_handler(self) -> None:
+        config = make_app_config(environment="test")
+        container = make_app_container(
+            config,
+            overrides=(make_in_memory_runtime_provider_set(),),
+        )
+
+        try:
+            dispatcher = await container.get(PacketDispatcher)
+            assert ClientPacketID.STATUS_CHANGE in dispatcher.get_handlers()
         finally:
             await container.close()
