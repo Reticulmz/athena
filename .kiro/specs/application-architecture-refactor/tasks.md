@@ -231,7 +231,7 @@
   - Completion is observable when deprecated imports fail or are caught by automated validation and no compatibility facade remains.
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.6_
 
-- [ ] 8.2 Synchronize architecture docs, glossary, and developer references
+- [x] 8.2 Synchronize architecture docs, glossary, and developer references
   - Update architecture documentation, glossary terms, tests, and developer-facing references to use the new package placement and terminology.
   - Keep Role, Privilege, Bancho Client Permission, Session Authorization Snapshot, and ModCombination language consistent.
   - Completion is observable when docs and tests no longer reference deprecated placement as supported architecture.

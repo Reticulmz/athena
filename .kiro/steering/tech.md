@@ -13,7 +13,7 @@
 | ORM | SQLAlchemy 2.0 async + asyncpg | Alembic でマイグレーション |
 | ジョブキュー | taskiq + taskiq-redis | redis-py 経由で Valkey に接続、async ネイティブ |
 | EventBus | 自前実装 (Valkey Pub/Sub + in-memory) | ~40行の軽量実装 |
-| DI | Dishka + starlette-dishka | ADR 0002 で採用決定。現行の自前軽量コンテナは application-architecture-refactor spec で置き換える |
+| DI | Dishka + starlette-dishka | ADR 0002 で採用決定。app / worker / test の依存構成は `composition/providers/` が所有する |
 | 型チェック | basedpyright (strict) | Pyright フォーク。conformance 95.7%、uv dev dependency でインストール |
 | Lint/Format | ruff | |
 | テスト | pytest + pytest-asyncio | |
@@ -30,13 +30,14 @@
 ## データベース・永続化方針
 
 - 現行の production target は **PostgreSQL + asyncpg** とする
-- DB dialect は **SQLAlchemy 2.0 async + Repository パターン** でアプリケーション層から隔離する
+- DB dialect は **SQLAlchemy 2.0 async + command/query Repository + Unit of Work** でアプリケーション層から隔離する
 - MySQL など別 dialect を導入する場合は spec で明示し、driver、migration、model compatibility を検証する
 - データベース読み書きは **SQLAlchemy 2.0 async** 経由に統一する
-- アプリケーションの永続化処理は **Repository パターン** で実装する
-  - `repositories/interfaces` に Protocol を定義する
-  - SQLAlchemy 実装は `repositories/sqlalchemy` に閉じ込める
-  - test double は `repositories/memory`、typed fake、または stub を使う
+- アプリケーションの永続化処理は **command/query Repository パターン** で実装する
+  - mutation と consistency check は `repositories/interfaces/commands` に Protocol を定義し、`UnitOfWork` 経由で扱う
+  - read-only / presentation read は `repositories/interfaces/queries` に Protocol を定義する
+  - SQLAlchemy 実装は `repositories/sqlalchemy/commands`、`repositories/sqlalchemy/queries`、`repositories/sqlalchemy/models` に閉じ込める
+  - test double は `repositories/memory/commands`、`repositories/memory/queries`、typed fake、または stub を使う
 - `services`、`transports`、`jobs` は SQLAlchemy model、DB session、raw SQL を直接扱わない
 - migration は Alembic に集約する。schema 変更を通常コードや unit test fixture に埋め込まない
 - DB-backed 検証が必要な場合は、`DATABASE_URL` で明示された test DB を使う。現行既定は PostgreSQL test DB とする

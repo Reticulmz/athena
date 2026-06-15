@@ -278,8 +278,8 @@ docs/
 - `src/osu_server/composition/worker_runtime.py` — removed with no compatibility facade.
 - `src/osu_server/services/*.py` flat service entry points — migrated into `services/commands` or `services/queries`; no re-export modules.
 - `src/osu_server/domain/*.py` flat domain modules that represent bounded-context concepts — migrated into context packages; no re-export modules.
-- `src/osu_server/transports/bancho`, `src/osu_server/transports/web_legacy`, `src/osu_server/transports/api`, `src/osu_server/transports/signalr` old root packages — migrated to family packages; old paths unsupported.
-- `src/osu_server/repositories/interfaces/*.py`, `src/osu_server/repositories/sqlalchemy/*.py`, and `src/osu_server/repositories/memory/*.py` flat repository modules — migrated into command/query packages or explicit non-CQRS adapters; old paths unsupported.
+- `src/osu_server/transports/bancho`, `src/osu_server/transports/web_legacy`, and `src/osu_server/transports/signalr` old root packages — migrated to stable/lazer/API family packages; old paths unsupported.
+- `src/osu_server/repositories/interfaces/*.py`, `src/osu_server/repositories/sqlalchemy/*.py`, and `src/osu_server/repositories/memory/*.py` flat repository modules — migrated into command/query packages or explicit non-CQRS adapters; residual flat modules are deprecated-import validation targets and not new command/query wiring boundaries.
 
 ## System Flows
 
@@ -849,7 +849,7 @@ class StableScoreSubmitMapper(Protocol):
 - Identity context:
   - `Role`: named authorization bundle assigned to users.
   - `Privilege`: server-side authorization capability and source of truth.
-  - `SessionAuthorizationSnapshot`: point-in-time session authorization view.
+  - `Session Authorization Snapshot`: point-in-time session authorization view represented by `SessionAuthorization`.
   - `BanchoClientPermission`: stable compatibility output derived from `Privilege`.
 - Scores context:
   - `Score`: canonical gameplay result. `mods` becomes `ModCombination` instead of raw `int`.

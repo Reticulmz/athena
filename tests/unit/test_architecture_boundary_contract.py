@@ -175,18 +175,18 @@ FUTURE_BOUNDARY_RULES = (
 
 IDENTITY_TRANSPORT_USE_CASE_RULES = (
     BoundaryRule(
-        name="bancho login identity use-case boundary",
-        source_path=SOURCE_ROOT / "transports" / "bancho" / "workflows",
+        name="stable bancho login identity use-case boundary",
+        source_path=SOURCE_ROOT / "transports" / "stable" / "bancho" / "workflows",
         forbidden_roots=("osu_server.services.commands.identity.auth_service",),
     ),
     BoundaryRule(
-        name="bancho lifecycle identity query boundary",
-        source_path=SOURCE_ROOT / "transports" / "bancho" / "listeners",
+        name="stable bancho lifecycle identity query boundary",
+        source_path=SOURCE_ROOT / "transports" / "stable" / "bancho" / "listeners",
         forbidden_roots=("osu_server.services.queries.identity.online_users_service",),
     ),
     BoundaryRule(
         name="legacy web identity use-case boundary",
-        source_path=SOURCE_ROOT / "transports" / "web_legacy",
+        source_path=SOURCE_ROOT / "transports" / "stable" / "web_legacy",
         forbidden_roots=(
             "osu_server.services.commands.identity.auth_service",
             "osu_server.services.legacy_web_auth_service",

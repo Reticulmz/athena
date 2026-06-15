@@ -57,6 +57,14 @@ The refactor target contexts are:
 
 Shared concepts used across stable, lazer, and first-party API workflows belong in these domain contexts before they are mapped to a client-family representation.
 
+## Terminology
+
+- `Role`: named authorization bundle assigned to users. It lives in `domain/identity/roles.py`.
+- `Privilege`: one server-side authorization capability. The Python type is `Privileges` in `domain/identity/authorization.py`.
+- `Session Authorization Snapshot`: the point-in-time session authorization view represented by `SessionAuthorization` in `domain/identity/sessions.py`.
+- `Bancho Client Permission`: stable-client compatibility output represented by `BanchoClientPermission` in `domain/compatibility/stable/permissions.py`. It is derived from `Privilege` values and is not an internal authorization input.
+- `ModCombination`: canonical score mod value object in `domain/scores/mods.py`. Stable bitmasks, lazer payloads, and first-party API payloads must map to it before reaching score use-cases.
+
 ## Compatibility Boundaries
 
 Compatibility semantics that differ from core business meaning are separated from wire encoding. `domain/compatibility/stable` owns stable-specific values such as Bancho Client Permission, stable mod support, and legacy getscores response semantics. Stable compatibility values may be derived from core domain values, but they are not accepted as internal authorization or scoring input.
@@ -94,10 +102,22 @@ Use this placement rule when adding or moving code:
 - Background task payload adaptation stays in `jobs/`; reusable business behavior stays in command/query use-cases.
 - Concrete infrastructure construction and provider replacement stay in `composition/providers/`.
 
-Do not add compatibility facades for deprecated service, repository, domain, or transport package paths. During this refactor, old paths are removed after call sites migrate; old and new paths must not remain supported for the same responsibility.
+Do not add compatibility facades for deprecated service, repository, domain, or transport package paths. Flat service and bounded-domain paths have been removed after call sites migrated. Residual flat repository modules are tracked by deprecated-import validation and must not be used as new command/query wiring boundaries. Old and new paths must not remain supported for the same responsibility.
+
+## Current Package Map
+
+- Identity commands: `services/commands/identity/auth_service.py`, `services/commands/identity/registration.py`, `services/commands/identity/login.py`, and `services/commands/identity/session_authorization_service.py`.
+- Identity queries: `services/queries/identity/permission_service.py`, `services/queries/identity/password_service.py`, `services/queries/identity/online_users_service.py`, and `services/queries/identity/session_credentials.py`.
+- Chat commands: `services/commands/chat/send_channel_message.py`, `services/commands/chat/send_private_message.py`, and `services/commands/chat/bancho_bot/`.
+- Chat queries: `services/queries/chat/channel_service.py`, `services/queries/chat/private_message_service.py`, `services/queries/chat/channels.py`, and `services/queries/chat/messages.py`.
+- Beatmap commands and queries: command-side fetch workflows live in `services/commands/beatmaps/`; mirror read/provider workflows live in `services/queries/beatmaps/mirror/`.
+- Storage commands: blob metadata and backend writes live in `services/commands/storage/blob_storage.py`.
+- Score commands and queries: score submission and authorization live in `services/commands/scores/`; legacy getscores display reads live in `services/queries/scores/`.
+- System users: system-user identity values live in `domain/identity/system_users.py`.
+- Stable compatibility language: stable permissions, mods, and getscores compatibility values live in `domain/compatibility/stable/`.
 
 ## Validation Contract
 
-Architecture documentation and mechanical validation must describe the same boundaries. `import-linter` contracts in `pyproject.toml` enforce dependency direction and forbidden imports. Tests cover provider replacement, startup failure, Unit of Work commit/rollback behavior, command/query separation, transport-family isolation, job adapter thinness, and deprecated path detection as those packages are introduced.
+Architecture documentation and mechanical validation must describe the same boundaries. `import-linter` contracts in `pyproject.toml` enforce dependency direction and forbidden imports. Tests cover provider replacement, startup failure, Unit of Work commit/rollback behavior, command/query separation, transport-family isolation, job adapter thinness, and deprecated path detection for finalized packages.
 
 The local quality gate is `./scripts/ci.sh quality`, which runs ruff formatting checks, ruff linting, basedpyright, and import-linter. The test gate is `./scripts/ci.sh test`. A refactor phase is incomplete if the guide, validation rules, and package layout disagree.

@@ -18,6 +18,10 @@ _Avoid_: Privilege, internal permission, ClientPermissions
 A point-in-time authorization view for an active session, containing the user's current privileges and role membership. It is refreshed from role state and then used by authorization-sensitive actions.
 _Avoid_: Session permissions, cached roles
 
+### ModCombination
+A canonical score mod value object. Stable bitmasks, lazer payloads, and first-party API payloads are converted into ModCombination before reaching score use-cases, while persistence may store the canonical bitmask integer.
+_Avoid_: Raw mods int at use-case boundary, stable bitmask as domain model
+
 ## Score Submission Context
 
 ### Score Submission
@@ -44,7 +48,7 @@ Validated された gameplay result の canonical record。Leaderboard、stats�
 - User ID, beatmap ID, beatmap checksum
 - Ruleset (osu, taiko, catch, mania)
 - Playstyle (vanilla, relax, autopilot)
-- Mods (bitmask)
+- Mods (`ModCombination`; persistence stores the canonical bitmask integer)
 - Hit counts (n300, n100, n50, miss, geki, katu)
 - Score value, max combo, accuracy, grade
 - Passed (true/false) — failed play も score として保存
@@ -199,7 +203,7 @@ Athena の設計は以下の既存実装を参考にしています:
 - Beatmap mirror (beatmap metadata と eligibility)
 - Blob storage (replay 保存)
 - Active session store (authorization)
-- Legacy auth service (password 検証)
+- Score authorization command service (password + active session 検証)
 
 ---
 
