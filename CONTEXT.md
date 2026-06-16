@@ -18,6 +18,18 @@ _Avoid_: Privilege, internal permission, ClientPermissions
 A point-in-time authorization view for an active session, containing the user's current privileges and role membership. It is refreshed from role state and then used by authorization-sensitive actions.
 _Avoid_: Session permissions, cached roles
 
+### Friend Relationship
+User が別の friendable user identity を friend として追加している片方向の social relationship。Target の online state とは独立して存在し、Stable friends list と Friends leaderboard の source of truth になる。
+_Avoid_: Mutual friend, follower, symmetric friendship
+
+### Friendable User Identity
+Friend Relationship の target になれる user identity。通常 User と明示的に friend 追加可能な system user を含むが、自動 friend 追加を意味しない。
+_Avoid_: Online user, all system users, implicit friend
+
+### Friend-Only DM
+User が friend 以外の player-originated private message を拒否する social privacy setting。受信者が有効にしている場合、受信者が送信者を friend に追加しているときだけ private message を受け付け、system response はこの制限の対象にしない。
+_Avoid_: Block list, mutual friend requirement, global DM disable
+
 ### ModCombination
 A canonical score mod value object. Stable bitmasks, lazer payloads, and first-party API payloads are converted into ModCombination before reaching score use-cases, while persistence may store the canonical bitmask integer.
 _Avoid_: Raw mods int at use-case boundary, stable bitmask as domain model
@@ -104,6 +116,24 @@ _Avoid_: Beatmap metadata lookup, synchronous file fetch, PP calculation
 - Beatmap File Warmup は Score を生成しない
 - Beatmap File Warmup は Performance Calculation の代わりに PP を計算しない
 - Beatmap File がまだ unavailable でも、stable response は各入口の互換形式を維持する
+
+---
+
+### Beatmap Leaderboard
+1つの Beatmap に対する Personal Best の順位付き一覧。Score の source of truth ではなく、Score と current Performance Calculation から stable client や Web 表示向けに導かれる view。
+_Avoid_: User stats, global ranking, beatmap ranking, score ingestion result
+
+### Personal Best
+1人の User が特定の Beatmap / Ruleset / Playstyle / leaderboard category で持つ代表 Score。Beatmap Leaderboard の順位付け対象になる。
+_Avoid_: Score history, latest score, best attempt
+
+### Leaderboard Category
+Stable client が選択する Beatmap Leaderboard の表示種別。Global、Country、Selected Mods、Friends の4種を扱い、Country は閲覧者の国を既定値として Score owner の国で絞り、Selected Mods は request mods と Score mods の完全一致だけを対象にする。
+_Avoid_: User rank category, playstyle, score status
+
+### User Stats
+1人の User の競技結果を ruleset / playstyle / category ごとに集約した表示用統計。Beatmap Leaderboard とは別の projection として扱う。
+_Avoid_: Beatmap leaderboard, user rank, score row
 
 ---
 

@@ -1,0 +1,22 @@
+{
+  "feature_name": "friend-relationships",
+  "created_at": "2026-06-17T05:50:33+09:00",
+  "updated_at": "2026-06-17T06:55:32+09:00",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": false
+    }
+  },
+  "ready_for_implementation": false
+}

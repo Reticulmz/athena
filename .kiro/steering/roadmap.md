@@ -28,17 +28,18 @@
 6. **beatmap-mirror** — ビートマップ情報取得（osu! API v1/v2 を正、ミラーは障害時フォールバック）。`.osu` ファイル保存は blob-storage に委譲する。依存: blob-storage
 7. **score-ingestion** (Wave 1) — Stable client からの score 受付、validation、保存、replay 保存。PP なし、completed response 返却。依存: beatmap-mirror, blob-storage
 8. **score-pp-calculation** (Wave 2) — rosu-pp-py による PP/stars 計算、provenance tracking。依存: score-ingestion
-9. **beatmap-leaderboards** (Wave 3) — Beatmap leaderboard projection、personal best tracking。依存: score-ingestion, score-pp-calculation
-10. **user-stats** (Wave 3) — User stats 集計 (play count, ranked score, weighted PP, accuracy)。依存: score-ingestion, score-pp-calculation
-11. **user-ranking** (Wave 4) — Global/country rank 時系列履歴、rank snapshot rebuild、ranking graph API。依存: user-stats
+9. **friend-relationships** — Stable friends list と Friends leaderboard の source of truth になる friend relationship。関係の向き、friends list packet、将来の friend 管理 API との境界を定義する。依存: bancho-login
+10. **beatmap-leaderboards** (Wave 3) — Beatmap leaderboard projection、personal best tracking、Global / Country / Selected Mods / Friends category の getscores rows。依存: score-ingestion, score-pp-calculation, friend-relationships
+11. **user-stats** (Wave 3) — User stats 集計 (play count, ranked score, weighted PP, accuracy)。依存: score-ingestion, score-pp-calculation
+12. **user-ranking** (Wave 4) — Global/country rank 時系列履歴、rank snapshot rebuild、ranking graph API。依存: user-stats
 
 ### Phase 3: 運用・拡張
 
-9. **email-verification** — メール認証（confirmed_at + SendGrid）
-10. **admin-panel** — 管理画面フロントエンド（ユーザー管理・RBAC 管理）
-11. **api-v2** — lazer 互換 REST API + OAuth2
-12. **signalr** — lazer 互換 SignalR ハブ（リアルタイム通信）
-13. **log-writer-pipeline** — 専用ログ writer による統合ログ出力。起動直後は各プロセスがローカル `latest.jsonl` に直接書き込み、Valkey 接続確立後に writer 経由へ昇格する案を検証する。Valkey 未起動・writer 障害時はローカル直接書き込みへフォールバックする前提で設計する
+13. **email-verification** — メール認証（confirmed_at + SendGrid）
+14. **admin-panel** — 管理画面フロントエンド（ユーザー管理・RBAC 管理）
+15. **api-v2** — lazer 互換 REST API + OAuth2
+16. **signalr** — lazer 互換 SignalR ハブ（リアルタイム通信）
+17. **log-writer-pipeline** — 専用ログ writer による統合ログ出力。起動直後は各プロセスがローカル `latest.jsonl` に直接書き込み、Valkey 接続確立後に writer 経由へ昇格する案を検証する。Valkey 未起動・writer 障害時はローカル直接書き込みへフォールバックする前提で設計する
 
 ## メモ
 
