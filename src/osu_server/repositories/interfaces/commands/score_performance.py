@@ -40,6 +40,7 @@ class ScorePerformanceCalculationRequestResult:
     calculation: PerformanceCalculation
     created: bool
     is_replacement: bool
+    requires_commit: bool = False
 
 
 @dataclass(frozen=True, slots=True)

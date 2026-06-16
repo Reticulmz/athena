@@ -85,6 +85,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
                 calculation=_model_to_domain(created),
                 created=True,
                 is_replacement=False,
+                requires_commit=True,
             )
 
         if _matches_request(current, command):
@@ -94,12 +95,28 @@ class SQLAlchemyScorePerformanceCommandRepository:
                 is_replacement=False,
             )
 
-        replacement = await self._get_matching_replacement_model(command)
-        if replacement is not None:
+        replacements = await self._get_pending_replacement_models(command.score_id)
+        matching_replacement: ScorePerformanceCalculationModel | None = None
+        superseded_replacement = False
+        for replacement in replacements:
+            if _matches_request(replacement, command):
+                matching_replacement = replacement
+                continue
+            replacement.state = PerformanceCalculationState.SUPERSEDED.value
+            replacement.is_current = False
+            replacement.claim_owner = None
+            replacement.claim_expires_at = None
+            superseded_replacement = True
+
+        if superseded_replacement:
+            await self._flush_or_raise_conflict()
+
+        if matching_replacement is not None:
             return ScorePerformanceCalculationRequestResult(
-                calculation=_model_to_domain(replacement),
+                calculation=_model_to_domain(matching_replacement),
                 created=False,
                 is_replacement=True,
+                requires_commit=superseded_replacement,
             )
 
         created_replacement = ScorePerformanceCalculationModel(
@@ -126,6 +143,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
             calculation=_model_to_domain(created_replacement),
             created=True,
             is_replacement=True,
+            requires_commit=True,
         )
 
     async def claim_pending_calculation(
@@ -463,27 +481,24 @@ class SQLAlchemyScorePerformanceCommandRepository:
         ).scalar_one_or_none()
         return model if isinstance(model, ScorePerformanceCalculationModel) else None
 
-    async def _get_matching_replacement_model(
+    async def _get_pending_replacement_models(
         self,
-        command: CreateScorePerformanceCalculation,
-    ) -> ScorePerformanceCalculationModel | None:
-        model = (
-            await self._session.execute(
-                select(ScorePerformanceCalculationModel)
-                .where(
-                    ScorePerformanceCalculationModel.score_id == command.score_id,
-                    ScorePerformanceCalculationModel.is_current.is_(False),
-                    ScorePerformanceCalculationModel.state.in_(_PENDING_STATE_VALUES),
-                    ScorePerformanceCalculationModel.calculator_name == command.calculator_name,
-                    ScorePerformanceCalculationModel.calculator_version
-                    == command.calculator_version,
-                    ScorePerformanceCalculationModel.formula_profile
-                    == command.formula_profile.value,
+        score_id: int,
+    ) -> tuple[ScorePerformanceCalculationModel, ...]:
+        models = (
+            (
+                await self._session.execute(
+                    select(ScorePerformanceCalculationModel).where(
+                        ScorePerformanceCalculationModel.score_id == score_id,
+                        ScorePerformanceCalculationModel.is_current.is_(False),
+                        ScorePerformanceCalculationModel.state.in_(_PENDING_STATE_VALUES),
+                    )
                 )
-                .limit(1)
             )
-        ).scalar_one_or_none()
-        return model if isinstance(model, ScorePerformanceCalculationModel) else None
+            .scalars()
+            .all()
+        )
+        return tuple(models)
 
     async def _get_pending_model_for_claim(
         self,

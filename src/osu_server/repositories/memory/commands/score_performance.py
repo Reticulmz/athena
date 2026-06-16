@@ -403,6 +403,7 @@ class InMemoryScorePerformanceCommandRepository:
             calculation=calculation,
             created=True,
             is_replacement=is_replacement,
+            requires_commit=True,
         )
 
     def _get_replacement_for_score(self, score_id: int) -> PerformanceCalculation | None:

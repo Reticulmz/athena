@@ -130,10 +130,114 @@ async def test_sqlalchemy_repository_creates_current_calculation_without_commit(
 
     assert result.created is True
     assert result.is_replacement is False
+    assert result.requires_commit is True
     assert result.calculation.id == 100
     assert result.calculation.is_current is True
     assert result.calculation.state is PerformanceCalculationState.QUEUED
     assert len(session.added) == 1
+    assert session.flush_calls == 1
+    assert session.commit_calls == 0
+    assert session.rollback_calls == 0
+
+
+async def test_sqlalchemy_request_supersedes_mismatched_pending_replacement() -> None:
+    current = _model(
+        calculation_id=1,
+        score_id=10,
+        state=PerformanceCalculationState.COMPLETED,
+        is_current=True,
+    )
+    stale_replacement = _model(
+        calculation_id=2,
+        score_id=10,
+        state=PerformanceCalculationState.QUEUED,
+        is_current=False,
+        calculator_version="4.1.0",
+    )
+    stale_replacement.claim_owner = "worker-a"
+    stale_replacement.claim_expires_at = _NOW + timedelta(minutes=5)
+    session = FakeSession(
+        execute_results=[current, [stale_replacement]],
+        get_results={(ScorePerformanceCalculationModel, 2): stale_replacement},
+    )
+    repo = _repo(session)
+
+    result = await repo.create_or_reuse_calculation(
+        _request(score_id=10, calculator_version="4.2.0")
+    )
+    stale_finalize = await repo.mark_completed(
+        CompleteScorePerformanceCalculation(
+            calculation_id=2,
+            pp=Decimal("111.111111"),
+            star_rating=Decimal("4.32100"),
+            calculator_name="rosu-pp-py",
+            calculator_version="4.1.0",
+            formula_profile=FormulaProfile.VANILLA_RANKED,
+            beatmap_file_attachment_id=55,
+            beatmap_file_checksum_md5="a" * 32,
+            calculated_at=_NOW,
+        )
+    )
+
+    assert result.created is True
+    assert result.is_replacement is True
+    assert result.requires_commit is True
+    assert result.calculation.id == 100
+    assert result.calculation.state is PerformanceCalculationState.QUEUED
+    assert result.calculation.is_current is False
+    assert stale_replacement.state == PerformanceCalculationState.SUPERSEDED.value
+    assert stale_replacement.is_current is False
+    assert stale_replacement.claim_owner is None
+    assert stale_replacement.claim_expires_at is None
+    assert stale_finalize is None
+    assert current.state == PerformanceCalculationState.COMPLETED.value
+    assert current.is_current is True
+    assert len(session.added) == 1
+    assert session.flush_calls == 2
+    assert session.commit_calls == 0
+    assert session.rollback_calls == 0
+
+
+async def test_sqlalchemy_request_commits_supersede_before_reusing_matching_replacement() -> None:
+    current = _model(
+        calculation_id=1,
+        score_id=10,
+        state=PerformanceCalculationState.COMPLETED,
+        is_current=True,
+    )
+    matching_replacement = _model(
+        calculation_id=2,
+        score_id=10,
+        state=PerformanceCalculationState.QUEUED,
+        is_current=False,
+        calculator_version="4.2.0",
+    )
+    stale_replacement = _model(
+        calculation_id=3,
+        score_id=10,
+        state=PerformanceCalculationState.QUEUED,
+        is_current=False,
+        calculator_version="4.1.0",
+    )
+    stale_replacement.claim_owner = "worker-a"
+    stale_replacement.claim_expires_at = _NOW + timedelta(minutes=5)
+    session = FakeSession(execute_results=[current, [matching_replacement, stale_replacement]])
+    repo = _repo(session)
+
+    result = await repo.create_or_reuse_calculation(
+        _request(score_id=10, calculator_version="4.2.0")
+    )
+
+    assert result.created is False
+    assert result.is_replacement is True
+    assert result.requires_commit is True
+    assert result.calculation.id == matching_replacement.id
+    assert result.calculation.state is PerformanceCalculationState.QUEUED
+    assert stale_replacement.state == PerformanceCalculationState.SUPERSEDED.value
+    assert stale_replacement.is_current is False
+    assert stale_replacement.claim_owner is None
+    assert stale_replacement.claim_expires_at is None
+    assert len(session.added) == 0
     assert session.flush_calls == 1
     assert session.commit_calls == 0
     assert session.rollback_calls == 0

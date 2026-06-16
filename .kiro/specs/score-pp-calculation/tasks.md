@@ -77,7 +77,7 @@
   - _Depends: 1.3_
 
 - [ ] 4. Core commands: calculation request と worker execution を実装する
-- [ ] 4.1 Request Performance Calculation workflow を実装する
+- [x] 4.1 Request Performance Calculation workflow を実装する
   - accepted eligible score に current calculation row を作成または再利用する
   - completed / unavailable row の provenance が active calculator version と Formula Profile に一致する場合は no-op にする
   - pending row が存在する場合は duplicate row を作らず worker wake-up だけを許可する

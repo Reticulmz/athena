@@ -54,8 +54,10 @@ async def test_duplicate_requests_reuse_one_current_calculation() -> None:
 
     assert first.created is True
     assert first.is_replacement is False
+    assert first.requires_commit is True
     assert second.created is False
     assert second.is_replacement is False
+    assert second.requires_commit is False
     assert second.calculation.id == first.calculation.id
     assert current == first.calculation
 
@@ -106,6 +108,7 @@ async def test_replacement_preserves_old_current_until_completed_finalization() 
 
     assert replacement.created is True
     assert replacement.is_replacement is True
+    assert replacement.requires_commit is True
     assert replacement.calculation.id != current_id
     assert replacement.calculation.is_current is False
     assert current_before_finalization is not None
@@ -130,6 +133,68 @@ async def test_replacement_preserves_old_current_until_completed_finalization() 
     assert new_current is not None
     assert new_current.id == replacement.calculation.id
     assert new_current.state is PerformanceCalculationState.COMPLETED
+
+
+async def test_mismatched_pending_replacement_is_superseded_before_new_replacement() -> None:
+    factory = _memory_factory()
+    current_id = await _create_current(factory, score_id=20, calculator_version="4.0.2")
+    _ = await _complete(factory, calculation_id=current_id, calculator_version="4.0.2")
+
+    async with factory() as uow:
+        first_replacement = await uow.score_performance.create_or_reuse_calculation(
+            _request(score_id=20, calculator_version="4.1.0")
+        )
+        await uow.commit()
+
+    assert first_replacement.calculation.id is not None
+    async with factory() as uow:
+        next_replacement = await uow.score_performance.create_or_reuse_calculation(
+            _request(score_id=20, calculator_version="4.2.0")
+        )
+        old_replacement = await uow.score_performance.get_by_id(first_replacement.calculation.id)
+        current_before_finalization = await uow.score_performance.get_current_for_score(20)
+        old_replacement_claim = await uow.score_performance.claim_pending_calculation(
+            _claim(
+                calculation_id=first_replacement.calculation.id,
+                owner="worker-a",
+                claimed_at=_NOW,
+            )
+        )
+        await uow.commit()
+
+    assert next_replacement.created is True
+    assert next_replacement.is_replacement is True
+    assert next_replacement.requires_commit is True
+    assert next_replacement.calculation.id != first_replacement.calculation.id
+    assert next_replacement.calculation.state is PerformanceCalculationState.QUEUED
+    assert old_replacement is not None
+    assert old_replacement.state is PerformanceCalculationState.SUPERSEDED
+    assert old_replacement.is_current is False
+    assert old_replacement_claim is None
+    assert current_before_finalization is not None
+    assert current_before_finalization.id == current_id
+    assert current_before_finalization.state is PerformanceCalculationState.COMPLETED
+
+    stale_finalize = await _complete_or_none(
+        factory,
+        calculation_id=first_replacement.calculation.id,
+        calculator_version="4.1.0",
+    )
+    assert stale_finalize is None
+
+    assert next_replacement.calculation.id is not None
+    finalized = await _complete(
+        factory,
+        calculation_id=next_replacement.calculation.id,
+        calculator_version="4.2.0",
+    )
+
+    async with factory() as uow:
+        current_after_finalization = await uow.score_performance.get_current_for_score(20)
+
+    assert finalized.id == next_replacement.calculation.id
+    assert current_after_finalization is not None
+    assert current_after_finalization.id == next_replacement.calculation.id
 
 
 async def test_unavailable_replacement_finalization_switches_current_once() -> None:
@@ -398,6 +463,21 @@ async def _complete(
     calculation_id: int,
     calculator_version: str,
 ) -> PerformanceCalculation:
+    completed = await _complete_or_none(
+        factory,
+        calculation_id=calculation_id,
+        calculator_version=calculator_version,
+    )
+    assert completed is not None
+    return completed
+
+
+async def _complete_or_none(
+    factory: UnitOfWorkFactory,
+    *,
+    calculation_id: int,
+    calculator_version: str,
+) -> PerformanceCalculation | None:
     async with factory() as uow:
         completed = await uow.score_performance.mark_completed(
             CompleteScorePerformanceCalculation(
@@ -413,7 +493,6 @@ async def _complete(
             )
         )
         await uow.commit()
-    assert completed is not None
     return completed
 
 
