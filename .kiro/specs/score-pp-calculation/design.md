@@ -629,7 +629,7 @@ class PerformanceCalculator(Protocol):
 
 ##### Batch / Job Contract
 
-- `calculate_score_performance(score_id: int)`.
+- `calculate_score_performance(score_id: int, calculation_id: int)`.
 - `process_performance_recalculation_batch(batch_id: int)`.
 - Duplicate execution is allowed; use-cases enforce idempotency.
 

@@ -10,7 +10,11 @@ from osu_server.infrastructure.jobs.registry import jobs
 if TYPE_CHECKING:
     from taskiq import AsyncBroker
 
-_JOB_MODULES = ("osu_server.jobs.chat_persistence", "osu_server.jobs.beatmap_fetch")
+_JOB_MODULES = (
+    "osu_server.jobs.chat_persistence",
+    "osu_server.jobs.beatmap_fetch",
+    "osu_server.jobs.score_performance",
+)
 
 
 def _load_job_modules() -> None:

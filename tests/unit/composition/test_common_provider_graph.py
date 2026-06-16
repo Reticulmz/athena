@@ -172,6 +172,8 @@ async def test_app_provider_graph_resolves_shared_infrastructure_dependencies() 
         assert broker.find_task("persist_private_message") is not None
         assert broker.find_task("fetch_beatmap_metadata") is not None
         assert broker.find_task("fetch_beatmap_file") is not None
+        assert broker.find_task("calculate_score_performance") is not None
+        assert broker.find_task("process_performance_recalculation_batch") is not None
         assert isinstance(http_client, httpx.AsyncClient)
         assert blob_backend is not None
         assert event_bus is not None

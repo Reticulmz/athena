@@ -93,7 +93,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 4.2, 4.3, 4.4, 5.2, 13.1, 14.1, 14.3, 14.4, 14.5, 15.3_
   - _Depends: 2.1, 3.1, 3.2, 3.3_
 
-- [ ] 4.3 score performance job adapters を実装する
+- [x] 4.3 score performance job adapters を実装する
   - calculation job と recalculation batch job は primitive id payload だけを受け取る
   - taskiq state から use-case を解決し、runtime dependency missing は observable failure として log / raise する
   - duplicate job execution は use-case の idempotency に委ねる
