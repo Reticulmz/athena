@@ -13,6 +13,7 @@ from osu_server.repositories.memory.commands import (
     InMemoryReplayCommandRepository,
     InMemoryRoleCommandRepository,
     InMemoryScoreCommandRepository,
+    InMemoryScorePerformanceCommandRepository,
     InMemoryScoreSubmissionCommandRepository,
     InMemoryUserCommandRepository,
 )
@@ -169,6 +170,7 @@ class InMemoryUnitOfWork:
     channels: InMemoryChannelCommandRepository
     chat: InMemoryChatCommandRepository
     scores: InMemoryScoreCommandRepository
+    score_performance: InMemoryScorePerformanceCommandRepository
     submissions: InMemoryScoreSubmissionCommandRepository
     replays: InMemoryReplayCommandRepository
     blobs: InMemoryBlobCommandRepository
@@ -207,6 +209,7 @@ class InMemoryUnitOfWork:
         self.channels = InMemoryChannelCommandRepository(self._state)
         self.chat = InMemoryChatCommandRepository(self._state)
         self.scores = InMemoryScoreCommandRepository(self._state)
+        self.score_performance = InMemoryScorePerformanceCommandRepository(self._state)
         self.submissions = InMemoryScoreSubmissionCommandRepository(self._state)
         self.replays = InMemoryReplayCommandRepository(self._state)
         self.blobs = InMemoryBlobCommandRepository(self._state)

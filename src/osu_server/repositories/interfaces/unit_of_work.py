@@ -15,6 +15,7 @@ if TYPE_CHECKING:
         ReplayCommandRepository,
         RoleCommandRepository,
         ScoreCommandRepository,
+        ScorePerformanceCommandRepository,
         ScoreSubmissionCommandRepository,
         UserCommandRepository,
     )
@@ -33,6 +34,7 @@ class UnitOfWork(Protocol):
     channels: ChannelCommandRepository
     chat: ChatCommandRepository
     scores: ScoreCommandRepository
+    score_performance: ScorePerformanceCommandRepository
     submissions: ScoreSubmissionCommandRepository
     replays: ReplayCommandRepository
     blobs: BlobCommandRepository

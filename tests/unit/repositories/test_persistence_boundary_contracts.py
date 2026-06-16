@@ -16,6 +16,7 @@ from osu_server.repositories.interfaces.commands import (
     ReplayCommandRepository,
     RoleCommandRepository,
     ScoreCommandRepository,
+    ScorePerformanceCommandRepository,
     ScoreSubmissionCommandRepository,
     UserCommandRepository,
 )
@@ -53,6 +54,7 @@ COMMAND_REPOSITORY_ATTRIBUTES = {
     "channels": ChannelCommandRepository,
     "chat": ChatCommandRepository,
     "scores": ScoreCommandRepository,
+    "score_performance": ScorePerformanceCommandRepository,
     "submissions": ScoreSubmissionCommandRepository,
     "replays": ReplayCommandRepository,
     "blobs": BlobCommandRepository,
@@ -149,6 +151,7 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         ChannelCommandRepository,
         ChatCommandRepository,
         ScoreCommandRepository,
+        ScorePerformanceCommandRepository,
         ScoreSubmissionCommandRepository,
         ReplayCommandRepository,
         BlobCommandRepository,
@@ -166,6 +169,14 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         "try_mark_fetch_pending",
         "mark_fetch_succeeded",
         "mark_fetch_failed",
+    }
+    assert _public_async_methods(ScorePerformanceCommandRepository) == {
+        "claim_pending_calculation",
+        "create_or_reuse_calculation",
+        "get_by_id",
+        "get_current_for_score",
+        "mark_completed",
+        "mark_unavailable",
     }
 
 

@@ -13,6 +13,7 @@ from osu_server.repositories.memory.commands import (
     InMemoryReplayCommandRepository,
     InMemoryRoleCommandRepository,
     InMemoryScoreCommandRepository,
+    InMemoryScorePerformanceCommandRepository,
     InMemoryScoreSubmissionCommandRepository,
     InMemoryUserCommandRepository,
 )
@@ -112,6 +113,7 @@ async def test_unit_of_work_exposes_typed_command_repositories() -> None:
         assert isinstance(uow.replays, InMemoryReplayCommandRepository)
         assert isinstance(uow.blobs, InMemoryBlobCommandRepository)
         assert isinstance(uow.beatmaps, InMemoryBeatmapCommandRepository)
+        assert isinstance(uow.score_performance, InMemoryScorePerformanceCommandRepository)
 
 
 async def _raise_after_command_mutation(factory: InMemoryUnitOfWorkFactory) -> None:

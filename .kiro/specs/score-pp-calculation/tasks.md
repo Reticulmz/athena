@@ -23,7 +23,7 @@
   - _Requirements: 6.1, 10.3, 10.4, 10.5, 10.6, 11.3, 11.4, 12.1_
 
 - [ ] 2. Persistence: current PP と recalculation work を保存・検索できるようにする
-- [ ] 2.1 (P) Performance Calculation の command persistence を実装する
+- [x] 2.1 (P) Performance Calculation の command persistence を実装する
   - calculation request の作成、既存 current row の再利用、pending claim、completed / unavailable finalization を原子的に扱う
   - stale provenance や profile mismatch の replacement は、finalization まで既存 current PP を維持する
   - duplicate request や temporary claim conflict は unavailable にせず、retry または no-op として収束させる

@@ -19,6 +19,7 @@ from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyReplayCommandRepository,
     SQLAlchemyRoleCommandRepository,
     SQLAlchemyScoreCommandRepository,
+    SQLAlchemyScorePerformanceCommandRepository,
     SQLAlchemyScoreSubmissionCommandRepository,
     SQLAlchemyUserCommandRepository,
 )
@@ -212,6 +213,7 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
         assert isinstance(uow.replays, SQLAlchemyReplayCommandRepository)
         assert isinstance(uow.blobs, SQLAlchemyBlobCommandRepository)
         assert isinstance(uow.beatmaps, SQLAlchemyBeatmapCommandRepository)
+        assert isinstance(uow.score_performance, SQLAlchemyScorePerformanceCommandRepository)
 
 
 async def test_user_command_repository_updates_password_hash_without_commit() -> None:

@@ -6,6 +6,9 @@ from osu_server.repositories.interfaces.commands.channels import ChannelCommandR
 from osu_server.repositories.interfaces.commands.chat import ChatCommandRepository
 from osu_server.repositories.interfaces.commands.replays import ReplayCommandRepository
 from osu_server.repositories.interfaces.commands.roles import RoleCommandRepository
+from osu_server.repositories.interfaces.commands.score_performance import (
+    ScorePerformanceCommandRepository,
+)
 from osu_server.repositories.interfaces.commands.scores import ScoreCommandRepository
 from osu_server.repositories.interfaces.commands.submissions import (
     ScoreSubmissionCommandRepository,
@@ -20,6 +23,7 @@ __all__ = [
     "ReplayCommandRepository",
     "RoleCommandRepository",
     "ScoreCommandRepository",
+    "ScorePerformanceCommandRepository",
     "ScoreSubmissionCommandRepository",
     "UserCommandRepository",
 ]
