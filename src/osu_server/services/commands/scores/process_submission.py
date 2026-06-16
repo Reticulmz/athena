@@ -36,6 +36,11 @@ from osu_server.services.commands.scores.submit_score import (
     SubmitScoreCommandResult,
     SubmitScoreUseCase,
 )
+from osu_server.services.queries.scores import (
+    PerformanceSubmitResponse,
+    PerformanceSubmitResponseQuery,
+    PerformanceSubmitResponseState,
+)
 from osu_server.shared.errors import DecryptionError
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -121,6 +126,13 @@ class PerformanceCalculatorIdentity(Protocol):
     def calculator_version(self) -> str: ...
 
 
+class PerformanceSubmitResponseUseCase(Protocol):
+    async def wait_for_submit_response(
+        self,
+        query: PerformanceSubmitResponseQuery,
+    ) -> PerformanceSubmitResponse: ...
+
+
 class SubmissionOutcome(Enum):
     """Submission result outcome."""
 
@@ -139,6 +151,7 @@ class SubmissionResult:
     beatmap_id: int | None = None
     beatmapset_id: int | None = None
     error_reason: str | None = None
+    stable_pp: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +258,7 @@ class ProcessScoreSubmissionUseCase:
         beatmap_file_warmup_use_case: BeatmapFileWarmupUseCase | None = None,
         performance_calculation_request: PerformanceCalculationRequestUseCase | None = None,
         performance_calculator_identity: PerformanceCalculatorIdentity | None = None,
+        performance_response_query: PerformanceSubmitResponseUseCase | None = None,
     ) -> None:
         self._submit_score_use_case: SubmitScoreUseCase = submit_score_use_case
         self._replay_blob_storage: ReplayBlobStorage = replay_blob_storage
@@ -260,6 +274,9 @@ class ProcessScoreSubmissionUseCase:
         )
         self._performance_calculator_identity: PerformanceCalculatorIdentity | None = (
             performance_calculator_identity
+        )
+        self._performance_response_query: PerformanceSubmitResponseUseCase | None = (
+            performance_response_query
         )
 
     async def execute(  # noqa: PLR0911, PLR0912, PLR0915
@@ -606,10 +623,11 @@ class ProcessScoreSubmissionUseCase:
             )
             return _submission_result_from_command(command_result)
 
-        await self._request_performance_calculation(
-            score_id=command_result.score_id,
-            requested_at=input_data.submitted_at,
-        )
+        if not command_result.existing_submission:
+            await self._request_performance_calculation(
+                score_id=command_result.score_id,
+                requested_at=input_data.submitted_at,
+            )
 
         total_duration_ms = (time.perf_counter() - start_time) * 1000
         logger.info(
@@ -631,12 +649,7 @@ class ProcessScoreSubmissionUseCase:
             opaque_fields=opaque_field_hashes or None,
         )
 
-        return SubmissionResult(
-            outcome=SubmissionOutcome.COMPLETED,
-            score_id=command_result.score_id,
-            beatmap_id=resolved_beatmap_id,
-            beatmapset_id=resolved_beatmapset_id,
-        )
+        return await self._build_accepted_submission_result(command_result)
 
     async def _request_performance_calculation(
         self,
@@ -675,6 +688,32 @@ class ProcessScoreSubmissionUseCase:
             calculation_id=None if result.calculation is None else result.calculation.id,
             worker_wake_requested=result.worker_wake_requested,
             worker_wake_failed=result.worker_wake_failed,
+        )
+
+    async def _build_accepted_submission_result(
+        self,
+        command_result: SubmitScoreCommandResult,
+    ) -> SubmissionResult:
+        if command_result.score_id is None or self._performance_response_query is None:
+            return _submission_result_from_command(command_result)
+
+        response = await self._performance_response_query.wait_for_submit_response(
+            PerformanceSubmitResponseQuery(score_id=command_result.score_id)
+        )
+        if response.state is PerformanceSubmitResponseState.RETRYABLE:
+            return SubmissionResult(
+                outcome=SubmissionOutcome.RETRYABLE,
+                score_id=command_result.score_id,
+                beatmap_id=command_result.beatmap_id,
+                beatmapset_id=command_result.beatmapset_id,
+                error_reason="performance_calculation_pending",
+            )
+        return SubmissionResult(
+            outcome=SubmissionOutcome.COMPLETED,
+            score_id=command_result.score_id,
+            beatmap_id=command_result.beatmap_id,
+            beatmapset_id=command_result.beatmapset_id,
+            stable_pp=response.stable_pp,
         )
 
     async def _request_score_submit_fallback_warmup(

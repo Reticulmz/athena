@@ -43,6 +43,11 @@ from osu_server.services.commands.scores.performance import (
     RequestPerformanceCalculationOutcome,
     RequestPerformanceCalculationResult,
 )
+from osu_server.services.queries.scores import (
+    PerformanceSubmitResponse,
+    PerformanceSubmitResponseQuery,
+    PerformanceSubmitResponseState,
+)
 from tests.support.fakes import (
     ScoreRepositoryViews,
     StubBlobStorageService,
@@ -206,6 +211,20 @@ class RecordingPerformanceCalculationRequest:
             outcome=RequestPerformanceCalculationOutcome.SCORE_NOT_FOUND,
             score_id=command.score_id,
         )
+
+
+@final
+class RecordingPerformanceResponseQuery:
+    def __init__(self, response: PerformanceSubmitResponse) -> None:
+        self.response: PerformanceSubmitResponse = response
+        self.queries: list[PerformanceSubmitResponseQuery] = []
+
+    async def wait_for_submit_response(
+        self,
+        query: PerformanceSubmitResponseQuery,
+    ) -> PerformanceSubmitResponse:
+        self.queries.append(query)
+        return self.response
 
 
 @final
@@ -431,6 +450,148 @@ async def test_completed_submission_requests_performance_calculation(
             requested_at=valid_input.submitted_at,
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_completed_submission_waits_for_performance_response_after_request(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    repos: ScoreRepositoryViews,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Accepted scores request calculation before building performance response."""
+    score_repo, _submission_repo, _replay_repo = repos
+    performance_request = RecordingPerformanceCalculationRequest()
+    performance_response = RecordingPerformanceResponseQuery(
+        PerformanceSubmitResponse(
+            state=PerformanceSubmitResponseState.COMPLETED,
+            stable_pp=248,
+        )
+    )
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=performance_request,
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+        performance_response_query=performance_response,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_perf_wait:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.score_id is not None
+    assert await score_repo.get_by_id(result.score_id) is not None
+    assert performance_request.commands[0].score_id == result.score_id
+    assert performance_response.queries == [
+        PerformanceSubmitResponseQuery(score_id=result.score_id)
+    ]
+    assert result.stable_pp == 248
+
+
+@pytest.mark.asyncio
+async def test_retryable_performance_response_keeps_score_accepted_without_rejecting(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    repos: ScoreRepositoryViews,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Pending performance returns retryable response while the score remains durable."""
+    score_repo, submission_repo, _replay_repo = repos
+    performance_response = RecordingPerformanceResponseQuery(
+        PerformanceSubmitResponse(
+            state=PerformanceSubmitResponseState.RETRYABLE,
+            stable_pp=None,
+        )
+    )
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=RecordingPerformanceCalculationRequest(),
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+        performance_response_query=performance_response,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_perf_retryable:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.RETRYABLE
+    assert result.score_id is not None
+    assert result.error_reason == "performance_calculation_pending"
+    assert await score_repo.get_by_id(result.score_id) is not None
+    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(valid_input))
+    assert submission is not None
+    assert submission.state == "completed"
+
+
+@pytest.mark.asyncio
+async def test_completed_performance_pp_is_result_only_not_submission_snapshot(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    repos: ScoreRepositoryViews,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Stable PP is response data, not canonical submission snapshot data."""
+    _score_repo, submission_repo, _replay_repo = repos
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=RecordingPerformanceCalculationRequest(),
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+        performance_response_query=RecordingPerformanceResponseQuery(
+            PerformanceSubmitResponse(
+                state=PerformanceSubmitResponseState.COMPLETED,
+                stable_pp=321,
+            )
+        ),
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_perf_snapshot:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.stable_pp == 321
+    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(valid_input))
+    assert submission is not None
+    assert submission.result_snapshot is not None
+    assert "pp" not in submission.result_snapshot
+    assert "stable_pp" not in submission.result_snapshot
 
 
 @pytest.mark.asyncio
@@ -873,6 +1034,108 @@ async def test_online_checksum_duplicate_rejection(
 
 
 @pytest.mark.asyncio
+async def test_performance_integration_preserves_duplicate_terminal_rejects(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    repos: ScoreRepositoryViews,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Duplicate checksum terminal rejects do not wait for performance response."""
+    _score_repo, submission_repo, _replay_repo = repos
+    performance_request = RecordingPerformanceCalculationRequest()
+    performance_response = RecordingPerformanceResponseQuery(
+        PerformanceSubmitResponse(
+            state=PerformanceSubmitResponseState.COMPLETED,
+            stable_pp=111,
+        )
+    )
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=performance_request,
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+        performance_response_query=performance_response,
+    )
+
+    def mock_decrypt(encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        if encrypted in {b"online-first", b"online-second"}:
+            payload = (
+                "1000:test_user:abc123:duplicate_perf_online:0:0:100:10:5:0:0:2:500000:99:1:1"
+            )
+        elif encrypted == b"replay-first":
+            payload = "1000:test_user:abc123:perf_replay_online_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+        else:
+            payload = "1000:test_user:abc123:perf_replay_online_2:0:0:100:10:5:0:0:2:500000:99:1:1"
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+    online_first = replace(
+        valid_input,
+        encrypted_payload=b"online-first",
+        replay_data=b"online-duplicate-replay-1",
+        client_hash="online-hash-1",
+    )
+    online_second = replace(
+        valid_input,
+        encrypted_payload=b"online-second",
+        replay_data=b"online-duplicate-replay-2",
+        client_hash="online-hash-2",
+    )
+    replay_first = replace(
+        valid_input,
+        encrypted_payload=b"replay-first",
+        replay_data=b"same-performance-replay",
+        client_hash="replay-hash-1",
+    )
+    replay_second = replace(
+        valid_input,
+        encrypted_payload=b"replay-second",
+        replay_data=b"same-performance-replay",
+        client_hash="replay-hash-2",
+    )
+
+    online_result1 = await service.execute(online_first)
+    online_result2 = await service.execute(online_second)
+    replay_result1 = await service.execute(replay_first)
+    replay_result2 = await service.execute(replay_second)
+
+    assert online_result1.outcome == SubmissionOutcome.COMPLETED
+    assert online_result1.score_id is not None
+    assert online_result1.stable_pp == 111
+    assert online_result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
+    assert online_result2.score_id is None
+    assert online_result2.error_reason == "duplicate_online_checksum"
+    assert replay_result1.outcome == SubmissionOutcome.COMPLETED
+    assert replay_result1.score_id is not None
+    assert replay_result1.stable_pp == 111
+    assert replay_result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
+    assert replay_result2.score_id is None
+    assert replay_result2.error_reason == "duplicate_replay_checksum"
+    assert performance_response.queries == [
+        PerformanceSubmitResponseQuery(score_id=online_result1.score_id),
+        PerformanceSubmitResponseQuery(score_id=replay_result1.score_id),
+    ]
+    assert [command.score_id for command in performance_request.commands] == [
+        online_result1.score_id,
+        replay_result1.score_id,
+    ]
+
+    online_submission = await submission_repo.get_by_fingerprint(_fingerprint_for(online_second))
+    replay_submission = await submission_repo.get_by_fingerprint(_fingerprint_for(replay_second))
+    assert online_submission is not None
+    assert online_submission.state == "terminal_rejected"
+    assert online_submission.result_snapshot == {"error_reason": "duplicate_online_checksum"}
+    assert replay_submission is not None
+    assert replay_submission.state == "terminal_rejected"
+    assert replay_submission.result_snapshot == {"error_reason": "duplicate_replay_checksum"}
+
+
+@pytest.mark.asyncio
 async def test_online_checksum_duplicate_rejection_ignores_fallback_warmup_failure(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
@@ -1129,6 +1392,73 @@ async def test_submission_fingerprint_idempotency(
     assert result2.outcome == SubmissionOutcome.COMPLETED
     assert result2.score_id == score_id1  # Same score ID
     assert decrypt_call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_same_fingerprint_retry_rebuilds_response_from_existing_score_performance(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    repos: ScoreRepositoryViews,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Same-fingerprint retry reads current performance for the existing score."""
+    _score_repo, submission_repo, _replay_repo = repos
+    performance_request = RecordingPerformanceCalculationRequest()
+    performance_response = RecordingPerformanceResponseQuery(
+        PerformanceSubmitResponse(
+            state=PerformanceSubmitResponseState.COMPLETED,
+            stable_pp=456,
+        )
+    )
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=performance_request,
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+        performance_response_query=performance_response,
+    )
+    decrypt_call_count = 0
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        nonlocal decrypt_call_count
+        decrypt_call_count += 1
+        payload = "1000:test_user:abc123:online_checksum_idem_pp:0:0:100:10:5:0:0:2:500000:99:1:1"
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+    replayless_input = replace(valid_input, replay_data=None)
+
+    result1 = await service.execute(replayless_input)
+    result2 = await service.execute(replace(replayless_input, submitted_at=datetime.now(UTC)))
+
+    assert result1.outcome == SubmissionOutcome.COMPLETED
+    assert result1.score_id is not None
+    assert result2.outcome == SubmissionOutcome.COMPLETED
+    assert result2.score_id == result1.score_id
+    assert result2.stable_pp == 456
+    assert performance_request.commands == [
+        RequestPerformanceCalculationCommand(
+            score_id=result1.score_id,
+            calculator_name="test-calculator",
+            calculator_version="1.2.3",
+            requested_at=replayless_input.submitted_at,
+        )
+    ]
+    assert performance_response.queries == [
+        PerformanceSubmitResponseQuery(score_id=result1.score_id),
+        PerformanceSubmitResponseQuery(score_id=result1.score_id),
+    ]
+    assert decrypt_call_count == 2
+    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(replayless_input))
+    assert submission is not None
+    assert submission.result_snapshot is not None
+    assert "pp" not in submission.result_snapshot
+    assert "stable_pp" not in submission.result_snapshot
 
 
 @pytest.mark.asyncio

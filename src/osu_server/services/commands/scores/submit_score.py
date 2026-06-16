@@ -61,6 +61,7 @@ class SubmitScoreCommandResult:
     beatmapset_id: int | None = None
     replay_attachment_id: int | None = None
     error_reason: str | None = None
+    existing_submission: bool = False
 
 
 class SubmitScoreUseCase:
@@ -243,6 +244,7 @@ def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScore
                 score_id=score_id,
                 beatmap_id=beatmap_id if isinstance(beatmap_id, int) else None,
                 beatmapset_id=beatmapset_id if isinstance(beatmapset_id, int) else None,
+                existing_submission=True,
             )
 
     error_reason = snapshot.get("error_reason")
@@ -250,11 +252,13 @@ def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScore
         return SubmitScoreCommandResult(
             outcome=SubmitScoreCommandOutcome.RETRYABLE,
             error_reason=error_reason if isinstance(error_reason, str) else "retryable",
+            existing_submission=True,
         )
 
     return SubmitScoreCommandResult(
         outcome=SubmitScoreCommandOutcome.TERMINAL_REJECTED,
         error_reason=error_reason if isinstance(error_reason, str) else "terminal_rejected",
+        existing_submission=True,
     )
 
 

@@ -118,7 +118,7 @@
   - _Requirements: 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 5.4, 6.1, 6.2, 6.3, 6.4, 6.5, 13.2, 13.3, 13.4_
   - _Depends: 2.2, 3.3_
 
-- [ ] 5.2 Score submission workflow に performance response を統合する
+- [x] 5.2 Score submission workflow に performance response を統合する
   - newly accepted eligible score は calculation request を発行してから bounded wait に入る
   - retried submission fingerprint は既存 accepted Score と current Performance Calculation から response を再構築する
   - PP を submission result snapshot の canonical value として保存しない
