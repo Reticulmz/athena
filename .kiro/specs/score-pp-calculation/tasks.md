@@ -48,7 +48,7 @@
   - 完了時には batch progress、completed count、unavailable count、last error が operator-visible に更新される
   - _Requirements: 10.2, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 12.2_
 
-- [ ] 3. Calculation dependencies: `.osu` file、calculator、completion signal を隔離する
+- [x] 3. Calculation dependencies: `.osu` file、calculator、completion signal を隔離する
 - [x] 3.1 (P) PP calculation 用 `.osu` file provider を実装する
   - beatmap-mirror に `require_osu_file=True` で問い合わせ、fetch 中の file は pending input として扱う
   - attachment が利用可能な場合だけ blob-storage から `.osu` bytes を読む
@@ -76,7 +76,7 @@
   - _Boundary: PerformanceCompletionSignal_
   - _Depends: 1.3_
 
-- [ ] 4. Core commands: calculation request と worker execution を実装する
+- [x] 4. Core commands: calculation request と worker execution を実装する
 - [x] 4.1 Request Performance Calculation workflow を実装する
   - accepted eligible score に current calculation row を作成または再利用する
   - completed / unavailable row の provenance が active calculator version と Formula Profile に一致する場合は no-op にする
@@ -109,7 +109,7 @@
   - _Requirements: 3.1, 6.1, 8.4, 10.2, 11.5_
   - _Depends: 4.3_
 
-- [ ] 5. Stable submit integration: accepted score response に PP state を合成する
+- [x] 5. Stable submit integration: accepted score response に PP state を合成する
 - [x] 5.1 PerformanceResponseQuery を実装する
   - bounded wait 中は completion signal を待ち、signal 後に current Performance Calculation を再読込する
   - signal timeout 時にも final current-state check を行う
@@ -134,7 +134,7 @@
   - _Requirements: 3.3, 3.4, 3.7, 13.2, 13.3, 13.4, 14.5_
   - _Depends: 5.2_
 
-- [ ] 6. Recalculation operations: CLI から durable work を作成・処理できるようにする
+- [x] 6. Recalculation operations: CLI から durable work を作成・処理できるようにする
 - [x] 6.1 Recalculation batch creation workflow を実装する
   - dry-run は candidate count と reason breakdown だけを返し、durable work を作らない
   - execute mode は filters、target calculator version、target Formula Profile、reason counts を保存した batch と work items を作る
@@ -160,7 +160,7 @@
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 11.2, 14.5_
   - _Depends: 6.1_
 
-- [ ] 7. End-to-end validation と scope boundary を固める
+- [x] 7. End-to-end validation と scope boundary を固める
 - [x] 7.1 Stable submit の PP response scenarios を検証する
   - Ranked / Approved passed score は bounded wait 内完了で PP 付き completed response を返す
   - bounded wait 内に終わらない場合は retryable response を返し、後続 retry で current PP を返す
@@ -185,7 +185,7 @@
   - _Requirements: 1.3, 1.4, 2.3, 2.4, 9.6, 12.5, 15.1, 15.2, 15.3, 15.4, 15.5_
   - _Depends: 7.1, 7.2_
 
-- [ ] 7.4 Quality gates と architecture boundaries を確認する
+- [x] 7.4 Quality gates と architecture boundaries を確認する
   - unit、integration、E2E coverage が performance domain、repositories、worker、stable submit、CLI を通る
   - type checking、lint、format、import boundary checks が新しい performance subsystem を含めて通る
   - implementation review で stable client と worker の externally observable behavior が保持されていることを確認する
