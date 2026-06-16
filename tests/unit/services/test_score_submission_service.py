@@ -29,6 +29,7 @@ from osu_server.services.commands.beatmaps.file_warmup import (
     BeatmapFileWarmupOutcome,
     BeatmapFileWarmupRequest,
     BeatmapFileWarmupResult,
+    RequestBeatmapFileWarmupUseCase,
 )
 from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
@@ -179,6 +180,43 @@ class RecordingWarmupUseCase:
             beatmap_id=request.beatmap_id,
             checksum_md5=request.checksum_md5,
             reason=None,
+        )
+
+
+@dataclass(slots=True)
+class FakeWarmupResolver:
+    file_status: BeatmapFileState
+    reason: str | None
+
+    async def resolve_by_beatmap_id(
+        self,
+        beatmap_id: int,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        del options
+        return self._result(beatmap_id)
+
+    async def resolve_by_checksum(
+        self,
+        checksum_md5: str,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        del checksum_md5, options
+        return self._result(1)
+
+    def _result(self, beatmap_id: int) -> BeatmapResolveResult:
+        beatmap = replace(_resolved_beatmap(), id=beatmap_id, file_state=self.file_status)
+        return BeatmapResolveResult(
+            beatmap=beatmap,
+            beatmapset=None,
+            eligibility=_eligible_beatmap(),
+            metadata_status=BeatmapFetchState.FRESH,
+            file_status=self.file_status,
+            source=BeatmapMetadataSource.OFFICIAL,
+            verified=True,
+            last_fetched_at=None,
+            next_refresh_at=None,
+            reason=self.reason,
         )
 
 
@@ -541,6 +579,56 @@ async def test_score_submit_fallback_warmup_runs_before_replay_blob_storage(
 
 
 @pytest.mark.asyncio
+async def test_score_submit_accepts_file_pending_and_logs_fallback_warmup(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Beatmap File pending is diagnostics-only and keeps accepted response shape."""
+    warmup = RequestBeatmapFileWarmupUseCase(
+        FakeWarmupResolver(
+            file_status=BeatmapFileState.PENDING_FETCH,
+            reason="pending_fetch",
+        )
+    )
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        beatmap_file_warmup_use_case=warmup,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_warmup_pending:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    with structlog.testing.capture_logs() as logs:
+        result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.error_reason is None
+    assert result.score_id is not None
+    assert result.beatmap_id == 1
+
+    warmup_events = [entry for entry in logs if entry["event"] == "beatmap_file_warmup"]
+    assert len(warmup_events) == 1
+    warmup_event = warmup_events[0]
+    assert warmup_event["entrance"] == "stable_score_submit_fallback"
+    assert warmup_event["outcome"] == "requested"
+    assert warmup_event["beatmap_id"] == 1
+    assert warmup_event["checksum_md5"] is None
+    assert warmup_event["reason"] == "pending_fetch"
+
+
+@pytest.mark.asyncio
 async def test_score_submit_fallback_warmup_precedes_retryable_replay_storage_failure(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
@@ -664,6 +752,110 @@ async def test_online_checksum_duplicate_rejection(
 
 
 @pytest.mark.asyncio
+async def test_online_checksum_duplicate_rejection_ignores_fallback_warmup_failure(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    repos: ScoreRepositoryViews,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Duplicate online checksum remains a terminal reject when warmup fails."""
+    _score_repo, submission_repo, _ = repos
+    events: list[str] = []
+    warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        beatmap_file_warmup_use_case=warmup,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:duplicate_checksum_with_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+    input1 = replace(valid_input, replay_data=b"online_duplicate_replay_1", client_hash="hash1")
+    input2 = replace(valid_input, replay_data=b"online_duplicate_replay_2", client_hash="hash2")
+
+    result1 = await service.execute(input1)
+    result2 = await service.execute(input2)
+
+    assert result1.outcome == SubmissionOutcome.COMPLETED
+    assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
+    assert result2.score_id is None
+    assert result2.error_reason == "duplicate_online_checksum"
+    assert len(warmup.requests) == 2
+    assert events == ["warmup", "warmup"]
+
+    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(input2))
+    assert submission is not None
+    assert submission.state == "terminal_rejected"
+    assert submission.result_snapshot == {"error_reason": "duplicate_online_checksum"}
+
+
+@pytest.mark.asyncio
+async def test_online_checksum_duplicate_rejection_ignores_file_pending_warmup(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    repos: ScoreRepositoryViews,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Duplicate online checksum remains terminal rejected when file warmup is pending."""
+    _score_repo, submission_repo, _ = repos
+    warmup = RequestBeatmapFileWarmupUseCase(
+        FakeWarmupResolver(
+            file_status=BeatmapFileState.PENDING_FETCH,
+            reason="pending_fetch",
+        )
+    )
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        beatmap_file_warmup_use_case=warmup,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:duplicate_checksum_pending_warmup:0:0:100:10:5:0:0:2:"
+            "500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+    input1 = replace(valid_input, replay_data=b"online_pending_replay_1", client_hash="hash1")
+    input2 = replace(valid_input, replay_data=b"online_pending_replay_2", client_hash="hash2")
+
+    with structlog.testing.capture_logs() as logs:
+        result1 = await service.execute(input1)
+        result2 = await service.execute(input2)
+
+    assert result1.outcome == SubmissionOutcome.COMPLETED
+    assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
+    assert result2.score_id is None
+    assert result2.error_reason == "duplicate_online_checksum"
+
+    warmup_events = [entry for entry in logs if entry["event"] == "beatmap_file_warmup"]
+    assert [entry["outcome"] for entry in warmup_events] == ["requested", "requested"]
+    assert [entry["reason"] for entry in warmup_events] == ["pending_fetch", "pending_fetch"]
+
+    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(input2))
+    assert submission is not None
+    assert submission.state == "terminal_rejected"
+    assert submission.result_snapshot == {"error_reason": "duplicate_online_checksum"}
+
+
+@pytest.mark.asyncio
 async def test_replay_checksum_duplicate_rejection(
     service: ProcessScoreSubmissionUseCase,
     repos: ScoreRepositoryViews,
@@ -716,6 +908,78 @@ async def test_replay_checksum_duplicate_rejection(
 
 
 @pytest.mark.asyncio
+async def test_replay_checksum_duplicate_rejection_ignores_fallback_warmup_failure(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    repos: ScoreRepositoryViews,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Duplicate replay checksum remains a terminal reject when warmup fails."""
+    _score_repo, submission_repo, _replay_repo = repos
+    events: list[str] = []
+    warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        beatmap_file_warmup_use_case=warmup,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        if b"first" in _encrypted:
+            payload = (
+                "1000:test_user:abc123:online_warmup_replay_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+            )
+        else:
+            payload = (
+                "1000:test_user:abc123:online_warmup_replay_2:0:0:100:10:5:0:0:2:500000:99:1:1"
+            )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+    input1 = ParsedSubmissionInput(
+        encrypted_payload=b"first",
+        iv=b"0" * 32,
+        replay_data=b"same_warmup_replay_data",
+        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        client_hash="hash1",
+        fail_time_ms=None,
+        osu_version="20240101",
+        beatmap_id=1,
+        submitted_at=datetime.now(UTC),
+    )
+    input2 = ParsedSubmissionInput(
+        encrypted_payload=b"second",
+        iv=b"0" * 32,
+        replay_data=b"same_warmup_replay_data",
+        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        client_hash="hash2",
+        fail_time_ms=None,
+        osu_version="20240101",
+        beatmap_id=1,
+        submitted_at=datetime.now(UTC),
+    )
+
+    result1 = await service.execute(input1)
+    result2 = await service.execute(input2)
+
+    assert result1.outcome == SubmissionOutcome.COMPLETED
+    assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
+    assert result2.score_id is None
+    assert result2.error_reason == "duplicate_replay_checksum"
+    assert len(warmup.requests) == 2
+    assert events == ["warmup", "warmup"]
+
+    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(input2))
+    assert submission is not None
+    assert submission.state == "terminal_rejected"
+    assert submission.result_snapshot == {"error_reason": "duplicate_replay_checksum"}
+
+
+@pytest.mark.asyncio
 async def test_submission_fingerprint_idempotency(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
@@ -743,6 +1007,51 @@ async def test_submission_fingerprint_idempotency(
     result2 = await service.execute(resent_input)
     assert result2.outcome == SubmissionOutcome.COMPLETED
     assert result2.score_id == score_id1  # Same score ID
+    assert decrypt_call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_submission_fingerprint_idempotency_ignores_fallback_warmup_failure(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Same-fingerprint cached result is unchanged by fallback warmup failure."""
+    events: list[str] = []
+    warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        beatmap_file_warmup_use_case=warmup,
+    )
+    decrypt_call_count = 0
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        nonlocal decrypt_call_count
+        decrypt_call_count += 1
+        payload = (
+            "1000:test_user:abc123:online_checksum_idem_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+    replayless_input = replace(valid_input, replay_data=None)
+
+    result1 = await service.execute(replayless_input)
+    result2 = await service.execute(replace(replayless_input, submitted_at=datetime.now(UTC)))
+
+    assert result1.outcome == SubmissionOutcome.COMPLETED
+    assert result1.score_id is not None
+    assert result2.outcome == SubmissionOutcome.COMPLETED
+    assert result2.error_reason is None
+    assert result2.score_id == result1.score_id
+    assert len(warmup.requests) == 2
+    assert events == ["warmup", "warmup"]
     assert decrypt_call_count == 2
 
 

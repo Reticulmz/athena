@@ -77,7 +77,7 @@
   - _Boundary: Stable bancho and beatmap fetch E2E tests_
   - _Depends: 3.1_
 
-- [ ] 4.3 (P) score submit fallback の outcome regression を検証する
+- [x] 4.3 (P) score submit fallback の outcome regression を検証する
   - terminal reject は warmup failure や file pending によって retryable response へ変換されない
   - accepted score は Beatmap File pending だけを理由に reject されず、fallback diagnostics を残して既存 response shape を返す
   - duplicate online checksum と duplicate replay checksum の reject / idempotency behavior は fallback warmup に参加しない
