@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. Foundation: Performance Calculation の基盤を定義する
-- [ ] 1.1 Performance domain model と policy を定義する
+- [x] 1.1 Performance domain model と policy を定義する
   - Performance Calculation の状態を `queued`, `fetching_file`, `calculating`, `completed`, `unavailable`, `superseded` として扱えるようにする
   - Ranked / Approved の passed vanilla score だけを Wave 2 の ranked PP 対象にし、Loved / Qualified / failed / Relax / Autopilot を対象外にする
   - Formula Profile を playstyle ごとに 1 つだけ解決し、user flag や user subset で ranked PP を分岐しない
