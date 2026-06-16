@@ -169,7 +169,7 @@
   - _Requirements: 1.1, 1.2, 1.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 6.1, 6.2, 6.3, 6.4, 6.5, 7.1, 7.2, 7.3, 7.4, 7.5, 13.2, 13.3, 13.4_
   - _Depends: 5.3_
 
-- [ ] 7.2 Worker と recalculation の recovery scenarios を検証する
+- [x] 7.2 Worker と recalculation の recovery scenarios を検証する
   - duplicate calculation request と duplicate worker claim が one current result に収束する
   - calculator version mismatch と Formula Profile mismatch が recalculation candidate になる
   - large batch が bounded chunk で進み、lost wake-up や stale claim 後も再開できる
