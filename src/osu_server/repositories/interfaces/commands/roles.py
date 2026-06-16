@@ -27,6 +27,10 @@ class RoleCommandRepository(Protocol):
         """Assign a role to a user idempotently."""
         ...
 
+    async def set_roles_for_user(self, user_id: int, role_ids: tuple[int, ...]) -> None:
+        """Replace all roles assigned to a user with the given role identifiers."""
+        ...
+
     async def get_default_role(self) -> Role:
         """Return the default role required by registration commands."""
         ...

@@ -127,6 +127,13 @@
   - 完了時は default path、multiple path、setup failure guard、pytest exit propagation の統合テストが通る。
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6_
   - _Depends: 2.4, 3.6_
+- [x] 3.9 development/test 限定の user role 変更 command を追加する
+  - `athena dev change-role <username> <role-name>` は production を拒否し、選択 environment の DB と Valkey session store を対象にする。
+  - role 変更は command use-case で user/role 存在確認、system user 保護、既存 role 集合の置換を行う。
+  - DB 上の role 置換後、既存の `SessionAuthorizationService` で active session の privileges と role_ids を refresh する。active session がない場合は成功として報告する。
+  - 完了時は use-case、CLI adapter、repository contract、memory/SQLAlchemy command repository の単体・統合テストが通る。
+  - _Requirements: 2026-06-17 user request_
+  - _Depends: 1.3, 1.4, 4.3_
 
 - [ ] 4. 開発環境と旧入口を新 CLI に統合する
 - [x] 4.1 devenv task wrapper を Athena CLI 経由に置き換える

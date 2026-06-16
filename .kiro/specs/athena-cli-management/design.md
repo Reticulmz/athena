@@ -4,7 +4,7 @@
 
 Athena CLI Management は、開発者と運用者が環境ファイル生成、DB 準備、マイグレーション、設定検証、テスト実行を `athena` から一貫して実行できるようにする管理 CLI 基盤である。既存の `AppConfig`、DB admin helper、Alembic、devenv task を再利用しつつ、CLI を `athena_cli` package として server runtime から分離する。
 
-この feature は CLI transport の基礎を確立する。CLI は command routing、prompt、presentation、subprocess orchestration を担当し、server 側の runtime 起動や user/blob の state-changing 管理は扱わない。
+この feature は CLI transport の基礎を確立する。CLI は command routing、prompt、presentation、subprocess orchestration を担当し、server 側の runtime 起動は扱わない。development/test 限定の user 管理は、専用 command use-case と management composition を通る薄い運用 adapter として扱う。
 
 ### Goals
 
@@ -17,7 +17,8 @@ Athena CLI Management は、開発者と運用者が環境ファイル生成、D
 ### Non-Goals
 
 - サーバー起動コマンド、worker 起動コマンドの追加。
-- user BAN、restrict、role 変更、blob GC、audit log 基盤。
+- user BAN、restrict、blob GC、audit log 基盤。
+- production での user role 変更、または複数 role の付与/剥奪を扱う本格的な RBAC 管理 UI/API。
 - DB drop、reset、seed、外部サービス疎通確認。
 - `osu_server` から `athena_server` への rename。
 
@@ -30,20 +31,22 @@ Athena CLI Management は、開発者と運用者が環境ファイル生成、D
 - 共通 environment 選択と process environment への反映。
 - env generation core、DSN builder、env file writer、prompt adapter、schema-based example renderer。
 - DB create/migrate/setup と pytest subprocess orchestration。
+- development/test 限定の `athena dev change-password` と `athena dev change-role`。
 - `devenv.nix` task wrapper の CLI 経由化。
 - 暫定 `python -m osu_server.db` entrypoint の削除。
 - `osu_server` が `athena_cli` に依存しない import-linter contract。
 
 ### Out of Boundary
 
-- user/blob 管理、audit log、doctor/connectivity check は後続 spec が所有する。
+- user BAN/restrict、blob 管理、audit log、doctor/connectivity check は後続 spec が所有する。
+- production user 管理は audit log と権限チェックを含む後続 spec が所有する。
 - Alembic migration implementation 自体は Alembic が所有する。本 spec は CLI から `alembic upgrade head` を実行する orchestration のみを所有する。
 - `AppConfig` の全設定項目の意味や validation policy は既存 config subsystem が所有する。本 spec は CLI 生成と検証に必要な schema 参照を行う。
 - devenv 固有の dynamic port 計算は `devenv.nix` が所有する。CLI は devenv 内部を知らない。
 
 ### Allowed Dependencies
 
-- `athena_cli` may import `osu_server.config` and `osu_server.infrastructure.database.admin`.
+- `athena_cli` may import `osu_server.config`, `osu_server.infrastructure.database.admin`, and lightweight management composition helpers under `osu_server.composition.management`.
 - `athena_cli` may invoke external commands through subprocess: `alembic upgrade head`, `pytest`.
 - `athena_cli` may use Typer for CLI routing and InquirerPy for interactive prompts.
 - `osu_server` must not import `athena_cli`.

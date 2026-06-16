@@ -24,6 +24,7 @@ from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyUserCommandRepository,
 )
 from osu_server.repositories.sqlalchemy.models.channel import ChannelModel
+from osu_server.repositories.sqlalchemy.models.role import UserRoleModel
 from osu_server.repositories.sqlalchemy.models.user import UserModel
 from osu_server.repositories.sqlalchemy.unit_of_work import (
     SQLAlchemyCommandSessionFactory,
@@ -31,6 +32,7 @@ from osu_server.repositories.sqlalchemy.unit_of_work import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from types import TracebackType
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -118,6 +120,9 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
 
     def add(self, instance: object) -> None:
         self.added.append(instance)
+
+    def add_all(self, instances: Iterable[object]) -> None:
+        self.added.extend(instances)
 
     async def delete(self, instance: object) -> None:
         self.added.remove(instance)
@@ -232,6 +237,22 @@ async def test_user_command_repository_updates_password_hash_without_commit() ->
 
     assert updated is True
     assert user.password_hash == "new-hash"
+    assert session.flushes == 1
+    assert session.commits == 0
+    assert session.rollbacks == 0
+
+
+async def test_role_command_repository_replaces_roles_without_commit() -> None:
+    session = FakeSession()
+    repo = SQLAlchemyRoleCommandRepository(cast("AsyncSession", cast("object", session)))
+
+    await repo.set_roles_for_user(42, (3, 3, 1))
+
+    assignments = [model for model in session.added if isinstance(model, UserRoleModel)]
+    assert [(model.user_id, model.role_id) for model in assignments] == [
+        (42, 3),
+        (42, 1),
+    ]
     assert session.flushes == 1
     assert session.commits == 0
     assert session.rollbacks == 0

@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 from tests.factories.domain import make_channel, make_user
 
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
 from osu_server.repositories.memory.commands import (
     InMemoryBeatmapCommandRepository,
     InMemoryBlobCommandRepository,
@@ -98,6 +100,28 @@ async def test_user_password_hash_update_commits_through_unit_of_work() -> None:
     assert updated is True
     assert user is not None
     assert user.password_hash == "new-hash"
+
+
+async def test_role_assignment_replacement_commits_through_unit_of_work() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    factory.seed_roles(
+        [
+            Role(id=1, name="Default", permissions=Privileges.NORMAL, position=0),
+            Role(id=2, name="Moderator", permissions=Privileges.MODERATOR, position=10),
+            Role(id=3, name="Admin", permissions=Privileges.ADMIN, position=20),
+        ]
+    )
+
+    async with factory() as uow:
+        await uow.roles.assign_role(user_id=42, role_id=1)
+        await uow.roles.assign_role(user_id=42, role_id=2)
+        await uow.roles.set_roles_for_user(user_id=42, role_ids=(3,))
+        await uow.commit()
+
+    async with factory() as uow:
+        roles = await uow.roles.get_roles_for_user(42)
+
+    assert [role.name for role in roles] == ["Admin"]
 
 
 async def test_unit_of_work_exposes_typed_command_repositories() -> None:

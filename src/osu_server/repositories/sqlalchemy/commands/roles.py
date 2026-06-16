@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
@@ -58,6 +58,15 @@ class SQLAlchemyRoleCommandRepository:
             return
 
         self._session.add(UserRoleModel(user_id=user_id, role_id=role_id))
+        await self._session.flush()
+
+    async def set_roles_for_user(self, user_id: int, role_ids: tuple[int, ...]) -> None:
+        _ = await self._session.execute(
+            delete(UserRoleModel).where(UserRoleModel.user_id == user_id)
+        )
+        self._session.add_all(
+            UserRoleModel(user_id=user_id, role_id=role_id) for role_id in dict.fromkeys(role_ids)
+        )
         await self._session.flush()
 
     async def get_default_role(self) -> Role:

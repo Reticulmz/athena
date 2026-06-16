@@ -165,6 +165,15 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         "get_by_id",
         "get_by_online_checksum",
     }
+    assert _public_async_methods(RoleCommandRepository) == {
+        "assign_role",
+        "get_by_id",
+        "get_by_name",
+        "get_default_role",
+        "get_roles_for_user",
+        "get_user_ids_for_role",
+        "set_roles_for_user",
+    }
     assert _public_async_methods(BeatmapCommandRepository) >= {
         "save_beatmapset_snapshot",
         "set_local_status_override",

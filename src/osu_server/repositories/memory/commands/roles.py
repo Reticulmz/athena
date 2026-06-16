@@ -41,6 +41,12 @@ class InMemoryRoleCommandRepository:
     async def assign_role(self, user_id: int, role_id: int) -> None:
         self._state.role_ids_by_user_id.setdefault(user_id, set()).add(role_id)
 
+    async def set_roles_for_user(self, user_id: int, role_ids: tuple[int, ...]) -> None:
+        if role_ids:
+            self._state.role_ids_by_user_id[user_id] = set(role_ids)
+            return
+        _ = self._state.role_ids_by_user_id.pop(user_id, None)
+
     async def get_default_role(self) -> Role:
         role = await self.get_by_name("Default")
         if role is None:

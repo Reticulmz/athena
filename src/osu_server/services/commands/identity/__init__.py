@@ -7,6 +7,13 @@ from osu_server.services.commands.identity.change_password import (
     ChangeUserPasswordCommandUseCase,
     ChangeUserPasswordStatus,
 )
+from osu_server.services.commands.identity.change_role import (
+    ChangeUserRoleCommand,
+    ChangeUserRoleCommandInput,
+    ChangeUserRoleCommandResult,
+    ChangeUserRoleCommandUseCase,
+    ChangeUserRoleStatus,
+)
 from osu_server.services.commands.identity.login import (
     LoginCommand,
     LoginCommandInput,
@@ -39,6 +46,11 @@ __all__ = [
     "ChangeUserPasswordCommandResult",
     "ChangeUserPasswordCommandUseCase",
     "ChangeUserPasswordStatus",
+    "ChangeUserRoleCommand",
+    "ChangeUserRoleCommandInput",
+    "ChangeUserRoleCommandResult",
+    "ChangeUserRoleCommandUseCase",
+    "ChangeUserRoleStatus",
     "LoginCommand",
     "LoginCommandInput",
     "LoginCommandResult",

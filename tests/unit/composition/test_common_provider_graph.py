@@ -77,6 +77,7 @@ from osu_server.services.commands.chat import (
 )
 from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
 from osu_server.services.commands.identity import (
+    ChangeUserRoleCommandUseCase,
     LoginCommandUseCase,
     RefreshRoleAuthorizationCommandUseCase,
     RefreshUserAuthorizationCommandUseCase,
@@ -269,6 +270,7 @@ async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
         AuthService,
         LoginCommandUseCase,
         RegisterUserCommandUseCase,
+        ChangeUserRoleCommandUseCase,
         SessionAuthorizationService,
         RefreshUserAuthorizationCommandUseCase,
         RefreshRoleAuthorizationCommandUseCase,
