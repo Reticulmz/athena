@@ -161,7 +161,7 @@
   - _Depends: 6.1_
 
 - [ ] 7. End-to-end validation と scope boundary を固める
-- [ ] 7.1 Stable submit の PP response scenarios を検証する
+- [x] 7.1 Stable submit の PP response scenarios を検証する
   - Ranked / Approved passed score は bounded wait 内完了で PP 付き completed response を返す
   - bounded wait 内に終わらない場合は retryable response を返し、後続 retry で current PP を返す
   - unavailable calculation は accepted completed response と `pp:0` に収束する
