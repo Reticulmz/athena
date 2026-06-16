@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Foundation: Beatmap File Warmup の command boundary を定義する
+- [x] 1. Foundation: Beatmap File Warmup の command boundary を定義する
 - [x] 1.1 Warmup request / result と identity policy を実装する
   - stable の 3 entrance を識別できる authenticated warmup request と diagnostics 用 outcome を typed contract として扱う
   - beatmap id は正の値だけを、checksum は normalized 32 hex だけを resolver input として受け付ける
@@ -16,7 +16,7 @@
   - 完了時には resolver options、outcome mapping、exception-to-failed、already available no-op が unit test で観測できる
   - _Requirements: 1.1, 1.2, 1.3, 1.5, 4.2, 5.3, 5.4, 6.1, 6.2, 6.3, 6.4, 6.6, 7.4_
 
-- [ ] 2. Core integrations: stable の 3 入口から warmup を発火する
+- [x] 2. Core integrations: stable の 3 入口から warmup を発火する
 - [x] 2.1 (P) getscores warmup side effect を追加する
   - 認証成功と parse 成功の後だけ warmup を呼び、auth failure と parse failure では fetch work を発火しない
   - known-header response では解決済み beatmap id を優先し、それ以外の parseable request では usable checksum を warmup input にする
@@ -47,7 +47,7 @@
   - _Boundary: Score submission command_
   - _Depends: 1.2_
 
-- [ ] 3. Runtime wiring: DI graph と dispatcher registration を統合する
+- [x] 3. Runtime wiring: DI graph と dispatcher registration を統合する
 - [x] 3.1 Warmup use-case と stable handler dependencies を composition graph に接続する
   - beatmap app graph は existing BeatmapMirrorService を warmup resolver として提供する
   - stable web legacy graph は getscores handler に warmup use-case を渡す
@@ -58,7 +58,7 @@
   - _Requirements: 1.1, 1.5, 2.1, 3.1, 4.1, 7.1, 7.2, 7.3, 7.4, 7.5_
   - _Depends: 2.1, 2.2, 2.3_
 
-- [ ] 4. Validation: compatibility、diagnostics、quality gates を固定する
+- [x] 4. Validation: compatibility、diagnostics、quality gates を固定する
 - [x] 4.1 (P) getscores compatibility と diagnostics を integration test で検証する
   - authenticated known-header request は warmup requested diagnostics を出しつつ response body を byte-for-byte 維持する
   - auth failure、parse failure、malformed identity は fetch work を発火せず、credential や raw query string を log に含めない
@@ -86,7 +86,7 @@
   - _Boundary: Score submission tests_
   - _Depends: 3.1_
 
-- [ ] 4.4 Quality gates と architecture boundary を確認する
+- [x] 4.4 Quality gates と architecture boundary を確認する
   - unit、integration、E2E coverage が warmup use-case、stable web legacy、stable bancho、score submit fallback、composition graph を通る
   - type checking、lint、format、import boundary checks が新しい warmup boundary を含めて通る
   - implementation review で stable response body、packet behavior、worker task names、score submission semantics が変わっていないことを確認する
