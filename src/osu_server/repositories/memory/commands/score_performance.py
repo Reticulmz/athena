@@ -343,8 +343,6 @@ class InMemoryScorePerformanceCommandRepository:
 
         failed = replace(
             item,
-            state=PerformanceRecalculationWorkItemState.PENDING.value,
-            claim=None,
             last_error=command.error,
             updated_at=command.failed_at,
         )

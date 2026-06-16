@@ -28,7 +28,10 @@ from osu_server.services.commands.chat import (
     PersistChannelMessageUseCase,
     PersistPrivateMessageUseCase,
 )
-from osu_server.services.commands.scores.performance import ExecutePerformanceCalculationUseCase
+from osu_server.services.commands.scores.performance import (
+    ExecutePerformanceCalculationUseCase,
+    ProcessPerformanceRecalculationBatchUseCase,
+)
 
 if TYPE_CHECKING:
     from dishka import AsyncContainer
@@ -78,6 +81,9 @@ async def startup(state: TaskiqState) -> None:
         state.beatmap_file_fetch = await worker_container.get(FetchBeatmapFileUseCase)
         state.score_performance_calculation_executor = await worker_container.get(
             ExecutePerformanceCalculationUseCase
+        )
+        state.performance_recalculation_batch_processor = await worker_container.get(
+            ProcessPerformanceRecalculationBatchUseCase
         )
     except Exception:
         _clear_worker_runtime_state(state)

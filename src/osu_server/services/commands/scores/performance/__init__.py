@@ -29,6 +29,13 @@ from osu_server.services.commands.scores.performance.execute_calculation import 
     ExecutePerformanceCalculationResult,
     ExecutePerformanceCalculationUseCase,
 )
+from osu_server.services.commands.scores.performance.process_recalculation_batch import (
+    PerformanceCalculationRequester,
+    ProcessPerformanceRecalculationBatchCommand,
+    ProcessPerformanceRecalculationBatchOutcome,
+    ProcessPerformanceRecalculationBatchResult,
+    ProcessPerformanceRecalculationBatchUseCase,
+)
 from osu_server.services.commands.scores.performance.request_calculation import (
     NoopPerformanceCalculationWorkerWake,
     PerformanceCalculationWorkerWake,
@@ -62,10 +69,15 @@ __all__ = (
     "PerformanceBeatmapFileStatus",
     "PerformanceBeatmapFileUnavailable",
     "PerformanceBeatmapFileUnavailableReason",
+    "PerformanceCalculationRequester",
     "PerformanceCalculationWorkerWake",
     "PerformanceCalculatorIdentity",
     "PerformanceRecalculationBatchWorkerWake",
     "PerformanceRuntimeSettings",
+    "ProcessPerformanceRecalculationBatchCommand",
+    "ProcessPerformanceRecalculationBatchOutcome",
+    "ProcessPerformanceRecalculationBatchResult",
+    "ProcessPerformanceRecalculationBatchUseCase",
     "RequestPerformanceCalculationCommand",
     "RequestPerformanceCalculationOutcome",
     "RequestPerformanceCalculationResult",

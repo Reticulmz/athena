@@ -24,7 +24,10 @@ from osu_server.services.commands.chat import (
     PersistChannelMessageUseCase,
     PersistPrivateMessageUseCase,
 )
-from osu_server.services.commands.scores.performance import ExecutePerformanceCalculationUseCase
+from osu_server.services.commands.scores.performance import (
+    ExecutePerformanceCalculationUseCase,
+    ProcessPerformanceRecalculationBatchUseCase,
+)
 from osu_server.services.queries.chat import (
     ListPrivateMessagesQuery,
     ListPrivateMessagesQueryInput,
@@ -245,7 +248,10 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
             _state_score_performance_calculation_executor(state),
             ExecutePerformanceCalculationUseCase,
         )
-        assert _state_performance_recalculation_batch_processor(state) is None
+        assert isinstance(
+            _state_performance_recalculation_batch_processor(state),
+            ProcessPerformanceRecalculationBatchUseCase,
+        )
     finally:
         await _run_shutdown(state)
 

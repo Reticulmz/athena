@@ -43,6 +43,7 @@ from osu_server.services.commands.scores.performance import (
     PerformanceCalculationWorkerWake,
     PerformanceRecalculationBatchWorkerWake,
     PerformanceRuntimeSettings,
+    ProcessPerformanceRecalculationBatchUseCase,
     RequestPerformanceCalculationUseCase,
 )
 from osu_server.services.commands.storage import BlobStorageService
@@ -71,6 +72,7 @@ _DISHKA_RUNTIME_HINTS = (
     PerformanceResponseQuery,
     PerformanceRuntimeSettings,
     CreatePerformanceRecalculationBatchUseCase,
+    ProcessPerformanceRecalculationBatchUseCase,
     RequestPerformanceCalculationUseCase,
     ExecutePerformanceCalculationUseCase,
     ScorePerformanceQueryRepository,
@@ -144,6 +146,21 @@ class PerformanceProviderSet(Provider):
             calculator_identity=calculator,
             worker_wake=worker_wake,
             formula_profile_policy=formula_profile_policy,
+        )
+
+    @provide
+    def process_performance_recalculation_batch_use_case(
+        self,
+        unit_of_work_factory: UnitOfWorkFactory,
+        request_use_case: RequestPerformanceCalculationUseCase,
+        calculator: PerformanceCalculator,
+        settings: PerformanceRuntimeSettings,
+    ) -> ProcessPerformanceRecalculationBatchUseCase:
+        return ProcessPerformanceRecalculationBatchUseCase(
+            unit_of_work_factory=unit_of_work_factory,
+            request_use_case=request_use_case,
+            calculator_identity=calculator,
+            settings=settings,
         )
 
     @provide

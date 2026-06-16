@@ -12,6 +12,8 @@ from osu_server.infrastructure.jobs.registry import jobs
 from osu_server.services.commands.scores.performance import (
     ExecutePerformanceCalculationCommand,
     ExecutePerformanceCalculationResult,
+    ProcessPerformanceRecalculationBatchCommand,
+    ProcessPerformanceRecalculationBatchResult,
 )
 
 if TYPE_CHECKING:
@@ -32,7 +34,10 @@ class ScorePerformanceCalculationExecutor(Protocol):
 class PerformanceRecalculationBatchProcessor(Protocol):
     """Recalculation batch use-case surface required by job adapters."""
 
-    async def execute(self, batch_id: int) -> object: ...
+    async def execute(
+        self,
+        command: ProcessPerformanceRecalculationBatchCommand,
+    ) -> ProcessPerformanceRecalculationBatchResult: ...
 
 
 class _EnqueueableTask(Protocol):
@@ -172,7 +177,16 @@ async def process_performance_recalculation_batch(
         msg = "performance recalculation batch use-case is not registered"
         raise RuntimeError(msg)
 
-    _ = await use_case.execute(batch_id)
+    result = await use_case.execute(
+        ProcessPerformanceRecalculationBatchCommand(
+            batch_id=batch_id,
+            claim_owner=_claim_owner_from_context(context),
+            claimed_at=datetime.now(tz=UTC),
+        )
+    )
+    if result.claimed_count > 0:
+        wake = TaskiqPerformanceRecalculationBatchWorkerWake(cast("_TaskBroker", context.broker))
+        await wake.wake_recalculation_batch(batch_id=batch_id)
 
 
 def _claim_owner_from_context(context: Context) -> str:

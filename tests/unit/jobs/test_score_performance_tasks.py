@@ -23,11 +23,14 @@ from osu_server.jobs.score_performance import (
 from osu_server.services.commands.scores.performance import (
     ExecutePerformanceCalculationOutcome,
     ExecutePerformanceCalculationResult,
+    ProcessPerformanceRecalculationBatchOutcome,
+    ProcessPerformanceRecalculationBatchResult,
 )
 
 if TYPE_CHECKING:
     from osu_server.services.commands.scores.performance import (
         ExecutePerformanceCalculationCommand,
+        ProcessPerformanceRecalculationBatchCommand,
     )
 
 
@@ -49,13 +52,27 @@ class _FakeCalculationExecutor:
 
 
 class _FakeBatchProcessor:
-    calls: list[int]
+    calls: list[ProcessPerformanceRecalculationBatchCommand]
+    _result: ProcessPerformanceRecalculationBatchResult | None
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        result: ProcessPerformanceRecalculationBatchResult | None = None,
+    ) -> None:
         self.calls = []
+        self._result = result
 
-    async def execute(self, batch_id: int) -> None:
-        self.calls.append(batch_id)
+    async def execute(
+        self,
+        command: ProcessPerformanceRecalculationBatchCommand,
+    ) -> ProcessPerformanceRecalculationBatchResult:
+        self.calls.append(command)
+        if self._result is not None:
+            return self._result
+        return ProcessPerformanceRecalculationBatchResult(
+            outcome=ProcessPerformanceRecalculationBatchOutcome.NO_WORK,
+            batch_id=command.batch_id,
+        )
 
 
 @final
@@ -82,8 +99,12 @@ class _FakeBroker:
         return self._task
 
 
-def _make_context(**services: object) -> Context:
-    broker = InMemoryBroker()
+def _make_context(
+    *,
+    broker: InMemoryBroker | None = None,
+    **services: object,
+) -> Context:
+    broker = broker or InMemoryBroker()
     for key, value in services.items():
         object.__setattr__(broker.state, key, value)
     message = TaskiqMessage(
@@ -94,6 +115,20 @@ def _make_context(**services: object) -> Context:
         kwargs={},
     )
     return Context(message, broker)
+
+
+def _make_requeue_broker(calls: list[int]) -> InMemoryBroker:
+    broker = InMemoryBroker()
+    broker.await_inplace = True
+
+    async def _record_batch(batch_id: int) -> None:
+        calls.append(batch_id)
+
+    _ = broker.register_task(
+        _record_batch,
+        task_name="process_performance_recalculation_batch",
+    )
+    return broker
 
 
 class TestScorePerformanceTaskRegistration:
@@ -213,7 +248,31 @@ class TestScorePerformanceTaskExecution:
 
         await process_performance_recalculation_batch(batch_id=789, context=context)
 
-        assert fake.calls == [789]
+        assert len(fake.calls) == 1
+        command = fake.calls[0]
+        assert command.batch_id == 789
+        assert command.claim_owner == "taskiq:score-performance-test-task"
+        assert command.claimed_at.tzinfo is UTC
+
+    async def test_recalculation_batch_task_reenqueues_after_non_empty_pass(self) -> None:
+        fake = _FakeBatchProcessor(
+            ProcessPerformanceRecalculationBatchResult(
+                outcome=ProcessPerformanceRecalculationBatchOutcome.PROCESSED,
+                batch_id=789,
+                claimed_count=2,
+            )
+        )
+        requeued_batches: list[int] = []
+        broker = _make_requeue_broker(requeued_batches)
+        context = _make_context(
+            broker=broker,
+            performance_recalculation_batch_processor=fake,
+        )
+
+        await process_performance_recalculation_batch(batch_id=789, context=context)
+
+        assert len(fake.calls) == 1
+        assert requeued_batches == [789]
 
 
 class TestTaskiqPerformanceCalculationWorkerWake:

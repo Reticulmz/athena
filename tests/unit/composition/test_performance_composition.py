@@ -45,6 +45,7 @@ from osu_server.services.commands.scores.performance import (
     PerformanceCalculationWorkerWake,
     PerformanceRecalculationBatchWorkerWake,
     PerformanceRuntimeSettings,
+    ProcessPerformanceRecalculationBatchUseCase,
     RequestPerformanceCalculationUseCase,
 )
 from osu_server.services.queries.scores import PerformanceResponseQuery
@@ -79,6 +80,7 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
         batch_worker_wake = await container.get(PerformanceRecalculationBatchWorkerWake)
         request_use_case = await container.get(RequestPerformanceCalculationUseCase)
         create_batch_use_case = await container.get(CreatePerformanceRecalculationBatchUseCase)
+        process_batch_use_case = await container.get(ProcessPerformanceRecalculationBatchUseCase)
         execute_use_case = await container.get(ExecutePerformanceCalculationUseCase)
         response_query = await container.get(PerformanceResponseQuery)
 
@@ -94,6 +96,7 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
         assert isinstance(batch_worker_wake, TaskiqPerformanceRecalculationBatchWorkerWake)
         assert isinstance(request_use_case, RequestPerformanceCalculationUseCase)
         assert isinstance(create_batch_use_case, CreatePerformanceRecalculationBatchUseCase)
+        assert isinstance(process_batch_use_case, ProcessPerformanceRecalculationBatchUseCase)
         assert isinstance(execute_use_case, ExecutePerformanceCalculationUseCase)
         assert isinstance(response_query, PerformanceResponseQuery)
     finally:
@@ -139,6 +142,7 @@ async def test_worker_container_resolves_performance_defaults(tmp_path: Path) ->
         completion_signal = await container.get(PerformanceCompletionSignal)
         request_use_case = await container.get(RequestPerformanceCalculationUseCase)
         create_batch_use_case = await container.get(CreatePerformanceRecalculationBatchUseCase)
+        process_batch_use_case = await container.get(ProcessPerformanceRecalculationBatchUseCase)
         execute_use_case = await container.get(ExecutePerformanceCalculationUseCase)
 
         assert settings.claim_timeout.total_seconds() == 300
@@ -150,6 +154,7 @@ async def test_worker_container_resolves_performance_defaults(tmp_path: Path) ->
         assert isinstance(completion_signal, InMemoryPerformanceCompletionSignal)
         assert isinstance(request_use_case, RequestPerformanceCalculationUseCase)
         assert isinstance(create_batch_use_case, CreatePerformanceRecalculationBatchUseCase)
+        assert isinstance(process_batch_use_case, ProcessPerformanceRecalculationBatchUseCase)
         assert isinstance(execute_use_case, ExecutePerformanceCalculationUseCase)
     finally:
         await container.close()

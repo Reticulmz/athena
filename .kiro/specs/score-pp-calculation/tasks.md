@@ -143,7 +143,7 @@
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 11.1, 11.2, 12.2, 14.2_
   - _Depends: 2.2, 2.3_
 
-- [ ] 6.2 Recalculation batch processing workflow を実装する
+- [x] 6.2 Recalculation batch processing workflow を実装する
   - pending または stale work item を bounded chunk で claim する
   - each work item は Request Performance Calculation workflow を通して replacement calculation を作成する
   - replacement が completed または unavailable の terminal state になるまで old current PP を維持する

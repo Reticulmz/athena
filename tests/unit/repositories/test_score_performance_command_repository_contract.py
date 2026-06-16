@@ -384,8 +384,8 @@ async def test_recalculation_work_outcomes_update_batch_progress_and_last_error(
     assert unavailable.attempt_count == 1
     assert unavailable.last_error == "osu_file_unusable"
     assert failed is not None
-    assert failed.state is PerformanceRecalculationWorkItemState.PENDING
-    assert failed.claim_owner is None
+    assert failed.state is PerformanceRecalculationWorkItemState.CLAIMED
+    assert failed.claim_owner == "worker-a"
     assert failed.attempt_count == 1
     assert failed.last_error == "calculator timeout"
     assert progress is not None
@@ -399,7 +399,7 @@ async def test_recalculation_work_outcomes_update_batch_progress_and_last_error(
             _work_claim(
                 batch_id=batch_id,
                 owner="worker-b",
-                claimed_at=_NOW + timedelta(minutes=4),
+                claimed_at=_NOW + timedelta(minutes=6),
                 limit=3,
             )
         )
@@ -408,7 +408,7 @@ async def test_recalculation_work_outcomes_update_batch_progress_and_last_error(
                 work_item_id=retry[0].id or 0,
                 owner="worker-b",
                 calculation_id=203,
-                completed_at=_NOW + timedelta(minutes=5),
+                completed_at=_NOW + timedelta(minutes=7),
             )
         )
         finished = await uow.score_performance.get_recalculation_batch_by_id(batch_id)

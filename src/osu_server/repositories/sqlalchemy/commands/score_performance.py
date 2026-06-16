@@ -428,9 +428,6 @@ class SQLAlchemyScorePerformanceCommandRepository:
         if model is None:
             return None
 
-        model.state = PerformanceRecalculationWorkItemState.PENDING.value
-        model.claim_owner = None
-        model.claim_expires_at = None
         model.last_error = command.error
         model.updated_at = command.failed_at
 

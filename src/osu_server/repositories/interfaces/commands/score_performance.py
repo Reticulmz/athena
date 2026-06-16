@@ -225,7 +225,7 @@ class ScorePerformanceCommandRepository(Protocol):
         self,
         command: MarkScorePerformanceRecalculationWorkFailed,
     ) -> PerformanceRecalculationWorkItem | None:
-        """Record a retryable work item failure and release it for retry."""
+        """Record a retryable work item failure and leave retry to claim timeout."""
         ...
 
     async def get_recalculation_batch_by_id(

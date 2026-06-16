@@ -462,6 +462,40 @@ async def test_sqlalchemy_repository_recalculates_batch_progress_from_work_items
     assert session.rollback_calls == 0
 
 
+async def test_sqlalchemy_repository_records_failure_without_releasing_claim() -> None:
+    batch = _batch_model(batch_id=200, candidate_count=1)
+    work = _work_model(work_item_id=300, batch_id=200, score_id=101)
+    work.state = "claimed"
+    work.claim_owner = "worker-a"
+    work.claim_expires_at = _NOW + timedelta(minutes=5)
+    work.attempt_count = 1
+    session = FakeSession(
+        execute_results=[work],
+        get_results={(PerformanceRecalculationBatchModel, 200): batch},
+    )
+    repo = _repo(session)
+
+    failed = await repo.mark_recalculation_work_failed(
+        MarkScorePerformanceRecalculationWorkFailed(
+            work_item_id=300,
+            owner="worker-a",
+            error="replacement_calculation_pending",
+            failed_at=_NOW + timedelta(minutes=1),
+        )
+    )
+
+    assert failed is not None
+    assert failed.state.value == "claimed"
+    assert work.state == "claimed"
+    assert work.claim_owner == "worker-a"
+    assert work.claim_expires_at == _NOW + timedelta(minutes=5)
+    assert work.last_error == "replacement_calculation_pending"
+    assert batch.status == "running"
+    assert session.flush_calls == 1
+    assert session.commit_calls == 0
+    assert session.rollback_calls == 0
+
+
 async def test_sqlalchemy_repository_rejects_stale_work_completion_owner() -> None:
     work = _work_model(work_item_id=300, batch_id=200, score_id=101)
     work.state = "claimed"
