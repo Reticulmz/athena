@@ -388,9 +388,21 @@ async def test_reused_replacement_internal_mutation_commits_before_wake() -> Non
 
 
 @pytest.mark.asyncio
-async def test_out_of_scope_score_is_skipped_without_mutating_score_or_performance_rows() -> None:
+@pytest.mark.parametrize(
+    ("status", "passed", "eligibility_reason"),
+    [
+        (BeatmapRankStatus.LOVED, True, "beatmap_status_out_of_scope"),
+        (BeatmapRankStatus.QUALIFIED, True, "beatmap_status_out_of_scope"),
+        (BeatmapRankStatus.RANKED, False, "score_failed"),
+    ],
+)
+async def test_out_of_scope_saved_score_is_skipped_without_performance_row(
+    status: BeatmapRankStatus,
+    passed: bool,
+    eligibility_reason: str,
+) -> None:
     factory = _CountingUnitOfWorkFactory()
-    score = _score(status=BeatmapRankStatus.LOVED)
+    score = _score(status=status, passed=passed)
     score_id = await _persist_score(factory, score)
     factory.reset_commit_count()
     wake = _WakeRecorder(factory)
@@ -402,7 +414,7 @@ async def test_out_of_scope_score_is_skipped_without_mutating_score_or_performan
     result = await use_case.execute(_command(score_id=score_id))
 
     assert result.outcome is RequestPerformanceCalculationOutcome.SKIPPED_OUT_OF_SCOPE
-    assert result.eligibility_reason == "beatmap_status_out_of_scope"
+    assert result.eligibility_reason == eligibility_reason
     assert result.calculation is None
     assert result.worker_wake_requested is False
     assert factory.commit_count == 0

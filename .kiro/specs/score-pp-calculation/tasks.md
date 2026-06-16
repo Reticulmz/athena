@@ -177,7 +177,7 @@
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 12.2, 12.3, 12.4, 14.2_
   - _Depends: 6.2, 6.3_
 
-- [ ] 7.3 Future scope boundary regressions を検証する
+- [x] 7.3 Future scope boundary regressions を検証する
   - Loved / Qualified / failed score は Score として保存されても Performance Calculation row を作らない
   - leaderboard projection、user stats、user rank projection を更新しない
   - replay file parsing を PP calculation input として使わない

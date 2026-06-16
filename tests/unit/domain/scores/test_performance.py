@@ -230,6 +230,20 @@ def test_formula_profile_policy_returns_one_profile_per_playstyle() -> None:
     assert policy.active_profile_for(Playstyle.VANILLA) is FormulaProfile.VANILLA_RANKED
 
 
+def test_future_loved_relax_and_autopilot_pp_scopes_remain_disabled() -> None:
+    eligibility_policy = PerformanceEligibilityPolicy()
+    profile_policy = FormulaProfilePolicy()
+
+    assert profile_policy.profiles_by_playstyle == {
+        Playstyle.VANILLA: FormulaProfile.VANILLA_RANKED
+    }
+    assert not eligibility_policy.evaluate(_make_score(status=BeatmapRankStatus.LOVED)).is_eligible
+    assert not eligibility_policy.evaluate(_make_score(mods=ModCombination(Mod.RELAX))).is_eligible
+    assert not eligibility_policy.evaluate(
+        _make_score(mods=ModCombination(Mod.AUTOPILOT))
+    ).is_eligible
+
+
 def test_formula_profile_policy_rejects_unknown_playstyle_object() -> None:
     policy = FormulaProfilePolicy()
 

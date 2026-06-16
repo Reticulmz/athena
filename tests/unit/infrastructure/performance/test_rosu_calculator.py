@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from importlib import metadata
@@ -111,6 +111,13 @@ def test_calculator_does_not_require_replay_bytes() -> None:
     assert isinstance(
         RosuPerformanceCalculator().calculate(input_data), PerformanceCalculatorCompleted
     )
+
+
+def test_calculator_input_boundary_excludes_replay_file_data() -> None:
+    assert [field.name for field in fields(PerformanceCalculatorInput)] == [
+        "score",
+        "osu_file_bytes",
+    ]
 
 
 def test_calculator_returns_unavailable_for_empty_or_unparseable_map() -> None:
