@@ -27,7 +27,10 @@ from osu_server.infrastructure.state.valkey.performance_completion_signal import
     ValkeyPerformanceCompletionPublisher,
     ValkeyPerformanceCompletionSignal,
 )
-from osu_server.jobs.score_performance import TaskiqPerformanceCalculationWorkerWake
+from osu_server.jobs.score_performance import (
+    TaskiqPerformanceCalculationWorkerWake,
+    TaskiqPerformanceRecalculationBatchWorkerWake,
+)
 from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
 )
@@ -36,9 +39,11 @@ from osu_server.repositories.memory.queries.score_performance import (
 )
 from osu_server.services.commands.scores.performance import (
     BeatmapMirrorPerformanceBeatmapFileProvider,
+    CreatePerformanceRecalculationBatchUseCase,
     ExecutePerformanceCalculationUseCase,
     PerformanceBeatmapFileProvider,
     PerformanceCalculationWorkerWake,
+    PerformanceRecalculationBatchWorkerWake,
     PerformanceRuntimeSettings,
     RequestPerformanceCalculationUseCase,
 )
@@ -71,7 +76,9 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
         completion_signal = await container.get(PerformanceCompletionSignal)
         query_repository = await container.get(ScorePerformanceQueryRepository)
         worker_wake = await container.get(PerformanceCalculationWorkerWake)
+        batch_worker_wake = await container.get(PerformanceRecalculationBatchWorkerWake)
         request_use_case = await container.get(RequestPerformanceCalculationUseCase)
+        create_batch_use_case = await container.get(CreatePerformanceRecalculationBatchUseCase)
         execute_use_case = await container.get(ExecutePerformanceCalculationUseCase)
         response_query = await container.get(PerformanceResponseQuery)
 
@@ -84,7 +91,9 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
         assert isinstance(completion_signal, InMemoryPerformanceCompletionSignal)
         assert isinstance(query_repository, InMemoryScorePerformanceQueryRepository)
         assert isinstance(worker_wake, TaskiqPerformanceCalculationWorkerWake)
+        assert isinstance(batch_worker_wake, TaskiqPerformanceRecalculationBatchWorkerWake)
         assert isinstance(request_use_case, RequestPerformanceCalculationUseCase)
+        assert isinstance(create_batch_use_case, CreatePerformanceRecalculationBatchUseCase)
         assert isinstance(execute_use_case, ExecutePerformanceCalculationUseCase)
         assert isinstance(response_query, PerformanceResponseQuery)
     finally:
@@ -129,6 +138,7 @@ async def test_worker_container_resolves_performance_defaults(tmp_path: Path) ->
         calculator = await container.get(PerformanceCalculator)
         completion_signal = await container.get(PerformanceCompletionSignal)
         request_use_case = await container.get(RequestPerformanceCalculationUseCase)
+        create_batch_use_case = await container.get(CreatePerformanceRecalculationBatchUseCase)
         execute_use_case = await container.get(ExecutePerformanceCalculationUseCase)
 
         assert settings.claim_timeout.total_seconds() == 300
@@ -139,6 +149,7 @@ async def test_worker_container_resolves_performance_defaults(tmp_path: Path) ->
         assert isinstance(calculator, RosuPerformanceCalculator)
         assert isinstance(completion_signal, InMemoryPerformanceCompletionSignal)
         assert isinstance(request_use_case, RequestPerformanceCalculationUseCase)
+        assert isinstance(create_batch_use_case, CreatePerformanceRecalculationBatchUseCase)
         assert isinstance(execute_use_case, ExecutePerformanceCalculationUseCase)
     finally:
         await container.close()

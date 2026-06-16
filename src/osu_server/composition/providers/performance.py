@@ -26,7 +26,10 @@ from osu_server.infrastructure.state.valkey.performance_completion_signal import
     ValkeyPerformanceCompletionPublisher,
     ValkeyPerformanceCompletionSignal,
 )
-from osu_server.jobs.score_performance import TaskiqPerformanceCalculationWorkerWake
+from osu_server.jobs.score_performance import (
+    TaskiqPerformanceCalculationWorkerWake,
+    TaskiqPerformanceRecalculationBatchWorkerWake,
+)
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
@@ -34,9 +37,11 @@ from osu_server.repositories.interfaces.queries.score_performance import (
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.scores.performance import (
     BeatmapMirrorPerformanceBeatmapFileProvider,
+    CreatePerformanceRecalculationBatchUseCase,
     ExecutePerformanceCalculationUseCase,
     PerformanceBeatmapFileProvider,
     PerformanceCalculationWorkerWake,
+    PerformanceRecalculationBatchWorkerWake,
     PerformanceRuntimeSettings,
     RequestPerformanceCalculationUseCase,
 )
@@ -62,12 +67,15 @@ _DISHKA_RUNTIME_HINTS = (
     PerformanceCalculationWorkerWake,
     PerformanceCalculator,
     PerformanceCompletionSignal,
+    PerformanceRecalculationBatchWorkerWake,
     PerformanceResponseQuery,
     PerformanceRuntimeSettings,
+    CreatePerformanceRecalculationBatchUseCase,
     RequestPerformanceCalculationUseCase,
     ExecutePerformanceCalculationUseCase,
     ScorePerformanceQueryRepository,
     TaskiqPerformanceCalculationWorkerWake,
+    TaskiqPerformanceRecalculationBatchWorkerWake,
     UnitOfWorkFactory,
     ValkeyPerformanceCompletionPublisher,
 )
@@ -102,6 +110,13 @@ class PerformanceProviderSet(Provider):
         return TaskiqPerformanceCalculationWorkerWake(broker)
 
     @provide
+    def performance_recalculation_batch_worker_wake(
+        self,
+        broker: AsyncBroker,
+    ) -> PerformanceRecalculationBatchWorkerWake:
+        return TaskiqPerformanceRecalculationBatchWorkerWake(broker)
+
+    @provide
     def request_performance_calculation_use_case(
         self,
         unit_of_work_factory: UnitOfWorkFactory,
@@ -110,6 +125,23 @@ class PerformanceProviderSet(Provider):
     ) -> RequestPerformanceCalculationUseCase:
         return RequestPerformanceCalculationUseCase(
             unit_of_work_factory=unit_of_work_factory,
+            worker_wake=worker_wake,
+            formula_profile_policy=formula_profile_policy,
+        )
+
+    @provide
+    def create_performance_recalculation_batch_use_case(
+        self,
+        repository: ScorePerformanceQueryRepository,
+        unit_of_work_factory: UnitOfWorkFactory,
+        calculator: PerformanceCalculator,
+        worker_wake: PerformanceRecalculationBatchWorkerWake,
+        formula_profile_policy: FormulaProfilePolicy,
+    ) -> CreatePerformanceRecalculationBatchUseCase:
+        return CreatePerformanceRecalculationBatchUseCase(
+            query_repository=repository,
+            unit_of_work_factory=unit_of_work_factory,
+            calculator_identity=calculator,
             worker_wake=worker_wake,
             formula_profile_policy=formula_profile_policy,
         )

@@ -79,6 +79,36 @@ class TaskiqPerformanceCalculationWorkerWake:
             raise
 
 
+@final
+class TaskiqPerformanceRecalculationBatchWorkerWake:
+    """Maps recalculation batch wake requests to taskiq jobs."""
+
+    def __init__(self, broker: _TaskBroker) -> None:
+        self._broker = broker
+
+    async def wake_recalculation_batch(self, *, batch_id: int) -> None:
+        task_name = "process_performance_recalculation_batch"
+        task = self._broker.find_task(task_name)
+        if task is None:
+            logger.error(
+                "performance_recalculation_batch_task_not_registered",
+                task_name=task_name,
+                batch_id=batch_id,
+            )
+            msg = "performance recalculation batch task is not registered"
+            raise RuntimeError(msg)
+
+        try:
+            _ = await task.kiq(batch_id)
+        except Exception:
+            logger.exception(
+                "performance_recalculation_batch_enqueue_failed",
+                task_name=task_name,
+                batch_id=batch_id,
+            )
+            raise
+
+
 def get_score_performance_calculation_executor(
     state: TaskiqState,
 ) -> ScorePerformanceCalculationExecutor | None:
@@ -153,6 +183,7 @@ __all__ = [
     "PerformanceRecalculationBatchProcessor",
     "ScorePerformanceCalculationExecutor",
     "TaskiqPerformanceCalculationWorkerWake",
+    "TaskiqPerformanceRecalculationBatchWorkerWake",
     "calculate_score_performance",
     "get_performance_recalculation_batch_processor",
     "get_score_performance_calculation_executor",

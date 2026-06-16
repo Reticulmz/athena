@@ -13,6 +13,16 @@ from osu_server.services.commands.scores.performance.beatmap_file_provider impor
     PerformanceBeatmapFileUnavailable,
     PerformanceBeatmapFileUnavailableReason,
 )
+from osu_server.services.commands.scores.performance.create_recalculation_batch import (
+    CreatePerformanceRecalculationBatchCommand,
+    CreatePerformanceRecalculationBatchMode,
+    CreatePerformanceRecalculationBatchOutcome,
+    CreatePerformanceRecalculationBatchResult,
+    CreatePerformanceRecalculationBatchUseCase,
+    NoopPerformanceRecalculationBatchWorkerWake,
+    PerformanceCalculatorIdentity,
+    PerformanceRecalculationBatchWorkerWake,
+)
 from osu_server.services.commands.scores.performance.execute_calculation import (
     ExecutePerformanceCalculationCommand,
     ExecutePerformanceCalculationOutcome,
@@ -31,11 +41,17 @@ from osu_server.services.commands.scores.performance.runtime import PerformanceR
 
 __all__ = (
     "BeatmapMirrorPerformanceBeatmapFileProvider",
+    "CreatePerformanceRecalculationBatchCommand",
+    "CreatePerformanceRecalculationBatchMode",
+    "CreatePerformanceRecalculationBatchOutcome",
+    "CreatePerformanceRecalculationBatchResult",
+    "CreatePerformanceRecalculationBatchUseCase",
     "ExecutePerformanceCalculationCommand",
     "ExecutePerformanceCalculationOutcome",
     "ExecutePerformanceCalculationResult",
     "ExecutePerformanceCalculationUseCase",
     "NoopPerformanceCalculationWorkerWake",
+    "NoopPerformanceRecalculationBatchWorkerWake",
     "PerformanceBeatmapFilePending",
     "PerformanceBeatmapFilePendingReason",
     "PerformanceBeatmapFileProvenance",
@@ -47,6 +63,8 @@ __all__ = (
     "PerformanceBeatmapFileUnavailable",
     "PerformanceBeatmapFileUnavailableReason",
     "PerformanceCalculationWorkerWake",
+    "PerformanceCalculatorIdentity",
+    "PerformanceRecalculationBatchWorkerWake",
     "PerformanceRuntimeSettings",
     "RequestPerformanceCalculationCommand",
     "RequestPerformanceCalculationOutcome",

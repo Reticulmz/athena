@@ -135,7 +135,7 @@
   - _Depends: 5.2_
 
 - [ ] 6. Recalculation operations: CLI から durable work を作成・処理できるようにする
-- [ ] 6.1 Recalculation batch creation workflow を実装する
+- [x] 6.1 Recalculation batch creation workflow を実装する
   - dry-run は candidate count と reason breakdown だけを返し、durable work を作らない
   - execute mode は filters、target calculator version、target Formula Profile、reason counts を保存した batch と work items を作る
   - no narrow filter の profile migration は explicit full-scope flag を必須にし、unavailable inclusion は explicit option を必須にする

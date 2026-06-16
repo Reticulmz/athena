@@ -14,6 +14,7 @@ from osu_server.infrastructure.jobs.registry import jobs
 from osu_server.jobs import score_performance
 from osu_server.jobs.score_performance import (
     TaskiqPerformanceCalculationWorkerWake,
+    TaskiqPerformanceRecalculationBatchWorkerWake,
     calculate_score_performance,
     get_performance_recalculation_batch_processor,
     get_score_performance_calculation_executor,
@@ -270,6 +271,62 @@ class TestTaskiqPerformanceCalculationWorkerWake:
         assert entries[0]["task_name"] == "calculate_score_performance"
         assert entries[0]["score_id"] == 123
         assert entries[0]["calculation_id"] == 456
+        assert entries[0]["log_level"] == "error"
+
+
+class TestTaskiqPerformanceRecalculationBatchWorkerWake:
+    async def test_wake_enqueues_recalculation_batch_task_with_primitive_id(self) -> None:
+        task = _FakeEnqueueableTask()
+        broker = _FakeBroker(task)
+        wake = TaskiqPerformanceRecalculationBatchWorkerWake(broker)
+
+        await wake.wake_recalculation_batch(batch_id=789)
+
+        assert broker.task_names == ["process_performance_recalculation_batch"]
+        assert task.calls == [((789,), {})]
+
+    async def test_wake_raises_and_logs_when_task_is_not_registered(self) -> None:
+        broker = _FakeBroker(None)
+        wake = TaskiqPerformanceRecalculationBatchWorkerWake(broker)
+
+        with (
+            structlog.testing.capture_logs() as logs,
+            pytest.raises(
+                RuntimeError,
+                match="performance recalculation batch task is not registered",
+            ),
+        ):
+            await wake.wake_recalculation_batch(batch_id=789)
+
+        entries = [
+            entry
+            for entry in logs
+            if entry.get("event") == "performance_recalculation_batch_task_not_registered"
+        ]
+        assert len(entries) == 1
+        assert entries[0]["task_name"] == "process_performance_recalculation_batch"
+        assert entries[0]["batch_id"] == 789
+        assert entries[0]["log_level"] == "error"
+
+    async def test_wake_raises_and_logs_when_enqueue_fails(self) -> None:
+        task = _FakeEnqueueableTask(error=RuntimeError("broker unavailable"))
+        broker = _FakeBroker(task)
+        wake = TaskiqPerformanceRecalculationBatchWorkerWake(broker)
+
+        with (
+            structlog.testing.capture_logs() as logs,
+            pytest.raises(RuntimeError, match="broker unavailable"),
+        ):
+            await wake.wake_recalculation_batch(batch_id=789)
+
+        entries = [
+            entry
+            for entry in logs
+            if entry.get("event") == "performance_recalculation_batch_enqueue_failed"
+        ]
+        assert len(entries) == 1
+        assert entries[0]["task_name"] == "process_performance_recalculation_batch"
+        assert entries[0]["batch_id"] == 789
         assert entries[0]["log_level"] == "error"
 
 
