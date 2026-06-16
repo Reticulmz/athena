@@ -77,6 +77,7 @@ def test_score_submit_mapper_formats_completed_response() -> None:
             score_id=12345,
             beatmap_id=654,
             beatmapset_id=321,
+            stable_pp=248,
         )
     )
 
@@ -84,6 +85,29 @@ def test_score_submit_mapper_formats_completed_response() -> None:
     body = bytes(response.body)
     assert body.startswith(b"654:321:1:3\n")
     assert b"chartId:overall\n" in body
+    assert b"pp:248\n" in body
+
+
+def test_score_submit_mapper_formats_completed_response_without_pp_as_zero() -> None:
+    mapper = StableScoreSubmitMapper()
+
+    response = mapper.to_response(
+        SubmissionResult(
+            outcome=SubmissionOutcome.COMPLETED,
+            score_id=12345,
+            beatmap_id=654,
+            beatmapset_id=321,
+            stable_pp=None,
+            error_reason="performance_unavailable: calculator stack trace",
+        )
+    )
+
+    assert response.status_code == 200
+    body = bytes(response.body)
+    assert b"pp:0\n" in body
+    assert b"performance_unavailable" not in body
+    assert b"calculator" not in body
+    assert b"stack trace" not in body
 
 
 def test_score_submit_mapper_formats_rejection_and_retry_responses() -> None:
@@ -101,3 +125,5 @@ def test_score_submit_mapper_formats_rejection_and_retry_responses() -> None:
 
     assert retryable.body == b"error: yes"
     assert terminal.body == b"error: no"
+    assert b"temporary" not in retryable.body
+    assert b"rejected" not in terminal.body

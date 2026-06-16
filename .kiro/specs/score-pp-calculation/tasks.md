@@ -126,7 +126,7 @@
   - _Requirements: 1.5, 3.1, 3.5, 3.6, 3.7, 7.1, 7.2, 7.3, 7.4, 7.5_
   - _Depends: 4.1, 5.1_
 
-- [ ] 5.3 Stable submit mapper の PP formatting を更新する
+- [x] 5.3 Stable submit mapper の PP formatting を更新する
   - completed current PP は stable chart の `pp` field に nearest integer として出力する
   - unavailable、pending timeout 後の retry、out-of-scope は existing response semantics に合わせる
   - calculator diagnostics と unavailable reason を stable client response に出さない

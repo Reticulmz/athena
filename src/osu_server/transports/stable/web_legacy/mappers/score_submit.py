@@ -118,6 +118,7 @@ class StableScoreSubmitMapper:
             return _format_completed_response(
                 beatmap_id=result.beatmap_id or 0,
                 beatmap_set_id=result.beatmapset_id or 0,
+                stable_pp=result.stable_pp,
             )
         if result.outcome in {SubmissionOutcome.RETRYABLE, SubmissionOutcome.ACCEPTED_PENDING}:
             return Response(b"error: yes", status_code=200)
@@ -200,8 +201,14 @@ def _parse_stable_payload(fields: list[str]) -> ParsedScore:
         raise ParseError(f"Failed to parse integer field: {e}") from e
 
 
-def _format_completed_response(*, beatmap_id: int, beatmap_set_id: int) -> Response:
+def _format_completed_response(
+    *,
+    beatmap_id: int,
+    beatmap_set_id: int,
+    stable_pp: int | None,
+) -> Response:
     beatmap_playcount = 1
+    pp = stable_pp or 0
 
     body = f"{beatmap_id}:{beatmap_set_id}:{beatmap_playcount}:3\n".encode()
     body += b"chartId:overall\n"
@@ -215,7 +222,7 @@ def _format_completed_response(*, beatmap_id: int, beatmap_set_id: int) -> Respo
     body += b"totalScore:0\n"
     body += b"maxCombo:0\n"
     body += b"accuracy:0\n"
-    body += b"pp:0\n"
+    body += f"pp:{pp}\n".encode()
 
     return Response(body, status_code=200)
 
