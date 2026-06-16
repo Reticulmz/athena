@@ -67,7 +67,7 @@
   - _Boundary: RosuPerformanceCalculator_
   - _Depends: 1.1_
 
-- [ ] 3.3 (P) Performance Completion Signal を実装する
+- [x] 3.3 (P) Performance Completion Signal を実装する
   - terminal state 到達時に score-scoped signal を publish できるようにする
   - signal payload には PP を持たせず、waiter は必ず DB を再読込する
   - signal loss、delay、missing があっても timeout 前の final current-state check へ進める

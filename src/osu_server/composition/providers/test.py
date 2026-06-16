@@ -11,9 +11,15 @@ from osu_server.domain.beatmaps import BeatmapMetadataProvider
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
+from osu_server.infrastructure.state.interfaces.performance_completion_signal import (
+    PerformanceCompletionSignal,
+)
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
+from osu_server.infrastructure.state.memory.performance_completion_signal import (
+    InMemoryPerformanceCompletionSignal,
+)
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.infrastructure.storage.local import LocalBlobStorageBackend
@@ -133,6 +139,11 @@ def make_in_memory_runtime_provider_set(
         ),
         replace_value(ChannelStateStore, InMemoryChannelStateStore(), scope=Scope.APP),
         replace_value(RateLimiter, InMemoryRateLimiter(), scope=Scope.APP),
+        replace_value(
+            PerformanceCompletionSignal,
+            InMemoryPerformanceCompletionSignal(),
+            scope=Scope.APP,
+        ),
         replace_value(SessionStore, InMemorySessionStore(), scope=Scope.APP),
         replace_value(
             BlobStorageBackend,

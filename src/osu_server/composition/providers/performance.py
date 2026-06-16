@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import final
 
 from dishka import Provider, Scope
+from glide import GlideClient
 from taskiq import AsyncBroker
 
 from osu_server.composition.providers._dishka import provide
@@ -12,6 +13,17 @@ from osu_server.composition.providers.beatmaps_app import enqueue_beatmap_fetch
 from osu_server.config import AppConfig
 from osu_server.domain.beatmaps import BeatmapFetchTarget, BeatmapFreshnessPolicy
 from osu_server.domain.scores.performance import FormulaProfilePolicy
+from osu_server.infrastructure.cache.valkey_client import (
+    ValkeyPubSubCallback,
+    create_valkey_pubsub_client,
+)
+from osu_server.infrastructure.state.interfaces.performance_completion_signal import (
+    PerformanceCompletionSignal,
+)
+from osu_server.infrastructure.state.valkey.performance_completion_signal import (
+    ValkeyPerformanceCompletionPublisher,
+    ValkeyPerformanceCompletionSignal,
+)
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 from osu_server.services.commands.scores.performance import (
     BeatmapMirrorPerformanceBeatmapFileProvider,
@@ -34,8 +46,11 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapQueryRepository,
     BlobStorageService,
     FormulaProfilePolicy,
+    GlideClient,
     PerformanceBeatmapFileProvider,
+    PerformanceCompletionSignal,
     PerformanceRuntimeSettings,
+    ValkeyPerformanceCompletionPublisher,
 )
 
 
@@ -77,4 +92,27 @@ class PerformanceProviderSet(Provider):
         return BeatmapMirrorPerformanceBeatmapFileProvider(
             beatmap_resolver=beatmap_resolver,
             blob_storage=blob_storage,
+        )
+
+    @provide
+    def performance_completion_publisher(
+        self,
+        valkey: GlideClient,
+    ) -> ValkeyPerformanceCompletionPublisher:
+        return valkey
+
+    @provide
+    def performance_completion_signal(
+        self,
+        publisher: ValkeyPerformanceCompletionPublisher,
+        config: AppConfig,
+    ) -> PerformanceCompletionSignal:
+        valkey_url = str(config.valkey_url)
+
+        async def pubsub_client_factory(callback: ValkeyPubSubCallback) -> GlideClient:
+            return await create_valkey_pubsub_client(valkey_url, callback)
+
+        return ValkeyPerformanceCompletionSignal(
+            publisher,
+            pubsub_client_factory=pubsub_client_factory,
         )
