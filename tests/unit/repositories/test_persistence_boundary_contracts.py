@@ -174,10 +174,17 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
     }
     assert _public_async_methods(ScorePerformanceCommandRepository) == {
         "claim_pending_calculation",
+        "claim_recalculation_work",
         "create_or_reuse_calculation",
+        "create_recalculation_batch",
         "get_by_id",
         "get_current_for_score",
+        "get_recalculation_batch_by_id",
+        "get_recalculation_work_item_by_id",
         "mark_completed",
+        "mark_recalculation_work_completed",
+        "mark_recalculation_work_failed",
+        "mark_recalculation_work_unavailable",
         "mark_unavailable",
     }
 

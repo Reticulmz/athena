@@ -53,6 +53,31 @@ class PerformanceCalculationState(Enum):
         return self is self.SUPERSEDED
 
 
+class PerformanceRecalculationBatchStatus(Enum):
+    """Operator-visible lifecycle for a durable recalculation batch."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+
+
+class PerformanceRecalculationWorkItemState(Enum):
+    """Lifecycle state for one durable recalculation work item."""
+
+    PENDING = "pending"
+    CLAIMED = "claimed"
+    COMPLETED = "completed"
+    UNAVAILABLE = "unavailable"
+
+    @classmethod
+    def terminal_states(cls) -> frozenset[PerformanceRecalculationWorkItemState]:
+        return frozenset({cls.COMPLETED, cls.UNAVAILABLE})
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in self.terminal_states()
+
+
 class FormulaProfile(Enum):
     """Playstyle-scoped formula profile key."""
 
@@ -87,6 +112,48 @@ class PerformanceCalculation:
         _validate_identity(self)
         _validate_provenance(self)
         _validate_state_payload(self)
+
+
+@dataclass(slots=True, frozen=True)
+class PerformanceRecalculationBatch:
+    """Durable operator-created recalculation work set."""
+
+    id: int | None
+    status: PerformanceRecalculationBatchStatus
+    filters: Mapping[str, object]
+    reason_counts: Mapping[str, int]
+    target_calculator_version: str
+    target_formula_profile: FormulaProfile
+    candidate_count: int
+    completed_count: int
+    unavailable_count: int
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        _validate_recalculation_batch(self)
+
+
+@dataclass(slots=True, frozen=True)
+class PerformanceRecalculationWorkItem:
+    """One score target inside a durable recalculation batch."""
+
+    id: int | None
+    batch_id: int
+    score_id: int
+    reason: str
+    state: PerformanceRecalculationWorkItemState
+    calculation_id: int | None
+    claim_owner: str | None
+    claim_expires_at: datetime | None
+    attempt_count: int
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        _validate_recalculation_work_item(self)
 
 
 @dataclass(slots=True, frozen=True)
@@ -240,6 +307,95 @@ def _validate_unavailable_payload(calculation: PerformanceCalculation) -> None:
         raise ValueError(msg)
 
 
+def _validate_recalculation_batch(batch: PerformanceRecalculationBatch) -> None:
+    if batch.id is not None and batch.id <= 0:
+        msg = "recalculation batch id must be positive"
+        raise ValueError(msg)
+    if batch.target_calculator_version == "":
+        msg = "target_calculator_version is required"
+        raise ValueError(msg)
+    if batch.candidate_count < 0:
+        msg = "candidate_count must be non-negative"
+        raise ValueError(msg)
+    if batch.completed_count < 0 or batch.unavailable_count < 0:
+        msg = "recalculation progress counts must be non-negative"
+        raise ValueError(msg)
+    if batch.completed_count + batch.unavailable_count > batch.candidate_count:
+        msg = "recalculation progress cannot exceed candidate_count"
+        raise ValueError(msg)
+    if batch.status is PerformanceRecalculationBatchStatus.COMPLETED and (
+        batch.completed_count + batch.unavailable_count != batch.candidate_count
+    ):
+        msg = "completed recalculation batch requires all work to be terminal"
+        raise ValueError(msg)
+    if batch.last_error == "":
+        msg = "last_error cannot be empty"
+        raise ValueError(msg)
+    for reason, count in batch.reason_counts.items():
+        if reason == "":
+            msg = "recalculation reason cannot be empty"
+            raise ValueError(msg)
+        if count < 0:
+            msg = "recalculation reason counts must be non-negative"
+            raise ValueError(msg)
+
+
+def _validate_recalculation_work_item(item: PerformanceRecalculationWorkItem) -> None:
+    if item.id is not None and item.id <= 0:
+        msg = "recalculation work item id must be positive"
+        raise ValueError(msg)
+    if item.batch_id <= 0:
+        msg = "recalculation work item batch_id must be positive"
+        raise ValueError(msg)
+    if item.score_id <= 0:
+        msg = "recalculation work item score_id must be positive"
+        raise ValueError(msg)
+    if item.reason == "":
+        msg = "recalculation work item reason is required"
+        raise ValueError(msg)
+    if item.calculation_id is not None and item.calculation_id <= 0:
+        msg = "recalculation work item calculation_id must be positive"
+        raise ValueError(msg)
+    if item.attempt_count < 0:
+        msg = "recalculation work item attempt_count must be non-negative"
+        raise ValueError(msg)
+    if item.last_error == "":
+        msg = "recalculation work item last_error cannot be empty"
+        raise ValueError(msg)
+    if (item.claim_owner is None) != (item.claim_expires_at is None):
+        msg = "recalculation work item claim owner and expiry must be set together"
+        raise ValueError(msg)
+    if item.claim_owner == "":
+        msg = "recalculation work item claim_owner cannot be empty"
+        raise ValueError(msg)
+    if item.state is PerformanceRecalculationWorkItemState.CLAIMED:
+        _validate_claimed_recalculation_work_item(item)
+    if item.state.is_terminal:
+        _validate_terminal_recalculation_work_item(item)
+
+
+def _validate_claimed_recalculation_work_item(
+    item: PerformanceRecalculationWorkItem,
+) -> None:
+    if item.claim_owner is None or item.claim_expires_at is None:
+        msg = "claimed recalculation work item requires claim metadata"
+        raise ValueError(msg)
+    if item.attempt_count <= 0:
+        msg = "claimed recalculation work item requires a positive attempt_count"
+        raise ValueError(msg)
+
+
+def _validate_terminal_recalculation_work_item(
+    item: PerformanceRecalculationWorkItem,
+) -> None:
+    if item.calculation_id is None:
+        msg = "terminal recalculation work item requires calculation_id"
+        raise ValueError(msg)
+    if item.claim_owner is not None or item.claim_expires_at is not None:
+        msg = "terminal recalculation work item cannot keep an active claim"
+        raise ValueError(msg)
+
+
 __all__ = [
     "FormulaProfile",
     "FormulaProfilePolicy",
@@ -247,4 +403,8 @@ __all__ = [
     "PerformanceCalculationState",
     "PerformanceEligibilityDecision",
     "PerformanceEligibilityPolicy",
+    "PerformanceRecalculationBatch",
+    "PerformanceRecalculationBatchStatus",
+    "PerformanceRecalculationWorkItem",
+    "PerformanceRecalculationWorkItemState",
 ]

@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from osu_server.domain.scores.performance import (
     FormulaProfile,
     PerformanceCalculation,
     PerformanceCalculationState,
+    PerformanceRecalculationBatch,
+    PerformanceRecalculationBatchStatus,
+    PerformanceRecalculationWorkItem,
+    PerformanceRecalculationWorkItemState,
 )
 from osu_server.repositories.interfaces.commands.score_performance import (
     ScorePerformanceCalculationClaimResult,
@@ -18,17 +22,26 @@ from osu_server.repositories.interfaces.commands.score_performance import (
     ScorePerformanceCommandConflictError,
 )
 from osu_server.repositories.sqlalchemy.models.score_performance import (
+    PerformanceRecalculationBatchModel,
+    PerformanceRecalculationWorkItemModel,
     ScorePerformanceCalculationModel,
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from osu_server.repositories.interfaces.commands.score_performance import (
         ClaimScorePerformanceCalculation,
+        ClaimScorePerformanceRecalculationWork,
         CompleteScorePerformanceCalculation,
+        CompleteScorePerformanceRecalculationWork,
         CreateScorePerformanceCalculation,
+        CreateScorePerformanceRecalculationBatch,
         MarkScorePerformanceCalculationUnavailable,
+        MarkScorePerformanceRecalculationWorkFailed,
+        MarkScorePerformanceRecalculationWorkUnavailable,
     )
 
 _PENDING_STATE_VALUES = tuple(
@@ -205,6 +218,235 @@ class SQLAlchemyScorePerformanceCommandRepository:
         model = await self._get_current_model_for_score(score_id)
         return _model_to_domain(model) if model is not None else None
 
+    async def create_recalculation_batch(
+        self,
+        command: CreateScorePerformanceRecalculationBatch,
+    ) -> PerformanceRecalculationBatch:
+        status = (
+            PerformanceRecalculationBatchStatus.COMPLETED
+            if len(command.work_items) == 0
+            else PerformanceRecalculationBatchStatus.PENDING
+        )
+        batch = PerformanceRecalculationBatchModel(
+            status=status.value,
+            filters=dict(command.filters),
+            reason_counts=dict(command.reason_counts),
+            target_calculator_version=command.target_calculator_version,
+            target_formula_profile=command.target_formula_profile.value,
+            candidate_count=len(command.work_items),
+            completed_count=0,
+            unavailable_count=0,
+        )
+        batch.created_at = command.created_at
+        batch.updated_at = command.created_at
+        self._session.add(batch)
+        await self._flush_or_raise_conflict()
+        await self._session.refresh(batch)
+
+        for work in command.work_items:
+            work_item = PerformanceRecalculationWorkItemModel(
+                batch_id=batch.id,
+                score_id=work.score_id,
+                reason=work.reason,
+                state=PerformanceRecalculationWorkItemState.PENDING.value,
+                calculation_id=None,
+                claim_owner=None,
+                claim_expires_at=None,
+                attempt_count=0,
+                last_error=None,
+            )
+            work_item.created_at = command.created_at
+            work_item.updated_at = command.created_at
+            self._session.add(work_item)
+
+        await self._flush_or_raise_conflict()
+        await self._session.refresh(batch)
+        return _batch_model_to_domain(batch, last_error=None)
+
+    async def claim_recalculation_work(
+        self,
+        command: ClaimScorePerformanceRecalculationWork,
+    ) -> tuple[PerformanceRecalculationWorkItem, ...]:
+        if command.limit <= 0:
+            msg = "recalculation work claim limit must be positive"
+            raise ValueError(msg)
+
+        models = (
+            (
+                await self._session.execute(
+                    select(PerformanceRecalculationWorkItemModel)
+                    .where(
+                        PerformanceRecalculationWorkItemModel.batch_id == command.batch_id,
+                        or_(
+                            and_(
+                                PerformanceRecalculationWorkItemModel.state
+                                == PerformanceRecalculationWorkItemState.PENDING.value,
+                                or_(
+                                    PerformanceRecalculationWorkItemModel.claim_expires_at.is_(
+                                        None
+                                    ),
+                                    PerformanceRecalculationWorkItemModel.claim_expires_at
+                                    <= command.claimed_at,
+                                ),
+                            ),
+                            and_(
+                                PerformanceRecalculationWorkItemModel.state
+                                == PerformanceRecalculationWorkItemState.CLAIMED.value,
+                                PerformanceRecalculationWorkItemModel.claim_expires_at
+                                <= command.claimed_at,
+                            ),
+                        ),
+                    )
+                    .order_by(PerformanceRecalculationWorkItemModel.id)
+                    .with_for_update(skip_locked=True)
+                    .limit(command.limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        claimed_models = tuple(models)
+        if len(claimed_models) == 0:
+            return ()
+
+        for model in claimed_models:
+            model.state = PerformanceRecalculationWorkItemState.CLAIMED.value
+            model.claim_owner = command.owner
+            model.claim_expires_at = command.claim_expires_at
+            model.attempt_count += 1
+            model.updated_at = command.claimed_at
+
+        batch = await self._session.get(PerformanceRecalculationBatchModel, command.batch_id)
+        if isinstance(batch, PerformanceRecalculationBatchModel):
+            self._mark_batch_running(batch, command.claimed_at)
+
+        await self._flush_or_raise_conflict()
+        for model in claimed_models:
+            await self._session.refresh(model)
+        return tuple(_work_item_model_to_domain(model) for model in claimed_models)
+
+    async def mark_recalculation_work_completed(
+        self,
+        command: CompleteScorePerformanceRecalculationWork,
+    ) -> PerformanceRecalculationWorkItem | None:
+        model = await self._get_claimed_recalculation_work_item_for_update(
+            work_item_id=command.work_item_id,
+            owner=command.owner,
+            at=command.completed_at,
+        )
+        if model is None:
+            existing = await self._session.get(
+                PerformanceRecalculationWorkItemModel,
+                command.work_item_id,
+            )
+            if not isinstance(existing, PerformanceRecalculationWorkItemModel):
+                return None
+            state = PerformanceRecalculationWorkItemState(existing.state)
+            return (
+                _work_item_model_to_domain(existing)
+                if state is PerformanceRecalculationWorkItemState.COMPLETED
+                else None
+            )
+
+        model.state = PerformanceRecalculationWorkItemState.COMPLETED.value
+        model.calculation_id = command.calculation_id
+        model.claim_owner = None
+        model.claim_expires_at = None
+        model.updated_at = command.completed_at
+        await self._refresh_batch_progress_from_work_items(
+            model.batch_id,
+            updated_at=command.completed_at,
+        )
+        await self._flush_or_raise_conflict()
+        await self._session.refresh(model)
+        return _work_item_model_to_domain(model)
+
+    async def mark_recalculation_work_unavailable(
+        self,
+        command: MarkScorePerformanceRecalculationWorkUnavailable,
+    ) -> PerformanceRecalculationWorkItem | None:
+        model = await self._get_claimed_recalculation_work_item_for_update(
+            work_item_id=command.work_item_id,
+            owner=command.owner,
+            at=command.completed_at,
+        )
+        if model is None:
+            existing = await self._session.get(
+                PerformanceRecalculationWorkItemModel,
+                command.work_item_id,
+            )
+            if not isinstance(existing, PerformanceRecalculationWorkItemModel):
+                return None
+            state = PerformanceRecalculationWorkItemState(existing.state)
+            return (
+                _work_item_model_to_domain(existing)
+                if state is PerformanceRecalculationWorkItemState.UNAVAILABLE
+                else None
+            )
+
+        model.state = PerformanceRecalculationWorkItemState.UNAVAILABLE.value
+        model.calculation_id = command.calculation_id
+        model.claim_owner = None
+        model.claim_expires_at = None
+        model.last_error = command.reason
+        model.updated_at = command.completed_at
+        await self._refresh_batch_progress_from_work_items(
+            model.batch_id,
+            updated_at=command.completed_at,
+        )
+        await self._flush_or_raise_conflict()
+        await self._session.refresh(model)
+        return _work_item_model_to_domain(model)
+
+    async def mark_recalculation_work_failed(
+        self,
+        command: MarkScorePerformanceRecalculationWorkFailed,
+    ) -> PerformanceRecalculationWorkItem | None:
+        model = await self._get_claimed_recalculation_work_item_for_update(
+            work_item_id=command.work_item_id,
+            owner=command.owner,
+            at=command.failed_at,
+        )
+        if model is None:
+            return None
+
+        model.state = PerformanceRecalculationWorkItemState.PENDING.value
+        model.claim_owner = None
+        model.claim_expires_at = None
+        model.last_error = command.error
+        model.updated_at = command.failed_at
+
+        batch = await self._session.get(PerformanceRecalculationBatchModel, model.batch_id)
+        if isinstance(batch, PerformanceRecalculationBatchModel):
+            self._mark_batch_running(batch, command.failed_at)
+
+        await self._flush_or_raise_conflict()
+        await self._session.refresh(model)
+        return _work_item_model_to_domain(model)
+
+    async def get_recalculation_batch_by_id(
+        self,
+        batch_id: int,
+    ) -> PerformanceRecalculationBatch | None:
+        model = await self._session.get(PerformanceRecalculationBatchModel, batch_id)
+        if not isinstance(model, PerformanceRecalculationBatchModel):
+            return None
+        return _batch_model_to_domain(
+            model,
+            last_error=await self._latest_recalculation_batch_error(batch_id),
+        )
+
+    async def get_recalculation_work_item_by_id(
+        self,
+        work_item_id: int,
+    ) -> PerformanceRecalculationWorkItem | None:
+        model = await self._session.get(PerformanceRecalculationWorkItemModel, work_item_id)
+        return (
+            _work_item_model_to_domain(model)
+            if isinstance(model, PerformanceRecalculationWorkItemModel)
+            else None
+        )
+
     async def _get_current_model_for_score(
         self,
         score_id: int,
@@ -260,6 +502,29 @@ class SQLAlchemyScorePerformanceCommandRepository:
         ).scalar_one_or_none()
         return model if isinstance(model, ScorePerformanceCalculationModel) else None
 
+    async def _get_claimed_recalculation_work_item_for_update(
+        self,
+        *,
+        work_item_id: int,
+        owner: str,
+        at: datetime,
+    ) -> PerformanceRecalculationWorkItemModel | None:
+        model = (
+            await self._session.execute(
+                select(PerformanceRecalculationWorkItemModel)
+                .where(
+                    PerformanceRecalculationWorkItemModel.id == work_item_id,
+                    PerformanceRecalculationWorkItemModel.state
+                    == PerformanceRecalculationWorkItemState.CLAIMED.value,
+                    PerformanceRecalculationWorkItemModel.claim_owner == owner,
+                    PerformanceRecalculationWorkItemModel.claim_expires_at > at,
+                )
+                .with_for_update()
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return model if isinstance(model, PerformanceRecalculationWorkItemModel) else None
+
     async def _finalize(
         self,
         model: ScorePerformanceCalculationModel,
@@ -277,6 +542,81 @@ class SQLAlchemyScorePerformanceCommandRepository:
         await self._flush_or_raise_conflict()
         await self._session.refresh(model)
         return _model_to_domain(model)
+
+    async def _refresh_batch_progress_from_work_items(
+        self,
+        batch_id: int,
+        *,
+        updated_at: datetime,
+    ) -> None:
+        await self._flush_or_raise_conflict()
+        batch = (
+            await self._session.execute(
+                select(PerformanceRecalculationBatchModel)
+                .where(PerformanceRecalculationBatchModel.id == batch_id)
+                .with_for_update()
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if not isinstance(batch, PerformanceRecalculationBatchModel):
+            return
+        work_items = (
+            (
+                await self._session.execute(
+                    select(PerformanceRecalculationWorkItemModel).where(
+                        PerformanceRecalculationWorkItemModel.batch_id == batch_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        completed_count = sum(
+            item.state == PerformanceRecalculationWorkItemState.COMPLETED.value
+            for item in work_items
+        )
+        unavailable_count = sum(
+            item.state == PerformanceRecalculationWorkItemState.UNAVAILABLE.value
+            for item in work_items
+        )
+        batch.completed_count = completed_count
+        batch.unavailable_count = unavailable_count
+        batch.updated_at = updated_at
+        terminal_count = batch.completed_count + batch.unavailable_count
+        batch.status = (
+            PerformanceRecalculationBatchStatus.COMPLETED.value
+            if terminal_count == batch.candidate_count
+            else PerformanceRecalculationBatchStatus.RUNNING.value
+        )
+
+    def _mark_batch_running(
+        self,
+        batch: PerformanceRecalculationBatchModel,
+        updated_at: datetime,
+    ) -> None:
+        if batch.status == PerformanceRecalculationBatchStatus.COMPLETED.value:
+            return
+        batch.status = PerformanceRecalculationBatchStatus.RUNNING.value
+        batch.updated_at = updated_at
+
+    async def _latest_recalculation_batch_error(self, batch_id: int) -> str | None:
+        model = (
+            await self._session.execute(
+                select(PerformanceRecalculationWorkItemModel)
+                .where(
+                    PerformanceRecalculationWorkItemModel.batch_id == batch_id,
+                    PerformanceRecalculationWorkItemModel.last_error.is_not(None),
+                )
+                .order_by(
+                    PerformanceRecalculationWorkItemModel.updated_at.desc(),
+                    PerformanceRecalculationWorkItemModel.id.desc(),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return (
+            model.last_error if isinstance(model, PerformanceRecalculationWorkItemModel) else None
+        )
 
     async def _flush_or_raise_conflict(self) -> None:
         try:
@@ -312,4 +652,47 @@ def _model_to_domain(model: ScorePerformanceCalculationModel) -> PerformanceCalc
         beatmap_file_checksum_md5=model.beatmap_file_checksum_md5,
         unavailable_reason=model.unavailable_reason,
         calculated_at=model.calculated_at,
+    )
+
+
+def _batch_model_to_domain(
+    model: PerformanceRecalculationBatchModel,
+    *,
+    last_error: str | None,
+) -> PerformanceRecalculationBatch:
+    reason_counts = {
+        reason: count for reason, count in model.reason_counts.items() if isinstance(count, int)
+    }
+    return PerformanceRecalculationBatch(
+        id=model.id,
+        status=PerformanceRecalculationBatchStatus(model.status),
+        filters=model.filters,
+        reason_counts=reason_counts,
+        target_calculator_version=model.target_calculator_version,
+        target_formula_profile=FormulaProfile(model.target_formula_profile),
+        candidate_count=model.candidate_count,
+        completed_count=model.completed_count,
+        unavailable_count=model.unavailable_count,
+        last_error=last_error,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )
+
+
+def _work_item_model_to_domain(
+    model: PerformanceRecalculationWorkItemModel,
+) -> PerformanceRecalculationWorkItem:
+    return PerformanceRecalculationWorkItem(
+        id=model.id,
+        batch_id=model.batch_id,
+        score_id=model.score_id,
+        reason=model.reason,
+        state=PerformanceRecalculationWorkItemState(model.state),
+        calculation_id=model.calculation_id,
+        claim_owner=model.claim_owner,
+        claim_expires_at=model.claim_expires_at,
+        attempt_count=model.attempt_count,
+        last_error=model.last_error,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
     )

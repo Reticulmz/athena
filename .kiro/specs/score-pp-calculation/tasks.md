@@ -22,7 +22,7 @@
   - 完了時には app / worker / test composition が performance subsystem の既定値で起動できる
   - _Requirements: 6.1, 10.3, 10.4, 10.5, 10.6, 11.3, 11.4, 12.1_
 
-- [ ] 2. Persistence: current PP と recalculation work を保存・検索できるようにする
+- [x] 2. Persistence: current PP と recalculation work を保存・検索できるようにする
 - [x] 2.1 (P) Performance Calculation の command persistence を実装する
   - calculation request の作成、既存 current row の再利用、pending claim、completed / unavailable finalization を原子的に扱う
   - stale provenance や profile mismatch の replacement は、finalization まで既存 current PP を維持する
@@ -41,7 +41,7 @@
   - _Boundary: ScorePerformanceQueryRepository_
   - _Depends: 1.2, 1.3_
 
-- [ ] 2.3 Recalculation batch persistence を実装する
+- [x] 2.3 Recalculation batch persistence を実装する
   - execution mode で batch と work item を 1 つの durable work set として作成する
   - pending または stale claimed work を bounded chunk で claim できるようにする
   - worker 停止や wake-up signal loss 後も未完了 work が再発見できるようにする

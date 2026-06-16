@@ -6,10 +6,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from datetime import datetime
     from decimal import Decimal
 
-    from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculation
+    from osu_server.domain.scores.performance import (
+        FormulaProfile,
+        PerformanceCalculation,
+        PerformanceRecalculationBatch,
+        PerformanceRecalculationWorkItem,
+    )
 
 
 class ScorePerformanceCommandConflictError(RuntimeError):
@@ -85,6 +91,68 @@ class MarkScorePerformanceCalculationUnavailable:
     calculated_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class CreateScorePerformanceRecalculationWorkItem:
+    """One score selected for durable recalculation work."""
+
+    score_id: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class CreateScorePerformanceRecalculationBatch:
+    """Create one durable recalculation batch and its work items."""
+
+    filters: Mapping[str, object]
+    reason_counts: Mapping[str, int]
+    target_calculator_version: str
+    target_formula_profile: FormulaProfile
+    work_items: tuple[CreateScorePerformanceRecalculationWorkItem, ...]
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimScorePerformanceRecalculationWork:
+    """Claim a bounded chunk of pending or stale recalculation work."""
+
+    batch_id: int
+    owner: str
+    claimed_at: datetime
+    claim_expires_at: datetime
+    limit: int
+
+
+@dataclass(frozen=True, slots=True)
+class CompleteScorePerformanceRecalculationWork:
+    """Mark one recalculation work item completed."""
+
+    work_item_id: int
+    owner: str
+    calculation_id: int
+    completed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class MarkScorePerformanceRecalculationWorkUnavailable:
+    """Mark one recalculation work item unavailable."""
+
+    work_item_id: int
+    owner: str
+    calculation_id: int
+    reason: str
+    completed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class MarkScorePerformanceRecalculationWorkFailed:
+    """Record one retryable recalculation work failure."""
+
+    work_item_id: int
+    owner: str
+    error: str
+    failed_at: datetime
+
+
 class ScorePerformanceCommandRepository(Protocol):
     """Mutation port for performance calculation rows."""
 
@@ -122,4 +190,53 @@ class ScorePerformanceCommandRepository(Protocol):
 
     async def get_current_for_score(self, score_id: int) -> PerformanceCalculation | None:
         """Return the current calculation for a score."""
+        ...
+
+    async def create_recalculation_batch(
+        self,
+        command: CreateScorePerformanceRecalculationBatch,
+    ) -> PerformanceRecalculationBatch:
+        """Create one recalculation batch with all selected work items."""
+        ...
+
+    async def claim_recalculation_work(
+        self,
+        command: ClaimScorePerformanceRecalculationWork,
+    ) -> tuple[PerformanceRecalculationWorkItem, ...]:
+        """Claim pending or stale recalculation work items in a bounded chunk."""
+        ...
+
+    async def mark_recalculation_work_completed(
+        self,
+        command: CompleteScorePerformanceRecalculationWork,
+    ) -> PerformanceRecalculationWorkItem | None:
+        """Mark one recalculation work item completed and update batch progress."""
+        ...
+
+    async def mark_recalculation_work_unavailable(
+        self,
+        command: MarkScorePerformanceRecalculationWorkUnavailable,
+    ) -> PerformanceRecalculationWorkItem | None:
+        """Mark one recalculation work item unavailable and update batch progress."""
+        ...
+
+    async def mark_recalculation_work_failed(
+        self,
+        command: MarkScorePerformanceRecalculationWorkFailed,
+    ) -> PerformanceRecalculationWorkItem | None:
+        """Record a retryable work item failure and release it for retry."""
+        ...
+
+    async def get_recalculation_batch_by_id(
+        self,
+        batch_id: int,
+    ) -> PerformanceRecalculationBatch | None:
+        """Return operator-visible recalculation batch progress."""
+        ...
+
+    async def get_recalculation_work_item_by_id(
+        self,
+        work_item_id: int,
+    ) -> PerformanceRecalculationWorkItem | None:
+        """Return one recalculation work item by id."""
         ...

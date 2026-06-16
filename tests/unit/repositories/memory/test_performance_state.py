@@ -50,6 +50,7 @@ def test_performance_state_clone_preserves_rows_batches_work_claims_and_replacem
         state="pending",
         calculation_id=2,
         claim=claim,
+        attempt_count=1,
         last_error=None,
         created_at=_NOW,
         updated_at=_NOW,

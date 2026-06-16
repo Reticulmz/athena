@@ -85,6 +85,7 @@ class InMemoryPerformanceRecalculationWorkItemRecord:
     state: str
     calculation_id: int | None
     claim: InMemoryPerformanceClaim | None
+    attempt_count: int
     last_error: str | None
     created_at: datetime
     updated_at: datetime

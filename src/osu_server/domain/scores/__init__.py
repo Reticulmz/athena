@@ -10,6 +10,10 @@ from osu_server.domain.scores.performance import (
     PerformanceCalculationState,
     PerformanceEligibilityDecision,
     PerformanceEligibilityPolicy,
+    PerformanceRecalculationBatch,
+    PerformanceRecalculationBatchStatus,
+    PerformanceRecalculationWorkItem,
+    PerformanceRecalculationWorkItemState,
 )
 from osu_server.domain.scores.replay import Replay
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
@@ -33,6 +37,10 @@ __all__ = [
     "PerformanceCalculationState",
     "PerformanceEligibilityDecision",
     "PerformanceEligibilityPolicy",
+    "PerformanceRecalculationBatch",
+    "PerformanceRecalculationBatchStatus",
+    "PerformanceRecalculationWorkItem",
+    "PerformanceRecalculationWorkItemState",
     "Playstyle",
     "Replay",
     "Ruleset",
