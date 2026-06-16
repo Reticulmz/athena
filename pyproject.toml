@@ -24,6 +24,7 @@ dependencies = [
     "athena-crypto",
     "dishka",
     "starlette-dishka",
+    "rosu-pp-py==4.0.2",
 ]
 
 [project.scripts]

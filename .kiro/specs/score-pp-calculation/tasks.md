@@ -58,7 +58,7 @@
   - _Boundary: PerformanceBeatmapFileProvider_
   - _Depends: 1.1_
 
-- [ ] 3.2 (P) rosu calculator adapter を実装する
+- [x] 3.2 (P) rosu calculator adapter を実装する
   - 承認済みの `rosu-pp-py` を infrastructure adapter 内だけで使う
   - server-validated Score data と `.osu` bytes から PP と star rating を計算し、replay bytes を要求しない
   - calculator version を package metadata から記録し、calculator failure を typed unavailable reason に変換する

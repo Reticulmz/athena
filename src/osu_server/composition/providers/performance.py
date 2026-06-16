@@ -17,6 +17,8 @@ from osu_server.infrastructure.cache.valkey_client import (
     ValkeyPubSubCallback,
     create_valkey_pubsub_client,
 )
+from osu_server.infrastructure.performance.interfaces import PerformanceCalculator
+from osu_server.infrastructure.performance.rosu_calculator import RosuPerformanceCalculator
 from osu_server.infrastructure.state.interfaces.performance_completion_signal import (
     PerformanceCompletionSignal,
 )
@@ -48,6 +50,7 @@ _DISHKA_RUNTIME_HINTS = (
     FormulaProfilePolicy,
     GlideClient,
     PerformanceBeatmapFileProvider,
+    PerformanceCalculator,
     PerformanceCompletionSignal,
     PerformanceRuntimeSettings,
     ValkeyPerformanceCompletionPublisher,
@@ -70,6 +73,10 @@ class PerformanceProviderSet(Provider):
         settings: PerformanceRuntimeSettings,
     ) -> FormulaProfilePolicy:
         return FormulaProfilePolicy(settings.formula_profiles_by_playstyle)
+
+    @provide
+    def performance_calculator(self) -> PerformanceCalculator:
+        return RosuPerformanceCalculator()
 
     @provide
     def performance_beatmap_file_provider(

@@ -15,6 +15,8 @@ from osu_server.composition.providers.test import (
 )
 from osu_server.domain.scores.performance import FormulaProfilePolicy
 from osu_server.domain.scores.score import Playstyle
+from osu_server.infrastructure.performance.interfaces import PerformanceCalculator
+from osu_server.infrastructure.performance.rosu_calculator import RosuPerformanceCalculator
 from osu_server.infrastructure.state.interfaces.performance_completion_signal import (
     PerformanceCompletionSignal,
 )
@@ -60,6 +62,7 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
         settings = await container.get(PerformanceRuntimeSettings)
         policy = await container.get(FormulaProfilePolicy)
         beatmap_file_provider = await container.get(PerformanceBeatmapFileProvider)
+        calculator = await container.get(PerformanceCalculator)
         completion_signal = await container.get(PerformanceCompletionSignal)
         query_repository = await container.get(ScorePerformanceQueryRepository)
 
@@ -68,6 +71,7 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
             Playstyle.VANILLA
         )
         assert isinstance(beatmap_file_provider, BeatmapMirrorPerformanceBeatmapFileProvider)
+        assert isinstance(calculator, RosuPerformanceCalculator)
         assert isinstance(completion_signal, InMemoryPerformanceCompletionSignal)
         assert isinstance(query_repository, InMemoryScorePerformanceQueryRepository)
     finally:
@@ -109,6 +113,7 @@ async def test_worker_container_resolves_performance_defaults(tmp_path: Path) ->
         settings = await container.get(PerformanceRuntimeSettings)
         policy = await container.get(FormulaProfilePolicy)
         beatmap_file_provider = await container.get(PerformanceBeatmapFileProvider)
+        calculator = await container.get(PerformanceCalculator)
         completion_signal = await container.get(PerformanceCompletionSignal)
 
         assert settings.claim_timeout.total_seconds() == 300
@@ -116,6 +121,7 @@ async def test_worker_container_resolves_performance_defaults(tmp_path: Path) ->
             Playstyle.VANILLA
         )
         assert isinstance(beatmap_file_provider, BeatmapMirrorPerformanceBeatmapFileProvider)
+        assert isinstance(calculator, RosuPerformanceCalculator)
         assert isinstance(completion_signal, InMemoryPerformanceCompletionSignal)
     finally:
         await container.close()
