@@ -85,7 +85,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 3.1, 8.1, 8.2, 8.3, 8.4, 8.5, 12.2, 14.2, 15.4, 15.5_
   - _Depends: 2.1_
 
-- [ ] 4.2 Execute Performance Calculation workflow を実装する
+- [x] 4.2 Execute Performance Calculation workflow を実装する
   - pending calculation を claim し、file provider、calculator、repository finalization を順に実行する
   - `.osu` file が一時的に不足する場合は pending state を維持し、永続的に使えない場合だけ unavailable にする
   - completed / unavailable の terminal state commit 後に completion signal を publish する

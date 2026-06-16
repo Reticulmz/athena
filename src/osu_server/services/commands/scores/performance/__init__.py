@@ -13,6 +13,12 @@ from osu_server.services.commands.scores.performance.beatmap_file_provider impor
     PerformanceBeatmapFileUnavailable,
     PerformanceBeatmapFileUnavailableReason,
 )
+from osu_server.services.commands.scores.performance.execute_calculation import (
+    ExecutePerformanceCalculationCommand,
+    ExecutePerformanceCalculationOutcome,
+    ExecutePerformanceCalculationResult,
+    ExecutePerformanceCalculationUseCase,
+)
 from osu_server.services.commands.scores.performance.request_calculation import (
     NoopPerformanceCalculationWorkerWake,
     PerformanceCalculationWorkerWake,
@@ -25,6 +31,10 @@ from osu_server.services.commands.scores.performance.runtime import PerformanceR
 
 __all__ = (
     "BeatmapMirrorPerformanceBeatmapFileProvider",
+    "ExecutePerformanceCalculationCommand",
+    "ExecutePerformanceCalculationOutcome",
+    "ExecutePerformanceCalculationResult",
+    "ExecutePerformanceCalculationUseCase",
     "NoopPerformanceCalculationWorkerWake",
     "PerformanceBeatmapFilePending",
     "PerformanceBeatmapFilePendingReason",
