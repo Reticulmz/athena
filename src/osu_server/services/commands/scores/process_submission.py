@@ -26,6 +26,10 @@ from osu_server.services.commands.scores.authorization import (
     AuthorizationContext,
     ScoreAuthorizationService,
 )
+from osu_server.services.commands.scores.performance import (
+    RequestPerformanceCalculationCommand,
+    RequestPerformanceCalculationResult,
+)
 from osu_server.services.commands.scores.submit_score import (
     SubmitScoreCommand,
     SubmitScoreCommandOutcome,
@@ -102,6 +106,19 @@ class BeatmapFileWarmupUseCase(Protocol):
         self,
         request: BeatmapFileWarmupRequest,
     ) -> BeatmapFileWarmupResult: ...
+
+
+class PerformanceCalculationRequestUseCase(Protocol):
+    async def execute(
+        self,
+        command: RequestPerformanceCalculationCommand,
+    ) -> RequestPerformanceCalculationResult: ...
+
+
+class PerformanceCalculatorIdentity(Protocol):
+    def calculator_name(self) -> str: ...
+
+    def calculator_version(self) -> str: ...
 
 
 class SubmissionOutcome(Enum):
@@ -226,6 +243,8 @@ class ProcessScoreSubmissionUseCase:
         auth_service: ScoreAuthorizationService,
         beatmap_resolver: BeatmapEligibilityResolver,
         beatmap_file_warmup_use_case: BeatmapFileWarmupUseCase | None = None,
+        performance_calculation_request: PerformanceCalculationRequestUseCase | None = None,
+        performance_calculator_identity: PerformanceCalculatorIdentity | None = None,
     ) -> None:
         self._submit_score_use_case: SubmitScoreUseCase = submit_score_use_case
         self._replay_blob_storage: ReplayBlobStorage = replay_blob_storage
@@ -235,6 +254,12 @@ class ProcessScoreSubmissionUseCase:
         self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
         self._beatmap_file_warmup_use_case: BeatmapFileWarmupUseCase | None = (
             beatmap_file_warmup_use_case
+        )
+        self._performance_calculation_request: PerformanceCalculationRequestUseCase | None = (
+            performance_calculation_request
+        )
+        self._performance_calculator_identity: PerformanceCalculatorIdentity | None = (
+            performance_calculator_identity
         )
 
     async def execute(  # noqa: PLR0911, PLR0912, PLR0915
@@ -581,6 +606,11 @@ class ProcessScoreSubmissionUseCase:
             )
             return _submission_result_from_command(command_result)
 
+        await self._request_performance_calculation(
+            score_id=command_result.score_id,
+            requested_at=input_data.submitted_at,
+        )
+
         total_duration_ms = (time.perf_counter() - start_time) * 1000
         logger.info(
             "score_submission_completed",
@@ -606,6 +636,45 @@ class ProcessScoreSubmissionUseCase:
             score_id=command_result.score_id,
             beatmap_id=resolved_beatmap_id,
             beatmapset_id=resolved_beatmapset_id,
+        )
+
+    async def _request_performance_calculation(
+        self,
+        *,
+        score_id: int | None,
+        requested_at: datetime,
+    ) -> None:
+        if (
+            score_id is None
+            or self._performance_calculation_request is None
+            or self._performance_calculator_identity is None
+        ):
+            return
+
+        try:
+            result = await self._performance_calculation_request.execute(
+                RequestPerformanceCalculationCommand(
+                    score_id=score_id,
+                    calculator_name=self._performance_calculator_identity.calculator_name(),
+                    calculator_version=self._performance_calculator_identity.calculator_version(),
+                    requested_at=requested_at,
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "score_performance_calculation_request_failed",
+                score_id=score_id,
+                error=type(exc).__name__,
+            )
+            return
+
+        logger.info(
+            "score_performance_calculation_requested",
+            score_id=score_id,
+            outcome=result.outcome.value,
+            calculation_id=None if result.calculation is None else result.calculation.id,
+            worker_wake_requested=result.worker_wake_requested,
+            worker_wake_failed=result.worker_wake_failed,
         )
 
     async def _request_score_submit_fallback_warmup(

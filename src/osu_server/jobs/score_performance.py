@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Annotated, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Protocol, cast, final
 
 import structlog
 from taskiq import Context, TaskiqDepends
@@ -33,6 +33,50 @@ class PerformanceRecalculationBatchProcessor(Protocol):
     """Recalculation batch use-case surface required by job adapters."""
 
     async def execute(self, batch_id: int) -> object: ...
+
+
+class _EnqueueableTask(Protocol):
+    async def kiq(self, *args: object, **kwargs: object) -> object:
+        """Enqueue the task with primitive payload arguments."""
+        ...
+
+
+class _TaskBroker(Protocol):
+    def find_task(self, task_name: str) -> _EnqueueableTask | None:
+        """Find a registered task by stable task name."""
+        ...
+
+
+@final
+class TaskiqPerformanceCalculationWorkerWake:
+    """Maps performance calculation wake requests to taskiq jobs."""
+
+    def __init__(self, broker: _TaskBroker) -> None:
+        self._broker = broker
+
+    async def wake_score_calculation(self, *, score_id: int, calculation_id: int) -> None:
+        task_name = "calculate_score_performance"
+        task = self._broker.find_task(task_name)
+        if task is None:
+            logger.error(
+                "score_performance_calculation_task_not_registered",
+                task_name=task_name,
+                score_id=score_id,
+                calculation_id=calculation_id,
+            )
+            msg = "score performance calculation task is not registered"
+            raise RuntimeError(msg)
+
+        try:
+            _ = await task.kiq(score_id, calculation_id)
+        except Exception:
+            logger.exception(
+                "score_performance_calculation_enqueue_failed",
+                task_name=task_name,
+                score_id=score_id,
+                calculation_id=calculation_id,
+            )
+            raise
 
 
 def get_score_performance_calculation_executor(
@@ -108,6 +152,7 @@ def _claim_owner_from_context(context: Context) -> str:
 __all__ = [
     "PerformanceRecalculationBatchProcessor",
     "ScorePerformanceCalculationExecutor",
+    "TaskiqPerformanceCalculationWorkerWake",
     "calculate_score_performance",
     "get_performance_recalculation_batch_processor",
     "get_score_performance_calculation_executor",

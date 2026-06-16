@@ -24,6 +24,7 @@ from osu_server.services.commands.chat import (
     PersistChannelMessageUseCase,
     PersistPrivateMessageUseCase,
 )
+from osu_server.services.commands.scores.performance import ExecutePerformanceCalculationUseCase
 from osu_server.services.queries.chat import (
     ListPrivateMessagesQuery,
     ListPrivateMessagesQueryInput,
@@ -157,6 +158,14 @@ def _state_beatmap_file_fetch(state: TaskiqState) -> object | None:
     return cast("object | None", getattr(state, "beatmap_file_fetch", None))
 
 
+def _state_score_performance_calculation_executor(state: TaskiqState) -> object | None:
+    return cast("object | None", getattr(state, "score_performance_calculation_executor", None))
+
+
+def _state_performance_recalculation_batch_processor(state: TaskiqState) -> object | None:
+    return cast("object | None", getattr(state, "performance_recalculation_batch_processor", None))
+
+
 async def _run_startup(state: TaskiqState) -> None:
     hook = cast("WorkerLifecycleHook", worker_module.startup)
     await hook(state)
@@ -232,6 +241,11 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
         )
         assert isinstance(_state_beatmap_metadata_fetch(state), FetchBeatmapMetadataUseCase)
         assert isinstance(_state_beatmap_file_fetch(state), FetchBeatmapFileUseCase)
+        assert isinstance(
+            _state_score_performance_calculation_executor(state),
+            ExecutePerformanceCalculationUseCase,
+        )
+        assert _state_performance_recalculation_batch_processor(state) is None
     finally:
         await _run_shutdown(state)
 
@@ -263,6 +277,8 @@ async def test_worker_startup_failure_closes_dishka_container(
     assert _state_persist_private_message_use_case(state) is None
     assert _state_beatmap_metadata_fetch(state) is None
     assert _state_beatmap_file_fetch(state) is None
+    assert _state_score_performance_calculation_executor(state) is None
+    assert _state_performance_recalculation_batch_processor(state) is None
     assert failing_container.close_calls == 1
 
 
@@ -309,6 +325,8 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     state.persist_private_message_use_case = object()
     state.beatmap_metadata_fetch = object()
     state.beatmap_file_fetch = object()
+    state.score_performance_calculation_executor = object()
+    state.performance_recalculation_batch_processor = object()
 
     await _run_shutdown(state)
 
@@ -317,4 +335,6 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     assert _state_persist_private_message_use_case(state) is None
     assert _state_beatmap_metadata_fetch(state) is None
     assert _state_beatmap_file_fetch(state) is None
+    assert _state_score_performance_calculation_executor(state) is None
+    assert _state_performance_recalculation_batch_processor(state) is None
     assert dishka_container.close_calls == 1

@@ -26,11 +26,16 @@ from osu_server.infrastructure.state.valkey.performance_completion_signal import
     ValkeyPerformanceCompletionPublisher,
     ValkeyPerformanceCompletionSignal,
 )
+from osu_server.jobs.score_performance import TaskiqPerformanceCalculationWorkerWake
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
+from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.scores.performance import (
     BeatmapMirrorPerformanceBeatmapFileProvider,
+    ExecutePerformanceCalculationUseCase,
     PerformanceBeatmapFileProvider,
+    PerformanceCalculationWorkerWake,
     PerformanceRuntimeSettings,
+    RequestPerformanceCalculationUseCase,
 )
 from osu_server.services.commands.storage import BlobStorageService
 from osu_server.services.queries.beatmaps.mirror import (
@@ -50,9 +55,14 @@ _DISHKA_RUNTIME_HINTS = (
     FormulaProfilePolicy,
     GlideClient,
     PerformanceBeatmapFileProvider,
+    PerformanceCalculationWorkerWake,
     PerformanceCalculator,
     PerformanceCompletionSignal,
     PerformanceRuntimeSettings,
+    RequestPerformanceCalculationUseCase,
+    ExecutePerformanceCalculationUseCase,
+    TaskiqPerformanceCalculationWorkerWake,
+    UnitOfWorkFactory,
     ValkeyPerformanceCompletionPublisher,
 )
 
@@ -77,6 +87,43 @@ class PerformanceProviderSet(Provider):
     @provide
     def performance_calculator(self) -> PerformanceCalculator:
         return RosuPerformanceCalculator()
+
+    @provide
+    def performance_calculation_worker_wake(
+        self,
+        broker: AsyncBroker,
+    ) -> PerformanceCalculationWorkerWake:
+        return TaskiqPerformanceCalculationWorkerWake(broker)
+
+    @provide
+    def request_performance_calculation_use_case(
+        self,
+        unit_of_work_factory: UnitOfWorkFactory,
+        worker_wake: PerformanceCalculationWorkerWake,
+        formula_profile_policy: FormulaProfilePolicy,
+    ) -> RequestPerformanceCalculationUseCase:
+        return RequestPerformanceCalculationUseCase(
+            unit_of_work_factory=unit_of_work_factory,
+            worker_wake=worker_wake,
+            formula_profile_policy=formula_profile_policy,
+        )
+
+    @provide
+    def execute_performance_calculation_use_case(
+        self,
+        unit_of_work_factory: UnitOfWorkFactory,
+        beatmap_file_provider: PerformanceBeatmapFileProvider,
+        calculator: PerformanceCalculator,
+        completion_signal: PerformanceCompletionSignal,
+        settings: PerformanceRuntimeSettings,
+    ) -> ExecutePerformanceCalculationUseCase:
+        return ExecutePerformanceCalculationUseCase(
+            unit_of_work_factory=unit_of_work_factory,
+            beatmap_file_provider=beatmap_file_provider,
+            calculator=calculator,
+            completion_signal=completion_signal,
+            settings=settings,
+        )
 
     @provide
     def performance_beatmap_file_provider(

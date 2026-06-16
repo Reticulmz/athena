@@ -101,9 +101,9 @@
   - _Requirements: 8.4, 10.2, 11.3, 11.4, 11.5_
   - _Depends: 4.1, 4.2_
 
-- [ ] 4.4 App / worker composition を統合する
+- [x] 4.4 App / worker composition を統合する
   - app side は accepted score 後に durable calculation request を作り、commit 後に worker を wake できるようにする
-  - worker side は calculation use-case と batch use-case を taskiq state に登録する
+  - worker side は calculation use-case を taskiq state に登録し、batch use-case は 6.2 実装時に同じ runtime state 境界へ登録できるようにする
   - job registration は既存 taskiq registry pattern に従う
   - 完了時には app process と worker process が performance dependencies を解決して起動できる
   - _Requirements: 3.1, 6.1, 8.4, 10.2, 11.5_
@@ -147,6 +147,7 @@
   - pending または stale work item を bounded chunk で claim する
   - each work item は Request Performance Calculation workflow を通して replacement calculation を作成する
   - replacement が completed または unavailable の terminal state になるまで old current PP を維持する
+  - worker side は batch use-case を taskiq state に登録する
   - 完了時には worker 停止後も stale work が後続 worker に再claimされ、batch progress が進む
   - _Requirements: 8.5, 11.3, 11.4, 11.5, 11.6, 12.3, 12.4_
   - _Depends: 4.1, 6.1_

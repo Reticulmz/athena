@@ -3,7 +3,7 @@
 import hashlib
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import cast, override
+from typing import cast, final, override
 
 import pytest
 import structlog.testing
@@ -37,6 +37,11 @@ from osu_server.services.commands.scores import (
     SubmissionOutcome,
     generate_submission_fingerprint,
     generate_submission_request_hash,
+)
+from osu_server.services.commands.scores.performance import (
+    RequestPerformanceCalculationCommand,
+    RequestPerformanceCalculationOutcome,
+    RequestPerformanceCalculationResult,
 )
 from tests.support.fakes import (
     ScoreRepositoryViews,
@@ -181,6 +186,35 @@ class RecordingWarmupUseCase:
             checksum_md5=request.checksum_md5,
             reason=None,
         )
+
+
+@final
+class RecordingPerformanceCalculationRequest:
+    def __init__(self, *, fail: bool = False) -> None:
+        self._fail = fail
+        self.commands: list[RequestPerformanceCalculationCommand] = []
+
+    async def execute(
+        self,
+        command: RequestPerformanceCalculationCommand,
+    ) -> RequestPerformanceCalculationResult:
+        self.commands.append(command)
+        if self._fail:
+            msg = "performance request failed"
+            raise RuntimeError(msg)
+        return RequestPerformanceCalculationResult(
+            outcome=RequestPerformanceCalculationOutcome.SCORE_NOT_FOUND,
+            score_id=command.score_id,
+        )
+
+
+@final
+class StubPerformanceCalculatorIdentity:
+    def calculator_name(self) -> str:
+        return "test-calculator"
+
+    def calculator_version(self) -> str:
+        return "1.2.3"
 
 
 @dataclass(slots=True)
@@ -352,6 +386,93 @@ async def test_happy_path_valid_submission_creates_score(
         submission.result_snapshot["beatmap_status_at_submission"]
         == BeatmapRankStatus.RANKED.value
     )
+
+
+@pytest.mark.asyncio
+async def test_completed_submission_requests_performance_calculation(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    repos: ScoreRepositoryViews,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Accepted score persistence is followed by a durable performance request."""
+    score_repo, _submission_repo, _replay_repo = repos
+    performance_request = RecordingPerformanceCalculationRequest()
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=performance_request,
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_perf_request:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.score_id is not None
+    assert await score_repo.get_by_id(result.score_id) is not None
+    assert performance_request.commands == [
+        RequestPerformanceCalculationCommand(
+            score_id=result.score_id,
+            calculator_name="test-calculator",
+            calculator_version="1.2.3",
+            requested_at=valid_input.submitted_at,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_performance_calculation_request_failure_keeps_completed_response(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Worker wake/request diagnostics do not reject an accepted stable submission."""
+    performance_request = RecordingPerformanceCalculationRequest(fail=True)
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=performance_request,
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_perf_failure:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    with structlog.testing.capture_logs() as logs:
+        result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.score_id is not None
+    assert len(performance_request.commands) == 1
+    entries = [
+        entry for entry in logs if entry["event"] == "score_performance_calculation_request_failed"
+    ]
+    assert len(entries) == 1
+    assert entries[0]["score_id"] == result.score_id
+    assert entries[0]["error"] == "RuntimeError"
 
 
 @pytest.mark.asyncio
