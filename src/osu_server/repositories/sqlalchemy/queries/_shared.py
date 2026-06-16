@@ -199,6 +199,7 @@ def attachment_to_domain(model: BeatmapFileAttachmentModel) -> BeatmapFileAttach
         original_filename=model.original_filename,
         fetched_at=model.fetched_at,
         verified_at=model.verified_at,
+        id=model.id,
     )
 
 

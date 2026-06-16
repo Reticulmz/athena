@@ -156,6 +156,7 @@ def test_file_attachment_metadata_references_blob_without_body_bytes() -> None:
     attachment = _make_attachment()
     beatmap = _make_beatmap(file_attachment=attachment)
 
+    assert attachment.id is None
     assert attachment.blob_id == 55
     assert attachment.checksum_md5 == _CHECKSUM
     assert attachment.original_filename == "2000.osu"
@@ -163,6 +164,36 @@ def test_file_attachment_metadata_references_blob_without_body_bytes() -> None:
     assert not hasattr(attachment, "content")
     assert beatmap.file_state is BeatmapFileState.AVAILABLE
     assert beatmap.file_attachment == attachment
+
+
+def test_file_attachment_preserves_persistent_identity_when_available() -> None:
+    attachment = BeatmapFileAttachment(
+        beatmap_id=2_000,
+        blob_id=55,
+        checksum_md5=_CHECKSUM,
+        source="official",
+        original_filename="2000.osu",
+        fetched_at=_NOW,
+        verified_at=_NOW,
+        id=7,
+    )
+
+    assert attachment.id == 7
+    assert attachment.blob_id == 55
+
+
+def test_file_attachment_rejects_non_positive_persistent_identity() -> None:
+    with pytest.raises(ValueError, match="id must be positive"):
+        _ = BeatmapFileAttachment(
+            beatmap_id=2_000,
+            blob_id=55,
+            checksum_md5=_CHECKSUM,
+            source="official",
+            original_filename="2000.osu",
+            fetched_at=_NOW,
+            verified_at=_NOW,
+            id=0,
+        )
 
 
 def test_beatmapset_groups_known_beatmaps_and_status_metadata() -> None:

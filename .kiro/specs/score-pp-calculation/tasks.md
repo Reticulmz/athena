@@ -49,7 +49,7 @@
   - _Requirements: 10.2, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 12.2_
 
 - [ ] 3. Calculation dependencies: `.osu` file、calculator、completion signal を隔離する
-- [ ] 3.1 (P) PP calculation 用 `.osu` file provider を実装する
+- [x] 3.1 (P) PP calculation 用 `.osu` file provider を実装する
   - beatmap-mirror に `require_osu_file=True` で問い合わせ、fetch 中の file は pending input として扱う
   - attachment が利用可能な場合だけ blob-storage から `.osu` bytes を読む
   - attachment id と checksum を provenance として返す

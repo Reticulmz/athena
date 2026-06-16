@@ -274,6 +274,7 @@ def _attachment_domain() -> BeatmapFileAttachment:
         original_filename="2000.osu",
         fetched_at=_NOW,
         verified_at=_NOW,
+        id=1,
     )
 
 

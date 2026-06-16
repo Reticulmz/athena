@@ -17,7 +17,11 @@ from osu_server.repositories.interfaces.queries.score_performance import (
 from osu_server.repositories.memory.queries.score_performance import (
     InMemoryScorePerformanceQueryRepository,
 )
-from osu_server.services.commands.scores.performance import PerformanceRuntimeSettings
+from osu_server.services.commands.scores.performance import (
+    BeatmapMirrorPerformanceBeatmapFileProvider,
+    PerformanceBeatmapFileProvider,
+    PerformanceRuntimeSettings,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,12 +38,14 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
     try:
         settings = await container.get(PerformanceRuntimeSettings)
         policy = await container.get(FormulaProfilePolicy)
+        beatmap_file_provider = await container.get(PerformanceBeatmapFileProvider)
         query_repository = await container.get(ScorePerformanceQueryRepository)
 
         assert settings.worker_chunk_size == 100
         assert policy.active_profile_for(Playstyle.VANILLA) is settings.active_formula_profile_for(
             Playstyle.VANILLA
         )
+        assert isinstance(beatmap_file_provider, BeatmapMirrorPerformanceBeatmapFileProvider)
         assert isinstance(query_repository, InMemoryScorePerformanceQueryRepository)
     finally:
         await container.close()
@@ -56,10 +62,12 @@ async def test_worker_container_resolves_performance_defaults(tmp_path: Path) ->
     try:
         settings = await container.get(PerformanceRuntimeSettings)
         policy = await container.get(FormulaProfilePolicy)
+        beatmap_file_provider = await container.get(PerformanceBeatmapFileProvider)
 
         assert settings.claim_timeout.total_seconds() == 300
         assert policy.active_profile_for(Playstyle.VANILLA) is settings.active_formula_profile_for(
             Playstyle.VANILLA
         )
+        assert isinstance(beatmap_file_provider, BeatmapMirrorPerformanceBeatmapFileProvider)
     finally:
         await container.close()

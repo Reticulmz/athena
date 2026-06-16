@@ -68,9 +68,13 @@ class BeatmapFileAttachment:
     original_filename: str | None
     fetched_at: datetime
     verified_at: datetime | None
+    id: int | None = None
 
     def __post_init__(self) -> None:
         _validate_md5(self.checksum_md5)
+        if self.id is not None and self.id <= 0:
+            msg = "id must be positive"
+            raise ValueError(msg)
 
 
 @dataclass(slots=True, frozen=True)

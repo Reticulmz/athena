@@ -486,6 +486,7 @@ async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
     assert beatmapset.beatmaps[0].id == fixture.beatmap.id
     assert beatmap_by_checksum.id == fixture.beatmap.id
     assert beatmap_by_filename.id == fixture.beatmap.id
+    assert file_attachment.id == fixture.attachment.id
     assert file_attachment.blob_id == fixture.blob.id
     assert fetch_state.status is BeatmapFetchState.FRESH
     assert legacy_by_checksum.id == fixture.beatmap.id
