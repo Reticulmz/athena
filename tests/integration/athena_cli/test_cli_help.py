@@ -24,6 +24,7 @@ def test_root_help_shows_only_in_scope_management_commands() -> None:
     assert "db" in result.output
     assert "config" in result.output
     assert "dev" in result.output
+    assert "pp" in result.output
     assert "test" in result.output
     assert "server" not in result.output
     assert "worker" not in result.output

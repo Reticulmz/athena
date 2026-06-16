@@ -20,6 +20,7 @@ from osu_server.composition.providers import container as container_providers
 from osu_server.composition.providers import identity as identity_providers
 from osu_server.composition.providers import infrastructure as infrastructure_providers
 from osu_server.composition.providers import performance as performance_providers
+from osu_server.composition.providers import performance_cli as performance_cli_providers
 from osu_server.composition.providers import repositories as repository_providers
 from osu_server.composition.providers import score_submission as score_submission_providers
 from osu_server.composition.providers import scores as score_providers
@@ -43,6 +44,7 @@ PRODUCTION_PROVIDER_MODULES = (
     infrastructure_providers,
     repository_providers,
     performance_providers,
+    performance_cli_providers,
     storage_providers,
     beatmap_providers,
     chat_providers,
@@ -135,6 +137,7 @@ def test_production_provider_modules_do_not_branch_on_test_environment() -> None
 def test_provider_package_exports_modular_sets_without_common_provider() -> None:
     assert "CommonProviderSet" not in provider_exports
     assert "InfrastructureProviderSet" in provider_exports
+    assert "PerformanceCliProviderSet" in provider_exports
     assert "PerformanceProviderSet" in provider_exports
     assert "RepositoryProviderSet" in provider_exports
     assert "StableWebLegacyProviderSet" in provider_exports

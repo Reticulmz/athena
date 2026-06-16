@@ -152,7 +152,7 @@
   - _Requirements: 8.5, 11.3, 11.4, 11.5, 11.6, 12.3, 12.4_
   - _Depends: 4.1, 6.1_
 
-- [ ] 6.3 PP recalculation CLI を追加する
+- [x] 6.3 PP recalculation CLI を追加する
   - operator command は dry-run を既定にし、execution は explicit flag で durable work を作る
   - score id、beatmap id、user id、ruleset、limit、all、include-unavailable を validation する
   - CLI process は calculator を import せず、raw SQL も実行しない
