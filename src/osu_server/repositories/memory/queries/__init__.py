@@ -8,6 +8,9 @@ from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryReposi
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
 from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
+from osu_server.repositories.memory.queries.score_performance import (
+    InMemoryScorePerformanceQueryRepository,
+)
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 
 __all__ = [
@@ -17,5 +20,6 @@ __all__ = [
     "InMemoryChannelQueryRepository",
     "InMemoryChatHistoryQueryRepository",
     "InMemoryRoleQueryRepository",
+    "InMemoryScorePerformanceQueryRepository",
     "InMemoryUserQueryRepository",
 ]

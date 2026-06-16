@@ -16,6 +16,9 @@ from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
 from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
 from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
+from osu_server.repositories.interfaces.queries.score_performance import (
+    ScorePerformanceQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
@@ -29,6 +32,9 @@ from osu_server.repositories.sqlalchemy.queries.chat import (
     SQLAlchemyChatHistoryQueryRepository,
 )
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
+from osu_server.repositories.sqlalchemy.queries.score_performance import (
+    SQLAlchemyScorePerformanceQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.scores import SQLAlchemyScoreQueryRepository
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
@@ -41,6 +47,7 @@ _DISHKA_RUNTIME_HINTS = (
     ChannelQueryRepository,
     ChatHistoryQueryRepository,
     RoleQueryRepository,
+    ScorePerformanceQueryRepository,
     ScoreQueryRepository,
     UnitOfWorkFactory,
     UserQueryRepository,
@@ -116,3 +123,10 @@ class RepositoryProviderSet(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> ScoreQueryRepository:
         return SQLAlchemyScoreQueryRepository(session_factory)
+
+    @provide
+    def score_performance_query_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> ScorePerformanceQueryRepository:
+        return SQLAlchemyScorePerformanceQueryRepository(session_factory)

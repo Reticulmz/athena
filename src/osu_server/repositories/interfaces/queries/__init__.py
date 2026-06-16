@@ -11,6 +11,13 @@ from osu_server.repositories.interfaces.queries.chat import (
     ChatHistoryQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
+from osu_server.repositories.interfaces.queries.score_performance import (
+    RecalculationCandidateReason,
+    ScorePerformanceCandidateSelection,
+    ScorePerformanceQueryRepository,
+    ScorePerformanceRecalculationCandidate,
+    ScorePerformanceRecalculationCandidateResult,
+)
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 
@@ -21,7 +28,12 @@ __all__ = [
     "ChannelQueryRepository",
     "ChatHistoryMessage",
     "ChatHistoryQueryRepository",
+    "RecalculationCandidateReason",
     "RoleQueryRepository",
+    "ScorePerformanceCandidateSelection",
+    "ScorePerformanceQueryRepository",
+    "ScorePerformanceRecalculationCandidate",
+    "ScorePerformanceRecalculationCandidateResult",
     "ScoreQueryRepository",
     "UserQueryRepository",
 ]

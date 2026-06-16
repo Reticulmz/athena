@@ -8,6 +8,9 @@ from osu_server.repositories.sqlalchemy.queries.blobs import SQLAlchemyBlobQuery
 from osu_server.repositories.sqlalchemy.queries.channels import SQLAlchemyChannelQueryRepository
 from osu_server.repositories.sqlalchemy.queries.chat import SQLAlchemyChatHistoryQueryRepository
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
+from osu_server.repositories.sqlalchemy.queries.score_performance import (
+    SQLAlchemyScorePerformanceQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.scores import SQLAlchemyScoreQueryRepository
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 
@@ -18,6 +21,7 @@ __all__ = [
     "SQLAlchemyChannelQueryRepository",
     "SQLAlchemyChatHistoryQueryRepository",
     "SQLAlchemyRoleQueryRepository",
+    "SQLAlchemyScorePerformanceQueryRepository",
     "SQLAlchemyScoreQueryRepository",
     "SQLAlchemyUserQueryRepository",
 ]

@@ -32,7 +32,7 @@
   - _Boundary: ScorePerformanceCommandRepository_
   - _Depends: 1.2, 1.3_
 
-- [ ] 2.2 (P) Performance read model と candidate selection を実装する
+- [x] 2.2 (P) Performance read model と candidate selection を実装する
   - stable response は current Performance Calculation だけを読めるようにする
   - uncalculated、stale、calculator version mismatch、Formula Profile mismatch、explicit unavailable を candidate reason として集計する
   - score id、beatmap id、user id、ruleset、limit の filter を candidate selection に反映する

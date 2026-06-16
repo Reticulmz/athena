@@ -45,6 +45,9 @@ from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
 from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
 from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
+from osu_server.repositories.interfaces.queries.score_performance import (
+    ScorePerformanceQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.sqlalchemy.queries.beatmap_score_listing import (
@@ -55,6 +58,9 @@ from osu_server.repositories.sqlalchemy.queries.blobs import SQLAlchemyBlobQuery
 from osu_server.repositories.sqlalchemy.queries.channels import SQLAlchemyChannelQueryRepository
 from osu_server.repositories.sqlalchemy.queries.chat import SQLAlchemyChatHistoryQueryRepository
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
+from osu_server.repositories.sqlalchemy.queries.score_performance import (
+    SQLAlchemyScorePerformanceQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.scores import SQLAlchemyScoreQueryRepository
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 from osu_server.services.commands.beatmaps import (
@@ -201,6 +207,10 @@ async def test_app_provider_graph_resolves_query_repositories() -> None:
         assert isinstance(await container.get(BlobQueryRepository), SQLAlchemyBlobQueryRepository)
         assert isinstance(
             await container.get(ScoreQueryRepository), SQLAlchemyScoreQueryRepository
+        )
+        assert isinstance(
+            await container.get(ScorePerformanceQueryRepository),
+            SQLAlchemyScorePerformanceQueryRepository,
         )
     finally:
         await _close_common_dependencies(container)

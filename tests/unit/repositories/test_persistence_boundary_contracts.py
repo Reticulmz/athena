@@ -27,6 +27,7 @@ from osu_server.repositories.interfaces.queries import (
     ChannelQueryRepository,
     ChatHistoryQueryRepository,
     RoleQueryRepository,
+    ScorePerformanceQueryRepository,
     ScoreQueryRepository,
     UserQueryRepository,
 )
@@ -73,6 +74,7 @@ QUERY_REPOSITORIES = (
     BlobQueryRepository,
     ChatHistoryQueryRepository,
     BeatmapScoreListingQueryRepository,
+    ScorePerformanceQueryRepository,
 )
 
 FORBIDDEN_INTERFACE_IMPORT_ROOTS = (
@@ -194,6 +196,10 @@ def test_query_repository_contracts_are_read_only() -> None:
         "find_by_checksum",
         "find_by_filename_in_beatmapset",
         "get_beatmapset",
+    }
+    assert _public_async_methods(ScorePerformanceQueryRepository) == {
+        "get_current_for_score",
+        "select_recalculation_candidates",
     }
 
 

@@ -11,6 +11,12 @@ from osu_server.composition.providers.container import make_app_container, make_
 from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
 from osu_server.domain.scores.performance import FormulaProfilePolicy
 from osu_server.domain.scores.score import Playstyle
+from osu_server.repositories.interfaces.queries.score_performance import (
+    ScorePerformanceQueryRepository,
+)
+from osu_server.repositories.memory.queries.score_performance import (
+    InMemoryScorePerformanceQueryRepository,
+)
 from osu_server.services.commands.scores.performance import PerformanceRuntimeSettings
 
 if TYPE_CHECKING:
@@ -28,11 +34,13 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
     try:
         settings = await container.get(PerformanceRuntimeSettings)
         policy = await container.get(FormulaProfilePolicy)
+        query_repository = await container.get(ScorePerformanceQueryRepository)
 
         assert settings.worker_chunk_size == 100
         assert policy.active_profile_for(Playstyle.VANILLA) is settings.active_formula_profile_for(
             Playstyle.VANILLA
         )
+        assert isinstance(query_repository, InMemoryScorePerformanceQueryRepository)
     finally:
         await container.close()
 

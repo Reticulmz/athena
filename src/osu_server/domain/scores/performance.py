@@ -56,6 +56,7 @@ class PerformanceCalculationState(Enum):
 class FormulaProfile(Enum):
     """Playstyle-scoped formula profile key."""
 
+    LEGACY_VANILLA_RANKED = "vanilla_ranked_legacy"
     VANILLA_RANKED = "vanilla_ranked_v1"
 
 

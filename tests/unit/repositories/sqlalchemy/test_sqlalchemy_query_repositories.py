@@ -6,6 +6,7 @@ import ast
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, override
 
@@ -17,7 +18,13 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
 )
 from osu_server.domain.chat.channels import ChannelType
+from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculationState
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
+from osu_server.repositories.interfaces.queries.score_performance import (
+    RecalculationCandidateReason,
+    ScorePerformanceCandidateSelection,
+    ScorePerformanceQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
@@ -33,6 +40,9 @@ from osu_server.repositories.sqlalchemy.models.channel import (
 )
 from osu_server.repositories.sqlalchemy.models.role import RoleModel
 from osu_server.repositories.sqlalchemy.models.score import ScoreModel
+from osu_server.repositories.sqlalchemy.models.score_performance import (
+    ScorePerformanceCalculationModel,
+)
 from osu_server.repositories.sqlalchemy.models.user import UserModel
 from osu_server.repositories.sqlalchemy.queries import (
     SQLAlchemyBeatmapQueryRepository,
@@ -41,6 +51,7 @@ from osu_server.repositories.sqlalchemy.queries import (
     SQLAlchemyChannelQueryRepository,
     SQLAlchemyChatHistoryQueryRepository,
     SQLAlchemyRoleQueryRepository,
+    SQLAlchemyScorePerformanceQueryRepository,
     SQLAlchemyScoreQueryRepository,
     SQLAlchemyUserQueryRepository,
 )
@@ -263,6 +274,177 @@ async def test_score_and_blob_query_repositories_are_read_only() -> None:
     assert blob_by_id.sha256 == "a" * 64
     assert blob_by_sha256.id == fixture.blob.id
     assert fixture.session.closed is True
+
+
+async def test_score_performance_query_repository_reads_current_and_candidates() -> None:
+    score_without_performance = _score_model(score_id=301, user_id=10, beatmap_id=7)
+    score_with_mismatch = _score_model(score_id=302, user_id=10, beatmap_id=7)
+    score_with_profile_mismatch = _score_model(score_id=303, user_id=10, beatmap_id=7)
+    score_with_stale_file = _score_model(score_id=304, user_id=10, beatmap_id=7)
+    attachment = _attachment_model(attachment_id=8, beatmap_id=7, checksum_md5="b" * 32)
+    current = _performance_model(
+        calculation_id=401,
+        score_id=302,
+        state=PerformanceCalculationState.COMPLETED,
+        calculator_version="3.9.0",
+    )
+    profile_mismatch = _performance_model(
+        calculation_id=402,
+        score_id=303,
+        state=PerformanceCalculationState.COMPLETED,
+        calculator_version="4.0.2",
+        formula_profile=FormulaProfile.LEGACY_VANILLA_RANKED,
+    )
+    stale_file = _performance_model(
+        calculation_id=403,
+        score_id=304,
+        state=PerformanceCalculationState.COMPLETED,
+        calculator_version="4.0.2",
+        beatmap_file_attachment_id=8,
+        beatmap_file_checksum_md5="c" * 32,
+    )
+    session = FakeQuerySession(
+        execute_handler=lambda statement: _execute_from_text(
+            statement,
+            {
+                "FROM score_performance_calculations": FakeResult(current),
+                "LEFT OUTER JOIN score_performance_calculations": FakeResult(
+                    values=[
+                        (score_without_performance, None, attachment),
+                        (score_with_mismatch, current, attachment),
+                        (score_with_profile_mismatch, profile_mismatch, attachment),
+                        (score_with_stale_file, stale_file, attachment),
+                    ]
+                ),
+            },
+        )
+    )
+    factory = FakeSessionFactory(session)
+    session_factory = cast("SQLAlchemyQuerySessionFactory", cast("object", factory))
+    repository: ScorePerformanceQueryRepository = SQLAlchemyScorePerformanceQueryRepository(
+        session_factory
+    )
+
+    current_read = await repository.get_current_for_score(score_with_mismatch.id)
+    candidates = await repository.select_recalculation_candidates(
+        ScorePerformanceCandidateSelection(
+            target_calculator_name="rosu-pp-py",
+            target_calculator_version="4.0.2",
+            target_formula_profile=FormulaProfile.VANILLA_RANKED,
+            score_id=None,
+            beatmap_id=7,
+            user_id=10,
+            ruleset=Ruleset.OSU,
+            limit=None,
+            include_unavailable=False,
+        )
+    )
+
+    assert current_read is not None
+    assert current_read.id == current.id
+    assert [candidate.score_id for candidate in candidates.candidates] == [301, 302, 303, 304]
+    assert candidates.reason_counts == {
+        RecalculationCandidateReason.UNCALCULATED: 1,
+        RecalculationCandidateReason.CALCULATOR_VERSION_MISMATCH: 1,
+        RecalculationCandidateReason.FORMULA_PROFILE_MISMATCH: 1,
+        RecalculationCandidateReason.STALE: 1,
+    }
+    assert factory.calls == 2
+    assert session.closed is True
+
+
+async def test_score_performance_query_repository_marks_explicit_target_mismatch_stale() -> None:
+    score = _score_model(score_id=305, user_id=10, beatmap_id=7)
+    attachment = _attachment_model(attachment_id=8, beatmap_id=7, checksum_md5="b" * 32)
+    current = _performance_model(
+        calculation_id=404,
+        score_id=305,
+        state=PerformanceCalculationState.COMPLETED,
+        calculator_version="4.0.2",
+        beatmap_file_attachment_id=8,
+        beatmap_file_checksum_md5="b" * 32,
+    )
+    session = FakeQuerySession(
+        execute_handler=lambda statement: _execute_from_text(
+            statement,
+            {
+                "LEFT OUTER JOIN score_performance_calculations": FakeResult(
+                    values=[(score, current, attachment)]
+                ),
+            },
+        )
+    )
+    factory = FakeSessionFactory(session)
+    session_factory = cast("SQLAlchemyQuerySessionFactory", cast("object", factory))
+    repository: ScorePerformanceQueryRepository = SQLAlchemyScorePerformanceQueryRepository(
+        session_factory
+    )
+
+    candidates = await repository.select_recalculation_candidates(
+        ScorePerformanceCandidateSelection(
+            target_calculator_name="rosu-pp-py",
+            target_calculator_version="4.0.2",
+            target_formula_profile=FormulaProfile.VANILLA_RANKED,
+            score_id=score.id,
+            beatmap_id=7,
+            user_id=10,
+            ruleset=Ruleset.OSU,
+            limit=None,
+            include_unavailable=False,
+            target_beatmap_file_checksum_md5="d" * 32,
+        )
+    )
+
+    assert [candidate.score_id for candidate in candidates.candidates] == [305]
+    assert candidates.reason_counts == {RecalculationCandidateReason.STALE: 1}
+    assert session.closed is True
+
+
+async def test_score_performance_query_repository_marks_explicit_attachment_stale() -> None:
+    score = _score_model(score_id=306, user_id=10, beatmap_id=7)
+    attachment = _attachment_model(attachment_id=8, beatmap_id=7, checksum_md5="b" * 32)
+    current = _performance_model(
+        calculation_id=405,
+        score_id=306,
+        state=PerformanceCalculationState.COMPLETED,
+        calculator_version="4.0.2",
+        beatmap_file_attachment_id=8,
+        beatmap_file_checksum_md5="b" * 32,
+    )
+    session = FakeQuerySession(
+        execute_handler=lambda statement: _execute_from_text(
+            statement,
+            {
+                "LEFT OUTER JOIN score_performance_calculations": FakeResult(
+                    values=[(score, current, attachment)]
+                ),
+            },
+        )
+    )
+    factory = FakeSessionFactory(session)
+    session_factory = cast("SQLAlchemyQuerySessionFactory", cast("object", factory))
+    repository: ScorePerformanceQueryRepository = SQLAlchemyScorePerformanceQueryRepository(
+        session_factory
+    )
+
+    candidates = await repository.select_recalculation_candidates(
+        ScorePerformanceCandidateSelection(
+            target_calculator_name="rosu-pp-py",
+            target_calculator_version="4.0.2",
+            target_formula_profile=FormulaProfile.VANILLA_RANKED,
+            score_id=score.id,
+            beatmap_id=7,
+            user_id=10,
+            ruleset=Ruleset.OSU,
+            limit=None,
+            include_unavailable=False,
+            target_beatmap_file_attachment_id=9,
+        )
+    )
+
+    assert [candidate.score_id for candidate in candidates.candidates] == [306]
+    assert candidates.reason_counts == {RecalculationCandidateReason.STALE: 1}
+    assert session.closed is True
 
 
 async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
@@ -584,11 +766,16 @@ def _channel_model() -> ChannelModel:
     )
 
 
-def _score_model() -> ScoreModel:
+def _score_model(
+    *,
+    score_id: int = 300,
+    user_id: int = 1,
+    beatmap_id: int = 7,
+) -> ScoreModel:
     return ScoreModel(
-        id=300,
-        user_id=1,
-        beatmap_id=7,
+        id=score_id,
+        user_id=user_id,
+        beatmap_id=beatmap_id,
         beatmap_checksum="b" * 32,
         online_checksum="online",
         ruleset=Ruleset.OSU.value,
@@ -609,6 +796,42 @@ def _score_model() -> ScoreModel:
         client_version="b20260614",
         submitted_at=_NOW,
         beatmap_status_at_submission="ranked",
+    )
+
+
+def _performance_model(
+    *,
+    calculation_id: int,
+    score_id: int,
+    state: PerformanceCalculationState,
+    calculator_version: str,
+    formula_profile: FormulaProfile = FormulaProfile.VANILLA_RANKED,
+    beatmap_file_attachment_id: int = 8,
+    beatmap_file_checksum_md5: str = "b" * 32,
+) -> ScorePerformanceCalculationModel:
+    return ScorePerformanceCalculationModel(
+        id=calculation_id,
+        score_id=score_id,
+        state=state.value,
+        is_current=True,
+        pp=Decimal("123.456789") if state is PerformanceCalculationState.COMPLETED else None,
+        star_rating=Decimal("5.43210") if state is PerformanceCalculationState.COMPLETED else None,
+        calculator_name="rosu-pp-py",
+        calculator_version=calculator_version,
+        formula_profile=formula_profile.value,
+        beatmap_file_attachment_id=(
+            beatmap_file_attachment_id if state is PerformanceCalculationState.COMPLETED else None
+        ),
+        beatmap_file_checksum_md5=(
+            beatmap_file_checksum_md5 if state is PerformanceCalculationState.COMPLETED else None
+        ),
+        unavailable_reason=None,
+        claim_owner=None,
+        claim_expires_at=None,
+        attempt_count=0,
+        calculated_at=_NOW if state.is_terminal else None,
+        created_at=_NOW,
+        updated_at=_NOW,
     )
 
 
@@ -666,13 +889,18 @@ def _beatmap_model() -> BeatmapModel:
     )
 
 
-def _attachment_model() -> BeatmapFileAttachmentModel:
+def _attachment_model(
+    *,
+    attachment_id: int = 8,
+    beatmap_id: int = 7,
+    checksum_md5: str = "b" * 32,
+) -> BeatmapFileAttachmentModel:
     return BeatmapFileAttachmentModel(
-        id=8,
-        beatmap_id=7,
+        id=attachment_id,
+        beatmap_id=beatmap_id,
         blob_id=400,
-        checksum_md5="b" * 32,
-        verified_md5="b" * 32,
+        checksum_md5=checksum_md5,
+        verified_md5=checksum_md5,
         source="osu_current",
         original_filename="artist - title.osu",
         fetched_at=_NOW,
