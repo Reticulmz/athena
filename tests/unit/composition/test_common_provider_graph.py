@@ -27,6 +27,7 @@ from osu_server.domain.beatmaps import (
     BeatmapMetadataProvider,
 )
 from osu_server.domain.identity.system_users import SystemUserIdentity
+from osu_server.domain.scores.performance import FormulaProfilePolicy
 from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
@@ -81,6 +82,7 @@ from osu_server.services.commands.identity.session_authorization_service import 
 )
 from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase, SubmitScoreUseCase
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
+from osu_server.services.commands.scores.performance import PerformanceRuntimeSettings
 from osu_server.services.commands.storage.blob_storage import BlobStorageService
 from osu_server.services.queries.beatmaps import (
     ResolveBeatmapByChecksumQuery,
@@ -220,6 +222,8 @@ async def test_app_provider_graph_resolves_shared_provider_groups() -> None:
         FetchBeatmapMetadataUseCase,
         FetchBeatmapFileUseCase,
         ScoreCryptoService,
+        PerformanceRuntimeSettings,
+        FormulaProfilePolicy,
         BeatmapScoreListingQuery,
         ListVisibleChannelsQuery,
         ListAutojoinChannelsQuery,
@@ -340,6 +344,11 @@ async def test_worker_provider_graph_uses_shared_dependencies_without_app_only_g
     try:
         assert isinstance(await container.get(WorkerProviderGraph), WorkerProviderGraph)
         assert isinstance(await container.get(ResolveBeatmapByIdQuery), ResolveBeatmapByIdQuery)
+        assert isinstance(
+            await container.get(PerformanceRuntimeSettings),
+            PerformanceRuntimeSettings,
+        )
+        assert isinstance(await container.get(FormulaProfilePolicy), FormulaProfilePolicy)
         assert isinstance(await container.get(BeatmapScoreListingQuery), BeatmapScoreListingQuery)
         assert isinstance(await container.get(ListVisibleChannelsQuery), ListVisibleChannelsQuery)
         assert isinstance(await container.get(JoinChannelUseCase), JoinChannelUseCase)

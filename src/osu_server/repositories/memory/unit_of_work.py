@@ -117,6 +117,43 @@ class InMemoryUnitOfWorkFactory:
         )
         _replace_mapping(self._state.fetch_states_by_target, committed.fetch_states_by_target)
 
+        _replace_mapping(
+            self._state.performance_calculations_by_id,
+            committed.performance_calculations_by_id,
+        )
+        _replace_mapping(
+            self._state.current_performance_calculation_id_by_score_id,
+            committed.current_performance_calculation_id_by_score_id,
+        )
+        _replace_mapping(
+            self._state.replacement_performance_calculation_id_by_score_id,
+            committed.replacement_performance_calculation_id_by_score_id,
+        )
+        _replace_mapping(
+            self._state.performance_claims_by_calculation_id,
+            committed.performance_claims_by_calculation_id,
+        )
+        self._state.next_performance_calculation_id = committed.next_performance_calculation_id
+
+        _replace_mapping(
+            self._state.performance_recalculation_batches_by_id,
+            committed.performance_recalculation_batches_by_id,
+        )
+        _replace_mapping(
+            self._state.performance_recalculation_work_items_by_id,
+            committed.performance_recalculation_work_items_by_id,
+        )
+        _replace_mapping(
+            self._state.performance_recalculation_work_item_ids_by_batch_id,
+            committed.performance_recalculation_work_item_ids_by_batch_id,
+        )
+        self._state.next_performance_recalculation_batch_id = (
+            committed.next_performance_recalculation_batch_id
+        )
+        self._state.next_performance_recalculation_work_item_id = (
+            committed.next_performance_recalculation_work_item_id
+        )
+
     def seed_roles(self, roles: list[Role]) -> None:
         """Seed roles into factory state (test helper)."""
         for role in roles:

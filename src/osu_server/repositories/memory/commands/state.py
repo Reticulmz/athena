@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from osu_server.domain.chat.channels import Channel, ChannelRoleOverride
     from osu_server.domain.identity.roles import Role
     from osu_server.domain.identity.users import User
+    from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculation
     from osu_server.domain.scores.replay import Replay
     from osu_server.domain.scores.score import Score
     from osu_server.domain.scores.submission import ScoreSubmission
@@ -45,6 +46,48 @@ class InMemoryPrivateMessageRecord:
     target_id: int
     content: str
     created_at: datetime
+
+
+@dataclass(slots=True, frozen=True)
+class InMemoryPerformanceClaim:
+    """In-memory worker claim metadata for performance rows and work items."""
+
+    owner: str
+    expires_at: datetime
+    attempt_count: int
+
+
+@dataclass(slots=True, frozen=True)
+class InMemoryPerformanceRecalculationBatchRecord:
+    """Committed performance recalculation batch row for memory repositories."""
+
+    id: int
+    status: str
+    filters: dict[str, object]
+    reason_counts: dict[str, int]
+    target_calculator_version: str
+    target_formula_profile: FormulaProfile
+    candidate_count: int
+    completed_count: int
+    unavailable_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True, frozen=True)
+class InMemoryPerformanceRecalculationWorkItemRecord:
+    """Committed performance recalculation work item row for memory repositories."""
+
+    id: int
+    batch_id: int
+    score_id: int
+    reason: str
+    state: str
+    calculation_id: int | None
+    claim: InMemoryPerformanceClaim | None
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(slots=True)
@@ -96,6 +139,28 @@ class InMemoryCommandRepositoryState:
     fetch_states_by_target: dict[BeatmapFetchTarget, BeatmapFetchRecord] = field(
         default_factory=dict
     )
+
+    performance_calculations_by_id: dict[int, PerformanceCalculation] = field(default_factory=dict)
+    current_performance_calculation_id_by_score_id: dict[int, int] = field(default_factory=dict)
+    replacement_performance_calculation_id_by_score_id: dict[int, int] = field(
+        default_factory=dict
+    )
+    performance_claims_by_calculation_id: dict[int, InMemoryPerformanceClaim] = field(
+        default_factory=dict
+    )
+    next_performance_calculation_id: int = 1
+
+    performance_recalculation_batches_by_id: dict[
+        int, InMemoryPerformanceRecalculationBatchRecord
+    ] = field(default_factory=dict)
+    performance_recalculation_work_items_by_id: dict[
+        int, InMemoryPerformanceRecalculationWorkItemRecord
+    ] = field(default_factory=dict)
+    performance_recalculation_work_item_ids_by_batch_id: dict[int, list[int]] = field(
+        default_factory=dict
+    )
+    next_performance_recalculation_batch_id: int = 1
+    next_performance_recalculation_work_item_id: int = 1
 
     def clone(self) -> Self:
         """Return an isolated copy for a command transaction."""

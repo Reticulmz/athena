@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from osu_server.domain.beatmaps import BeatmapRankStatus
@@ -13,6 +14,7 @@ from osu_server.domain.scores.mods import Mod
 from osu_server.domain.scores.score import Playstyle
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from datetime import datetime
 
     from osu_server.domain.scores.score import Score
@@ -55,6 +57,11 @@ class FormulaProfile(Enum):
     """Playstyle-scoped formula profile key."""
 
     VANILLA_RANKED = "vanilla_ranked_v1"
+
+
+_DEFAULT_FORMULA_PROFILES_BY_PLAYSTYLE: Mapping[Playstyle, FormulaProfile] = MappingProxyType(
+    {Playstyle.VANILLA: FormulaProfile.VANILLA_RANKED}
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -110,9 +117,31 @@ class PerformanceEligibilityPolicy:
 class FormulaProfilePolicy:
     """Resolve exactly one active Formula Profile per playstyle."""
 
+    def __init__(
+        self,
+        profiles_by_playstyle: Mapping[Playstyle, FormulaProfile] | None = None,
+    ) -> None:
+        profiles = dict(
+            _DEFAULT_FORMULA_PROFILES_BY_PLAYSTYLE
+            if profiles_by_playstyle is None
+            else profiles_by_playstyle
+        )
+        if Playstyle.VANILLA not in profiles:
+            msg = "vanilla formula profile is required"
+            raise ValueError(msg)
+        self._profiles_by_playstyle: Mapping[Playstyle, FormulaProfile] = MappingProxyType(
+            profiles
+        )
+
+    @property
+    def profiles_by_playstyle(self) -> Mapping[Playstyle, FormulaProfile]:
+        return self._profiles_by_playstyle
+
     def active_profile_for(self, playstyle: object) -> FormulaProfile:
-        if playstyle is Playstyle.VANILLA:
-            return FormulaProfile.VANILLA_RANKED
+        if isinstance(playstyle, Playstyle):
+            profile = self._profiles_by_playstyle.get(playstyle)
+            if profile is not None:
+                return profile
         msg = f"unsupported playstyle for performance calculation: {playstyle!r}"
         raise ValueError(msg)
 

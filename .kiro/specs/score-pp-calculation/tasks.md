@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Foundation: Performance Calculation の基盤を定義する
+- [x] 1. Foundation: Performance Calculation の基盤を定義する
 - [x] 1.1 Performance domain model と policy を定義する
   - Performance Calculation の状態を `queued`, `fetching_file`, `calculating`, `completed`, `unavailable`, `superseded` として扱えるようにする
   - Ranked / Approved の passed vanilla score だけを Wave 2 の ranked PP 対象にし、Loved / Qualified / failed / Relax / Autopilot を対象外にする
@@ -15,7 +15,7 @@
   - 完了時には migration 適用後の DB に performance / recalculation tables、constraints、indexes が作成される
   - _Requirements: 5.1, 5.2, 5.3, 11.1, 11.2, 13.1_
 
-- [ ] 1.3 Runtime configuration と test double を整える
+- [x] 1.3 Runtime configuration と test double を整える
   - bounded wait、Formula Profile、worker chunk size、claim timeout を実行時設定として扱う
   - 設定ファイル変更が必要な場合は実装時に明示承認を得てから追加する
   - in-memory state が performance row、batch、work item、claim、current replacement を test で再現できるようにする

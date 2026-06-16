@@ -13,6 +13,7 @@ from osu_server.composition.providers.chat import ChatProviderSet
 from osu_server.composition.providers.chat_app import ChatAppProviderSet
 from osu_server.composition.providers.identity import IdentityProviderSet
 from osu_server.composition.providers.infrastructure import InfrastructureProviderSet
+from osu_server.composition.providers.performance import PerformanceProviderSet
 from osu_server.composition.providers.repositories import RepositoryProviderSet
 from osu_server.composition.providers.score_submission import ScoreSubmissionProviderSet
 from osu_server.composition.providers.scores import ScoreProviderSet
@@ -41,6 +42,7 @@ def make_app_container(
         BeatmapProviderSet(),
         ChatProviderSet(),
         ScoreProviderSet(),
+        PerformanceProviderSet(),
         AppProviderSet(),
         IdentityProviderSet(),
         ChatAppProviderSet(),
@@ -64,6 +66,7 @@ def make_worker_container(
         BeatmapProviderSet(),
         ChatProviderSet(),
         ScoreProviderSet(),
+        PerformanceProviderSet(),
         WorkerProviderSet(),
         *overrides,
     )
