@@ -110,7 +110,7 @@
   - _Depends: 4.3_
 
 - [ ] 5. Stable submit integration: accepted score response に PP state を合成する
-- [ ] 5.1 PerformanceResponseQuery を実装する
+- [x] 5.1 PerformanceResponseQuery を実装する
   - bounded wait 中は completion signal を待ち、signal 後に current Performance Calculation を再読込する
   - signal timeout 時にも final current-state check を行う
   - completed は stable-safe integer PP、pending は retryable、unavailable / out-of-scope は accepted `pp:0` として返す

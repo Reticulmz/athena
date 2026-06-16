@@ -28,6 +28,9 @@ from osu_server.infrastructure.state.valkey.performance_completion_signal import
 )
 from osu_server.jobs.score_performance import TaskiqPerformanceCalculationWorkerWake
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
+from osu_server.repositories.interfaces.queries.score_performance import (
+    ScorePerformanceQueryRepository,
+)
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.scores.performance import (
     BeatmapMirrorPerformanceBeatmapFileProvider,
@@ -42,6 +45,7 @@ from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
 )
+from osu_server.services.queries.scores import PerformanceResponseQuery
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
@@ -58,9 +62,11 @@ _DISHKA_RUNTIME_HINTS = (
     PerformanceCalculationWorkerWake,
     PerformanceCalculator,
     PerformanceCompletionSignal,
+    PerformanceResponseQuery,
     PerformanceRuntimeSettings,
     RequestPerformanceCalculationUseCase,
     ExecutePerformanceCalculationUseCase,
+    ScorePerformanceQueryRepository,
     TaskiqPerformanceCalculationWorkerWake,
     UnitOfWorkFactory,
     ValkeyPerformanceCompletionPublisher,
@@ -123,6 +129,19 @@ class PerformanceProviderSet(Provider):
             calculator=calculator,
             completion_signal=completion_signal,
             settings=settings,
+        )
+
+    @provide
+    def performance_response_query(
+        self,
+        repository: ScorePerformanceQueryRepository,
+        completion_signal: PerformanceCompletionSignal,
+        settings: PerformanceRuntimeSettings,
+    ) -> PerformanceResponseQuery:
+        return PerformanceResponseQuery(
+            repository=repository,
+            completion_signal=completion_signal,
+            bounded_wait=settings.bounded_wait,
         )
 
     @provide

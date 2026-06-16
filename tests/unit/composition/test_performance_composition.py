@@ -42,6 +42,7 @@ from osu_server.services.commands.scores.performance import (
     PerformanceRuntimeSettings,
     RequestPerformanceCalculationUseCase,
 )
+from osu_server.services.queries.scores import PerformanceResponseQuery
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -72,6 +73,7 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
         worker_wake = await container.get(PerformanceCalculationWorkerWake)
         request_use_case = await container.get(RequestPerformanceCalculationUseCase)
         execute_use_case = await container.get(ExecutePerformanceCalculationUseCase)
+        response_query = await container.get(PerformanceResponseQuery)
 
         assert settings.worker_chunk_size == 100
         assert policy.active_profile_for(Playstyle.VANILLA) is settings.active_formula_profile_for(
@@ -84,6 +86,7 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
         assert isinstance(worker_wake, TaskiqPerformanceCalculationWorkerWake)
         assert isinstance(request_use_case, RequestPerformanceCalculationUseCase)
         assert isinstance(execute_use_case, ExecutePerformanceCalculationUseCase)
+        assert isinstance(response_query, PerformanceResponseQuery)
     finally:
         await container.close()
 
