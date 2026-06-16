@@ -24,6 +24,7 @@ from osu_server.repositories.interfaces.commands.score_performance import (
     MarkScorePerformanceCalculationUnavailable,
     MarkScorePerformanceRecalculationWorkFailed,
     MarkScorePerformanceRecalculationWorkUnavailable,
+    UpdateScorePerformanceCalculationState,
 )
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 
@@ -92,6 +93,83 @@ async def test_claim_conflict_is_retryable_without_marking_unavailable() -> None
     assert stale_claim.attempt_count == 2
     assert current is not None
     assert current.state is PerformanceCalculationState.QUEUED
+
+
+async def test_pending_calculation_state_transitions_are_durable() -> None:
+    factory = _memory_factory()
+    created_id = await _create_current(factory, score_id=21)
+
+    async with factory() as uow:
+        fetching = await uow.score_performance.update_pending_calculation_state(
+            UpdateScorePerformanceCalculationState(
+                calculation_id=created_id,
+                expected_state=PerformanceCalculationState.QUEUED,
+                state=PerformanceCalculationState.FETCHING_FILE,
+                transitioned_at=_NOW,
+            )
+        )
+        calculating = await uow.score_performance.update_pending_calculation_state(
+            UpdateScorePerformanceCalculationState(
+                calculation_id=created_id,
+                expected_state=PerformanceCalculationState.FETCHING_FILE,
+                state=PerformanceCalculationState.CALCULATING,
+                transitioned_at=_NOW + timedelta(seconds=1),
+            )
+        )
+        current = await uow.score_performance.get_current_for_score(21)
+        await uow.commit()
+
+    assert fetching is not None
+    assert fetching.state is PerformanceCalculationState.FETCHING_FILE
+    assert calculating is not None
+    assert calculating.state is PerformanceCalculationState.CALCULATING
+    assert current == calculating
+
+
+async def test_pending_calculation_state_transitions_do_not_skip_forward() -> None:
+    factory = _memory_factory()
+    created_id = await _create_current(factory, score_id=23)
+
+    async with factory() as uow:
+        transitioned = await uow.score_performance.update_pending_calculation_state(
+            UpdateScorePerformanceCalculationState(
+                calculation_id=created_id,
+                expected_state=PerformanceCalculationState.FETCHING_FILE,
+                state=PerformanceCalculationState.CALCULATING,
+                transitioned_at=_NOW,
+            )
+        )
+        current = await uow.score_performance.get_current_for_score(23)
+        await uow.commit()
+
+    assert transitioned is None
+    assert current is not None
+    assert current.state is PerformanceCalculationState.QUEUED
+
+
+async def test_terminal_calculation_state_does_not_transition_back_to_pending() -> None:
+    factory = _memory_factory()
+    created_id = await _create_current(factory, score_id=22)
+    completed = await _complete(
+        factory,
+        calculation_id=created_id,
+        calculator_version="4.0.2",
+    )
+
+    async with factory() as uow:
+        transitioned = await uow.score_performance.update_pending_calculation_state(
+            UpdateScorePerformanceCalculationState(
+                calculation_id=created_id,
+                expected_state=PerformanceCalculationState.QUEUED,
+                state=PerformanceCalculationState.FETCHING_FILE,
+                transitioned_at=_NOW + timedelta(seconds=1),
+            )
+        )
+        current = await uow.score_performance.get_current_for_score(22)
+        await uow.commit()
+
+    assert transitioned is None
+    assert current == completed
 
 
 async def test_replacement_preserves_old_current_until_completed_finalization() -> None:

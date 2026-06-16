@@ -16,6 +16,7 @@ from osu_server.repositories.interfaces.commands.score_performance import (
     CreateScorePerformanceRecalculationBatch,
     CreateScorePerformanceRecalculationWorkItem,
     MarkScorePerformanceRecalculationWorkFailed,
+    UpdateScorePerformanceCalculationState,
 )
 from osu_server.repositories.sqlalchemy.commands.score_performance import (
     SQLAlchemyScorePerformanceCommandRepository,
@@ -269,6 +270,83 @@ async def test_sqlalchemy_repository_returns_claim_conflict_without_mutation() -
     assert session.flush_calls == 0
     assert session.commit_calls == 0
     assert session.rollback_calls == 0
+
+
+async def test_sqlalchemy_repository_updates_pending_calculation_state() -> None:
+    model = _model(
+        calculation_id=20,
+        score_id=10,
+        state=PerformanceCalculationState.QUEUED,
+        is_current=True,
+    )
+    session = FakeSession(execute_results=[model])
+    repo = _repo(session)
+
+    result = await repo.update_pending_calculation_state(
+        UpdateScorePerformanceCalculationState(
+            calculation_id=20,
+            expected_state=PerformanceCalculationState.QUEUED,
+            state=PerformanceCalculationState.FETCHING_FILE,
+            transitioned_at=_NOW,
+        )
+    )
+
+    assert result is not None
+    assert result.state is PerformanceCalculationState.FETCHING_FILE
+    assert model.state == PerformanceCalculationState.FETCHING_FILE.value
+    assert model.updated_at == _NOW
+    assert session.flush_calls == 1
+    assert session.refresh_calls == 1
+
+
+async def test_sqlalchemy_repository_does_not_skip_pending_calculation_state() -> None:
+    model = _model(
+        calculation_id=20,
+        score_id=10,
+        state=PerformanceCalculationState.QUEUED,
+        is_current=True,
+    )
+    session = FakeSession(execute_results=[None])
+    repo = _repo(session)
+
+    result = await repo.update_pending_calculation_state(
+        UpdateScorePerformanceCalculationState(
+            calculation_id=20,
+            expected_state=PerformanceCalculationState.FETCHING_FILE,
+            state=PerformanceCalculationState.CALCULATING,
+            transitioned_at=_NOW,
+        )
+    )
+
+    assert result is None
+    assert model.state == PerformanceCalculationState.QUEUED.value
+    assert session.flush_calls == 0
+    assert session.refresh_calls == 0
+
+
+async def test_sqlalchemy_repository_does_not_update_terminal_calculation_state() -> None:
+    model = _model(
+        calculation_id=20,
+        score_id=10,
+        state=PerformanceCalculationState.COMPLETED,
+        is_current=True,
+    )
+    session = FakeSession(execute_results=[None])
+    repo = _repo(session)
+
+    result = await repo.update_pending_calculation_state(
+        UpdateScorePerformanceCalculationState(
+            calculation_id=20,
+            expected_state=PerformanceCalculationState.QUEUED,
+            state=PerformanceCalculationState.FETCHING_FILE,
+            transitioned_at=_NOW,
+        )
+    )
+
+    assert result is None
+    assert model.state == PerformanceCalculationState.COMPLETED.value
+    assert session.flush_calls == 0
+    assert session.refresh_calls == 0
 
 
 async def test_sqlalchemy_replacement_completion_supersedes_old_current_atomically() -> None:

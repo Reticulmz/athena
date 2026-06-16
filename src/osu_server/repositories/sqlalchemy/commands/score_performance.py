@@ -42,6 +42,7 @@ if TYPE_CHECKING:
         MarkScorePerformanceCalculationUnavailable,
         MarkScorePerformanceRecalculationWorkFailed,
         MarkScorePerformanceRecalculationWorkUnavailable,
+        UpdateScorePerformanceCalculationState,
     )
 
 _PENDING_STATE_VALUES = tuple(
@@ -196,6 +197,30 @@ class SQLAlchemyScorePerformanceCommandRepository:
         model.unavailable_reason = None
         model.calculated_at = command.calculated_at
         return await self._finalize(model)
+
+    async def update_pending_calculation_state(
+        self,
+        command: UpdateScorePerformanceCalculationState,
+    ) -> PerformanceCalculation | None:
+        model = (
+            await self._session.execute(
+                select(ScorePerformanceCalculationModel)
+                .where(
+                    ScorePerformanceCalculationModel.id == command.calculation_id,
+                    ScorePerformanceCalculationModel.state == command.expected_state.value,
+                )
+                .with_for_update()
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if not isinstance(model, ScorePerformanceCalculationModel):
+            return None
+
+        model.state = command.state.value
+        model.updated_at = command.transitioned_at
+        await self._flush_or_raise_conflict()
+        await self._session.refresh(model)
+        return _model_to_domain(model)
 
     async def mark_unavailable(
         self,

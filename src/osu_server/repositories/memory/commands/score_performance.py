@@ -36,6 +36,7 @@ if TYPE_CHECKING:
         MarkScorePerformanceCalculationUnavailable,
         MarkScorePerformanceRecalculationWorkFailed,
         MarkScorePerformanceRecalculationWorkUnavailable,
+        UpdateScorePerformanceCalculationState,
     )
     from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
@@ -130,6 +131,20 @@ class InMemoryScorePerformanceCommandRepository:
             calculated_at=command.calculated_at,
         )
         return self._finalize(completed)
+
+    async def update_pending_calculation_state(
+        self,
+        command: UpdateScorePerformanceCalculationState,
+    ) -> PerformanceCalculation | None:
+        calculation = self._state.performance_calculations_by_id.get(command.calculation_id)
+        if calculation is None or not calculation.state.is_pending:
+            return None
+        if calculation.state is not command.expected_state:
+            return None
+
+        updated = replace(calculation, state=command.state)
+        self._state.performance_calculations_by_id[command.calculation_id] = updated
+        return updated
 
     async def mark_unavailable(
         self,

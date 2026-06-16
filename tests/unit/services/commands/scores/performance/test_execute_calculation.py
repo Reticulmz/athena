@@ -28,6 +28,7 @@ from osu_server.infrastructure.state.interfaces.performance_completion_signal im
 )
 from osu_server.repositories.interfaces.commands.score_performance import (
     CreateScorePerformanceCalculation,
+    UpdateScorePerformanceCalculationState,
 )
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.scores.performance import (
@@ -79,14 +80,32 @@ class _CountingUnitOfWorkFactory(InMemoryUnitOfWorkFactory):
 
 @final
 class _FileProvider:
-    def __init__(self, result: PerformanceBeatmapFileResult) -> None:
+    def __init__(
+        self,
+        result: PerformanceBeatmapFileResult,
+        *,
+        factory: _CountingUnitOfWorkFactory | None = None,
+        calculation_id: int | None = None,
+        expected_state_at_call: PerformanceCalculationState | None = None,
+    ) -> None:
         self._result = result
+        self._factory = factory
+        self._calculation_id = calculation_id
+        self._expected_state_at_call = expected_state_at_call
         self.queries: list[PerformanceBeatmapFileQuery] = []
 
     async def provide(
         self,
         query: PerformanceBeatmapFileQuery,
     ) -> PerformanceBeatmapFileResult:
+        if self._expected_state_at_call is not None:
+            assert self._factory is not None
+            assert self._calculation_id is not None
+            calculation = self._factory.snapshot().performance_calculations_by_id.get(
+                self._calculation_id
+            )
+            assert calculation is not None
+            assert calculation.state is self._expected_state_at_call
         self.queries.append(query)
         return self._result
 
@@ -96,8 +115,15 @@ class _Calculator:
     def __init__(
         self,
         result: PerformanceCalculatorCompleted | PerformanceCalculatorUnavailable,
+        *,
+        factory: _CountingUnitOfWorkFactory | None = None,
+        calculation_id: int | None = None,
+        expected_state_at_call: PerformanceCalculationState | None = None,
     ) -> None:
         self._result = result
+        self._factory = factory
+        self._calculation_id = calculation_id
+        self._expected_state_at_call = expected_state_at_call
         self.inputs: list[PerformanceCalculatorInput] = []
 
     def calculator_name(self) -> str:
@@ -110,6 +136,14 @@ class _Calculator:
         self,
         input_data: PerformanceCalculatorInput,
     ) -> PerformanceCalculatorCompleted | PerformanceCalculatorUnavailable:
+        if self._expected_state_at_call is not None:
+            assert self._factory is not None
+            assert self._calculation_id is not None
+            calculation = self._factory.snapshot().performance_calculations_by_id.get(
+                self._calculation_id
+            )
+            assert calculation is not None
+            assert calculation.state is self._expected_state_at_call
         self.inputs.append(input_data)
         return self._result
 
@@ -141,12 +175,20 @@ async def test_execute_calculation_claims_calculates_commits_and_signals_complet
     score_id = await _persist_score(factory, score)
     calculation_id = await _create_pending_calculation(factory, score_id=score_id)
     factory.reset_commit_count()
-    file_provider = _FileProvider(_ready_file())
+    file_provider = _FileProvider(
+        _ready_file(),
+        factory=factory,
+        calculation_id=calculation_id,
+        expected_state_at_call=PerformanceCalculationState.FETCHING_FILE,
+    )
     calculator = _Calculator(
         PerformanceCalculatorCompleted(
             pp=Decimal("123.456789"),
             star_rating=Decimal("5.43210"),
-        )
+        ),
+        factory=factory,
+        calculation_id=calculation_id,
+        expected_state_at_call=PerformanceCalculationState.CALCULATING,
     )
     completion_signal = _CompletionSignal(factory)
     use_case = _use_case(
@@ -170,7 +212,7 @@ async def test_execute_calculation_claims_calculates_commits_and_signals_complet
     assert result.calculation.beatmap_file_attachment_id == 55
     assert result.calculation.beatmap_file_checksum_md5 == "a" * 32
     assert result.signal_notified is True
-    assert factory.commit_count == 2
+    assert factory.commit_count == 3
     assert file_provider.queries == [PerformanceBeatmapFileQuery(score.beatmap_id)]
     assert len(calculator.inputs) == 1
     assert calculator.inputs[0].score == replace(score, id=score_id)
@@ -182,7 +224,7 @@ async def test_execute_calculation_claims_calculates_commits_and_signals_complet
                 calculation_id=calculation_id,
                 state=PerformanceCalculationState.COMPLETED,
             ),
-            commit_count_at_call=2,
+            commit_count_at_call=3,
         )
     ]
 
@@ -213,7 +255,7 @@ async def test_execute_calculation_keeps_temporary_file_input_pending_without_si
     assert result.outcome is ExecutePerformanceCalculationOutcome.PENDING_INPUT
     assert result.calculation is not None
     assert result.calculation.id == calculation_id
-    assert result.calculation.state is PerformanceCalculationState.QUEUED
+    assert result.calculation.state is PerformanceCalculationState.FETCHING_FILE
     assert result.pending_reason == PerformanceBeatmapFilePendingReason.OSU_FILE_FETCH_PENDING
     assert result.signal_notified is False
     assert factory.commit_count == 1
@@ -222,8 +264,131 @@ async def test_execute_calculation_keeps_temporary_file_input_pending_without_si
     async with factory() as uow:
         current = await uow.score_performance.get_current_for_score(score_id)
     assert current is not None
-    assert current.state is PerformanceCalculationState.QUEUED
+    assert current.state is PerformanceCalculationState.FETCHING_FILE
     assert current.unavailable_reason is None
+
+
+@pytest.mark.asyncio
+async def test_execute_calculation_retries_from_fetching_file_state() -> None:
+    factory = _CountingUnitOfWorkFactory()
+    score = _score()
+    score_id = await _persist_score(factory, score)
+    calculation_id = await _create_pending_calculation(factory, score_id=score_id)
+    pending_use_case = _use_case(
+        factory,
+        file_provider=_FileProvider(_pending_file()),
+        calculator=_Calculator(
+            PerformanceCalculatorCompleted(
+                pp=Decimal("999"),
+                star_rating=Decimal("9"),
+            )
+        ),
+        completion_signal=_CompletionSignal(factory),
+    )
+
+    pending_result = await pending_use_case.execute(_command(calculation_id=calculation_id))
+
+    assert pending_result.outcome is ExecutePerformanceCalculationOutcome.PENDING_INPUT
+    factory.reset_commit_count()
+    file_provider = _FileProvider(
+        _ready_file(),
+        factory=factory,
+        calculation_id=calculation_id,
+        expected_state_at_call=PerformanceCalculationState.FETCHING_FILE,
+    )
+    calculator = _Calculator(
+        PerformanceCalculatorCompleted(
+            pp=Decimal("123.456789"),
+            star_rating=Decimal("5.43210"),
+        ),
+        factory=factory,
+        calculation_id=calculation_id,
+        expected_state_at_call=PerformanceCalculationState.CALCULATING,
+    )
+    completion_signal = _CompletionSignal(factory)
+    retry_use_case = _use_case(
+        factory,
+        file_provider=file_provider,
+        calculator=calculator,
+        completion_signal=completion_signal,
+    )
+
+    result = await retry_use_case.execute(
+        _command(
+            calculation_id=calculation_id,
+            claimed_at=_NOW + timedelta(minutes=6),
+        )
+    )
+
+    assert result.outcome is ExecutePerformanceCalculationOutcome.COMPLETED
+    assert result.calculation is not None
+    assert result.calculation.state is PerformanceCalculationState.COMPLETED
+    assert result.calculation.pp == Decimal("123.456789")
+    assert factory.commit_count == 3
+    assert file_provider.queries == [PerformanceBeatmapFileQuery(score.beatmap_id)]
+    assert len(calculator.inputs) == 1
+    assert completion_signal.calls == [
+        _SignalCall(
+            payload=PerformanceCompletionSignalPayload(
+                score_id=score_id,
+                calculation_id=calculation_id,
+                state=PerformanceCalculationState.COMPLETED,
+            ),
+            commit_count_at_call=3,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execute_calculation_retries_from_calculating_state() -> None:
+    factory = _CountingUnitOfWorkFactory()
+    score = _score()
+    score_id = await _persist_score(factory, score)
+    calculation_id = await _create_pending_calculation(factory, score_id=score_id)
+    await _advance_calculation_to_calculating(factory, calculation_id=calculation_id)
+    factory.reset_commit_count()
+    file_provider = _FileProvider(
+        _ready_file(),
+        factory=factory,
+        calculation_id=calculation_id,
+        expected_state_at_call=PerformanceCalculationState.CALCULATING,
+    )
+    calculator = _Calculator(
+        PerformanceCalculatorCompleted(
+            pp=Decimal("123.456789"),
+            star_rating=Decimal("5.43210"),
+        ),
+        factory=factory,
+        calculation_id=calculation_id,
+        expected_state_at_call=PerformanceCalculationState.CALCULATING,
+    )
+    completion_signal = _CompletionSignal(factory)
+    use_case = _use_case(
+        factory,
+        file_provider=file_provider,
+        calculator=calculator,
+        completion_signal=completion_signal,
+    )
+
+    result = await use_case.execute(_command(calculation_id=calculation_id))
+
+    assert result.outcome is ExecutePerformanceCalculationOutcome.COMPLETED
+    assert result.calculation is not None
+    assert result.calculation.state is PerformanceCalculationState.COMPLETED
+    assert result.calculation.pp == Decimal("123.456789")
+    assert factory.commit_count == 2
+    assert file_provider.queries == [PerformanceBeatmapFileQuery(score.beatmap_id)]
+    assert len(calculator.inputs) == 1
+    assert completion_signal.calls == [
+        _SignalCall(
+            payload=PerformanceCompletionSignalPayload(
+                score_id=score_id,
+                calculation_id=calculation_id,
+                state=PerformanceCalculationState.COMPLETED,
+            ),
+            commit_count_at_call=2,
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -283,7 +448,10 @@ async def test_execute_calculation_marks_calculator_failure_unavailable_with_fil
     calculator = _Calculator(
         PerformanceCalculatorUnavailable(
             PerformanceCalculatorUnavailableReason.CALCULATOR_INPUT_INVALID
-        )
+        ),
+        factory=factory,
+        calculation_id=calculation_id,
+        expected_state_at_call=PerformanceCalculationState.CALCULATING,
     )
     completion_signal = _CompletionSignal(factory)
     use_case = _use_case(
@@ -305,7 +473,7 @@ async def test_execute_calculation_marks_calculator_failure_unavailable_with_fil
     assert result.calculation.beatmap_file_attachment_id == 55
     assert result.calculation.beatmap_file_checksum_md5 == "a" * 32
     assert result.signal_notified is True
-    assert factory.commit_count == 2
+    assert factory.commit_count == 3
     assert completion_signal.calls == [
         _SignalCall(
             payload=PerformanceCompletionSignalPayload(
@@ -313,7 +481,7 @@ async def test_execute_calculation_marks_calculator_failure_unavailable_with_fil
                 calculation_id=calculation_id,
                 state=PerformanceCalculationState.UNAVAILABLE,
             ),
-            commit_count_at_call=2,
+            commit_count_at_call=3,
         )
     ]
 
@@ -407,11 +575,15 @@ def _use_case(
     )
 
 
-def _command(*, calculation_id: int) -> ExecutePerformanceCalculationCommand:
+def _command(
+    *,
+    calculation_id: int,
+    claimed_at: datetime = _NOW,
+) -> ExecutePerformanceCalculationCommand:
     return ExecutePerformanceCalculationCommand(
         calculation_id=calculation_id,
         claim_owner=_CLAIM_OWNER,
-        claimed_at=_NOW,
+        claimed_at=claimed_at,
     )
 
 
@@ -501,6 +673,33 @@ async def _create_pending_calculation(
         )
         await uow.commit()
     return _require_calculation_id(result.calculation)
+
+
+async def _advance_calculation_to_calculating(
+    factory: _CountingUnitOfWorkFactory,
+    *,
+    calculation_id: int,
+) -> None:
+    async with factory() as uow:
+        fetching = await uow.score_performance.update_pending_calculation_state(
+            UpdateScorePerformanceCalculationState(
+                calculation_id=calculation_id,
+                expected_state=PerformanceCalculationState.QUEUED,
+                state=PerformanceCalculationState.FETCHING_FILE,
+                transitioned_at=_NOW,
+            )
+        )
+        calculating = await uow.score_performance.update_pending_calculation_state(
+            UpdateScorePerformanceCalculationState(
+                calculation_id=calculation_id,
+                expected_state=PerformanceCalculationState.FETCHING_FILE,
+                state=PerformanceCalculationState.CALCULATING,
+                transitioned_at=_NOW,
+            )
+        )
+        await uow.commit()
+    assert fetching is not None
+    assert calculating is not None
 
 
 def _require_calculation_id(calculation: PerformanceCalculation) -> int:

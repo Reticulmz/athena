@@ -126,8 +126,7 @@ src/
 ├── osu_server/
 │   ├── domain/
 │   │   └── scores/
-│   │       ├── performance.py
-│   │       └── performance_recalculation.py
+│   │       └── performance.py
 │   ├── services/
 │   │   ├── commands/
 │   │   │   └── scores/
@@ -140,8 +139,7 @@ src/
 │   │   │           └── process_recalculation_batch.py
 │   │   └── queries/
 │   │       └── scores/
-│   │           ├── performance.py
-│   │           └── performance_recalculation.py
+│   │           └── performance.py
 │   ├── repositories/
 │   │   ├── interfaces/
 │   │   │   ├── commands/
@@ -161,17 +159,25 @@ src/
 │   │       └── queries/
 │   │           └── score_performance.py
 │   ├── infrastructure/
-│   │   └── performance/
-│   │       ├── __init__.py
-│   │       ├── rosu_calculator.py
-│   │       └── completion_signal.py
+│   │   ├── performance/
+│   │   │   ├── __init__.py
+│   │   │   ├── calculator_identity.py
+│   │   │   ├── interfaces.py
+│   │   │   └── rosu_calculator.py
+│   │   └── state/
+│   │       ├── interfaces/
+│   │       │   └── performance_completion_signal.py
+│   │       ├── memory/
+│   │       │   └── performance_completion_signal.py
+│   │       └── valkey/
+│   │           └── performance_completion_signal.py
 │   ├── jobs/
 │   │   └── score_performance.py
 │   └── composition/
+│       ├── performance_cli.py
 │       └── providers/
 │           ├── performance.py
-│           ├── performance_app.py
-│           └── performance_worker.py
+│           └── performance_cli.py
 └── athena_cli/
     └── commands/
         └── pp.py
@@ -195,7 +201,9 @@ alembic/
 - `src/osu_server/worker.py` — resolve performance worker use-cases into taskiq state.
 - `src/osu_server/composition/providers/container.py` — add performance provider sets to app and worker containers.
 - `src/osu_server/composition/providers/repositories.py` — provide performance query repository.
-- `src/osu_server/config.py` — add bounded wait, Formula Profile, chunk, claim timeout settings after explicit config-change approval.
+- `src/osu_server/services/commands/scores/performance/runtime.py` — define bounded wait, Formula Profile, chunk, and claim timeout defaults without project-wide config changes.
+- `src/osu_server/composition/providers/performance.py` — wire shared app/worker performance providers.
+- `src/osu_server/composition/providers/performance_cli.py` — wire CLI-adjacent recalculation providers without importing the calculator implementation.
 - `src/athena_cli/main.py` — register `pp` command group.
 - Tests under `tests/unit`, `tests/integration`, and `tests/e2e` mirror the changed boundaries.
 

@@ -186,6 +186,7 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         "mark_recalculation_work_failed",
         "mark_recalculation_work_unavailable",
         "mark_unavailable",
+        "update_pending_calculation_state",
     }
 
 

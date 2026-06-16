@@ -19,6 +19,7 @@ from osu_server.repositories.interfaces.commands.score_performance import (
     ClaimScorePerformanceCalculation,
     CompleteScorePerformanceCalculation,
     MarkScorePerformanceCalculationUnavailable,
+    UpdateScorePerformanceCalculationState,
 )
 from osu_server.services.commands.scores.performance.beatmap_file_provider import (
     PerformanceBeatmapFilePending,
@@ -195,9 +196,51 @@ class ExecutePerformanceCalculationUseCase:
                     signal_error=result.signal_error,
                 )
 
+            if calculation.state is PerformanceCalculationState.QUEUED:
+                calculation = await uow.score_performance.update_pending_calculation_state(
+                    UpdateScorePerformanceCalculationState(
+                        calculation_id=command.calculation_id,
+                        expected_state=PerformanceCalculationState.QUEUED,
+                        state=PerformanceCalculationState.FETCHING_FILE,
+                        transitioned_at=command.claimed_at,
+                    )
+                )
+                if calculation is None:
+                    return ExecutePerformanceCalculationResult(
+                        outcome=ExecutePerformanceCalculationOutcome.FINALIZATION_CONFLICT,
+                        calculation_id=command.calculation_id,
+                        score_id=claim.calculation.score_id,
+                    )
+
             await uow.commit()
 
         return _ClaimedCalculation(calculation=calculation, score=score)
+
+    async def _transition_pending_state(
+        self,
+        *,
+        command: ExecutePerformanceCalculationCommand,
+        score_id: int,
+        expected_state: PerformanceCalculationState,
+        state: PerformanceCalculationState,
+    ) -> PerformanceCalculation | ExecutePerformanceCalculationResult:
+        async with self._unit_of_work_factory() as uow:
+            calculation = await uow.score_performance.update_pending_calculation_state(
+                UpdateScorePerformanceCalculationState(
+                    calculation_id=command.calculation_id,
+                    expected_state=expected_state,
+                    state=state,
+                    transitioned_at=command.claimed_at,
+                )
+            )
+            if calculation is None:
+                return ExecutePerformanceCalculationResult(
+                    outcome=ExecutePerformanceCalculationOutcome.FINALIZATION_CONFLICT,
+                    calculation_id=command.calculation_id,
+                    score_id=score_id,
+                )
+            await uow.commit()
+        return calculation
 
     async def _finalize_from_file_result(
         self,
@@ -215,6 +258,24 @@ class ExecutePerformanceCalculationUseCase:
                 reason=file_result.reason.value,
             )
 
+        calculating = claimed.calculation
+        if claimed.calculation.state is PerformanceCalculationState.FETCHING_FILE:
+            transitioned = await self._transition_pending_state(
+                command=command,
+                score_id=claimed.calculation.score_id,
+                expected_state=PerformanceCalculationState.FETCHING_FILE,
+                state=PerformanceCalculationState.CALCULATING,
+            )
+            if isinstance(transitioned, ExecutePerformanceCalculationResult):
+                return transitioned
+            calculating = transitioned
+        elif claimed.calculation.state is not PerformanceCalculationState.CALCULATING:
+            return ExecutePerformanceCalculationResult(
+                outcome=ExecutePerformanceCalculationOutcome.FINALIZATION_CONFLICT,
+                calculation_id=command.calculation_id,
+                score_id=claimed.calculation.score_id,
+            )
+
         calculator_result = self._calculator.calculate(
             PerformanceCalculatorInput(
                 score=claimed.score,
@@ -225,7 +286,7 @@ class ExecutePerformanceCalculationUseCase:
             return await self._finalize_unavailable(
                 command=command,
                 score_id=claimed.calculation.score_id,
-                calculation=claimed.calculation,
+                calculation=calculating,
                 file_result=file_result,
                 reason=calculator_result.reason.value,
             )
@@ -233,7 +294,7 @@ class ExecutePerformanceCalculationUseCase:
         return await self._finalize_completed(
             command=command,
             score_id=claimed.calculation.score_id,
-            calculation=claimed.calculation,
+            calculation=calculating,
             file_result=file_result,
             calculator_result=calculator_result,
         )

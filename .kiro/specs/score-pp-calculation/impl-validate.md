@@ -97,3 +97,61 @@ Exit code: 0
 
 - Task-local decision: GO
 - Remaining unverified items for 7.4: none
+
+## 2026-06-17T04:12:08+09:00 - Feature-level validation
+
+### 対象
+
+- Spec: `.kiro/specs/score-pp-calculation/requirements.md`, `design.md`, `tasks.md`
+- Gate: `kiro-validate-impl score-pp-calculation`
+- Claim type: `FEATURE_GO`
+
+### 検証結果
+
+- DECISION: GO
+- OWNERSHIP: LOCAL
+- UPSTREAM_SPEC: N/A
+- BLOCKED_TASKS: none
+
+### Mechanical results
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Full test suite | PASS | `./scripts/ci.sh test` -> `2474 passed in 72.06s` |
+| Quality gate | PASS | `./scripts/ci.sh quality` -> ruff format/lint PASS, basedpyright `0 errors`, import-linter `13 kept, 0 broken` |
+| CLI smoke | PASS | `uv run athena pp recalculate --help` displayed the PP recalculation command options |
+| Runtime smoke | PASS | Starlette `TestClient` with in-memory provider overrides returned `200 athena v0.1.0 (a0ef978)` |
+| Placeholder marker scan | CLEAN | No placeholder marker matches in changed production, test, or spec files outside this validation log |
+| Secret assignment scan | CLEAN | No direct secret assignment matches in changed production, test, or spec files outside this validation log |
+
+### Integration
+
+- Cross-task contracts: PASS. Stable submit, command use-cases, query use-cases, repositories, taskiq adapters, CLI, and composition pass through typed command/query boundaries.
+- Shared state consistency: PASS. Current Performance Calculation rows remain command-owned durable state; completion signals and wake-ups remain optimizations.
+- Boundary audit: CLEAN. Domain remains transport- and infrastructure-independent; repository interfaces remain adapter-pure; jobs keep primitive task payloads; CLI does not run PP calculation inline.
+- Review: APPROVED. Remediation review confirmed pending lifecycle persistence, retry from `fetching_file` / `calculating`, and SQLAlchemy expected-state locking.
+
+### Coverage
+
+- Requirements mapped: 81/81 acceptance criteria.
+- Coverage gaps: none.
+- Evidence: `tasks.md` 7.4 maps every requirement acceptance criterion, and the project test suite covers performance domain, command/query use-cases, persistence, worker adapters, stable submit integration, recalculation CLI, recovery, and future scope boundaries.
+
+### Design
+
+- Architecture drift: none after design file structure synchronization.
+- Dependency direction: PASS via import-linter contracts.
+- Performance state flow: PASS. Worker execution now persists `queued -> fetching_file -> calculating -> completed/unavailable`; permanent file failure finalizes from `fetching_file`, calculator failure finalizes from `calculating`, and stale claims resume from already advanced pending states.
+- File Structure Plan vs actual: MATCH. Approved plan was synchronized to the implemented bounded contexts: recalculation domain values live in `domain/scores/performance.py`, stable response query lives in `services/queries/scores/performance.py`, app/worker providers share `composition/providers/performance.py`, and CLI-specific providers live in `composition/providers/performance_cli.py`.
+
+### Verification result
+
+```md
+## Verification Result
+- STATUS: VERIFIED
+- CLAIM_TYPE: FEATURE_GO
+- CLAIM: score-pp-calculation implementation is feature-level GO.
+- EVIDENCE: Full test suite, quality gate, CLI smoke, runtime smoke, requirement coverage review, design alignment review, boundary audit, and approved remediation review.
+- GAPS: none
+- NOTES: none
+```

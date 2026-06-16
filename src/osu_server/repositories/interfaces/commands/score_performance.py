@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from osu_server.domain.scores.performance import (
         FormulaProfile,
         PerformanceCalculation,
+        PerformanceCalculationState,
         PerformanceRecalculationBatch,
         PerformanceRecalculationWorkItem,
     )
@@ -20,6 +21,13 @@ if TYPE_CHECKING:
 
 class ScorePerformanceCommandConflictError(RuntimeError):
     """Raised when concurrent command persistence should be retried."""
+
+
+_ALLOWED_PENDING_STATE_TRANSITIONS = {
+    "queued": frozenset({"fetching_file"}),
+    "fetching_file": frozenset({"calculating"}),
+    "calculating": frozenset[str](),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +69,31 @@ class ScorePerformanceCalculationClaimResult:
     owner: str
     expires_at: datetime
     attempt_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class UpdateScorePerformanceCalculationState:
+    """Move one pending calculation from its expected state to the next pending state."""
+
+    calculation_id: int
+    expected_state: PerformanceCalculationState
+    state: PerformanceCalculationState
+    transitioned_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.calculation_id <= 0:
+            msg = "calculation_id must be positive"
+            raise ValueError(msg)
+        if not self.expected_state.is_pending:
+            msg = "score performance calculation expected state must be pending"
+            raise ValueError(msg)
+        if not self.state.is_pending:
+            msg = "score performance calculation state update must stay pending"
+            raise ValueError(msg)
+        allowed_next_states = _ALLOWED_PENDING_STATE_TRANSITIONS[self.expected_state.value]
+        if self.state.value not in allowed_next_states:
+            msg = "score performance calculation state update must advance"
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +202,13 @@ class ScorePerformanceCommandRepository(Protocol):
         command: ClaimScorePerformanceCalculation,
     ) -> ScorePerformanceCalculationClaimResult | None:
         """Claim a pending calculation, returning None on temporary conflict."""
+        ...
+
+    async def update_pending_calculation_state(
+        self,
+        command: UpdateScorePerformanceCalculationState,
+    ) -> PerformanceCalculation | None:
+        """Persist an operator-visible pending lifecycle state."""
         ...
 
     async def mark_completed(
