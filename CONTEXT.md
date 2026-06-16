@@ -18,6 +18,18 @@ _Avoid_: Privilege, internal permission, ClientPermissions
 A point-in-time authorization view for an active session, containing the user's current privileges and role membership. It is refreshed from role state and then used by authorization-sensitive actions.
 _Avoid_: Session permissions, cached roles
 
+### Password Safety Check
+A synchronous identity gate that rejects passwords disallowed by Athena policy or known compromised-password evidence before account creation or password change succeeds.
+_Avoid_: Post-registration password audit, HIBP as domain term
+
+### Self-Service Password Change
+A password change requested by an authenticated user for their own identity. It requires current-password proof and the new password must pass the Password Safety Check.
+_Avoid_: Password reset, admin password change
+
+### Administrative Password Reset
+A password reset requested by an authorized operator or development tool for another user's identity. It does not require the user's current password, but it must be protected by an operator authorization boundary.
+_Avoid_: Self-service password change, public password update
+
 ### Friend Relationship
 User が別の friendable user identity を friend として追加している片方向の social relationship。Target の online state とは独立して存在し、Stable friends list と Friends leaderboard の source of truth になる。
 _Avoid_: Mutual friend, follower, symmetric friendship
