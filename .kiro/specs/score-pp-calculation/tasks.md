@@ -8,7 +8,7 @@
   - 完了時には state invariant、eligibility decision、Formula Profile decision を unit test で観測できる
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 4.1, 4.2, 4.3, 4.4, 4.5, 5.3, 5.5, 9.6, 12.1, 12.5, 15.4, 15.5_
 
-- [ ] 1.2 Performance と recalculation の永続 schema を追加する
+- [x] 1.2 Performance と recalculation の永続 schema を追加する
   - current Performance Calculation が score ごとに 1 件だけになる制約を追加する
   - PP、star rating、calculator version、Formula Profile、beatmap file attachment identity、calculated timestamp を保存できるようにする
   - recalculation batch と work item が filters、reason counts、target provenance、progress、claim state を保持できるようにする

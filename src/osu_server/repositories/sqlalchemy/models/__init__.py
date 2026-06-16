@@ -22,6 +22,11 @@ from osu_server.repositories.sqlalchemy.models.score import (
     ScoreModel,
     ScoreSubmissionModel,
 )
+from osu_server.repositories.sqlalchemy.models.score_performance import (
+    PerformanceRecalculationBatchModel,
+    PerformanceRecalculationWorkItemModel,
+    ScorePerformanceCalculationModel,
+)
 from osu_server.repositories.sqlalchemy.models.user import (
     DisallowedUsernameModel,
     UserModel,
@@ -37,10 +42,13 @@ __all__ = [
     "ChannelModel",
     "ChannelRoleOverrideModel",
     "DisallowedUsernameModel",
+    "PerformanceRecalculationBatchModel",
+    "PerformanceRecalculationWorkItemModel",
     "PrivateMessageModel",
     "ReplayModel",
     "RoleModel",
     "ScoreModel",
+    "ScorePerformanceCalculationModel",
     "ScoreSubmissionModel",
     "UserModel",
     "UserRoleModel",
