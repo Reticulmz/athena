@@ -46,6 +46,12 @@ _Avoid_: Block list, mutual friend requirement, global DM disable
 A canonical score mod value object. Stable bitmasks, lazer payloads, and first-party API payloads are converted into ModCombination before reaching score use-cases, while persistence may store the canonical bitmask integer.
 _Avoid_: Raw mods int at use-case boundary, stable bitmask as domain model
 
+## Web Surface Context
+
+### Athena Web App
+Athena が公式に提供する first-party web surface。Public、User、Admin、Ops workflows を統合して扱うが、authorization や domain state の source of truth ではない。
+_Avoid_: Admin panel, separate WebUI, external frontend
+
 ## Event Boundary Context
 
 ### Local Event
@@ -76,6 +82,12 @@ Production-critical Durable Work は DB-backed work item や state machine を s
 _Avoid_: chat event, pub/sub message, listener side effect
 
 ## Score Submission Context
+
+### Stable Surface
+Athena が stable client に対して公開している外部観測可能な endpoint、packet flow、response contract の集合。内部 package や test suite の構造ではなく、stable client から見える互換対象を指す。
+_Avoid_: Stable transport package, test scope, implementation module
+
+---
 
 ### Score Submission
 Client からの score submit request を記録する entity。Network error や processing delay による retry を検出し、idempotent response を保証する。
@@ -128,6 +140,12 @@ _Avoid_: Beatmap metadata lookup, synchronous file fetch, PP calculation
 - Beatmap File Warmup は Score を生成しない
 - Beatmap File Warmup は Performance Calculation の代わりに PP を計算しない
 - Beatmap File がまだ unavailable でも、stable response は各入口の互換形式を維持する
+
+---
+
+### Stable Compatibility Evidence
+Stable client または stable client emulator から観測できる request / response contract。Athena の stable transport 互換性を判断する根拠であり、内部実装の都合より優先する。
+_Avoid_: Implementation preference, guessed compatibility, test-only assumption
 
 ---
 
