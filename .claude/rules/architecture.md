@@ -109,6 +109,12 @@ Compatibility semantics that differ from core business meaning are separated fro
 
 Wire parsing and building remains in transport packages. For example, stable packet structs and legacy form parsing live under the stable transport family, while stable permission and mod compatibility rules live in `domain/compatibility/stable` or stable mappers as specified by the use-case boundary.
 
+### Compatibility Evidence Before Implementation
+
+When Stable or Lazer request formats, response formats, packet payloads, endpoint form fields, REST payloads, or realtime message shapes are unclear, do not infer the external contract from intuition. First consult existing implementations, protocol documentation, captured fixtures, client-observable examples, or focused tests, then document the confirmed behavior before implementation.
+
+Record the evidence in the relevant spec `research.md` / `design.md`, ADR, glossary, protocol fixture, or focused test. If the behavior remains uncertain after research, mark it as `未確認` and stop for clarification rather than implementing a guessed contract.
+
 ### Transport Families
 
 Transport families adapt client-family protocols to command/query use-cases and map use-case results back to the existing response shape.
