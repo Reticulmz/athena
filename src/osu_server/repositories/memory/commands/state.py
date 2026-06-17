@@ -24,6 +24,9 @@ if TYPE_CHECKING:
     from osu_server.domain.scores.score import Score
     from osu_server.domain.scores.submission import ScoreSubmission
     from osu_server.domain.storage.blobs import Blob
+    from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+        BeatmapLeaderboardUserBest,
+    )
 
 
 @dataclass(slots=True, frozen=True)
@@ -140,6 +143,15 @@ class InMemoryCommandRepositoryState:
         default_factory=dict
     )
     next_personal_best_id: int = 1
+
+    beatmap_leaderboard_user_bests_by_id: dict[int, BeatmapLeaderboardUserBest] = field(
+        default_factory=dict
+    )
+    beatmap_leaderboard_user_best_id_by_scope: dict[
+        tuple[int, int, int, int, int | None],
+        int,
+    ] = field(default_factory=dict)
+    next_beatmap_leaderboard_user_best_id: int = 1
 
     submissions_by_id: dict[int, ScoreSubmission] = field(default_factory=dict)
     submission_id_by_fingerprint: dict[str, int] = field(default_factory=dict)

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Self, cast
 
 from osu_server.repositories.memory.commands import (
     InMemoryBeatmapCommandRepository,
+    InMemoryBeatmapLeaderboardCommandRepository,
     InMemoryBlobCommandRepository,
     InMemoryChannelCommandRepository,
     InMemoryChatCommandRepository,
@@ -104,6 +105,7 @@ class InMemoryUnitOfWorkFactory:
             committed.personal_best_id_by_scope,
         )
         self._state.next_personal_best_id = committed.next_personal_best_id
+        self._commit_beatmap_leaderboard_state(committed)
 
         _replace_mapping(self._state.submissions_by_id, committed.submissions_by_id)
         _replace_mapping(
@@ -167,6 +169,22 @@ class InMemoryUnitOfWorkFactory:
             committed.next_performance_recalculation_work_item_id
         )
 
+    def _commit_beatmap_leaderboard_state(
+        self,
+        committed: InMemoryCommandRepositoryState,
+    ) -> None:
+        _replace_mapping(
+            self._state.beatmap_leaderboard_user_bests_by_id,
+            committed.beatmap_leaderboard_user_bests_by_id,
+        )
+        _replace_mapping(
+            self._state.beatmap_leaderboard_user_best_id_by_scope,
+            committed.beatmap_leaderboard_user_best_id_by_scope,
+        )
+        self._state.next_beatmap_leaderboard_user_best_id = (
+            committed.next_beatmap_leaderboard_user_best_id
+        )
+
     def seed_roles(self, roles: list[Role]) -> None:
         """Seed roles into factory state (test helper)."""
         for role in roles:
@@ -189,6 +207,7 @@ class InMemoryUnitOfWork:
     replays: InMemoryReplayCommandRepository
     blobs: InMemoryBlobCommandRepository
     beatmaps: InMemoryBeatmapCommandRepository
+    beatmap_leaderboards: InMemoryBeatmapLeaderboardCommandRepository
 
     def __init__(self, factory: InMemoryUnitOfWorkFactory) -> None:
         self._factory: InMemoryUnitOfWorkFactory = factory
@@ -230,3 +249,4 @@ class InMemoryUnitOfWork:
         self.replays = InMemoryReplayCommandRepository(self._state)
         self.blobs = InMemoryBlobCommandRepository(self._state)
         self.beatmaps = InMemoryBeatmapCommandRepository(self._state)
+        self.beatmap_leaderboards = InMemoryBeatmapLeaderboardCommandRepository(self._state)

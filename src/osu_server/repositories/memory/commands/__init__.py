@@ -1,5 +1,8 @@
 """In-memory command repository package."""
 
+from osu_server.repositories.memory.commands.beatmap_leaderboards import (
+    InMemoryBeatmapLeaderboardCommandRepository,
+)
 from osu_server.repositories.memory.commands.beatmaps import (
     BeatmapNotFoundError,
     DuplicateBeatmapChecksumError,
@@ -30,6 +33,7 @@ __all__ = [
     "BeatmapNotFoundError",
     "DuplicateBeatmapChecksumError",
     "InMemoryBeatmapCommandRepository",
+    "InMemoryBeatmapLeaderboardCommandRepository",
     "InMemoryBlobCommandRepository",
     "InMemoryChannelCommandRepository",
     "InMemoryChatCommandRepository",

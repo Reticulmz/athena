@@ -1,5 +1,8 @@
 """Command repository interface package."""
 
+from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+    BeatmapLeaderboardCommandRepository,
+)
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
 from osu_server.repositories.interfaces.commands.blobs import BlobCommandRepository
 from osu_server.repositories.interfaces.commands.channels import ChannelCommandRepository
@@ -23,6 +26,7 @@ from osu_server.repositories.interfaces.commands.users import UserCommandReposit
 
 __all__ = [
     "BeatmapCommandRepository",
+    "BeatmapLeaderboardCommandRepository",
     "BlobCommandRepository",
     "ChannelCommandRepository",
     "ChatCommandRepository",

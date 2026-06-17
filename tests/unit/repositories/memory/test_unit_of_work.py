@@ -9,6 +9,7 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.repositories.memory.commands import (
     InMemoryBeatmapCommandRepository,
+    InMemoryBeatmapLeaderboardCommandRepository,
     InMemoryBlobCommandRepository,
     InMemoryChannelCommandRepository,
     InMemoryChatCommandRepository,
@@ -141,6 +142,7 @@ async def test_unit_of_work_exposes_typed_command_repositories() -> None:
         assert isinstance(uow.replays, InMemoryReplayCommandRepository)
         assert isinstance(uow.blobs, InMemoryBlobCommandRepository)
         assert isinstance(uow.beatmaps, InMemoryBeatmapCommandRepository)
+        assert isinstance(uow.beatmap_leaderboards, InMemoryBeatmapLeaderboardCommandRepository)
         assert isinstance(uow.score_performance, InMemoryScorePerformanceCommandRepository)
 
 

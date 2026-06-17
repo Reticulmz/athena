@@ -10,6 +10,7 @@ from typing import get_type_hints
 
 from osu_server.repositories.interfaces.commands import (
     BeatmapCommandRepository,
+    BeatmapLeaderboardCommandRepository,
     BlobCommandRepository,
     ChannelCommandRepository,
     ChatCommandRepository,
@@ -65,6 +66,7 @@ COMMAND_REPOSITORY_ATTRIBUTES = {
     "replays": ReplayCommandRepository,
     "blobs": BlobCommandRepository,
     "beatmaps": BeatmapCommandRepository,
+    "beatmap_leaderboards": BeatmapLeaderboardCommandRepository,
 }
 COMMAND_REPOSITORY_GLOBALS = {
     repository.__name__: repository for repository in COMMAND_REPOSITORY_ATTRIBUTES.values()
@@ -166,6 +168,7 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         ReplayCommandRepository,
         BlobCommandRepository,
         BeatmapCommandRepository,
+        BeatmapLeaderboardCommandRepository,
     }
     assert _public_async_methods(ScoreCommandRepository) == {
         "create",
@@ -197,6 +200,11 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         "try_mark_fetch_pending",
         "mark_fetch_succeeded",
         "mark_fetch_failed",
+    }
+    assert _public_async_methods(BeatmapLeaderboardCommandRepository) == {
+        "get_user_best",
+        "replace_projection_slice",
+        "upsert_if_better",
     }
     assert _public_async_methods(ScorePerformanceCommandRepository) == {
         "claim_pending_calculation",

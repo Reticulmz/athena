@@ -30,7 +30,7 @@
   - _Requirements: 2.1, 3.1, 3.4, 6.2, 7.2, 10.5_
 
 - [ ] 2. Projection persistence を command/query 境界で実装する
-- [ ] 2.1 Beatmap Leaderboard command repository contract と in-memory behavior を実装する
+- [x] 2.1 Beatmap Leaderboard command repository contract と in-memory behavior を実装する
   - candidate が current row より高 rank の場合だけ replacement する
   - same score and submitted_at では lower score_id を上位として扱う
   - explicit projection slice replacement は empty rows でも stale rows を削除できるようにする
