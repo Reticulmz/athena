@@ -10,13 +10,49 @@ _Avoid_: Permission group, client role
 A server-side authorization capability used by Athena to permit protected operations. Privileges are the source of truth for internal authorization decisions.
 _Avoid_: Permission, client permission
 
+### Supporter Entitlement
+User に付与される Supporter 特典の有効状態。有効期間を持ち、期限切れの entitlement は active と扱わない。Payment、subscription、stable client compatibility flag そのものではなく、community perks や Web display perks の入力として扱う。
+_Avoid_: Supporter role, Stripe subscription, payment record, osu!direct access
+
+### Email Verification
+User が登録済み email address を操作できることの確認。Login authentication とは別の durable account state であり、Verified play access や `Privileges.VERIFIED` の入力として扱う。
+_Avoid_: Login authentication, password check, supporter verification
+
+### Email Verification Code
+Email Verification を完了するために User が BanchoBot へ提示する8文字の英数字 code。紛らわしい文字を避け、表示は大文字に統一し、入力時は大小文字を区別せず、最新の有効 code だけを受け付ける。一時 credential として TTL 付き state に置き、durable account state の source of truth にはしない。
+_Avoid_: Password, login token, supporter code
+
+### Email Verification Link
+Email Verification を WebUI で完了するための one-time link。Email Verification Code とは別の長い token を使い、成功時は同じ Email Verification を完了させて active session authorization refresh を要求する。
+_Avoid_: BanchoBot code, reusable login link, password reset link
+
+### Limited Bancho Session
+Email Verification が未完了の User に与える制限付き stable session。BanchoBot verification guidance と verification command だけを許可し、play access、public chat、score submission、osu!direct Access、beatmap warmup には使わない。
+_Avoid_: Full login, guest session, unverified play access
+
+### Verified Play Access
+Email Verification 完了後に User が stable gameplay workflows を利用できる状態。`Privileges.VERIFIED` は Role ではなく Email Verification から派生し、session authorization refresh によって active session へ反映され、stable client の再ログインを要求しない。
+_Avoid_: Login success, supporter access, unrestricted flag
+
+### Limited Session Packet Gate
+Limited Bancho Session で受け取った gameplay-capable packet を通常 side effect に流さないための gate。`STATUS_CHANGE` は decode しても presence broadcast、gameplay state update、beatmap warmup を行わない。
+_Avoid_: Packet drop as authentication, hidden play access, warmup trigger
+
 ### Bancho Client Permission
-A stable client-visible compatibility flag derived from a user's privileges for Bancho login and presence packets. It is never the source of truth for server authorization.
+A stable client-visible compatibility flag derived for Bancho login and presence packets. The Supporter flag may be emitted as an osu!direct compatibility unlock and does not prove that the user has a Supporter Entitlement.
 _Avoid_: Privilege, internal permission, ClientPermissions
 
 ### Stable Presence Roster
 Stable client が user id と username を解決するために受け取る client-visible な online identity 集合。Login 時の snapshot と接続状態の変化に追随し、Active session と明示的な system presence を入力にするが、Friend Relationship や durable user list の source of truth ではない。
 _Avoid_: Friend list, all users list, session store
+
+### osu!direct Access
+Stable client が Athena 経由で beatmap search や download を利用できる compatibility feature。Client 側の unlock には Bancho Client Permission の Supporter flag が必要だが、Server policy によりログイン成功ユーザーへ開放される機能であり、Supporter Entitlement の有無を意味しない。
+_Avoid_: Paid Supporter perk, billing entitlement, supporter-only access
+
+### Server Policy
+Athena instance 全体に適用される operator-controlled behavior setting。User entitlement ではなく、self-host instance の運用方針を表す。
+_Avoid_: User preference, billing entitlement, role permission
 
 ### Session Authorization Snapshot
 A point-in-time authorization view for an active session, containing the user's current privileges and role membership. It is refreshed from role state and then used by authorization-sensitive actions.
@@ -55,6 +91,186 @@ _Avoid_: Raw mods int at use-case boundary, stable bitmask as domain model
 ### Athena Web App
 Athena が公式に提供する first-party web surface。Public、User、Admin、Ops workflows を統合して扱うが、authorization や domain state の source of truth ではない。
 _Avoid_: Admin panel, separate WebUI, external frontend
+
+### Public API
+Athena 外部の client や integration が利用できる公開 API surface。Documented contract と versioning の対象であり、Athena Web App 専用の都合を混ぜない。
+_Avoid_: Web App API, internal route, admin endpoint
+
+### Public API Version
+Public API contract の破壊的変更境界。URL path で表し、同一 version 内では additive change を基本にする。
+_Avoid_: Feature flag, API Token Scope, Web App route
+
+### Public API Deprecation
+Public API version または endpoint を将来削除・置換するための移行状態。外部 integration が移行できる期間と終了日を持ち、即時削除の同義ではない。
+_Avoid_: Breaking change, feature flag, internal cleanup
+
+### Web App API
+Athena Web App が利用する first-party API surface。外部互換性の保証対象ではないが、browser から観測・再実行される前提で扱い、隠されていることを security boundary にしない。
+_Avoid_: Hidden API, private security boundary, public API
+
+### Admin/Ops API
+Athena の管理・運用 workflows に使う privileged API surface。Public API や通常 User workflow とは別の authorization、audit、operator intent を要求する。
+_Avoid_: Public API, normal user endpoint, hidden admin panel
+
+### Integration
+Athena 外部から Public API を利用する Bot、外部 tool、automation などの first-class actor。User とは別の責任主体であり、API Token Owner、audit、rate limit、停止・移譲の単位になり得る。
+_Avoid_: API token label, User alias, request IP
+
+### Integration Status
+Integration 全体の利用可否を表す状態。`disabled` の Integration は、その Integration-owned API Token が個別に active でも Public API authentication で拒否される。
+_Avoid_: API Token status, membership level, rate limit state
+
+### Integration Disable Source
+Integration が disabled になった理由の分類。Owner による自主停止と admin/operator による停止を区別し、再有効化条件、audit、UI 表示の判断材料にする。
+_Avoid_: API Token status, deletion reason, rate limit state
+
+### Integration Membership Level
+User が Integration を管理する権限段階。初期は `owner` と `maintainer` の2段階とし、User の Role や Privilege とは別の Integration-local authority として扱う。
+_Avoid_: Role, Privilege, API Token Scope
+
+### Integration Sensitive Operation
+Integration の外部 automation 権限や管理主体に影響する操作。削除、移譲、membership 変更、API token 発行・revoke を含み、通常の Integration 利用とは別の security-sensitive workflow として扱う。
+_Avoid_: Normal API request, integration usage, public API read
+
+### Web App Session
+Athena Web App 上の authenticated browser session。Stable Bancho Session や API token とは別の user-facing session であり、Web App API の authorization input になるが、durable user state や audit record の source of truth ではない。
+_Avoid_: Stable session, OAuth token, API key
+
+### API Token
+User または integration が Public API access に使う long-lived credential。Web App API の authentication には使わない。Public API では `Authorization: Bearer` で提示し、query parameter では受け付けない。Raw token は発行時に一度だけ表示し、Athena は token hash、display prefix、key id、scope、expiration、usage metadata だけを durable state として保持する。
+_Avoid_: Web App Session, password, raw bearer token storage
+
+### API Token Display Prefix
+API Token を UI や管理画面で人間が識別するための短い non-secret prefix。Authentication lookup の安定性を担わず、単独では authentication proof にならない。
+_Avoid_: Raw token, token secret, lookup key
+
+### API Token Key ID
+API Token authentication で候補 token record を絞り込むための non-secret identifier。Raw token から取り出せるが、単独では authentication proof にならず、最終的な authentication は token hash verification で成立する。
+_Avoid_: Raw token, token secret, display prefix
+
+### Raw API Token Format
+User または integration に発行時だけ表示される API Token の文字列表現。Token type、API Token Key ID、secret を含む構造化文字列とし、Athena は raw value を durable state として保存しない。
+_Avoid_: Stored credential, display prefix only, opaque database id
+
+### API Token Secret
+Raw API Token に含まれる authentication secret。Server が CSPRNG で生成する 256-bit 以上の URL-safe random value であり、User や integration が指定する値ではない。
+_Avoid_: User password, display prefix, key id
+
+### API Token Secret Disclosure
+API Token Secret を発行者へ一度だけ開示する操作。Safe retry や Idempotency replay で再実行されるものではなく、失われた場合は token rotation で扱う。
+_Avoid_: Raw token redisplay, idempotency replay, token metadata
+
+### API Token Hash
+API Token authentication のために保存する secret verification value。Password hash ではなく、server-side key または pepper を使った keyed hash / HMAC として扱い、raw token や raw secret は保存しない。
+_Avoid_: Password hash, raw token, display prefix
+
+### API Token Hash Key Version
+API Token Hash の検証に使う server-side key または pepper の version。Token record に `hash_key_version` として保存し、将来の HMAC key rotation 時にどの key で検証するかを判断する。
+_Avoid_: API Token Key ID, API Token Scope, raw secret
+
+### API Token Hash Key Ring
+API Token Hash の生成・検証に使う server-side key または pepper の集合。Database には保存せず、AppConfig、environment variable、secret manager などの runtime secret source から供給する。
+_Avoid_: Database credential record, API Token Hash, raw token
+
+### API Token Hash Key Rotation
+API Token Hash Key Ring の active key を切り替える運用。新規 API Token 発行には active key を使い、既存 API Token は token record の `hash_key_version` に対応する key で検証し続ける。
+_Avoid_: Immediate token revocation, password reset, API Token Rotation
+
+### API Token Hash Key Retirement
+古い API Token Hash key を verification 対象から外すための移行状態。対象 `hash_key_version` の token は期限付きの forced rotation 対象になり、期限後は Public API authentication で拒否される。
+_Avoid_: Immediate token revocation, normal expiration, API Token Rotation
+
+### API Token Owner
+API Token の責任主体。User または Integration を表現でき、初期運用で User-owned token だけを有効にしても、token identity を User 固定の概念として扱わない。
+_Avoid_: Token presenter, request IP, Role
+
+### API Token Expiration
+API Token が Public API authentication に使える期限。期限切れ token は revoke 済み token と同様に authentication で拒否され、長期 credential を永久に有効なものとして扱わない。
+_Avoid_: Token revocation, session timeout, Integration disabled state
+
+### API Token Rotation
+既存 API Token を置き換える運用。Raw token の再表示や既存 record の再生成ではなく、新しい API Token を発行し、旧 API Token を明示 revoke することで扱う。
+_Avoid_: Raw token redisplay, in-place token regeneration, password reset
+
+### API Token Usage Metadata
+API Token の利用状況を表示・監査補助するための metadata。`last_used_at` などを含むが、authentication や authorization の source of truth ではなく、短い反映遅延を許容する。
+_Avoid_: Token validity, Security/Audit Event, rate limit counter
+
+### API Token Validity Failure
+API Token 自体が Public API authentication に使えない failure。Public API では authentication failure として扱い、invalid、expired、revoked、retired hash key などの reason は permission failure とは別の error code で区別する。
+_Avoid_: API Token Scope failure, rate limit, CSRF failure
+
+### API Token Permission Failure
+API Token は valid だが requested operation に必要な scope を持たない authorization failure。Public API error code では `insufficient_scope` として扱い、invalid / expired / revoked token と混同しない。
+_Avoid_: Invalid token, expired token, revoked token
+
+### API Token Scope
+API Token に許可する API access の範囲。初期は `read`、`write`、`admin` の粗い scope から始め、公開 API や運用 workflow が固まってから必要に応じて細分化する。
+_Avoid_: Role, Privilege, endpoint-specific permission
+
+### Public API Rate Limit
+Public API request の利用量を制御する abuse protection。API Token、owner user/integration、request IP の複数軸で評価し、単一の identity signal だけに依存しない。
+_Avoid_: Authorization, API Token Scope, Web App CSRF Gate
+
+### Public API Rate Limit Failure
+Public API request が許容された利用量を超えた failure。Token validity failure や permission failure ではなく、外部 integration が backoff して再試行すべき throttling として扱う。
+_Avoid_: API Token revocation, insufficient scope, authentication failure
+
+### Public API Error Response
+Public API failure を integration が安定して判定するための machine-readable response。HTTP status に加えて error code と request_id を含み、human-readable message は補助情報として扱う。
+_Avoid_: Web App validation message, application log, exception text
+
+### Public API Idempotency
+Authenticated actor による state-changing Public API request を外部 integration が安全に retry するための重複防止 contract。同じ mutation intent が複数回送られても、二重の side effect を作らないことを目的にする。
+_Avoid_: Request ID, CSRF token, rate limit
+
+### Public API Idempotency Replay
+完了済みの Public API Idempotency Record に対して同じ mutation intent が再送された状態。新しい side effect を作らず、記録済み outcome を再利用する。
+_Avoid_: New mutation execution, idempotency conflict, in-progress retry
+
+### Public API Replay Header
+Public API Idempotency Replay で記録済み outcome の一部として再利用できる response header。Mutation result の contract に属する header だけを対象にし、request context に属する値は含めない。
+_Avoid_: Request-specific header, hop-by-hop header, request id
+
+### Public API Idempotency Outcome
+Public API Idempotency Record に保存される retry-stable な結果。成功した mutation と、同じ mutation intent なら再送時も同じ caller-side rejection と見なせる失敗を含む。Server-side transient failure や timeout は final outcome として扱わない。
+_Avoid_: Transient server failure, timeout, raw exception
+
+### Public API Idempotency Conflict
+同じ Idempotency Key が異なる mutation intent に再利用された状態。安全な retry ではなく caller 側の key reuse accident として扱う。
+_Avoid_: Retried request, rate limit, duplicate side effect
+
+### Public API Idempotency In-Progress
+同じ Idempotency Key と同じ request fingerprint の mutation がまだ outcome 確定前に再送された状態。Completed retry の replay ではなく、caller に後続 retry を促す transient state として扱う。
+_Avoid_: Idempotency conflict, completed retry, rate limit
+
+### Public API Request Fingerprint
+Public API Idempotency が同じ mutation intent かを比較するための non-secret digest。Raw request body や secret payload ではなく、正規化された request intent から導出する。
+_Avoid_: Raw request body, API token, audit payload
+
+### Public API Idempotency Record
+Public API Idempotency のために Idempotency Key、mutation intent、outcome を結びつける durable record。Safe retry に同じ outcome を返し、異なる intent の再利用を conflict として判定するための source of truth になる。
+_Avoid_: Rate limit counter, request log, transient cache
+
+### Public API Idempotency Record Retention
+Public API Idempotency Record が retry / deduplication guarantee の対象として保持される期間。Retention 期限を過ぎた record は pruning 対象になり、その後の同じ key は過去 request の deduplication guarantee を持たない。
+_Avoid_: Permanent audit retention, rate limit window, API token expiration
+
+### Web App CSRF Gate
+Web App Session cookie を使う state-changing Web App API request が、Athena Web App から発生した user intent を伴うことを確認する security gate。Web App Session に紐づく token を要求し、SameSite cookie の挙動だけを source of truth にしない。
+_Avoid_: SameSite-only protection, hidden route protection, authorization check
+
+### Web App Sudo Mode
+Web App Session が短時間だけ recent authentication proof を持つ状態。Password/email 変更、2FA 設定、moderation mutation、Admin/Ops mutation、Billing 操作、API token 発行・削除などの sensitive operation に使い、通常の閲覧や低リスク profile edit には要求しない。
+_Avoid_: Always re-login, CSRF check, normal authorization
+
+### Operator Intent Confirmation
+破壊的または高影響な moderation / Admin / Ops operation について、operator が対象と操作内容を意図していることを追加確認する gate。Web App Sudo Mode、CSRF check、通常 authorization の代わりにはしない。
+_Avoid_: Re-authentication, CSRF check, privilege check
+
+### Security/Audit Event
+Security-sensitive workflow や operator action の durable record。Actor、target、operation、reason、request/session context、outcome を後から追跡するための記録であり、成功した操作だけでなく権限不足、Web App Sudo Mode 不足、CSRF failure、Operator Intent Confirmation failure などの失敗した試行も扱う。Retention policy の対象であり、永久保存の同義ではない。Secret、raw token、password、支払いカード情報、payload 全文は保存しない。通常の application log や metrics の代わりにはしない。
+_Avoid_: Application log, debug log, metrics event
 
 ## Event Boundary Context
 
@@ -160,6 +376,10 @@ _Avoid_: User stats, global ranking, beatmap ranking, score ingestion result
 ### Personal Best
 1人の User が特定の Beatmap / Ruleset / Playstyle / leaderboard category で持つ代表 Score。Beatmap Leaderboard の順位付け対象になる。
 _Avoid_: Score history, latest score, best attempt
+
+### Score Submit Personal Best Delta
+Stable score submit response で返す、提出前 Personal Best と提出後 Personal Best の比較値。Rank は placement projection、total score などは User Stats として別に扱う。
+_Avoid_: User stats, raw submitted score, leaderboard rank
 
 ### Leaderboard Category
 Stable client が選択する Beatmap Leaderboard の表示種別。Global、Country、Selected Mods、Friends の4種を扱い、Country は閲覧者の国を既定値として Score owner の国で絞り、Selected Mods は request mods と Score mods の完全一致だけを対象にする。
