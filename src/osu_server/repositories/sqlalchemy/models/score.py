@@ -14,6 +14,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -27,6 +28,18 @@ class ScoreModel(Base):
         Index("idx_scores_user_id", "user_id"),
         Index("idx_scores_beatmap_id", "beatmap_id"),
         Index("idx_scores_submitted_at", "submitted_at"),
+        Index(
+            "idx_scores_leaderboard_rebuild_candidate",
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "user_id",
+            "leaderboard_eligible_at_submission",
+            "passed",
+            "score",
+            "submitted_at",
+            "id",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -54,6 +67,11 @@ class ScoreModel(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     beatmap_status_at_submission: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    leaderboard_eligible_at_submission: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
 
 
 class ScoreSubmissionModel(Base):

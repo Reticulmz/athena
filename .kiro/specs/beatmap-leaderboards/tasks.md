@@ -15,7 +15,7 @@
   - 完了時には viewer-only、viewer plus friends、reverse-only exclusion、restricted viewer PB suppression の tests が通る
   - _Requirements: 3.7, 4.3, 4.4, 4.6, 6.3, 6.4, 6.5, 6.6, 6.7_
 
-- [ ] 1.3 Leaderboard projection と score eligibility の schema migration を追加する
+- [x] 1.3 Leaderboard projection と score eligibility の schema migration を追加する
   - Score に submission-time leaderboard eligibility evidence を保存できるようにする
   - user/beatmap/ruleset/playstyle/mod filter scope ごとの score-priority projection を保存できるようにする
   - all-mods と NoMod を区別できる uniqueness と ordering indexes を用意する

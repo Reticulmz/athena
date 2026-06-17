@@ -9,6 +9,9 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapModel,
     BeatmapSetModel,
 )
+from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
+    BeatmapLeaderboardUserBestModel,
+)
 from osu_server.repositories.sqlalchemy.models.blob import BlobModel
 from osu_server.repositories.sqlalchemy.models.channel import (
     ChannelMessageModel,
@@ -37,6 +40,7 @@ from osu_server.repositories.sqlalchemy.models.user import (
 __all__ = [
     "BeatmapFetchStateModel",
     "BeatmapFileAttachmentModel",
+    "BeatmapLeaderboardUserBestModel",
     "BeatmapModel",
     "BeatmapSetModel",
     "BlobModel",

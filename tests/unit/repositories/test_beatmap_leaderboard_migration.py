@@ -1,0 +1,155 @@
+from pathlib import Path
+from typing import cast
+
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKeyConstraint, Index, Table
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateIndex
+
+from osu_server.infrastructure.database.base import Base
+from osu_server.repositories.sqlalchemy.models import BeatmapLeaderboardUserBestModel, ScoreModel
+
+MIGRATION_PATH = Path("alembic/versions/20260618_0100_add_beatmap_leaderboard_projection.py")
+
+
+def _column(table: Table, name: str) -> Column[object]:
+    return cast("Column[object]", table.c[name])
+
+
+def _check_constraints(table: Table) -> set[str]:
+    return {
+        str(constraint.name)
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+
+def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
+    constraints: dict[str, tuple[str, str]] = {}
+    for constraint in table.constraints:
+        if isinstance(constraint, ForeignKeyConstraint) and constraint.name is not None:
+            constraint_name = cast("str", constraint.name)
+            source_column = next(iter(constraint.columns)).name
+            target_column = cast("str", next(iter(constraint.elements)).target_fullname)
+            constraints[constraint_name] = (source_column, target_column)
+    return constraints
+
+
+def _indexes(table: Table) -> dict[str, Index]:
+    indexes: dict[str, Index] = {}
+    for index in table.indexes:
+        if index.name is not None:
+            indexes[cast("str", index.name)] = index
+    return indexes
+
+
+def _index_columns(index: Index) -> tuple[str, ...]:
+    return tuple(column.name for column in index.columns)
+
+
+def _index_sql(index: Index) -> str:
+    return str(CreateIndex(index).compile(dialect=postgresql.dialect()))
+
+
+def test_beatmap_leaderboard_migration_adds_score_eligibility_and_projection_schema() -> None:
+    migration = MIGRATION_PATH.read_text()
+
+    assert 'revision: str = "20260618_0100"' in migration
+    assert 'down_revision: str | None = "20260617_0102"' in migration
+    assert '"leaderboard_eligible_at_submission"' in migration
+    assert 'server_default=sa.text("false")' in migration
+    assert "beatmap_status_at_submission IN (" in migration
+    assert "'ranked', 'approved', 'loved', 'qualified'" in migration
+    assert 'op.create_table(\n        "beatmap_leaderboard_user_bests"' in migration
+    assert "fk_beatmap_leaderboard_user_bests_score_id" in migration
+    assert "ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative" in migration
+    assert "idx_beatmap_leaderboard_user_bests_scope_unique" in migration
+    assert "COALESCE(mod_filter_key, -1)" in migration
+    assert "idx_beatmap_leaderboard_user_bests_ordering" in migration
+    assert "score DESC" in migration
+    assert "submitted_at ASC" in migration
+    assert "score_id ASC" in migration
+    assert "idx_beatmap_leaderboard_user_bests_user_rebuild" in migration
+    assert "idx_scores_leaderboard_rebuild_candidate" in migration
+    assert "personal_bests" not in migration
+    assert 'op.drop_table("beatmap_leaderboard_user_bests")' in migration
+    assert 'op.drop_column("scores", "leaderboard_eligible_at_submission")' in migration
+
+
+def test_beatmap_leaderboard_model_is_registered_for_metadata_discovery() -> None:
+    assert BeatmapLeaderboardUserBestModel.__tablename__ == "beatmap_leaderboard_user_bests"
+    assert (
+        Base.metadata.tables["beatmap_leaderboard_user_bests"]
+        is BeatmapLeaderboardUserBestModel.__table__
+    )
+    assert "leaderboard_eligible_at_submission" in ScoreModel.__table__.columns
+
+
+def test_score_metadata_includes_submission_time_leaderboard_eligibility() -> None:
+    table = cast("Table", ScoreModel.__table__)
+
+    eligibility_column = _column(table, "leaderboard_eligible_at_submission")
+    assert isinstance(eligibility_column.type, Boolean)
+    assert not eligibility_column.nullable
+    assert eligibility_column.server_default is not None
+
+    rebuild_index = _indexes(table)["idx_scores_leaderboard_rebuild_candidate"]
+    assert _index_columns(rebuild_index) == (
+        "beatmap_id",
+        "ruleset",
+        "playstyle",
+        "user_id",
+        "leaderboard_eligible_at_submission",
+        "passed",
+        "score",
+        "submitted_at",
+        "id",
+    )
+    assert rebuild_index.unique is False
+
+
+def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
+    table = cast("Table", BeatmapLeaderboardUserBestModel.__table__)
+
+    assert _column(table, "id").primary_key
+    assert not _column(table, "beatmap_id").nullable
+    assert not _column(table, "ruleset").nullable
+    assert not _column(table, "playstyle").nullable
+    assert not _column(table, "user_id").nullable
+    assert _column(table, "mod_filter_key").nullable
+    assert not _column(table, "score_id").nullable
+    assert not _column(table, "score").nullable
+    assert not _column(table, "submitted_at").nullable
+    assert not _column(table, "created_at").nullable
+    assert not _column(table, "updated_at").nullable
+    assert _foreign_key_constraints(table)["fk_beatmap_leaderboard_user_bests_score_id"] == (
+        "score_id",
+        "scores.id",
+    )
+    assert "ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative" in _check_constraints(
+        table
+    )
+
+    indexes = _indexes(table)
+    unique_scope_index = indexes["idx_beatmap_leaderboard_user_bests_scope_unique"]
+    assert unique_scope_index.unique is True
+    unique_scope_sql = _index_sql(unique_scope_index)
+    assert "beatmap_id, ruleset, playstyle, user_id, COALESCE(mod_filter_key, -1)" in (
+        unique_scope_sql
+    )
+
+    ordering_index = indexes["idx_beatmap_leaderboard_user_bests_ordering"]
+    assert ordering_index.unique is False
+    ordering_sql = _index_sql(ordering_index)
+    assert (
+        "beatmap_id, ruleset, playstyle, COALESCE(mod_filter_key, -1), "
+        "score DESC, submitted_at ASC, score_id ASC"
+    ) in ordering_sql
+
+    user_rebuild_index = indexes["idx_beatmap_leaderboard_user_bests_user_rebuild"]
+    assert user_rebuild_index.unique is False
+    assert _index_columns(user_rebuild_index) == (
+        "user_id",
+        "beatmap_id",
+        "ruleset",
+        "playstyle",
+    )
