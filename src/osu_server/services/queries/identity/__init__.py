@@ -10,13 +10,23 @@ from osu_server.services.queries.identity.authorization import (
     ComputeSessionAuthorizationQueryResult,
     ComputeSessionAuthorizationQueryUseCase,
 )
-from osu_server.services.queries.identity.online_users import (
-    ListOnlineUsersQuery,
-    ListOnlineUsersQueryInput,
-    ListOnlineUsersQueryResult,
-    ListOnlineUsersQueryUseCase,
+from osu_server.services.queries.identity.friend_relationships import (
+    CheckFriendRelationshipQuery,
+    CheckFriendRelationshipQueryUseCase,
+    GetFriendEligibleUserIdsQuery,
+    GetFriendEligibleUserIdsQueryUseCase,
+    ListFriendIdsQuery,
+    ListFriendIdsQueryInput,
+    ListFriendIdsQueryResult,
+    ListFriendIdsQueryUseCase,
 )
-from osu_server.services.queries.identity.online_users_service import OnlineUsersService
+from osu_server.services.queries.identity.online_sessions import (
+    ListActiveSessionsQuery,
+    ListActiveSessionsQueryInput,
+    ListActiveSessionsQueryResult,
+    ListActiveSessionsQueryUseCase,
+    OnlineSessionSnapshot,
+)
 from osu_server.services.queries.identity.password_service import PasswordService
 from osu_server.services.queries.identity.permission_service import PermissionService
 from osu_server.services.queries.identity.session_credentials import (
@@ -27,6 +37,8 @@ from osu_server.services.queries.identity.session_credentials import (
 )
 
 __all__ = [
+    "CheckFriendRelationshipQuery",
+    "CheckFriendRelationshipQueryUseCase",
     "ComputePermissionsQuery",
     "ComputePermissionsQueryInput",
     "ComputePermissionsQueryResult",
@@ -35,11 +47,17 @@ __all__ = [
     "ComputeSessionAuthorizationQueryInput",
     "ComputeSessionAuthorizationQueryResult",
     "ComputeSessionAuthorizationQueryUseCase",
-    "ListOnlineUsersQuery",
-    "ListOnlineUsersQueryInput",
-    "ListOnlineUsersQueryResult",
-    "ListOnlineUsersQueryUseCase",
-    "OnlineUsersService",
+    "GetFriendEligibleUserIdsQuery",
+    "GetFriendEligibleUserIdsQueryUseCase",
+    "ListActiveSessionsQuery",
+    "ListActiveSessionsQueryInput",
+    "ListActiveSessionsQueryResult",
+    "ListActiveSessionsQueryUseCase",
+    "ListFriendIdsQuery",
+    "ListFriendIdsQueryInput",
+    "ListFriendIdsQueryResult",
+    "ListFriendIdsQueryUseCase",
+    "OnlineSessionSnapshot",
     "PasswordService",
     "PermissionService",
     "SessionCredentialsQuery",

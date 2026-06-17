@@ -182,7 +182,7 @@ IDENTITY_TRANSPORT_USE_CASE_RULES = (
     BoundaryRule(
         name="stable bancho lifecycle identity query boundary",
         source_path=SOURCE_ROOT / "transports" / "stable" / "bancho" / "listeners",
-        forbidden_roots=("osu_server.services.queries.identity.online_users_service",),
+        forbidden_roots=("osu_server.repositories.interfaces.session_store",),
     ),
     BoundaryRule(
         name="legacy web identity use-case boundary",
@@ -278,6 +278,8 @@ REMOVED_ARCHITECTURE_ENTRYPOINTS = (
     SOURCE_ROOT / "services" / "permission_service.py",
     SOURCE_ROOT / "services" / "private_message_service.py",
     SOURCE_ROOT / "services" / "queries" / "chat" / "channel_service.py",
+    SOURCE_ROOT / "services" / "queries" / "identity" / "online_users.py",
+    SOURCE_ROOT / "services" / "queries" / "identity" / "online_users_service.py",
     SOURCE_ROOT / "services" / "score_authorization_service.py",
     SOURCE_ROOT / "services" / "session_authorization_service.py",
     SOURCE_ROOT / "transports" / "bancho",

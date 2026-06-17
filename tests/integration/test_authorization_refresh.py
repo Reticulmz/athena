@@ -287,4 +287,4 @@ class TestRefreshDoesNotInvalidateSession:
 
         # No session was created
         assert await store.get_by_user(user_id=1) is None
-        assert await store.get_all_user_ids() == []
+        assert await store.list_active_sessions() == []

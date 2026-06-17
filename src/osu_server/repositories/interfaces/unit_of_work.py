@@ -12,6 +12,7 @@ if TYPE_CHECKING:
         BlobCommandRepository,
         ChannelCommandRepository,
         ChatCommandRepository,
+        FriendRelationshipCommandRepository,
         PersonalBestCommandRepository,
         ReplayCommandRepository,
         RoleCommandRepository,
@@ -34,6 +35,7 @@ class UnitOfWork(Protocol):
     roles: RoleCommandRepository
     channels: ChannelCommandRepository
     chat: ChatCommandRepository
+    friends: FriendRelationshipCommandRepository
     scores: ScoreCommandRepository
     personal_bests: PersonalBestCommandRepository
     score_performance: ScorePerformanceCommandRepository

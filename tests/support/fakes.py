@@ -175,8 +175,14 @@ class StaticSessionStore:
         self._session.role_ids = authorization.role_ids
         return True
 
-    async def get_all_user_ids(self) -> list[int]:
-        return [] if self._session is None else [self._session.user_id]
+    async def update_pm_private(self, user_id: int, enabled: bool) -> bool:
+        if self._session is None or self._session.user_id != user_id:
+            return False
+        self._session.pm_private = enabled
+        return True
+
+    async def list_active_sessions(self) -> list[SessionData]:
+        return [] if self._session is None else [self._session]
 
 
 def make_score_authorization_service(

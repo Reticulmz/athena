@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING, cast, final, override
+from typing import TYPE_CHECKING, TypeVar, cast, final, override
 
 import structlog.contextvars
 import structlog.testing
 
+from osu_server.domain.events.users import UserConnected
 from osu_server.domain.identity.authentication import LoginRequest, LoginResponse, LoginResult
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.services.commands.identity import LoginCommandInput, LoginCommandResult
 from osu_server.services.queries.chat import ChannelCatalogQueryResult
+from osu_server.services.queries.identity import (
+    ListActiveSessionsQueryResult,
+    ListFriendIdsQueryResult,
+)
 from osu_server.transports.stable.bancho.protocol.s2c.login import login_reply
 from osu_server.transports.stable.bancho.workflows import (
     LoginResponseBuilder,
@@ -23,7 +28,12 @@ from osu_server.transports.stable.bancho.workflows import (
 from tests.factories.domain import make_user
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Awaitable, Callable, Mapping
+
+    from osu_server.services.queries.identity import (
+        ListActiveSessionsQueryUseCase,
+        ListFriendIdsQueryUseCase,
+    )
 
 _PASSWORD = "SecurePass1234"
 _PASSWORD_MD5 = hashlib.md5(_PASSWORD.encode()).hexdigest()
@@ -31,6 +41,7 @@ _SUCCESS_STREAM = b"successful-login-stream"
 _USER_ID = 42
 _ROLE_ID = 1
 _UTC_OFFSET = 9
+TEvent = TypeVar("TEvent", bound=object)
 
 
 @final
@@ -72,9 +83,46 @@ class _RecordingLoginCommand:
 
 
 @final
+class _RecordingLocalEventBus:
+    """Local event bus fake that records fired events."""
+
+    events: list[object]
+    raise_on_fire: bool
+
+    def __init__(self, *, raise_on_fire: bool = False) -> None:
+        self.events = []
+        self.raise_on_fire = raise_on_fire
+
+    async def fire(self, event: object) -> None:
+        if self.raise_on_fire:
+            raise RuntimeError("event fan-out failed")
+        self.events.append(event)
+
+    def subscribe(
+        self,
+        event_type: type[TEvent],
+        handler: Callable[[TEvent], Awaitable[None]],
+    ) -> None:
+        _ = event_type
+        _ = handler
+
+
+@final
 class _EmptyChannelCatalogQuery:
     async def execute(self, _input_data: object) -> ChannelCatalogQueryResult:
         return ChannelCatalogQueryResult(channels=())
+
+
+@final
+class _EmptyFriendIdsQuery:
+    async def execute(self, _input_data: object) -> ListFriendIdsQueryResult:
+        return ListFriendIdsQueryResult(friend_user_ids=())
+
+
+@final
+class _EmptyActiveSessionsQuery:
+    async def execute(self, _input_data: object) -> ListActiveSessionsQueryResult:
+        return ListActiveSessionsQueryResult(sessions=())
 
 
 @final
@@ -90,9 +138,19 @@ class _RecordingLoginResponseBuilder(LoginResponseBuilder):
         content: bytes = _SUCCESS_STREAM,
     ) -> None:
         empty_query = _EmptyChannelCatalogQuery()
+        friend_ids_query = _EmptyFriendIdsQuery()
+        active_sessions_query = _EmptyActiveSessionsQuery()
         super().__init__(
             visible_channels_query=cast("object", empty_query),  # pyright: ignore[reportArgumentType]
             autojoin_channels_query=cast("object", empty_query),  # pyright: ignore[reportArgumentType]
+            friend_ids_query=cast(
+                "ListFriendIdsQueryUseCase",
+                cast("object", friend_ids_query),
+            ),
+            active_sessions_query=cast(
+                "ListActiveSessionsQueryUseCase",
+                cast("object", active_sessions_query),
+            ),
         )
         self._content = content
         self.login_response = None
@@ -145,21 +203,25 @@ def _make_workflow(
     auth_result: LoginResponse | LoginResult,
     country_resolver: _RecordingCountryResolver | None = None,
     response_builder: _RecordingLoginResponseBuilder | None = None,
+    event_bus: _RecordingLocalEventBus | None = None,
 ) -> tuple[
     LoginWorkflow,
     _RecordingLoginCommand,
     _RecordingCountryResolver,
     _RecordingLoginResponseBuilder,
+    _RecordingLocalEventBus,
 ]:
     login_command = _RecordingLoginCommand(auth_result)
     resolver = country_resolver or _RecordingCountryResolver()
     builder = response_builder or _RecordingLoginResponseBuilder()
+    local_event_bus = event_bus or _RecordingLocalEventBus()
     workflow = LoginWorkflow(
         login_command=login_command,
         country_resolver=resolver,
         response_builder=builder,
+        event_bus=local_event_bus,
     )
-    return workflow, login_command, resolver, builder
+    return workflow, login_command, resolver, builder, local_event_bus
 
 
 def _contextvars() -> Mapping[str, object]:
@@ -168,7 +230,7 @@ def _contextvars() -> Mapping[str, object]:
 
 class TestLoginWorkflow:
     async def test_parse_failure_returns_auth_failed_packet_without_token_and_logs(self) -> None:
-        workflow, login_command, country_resolver, response_builder = _make_workflow(
+        workflow, login_command, country_resolver, response_builder, event_bus = _make_workflow(
             auth_result=_login_response()
         )
         structlog.contextvars.clear_contextvars()
@@ -185,6 +247,7 @@ class TestLoginWorkflow:
         assert login_command.login_request is None
         assert country_resolver.headers is None
         assert response_builder.login_response is None
+        assert event_bus.events == []
         parse_logs = [
             log
             for log in cast("list[dict[str, object]]", logs)
@@ -198,7 +261,7 @@ class TestLoginWorkflow:
     async def test_auth_rejection_returns_login_result_packet_without_token(self) -> None:
         headers = {"x-real-ip": "203.0.113.10"}
         country_resolver = _RecordingCountryResolver(country="US")
-        workflow, login_command, resolver, response_builder = _make_workflow(
+        workflow, login_command, resolver, response_builder, event_bus = _make_workflow(
             auth_result=LoginResult.AUTHENTICATION_FAILED,
             country_resolver=country_resolver,
         )
@@ -217,6 +280,7 @@ class TestLoginWorkflow:
         assert login_command.country == "US"
         assert resolver.headers is headers
         assert response_builder.login_response is None
+        assert event_bus.events == []
         assert "user" not in _contextvars()
         assert "user_id" not in _contextvars()
 
@@ -226,7 +290,7 @@ class TestLoginWorkflow:
         response_builder = _RecordingLoginResponseBuilder(
             content=_SUCCESS_STREAM,
         )
-        workflow, login_command, resolver, builder = _make_workflow(
+        workflow, login_command, resolver, builder, event_bus = _make_workflow(
             auth_result=login_response,
             response_builder=response_builder,
         )
@@ -246,8 +310,26 @@ class TestLoginWorkflow:
             assert login_command.country == "JP"
             assert resolver.headers is headers
             assert builder.login_response is login_response
+            assert event_bus.events == [UserConnected(user_id=login_response.user.id)]
             context = _contextvars()
             assert context.get("user") == login_response.user.username
             assert context.get("user_id") == login_response.user.id
         finally:
             structlog.contextvars.clear_contextvars()
+
+    async def test_success_still_returns_login_result_when_connected_event_fails(self) -> None:
+        login_response = _login_response()
+        event_bus = _RecordingLocalEventBus(raise_on_fire=True)
+        workflow, _, _, _, _ = _make_workflow(
+            auth_result=login_response,
+            event_bus=event_bus,
+        )
+
+        result = await workflow.execute(
+            LoginWorkflowInput(body=_build_login_body(), headers={"x-real-ip": "203.0.113.20"})
+        )
+
+        assert result == LoginWorkflowResult(
+            content=_SUCCESS_STREAM,
+            cho_token=login_response.token,
+        )

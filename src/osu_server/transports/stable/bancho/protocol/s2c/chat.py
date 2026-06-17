@@ -1,7 +1,3 @@
-# pyright: reportAny=false, reportUnknownVariableType=false
-# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
-# pyright: reportInvalidTypeForm=false
-# Caterpillar's metaclass/descriptor patterns require these file-level suppressions.
 """S2C chat packet builders — send_message, channel_join_success, channel_revoked.
 
 Design ref: S2C Chat Builders in channel-system design.md
@@ -20,6 +16,13 @@ def send_message(*, sender: str, content: str, target: str, sender_id: int) -> b
     msg = Message(sender=sender, content=content, target=target, sender_id=sender_id)
     payload: bytes = pack(msg)
     return write_packet(ServerPacketID.SEND_MESSAGE, payload)
+
+
+def user_dm_blocked(*, target: str) -> bytes:
+    """ServerPacketID.USER_DM_BLOCKED (100) — target rejected a private message."""
+    msg = Message(sender="", content="", target=target, sender_id=0)
+    payload: bytes = pack(msg)
+    return write_packet(ServerPacketID.USER_DM_BLOCKED, payload)
 
 
 def channel_join_success(*, channel_name: str) -> bytes:

@@ -7,8 +7,15 @@ from typing import TYPE_CHECKING
 from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY, SystemUserIdentity
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.services.queries.chat import ChannelCatalogQueryInput
+from osu_server.services.queries.identity import (
+    ListActiveSessionsQueryInput,
+    ListFriendIdsQueryInput,
+)
 from osu_server.transports.stable.bancho.mappers.permissions import (
     map_stable_bancho_authorization,
+)
+from osu_server.transports.stable.bancho.mappers.presence import (
+    online_session_presence_packet,
 )
 from osu_server.transports.stable.bancho.protocol import PROTOCOL_VERSION
 from osu_server.transports.stable.bancho.protocol.s2c.login import (
@@ -31,6 +38,10 @@ if TYPE_CHECKING:
         ListAutojoinChannelsQuery,
         ListVisibleChannelsQuery,
     )
+    from osu_server.services.queries.identity import (
+        ListActiveSessionsQueryUseCase,
+        ListFriendIdsQueryUseCase,
+    )
 
 
 class LoginResponseBuilder:
@@ -38,6 +49,8 @@ class LoginResponseBuilder:
 
     _visible_channels_query: ListVisibleChannelsQuery
     _autojoin_channels_query: ListAutojoinChannelsQuery
+    _friend_ids_query: ListFriendIdsQueryUseCase
+    _active_sessions_query: ListActiveSessionsQueryUseCase
     _bot_identity: SystemUserIdentity
 
     def __init__(
@@ -45,10 +58,14 @@ class LoginResponseBuilder:
         *,
         visible_channels_query: ListVisibleChannelsQuery,
         autojoin_channels_query: ListAutojoinChannelsQuery,
+        friend_ids_query: ListFriendIdsQueryUseCase,
+        active_sessions_query: ListActiveSessionsQueryUseCase,
         bot_identity: SystemUserIdentity | None = None,
     ) -> None:
         self._visible_channels_query = visible_channels_query
         self._autojoin_channels_query = autojoin_channels_query
+        self._friend_ids_query = friend_ids_query
+        self._active_sessions_query = active_sessions_query
         self._bot_identity = bot_identity or BANCHO_BOT_IDENTITY
 
     async def build(self, login_response: LoginResponse) -> bytes:
@@ -67,6 +84,12 @@ class LoginResponseBuilder:
         autojoin_channels = (
             await self._autojoin_channels_query.execute(channel_query_input)
         ).channels
+        friend_ids = (
+            await self._friend_ids_query.execute(ListFriendIdsQueryInput(owner_user_id=user.id))
+        ).friend_user_ids
+        active_sessions = (
+            await self._active_sessions_query.execute(ListActiveSessionsQueryInput())
+        ).sessions
 
         packets: list[bytes] = [
             login_reply(user.id),
@@ -114,6 +137,15 @@ class LoginResponseBuilder:
             )
         )
 
+        other_active_sessions = [
+            session
+            for session in active_sessions
+            if session.user_id not in {self._bot_identity.user_id, user.id}
+        ]
+        packets.extend(
+            online_session_presence_packet(session) for session in other_active_sessions
+        )
+
         packets.extend(
             channel_available(name=channel.name, topic=channel.topic, user_count=user_count)
             for channel, user_count in visible_channels
@@ -127,12 +159,20 @@ class LoginResponseBuilder:
             for channel, user_count in autojoin_channels
         )
 
-        roster_ids = list(dict.fromkeys([self._bot_identity.user_id, user.id]))
+        roster_ids = list(
+            dict.fromkeys(
+                [
+                    self._bot_identity.user_id,
+                    user.id,
+                    *(session.user_id for session in other_active_sessions),
+                ]
+            )
+        )
 
         packets.extend(
             [
                 channel_info_complete(),
-                friends_list([]),
+                friends_list(list(friend_ids)),
                 silence_info(0),
                 user_presence_bundle(roster_ids),
             ]

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, final
 
 import structlog.testing
-from caterpillar.model import pack
 
 from osu_server.domain.beatmaps import (
     BeatmapFetchState,
@@ -22,6 +21,7 @@ from osu_server.services.commands.beatmaps import (
 )
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.handlers.status import StatusChangeHandlers
+from osu_server.transports.stable.bancho.protocol.c2s import status_change_payload
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.stable.bancho.protocol.types import StatusUpdate
 
@@ -83,7 +83,7 @@ def _status_payload(
     beatmap_md5: str = _CHECKSUM,
     status_text: str = "playing",
 ) -> bytes:
-    return pack(
+    return status_change_payload(
         StatusUpdate(
             status=2,
             status_text=status_text,

@@ -9,6 +9,7 @@ from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyBlobCommandRepository,
     SQLAlchemyChannelCommandRepository,
     SQLAlchemyChatCommandRepository,
+    SQLAlchemyFriendRelationshipCommandRepository,
     SQLAlchemyPersonalBestCommandRepository,
     SQLAlchemyReplayCommandRepository,
     SQLAlchemyRoleCommandRepository,
@@ -50,6 +51,7 @@ class SQLAlchemyUnitOfWork:
     roles: SQLAlchemyRoleCommandRepository
     channels: SQLAlchemyChannelCommandRepository
     chat: SQLAlchemyChatCommandRepository
+    friends: SQLAlchemyFriendRelationshipCommandRepository
     scores: SQLAlchemyScoreCommandRepository
     personal_bests: SQLAlchemyPersonalBestCommandRepository
     score_performance: SQLAlchemyScorePerformanceCommandRepository
@@ -66,6 +68,10 @@ class SQLAlchemyUnitOfWork:
         self.roles = cast("SQLAlchemyRoleCommandRepository", cast("object", None))
         self.channels = cast("SQLAlchemyChannelCommandRepository", cast("object", None))
         self.chat = cast("SQLAlchemyChatCommandRepository", cast("object", None))
+        self.friends = cast(
+            "SQLAlchemyFriendRelationshipCommandRepository",
+            cast("object", None),
+        )
         self.scores = cast("SQLAlchemyScoreCommandRepository", cast("object", None))
         self.personal_bests = cast(
             "SQLAlchemyPersonalBestCommandRepository",
@@ -113,6 +119,7 @@ class SQLAlchemyUnitOfWork:
         self.roles = SQLAlchemyRoleCommandRepository(session)
         self.channels = SQLAlchemyChannelCommandRepository(session)
         self.chat = SQLAlchemyChatCommandRepository(session)
+        self.friends = SQLAlchemyFriendRelationshipCommandRepository(session)
         self.scores = SQLAlchemyScoreCommandRepository(session)
         self.personal_bests = SQLAlchemyPersonalBestCommandRepository(session)
         self.score_performance = SQLAlchemyScorePerformanceCommandRepository(session)

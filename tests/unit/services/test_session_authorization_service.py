@@ -11,6 +11,7 @@ from osu_server.domain.identity.sessions import (
     AuthorizationRefreshStatus,
     RoleAuthorizationRefreshResult,
     SessionAuthorization,
+    SessionData,
 )
 from osu_server.services.commands.identity.session_authorization_service import (
     SessionAuthorizationService,
@@ -52,8 +53,8 @@ class FakeSessionStore:
     """update_authorization の戻り値を制御する fake。全 Protocol メソッドを実装。"""
 
     _update_result: bool
-    _by_token: dict[str, object]
-    _by_user: dict[int, object]
+    _by_token: dict[str, SessionData]
+    _by_user: dict[int, SessionData]
 
     def __init__(self, *, update_result: bool = True) -> None:
         self._update_result = update_result
@@ -61,14 +62,14 @@ class FakeSessionStore:
         self._by_user = {}
         self.update_calls: list[tuple[int, SessionAuthorization]] = []
 
-    async def create(self, user_id: int, token: str, data: object) -> None:
+    async def create(self, user_id: int, token: str, data: SessionData) -> None:
         _ = (user_id, token, data)
 
-    async def get(self, token: str) -> object | None:
+    async def get(self, token: str) -> SessionData | None:
         _ = token
         return None
 
-    async def get_by_user(self, user_id: int) -> object | None:
+    async def get_by_user(self, user_id: int) -> SessionData | None:
         _ = user_id
         return None
 
@@ -86,7 +87,7 @@ class FakeSessionStore:
     async def delete_by_user(self, user_id: int) -> None:
         _ = user_id
 
-    async def get_all_user_ids(self) -> list[int]:
+    async def list_active_sessions(self) -> list[SessionData]:
         return []
 
     async def update_authorization(

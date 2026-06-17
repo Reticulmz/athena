@@ -13,6 +13,7 @@ from osu_server.repositories.interfaces.commands import (
     BlobCommandRepository,
     ChannelCommandRepository,
     ChatCommandRepository,
+    FriendRelationshipCommandRepository,
     PersonalBestCommandRepository,
     ReplayCommandRepository,
     RoleCommandRepository,
@@ -27,6 +28,7 @@ from osu_server.repositories.interfaces.queries import (
     BlobQueryRepository,
     ChannelQueryRepository,
     ChatHistoryQueryRepository,
+    FriendRelationshipQueryRepository,
     RoleQueryRepository,
     ScorePerformanceQueryRepository,
     ScoreQueryRepository,
@@ -55,6 +57,7 @@ COMMAND_REPOSITORY_ATTRIBUTES = {
     "roles": RoleCommandRepository,
     "channels": ChannelCommandRepository,
     "chat": ChatCommandRepository,
+    "friends": FriendRelationshipCommandRepository,
     "scores": ScoreCommandRepository,
     "personal_bests": PersonalBestCommandRepository,
     "score_performance": ScorePerformanceCommandRepository,
@@ -75,6 +78,7 @@ QUERY_REPOSITORIES = (
     BeatmapQueryRepository,
     BlobQueryRepository,
     ChatHistoryQueryRepository,
+    FriendRelationshipQueryRepository,
     BeatmapScoreListingQueryRepository,
     ScorePerformanceQueryRepository,
 )
@@ -154,6 +158,7 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         RoleCommandRepository,
         ChannelCommandRepository,
         ChatCommandRepository,
+        FriendRelationshipCommandRepository,
         PersonalBestCommandRepository,
         ScoreCommandRepository,
         ScorePerformanceCommandRepository,
@@ -171,6 +176,11 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
     assert _public_async_methods(PersonalBestCommandRepository) == {
         "get_by_scope",
         "upsert_if_better",
+    }
+    assert _public_async_methods(FriendRelationshipCommandRepository) == {
+        "add_relationship",
+        "remove_relationship",
+        "target_exists",
     }
     assert _public_async_methods(RoleCommandRepository) == {
         "assign_role",

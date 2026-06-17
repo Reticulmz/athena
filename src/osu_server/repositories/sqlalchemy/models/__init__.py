@@ -16,6 +16,7 @@ from osu_server.repositories.sqlalchemy.models.channel import (
     ChannelRoleOverrideModel,
     PrivateMessageModel,
 )
+from osu_server.repositories.sqlalchemy.models.friend import UserFriendRelationshipModel
 from osu_server.repositories.sqlalchemy.models.personal_best import PersonalBestModel
 from osu_server.repositories.sqlalchemy.models.role import RoleModel, UserRoleModel
 from osu_server.repositories.sqlalchemy.models.score import (
@@ -52,6 +53,7 @@ __all__ = [
     "ScoreModel",
     "ScorePerformanceCalculationModel",
     "ScoreSubmissionModel",
+    "UserFriendRelationshipModel",
     "UserModel",
     "UserRoleModel",
 ]

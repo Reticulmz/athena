@@ -96,6 +96,21 @@ class InMemorySessionStore:
         )
         return True
 
-    async def get_all_user_ids(self) -> list[int]:
-        """Return all active user IDs."""
-        return list(self._user_to_token.keys())
+    async def update_pm_private(self, user_id: int, enabled: bool) -> bool:
+        """Update only pm_private of an active session.
+
+        Returns ``True`` if the session was updated, ``False`` if no active
+        session exists for *user_id*.  Does not create a new session, delete
+        the session, or change any non-privacy fields.
+        """
+        token = self._user_to_token.get(user_id)
+        if token is None:
+            return False
+
+        session = self._by_token[token]
+        self._by_token[token] = replace(session, pm_private=enabled)
+        return True
+
+    async def list_active_sessions(self) -> list[SessionData]:
+        """Return copies of all active sessions."""
+        return [replace(session) for session in self._by_token.values()]

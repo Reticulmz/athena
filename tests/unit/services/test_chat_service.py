@@ -15,6 +15,7 @@ from osu_server.domain.chat import (
     ChatPersistenceResult,
     ChatSender,
     PrivateChatDestination,
+    PrivateMessageDeliveryStatus,
     PrivateMessageResult,
     SendChannelMessageInput,
     SendPrivateMessageInput,
@@ -29,6 +30,9 @@ from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimi
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
+from osu_server.repositories.memory.queries.friends import (
+    InMemoryFriendRelationshipQueryRepository,
+)
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -51,6 +55,9 @@ from osu_server.services.commands.chat.bancho_bot.commands import create_builtin
 from osu_server.services.queries.chat import (
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,
+)
+from osu_server.services.queries.identity.friend_relationships import (
+    CheckFriendRelationshipQuery,
 )
 
 _NOW = datetime.now(UTC)
@@ -307,6 +314,9 @@ def chat_service(
     )
     send_private = SendPrivateMessageUseCase(
         target_query=private_message_target_query,
+        friend_relationship_query=CheckFriendRelationshipQuery(
+            repository=InMemoryFriendRelationshipQueryRepository(uow_factory)
+        ),
         command_service=command_service,
         session_store=session_store,
         persistence_publisher=persistence_publisher,
@@ -471,6 +481,7 @@ async def test_send_private_message_success(
     res = await chat_service.send_private_message(_private_message_input())
 
     assert res is not None
+    assert res.delivery_status is PrivateMessageDeliveryStatus.DELIVERABLE
     assert res.target_id == created_target.id
     assert res.is_online is True
     assert res.content == "hello PM"
@@ -486,6 +497,162 @@ async def test_send_private_message_success(
         )
     ]
     assert persistence_publisher.channel_messages == []
+
+
+@pytest.mark.asyncio
+async def test_friend_only_private_message_blocks_non_friend_without_persistence(
+    chat_service: ChatUseCaseHarness,
+    user_repo: InMemoryUserRepository,
+    session_store: InMemorySessionStore,
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
+) -> None:
+    sender = await user_repo.create(
+        User(
+            id=0,
+            username="sender",
+            safe_username="sender",
+            email="sender@test.local",
+            password_hash="hash",
+            country="JP",
+            created_at=_NOW,
+            updated_at=_NOW,
+        )
+    )
+    target = await user_repo.create(
+        User(
+            id=0,
+            username="target",
+            safe_username="target",
+            email="target@test.local",
+            password_hash="hash",
+            country="JP",
+            created_at=_NOW,
+            updated_at=_NOW,
+        )
+    )
+    await session_store.create(
+        user_id=sender.id,
+        token="sender_session_actual",
+        data=SessionData(
+            user_id=sender.id,
+            username="sender",
+            privileges=0,
+            country="JP",
+            osu_version="test",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="",
+            pm_private=False,
+            silence_end=0,
+        ),
+    )
+    await session_store.create(
+        user_id=target.id,
+        token="target_session",
+        data=SessionData(
+            user_id=target.id,
+            username="target",
+            privileges=0,
+            country="JP",
+            osu_version="test",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="",
+            pm_private=True,
+            silence_end=0,
+        ),
+    )
+
+    res = await chat_service.send_private_message(_private_message_input(sender_id=sender.id))
+
+    assert res is not None
+    assert res.delivery_status is PrivateMessageDeliveryStatus.BLOCKED_BY_FRIEND_ONLY
+    assert res.target_id == target.id
+    assert res.is_online is True
+    assert persistence_publisher.private_messages == []
+
+
+@pytest.mark.asyncio
+async def test_friend_only_private_message_allows_target_friend(
+    chat_service: ChatUseCaseHarness,
+    user_repo: InMemoryUserRepository,
+    session_store: InMemorySessionStore,
+    uow_factory: InMemoryUnitOfWorkFactory,
+    persistence_publisher: FakeChatPersistenceWorkPublisher,
+) -> None:
+    sender = await user_repo.create(
+        User(
+            id=0,
+            username="sender",
+            safe_username="sender",
+            email="sender@test.local",
+            password_hash="hash",
+            country="JP",
+            created_at=_NOW,
+            updated_at=_NOW,
+        )
+    )
+    target = await user_repo.create(
+        User(
+            id=0,
+            username="target",
+            safe_username="target",
+            email="target@test.local",
+            password_hash="hash",
+            country="JP",
+            created_at=_NOW,
+            updated_at=_NOW,
+        )
+    )
+    async with uow_factory() as uow:
+        _ = await uow.friends.add_relationship(target.id, sender.id)
+        await uow.commit()
+    await session_store.create(
+        user_id=sender.id,
+        token="sender_session_actual",
+        data=SessionData(
+            user_id=sender.id,
+            username="sender",
+            privileges=0,
+            country="JP",
+            osu_version="test",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="",
+            pm_private=False,
+            silence_end=0,
+        ),
+    )
+    await session_store.create(
+        user_id=target.id,
+        token="target_session",
+        data=SessionData(
+            user_id=target.id,
+            username="target",
+            privileges=0,
+            country="JP",
+            osu_version="test",
+            utc_offset=9,
+            display_city=False,
+            client_hashes="",
+            pm_private=True,
+            silence_end=0,
+        ),
+    )
+
+    res = await chat_service.send_private_message(_private_message_input(sender_id=sender.id))
+
+    assert res is not None
+    assert res.delivery_status is PrivateMessageDeliveryStatus.DELIVERABLE
+    assert persistence_publisher.private_messages == [
+        PrivateMessagePersistenceWork(
+            sender_id=sender.id,
+            sender_name="sender",
+            target_id=target.id,
+            target_name="target",
+            content="hello PM",
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -557,6 +724,7 @@ async def test_private_target_not_found_does_not_publish_work(
     res = await chat_service.send_private_message(_private_message_input(target_name="missing"))
 
     assert res is not None
+    assert res.delivery_status is PrivateMessageDeliveryStatus.TARGET_NOT_FOUND
     assert res.target_id is None
     assert persistence_publisher.channel_messages == []
     assert persistence_publisher.private_messages == []

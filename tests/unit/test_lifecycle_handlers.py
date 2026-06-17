@@ -69,7 +69,11 @@ class FakeSessionStore:
         _ = (user_id, authorization)
         raise NotImplementedError
 
-    async def get_all_user_ids(self) -> list[int]:
+    async def update_pm_private(self, user_id: int, enabled: bool) -> bool:
+        _ = (user_id, enabled)
+        raise NotImplementedError
+
+    async def list_active_sessions(self) -> list[SessionData]:
         raise NotImplementedError
 
 

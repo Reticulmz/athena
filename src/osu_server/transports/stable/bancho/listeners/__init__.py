@@ -15,13 +15,13 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.messaging.local import LocalEventBus
     from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
-    from osu_server.services.queries.identity import ListOnlineUsersQuery
+    from osu_server.services.queries.identity import ListActiveSessionsQuery
 
 
 def setup_listeners(
     eventbus: LocalEventBus,
     packet_queue: PacketQueue,
-    online_users_query: ListOnlineUsersQuery,
+    active_sessions_query: ListActiveSessionsQuery,
     channel_state: ChannelStateStore,
 ) -> None:
     """Register all Bancho local event listeners.
@@ -30,7 +30,7 @@ def setup_listeners(
     instances and delegates to their ``register_all`` methods.
     """
     lifecycle = LifecycleListeners(
-        online_users_query=online_users_query,
+        active_sessions_query=active_sessions_query,
         packet_queue=packet_queue,
     )
     chat = ChatListeners(

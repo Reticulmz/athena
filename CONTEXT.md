@@ -14,6 +14,10 @@ _Avoid_: Permission, client permission
 A stable client-visible compatibility flag derived from a user's privileges for Bancho login and presence packets. It is never the source of truth for server authorization.
 _Avoid_: Privilege, internal permission, ClientPermissions
 
+### Stable Presence Roster
+Stable client が user id と username を解決するために受け取る client-visible な online identity 集合。Login 時の snapshot と接続状態の変化に追随し、Active session と明示的な system presence を入力にするが、Friend Relationship や durable user list の source of truth ではない。
+_Avoid_: Friend list, all users list, session store
+
 ### Session Authorization Snapshot
 A point-in-time authorization view for an active session, containing the user's current privileges and role membership. It is refreshed from role state and then used by authorization-sensitive actions.
 _Avoid_: Session permissions, cached roles

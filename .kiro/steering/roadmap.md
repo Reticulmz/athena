@@ -56,5 +56,6 @@
 - **bot-api** — 外部 Bot 接続用 API（REST/WS/Webhook 方式の選定含む）
 - **moderation-system** — Silence 付与/解除、Channel Ban、通報、モデレーションログ
 - **athena-web-app** — monorepo 内のオープンソース統合 Web App。チャンネル管理・チャットログ閲覧・ユーザー管理、beatmap request / rank 状態変更などを扱う。rank 変更ルール自体は beatmap-rank-management に委譲する
+- **stable-presence-filter-semantics** — `RECEIVE_UPDATES`、`PRESENCE_REQUEST`、`PRESENCE_REQUEST_ALL`、friends-only visibility / roster filter の Stable client 挙動を Lekuruu / Akatsuki / 実クライアントで確認して実装する。初期 Stable Presence Roster は all active online users + explicit system presence を送る方針とし、この filter semantics は今回 scope 外にする
 - **beatmap-rank-request** — !request コマンドや WebUI からのビートマップランクリクエスト（リクエストキュー、承認フロー、BanchoBot 通知）。依存: channel-system, beatmap-mirror
 - **beatmap-rank-management** — BanchoBot / 管理コマンド / WebUI から beatmap の rank 状態を確認・変更する運用機能。外部由来の ranked status とローカル override の優先順位、変更権限、監査ログ、request 承認時の status 更新を扱う。Bot と WebUI は直接 DB を更新せず、この機能の共通サービス/APIを正規経路として利用する。依存: channel-system, beatmap-mirror, beatmap-rank-request, web-ui

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Self
 
 
@@ -13,6 +13,15 @@ class ChatPersistenceFailureReason(Enum):
     CHANNEL_NOT_FOUND = "channel_not_found"
     STORAGE_ERROR = "storage_error"
     RUNTIME_UNAVAILABLE = "runtime_unavailable"
+
+
+class PrivateMessageDeliveryStatus(StrEnum):
+    """Target delivery status for player-originated private messages."""
+
+    DELIVERABLE = "deliverable"
+    OFFLINE = "offline"
+    TARGET_NOT_FOUND = "target_not_found"
+    BLOCKED_BY_FRIEND_ONLY = "blocked_by_friend_only"
 
 
 @dataclass(slots=True, frozen=True)
@@ -96,3 +105,4 @@ class PrivateMessageResult:
     is_online: bool
     content: str
     command_responses: tuple[ChatCommandResponse, ...] = ()
+    delivery_status: PrivateMessageDeliveryStatus = PrivateMessageDeliveryStatus.DELIVERABLE

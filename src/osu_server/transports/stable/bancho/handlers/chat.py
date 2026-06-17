@@ -9,16 +9,16 @@ handle_leave_channel を @handles デコレータで実装する。
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import structlog
-from caterpillar.model import unpack
 
 from osu_server.domain.chat import (
     ChannelChatDestination,
     ChatAuthorization,
     ChatSender,
     PrivateChatDestination,
+    PrivateMessageDeliveryStatus,
     SendChannelMessageInput,
     SendPrivateMessageInput,
 )
@@ -30,16 +30,18 @@ from osu_server.services.commands.chat import (
     SendPrivateMessageCommand,
 )
 from osu_server.transports.stable.bancho.handlers.base import HandlerGroup, handles
+from osu_server.transports.stable.bancho.protocol.c2s import (
+    parse_channel_name_payload,
+    parse_message_payload,
+)
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
 from osu_server.transports.stable.bancho.protocol.s2c.chat import (
     channel_join_success,
     channel_revoked,
     send_message,
+    user_dm_blocked,
 )
-from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
-
-# Minimum wire size of a Message: 3 empty BanchoStrings (1 byte each) + int32 sender_id (4 bytes)
-_MIN_MESSAGE_SIZE: int = 7
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
@@ -50,6 +52,7 @@ if TYPE_CHECKING:
         SendChannelMessageUseCase,
         SendPrivateMessageUseCase,
     )
+    from osu_server.transports.stable.bancho.protocol.types import Message
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -89,15 +92,9 @@ class ChatHandlers(HandlerGroup):
     @handles(ClientPacketID.SEND_MESSAGE)
     async def handle_send_message(self, payload: bytes, user_id: int) -> None:
         """SEND_MESSAGE (1) — チャンネルメッセージ送信。"""
-        if len(payload) < _MIN_MESSAGE_SIZE:
-            logger.warning(
-                "c2s_payload_too_small",
-                packet="SEND_MESSAGE",
-                payload_size=len(payload),
-                min_expected=_MIN_MESSAGE_SIZE,
-            )
+        msg = _parse_message(payload, "SEND_MESSAGE")
+        if msg is None:
             return
-        msg = unpack(Message, payload)
         session = await self._session_store.get_by_user(user_id)
         if session is None:
             return
@@ -153,15 +150,9 @@ class ChatHandlers(HandlerGroup):
     @handles(ClientPacketID.SEND_PRIVATE_MESSAGE)
     async def handle_send_private_message(self, payload: bytes, user_id: int) -> None:
         """SEND_PRIVATE_MESSAGE (25) — PM 送信。"""
-        if len(payload) < _MIN_MESSAGE_SIZE:
-            logger.warning(
-                "c2s_payload_too_small",
-                packet="SEND_PRIVATE_MESSAGE",
-                payload_size=len(payload),
-                min_expected=_MIN_MESSAGE_SIZE,
-            )
+        msg = _parse_message(payload, "SEND_PRIVATE_MESSAGE")
+        if msg is None:
             return
-        msg = unpack(Message, payload)
         session = await self._session_store.get_by_user(user_id)
         if session is None:
             return
@@ -181,6 +172,10 @@ class ChatHandlers(HandlerGroup):
         )
         result = command_result.result
         if result is None:
+            return
+
+        if result.delivery_status is PrivateMessageDeliveryStatus.BLOCKED_BY_FRIEND_ONLY:
+            await self._packet_queue.enqueue(user_id, user_dm_blocked(target=msg.target))
             return
 
         if result.target_id is not None and result.is_online:
@@ -209,7 +204,9 @@ class ChatHandlers(HandlerGroup):
     @handles(ClientPacketID.JOIN_CHANNEL)
     async def handle_join_channel(self, payload: bytes, user_id: int) -> None:
         """JOIN_CHANNEL (63) — チャンネル参加。"""
-        channel_name = cast("str", unpack(BanchoString, payload))
+        channel_name = _parse_channel_name(payload, "JOIN_CHANNEL")
+        if channel_name is None:
+            return
         session = await self._session_store.get_by_user(user_id)
         if session is None:
             return
@@ -233,7 +230,9 @@ class ChatHandlers(HandlerGroup):
     @handles(ClientPacketID.LEAVE_CHANNEL)
     async def handle_leave_channel(self, payload: bytes, user_id: int) -> None:
         """LEAVE_CHANNEL (78) — チャンネル離脱。"""
-        channel_name = cast("str", unpack(BanchoString, payload))
+        channel_name = _parse_channel_name(payload, "LEAVE_CHANNEL")
+        if channel_name is None:
+            return
         session = await self._session_store.get_by_user(user_id)
         if session is None:
             return
@@ -245,3 +244,29 @@ class ChatHandlers(HandlerGroup):
             )
         )
         await self._packet_queue.enqueue(user_id, channel_revoked(channel_name=channel_name))
+
+
+def _parse_message(payload: bytes, packet_name: str) -> Message | None:
+    try:
+        return parse_message_payload(payload, packet_name=packet_name)
+    except PacketReadError as exc:
+        logger.warning(
+            "c2s_malformed_payload",
+            packet=packet_name,
+            payload_size=len(payload),
+            reason=str(exc),
+        )
+        return None
+
+
+def _parse_channel_name(payload: bytes, packet_name: str) -> str | None:
+    try:
+        return parse_channel_name_payload(payload, packet_name=packet_name)
+    except PacketReadError as exc:
+        logger.warning(
+            "c2s_malformed_payload",
+            packet=packet_name,
+            payload_size=len(payload),
+            reason=str(exc),
+        )
+        return None

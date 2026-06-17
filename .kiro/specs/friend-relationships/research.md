@@ -18,12 +18,14 @@
   - `src/osu_server/transports/stable/bancho/protocol/enums.py`
   - `src/osu_server/transports/stable/bancho/protocol/s2c/login.py`
   - `src/osu_server/transports/stable/bancho/workflows/login_response_builder.py`
+  - Lekuruu bancho-documentation wiki: `Packets/Client/73 AddFriend`, `74 RemoveFriend`, `99 ChangeFriendonlyDms`
 - **Findings**:
   - `ClientPacketID.ADD_FRIEND = 73`, `REMOVE_FRIEND = 74`, and `CHANGE_FRIENDONLY_DMS = 99` already exist.
   - `ServerPacketID.FRIENDS_LIST = 72` and `USER_DM_BLOCKED = 100` already exist.
+  - Lekuruu wiki confirms `ADD_FRIEND` and `REMOVE_FRIEND` payloads are 4-byte signed integer `UserId`, and `CHANGE_FRIENDONLY_DMS` is a 1-byte signed integer enabled flag (`1` or `0`).
   - The login response builder appends `friends_list([])` unconditionally.
 - **Implications**:
-  - The protocol enum surface is ready; the feature needs stable handlers and query-backed login response construction.
+  - The protocol enum surface is ready; the feature needs Caterpillar-backed stable payload parsers, stable handlers, and query-backed login response construction.
   - No new packet ID model is required.
 
 ### Session Privacy State

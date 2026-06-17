@@ -11,11 +11,16 @@ from typing import TYPE_CHECKING, cast, override
 import pytest
 from tests.factories.domain import make_channel, make_user
 
+from osu_server.domain.identity.friends import (
+    FriendableSystemUserCatalog,
+    FriendMutationStatus,
+)
 from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyBeatmapCommandRepository,
     SQLAlchemyBlobCommandRepository,
     SQLAlchemyChannelCommandRepository,
     SQLAlchemyChatCommandRepository,
+    SQLAlchemyFriendRelationshipCommandRepository,
     SQLAlchemyPersonalBestCommandRepository,
     SQLAlchemyReplayCommandRepository,
     SQLAlchemyRoleCommandRepository,
@@ -32,6 +37,7 @@ from osu_server.repositories.sqlalchemy.unit_of_work import (
     SQLAlchemyCommandSessionFactory,
     SQLAlchemyUnitOfWorkFactory,
 )
+from osu_server.services.commands.identity import AddFriendCommand, AddFriendUseCase
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -78,11 +84,13 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     _next_channel_id: int
     _next_personal_best_id: int
     _get_results: dict[tuple[type[object], object], object]
+    _execute_results: list[FakeResult]
 
     def __init__(
         self,
         *,
         get_results: dict[tuple[type[object], object], object] | None = None,
+        execute_results: list[FakeResult] | None = None,
     ) -> None:
         self.added = []
         self.commits = 0
@@ -94,6 +102,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         self._next_channel_id = 20
         self._next_personal_best_id = 30
         self._get_results = get_results or {}
+        self._execute_results = execute_results or []
 
     @override
     async def __aenter__(self) -> FakeSession:
@@ -116,6 +125,8 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
 
     async def execute(self, statement: Executable) -> FakeResult:
         _ = statement
+        if self._execute_results:
+            return self._execute_results.pop(0)
         return FakeResult()
 
     async def merge(self, instance: object) -> object:
@@ -222,6 +233,7 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
         assert isinstance(uow.roles, SQLAlchemyRoleCommandRepository)
         assert isinstance(uow.channels, SQLAlchemyChannelCommandRepository)
         assert isinstance(uow.chat, SQLAlchemyChatCommandRepository)
+        assert isinstance(uow.friends, SQLAlchemyFriendRelationshipCommandRepository)
         assert isinstance(uow.scores, SQLAlchemyScoreCommandRepository)
         assert isinstance(uow.personal_bests, SQLAlchemyPersonalBestCommandRepository)
         assert isinstance(uow.submissions, SQLAlchemyScoreSubmissionCommandRepository)
@@ -229,6 +241,49 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
         assert isinstance(uow.blobs, SQLAlchemyBlobCommandRepository)
         assert isinstance(uow.beatmaps, SQLAlchemyBeatmapCommandRepository)
         assert isinstance(uow.score_performance, SQLAlchemyScorePerformanceCommandRepository)
+
+
+async def test_friend_command_repository_uses_returning_for_mutation_outcomes() -> None:
+    session = FakeSession(
+        execute_results=[
+            FakeResult(value=2),
+            FakeResult(value=2),
+            FakeResult(value=None),
+            FakeResult(value=2),
+            FakeResult(value=None),
+        ]
+    )
+    repo = SQLAlchemyFriendRelationshipCommandRepository(
+        cast("AsyncSession", cast("object", session))
+    )
+
+    assert await repo.target_exists(2) is True
+    assert await repo.add_relationship(owner_user_id=1, target_user_id=2) is True
+    assert await repo.add_relationship(owner_user_id=1, target_user_id=2) is False
+    assert await repo.remove_relationship(owner_user_id=1, target_user_id=2) is True
+    assert await repo.remove_relationship(owner_user_id=1, target_user_id=2) is False
+
+
+async def test_add_friend_use_case_commits_sqlalchemy_unit_of_work_insert() -> None:
+    session = FakeSession(
+        execute_results=[
+            FakeResult(value=2),
+            FakeResult(value=2),
+        ]
+    )
+    use_case = AddFriendUseCase(
+        uow_factory=_factory(session),
+        system_user_catalog=FriendableSystemUserCatalog.with_bancho_bot(),
+    )
+
+    result = await use_case.execute(
+        AddFriendCommand(owner_user_id=1, target_user_id=2),
+    )
+
+    assert result.status is FriendMutationStatus.ADDED
+    assert session.commits == 1
+    assert session.rollbacks == 0
+    assert session.closed is True
 
 
 async def test_user_command_repository_updates_password_hash_without_commit() -> None:

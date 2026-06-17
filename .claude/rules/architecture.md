@@ -109,6 +109,8 @@ Compatibility semantics that differ from core business meaning are separated fro
 
 Wire parsing and building remains in transport packages. For example, stable packet structs and legacy form parsing live under the stable transport family, while stable permission and mod compatibility rules live in `domain/compatibility/stable` or stable mappers as specified by the use-case boundary.
 
+Stable Bancho packet payload parsing and building must go through Caterpillar-backed protocol definitions under `transports/stable/bancho/protocol/`. Packet handlers must not use ad hoc `struct.unpack`, byte slicing, or manual payload decoding for Bancho packet payloads. Handlers should call protocol parsers/builders and map parsed transport values into command/query inputs. Exceptions are limited to low-level protocol primitive/header implementations and tests that build raw protocol fixtures. Caterpillar typing issues should be solved with typed helpers, casts at protocol boundaries, or local type aliases. File-level pyright suppressions are a last resort only after structural alternatives have been exhausted and the reason is documented.
+
 ### Compatibility Evidence Before Implementation
 
 When Stable or Lazer request formats, response formats, packet payloads, endpoint form fields, REST payloads, or realtime message shapes are unclear, do not infer the external contract from intuition. First consult existing implementations, protocol documentation, captured fixtures, client-observable examples, or focused tests, then document the confirmed behavior before implementation.
@@ -151,7 +153,7 @@ Do not add compatibility facades for deprecated service, repository, domain, or 
 ### Current Package Map
 
 - Identity commands: `services/commands/identity/auth_service.py`, `services/commands/identity/registration.py`, `services/commands/identity/login.py`, and `services/commands/identity/session_authorization_service.py`.
-- Identity queries: `services/queries/identity/permission_service.py`, `services/queries/identity/password_service.py`, `services/queries/identity/online_users_service.py`, and `services/queries/identity/session_credentials.py`.
+- Identity queries: `services/queries/identity/permission_service.py`, `services/queries/identity/password_service.py`, `services/queries/identity/online_sessions.py`, and `services/queries/identity/session_credentials.py`.
 - Chat commands: `services/commands/chat/send_channel_message.py`, `services/commands/chat/send_private_message.py`, and `services/commands/chat/bancho_bot/`.
 - Chat queries: `services/queries/chat/channel_service.py`, `services/queries/chat/private_message_service.py`, `services/queries/chat/channels.py`, and `services/queries/chat/messages.py`.
 - Beatmap commands and queries: command-side fetch workflows live in `services/commands/beatmaps/`; mirror read/provider workflows live in `services/queries/beatmaps/mirror/`.

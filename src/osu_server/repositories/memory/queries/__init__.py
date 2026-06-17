@@ -7,6 +7,9 @@ from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQuery
 from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryRepository
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
+from osu_server.repositories.memory.queries.friends import (
+    InMemoryFriendRelationshipQueryRepository,
+)
 from osu_server.repositories.memory.queries.personal_bests import (
     InMemoryPersonalBestQueryRepository,
 )
@@ -22,6 +25,7 @@ __all__ = [
     "InMemoryBlobQueryRepository",
     "InMemoryChannelQueryRepository",
     "InMemoryChatHistoryQueryRepository",
+    "InMemoryFriendRelationshipQueryRepository",
     "InMemoryPersonalBestQueryRepository",
     "InMemoryRoleQueryRepository",
     "InMemoryScorePerformanceQueryRepository",

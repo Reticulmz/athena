@@ -20,7 +20,7 @@ import os
 import struct
 from contextlib import contextmanager
 from http import HTTPStatus
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from starlette.testclient import TestClient
 
@@ -329,6 +329,59 @@ class TestPollingStub:
 
                 assert poll_resp.status_code == HTTPStatus.OK
                 assert poll_resp.content == b""
+
+
+class TestPresenceBroadcast:
+    """Login live presence is delivered through the polling queue."""
+
+    def test_second_login_enqueues_user_presence_for_existing_online_user(self) -> None:
+        """When User B logs in, User A receives User B's USER_PRESENCE on next poll."""
+        with _test_env():
+            app = create_app()
+            with TestClient(app, raise_server_exceptions=False) as client:
+                _seed_test_data(app)
+                _register_user(client)
+                second_register = client.post(
+                    "/web/users",
+                    data=_registration_form(
+                        username="SecondUser",
+                        email="second@example.com",
+                    ),
+                )
+                assert second_register.status_code == HTTPStatus.OK
+
+                login_a = client.post(_BANCHO_URL, content=_login_body())
+                assert login_a.status_code == HTTPStatus.OK
+                token_a = login_a.headers["cho-token"]
+
+                first_poll = client.post(_BANCHO_URL, headers={"osu-token": token_a})
+                assert first_poll.status_code == HTTPStatus.OK
+                assert first_poll.content == b""
+
+                login_b = client.post(
+                    _BANCHO_URL,
+                    content=_login_body(username="SecondUser"),
+                )
+                assert login_b.status_code == HTTPStatus.OK
+                login_b_reply = _find_packet(
+                    _parse_packets(login_b.content),
+                    _LOGIN_REPLY_ID,
+                )
+                assert login_b_reply is not None
+                user_b_id = cast("int", struct.unpack_from("<i", login_b_reply, 0)[0])
+
+                second_poll = client.post(_BANCHO_URL, headers={"osu-token": token_a})
+                assert second_poll.status_code == HTTPStatus.OK
+                presence_packets = [
+                    content
+                    for packet_id, content in _parse_packets(second_poll.content)
+                    if packet_id == ServerPacketID.USER_PRESENCE
+                ]
+
+                assert any(
+                    cast("int", struct.unpack_from("<i", packet, 0)[0]) == user_b_id
+                    for packet in presence_packets
+                )
 
 
 # ── Test: Re-login ───────────────────────────────────────────────────────

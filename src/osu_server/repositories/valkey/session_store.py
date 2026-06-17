@@ -93,6 +93,36 @@ data['role_ids'] = cjson.decode(ARGV[3])
 redis.call('SET', session_key, cjson.encode(data), 'EX', ttl)
 return 1""")
 
+    # KEYS[1] = user_session:{user_id}
+    # ARGV[1] = session key prefix
+    # ARGV[2] = enabled flag ("1" or "0")
+    _UPDATE_PM_PRIVATE_SCRIPT: ClassVar[Script] = Script("""\
+local token = redis.call('GET', KEYS[1])
+if not token then
+    return 0
+end
+local session_key = ARGV[1] .. token
+local raw = redis.call('GET', session_key)
+if not raw then
+    return 0
+end
+local pttl = redis.call('PTTL', session_key)
+if pttl == -2 then
+    return 0
+end
+local data = cjson.decode(raw)
+data['pm_private'] = ARGV[2] == '1'
+local encoded = cjson.encode(data)
+if pttl == -1 then
+    redis.call('SET', session_key, encoded)
+    return 1
+end
+if pttl < 1 then
+    pttl = 1
+end
+redis.call('SET', session_key, encoded, 'PX', pttl)
+return 1""")
+
     # KEYS[1] = session:{token}
     # ARGV[1] = user_id JSON field name, ARGV[2] = user key prefix, ARGV[3] = token
     _DELETE_SCRIPT: ClassVar[Script] = Script("""\
@@ -229,18 +259,37 @@ return 1""")
         )
         return bool(result)
 
-    async def get_all_user_ids(self) -> list[int]:
-        """Return all active user IDs by scanning ``user_session:*`` keys."""
+    async def update_pm_private(self, user_id: int, enabled: bool) -> bool:
+        """Atomically patch ``pm_private`` in the active session.
+
+        Preserves all other fields, the user-to-token mapping, and the
+        remaining TTL on the session key.  Returns ``False`` when no active
+        session exists for *user_id*.
+        """
+        result = await self._client.invoke_script(
+            self._UPDATE_PM_PRIVATE_SCRIPT,
+            keys=[self._user_key(user_id)],
+            args=[
+                f"{self._prefix}session:",
+                "1" if enabled else "0",
+            ],
+        )
+        return bool(result)
+
+    async def list_active_sessions(self) -> list[SessionData]:
+        """Return all active sessions by scanning ``user_session:*`` keys."""
         prefix = f"{self._prefix}user_session:"
-        user_ids: list[int] = []
+        sessions: list[SessionData] = []
         cursor = "0"
         while True:
             cursor_str, keys = await self._client.scan(cursor, match=prefix + "*", count=100)
             for key in keys:
                 raw_str = key.decode() if isinstance(key, bytes) else str(key)
                 user_id_str = raw_str.removeprefix(prefix)
-                user_ids.append(int(user_id_str))
+                session = await self.get_by_user(int(user_id_str))
+                if session is not None:
+                    sessions.append(session)
             cursor = cursor_str.decode() if isinstance(cursor_str, bytes) else str(cursor_str)
             if cursor == "0":
                 break
-        return user_ids
+        return sessions

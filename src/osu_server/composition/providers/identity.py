@@ -8,40 +8,50 @@ from dishka import Provider, Scope
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
+from osu_server.domain.identity.friends import FriendableSystemUserCatalog
 from osu_server.domain.identity.system_users import (
     BANCHO_BOT_USER_ID,
     SystemUserIdentity,
     create_bancho_bot_identity,
 )
 from osu_server.infrastructure.security.hibp import HIBPClient
+from osu_server.repositories.interfaces.queries.friends import (
+    FriendRelationshipQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.identity import (
+    AddFriendUseCase,
     ChangeUserPasswordCommandUseCase,
     ChangeUserRoleCommandUseCase,
     LoginCommandUseCase,
     RefreshRoleAuthorizationCommandUseCase,
     RefreshUserAuthorizationCommandUseCase,
     RegisterUserCommandUseCase,
+    RemoveFriendUseCase,
+    UpdateFriendOnlyDmUseCase,
 )
 from osu_server.services.commands.identity.auth_service import AuthService
 from osu_server.services.commands.identity.session_authorization_service import (
     SessionAuthorizationService,
 )
 from osu_server.services.queries.identity import (
+    CheckFriendRelationshipQuery,
     ComputePermissionsQueryUseCase,
     ComputeSessionAuthorizationQueryUseCase,
-    ListOnlineUsersQueryUseCase,
+    GetFriendEligibleUserIdsQuery,
+    ListActiveSessionsQueryUseCase,
+    ListFriendIdsQuery,
     SessionCredentialsQueryUseCase,
 )
-from osu_server.services.queries.identity.online_users_service import OnlineUsersService
 from osu_server.services.queries.identity.password_service import PasswordService
 from osu_server.services.queries.identity.permission_service import PermissionService
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
+    FriendRelationshipQueryRepository,
     HIBPClient,
     RoleQueryRepository,
     SessionStore,
@@ -82,6 +92,13 @@ class IdentityProviderSet(Provider):
             hibp_client=hibp_client,
             banned_passwords=config.banned_passwords,
         )
+
+    @provide
+    def friendable_system_user_catalog(
+        self,
+        system_user_identity: SystemUserIdentity,
+    ) -> FriendableSystemUserCatalog:
+        return FriendableSystemUserCatalog.with_bancho_bot(system_user_identity)
 
     @provide
     def permission_service(self, role_repo: RoleQueryRepository) -> PermissionService:
@@ -130,6 +147,28 @@ class IdentityProviderSet(Provider):
     @provide
     def register_user_command(self, auth_service: AuthService) -> RegisterUserCommandUseCase:
         return RegisterUserCommandUseCase(auth_service=auth_service)
+
+    @provide
+    def add_friend_command(
+        self,
+        uow_factory: UnitOfWorkFactory,
+        system_user_catalog: FriendableSystemUserCatalog,
+    ) -> AddFriendUseCase:
+        return AddFriendUseCase(
+            uow_factory=uow_factory,
+            system_user_catalog=system_user_catalog,
+        )
+
+    @provide
+    def remove_friend_command(self, uow_factory: UnitOfWorkFactory) -> RemoveFriendUseCase:
+        return RemoveFriendUseCase(uow_factory=uow_factory)
+
+    @provide
+    def update_friend_only_dm_command(
+        self,
+        session_store: SessionStore,
+    ) -> UpdateFriendOnlyDmUseCase:
+        return UpdateFriendOnlyDmUseCase(session_store=session_store)
 
     @provide
     def change_user_password_command(
@@ -189,15 +228,32 @@ class IdentityProviderSet(Provider):
         )
 
     @provide
-    def online_users_service(self, session_store: SessionStore) -> OnlineUsersService:
-        return OnlineUsersService(session_store=session_store)
+    def active_sessions_query(
+        self,
+        session_store: SessionStore,
+    ) -> ListActiveSessionsQueryUseCase:
+        return ListActiveSessionsQueryUseCase(session_store=session_store)
 
     @provide
-    def online_users_query(
+    def list_friend_ids_query(
         self,
-        online_users_service: OnlineUsersService,
-    ) -> ListOnlineUsersQueryUseCase:
-        return ListOnlineUsersQueryUseCase(online_users_service=online_users_service)
+        friend_repository: FriendRelationshipQueryRepository,
+    ) -> ListFriendIdsQuery:
+        return ListFriendIdsQuery(repository=friend_repository)
+
+    @provide
+    def check_friend_relationship_query(
+        self,
+        friend_repository: FriendRelationshipQueryRepository,
+    ) -> CheckFriendRelationshipQuery:
+        return CheckFriendRelationshipQuery(repository=friend_repository)
+
+    @provide
+    def friend_eligible_user_ids_query(
+        self,
+        friend_repository: FriendRelationshipQueryRepository,
+    ) -> GetFriendEligibleUserIdsQuery:
+        return GetFriendEligibleUserIdsQuery(repository=friend_repository)
 
     @provide
     def session_credentials_query(

@@ -10,6 +10,9 @@ from osu_server.repositories.interfaces.queries.chat import (
     ChatHistoryMessage,
     ChatHistoryQueryRepository,
 )
+from osu_server.repositories.interfaces.queries.friends import (
+    FriendRelationshipQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.personal_bests import (
     PersonalBestQueryRepository,
 )
@@ -31,6 +34,7 @@ __all__ = [
     "ChannelQueryRepository",
     "ChatHistoryMessage",
     "ChatHistoryQueryRepository",
+    "FriendRelationshipQueryRepository",
     "PersonalBestQueryRepository",
     "RecalculationCandidateReason",
     "RoleQueryRepository",

@@ -4,6 +4,9 @@ from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandR
 from osu_server.repositories.interfaces.commands.blobs import BlobCommandRepository
 from osu_server.repositories.interfaces.commands.channels import ChannelCommandRepository
 from osu_server.repositories.interfaces.commands.chat import ChatCommandRepository
+from osu_server.repositories.interfaces.commands.friends import (
+    FriendRelationshipCommandRepository,
+)
 from osu_server.repositories.interfaces.commands.personal_bests import (
     PersonalBestCommandRepository,
 )
@@ -23,6 +26,7 @@ __all__ = [
     "BlobCommandRepository",
     "ChannelCommandRepository",
     "ChatCommandRepository",
+    "FriendRelationshipCommandRepository",
     "PersonalBestCommandRepository",
     "ReplayCommandRepository",
     "RoleCommandRepository",

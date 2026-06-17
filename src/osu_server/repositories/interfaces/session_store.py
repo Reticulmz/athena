@@ -15,7 +15,7 @@ class SessionStore(Protocol):
     """Protocol for session CRUD operations.
 
     Implementations must support create, get, get_by_user, delete,
-    delete_by_user, exists, refresh, update_authorization, and get_all_user_ids.
+    delete_by_user, exists, refresh, update_authorization, and list_active_sessions.
     Session data is represented by the ``SessionData`` dataclass.
     """
 
@@ -63,6 +63,15 @@ class SessionStore(Protocol):
         """
         ...
 
-    async def get_all_user_ids(self) -> list[int]:
-        """Return a list of user IDs for all active sessions."""
+    async def update_pm_private(self, user_id: int, enabled: bool) -> bool:
+        """Update only pm_private of an active session.
+
+        Returns ``True`` if the session was updated, ``False`` if no active
+        session exists for *user_id*.  Does not create a new session, delete
+        the session, or change any non-privacy fields.
+        """
+        ...
+
+    async def list_active_sessions(self) -> list[SessionData]:
+        """Return session data for all active sessions."""
         ...

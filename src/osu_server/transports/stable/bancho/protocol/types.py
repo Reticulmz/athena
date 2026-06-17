@@ -1,7 +1,3 @@
-# pyright: reportAny=false, reportUnknownVariableType=false
-# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
-# pyright: reportInvalidTypeForm=false
-# Caterpillar's metaclass/descriptor patterns require these file-level suppressions.
 """Wire types for the bancho binary protocol.
 
 BanchoString — osu! proprietary string encoding (Req 3.1, 3.6)
@@ -12,10 +8,11 @@ StatusUpdate — player status with mods, mode, beatmap info (Req 3.5, 3.6)
 """
 
 from io import BytesIO
-from typing import Annotated, cast, override
+from typing import Annotated, Final, cast, override
 
+from caterpillar import context as caterpillar_context
 from caterpillar.byteorder import LittleEndian
-from caterpillar.context import CTX_STREAM, this
+from caterpillar.context import this
 from caterpillar.exception import DynamicSizeError
 from caterpillar.fields import FieldStruct, int16, int32, uint8, uint16
 from caterpillar.model import struct
@@ -25,6 +22,7 @@ from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
 _PRESENCE_EMPTY: int = 0x00
 _PRESENCE_STRING: int = 0x0B
 _ULEB128_VALUE_MASK: int = 0x7F
+_CTX_STREAM_KEY: Final[str] = cast("str", caterpillar_context.CTX_STREAM)
 
 
 def _read_byte(stream: BytesIO) -> int:
@@ -33,6 +31,11 @@ def _read_byte(stream: BytesIO) -> int:
     if not b:
         raise PacketReadError("Unexpected end of stream")
     return b[0]
+
+
+def _stream_from_context(context: object) -> BytesIO:
+    context_map = cast("dict[str, object]", context)
+    return cast("BytesIO", context_map[_CTX_STREAM_KEY])
 
 
 class _BanchoString(FieldStruct):  # type: ignore[type-arg]
@@ -52,7 +55,7 @@ class _BanchoString(FieldStruct):  # type: ignore[type-arg]
 
     @override
     def pack_single(self, obj: str, context: object) -> None:
-        stream = cast("BytesIO", context[CTX_STREAM])  # pyright: ignore[reportIndexIssue]
+        stream = _stream_from_context(context)
 
         if not obj:
             _ = stream.write(b"\x00")
@@ -65,7 +68,7 @@ class _BanchoString(FieldStruct):  # type: ignore[type-arg]
 
     @override
     def unpack_single(self, context: object) -> str:
-        stream = cast("BytesIO", context[CTX_STREAM])  # pyright: ignore[reportIndexIssue]
+        stream = _stream_from_context(context)
         presence = _read_byte(stream)
 
         if presence == _PRESENCE_EMPTY:

@@ -14,12 +14,20 @@ from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.domain.identity.users import User
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.services.queries.chat import ChannelCatalogQueryResult
+from osu_server.services.queries.identity import (
+    ListActiveSessionsQueryInput,
+    ListActiveSessionsQueryResult,
+    ListFriendIdsQueryInput,
+    ListFriendIdsQueryResult,
+    OnlineSessionSnapshot,
+)
 from osu_server.transports.stable.bancho.mappers.permissions import (
     map_stable_bancho_authorization,
 )
 from osu_server.transports.stable.bancho.protocol import PROTOCOL_VERSION
 from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.stable.bancho.protocol.s2c.login import (
+    friends_list,
     login_permissions,
     login_reply,
     protocol_version,
@@ -35,6 +43,10 @@ if TYPE_CHECKING:
     from osu_server.services.queries.chat import (
         ListAutojoinChannelsQuery,
         ListVisibleChannelsQuery,
+    )
+    from osu_server.services.queries.identity import (
+        ListActiveSessionsQueryUseCase,
+        ListFriendIdsQueryUseCase,
     )
 
 # -- packet header parsing ----------------------------------------------------
@@ -78,6 +90,39 @@ class _FakeChannelCatalogQuery:
 
     async def execute(self, _input_data: object) -> ChannelCatalogQueryResult:
         return ChannelCatalogQueryResult(channels=tuple(self._channels))
+
+
+@final
+class _FakeFriendIdsQuery:
+    """Friend ID query stub for login friends list tests."""
+
+    def __init__(self, friend_ids: tuple[int, ...] = ()) -> None:
+        self._friend_ids = friend_ids
+        self.calls: list[int] = []
+
+    async def execute(
+        self,
+        input_data: ListFriendIdsQueryInput,
+    ) -> ListFriendIdsQueryResult:
+        owner_user_id = input_data.owner_user_id
+        assert isinstance(owner_user_id, int)
+        self.calls.append(owner_user_id)
+        return ListFriendIdsQueryResult(friend_user_ids=self._friend_ids)
+
+
+@final
+class _FakeActiveSessionsQuery:
+    """Active sessions query stub for login online presence tests."""
+
+    def __init__(self, sessions: tuple[OnlineSessionSnapshot, ...] = ()) -> None:
+        self._sessions = sessions
+
+    async def execute(
+        self,
+        input_data: ListActiveSessionsQueryInput,
+    ) -> ListActiveSessionsQueryResult:
+        assert isinstance(input_data, ListActiveSessionsQueryInput)
+        return ListActiveSessionsQueryResult(sessions=self._sessions)
 
 
 # -- helpers -----------------------------------------------------------------
@@ -141,10 +186,29 @@ def _login_response(
     )
 
 
+def _online_session(
+    *,
+    user_id: int,
+    username: str,
+    country: str = "JP",
+    privileges: int = 1,
+    utc_offset: int = 9,
+) -> OnlineSessionSnapshot:
+    return OnlineSessionSnapshot(
+        user_id=user_id,
+        username=username,
+        privileges=privileges,
+        country=country,
+        utc_offset=utc_offset,
+    )
+
+
 def _make_builder(
     *,
     visible: list[tuple[Channel, int]] | None = None,
     autojoin: list[tuple[Channel, int]] | None = None,
+    friend_ids: tuple[int, ...] = (),
+    active_sessions: tuple[OnlineSessionSnapshot, ...] = (),
 ) -> LoginResponseBuilder:
     return LoginResponseBuilder(
         visible_channels_query=cast(
@@ -154,6 +218,14 @@ def _make_builder(
         autojoin_channels_query=cast(
             "ListAutojoinChannelsQuery",
             cast("object", _FakeChannelCatalogQuery(autojoin)),
+        ),
+        friend_ids_query=cast(
+            "ListFriendIdsQueryUseCase",
+            cast("object", _FakeFriendIdsQuery(friend_ids)),
+        ),
+        active_sessions_query=cast(
+            "ListActiveSessionsQueryUseCase",
+            cast("object", _FakeActiveSessionsQuery(active_sessions)),
         ),
     )
 
@@ -257,6 +329,72 @@ class TestLoginResponseBuilder:
         # Bundle must contain bot_id exactly once
         expected = user_presence_bundle([bot_id])
         assert expected in result
+
+    async def test_online_session_presence_packets_are_included(self) -> None:
+        online_user = _online_session(
+            user_id=100,
+            username="OnlineUser",
+            country="US",
+            utc_offset=-5,
+        )
+        authorization_output = map_stable_bancho_authorization(Privileges.NORMAL)
+        builder = _make_builder(active_sessions=(online_user,))
+
+        result = await builder.build(_login_response(user_id=42))
+
+        assert (
+            user_presence(
+                user_id=100,
+                username="OnlineUser",
+                timezone=19,
+                country_id=country_code_to_id("US"),
+                permissions=int(authorization_output.presence_permissions),
+                mode=0,
+                longitude=0.0,
+                latitude=0.0,
+                rank=0,
+            )
+            in result
+        )
+        assert user_presence_bundle([BANCHO_BOT_IDENTITY.user_id, 42, 100]) in result
+
+    async def test_online_session_presence_skips_self_and_banchobot_duplicates(
+        self,
+    ) -> None:
+        user_id = 42
+        other_user = _online_session(user_id=100, username="OnlineUser")
+        builder = _make_builder(
+            active_sessions=(
+                _online_session(user_id=user_id, username="TestUser"),
+                _online_session(
+                    user_id=BANCHO_BOT_IDENTITY.user_id,
+                    username=BANCHO_BOT_IDENTITY.username,
+                ),
+                other_user,
+            )
+        )
+
+        result = await builder.build(_login_response(user_id=user_id))
+
+        assert user_presence_bundle([BANCHO_BOT_IDENTITY.user_id, user_id, 100]) in result
+        ids = _extract_packet_ids(result)
+        assert ids.count(ServerPacketID.USER_PRESENCE) == 3
+
+    async def test_friends_list_uses_owner_scoped_friend_query(self) -> None:
+        builder = _make_builder(friend_ids=(10, 20))
+
+        result = await builder.build(_login_response(user_id=42))
+
+        assert friends_list([10, 20]) in result
+        assert friends_list([]) not in result
+
+    async def test_friends_list_does_not_synthesize_banchobot(self) -> None:
+        builder = _make_builder(friend_ids=())
+
+        result = await builder.build(_login_response())
+
+        assert friends_list([]) in result
+        assert friends_list([BANCHO_BOT_IDENTITY.user_id]) not in result
 
     # -- existing packet order tests ---------------------------------------
 

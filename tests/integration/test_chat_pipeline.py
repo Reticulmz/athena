@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import struct
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -10,6 +11,7 @@ from pydantic import PostgresDsn, RedisDsn
 from osu_server.config import AppConfig
 from osu_server.domain.events.users import UserDisconnected
 from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.friends import FriendableSystemUserCatalog
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.messaging.memory import InMemoryLocalEventBus
@@ -20,6 +22,9 @@ from osu_server.jobs.chat_persistence_publisher import TaskiqChatPersistenceWork
 from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
+from osu_server.repositories.memory.queries.friends import (
+    InMemoryFriendRelationshipQueryRepository,
+)
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -32,17 +37,25 @@ from osu_server.services.commands.chat import (
 )
 from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
 from osu_server.services.commands.chat.bancho_bot.commands import create_builtin_registry
+from osu_server.services.commands.identity import (
+    AddFriendUseCase,
+    RemoveFriendUseCase,
+    UpdateFriendOnlyDmUseCase,
+)
 from osu_server.services.queries.chat import (
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,
 )
+from osu_server.services.queries.identity.friend_relationships import CheckFriendRelationshipQuery
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
+from osu_server.transports.stable.bancho.handlers.friends import FriendHandlers
 from osu_server.transports.stable.bancho.listeners.chat import ChatListeners
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.stable.bancho.protocol.s2c.chat import (
     channel_join_success,
     send_message,
+    user_dm_blocked,
 )
 from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
 from tests.factories.domain import make_channel, make_user
@@ -142,6 +155,7 @@ async def _setup_pipeline() -> ChatPipeline:
         user_repository=user_query_repo,
         session_store=session_store,
     )
+    friend_query_repository = InMemoryFriendRelationshipQueryRepository(uow_factory)
     command_service = CommandService(create_builtin_registry())
     send_channel_message = SendChannelMessageUseCase(
         channel_delivery_query=channel_delivery_query,
@@ -159,6 +173,7 @@ async def _setup_pipeline() -> ChatPipeline:
     )
     send_private_message = SendPrivateMessageUseCase(
         target_query=private_message_target_query,
+        friend_relationship_query=CheckFriendRelationshipQuery(repository=friend_query_repository),
         command_service=CommandService(create_builtin_registry()),
         session_store=session_store,
         persistence_publisher=persistence_publisher,
@@ -187,6 +202,15 @@ async def _setup_pipeline() -> ChatPipeline:
         packet_queue=packet_queue,
     )
     handlers.register_all(dispatcher)
+    friend_handlers = FriendHandlers(
+        add_friend=AddFriendUseCase(
+            uow_factory=uow_factory,
+            system_user_catalog=FriendableSystemUserCatalog.with_bancho_bot(),
+        ),
+        remove_friend=RemoveFriendUseCase(uow_factory=uow_factory),
+        update_friend_only_dm=UpdateFriendOnlyDmUseCase(session_store=session_store),
+    )
+    friend_handlers.register_all(dispatcher)
 
     return ChatPipeline(
         dispatcher=dispatcher,
@@ -292,6 +316,108 @@ class TestPrivateMessagePipeline:
             "Sender",
             "Offline",
             "offline pm",
+        )
+
+    async def test_friend_only_dms_block_non_friend_and_notify_sender(self) -> None:
+        pipeline = await _setup_pipeline()
+
+        await pipeline.dispatcher.dispatch(
+            ClientPacketID.CHANGE_FRIENDONLY_DMS,
+            b"\x01",
+            pipeline.target_id,
+        )
+        await pipeline.dispatcher.dispatch(
+            ClientPacketID.SEND_PRIVATE_MESSAGE,
+            _message_payload(
+                sender="Sender",
+                content="blocked pm",
+                target="Target",
+                sender_id=pipeline.sender_id,
+            ),
+            pipeline.sender_id,
+        )
+
+        assert await pipeline.packet_queue.dequeue_all(pipeline.target_id) == b""
+        assert await pipeline.packet_queue.dequeue_all(pipeline.sender_id) == user_dm_blocked(
+            target="Target"
+        )
+        task = pipeline.broker.find_task("persist_private_message")
+        assert task.calls == []
+
+    async def test_friend_only_dms_allow_sender_friended_by_target(self) -> None:
+        pipeline = await _setup_pipeline()
+
+        await pipeline.dispatcher.dispatch(
+            ClientPacketID.ADD_FRIEND,
+            struct.pack("<i", pipeline.sender_id),
+            pipeline.target_id,
+        )
+        await pipeline.dispatcher.dispatch(
+            ClientPacketID.CHANGE_FRIENDONLY_DMS,
+            b"\x01",
+            pipeline.target_id,
+        )
+        await pipeline.dispatcher.dispatch(
+            ClientPacketID.SEND_PRIVATE_MESSAGE,
+            _message_payload(
+                sender="Sender",
+                content="friend pm",
+                target="Target",
+                sender_id=pipeline.sender_id,
+            ),
+            pipeline.sender_id,
+        )
+
+        assert await pipeline.packet_queue.dequeue_all(pipeline.sender_id) == b""
+        assert await pipeline.packet_queue.dequeue_all(pipeline.target_id) == send_message(
+            sender="Sender",
+            content="friend pm",
+            target="Target",
+            sender_id=pipeline.sender_id,
+        )
+        task = pipeline.broker.find_task("persist_private_message")
+        assert task.calls[-1][0] == (
+            pipeline.sender_id,
+            pipeline.target_id,
+            "Sender",
+            "Target",
+            "friend pm",
+        )
+
+    async def test_banchobot_pm_response_bypasses_sender_friend_only_dms(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        pipeline = await _setup_pipeline()
+
+        def fixed_randint(minimum: int, maximum: int) -> int:
+            assert minimum == 0
+            assert maximum == 100
+            return 50
+
+        monkeypatch.setattr(random, "randint", fixed_randint)
+
+        await pipeline.dispatcher.dispatch(
+            ClientPacketID.CHANGE_FRIENDONLY_DMS,
+            b"\x01",
+            pipeline.sender_id,
+        )
+        await pipeline.dispatcher.dispatch(
+            ClientPacketID.SEND_PRIVATE_MESSAGE,
+            _message_payload(
+                sender="Sender",
+                content="!roll 100",
+                target=BANCHO_BOT_IDENTITY.username,
+                sender_id=pipeline.sender_id,
+            ),
+            pipeline.sender_id,
+        )
+
+        assert await pipeline.packet_queue.dequeue_all(pipeline.sender_id) == send_message(
+            sender=BANCHO_BOT_IDENTITY.username,
+            content="Sender rolls 50 point(s)",
+            target="Sender",
+            sender_id=BANCHO_BOT_IDENTITY.user_id,
         )
 
 

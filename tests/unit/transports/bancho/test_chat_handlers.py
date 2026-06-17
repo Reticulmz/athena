@@ -10,11 +10,11 @@ Validates:
 from __future__ import annotations
 
 import pytest
-from caterpillar.model import pack
 
 from osu_server.domain.chat import (
     ChannelMessageResult,
     ChatCommandResponse,
+    PrivateMessageDeliveryStatus,
     PrivateMessageResult,
 )
 from osu_server.domain.identity.sessions import SessionData
@@ -30,8 +30,11 @@ from osu_server.services.commands.chat import (
     SendPrivateMessageResult,
 )
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
-from osu_server.transports.stable.bancho.protocol.s2c.chat import send_message
-from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
+from osu_server.transports.stable.bancho.protocol.c2s import (
+    channel_name_payload,
+    message_payload,
+)
+from osu_server.transports.stable.bancho.protocol.s2c.chat import send_message, user_dm_blocked
 
 # ── Stubs ────────────────────────────────────────────────────────────────
 
@@ -162,12 +165,16 @@ def _build_message_payload(
     target: str = "#osu",
     sender_id: int = 1,
 ) -> bytes:
-    msg = Message(sender=sender, content=content, target=target, sender_id=sender_id)
-    return pack(msg)
+    return message_payload(
+        sender=sender,
+        content=content,
+        target=target,
+        sender_id=sender_id,
+    )
 
 
 def _build_banchostring_payload(value: str) -> bytes:
-    return pack(value, BanchoString)
+    return channel_name_payload(value)
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
@@ -220,6 +227,24 @@ def handlers(
         session_store=session_store,  # pyright: ignore[reportArgumentType]
         packet_queue=packet_queue,
     )
+
+
+async def test_malformed_chat_payloads_are_dropped_without_use_case_calls(
+    handlers: ChatHandlers,
+    send_channel_message: StubSendChannelMessageUseCase,
+    send_private_message: StubSendPrivateMessageUseCase,
+    join_channel: StubJoinChannelUseCase,
+    leave_channel: StubLeaveChannelUseCase,
+) -> None:
+    await handlers.handle_send_message(b"\x00\x00", user_id=1)
+    await handlers.handle_send_private_message(b"\x00\x00", user_id=1)
+    await handlers.handle_join_channel(b"\x0c", user_id=1)
+    await handlers.handle_leave_channel(b"\x0c", user_id=1)
+
+    assert send_channel_message.calls == []
+    assert send_private_message.calls == []
+    assert join_channel.calls == []
+    assert leave_channel.calls == []
 
 
 # ── handle_send_message ──────────────────────────────────────────────────
@@ -388,6 +413,34 @@ class TestSendPrivateMessage:
         await handlers.handle_send_private_message(payload, user_id=999)
 
         assert len(send_private_message.calls) == 0
+
+    async def test_blocked_private_message_enqueues_user_dm_blocked_to_sender(
+        self,
+        handlers: ChatHandlers,
+        send_private_message: StubSendPrivateMessageUseCase,
+        packet_queue: InMemoryPacketQueue,
+        session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
+    ) -> None:
+        await packet_queue.refresh_ttl(1, ttl=60)
+        await packet_queue.refresh_ttl(2, ttl=60)
+        send_private_message.private_result = PrivateMessageResult(
+            target_id=2,
+            is_online=True,
+            content="secret",
+            command_responses=(),
+            delivery_status=PrivateMessageDeliveryStatus.BLOCKED_BY_FRIEND_ONLY,
+        )
+        payload = _build_message_payload(
+            sender="test_user",
+            content="secret",
+            target="target",
+            sender_id=1,
+        )
+
+        await handlers.handle_send_private_message(payload, user_id=1)
+
+        assert await packet_queue.dequeue_all(1) == user_dm_blocked(target="target")
+        assert await packet_queue.dequeue_all(2) == b""
 
 
 # ── handle_join_channel ──────────────────────────────────────────────────

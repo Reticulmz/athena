@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import re
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import structlog
-from caterpillar.model import unpack
 
 from osu_server.services.commands.beatmaps import (
     BeatmapFileWarmupEntrance,
@@ -14,8 +13,12 @@ from osu_server.services.commands.beatmaps import (
     BeatmapFileWarmupResult,
 )
 from osu_server.transports.stable.bancho.handlers.base import HandlerGroup, handles
+from osu_server.transports.stable.bancho.protocol.c2s import parse_status_change_payload
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
-from osu_server.transports.stable.bancho.protocol.types import StatusUpdate
+from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
+
+if TYPE_CHECKING:
+    from osu_server.transports.stable.bancho.protocol.types import StatusUpdate
 
 logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 _CHECKSUM_MD5_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
@@ -40,13 +43,13 @@ class StatusChangeHandlers(HandlerGroup):
     async def handle_status_change(self, payload: bytes, user_id: int) -> None:
         """Decode STATUS_CHANGE and request beatmap file warmup when possible."""
         try:
-            status_update = unpack(StatusUpdate, payload)
-        except Exception as exc:
+            status_update = parse_status_change_payload(payload)
+        except PacketReadError as exc:
             logger.info(
                 "status_change_warmup_decode_failed",
                 user_id=user_id,
                 payload_size=len(payload),
-                exception_type=type(exc).__name__,
+                reason=str(exc),
             )
             return
 

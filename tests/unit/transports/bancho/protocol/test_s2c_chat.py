@@ -14,6 +14,7 @@ from osu_server.transports.stable.bancho.protocol.s2c.chat import (
     channel_join_success,
     channel_revoked,
     send_message,
+    user_dm_blocked,
 )
 
 
@@ -105,6 +106,29 @@ class TestChannelRevoked:
 
     def test_payload_size_matches_header(self) -> None:
         pkt = channel_revoked(channel_name="#osu")
+        declared = _extract_payload_size(pkt)
+        actual = len(_extract_payload(pkt))
+        assert declared == actual
+
+
+class TestUserDmBlocked:
+    """S2C USER_DM_BLOCKED (100) — Message struct payload."""
+
+    def test_packet_id(self) -> None:
+        pkt = user_dm_blocked(target="target")
+        assert _extract_packet_id(pkt) == ServerPacketID.USER_DM_BLOCKED
+
+    def test_payload_contains_target_only_and_zero_sender_id(self) -> None:
+        pkt = user_dm_blocked(target="target")
+        payload = _extract_payload(pkt)
+
+        assert b"target" in payload
+        assert b"BanchoBot" not in payload
+        sender_id = cast("int", pystruct.unpack_from("<i", payload, len(payload) - 4)[0])
+        assert sender_id == 0
+
+    def test_payload_size_matches_header(self) -> None:
+        pkt = user_dm_blocked(target="target")
         declared = _extract_payload_size(pkt)
         actual = len(_extract_payload(pkt))
         assert declared == actual

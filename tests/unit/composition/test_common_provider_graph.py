@@ -115,10 +115,9 @@ from osu_server.services.queries.chat.private_message_service import PrivateMess
 from osu_server.services.queries.identity import (
     ComputePermissionsQueryUseCase,
     ComputeSessionAuthorizationQueryUseCase,
-    ListOnlineUsersQueryUseCase,
+    ListActiveSessionsQueryUseCase,
     SessionCredentialsQueryUseCase,
 )
-from osu_server.services.queries.identity.online_users_service import OnlineUsersService
 from osu_server.services.queries.identity.password_service import PasswordService
 from osu_server.services.queries.identity.permission_service import PermissionService
 from osu_server.services.queries.scores import BeatmapScoreListingQuery
@@ -282,8 +281,7 @@ async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
         SessionAuthorizationService,
         RefreshUserAuthorizationCommandUseCase,
         RefreshRoleAuthorizationCommandUseCase,
-        OnlineUsersService,
-        ListOnlineUsersQueryUseCase,
+        ListActiveSessionsQueryUseCase,
         SessionCredentialsQueryUseCase,
         ResolvePrivateMessageTargetQuery,
         PrivateMessageService,

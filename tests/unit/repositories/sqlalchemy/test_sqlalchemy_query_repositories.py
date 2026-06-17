@@ -51,6 +51,7 @@ from osu_server.repositories.sqlalchemy.queries import (
     SQLAlchemyBlobQueryRepository,
     SQLAlchemyChannelQueryRepository,
     SQLAlchemyChatHistoryQueryRepository,
+    SQLAlchemyFriendRelationshipQueryRepository,
     SQLAlchemyPersonalBestQueryRepository,
     SQLAlchemyRoleQueryRepository,
     SQLAlchemyScorePerformanceQueryRepository,
@@ -70,6 +71,7 @@ if TYPE_CHECKING:
         BlobQueryRepository,
         ChannelQueryRepository,
         ChatHistoryQueryRepository,
+        FriendRelationshipQueryRepository,
         PersonalBestQueryRepository,
         RoleQueryRepository,
         ScoreQueryRepository,
@@ -254,6 +256,30 @@ async def test_identity_and_channel_query_repositories_use_short_read_sessions()
         channel_model.id: [overrides[0]]
     }
     assert factory.calls == 13
+    assert session.closed is True
+
+
+async def test_friend_relationship_query_repository_uses_short_read_sessions() -> None:
+    session = FakeQuerySession(
+        execute_handler=lambda statement: _execute_from_text(
+            statement,
+            {
+                "FROM user_friend_relationships": FakeResult(value=20, values=[10, 20]),
+            },
+        )
+    )
+    factory = FakeSessionFactory(session)
+    session_factory = cast("SQLAlchemyQuerySessionFactory", cast("object", factory))
+    repository: FriendRelationshipQueryRepository = SQLAlchemyFriendRelationshipQueryRepository(
+        session_factory
+    )
+
+    friend_ids = await repository.list_friend_ids(owner_user_id=1)
+    has_relationship = await repository.has_relationship(owner_user_id=1, target_user_id=20)
+
+    assert friend_ids == (10, 20)
+    assert has_relationship is True
+    assert factory.calls == 2
     assert session.closed is True
 
 

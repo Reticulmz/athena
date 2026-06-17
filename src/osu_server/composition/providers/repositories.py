@@ -15,6 +15,9 @@ from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepo
 from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
 from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
 from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
+from osu_server.repositories.interfaces.queries.friends import (
+    FriendRelationshipQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.score_performance import (
@@ -31,6 +34,9 @@ from osu_server.repositories.sqlalchemy.queries.blobs import SQLAlchemyBlobQuery
 from osu_server.repositories.sqlalchemy.queries.channels import SQLAlchemyChannelQueryRepository
 from osu_server.repositories.sqlalchemy.queries.chat import (
     SQLAlchemyChatHistoryQueryRepository,
+)
+from osu_server.repositories.sqlalchemy.queries.friends import (
+    SQLAlchemyFriendRelationshipQueryRepository,
 )
 from osu_server.repositories.sqlalchemy.queries.personal_bests import (
     SQLAlchemyPersonalBestQueryRepository,
@@ -50,6 +56,7 @@ _DISHKA_RUNTIME_HINTS = (
     BlobQueryRepository,
     ChannelQueryRepository,
     ChatHistoryQueryRepository,
+    FriendRelationshipQueryRepository,
     PersonalBestQueryRepository,
     RoleQueryRepository,
     ScorePerformanceQueryRepository,
@@ -135,6 +142,13 @@ class RepositoryProviderSet(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> PersonalBestQueryRepository:
         return SQLAlchemyPersonalBestQueryRepository(session_factory)
+
+    @provide
+    def friend_relationship_query_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> FriendRelationshipQueryRepository:
+        return SQLAlchemyFriendRelationshipQueryRepository(session_factory)
 
     @provide
     def score_performance_query_repository(

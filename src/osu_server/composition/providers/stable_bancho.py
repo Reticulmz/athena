@@ -22,15 +22,24 @@ from osu_server.services.commands.chat import (
     SendChannelMessageUseCase,
     SendPrivateMessageUseCase,
 )
-from osu_server.services.commands.identity import LoginCommandUseCase
+from osu_server.services.commands.identity import (
+    AddFriendUseCase,
+    LoginCommandUseCase,
+    RemoveFriendUseCase,
+    UpdateFriendOnlyDmUseCase,
+)
 from osu_server.services.queries.chat import (
     ListAutojoinChannelsQuery,
     ListVisibleChannelsQuery,
 )
-from osu_server.services.queries.identity import ListOnlineUsersQueryUseCase
+from osu_server.services.queries.identity import (
+    ListActiveSessionsQueryUseCase,
+    ListFriendIdsQuery,
+)
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
+from osu_server.transports.stable.bancho.handlers.friends import FriendHandlers
 from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
 from osu_server.transports.stable.bancho.handlers.status import StatusChangeHandlers
 from osu_server.transports.stable.bancho.listeners import setup_listeners
@@ -47,16 +56,20 @@ _DISHKA_RUNTIME_HINTS = (
     LocalEventBus,
     JoinChannelUseCase,
     LeaveChannelUseCase,
+    AddFriendUseCase,
+    ListActiveSessionsQueryUseCase,
     ListAutojoinChannelsQuery,
-    ListOnlineUsersQueryUseCase,
+    ListFriendIdsQuery,
     ListVisibleChannelsQuery,
     LoginCommandUseCase,
     PacketQueue,
     RequestBeatmapFileWarmupUseCase,
+    RemoveFriendUseCase,
     SendChannelMessageUseCase,
     SendPrivateMessageUseCase,
     SessionStore,
     SystemUserIdentity,
+    UpdateFriendOnlyDmUseCase,
 )
 
 
@@ -78,11 +91,15 @@ class StableBanchoProviderSet(Provider):
         self,
         visible_channels_query: ListVisibleChannelsQuery,
         autojoin_channels_query: ListAutojoinChannelsQuery,
+        friend_ids_query: ListFriendIdsQuery,
+        active_sessions_query: ListActiveSessionsQueryUseCase,
         bot_identity: SystemUserIdentity,
     ) -> LoginResponseBuilder:
         return LoginResponseBuilder(
             visible_channels_query=visible_channels_query,
             autojoin_channels_query=autojoin_channels_query,
+            friend_ids_query=friend_ids_query,
+            active_sessions_query=active_sessions_query,
             bot_identity=bot_identity,
         )
 
@@ -92,11 +109,13 @@ class StableBanchoProviderSet(Provider):
         login_command: LoginCommandUseCase,
         country_resolver: CountryResolver,
         response_builder: LoginResponseBuilder,
+        event_bus: LocalEventBus,
     ) -> LoginWorkflow:
         return LoginWorkflow(
             login_command=login_command,
             country_resolver=country_resolver,
             response_builder=response_builder,
+            event_bus=event_bus,
         )
 
     @provide
@@ -127,6 +146,19 @@ class StableBanchoProviderSet(Provider):
         )
 
     @provide
+    def friend_handlers(
+        self,
+        add_friend: AddFriendUseCase,
+        remove_friend: RemoveFriendUseCase,
+        update_friend_only_dm: UpdateFriendOnlyDmUseCase,
+    ) -> FriendHandlers:
+        return FriendHandlers(
+            add_friend=add_friend,
+            remove_friend=remove_friend,
+            update_friend_only_dm=update_friend_only_dm,
+        )
+
+    @provide
     def status_change_handlers(
         self,
         beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
@@ -140,10 +172,10 @@ class StableBanchoProviderSet(Provider):
         self,
         event_bus: LocalEventBus,
         packet_queue: PacketQueue,
-        online_users_query: ListOnlineUsersQueryUseCase,
+        active_sessions_query: ListActiveSessionsQueryUseCase,
         channel_state: ChannelStateStore,
     ) -> AppEventListeners:
-        setup_listeners(event_bus, packet_queue, online_users_query, channel_state)
+        setup_listeners(event_bus, packet_queue, active_sessions_query, channel_state)
         return AppEventListeners()
 
     @provide
@@ -151,6 +183,7 @@ class StableBanchoProviderSet(Provider):
         self,
         lifecycle_handlers: LifecycleHandlers,
         chat_handlers: ChatHandlers,
+        friend_handlers: FriendHandlers,
         status_change_handlers: StatusChangeHandlers,
         listeners: AppEventListeners,
     ) -> PacketDispatcher:
@@ -158,6 +191,7 @@ class StableBanchoProviderSet(Provider):
         dispatcher = PacketDispatcher()
         lifecycle_handlers.register_all(dispatcher)
         chat_handlers.register_all(dispatcher)
+        friend_handlers.register_all(dispatcher)
         status_change_handlers.register_all(dispatcher)
         return dispatcher
 

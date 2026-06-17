@@ -17,9 +17,10 @@ import pytest
 from osu_server.domain.events.users import UserDisconnected
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue  # noqa: TC001
 from osu_server.services.queries.identity import (
-    ListOnlineUsersQuery,
-    ListOnlineUsersQueryInput,
-    ListOnlineUsersQueryResult,
+    ListActiveSessionsQuery,
+    ListActiveSessionsQueryInput,
+    ListActiveSessionsQueryResult,
+    OnlineSessionSnapshot,
 )
 from osu_server.transports.stable.bancho.listeners.lifecycle import LifecycleListeners
 from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
@@ -29,13 +30,28 @@ from osu_server.transports.stable.bancho.protocol.writer import (
 )
 
 
-class FakeListOnlineUsersQuery:
+def _snapshot(user_id: int) -> OnlineSessionSnapshot:
+    return OnlineSessionSnapshot(
+        user_id=user_id,
+        username=f"user_{user_id}",
+        privileges=0,
+        country="JP",
+        utc_offset=9,
+    )
+
+
+class FakeListActiveSessionsQuery:
     def __init__(self) -> None:
         self.user_ids: list[int] = []
 
-    async def execute(self, input_data: ListOnlineUsersQueryInput) -> ListOnlineUsersQueryResult:
+    async def execute(
+        self,
+        input_data: ListActiveSessionsQueryInput,
+    ) -> ListActiveSessionsQueryResult:
         _ = input_data
-        return ListOnlineUsersQueryResult(user_ids=tuple(self.user_ids))
+        return ListActiveSessionsQueryResult(
+            sessions=tuple(_snapshot(user_id) for user_id in self.user_ids),
+        )
 
 
 class FakePacketQueue:
@@ -48,9 +64,9 @@ class FakePacketQueue:
 
 
 @pytest.fixture
-def online_users() -> FakeListOnlineUsersQuery:
-    """Fake ListOnlineUsersQuery."""
-    return FakeListOnlineUsersQuery()
+def online_users() -> FakeListActiveSessionsQuery:
+    """Fake ListActiveSessionsQuery."""
+    return FakeListActiveSessionsQuery()
 
 
 @pytest.fixture
@@ -61,14 +77,14 @@ def packet_queue() -> FakePacketQueue:
 
 @pytest.fixture
 def listeners(
-    online_users: FakeListOnlineUsersQuery,
+    online_users: FakeListActiveSessionsQuery,
     packet_queue: FakePacketQueue,
 ) -> LifecycleListeners:
     """LifecycleListeners instance with faked dependencies."""
     return LifecycleListeners(
-        online_users_query=typing.cast(
-            "ListOnlineUsersQuery", typing.cast("object", online_users)
-        ),  # FakeListOnlineUsersQuery structurally compatible
+        active_sessions_query=typing.cast(
+            "ListActiveSessionsQuery", typing.cast("object", online_users)
+        ),  # FakeListActiveSessionsQuery structurally compatible
         packet_queue=typing.cast(
             "PacketQueue", typing.cast("object", packet_queue)
         ),  # FakePacketQueue structurally compatible
@@ -86,7 +102,7 @@ class TestUserQuitBroadcast:
     async def test_all_online_users_receive_user_quit(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeListOnlineUsersQuery,
+        online_users: FakeListActiveSessionsQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """Every online user (excluding the disconnecting one) gets USER_QUIT."""
@@ -106,7 +122,7 @@ class TestUserQuitBroadcast:
     async def test_disconnecting_user_excluded_from_broadcast(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeListOnlineUsersQuery,
+        online_users: FakeListActiveSessionsQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """The disconnecting user must NOT receive their own USER_QUIT."""
@@ -125,7 +141,7 @@ class TestUserQuitBroadcast:
     async def test_no_online_users_completes_without_error(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeListOnlineUsersQuery,
+        online_users: FakeListActiveSessionsQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """Zero online users — handler completes without raising."""
@@ -140,7 +156,7 @@ class TestUserQuitBroadcast:
     async def test_only_disconnecting_user_online_no_enqueue(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeListOnlineUsersQuery,
+        online_users: FakeListActiveSessionsQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """When the only online user is the one disconnecting, no enqueue."""
@@ -159,7 +175,7 @@ class TestUserQuitPacketFormat:
     async def test_packet_contains_correct_user_id(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeListOnlineUsersQuery,
+        online_users: FakeListActiveSessionsQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """USER_QUIT payload is the disconnecting user's ID as int32 LE."""
@@ -180,7 +196,7 @@ class TestUserQuitPacketFormat:
     async def test_enqueue_call_order_matches_online_list(
         self,
         listeners: LifecycleListeners,
-        online_users: FakeListOnlineUsersQuery,
+        online_users: FakeListActiveSessionsQuery,
         packet_queue: FakePacketQueue,
     ) -> None:
         """Enqueue calls follow the order of the online user list."""

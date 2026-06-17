@@ -25,11 +25,13 @@ from osu_server.services.queries.chat import (
     ResolvePrivateMessageTargetQuery,
 )
 from osu_server.services.queries.chat.private_message_service import PrivateMessageService
+from osu_server.services.queries.identity import CheckFriendRelationshipQuery
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
     AsyncBroker,
     ChatPersistenceWorkPublisher,
+    CheckFriendRelationshipQuery,
     RateLimiter,
     ResolveChannelMessageDeliveryQuery,
     ResolvePrivateMessageTargetQuery,
@@ -97,6 +99,7 @@ class ChatAppProviderSet(Provider):
     def send_private_message_use_case(
         self,
         target_query: ResolvePrivateMessageTargetQuery,
+        friend_relationship_query: CheckFriendRelationshipQuery,
         command_service: CommandService,
         session_store: SessionStore,
         persistence_publisher: ChatPersistenceWorkPublisher,
@@ -105,6 +108,7 @@ class ChatAppProviderSet(Provider):
     ) -> SendPrivateMessageUseCase:
         return SendPrivateMessageUseCase(
             target_query=target_query,
+            friend_relationship_query=friend_relationship_query,
             command_service=command_service,
             session_store=session_store,
             persistence_publisher=persistence_publisher,

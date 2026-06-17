@@ -50,6 +50,15 @@ class InMemoryPrivateMessageRecord:
 
 
 @dataclass(slots=True, frozen=True)
+class InMemoryFriendRelationshipRecord:
+    """Committed directed friend relationship row for memory repositories."""
+
+    owner_user_id: int
+    target_user_id: int
+    created_at: datetime
+
+
+@dataclass(slots=True, frozen=True)
 class InMemoryPerformanceClaim:
     """In-memory worker claim metadata for performance rows and work items."""
 
@@ -116,6 +125,11 @@ class InMemoryCommandRepositoryState:
     private_messages_by_id: dict[int, InMemoryPrivateMessageRecord] = field(default_factory=dict)
     next_channel_message_id: int = 1
     next_private_message_id: int = 1
+
+    friend_relationships_by_key: dict[
+        tuple[int, int],
+        InMemoryFriendRelationshipRecord,
+    ] = field(default_factory=dict)
 
     scores_by_id: dict[int, Score] = field(default_factory=dict)
     score_id_by_online_checksum: dict[str, int] = field(default_factory=dict)

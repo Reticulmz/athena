@@ -162,19 +162,19 @@ async def test_delete_by_user_does_not_affect_other_users(store: InMemorySession
 
 
 # ---------------------------------------------------------------------------
-# get_all_user_ids
+# list_active_sessions
 # ---------------------------------------------------------------------------
 
 
-async def test_get_all_user_ids_empty_store(store: InMemorySessionStore) -> None:
-    """get_all_user_ids returns an empty list when the store is empty."""
-    result = await store.get_all_user_ids()
+async def test_list_active_sessions_empty_store(store: InMemorySessionStore) -> None:
+    """list_active_sessions returns an empty list when the store is empty."""
+    result = await store.list_active_sessions()
 
     assert result == []
 
 
-async def test_get_all_user_ids_returns_all(store: InMemorySessionStore) -> None:
-    """get_all_user_ids returns all active user_ids."""
+async def test_list_active_sessions_returns_all(store: InMemorySessionStore) -> None:
+    """list_active_sessions returns all active sessions."""
     session_2 = replace(_SESSION, user_id=2, username="cookiezi")
     session_3 = replace(_SESSION, user_id=3, username="whitecat")
 
@@ -182,22 +182,22 @@ async def test_get_all_user_ids_returns_all(store: InMemorySessionStore) -> None
     await store.create(user_id=2, token="t2", data=session_2)
     await store.create(user_id=3, token="t3", data=session_3)
 
-    result = await store.get_all_user_ids()
+    result = await store.list_active_sessions()
 
-    assert sorted(result) == [1, 2, 3]
+    assert sorted(session.user_id for session in result) == [1, 2, 3]
 
 
-async def test_get_all_user_ids_excludes_deleted(store: InMemorySessionStore) -> None:
-    """get_all_user_ids does not include users whose sessions were deleted."""
+async def test_list_active_sessions_excludes_deleted(store: InMemorySessionStore) -> None:
+    """list_active_sessions does not include users whose sessions were deleted."""
     session_2 = replace(_SESSION, user_id=2, username="cookiezi")
     await store.create(user_id=1, token="t1", data=_SESSION)
     await store.create(user_id=2, token="t2", data=session_2)
 
     await store.delete_by_user(user_id=1)
 
-    result = await store.get_all_user_ids()
+    result = await store.list_active_sessions()
 
-    assert result == [2]
+    assert [session.user_id for session in result] == [2]
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +297,7 @@ async def test_update_authorization_returns_false_for_offline_user(
 
     assert result is False
     assert await store.get_by_user(user_id=9999) is None
-    assert await store.get_all_user_ids() == []
+    assert await store.list_active_sessions() == []
 
 
 async def test_update_authorization_does_not_affect_other_users(
@@ -363,6 +363,88 @@ async def test_update_authorization_token_mapping_unchanged(
     session_by_token = await store.get("abc-123")
     assert session_by_token is not None
     assert session_by_token.user_id == 1
+
+
+# ---------------------------------------------------------------------------
+# update_pm_private
+# ---------------------------------------------------------------------------
+
+
+async def test_update_pm_private_updates_session(
+    store: InMemorySessionStore,
+) -> None:
+    """update_pm_private updates only the active session privacy flag."""
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+    result = await store.update_pm_private(user_id=1, enabled=True)
+
+    assert result is True
+    session = await store.get("abc-123")
+    assert session is not None
+    assert session.pm_private is True
+
+    result = await store.update_pm_private(user_id=1, enabled=False)
+
+    assert result is True
+    session = await store.get("abc-123")
+    assert session is not None
+    assert session.pm_private is False
+
+
+async def test_update_pm_private_preserves_other_fields(
+    store: InMemorySessionStore,
+) -> None:
+    """update_pm_private preserves all non-privacy session fields."""
+    original = replace(
+        _SESSION,
+        privileges=int(Privileges.MODERATOR),
+        role_ids=(3,),
+        silence_end=123,
+    )
+    await store.create(user_id=1, token="abc-123", data=original)
+
+    _ = await store.update_pm_private(user_id=1, enabled=True)
+
+    session = await store.get("abc-123")
+    assert session is not None
+    assert session.user_id == 1
+    assert session.username == "peppy"
+    assert session.privileges == int(Privileges.MODERATOR)
+    assert session.role_ids == (3,)
+    assert session.country == "JP"
+    assert session.osu_version == "20231111"
+    assert session.utc_offset == 9
+    assert session.display_city is True
+    assert session.client_hashes == "hash1:hash2"
+    assert session.silence_end == 123
+
+
+async def test_update_pm_private_returns_false_for_offline_user(
+    store: InMemorySessionStore,
+) -> None:
+    """update_pm_private returns False without creating session state."""
+    result = await store.update_pm_private(user_id=9999, enabled=True)
+
+    assert result is False
+    assert await store.get_by_user(user_id=9999) is None
+    assert await store.list_active_sessions() == []
+
+
+async def test_update_pm_private_token_mapping_unchanged(
+    store: InMemorySessionStore,
+) -> None:
+    """update_pm_private does not change token-to-user or user-to-token mappings."""
+    await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+    _ = await store.update_pm_private(user_id=1, enabled=True)
+
+    session_by_user = await store.get_by_user(user_id=1)
+    assert session_by_user is not None
+    assert session_by_user.pm_private is True
+
+    session_by_token = await store.get("abc-123")
+    assert session_by_token is not None
+    assert session_by_token.pm_private is True
 
 
 # ---------------------------------------------------------------------------

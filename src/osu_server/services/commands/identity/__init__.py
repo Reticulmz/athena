@@ -14,6 +14,17 @@ from osu_server.services.commands.identity.change_role import (
     ChangeUserRoleCommandUseCase,
     ChangeUserRoleStatus,
 )
+from osu_server.services.commands.identity.friend_relationships import (
+    AddFriendCommand,
+    AddFriendCommandUseCase,
+    AddFriendUseCase,
+    RemoveFriendCommand,
+    RemoveFriendCommandUseCase,
+    RemoveFriendUseCase,
+    UpdateFriendOnlyDmCommand,
+    UpdateFriendOnlyDmCommandUseCase,
+    UpdateFriendOnlyDmUseCase,
+)
 from osu_server.services.commands.identity.login import (
     LoginCommand,
     LoginCommandInput,
@@ -41,6 +52,9 @@ from osu_server.services.commands.identity.session_authorization_service import 
 )
 
 __all__ = [
+    "AddFriendCommand",
+    "AddFriendCommandUseCase",
+    "AddFriendUseCase",
     "ChangeUserPasswordCommand",
     "ChangeUserPasswordCommandInput",
     "ChangeUserPasswordCommandResult",
@@ -67,5 +81,11 @@ __all__ = [
     "RegisterUserCommandInput",
     "RegisterUserCommandResult",
     "RegisterUserCommandUseCase",
+    "RemoveFriendCommand",
+    "RemoveFriendCommandUseCase",
+    "RemoveFriendUseCase",
     "SessionAuthorizationService",
+    "UpdateFriendOnlyDmCommand",
+    "UpdateFriendOnlyDmCommandUseCase",
+    "UpdateFriendOnlyDmUseCase",
 ]

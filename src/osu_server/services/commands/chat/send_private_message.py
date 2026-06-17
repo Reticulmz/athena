@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.chat import PrivateMessageResult
+from osu_server.domain.chat import PrivateMessageDeliveryStatus, PrivateMessageResult
 from osu_server.services.commands.chat.persistence_work import PrivateMessagePersistenceWork
 from osu_server.services.queries.chat import ResolvePrivateMessageTargetQueryInput
 
@@ -20,6 +20,9 @@ if TYPE_CHECKING:
     from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
     from osu_server.services.commands.chat.persistence_work import ChatPersistenceWorkPublisher
     from osu_server.services.queries.chat import ResolvePrivateMessageTargetQuery
+    from osu_server.services.queries.identity.friend_relationships import (
+        CheckFriendRelationshipQueryUseCase,
+    )
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -45,6 +48,7 @@ class SendPrivateMessageUseCase:
         self,
         *,
         target_query: ResolvePrivateMessageTargetQuery,
+        friend_relationship_query: CheckFriendRelationshipQueryUseCase,
         command_service: CommandService,
         session_store: SessionStore,
         persistence_publisher: ChatPersistenceWorkPublisher,
@@ -52,6 +56,9 @@ class SendPrivateMessageUseCase:
         config: AppConfig,
     ) -> None:
         self._target_query: ResolvePrivateMessageTargetQuery = target_query
+        self._friend_relationship_query: CheckFriendRelationshipQueryUseCase = (
+            friend_relationship_query
+        )
         self._command_service: CommandService = command_service
         self._session_store: SessionStore = session_store
         self._persistence_publisher: ChatPersistenceWorkPublisher = persistence_publisher
@@ -103,12 +110,30 @@ class SendPrivateMessageUseCase:
                     is_online=False,
                     content=valid_content,
                     command_responses=(),
+                    delivery_status=PrivateMessageDeliveryStatus.TARGET_NOT_FOUND,
                 )
             )
 
         # Success guarantees target_id is not None.
         assert pm_result.target_id is not None
         target_id: int = pm_result.target_id
+        target_session = await self._session_store.get_by_user(target_id)
+        if target_session is not None and target_session.pm_private:
+            target_added_sender = await self._friend_relationship_query.execute(
+                owner_user_id=target_id,
+                target_user_id=sender.user_id,
+            )
+            if not target_added_sender:
+                return SendPrivateMessageResult(
+                    result=PrivateMessageResult(
+                        target_id=target_id,
+                        is_online=True,
+                        content=valid_content,
+                        command_responses=command_responses,
+                        delivery_status=PrivateMessageDeliveryStatus.BLOCKED_BY_FRIEND_ONLY,
+                    )
+                )
+
         await self._persistence_publisher.publish_private_message(
             PrivateMessagePersistenceWork(
                 sender_id=sender.user_id,
@@ -124,6 +149,11 @@ class SendPrivateMessageUseCase:
             is_online=pm_result.is_online,
             content=valid_content,
             command_responses=command_responses,
+            delivery_status=(
+                PrivateMessageDeliveryStatus.DELIVERABLE
+                if pm_result.is_online
+                else PrivateMessageDeliveryStatus.OFFLINE
+            ),
         )
         return SendPrivateMessageResult(result=result)
 

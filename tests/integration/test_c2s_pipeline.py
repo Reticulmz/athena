@@ -19,8 +19,10 @@ from osu_server.domain.identity.sessions import SessionData
 from osu_server.infrastructure.messaging.memory import InMemoryLocalEventBus
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.services.queries.identity import ListOnlineUsersQueryUseCase
-from osu_server.services.queries.identity.online_users_service import OnlineUsersService
+from osu_server.services.queries.identity import (
+    ListActiveSessionsQueryInput,
+    ListActiveSessionsQueryUseCase,
+)
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
 from osu_server.transports.stable.bancho.listeners.lifecycle import LifecycleListeners
@@ -70,15 +72,14 @@ class TestExitPipelineIntegration:
         session_store = InMemorySessionStore()
         event_bus = InMemoryLocalEventBus()
         packet_queue = InMemoryPacketQueue()
-        online_users = OnlineUsersService(session_store)
-        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
+        active_sessions_query = ListActiveSessionsQueryUseCase(session_store=session_store)
 
         handlers = LifecycleHandlers(
             session_store=session_store,
             event_bus=event_bus,
         )
         listeners = LifecycleListeners(
-            online_users_query=online_users_query,
+            active_sessions_query=active_sessions_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)
@@ -113,15 +114,14 @@ class TestExitPipelineIntegration:
         session_store = InMemorySessionStore()
         event_bus = InMemoryLocalEventBus()
         packet_queue = InMemoryPacketQueue()
-        online_users = OnlineUsersService(session_store)
-        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
+        active_sessions_query = ListActiveSessionsQueryUseCase(session_store=session_store)
 
         handlers = LifecycleHandlers(
             session_store=session_store,
             event_bus=event_bus,
         )
         listeners = LifecycleListeners(
-            online_users_query=online_users_query,
+            active_sessions_query=active_sessions_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)
@@ -139,15 +139,14 @@ class TestExitPipelineIntegration:
         session_store = InMemorySessionStore()
         event_bus = InMemoryLocalEventBus()
         packet_queue = InMemoryPacketQueue()
-        online_users = OnlineUsersService(session_store)
-        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
+        active_sessions_query = ListActiveSessionsQueryUseCase(session_store=session_store)
 
         handlers = LifecycleHandlers(
             session_store=session_store,
             event_bus=event_bus,
         )
         listeners = LifecycleListeners(
-            online_users_query=online_users_query,
+            active_sessions_query=active_sessions_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)
@@ -159,7 +158,8 @@ class TestExitPipelineIntegration:
         await handlers.handle_exit(b"", user_id=10)
 
         # user 10 is gone
-        all_ids = await online_users.get_all_user_ids()
+        active_sessions = await active_sessions_query.execute(ListActiveSessionsQueryInput())
+        all_ids = [session.user_id for session in active_sessions.sessions]
         assert 10 not in all_ids
         assert 20 in all_ids
 
@@ -241,11 +241,10 @@ class TestListenerGroupLocalEventBusIntegration:
         session_store = InMemorySessionStore()
         packet_queue = InMemoryPacketQueue()
         event_bus = InMemoryLocalEventBus()
-        online_users = OnlineUsersService(session_store)
-        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
+        active_sessions_query = ListActiveSessionsQueryUseCase(session_store=session_store)
 
         listeners = LifecycleListeners(
-            online_users_query=online_users_query,
+            active_sessions_query=active_sessions_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)
@@ -280,11 +279,10 @@ class TestListenerGroupLocalEventBusIntegration:
         session_store = InMemorySessionStore()
         packet_queue = InMemoryPacketQueue()
         event_bus = InMemoryLocalEventBus()
-        online_users = OnlineUsersService(session_store)
-        online_users_query = ListOnlineUsersQueryUseCase(online_users_service=online_users)
+        active_sessions_query = ListActiveSessionsQueryUseCase(session_store=session_store)
 
         listeners = LifecycleListeners(
-            online_users_query=online_users_query,
+            active_sessions_query=active_sessions_query,
             packet_queue=packet_queue,
         )
         listeners.register_all(event_bus)

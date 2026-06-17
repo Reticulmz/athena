@@ -197,6 +197,36 @@ class TestOverwrite:
         assert result_by_user.country == "JP"
 
 
+class TestListActiveSessions:
+    """list_active_sessions returns only active session data."""
+
+    async def test_empty_store_returns_empty_list(self, store: SessionStore) -> None:
+        result = await store.list_active_sessions()
+
+        assert result == []
+
+    async def test_returns_active_sessions(self, store: SessionStore) -> None:
+        session_2 = replace(_SESSION, user_id=2, username="cookiezi")
+
+        await store.create(user_id=1, token="abc-123", data=_SESSION)
+        await store.create(user_id=2, token="def-456", data=session_2)
+
+        result = await store.list_active_sessions()
+
+        assert sorted(session.user_id for session in result) == [1, 2]
+
+    async def test_excludes_deleted_sessions(self, store: SessionStore) -> None:
+        session_2 = replace(_SESSION, user_id=2, username="cookiezi")
+
+        await store.create(user_id=1, token="abc-123", data=_SESSION)
+        await store.create(user_id=2, token="def-456", data=session_2)
+        await store.delete_by_user(user_id=1)
+
+        result = await store.list_active_sessions()
+
+        assert [session.user_id for session in result] == [2]
+
+
 # ---------------------------------------------------------------------------
 # Tests — update_authorization
 # ---------------------------------------------------------------------------
@@ -351,3 +381,115 @@ class TestUpdateAuthorization:
         assert session_ttl <= 1800
         assert user_ttl > 0
         assert user_ttl <= 1800
+
+
+# ---------------------------------------------------------------------------
+# Tests — update_pm_private
+# ---------------------------------------------------------------------------
+
+
+class TestUpdatePmPrivate:
+    """update_pm_private patches pm_private while preserving session state."""
+
+    async def test_update_pm_private_patches_session(
+        self,
+        store: SessionStore,
+    ) -> None:
+        await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+        enabled = await store.update_pm_private(user_id=1, enabled=True)
+        disabled = await store.update_pm_private(user_id=1, enabled=False)
+
+        assert enabled is True
+        assert disabled is True
+        session = await store.get_by_user(user_id=1)
+        assert session is not None
+        assert session.pm_private is False
+
+    async def test_update_pm_private_preserves_token_mapping(
+        self,
+        store: SessionStore,
+    ) -> None:
+        await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+        _ = await store.update_pm_private(user_id=1, enabled=True)
+
+        result = await store.get("abc-123")
+        assert result is not None
+        assert result.user_id == 1
+        assert result.pm_private is True
+
+        by_user = await store.get_by_user(user_id=1)
+        assert by_user is not None
+        assert by_user.pm_private is True
+
+    async def test_update_pm_private_preserves_non_privacy_fields(
+        self,
+        store: SessionStore,
+    ) -> None:
+        await store.create(user_id=1, token="abc-123", data=_SESSION)
+
+        _ = await store.update_pm_private(user_id=1, enabled=True)
+
+        result = await store.get_by_user(user_id=1)
+        assert result is not None
+        assert result.user_id == _SESSION.user_id
+        assert result.username == _SESSION.username
+        assert result.privileges == _SESSION.privileges
+        assert result.role_ids == _SESSION.role_ids
+        assert result.country == _SESSION.country
+        assert result.osu_version == _SESSION.osu_version
+        assert result.utc_offset == _SESSION.utc_offset
+        assert result.display_city == _SESSION.display_city
+        assert result.client_hashes == _SESSION.client_hashes
+        assert result.silence_end == _SESSION.silence_end
+
+    async def test_update_pm_private_returns_false_when_no_session(
+        self,
+        store: SessionStore,
+    ) -> None:
+        result = await store.update_pm_private(user_id=9999, enabled=True)
+
+        assert result is False
+        assert await store.get_by_user(user_id=9999) is None
+
+    async def test_update_pm_private_preserves_ttl(
+        self,
+        valkey_client: GlideClient,
+        valkey_store: ValkeySessionStore,
+    ) -> None:
+        await valkey_store.create(
+            user_id=1,
+            token="abc-123",
+            data=_SESSION,
+        )
+
+        _ = await valkey_client.expire(f"{_KEY_PREFIX}session:abc-123", 1800)
+        _ = await valkey_client.expire(f"{_KEY_PREFIX}user_session:1", 1800)
+
+        _ = await valkey_store.update_pm_private(user_id=1, enabled=True)
+
+        session_ttl = await valkey_client.ttl(f"{_KEY_PREFIX}session:abc-123")
+        user_ttl = await valkey_client.ttl(f"{_KEY_PREFIX}user_session:1")
+
+        assert session_ttl > 0
+        assert session_ttl <= 1800
+        assert user_ttl > 0
+        assert user_ttl <= 1800
+
+    async def test_update_pm_private_returns_false_when_session_key_is_missing(
+        self,
+        valkey_client: GlideClient,
+        valkey_store: ValkeySessionStore,
+    ) -> None:
+        await valkey_store.create(
+            user_id=1,
+            token="abc-123",
+            data=_SESSION,
+        )
+        _ = await valkey_client.delete([f"{_KEY_PREFIX}session:abc-123"])
+
+        result = await valkey_store.update_pm_private(user_id=1, enabled=True)
+
+        assert result is False
+        assert await valkey_store.get_by_user(user_id=1) is None

@@ -37,8 +37,8 @@ from osu_server.services.queries.identity import (
     ComputePermissionsQueryUseCase,
     ComputeSessionAuthorizationQueryInput,
     ComputeSessionAuthorizationQueryUseCase,
-    ListOnlineUsersQueryInput,
-    ListOnlineUsersQueryUseCase,
+    ListActiveSessionsQueryInput,
+    ListActiveSessionsQueryUseCase,
     SessionCredentialsQueryInput,
     SessionCredentialsQueryUseCase,
 )
@@ -117,9 +117,32 @@ class FakePermissionService:
 
 
 @final
-class FakeOnlineUsersService:
-    async def get_all_user_ids(self) -> list[int]:
-        return [3, 1, 2]
+class FakeActiveSessionStore:
+    async def list_active_sessions(self) -> list[SessionData]:
+        return [
+            SessionData(
+                user_id=3,
+                username="user_3",
+                privileges=0,
+                country="JP",
+                osu_version="20231111",
+                utc_offset=9,
+                display_city=False,
+                client_hashes="hashes",
+                pm_private=False,
+            ),
+            SessionData(
+                user_id=1,
+                username="user_1",
+                privileges=1,
+                country="US",
+                osu_version="20231111",
+                utc_offset=-5,
+                display_city=False,
+                client_hashes="hashes",
+                pm_private=False,
+            ),
+        ]
 
 
 @final
@@ -220,8 +243,13 @@ class FakeCredentialSessionStore:
         _ = (user_id, authorization)
         return False
 
-    async def get_all_user_ids(self) -> list[int]:
-        return [7]
+    async def update_pm_private(self, user_id: int, enabled: bool) -> bool:
+        _ = (user_id, enabled)
+        return False
+
+    async def list_active_sessions(self) -> list[SessionData]:
+        session = await self.get_by_user(7)
+        return [] if session is None else [session]
 
 
 def _login_request() -> LoginRequest:
@@ -308,12 +336,12 @@ async def test_compute_session_authorization_query_returns_snapshot() -> None:
     assert service.authorization_inputs == [10]
 
 
-async def test_list_online_users_query_returns_snapshot_tuple() -> None:
-    use_case = ListOnlineUsersQueryUseCase(online_users_service=FakeOnlineUsersService())
+async def test_list_active_sessions_query_returns_snapshot_tuple() -> None:
+    use_case = ListActiveSessionsQueryUseCase(session_store=FakeActiveSessionStore())
 
-    result = await use_case.execute(ListOnlineUsersQueryInput())
+    result = await use_case.execute(ListActiveSessionsQueryInput())
 
-    assert result.user_ids == (3, 1, 2)
+    assert tuple(session.user_id for session in result.sessions) == (1, 3)
 
 
 async def test_session_credentials_query_reads_credentials_and_active_session() -> None:

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import structlog
 import structlog.contextvars
 
+from osu_server.domain.events.users import UserConnected
 from osu_server.domain.identity.authentication import LoginResult
 from osu_server.services.commands.identity import LoginCommandInput
 from osu_server.transports.stable.bancho.parsers.login import parse_login_request
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from osu_server.infrastructure.country.interfaces import CountryResolver
+    from osu_server.infrastructure.messaging.local import LocalEventBus
     from osu_server.services.commands.identity import LoginCommand
     from osu_server.transports.stable.bancho.workflows.login_response_builder import (
         LoginResponseBuilder,
@@ -47,6 +49,7 @@ class LoginWorkflow:
     _login_command: LoginCommand
     _country_resolver: CountryResolver
     _response_builder: LoginResponseBuilder
+    _event_bus: LocalEventBus
 
     def __init__(
         self,
@@ -54,10 +57,12 @@ class LoginWorkflow:
         login_command: LoginCommand,
         country_resolver: CountryResolver,
         response_builder: LoginResponseBuilder,
+        event_bus: LocalEventBus,
     ) -> None:
         self._login_command = login_command
         self._country_resolver = country_resolver
         self._response_builder = response_builder
+        self._event_bus = event_bus
 
     async def execute(self, workflow_input: LoginWorkflowInput) -> LoginWorkflowResult:
         """Execute the Starlette-independent login workflow."""
@@ -85,6 +90,10 @@ class LoginWorkflow:
         )
 
         stream = await self._response_builder.build(result)
+        try:
+            await self._event_bus.fire(UserConnected(user_id=result.user.id))
+        except Exception:
+            logger.exception("user_connected_event_failed", user_id=result.user.id)
         return LoginWorkflowResult(content=stream, cho_token=result.token)
 
 
