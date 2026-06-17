@@ -42,6 +42,9 @@ from osu_server.transports.stable.web_legacy.mappers import (
 )
 
 if TYPE_CHECKING:
+    from osu_server.domain.compatibility.stable.getscores import GetscoresPersonalBest
+    from osu_server.domain.scores.personal_best import LeaderboardCategory
+    from osu_server.domain.scores.score import Playstyle, Ruleset
     from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 
 _NOW = datetime(2026, 6, 15, tzinfo=UTC)
@@ -82,6 +85,21 @@ class _ScoreListingRepository:
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
         return self.beatmapsets_by_id.get(beatmapset_id)
+
+
+@final
+class _EmptyPersonalBestRepository:
+    async def get_personal_best(
+        self,
+        *,
+        user_id: int,
+        beatmap_id: int,
+        ruleset: Ruleset,
+        playstyle: Playstyle,
+        category: LeaderboardCategory,
+    ) -> GetscoresPersonalBest | None:
+        _ = (user_id, beatmap_id, ruleset, playstyle, category)
+        return None
 
 
 @final
@@ -377,7 +395,7 @@ def _make_handler(
     return GetscoresHandler(
         auth_query=_AuthQuery(auth_result),
         getscores_parser=GetscoresQueryParser(),
-        getscores_query=BeatmapScoreListingQuery(repository),
+        getscores_query=BeatmapScoreListingQuery(repository, _EmptyPersonalBestRepository()),
         status_mapper=GetscoresStatusMapper(),
         beatmap_resolver=cast("BeatmapMirrorService", resolver),
         beatmap_file_warmup=cast(

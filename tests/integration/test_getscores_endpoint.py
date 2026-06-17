@@ -17,6 +17,10 @@ from typing import TYPE_CHECKING
 
 from starlette.testclient import TestClient
 
+from athena_cli.stable_verification.parsers import (
+    GetscoresResponseKind,
+    parse_getscores_response,
+)
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
@@ -28,7 +32,12 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
+from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.personal_best import LeaderboardCategory, PersonalBestScope
+from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.repositories.interfaces.commands.personal_bests import UpsertPersonalBest
 from osu_server.repositories.interfaces.session_store import SessionStore
+from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.queries.identity.password_service import PasswordService
 from tests.support.app import create_in_memory_app as create_app
 from tests.support.app import resolve_dependency
@@ -150,6 +159,55 @@ async def _seed_known_beatmap(app: Starlette) -> None:
         next_refresh_at=_NEXT_REFRESH,
     )
     await seed_beatmapset(app, beatmapset)
+
+
+async def _seed_personal_best(app: Starlette, *, user_id: int) -> int:
+    """Seed a score and current personal best projection for getscores."""
+    uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
+    async with uow_factory() as uow:
+        score = await uow.scores.create(
+            Score(
+                id=None,
+                user_id=user_id,
+                beatmap_id=75,
+                beatmap_checksum=_KNOWN_CHECKSUM,
+                online_checksum="getscores-pb-online-checksum",
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                mods=ModCombination.from_bitmask(24),
+                n300=300,
+                n100=2,
+                n50=1,
+                geki=5,
+                katu=4,
+                miss=3,
+                score=987_654,
+                max_combo=1_234,
+                accuracy=98.76,
+                grade=Grade.S,
+                passed=True,
+                perfect=True,
+                client_version="b20260617",
+                submitted_at=_NOW,
+                beatmap_status_at_submission="ranked",
+            )
+        )
+        assert score.id is not None
+        _ = await uow.personal_bests.upsert_if_better(
+            UpsertPersonalBest(
+                scope=PersonalBestScope(
+                    user_id=user_id,
+                    beatmap_id=75,
+                    ruleset=Ruleset.OSU,
+                    playstyle=Playstyle.VANILLA,
+                    category=LeaderboardCategory.GLOBAL,
+                ),
+                score_id=score.id,
+                ranking_value=score.score,
+            )
+        )
+        await uow.commit()
+        return score.id
 
 
 def _query(
@@ -321,6 +379,53 @@ class TestStableResponse:
                 first_line = response.content.split(b"\n")[0]
                 # Ranked status = 2; beatmap_id=75; beatmapset_id=1
                 assert first_line == b"2|false|75|1|0||"
+                parsed = parse_getscores_response(response.content)
+                assert parsed.error is None
+                assert parsed.response is not None
+                assert parsed.response.kind is GetscoresResponseKind.HEADER
+                assert parsed.response.header is not None
+                assert parsed.response.header.empty_leaderboard
+
+    def test_known_checksum_returns_personal_best_row_when_projection_exists(self) -> None:
+        """Authorized request returns the current user's PB row when available."""
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+
+                async def _setup() -> tuple[int, int]:
+                    user_id = await _seed_user_with_session(app)
+                    await _seed_known_beatmap(app)
+                    score_id = await _seed_personal_best(app, user_id=user_id)
+                    return score_id, user_id
+
+                score_id, user_id = asyncio.run(_setup())
+                response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(),
+                )
+
+                assert response.status_code == HTTPStatus.OK
+                lines = response.content.split(b"\n")
+                assert lines[0] == b"2|false|75|1|1||"
+                assert (
+                    lines[4]
+                    == (
+                        f"{score_id}|{_TEST_USERNAME}|987654|1234|1|2|300|3|4|5|1|24|"
+                        f"{user_id}|1|{int(_NOW.timestamp())}|0"
+                    ).encode()
+                )
+                assert lines[5] == lines[4]
+                parsed = parse_getscores_response(response.content)
+                assert parsed.error is None
+                assert parsed.response is not None
+                assert parsed.response.header is not None
+                assert parsed.response.header.personal_best_row == lines[4].decode()
+                assert parsed.response.header.score_rows == (lines[5].decode(),)
+                assert not parsed.response.header.empty_leaderboard
 
     def test_unknown_checksum_returns_unavailable_short_body(self) -> None:
         """Unknown checksum returns 200 -1|false."""
@@ -339,6 +444,10 @@ class TestStableResponse:
                 assert response.status_code == HTTPStatus.OK
                 assert response.headers["content-type"].startswith("text/plain")
                 assert response.content == b"-1|false"
+                parsed = parse_getscores_response(response.content)
+                assert parsed.error is None
+                assert parsed.response is not None
+                assert parsed.response.kind is GetscoresResponseKind.NOT_SUBMITTED
 
     def test_missing_identity_returns_unavailable_short_body(self) -> None:
         """Missing identity (no c, no f+i) returns 200 -1|false."""
@@ -356,3 +465,7 @@ class TestStableResponse:
                 )
                 assert response.status_code == HTTPStatus.OK
                 assert response.content == b"-1|false"
+                parsed = parse_getscores_response(response.content)
+                assert parsed.error is None
+                assert parsed.response is not None
+                assert parsed.response.kind is GetscoresResponseKind.NOT_SUBMITTED

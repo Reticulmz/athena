@@ -30,7 +30,10 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
-    from osu_server.domain.compatibility.stable.getscores import GetscoresRequest
+    from osu_server.domain.compatibility.stable.getscores import (
+        GetscoresPersonalBest,
+        GetscoresRequest,
+    )
     from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
     from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
     from osu_server.services.queries.identity import SessionCredentialsQuery
@@ -120,7 +123,7 @@ class GetscoresHandler:
             )
 
         await self._prepare_metadata(request_obj, user_id=user_id)
-        outcome = await self._getscores_query.resolve(request_obj)
+        outcome = await self._getscores_query.resolve(request_obj, user_id=user_id)
 
         if outcome.kind is GetscoresOutcomeKind.UNAVAILABLE:
             await self._request_beatmap_file_warmup(
@@ -166,6 +169,7 @@ class GetscoresHandler:
             status=wire_status,
             beatmap=outcome.header.beatmap,
             beatmapset=outcome.header.beatmapset,
+            personal_best=outcome.header.personal_best,
         )
 
     async def _prepare_metadata(
@@ -265,20 +269,50 @@ def format_getscores_header_response(
     status: int,
     beatmap: Beatmap,
     beatmapset: BeatmapSet,
+    personal_best: GetscoresPersonalBest | None = None,
 ) -> Response:
     artist = _sanitize(beatmapset.artist)
     title = _sanitize(beatmapset.title)
+    personal_best_row = (
+        _format_personal_best_row(personal_best) if personal_best is not None else ""
+    )
+    score_count = 1 if personal_best is not None else 0
+    score_rows = personal_best_row
 
     body = (
-        f"{status}|false|{beatmap.id}|{beatmap.beatmapset_id}|0||\n"
+        f"{status}|false|{beatmap.id}|{beatmap.beatmapset_id}|{score_count}||\n"
         f"0\n"
         f"[bold:0,size:20]{artist}|{title}\n"
         f"0\n"
-        f"\n"
-        f"\n"
+        f"{personal_best_row}\n"
+        f"{score_rows}\n"
     ).encode()
     return Response(
         content=body,
         status_code=HTTPStatus.OK,
         media_type=_TEXT_PLAIN_UTF8,
+    )
+
+
+def _format_personal_best_row(personal_best: GetscoresPersonalBest) -> str:
+    submitted_at_seconds = int(personal_best.submitted_at.timestamp())
+    return "|".join(
+        (
+            str(personal_best.score_id),
+            _sanitize(personal_best.username),
+            str(personal_best.score),
+            str(personal_best.max_combo),
+            str(personal_best.n50),
+            str(personal_best.n100),
+            str(personal_best.n300),
+            str(personal_best.miss),
+            str(personal_best.katu),
+            str(personal_best.geki),
+            "1" if personal_best.perfect else "0",
+            str(personal_best.mods),
+            str(personal_best.user_id),
+            str(personal_best.rank),
+            str(submitted_at_seconds),
+            "1" if personal_best.has_replay else "0",
+        )
     )

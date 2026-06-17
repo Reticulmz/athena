@@ -13,6 +13,9 @@ from osu_server.services.queries.scores.beatmap_score_listing import BeatmapScor
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
+    from osu_server.domain.compatibility.stable.getscores import GetscoresPersonalBest
+    from osu_server.domain.scores.personal_best import LeaderboardCategory
+    from osu_server.domain.scores.score import Playstyle, Ruleset
 
 
 class EmptyBeatmapScoreListingRepository:
@@ -33,8 +36,25 @@ class EmptyBeatmapScoreListingRepository:
         return None
 
 
+class EmptyPersonalBestRepository:
+    async def get_personal_best(
+        self,
+        *,
+        user_id: int,
+        beatmap_id: int,
+        ruleset: Ruleset,
+        playstyle: Playstyle,
+        category: LeaderboardCategory,
+    ) -> GetscoresPersonalBest | None:
+        _ = (user_id, beatmap_id, ruleset, playstyle, category)
+        return None
+
+
 async def test_getscores_query_returns_unavailable_without_starting_fetch() -> None:
-    query = BeatmapScoreListingQuery(EmptyBeatmapScoreListingRepository())
+    query = BeatmapScoreListingQuery(
+        EmptyBeatmapScoreListingRepository(),
+        EmptyPersonalBestRepository(),
+    )
 
     outcome = await query.resolve(
         GetscoresRequest(

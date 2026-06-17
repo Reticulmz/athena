@@ -19,6 +19,8 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
+from osu_server.domain.compatibility.stable.getscores import GetscoresPersonalBest
+from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.transports.stable.web_legacy.getscores import (
     format_getscores_header_response,
     format_getscores_unavailable_response,
@@ -92,6 +94,35 @@ def _make_beatmapset(
     )
 
 
+def _make_personal_best(
+    *,
+    username: str = "Player",
+    has_replay: bool = True,
+    rank: int = 3,
+) -> GetscoresPersonalBest:
+    return GetscoresPersonalBest(
+        score_id=42,
+        user_id=7,
+        username=username,
+        beatmap_id=75,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        score=987_654,
+        max_combo=1_234,
+        n50=1,
+        n100=2,
+        n300=300,
+        miss=3,
+        katu=4,
+        geki=5,
+        perfect=True,
+        mods=24,
+        rank=rank,
+        submitted_at=_NOW,
+        has_replay=has_replay,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Short response bodies (requirements 6.2, 7.1)
 # ---------------------------------------------------------------------------
@@ -130,8 +161,8 @@ def test_header_first_line_format() -> None:
     assert first_line == b"2|false|75|1|0||"
 
 
-def test_header_score_count_is_zero() -> None:
-    """Score count must be 0 while ranking rows are out of scope (requirement 8.5)."""
+def test_header_score_count_is_zero_without_personal_best() -> None:
+    """Score count is 0 when there is no score row."""
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -142,6 +173,21 @@ def test_header_score_count_is_zero() -> None:
     first_line = body.split(b"\n")[0]
     parts = first_line.split(b"|")
     assert parts[4] == b"0"
+
+
+def test_header_score_count_is_one_with_personal_best_fallback_row() -> None:
+    """Personal best is emitted as the minimal score row for stable clients."""
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+            personal_best=_make_personal_best(),
+        )
+    )
+    first_line = body.split(b"\n")[0]
+    parts = first_line.split(b"|")
+    assert parts[4] == b"1"
 
 
 def test_header_failed_flag_is_false() -> None:
@@ -229,6 +275,42 @@ def test_header_response_ends_with_newline() -> None:
         )
     )
     assert body.endswith(b"\n")
+
+
+def test_header_personal_best_row_uses_stable_score_listing_format() -> None:
+    """Personal best row follows Bancho score row field order."""
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+            personal_best=_make_personal_best(),
+        )
+    )
+
+    lines = body.split(b"\n")
+    assert lines[0] == b"2|false|75|1|1||"
+    assert lines[4] == (
+        b"42|Player|987654|1234|1|2|300|3|4|5|1|24|7|3|"
+        + str(int(_NOW.timestamp())).encode()
+        + b"|1"
+    )
+    assert lines[5] == lines[4]
+
+
+def test_personal_best_username_is_sanitized() -> None:
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+            personal_best=_make_personal_best(username="A|B\nC", has_replay=False),
+        )
+    )
+
+    lines = body.split(b"\n")
+    assert b"A|B" not in lines[4]
+    assert lines[4].endswith(b"|0")
 
 
 # ---------------------------------------------------------------------------
