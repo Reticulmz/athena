@@ -1,6 +1,16 @@
 """Score domain models."""
 
 from osu_server.domain.scores.decryption import DecryptedPayload
+from osu_server.domain.scores.leaderboards import (
+    ALL_MODS_FILTER_KEY,
+    NO_MOD_FILTER_KEY,
+    LeaderboardModFilter,
+    LeaderboardScope,
+    ScoreRankKey,
+    filter_from_mod_combination,
+    projection_keys_for_score,
+    score_beats_current,
+)
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.domain.scores.performance import (
@@ -32,11 +42,15 @@ from osu_server.domain.scores.validator import (
 )
 
 __all__ = [
+    "ALL_MODS_FILTER_KEY",
+    "NO_MOD_FILTER_KEY",
     "DecryptedPayload",
     "FormulaProfile",
     "FormulaProfilePolicy",
     "Grade",
     "LeaderboardCategory",
+    "LeaderboardModFilter",
+    "LeaderboardScope",
     "Mod",
     "ModCombination",
     "ParseError",
@@ -56,9 +70,13 @@ __all__ = [
     "Replay",
     "Ruleset",
     "Score",
+    "ScoreRankKey",
     "ScoreSubmission",
     "ValidationError",
     "ValidationResult",
+    "filter_from_mod_combination",
+    "projection_keys_for_score",
+    "score_beats_current",
     "score_beats_personal_best",
     "validate_hit_counts",
 ]
