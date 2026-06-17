@@ -22,7 +22,7 @@
   - 完了時には migration 適用後に projection table、score eligibility column、constraints、indexes が検証できる
   - _Requirements: 2.1, 2.2, 2.6, 5.7, 6.1, 6.2, 7.2, 10.5_
 
-- [ ] 1.4 Legacy Personal Best migration path を安全に置き換える
+- [x] 1.4 Legacy Personal Best migration path を安全に置き換える
   - 既存の valid Personal Best rows を all-mods projection へ移せるようにする
   - source Score が存在しない legacy rows は移行せず、diagnostics として観測できるようにする
   - Selected Mods projection は source Score から rebuild/backfill する前提にする

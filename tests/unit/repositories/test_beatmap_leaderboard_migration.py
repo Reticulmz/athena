@@ -70,9 +70,44 @@ def test_beatmap_leaderboard_migration_adds_score_eligibility_and_projection_sch
     assert "score_id ASC" in migration
     assert "idx_beatmap_leaderboard_user_bests_user_rebuild" in migration
     assert "idx_scores_leaderboard_rebuild_candidate" in migration
-    assert "personal_bests" not in migration
+    assert 'op.drop_table("personal_bests")' not in migration
     assert 'op.drop_table("beatmap_leaderboard_user_bests")' in migration
     assert 'op.drop_column("scores", "leaderboard_eligible_at_submission")' in migration
+
+
+def test_legacy_personal_bests_migrate_to_all_mods_projection_from_source_scores() -> None:
+    migration = MIGRATION_PATH.read_text()
+
+    assert "INSERT INTO beatmap_leaderboard_user_bests" in migration
+    assert "FROM personal_bests pb" in migration
+    assert "INNER JOIN scores s ON s.id = pb.score_id" in migration
+    assert "pb.category IN ('global', 'country', 'friends')" in migration
+    assert "s.leaderboard_eligible_at_submission = true" in migration
+    assert "s.id AS score_id" in migration
+    assert "s.score AS score" in migration
+    assert "s.submitted_at AS submitted_at" in migration
+    assert "NULL AS mod_filter_key" in migration
+    assert "ROW_NUMBER() OVER" in migration
+    assert "ORDER BY s.score DESC, s.submitted_at ASC, s.id ASC" in migration
+
+
+def test_legacy_personal_best_source_missing_skips_are_observable() -> None:
+    migration = MIGRATION_PATH.read_text()
+
+    assert "beatmap_leaderboard_legacy_personal_best_skipped" in migration
+    assert "source_missing" in migration
+    assert "LEFT JOIN scores s ON s.id = pb.score_id" in migration
+    assert "WHERE s.id IS NULL" in migration
+    assert "RAISE NOTICE" in migration
+
+
+def test_legacy_personal_bests_do_not_seed_selected_mods_projection() -> None:
+    migration = MIGRATION_PATH.read_text()
+
+    assert "NULL AS mod_filter_key" in migration
+    assert "mod_filter_key = " not in migration
+    assert "s.mods AS mod_filter_key" not in migration
+    assert "'selected_mods'" not in migration
 
 
 def test_beatmap_leaderboard_model_is_registered_for_metadata_discovery() -> None:

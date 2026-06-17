@@ -91,6 +91,73 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.execute(
+        sa.text(
+            """
+            DO $$
+            DECLARE
+                source_missing_count bigint;
+            BEGIN
+                SELECT count(*)
+                INTO source_missing_count
+                FROM personal_bests pb
+                LEFT JOIN scores s ON s.id = pb.score_id
+                WHERE s.id IS NULL
+                  AND pb.category IN ('global', 'country', 'friends');
+
+                RAISE NOTICE
+                    'beatmap_leaderboard_legacy_personal_best_skipped source_missing=%',
+                    source_missing_count;
+            END $$;
+            """
+        )
+    )
+    op.execute(
+        sa.text(
+            """
+            WITH legacy_personal_best_candidates AS (
+                SELECT
+                    s.beatmap_id AS beatmap_id,
+                    s.ruleset AS ruleset,
+                    s.playstyle AS playstyle,
+                    s.user_id AS user_id,
+                    NULL AS mod_filter_key,
+                    s.id AS score_id,
+                    s.score AS score,
+                    s.submitted_at AS submitted_at,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY s.beatmap_id, s.ruleset, s.playstyle, s.user_id
+                        ORDER BY s.score DESC, s.submitted_at ASC, s.id ASC
+                    ) AS candidate_rank
+                FROM personal_bests pb
+                INNER JOIN scores s ON s.id = pb.score_id
+                WHERE pb.category IN ('global', 'country', 'friends')
+                  AND s.leaderboard_eligible_at_submission = true
+            )
+            INSERT INTO beatmap_leaderboard_user_bests (
+                beatmap_id,
+                ruleset,
+                playstyle,
+                user_id,
+                mod_filter_key,
+                score_id,
+                score,
+                submitted_at
+            )
+            SELECT
+                beatmap_id,
+                ruleset,
+                playstyle,
+                user_id,
+                mod_filter_key,
+                score_id,
+                score,
+                submitted_at
+            FROM legacy_personal_best_candidates
+            WHERE candidate_rank = 1
+            """
+        )
+    )
     op.create_index(
         "idx_beatmap_leaderboard_user_bests_scope_unique",
         "beatmap_leaderboard_user_bests",
