@@ -40,7 +40,7 @@
   - _Boundary: Beatmap leaderboard command repo_
   - _Depends: 1.1, 1.3_
 
-- [ ] 2.2 SQLAlchemy command persistence を projection schema に接続する
+- [x] 2.2 SQLAlchemy command persistence を projection schema に接続する
   - command repository は Unit of Work-owned session だけを使い、直接 commit/rollback しない
   - projection natural key と rank key copy を使って concurrent upsert を DB constraint で収束させる
   - explicit projection slice replacement は user slice と beatmap slice の両方で stale rows を削除する
