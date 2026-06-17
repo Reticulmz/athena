@@ -148,7 +148,64 @@ async def test_friend_queries_share_owner_scoped_source_of_truth() -> None:
     assert listed.friend_user_ids == (target_id,)
     assert has_forward is True
     assert has_reverse is False
-    assert eligible == (target_id,)
+    assert eligible == (owner_id, target_id)
+
+
+@pytest.mark.asyncio
+async def test_friend_eligible_user_ids_include_viewer_when_no_friends() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    owner_id, _ = await _create_users(factory)
+    repository = InMemoryFriendRelationshipQueryRepository(factory)
+    eligible_query = GetFriendEligibleUserIdsQuery(repository=repository)
+
+    eligible = await eligible_query.execute(viewer_user_id=owner_id)
+
+    assert eligible == (owner_id,)
+
+
+@pytest.mark.asyncio
+async def test_friend_eligible_user_ids_include_viewer_and_current_friend_targets() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    owner_id, target_id = await _create_users(factory)
+    _ = await _add_use_case(factory).execute(
+        AddFriendCommand(owner_user_id=owner_id, target_user_id=target_id)
+    )
+    repository = InMemoryFriendRelationshipQueryRepository(factory)
+    eligible_query = GetFriendEligibleUserIdsQuery(repository=repository)
+
+    eligible = await eligible_query.execute(viewer_user_id=owner_id)
+
+    assert eligible == (owner_id, target_id)
+
+
+@pytest.mark.asyncio
+async def test_friend_eligible_user_ids_exclude_reverse_only_relationships() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    owner_id, target_id = await _create_users(factory)
+    _ = await _add_use_case(factory).execute(
+        AddFriendCommand(owner_user_id=target_id, target_user_id=owner_id)
+    )
+    repository = InMemoryFriendRelationshipQueryRepository(factory)
+    eligible_query = GetFriendEligibleUserIdsQuery(repository=repository)
+
+    eligible = await eligible_query.execute(viewer_user_id=owner_id)
+
+    assert eligible == (owner_id,)
+
+
+@pytest.mark.asyncio
+async def test_list_friend_ids_query_remains_target_only_for_stable_login() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    owner_id, target_id = await _create_users(factory)
+    _ = await _add_use_case(factory).execute(
+        AddFriendCommand(owner_user_id=owner_id, target_user_id=target_id)
+    )
+    repository = InMemoryFriendRelationshipQueryRepository(factory)
+    list_query = ListFriendIdsQuery(repository=repository)
+
+    listed = await list_query.execute(ListFriendIdsQueryInput(owner_user_id=owner_id))
+
+    assert listed.friend_user_ids == (target_id,)
 
 
 def _add_use_case(

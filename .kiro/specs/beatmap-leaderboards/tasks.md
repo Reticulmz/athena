@@ -8,7 +8,7 @@
   - 完了時には rank ordering、tie-break、NoMod、NC/DT、PF/SD、Mirror unsupported の unit tests が通る
   - _Requirements: 2.1, 2.2, 2.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 9.4_
 
-- [ ] 1.2 Leaderboard visible user policy と Friends eligible user set を固める
+- [x] 1.2 Leaderboard visible user policy と Friends eligible user set を固める
   - public leaderboard visibility は NORMAL と UNRESTRICTED の両方を直接要求し、ADMIN bypass を使わない
   - Friends leaderboard 用 eligible user set は viewer ID と current friend target IDs を返す
   - stable login 用 friends list は target-only のまま維持する

@@ -67,7 +67,8 @@ class GetFriendEligibleUserIdsQuery:
         self._repository: FriendRelationshipQueryRepository = repository
 
     async def execute(self, *, viewer_user_id: int) -> tuple[int, ...]:
-        return await self._repository.list_friend_ids(viewer_user_id)
+        friend_user_ids = await self._repository.list_friend_ids(viewer_user_id)
+        return (viewer_user_id, *friend_user_ids)
 
 
 __all__ = [
