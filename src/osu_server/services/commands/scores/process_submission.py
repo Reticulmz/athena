@@ -150,6 +150,10 @@ class SubmissionResult:
     score_id: int | None = None
     beatmap_id: int | None = None
     beatmapset_id: int | None = None
+    score: int | None = None
+    max_combo: int | None = None
+    accuracy: float | None = None
+    passed: bool | None = None
     error_reason: str | None = None
     stable_pp: int | None = None
 
@@ -237,6 +241,10 @@ def _submission_result_from_command(result: SubmitScoreCommandResult) -> Submiss
         score_id=result.score_id,
         beatmap_id=result.beatmap_id,
         beatmapset_id=result.beatmapset_id,
+        score=result.score,
+        max_combo=result.max_combo,
+        accuracy=result.accuracy,
+        passed=result.passed,
         error_reason=result.error_reason,
     )
 
@@ -706,6 +714,10 @@ class ProcessScoreSubmissionUseCase:
                 score_id=command_result.score_id,
                 beatmap_id=command_result.beatmap_id,
                 beatmapset_id=command_result.beatmapset_id,
+                score=command_result.score,
+                max_combo=command_result.max_combo,
+                accuracy=command_result.accuracy,
+                passed=command_result.passed,
                 error_reason="performance_calculation_pending",
             )
         return SubmissionResult(
@@ -713,6 +725,10 @@ class ProcessScoreSubmissionUseCase:
             score_id=command_result.score_id,
             beatmap_id=command_result.beatmap_id,
             beatmapset_id=command_result.beatmapset_id,
+            score=command_result.score,
+            max_combo=command_result.max_combo,
+            accuracy=command_result.accuracy,
+            passed=command_result.passed,
             stable_pp=response.stable_pp,
         )
 

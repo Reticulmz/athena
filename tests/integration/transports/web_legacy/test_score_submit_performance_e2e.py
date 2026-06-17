@@ -139,7 +139,9 @@ async def test_ranked_or_approved_submit_returns_pp_when_performance_completes(
     response = await handler(_request(body, content_type))
 
     assert response.status_code == 200
-    assert b"pp:248\n" in bytes(response.body)
+    assert b"ppAfter:248" in bytes(response.body)
+    assert b"rankedScoreAfter:500000" in bytes(response.body)
+    assert b"maxComboAfter:99" in bytes(response.body)
     assert len(uow_factory.snapshot().scores_by_id) == 1
     assert len(performance_request.commands) == 1
     assert performance_response.queries == [
@@ -170,7 +172,7 @@ async def test_pending_submit_returns_retryable_then_same_fingerprint_retry_retu
 
     assert first.body == b"error: yes"
     assert second.status_code == 200
-    assert b"pp:312\n" in bytes(second.body)
+    assert b"ppAfter:312" in bytes(second.body)
     assert len(uow_factory.snapshot().scores_by_id) == 1
     assert len(performance_request.commands) == 1
     assert performance_response.queries == [
@@ -196,7 +198,7 @@ async def test_unavailable_performance_returns_accepted_response_with_zero_pp() 
 
     assert response.status_code == 200
     response_body = bytes(response.body)
-    assert b"pp:0\n" in response_body
+    assert b"ppAfter:0" in response_body
     assert b"unavailable" not in response_body
     assert b"calculator" not in response_body
 

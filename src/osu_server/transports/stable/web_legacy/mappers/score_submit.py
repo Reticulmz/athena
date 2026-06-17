@@ -116,8 +116,13 @@ class StableScoreSubmitMapper:
     def to_response(self, result: SubmissionResult) -> Response:
         if result.outcome == SubmissionOutcome.COMPLETED:
             return _format_completed_response(
+                score_id=result.score_id or 0,
                 beatmap_id=result.beatmap_id or 0,
                 beatmap_set_id=result.beatmapset_id or 0,
+                score=result.score,
+                max_combo=result.max_combo,
+                accuracy=result.accuracy,
+                passed=result.passed,
                 stable_pp=result.stable_pp,
             )
         if result.outcome in {SubmissionOutcome.RETRYABLE, SubmissionOutcome.ACCEPTED_PENDING}:
@@ -203,28 +208,85 @@ def _parse_stable_payload(fields: list[str]) -> ParsedScore:
 
 def _format_completed_response(
     *,
+    score_id: int,
     beatmap_id: int,
     beatmap_set_id: int,
+    score: int | None,
+    max_combo: int | None,
+    accuracy: float | None,
+    passed: bool | None,
     stable_pp: int | None,
 ) -> Response:
     beatmap_playcount = 1
+    beatmap_passcount = 0 if passed is False else 1
+    score_value = score or 0
+    max_combo_value = max_combo or 0
+    accuracy_value = _format_accuracy_percent(accuracy)
     pp = stable_pp or 0
 
-    body = f"{beatmap_id}:{beatmap_set_id}:{beatmap_playcount}:3\n".encode()
-    body += b"chartId:overall\n"
-    body += b"chartUrl:\n"
-    body += b"chartName:Overall Ranking\n"
-    body += b"achieved:0\n"
-    body += b"rank:0\n"
-    body += b"rankBefore:0\n"
-    body += b"rankedScoreBefore:0\n"
-    body += b"rankedScore:0\n"
-    body += b"totalScore:0\n"
-    body += b"maxCombo:0\n"
-    body += b"accuracy:0\n"
-    body += f"pp:{pp}\n".encode()
+    lines = [
+        _format_chart_line(
+            (
+                ("beatmapId", beatmap_id),
+                ("beatmapSetId", beatmap_set_id),
+                ("beatmapPlaycount", beatmap_playcount),
+                ("beatmapPasscount", beatmap_passcount),
+                ("approvedDate", ""),
+            )
+        ),
+        _format_chart_line(
+            (
+                ("chartId", "beatmap"),
+                ("chartUrl", ""),
+                ("chartName", "Beatmap Ranking"),
+                ("rankBefore", ""),
+                ("rankAfter", 0),
+                ("maxComboBefore", 0),
+                ("maxComboAfter", max_combo_value),
+                ("accuracyBefore", 0),
+                ("accuracyAfter", accuracy_value),
+                ("rankedScoreBefore", 0),
+                ("rankedScoreAfter", score_value),
+                ("ppBefore", 0),
+                ("ppAfter", pp),
+                ("onlineScoreId", score_id),
+            )
+        ),
+        _format_chart_line(
+            (
+                ("chartId", "overall"),
+                ("chartUrl", ""),
+                ("chartName", "Overall Ranking"),
+                ("rankBefore", 0),
+                ("rankAfter", 0),
+                ("rankedScoreBefore", 0),
+                ("rankedScoreAfter", 0),
+                ("totalScoreBefore", 0),
+                ("totalScoreAfter", 0),
+                ("maxComboBefore", 0),
+                ("maxComboAfter", 0),
+                ("accuracyBefore", 0),
+                ("accuracyAfter", 0),
+                ("ppBefore", 0),
+                ("ppAfter", 0),
+                ("achievements-new", ""),
+                ("onlineScoreId", score_id),
+            )
+        ),
+    ]
 
-    return Response(body, status_code=200)
+    return Response("\n".join(lines).encode(), status_code=200)
+
+
+def _format_accuracy_percent(accuracy: float | None) -> str:
+    if accuracy is None:
+        return "0"
+    percent = accuracy * 100
+    return f"{percent:.6f}".rstrip("0").rstrip(".")
+
+
+def _format_chart_line(entries: tuple[tuple[str, object], ...]) -> str:
+    return "|".join(f"{key}:{value}" for key, value in entries)
 
 
 __all__ = [

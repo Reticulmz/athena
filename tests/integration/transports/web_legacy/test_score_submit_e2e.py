@@ -211,8 +211,11 @@ async def test_e2e_score_submit_completed_response() -> None:
     # Assert
     assert response.status_code == 200
     response_body = bytes(response.body)
-    assert response_body.startswith(b"1:0:1:3\n")
-    assert b"chartId:overall\n" in response_body
+    assert response_body.startswith(
+        b"beatmapId:1|beatmapSetId:0|beatmapPlaycount:1|beatmapPasscount:1|approvedDate:\n"
+    )
+    assert b"chartId:beatmap|chartUrl:|chartName:Beatmap Ranking|" in response_body
+    assert b"chartId:overall|chartUrl:|chartName:Overall Ranking|" in response_body
 
 
 @pytest.mark.asyncio

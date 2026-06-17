@@ -150,6 +150,10 @@ async def test_completed_submission_commits_one_snapshot() -> None:
 
     assert result.outcome == SubmitScoreCommandOutcome.COMPLETED
     assert result.score_id == 1
+    assert result.score == 500000
+    assert result.max_combo == 99
+    assert result.accuracy == 0.95
+    assert result.passed is True
     async with factory() as uow:
         submission = await uow.submissions.get_by_fingerprint("fingerprint-2")
         assert submission is not None
@@ -158,9 +162,33 @@ async def test_completed_submission_commits_one_snapshot() -> None:
             "score_id": 1,
             "beatmap_id": 1,
             "beatmapset_id": 10,
+            "score": 500000,
+            "max_combo": 99,
+            "accuracy": 0.95,
+            "passed": True,
             "beatmap_status_at_submission": "ranked",
             "grade_discrepancy": {"client_grade": "D", "server_grade": "A"},
             "opaque_fields": {"fs_sha256": "c" * 64},
             "replay_attachment_id": 1,
             "replay_blob_id": 2,
         }
+
+    retry = await use_case.execute(
+        SubmitScoreCommand(
+            fingerprint="fingerprint-2",
+            user_id=1000,
+            beatmap_checksum="abc123",
+            submitted_at=datetime.now(UTC),
+            outcome=SubmitScoreCommandOutcome.COMPLETED,
+            score=_score(online_checksum="online-2-retry"),
+            beatmap_id=1,
+            beatmapset_id=10,
+        )
+    )
+
+    assert retry.outcome == SubmitScoreCommandOutcome.COMPLETED
+    assert retry.existing_submission is True
+    assert retry.score == 500000
+    assert retry.max_combo == 99
+    assert retry.accuracy == 0.95
+    assert retry.passed is True

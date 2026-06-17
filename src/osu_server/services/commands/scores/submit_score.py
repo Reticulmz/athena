@@ -59,6 +59,10 @@ class SubmitScoreCommandResult:
     score_id: int | None = None
     beatmap_id: int | None = None
     beatmapset_id: int | None = None
+    score: int | None = None
+    max_combo: int | None = None
+    accuracy: float | None = None
+    passed: bool | None = None
     replay_attachment_id: int | None = None
     error_reason: str | None = None
     existing_submission: bool = False
@@ -185,6 +189,10 @@ async def _record_completed(
         beatmapset_id=completion_snapshot["beatmapset_id"]
         if isinstance(completion_snapshot["beatmapset_id"], int)
         else None,
+        score=created_score.score,
+        max_combo=created_score.max_combo,
+        accuracy=created_score.accuracy,
+        passed=created_score.passed,
         replay_attachment_id=created_replay.id if created_replay is not None else None,
     )
 
@@ -235,15 +243,23 @@ def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScore
 
     snapshot = submission.result_snapshot or {}
     if submission.state == _STATE_COMPLETED:
-        score_id = snapshot.get("score_id")
-        beatmap_id = snapshot.get("beatmap_id")
-        beatmapset_id = snapshot.get("beatmapset_id")
-        if isinstance(score_id, int):
+        score_id = _snapshot_int(snapshot.get("score_id"))
+        beatmap_id = _snapshot_int(snapshot.get("beatmap_id"))
+        beatmapset_id = _snapshot_int(snapshot.get("beatmapset_id"))
+        score = _snapshot_int(snapshot.get("score"))
+        max_combo = _snapshot_int(snapshot.get("max_combo"))
+        accuracy = _snapshot_float(snapshot.get("accuracy"))
+        passed = snapshot.get("passed")
+        if score_id is not None:
             return SubmitScoreCommandResult(
                 outcome=SubmitScoreCommandOutcome.COMPLETED,
                 score_id=score_id,
-                beatmap_id=beatmap_id if isinstance(beatmap_id, int) else None,
-                beatmapset_id=beatmapset_id if isinstance(beatmapset_id, int) else None,
+                beatmap_id=beatmap_id,
+                beatmapset_id=beatmapset_id,
+                score=score,
+                max_combo=max_combo,
+                accuracy=accuracy,
+                passed=passed if isinstance(passed, bool) else None,
                 existing_submission=True,
             )
 
@@ -262,6 +278,20 @@ def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScore
     )
 
 
+def _snapshot_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    return value if isinstance(value, int) else None
+
+
+def _snapshot_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
 def _completion_snapshot(
     command: SubmitScoreCommand,
     created_score: Score,
@@ -272,6 +302,10 @@ def _completion_snapshot(
         "score_id": created_score.id,
         "beatmap_id": beatmap_id,
         "beatmapset_id": beatmapset_id,
+        "score": created_score.score,
+        "max_combo": created_score.max_combo,
+        "accuracy": created_score.accuracy,
+        "passed": created_score.passed,
         "beatmap_status_at_submission": created_score.beatmap_status_at_submission,
     }
     if command.grade_discrepancy is not None:
