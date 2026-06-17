@@ -93,12 +93,7 @@ class InMemoryUnitOfWorkFactory:
             committed.friend_relationships_by_key,
         )
 
-        _replace_mapping(self._state.scores_by_id, committed.scores_by_id)
-        _replace_mapping(
-            self._state.score_id_by_online_checksum,
-            committed.score_id_by_online_checksum,
-        )
-        self._state.next_score_id = committed.next_score_id
+        self._commit_score_state(committed)
         _replace_mapping(self._state.personal_bests_by_id, committed.personal_bests_by_id)
         _replace_mapping(
             self._state.personal_best_id_by_scope,
@@ -184,6 +179,21 @@ class InMemoryUnitOfWorkFactory:
         self._state.next_beatmap_leaderboard_user_best_id = (
             committed.next_beatmap_leaderboard_user_best_id
         )
+
+    def _commit_score_state(
+        self,
+        committed: InMemoryCommandRepositoryState,
+    ) -> None:
+        _replace_mapping(self._state.scores_by_id, committed.scores_by_id)
+        _replace_mapping(
+            self._state.score_id_by_online_checksum,
+            committed.score_id_by_online_checksum,
+        )
+        _replace_mapping(
+            self._state.score_leaderboard_eligibility_by_id,
+            committed.score_leaderboard_eligibility_by_id,
+        )
+        self._state.next_score_id = committed.next_score_id
 
     def seed_roles(self, roles: list[Role]) -> None:
         """Seed roles into factory state (test helper)."""

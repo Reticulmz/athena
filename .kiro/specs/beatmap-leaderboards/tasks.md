@@ -48,7 +48,7 @@
   - _Requirements: 2.1, 2.2, 2.6, 5.7, 8.1, 8.2, 8.3, 10.5_
   - _Depends: 2.1_
 
-- [ ] 2.3 (P) Beatmap Leaderboard query repository contract と in-memory behavior を実装する
+- [x] 2.3 (P) Beatmap Leaderboard query repository contract と in-memory behavior を実装する
   - top rows は projection から current Beatmap、checksum、passed、submission eligibility、owner visibility を適用して読む
   - PB rank は rows と同じ filtered candidate ordering から actual rank を計算する
   - Country と Friends は read-time filter とし、Selected Mods は mod filter key を使う

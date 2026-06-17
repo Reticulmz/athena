@@ -1,5 +1,11 @@
 """Query repository interface package."""
 
+from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+    BeatmapLeaderboardQueryRepository,
+    BeatmapLeaderboardRow,
+    LeaderboardReadScope,
+    ScoreHitCounts,
+)
 from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
@@ -28,6 +34,8 @@ from osu_server.repositories.interfaces.queries.scores import ScoreQueryReposito
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 
 __all__ = [
+    "BeatmapLeaderboardQueryRepository",
+    "BeatmapLeaderboardRow",
     "BeatmapQueryRepository",
     "BeatmapScoreListingQueryRepository",
     "BlobQueryRepository",
@@ -35,9 +43,11 @@ __all__ = [
     "ChatHistoryMessage",
     "ChatHistoryQueryRepository",
     "FriendRelationshipQueryRepository",
+    "LeaderboardReadScope",
     "PersonalBestQueryRepository",
     "RecalculationCandidateReason",
     "RoleQueryRepository",
+    "ScoreHitCounts",
     "ScorePerformanceCandidateSelection",
     "ScorePerformanceQueryRepository",
     "ScorePerformanceRecalculationCandidate",

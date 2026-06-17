@@ -1,5 +1,8 @@
 """In-memory query repository package."""
 
+from osu_server.repositories.memory.queries.beatmap_leaderboards import (
+    InMemoryBeatmapLeaderboardQueryRepository,
+)
 from osu_server.repositories.memory.queries.beatmap_score_listing import (
     InMemoryBeatmapScoreListingQueryRepository,
 )
@@ -20,6 +23,7 @@ from osu_server.repositories.memory.queries.score_performance import (
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 
 __all__ = [
+    "InMemoryBeatmapLeaderboardQueryRepository",
     "InMemoryBeatmapQueryRepository",
     "InMemoryBeatmapScoreListingQueryRepository",
     "InMemoryBlobQueryRepository",

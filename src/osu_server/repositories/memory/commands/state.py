@@ -136,6 +136,7 @@ class InMemoryCommandRepositoryState:
 
     scores_by_id: dict[int, Score] = field(default_factory=dict)
     score_id_by_online_checksum: dict[str, int] = field(default_factory=dict)
+    score_leaderboard_eligibility_by_id: dict[int, bool] = field(default_factory=dict)
     next_score_id: int = 1
 
     personal_bests_by_id: dict[int, PersonalBest] = field(default_factory=dict)

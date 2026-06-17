@@ -24,12 +24,14 @@ from osu_server.repositories.interfaces.commands import (
     UserCommandRepository,
 )
 from osu_server.repositories.interfaces.queries import (
+    BeatmapLeaderboardQueryRepository,
     BeatmapQueryRepository,
     BeatmapScoreListingQueryRepository,
     BlobQueryRepository,
     ChannelQueryRepository,
     ChatHistoryQueryRepository,
     FriendRelationshipQueryRepository,
+    LeaderboardReadScope,
     RoleQueryRepository,
     ScorePerformanceQueryRepository,
     ScoreQueryRepository,
@@ -83,6 +85,7 @@ QUERY_REPOSITORIES = (
     FriendRelationshipQueryRepository,
     BeatmapScoreListingQueryRepository,
     ScorePerformanceQueryRepository,
+    BeatmapLeaderboardQueryRepository,
 )
 
 FORBIDDEN_INTERFACE_IMPORT_ROOTS = (
@@ -243,6 +246,11 @@ def test_query_repository_contracts_are_read_only() -> None:
         "get_current_for_score",
         "select_recalculation_candidates",
     }
+    assert _public_async_methods(BeatmapLeaderboardQueryRepository) == {
+        "get_personal_best",
+        "list_top_rows",
+    }
+    assert LeaderboardReadScope.__name__ == "LeaderboardReadScope"
 
 
 def test_persistence_boundary_interfaces_do_not_depend_on_adapters_or_runtime() -> None:
