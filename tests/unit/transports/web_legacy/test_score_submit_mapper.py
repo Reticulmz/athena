@@ -5,9 +5,34 @@ from __future__ import annotations
 import base64
 from datetime import UTC, datetime
 
+from athena_cli.stable_verification.parsers import parse_score_submit_response
+from osu_server.domain.scores.personal_best import PersonalBestDelta
 from osu_server.services.commands.scores import SubmissionOutcome, SubmissionResult
 from osu_server.transports.stable.web_legacy.mappers import (
     StableScoreSubmitMapper,
+)
+
+_BEATMAP_CHART_REQUIRED_FIELDS = (
+    "achieved",
+    "rankBefore",
+    "rankedScoreBefore",
+    "rankedScoreAfter",
+    "maxComboAfter",
+    "accuracyAfter",
+    "ppAfter",
+    "onlineScoreId",
+)
+_OVERALL_CHART_REQUIRED_FIELDS = (
+    "rankBefore",
+    "rankedScoreBefore",
+    "rankedScoreAfter",
+    "totalScoreBefore",
+    "totalScoreAfter",
+    "maxComboAfter",
+    "accuracyAfter",
+    "ppAfter",
+    "achievements-new",
+    "onlineScoreId",
 )
 
 
@@ -87,6 +112,7 @@ def test_score_submit_mapper_formats_completed_response() -> None:
 
     assert response.status_code == 200
     body = bytes(response.body)
+    parsed = parse_score_submit_response(body)
     lines = body.splitlines()
     assert lines[0] == (
         b"beatmapId:654|beatmapSetId:321|beatmapPlaycount:1|beatmapPasscount:1|approvedDate:"
@@ -99,6 +125,60 @@ def test_score_submit_mapper_formats_completed_response() -> None:
     assert b"onlineScoreId:12345" in lines[1]
     assert lines[2].startswith(b"chartId:overall|chartUrl:|chartName:Overall Ranking|")
     assert b"achievements-new:" in lines[2]
+    assert b"password_md5_hash" not in body
+    assert b"session_token" not in body
+    assert b"replay_binary_data" not in body
+    assert parsed.response is not None
+    assert parsed.response.beatmap_chart.fields["achieved"] == "true"
+    for field in _BEATMAP_CHART_REQUIRED_FIELDS:
+        assert field in parsed.response.beatmap_chart.fields
+    for field in _OVERALL_CHART_REQUIRED_FIELDS:
+        assert field in parsed.response.overall_chart.fields
+
+
+def test_score_submit_mapper_formats_personal_best_delta_values() -> None:
+    mapper = StableScoreSubmitMapper()
+
+    response = mapper.to_response(
+        SubmissionResult(
+            outcome=SubmissionOutcome.COMPLETED,
+            score_id=12346,
+            beatmap_id=654,
+            beatmapset_id=321,
+            score=1000000,
+            max_combo=500,
+            accuracy=0.9,
+            passed=True,
+            stable_pp=111,
+            stable_pp_before=222,
+            stable_pp_after=222,
+            personal_best_delta=PersonalBestDelta(
+                before_score_id=10,
+                before_score=2000000,
+                before_max_combo=700,
+                before_accuracy=0.98,
+                after_score_id=10,
+                after_score=2000000,
+                after_max_combo=700,
+                after_accuracy=0.98,
+                updated=False,
+            ),
+        )
+    )
+
+    parsed = parse_score_submit_response(bytes(response.body))
+
+    assert parsed.response is not None
+    beatmap_chart = parsed.response.beatmap_chart.fields
+    assert beatmap_chart["rankedScoreBefore"] == "2000000"
+    assert beatmap_chart["rankedScoreAfter"] == "2000000"
+    assert beatmap_chart["maxComboBefore"] == "700"
+    assert beatmap_chart["maxComboAfter"] == "700"
+    assert beatmap_chart["accuracyBefore"] == "98"
+    assert beatmap_chart["accuracyAfter"] == "98"
+    assert beatmap_chart["ppBefore"] == "222"
+    assert beatmap_chart["ppAfter"] == "222"
+    assert beatmap_chart["onlineScoreId"] == "12346"
 
 
 def test_score_submit_mapper_formats_failed_score_passcount_as_zero() -> None:
@@ -119,10 +199,15 @@ def test_score_submit_mapper_formats_failed_score_passcount_as_zero() -> None:
     )
 
     assert response.status_code == 200
-    lines = bytes(response.body).splitlines()
+    body = bytes(response.body)
+    parsed = parse_score_submit_response(body)
+    lines = body.splitlines()
     assert lines[0] == (
         b"beatmapId:654|beatmapSetId:321|beatmapPlaycount:1|beatmapPasscount:0|approvedDate:"
     )
+    assert parsed.response is not None
+    assert parsed.response.beatmap_metadata.beatmap_passcount == 0
+    assert parsed.response.beatmap_chart.fields["achieved"] == "false"
 
 
 def test_score_submit_mapper_formats_completed_response_without_pp_as_zero() -> None:

@@ -13,6 +13,7 @@ from osu_server.repositories.interfaces.commands import (
     BlobCommandRepository,
     ChannelCommandRepository,
     ChatCommandRepository,
+    PersonalBestCommandRepository,
     ReplayCommandRepository,
     RoleCommandRepository,
     ScoreCommandRepository,
@@ -55,6 +56,7 @@ COMMAND_REPOSITORY_ATTRIBUTES = {
     "channels": ChannelCommandRepository,
     "chat": ChatCommandRepository,
     "scores": ScoreCommandRepository,
+    "personal_bests": PersonalBestCommandRepository,
     "score_performance": ScorePerformanceCommandRepository,
     "submissions": ScoreSubmissionCommandRepository,
     "replays": ReplayCommandRepository,
@@ -152,6 +154,7 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         RoleCommandRepository,
         ChannelCommandRepository,
         ChatCommandRepository,
+        PersonalBestCommandRepository,
         ScoreCommandRepository,
         ScorePerformanceCommandRepository,
         ScoreSubmissionCommandRepository,
@@ -164,6 +167,10 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         "exists_by_online_checksum",
         "get_by_id",
         "get_by_online_checksum",
+    }
+    assert _public_async_methods(PersonalBestCommandRepository) == {
+        "get_by_scope",
+        "upsert_if_better",
     }
     assert _public_async_methods(RoleCommandRepository) == {
         "assign_role",

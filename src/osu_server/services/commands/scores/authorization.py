@@ -103,7 +103,7 @@ class ScoreAuthorizationService:
         payload_username: str,
         payload_user_id: int,
     ) -> AuthorizationContext:
-        safe_username = User.normalize_username(payload_username)
+        safe_username = User.normalize_username(payload_username.strip())
         user = await self._user_repo.get_by_safe_username(safe_username)
         if user is None:
             return AuthorizationContext(

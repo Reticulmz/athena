@@ -226,6 +226,13 @@ class RecordingPerformanceResponseQuery:
         self.queries.append(query)
         return self.response
 
+    async def get_submit_response(
+        self,
+        query: PerformanceSubmitResponseQuery,
+    ) -> PerformanceSubmitResponse:
+        self.queries.append(query)
+        return self.response
+
 
 @final
 class StubPerformanceCalculatorIdentity:
@@ -1118,7 +1125,7 @@ async def test_performance_integration_preserves_duplicate_terminal_rejects(
     assert replay_result2.error_reason == "duplicate_replay_checksum"
     assert performance_response.queries == [
         PerformanceSubmitResponseQuery(score_id=online_result1.score_id),
-        PerformanceSubmitResponseQuery(score_id=replay_result1.score_id),
+        PerformanceSubmitResponseQuery(score_id=online_result1.score_id),
     ]
     assert [command.score_id for command in performance_request.commands] == [
         online_result1.score_id,

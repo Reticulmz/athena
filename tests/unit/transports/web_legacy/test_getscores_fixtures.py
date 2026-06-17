@@ -18,6 +18,14 @@ if TYPE_CHECKING:
 
 import pytest
 
+from athena_cli.stable_verification.catalog import list_evidence
+from athena_cli.stable_verification.models import (
+    EvidenceScope,
+    EvidenceType,
+    StableSurface,
+)
+from athena_cli.stable_verification.parsers import parse_getscores_response
+
 _FIXTURE_DIR = Path(__file__).parents[3] / "fixtures" / "web_legacy" / "getscores"
 
 # -- Header fixture file -> expected status value --------------------------
@@ -31,6 +39,7 @@ _SUBMITTED_FIXTURES: dict[str, int] = {
     "wip_response.txt": 0,
     "graveyard_response.txt": 0,
 }
+_ALL_FIXTURE_FILES = [*_SUBMITTED_FIXTURES, "not_submitted_response.txt"]
 
 
 def _header_fixture_paths() -> Iterator[tuple[str, Path, int]]:
@@ -175,12 +184,30 @@ def test_not_submitted_fixture_is_short_response() -> None:
     )
 
 
+def test_fixtures_are_referenced_by_stable_verification_catalog() -> None:
+    evidence = list_evidence(StableSurface.GETSCORES)
+
+    assert any(
+        entry.evidence_type is EvidenceType.GOLDEN_FIXTURE
+        and entry.scope is EvidenceScope.MANDATORY
+        and entry.reference == "tests/unit/transports/web_legacy/test_getscores_fixtures.py"
+        for entry in evidence
+    )
+
+
+@pytest.mark.parametrize("fixture_filename", _ALL_FIXTURE_FILES)
+def test_fixture_parses_with_stable_verification_parser(fixture_filename: str) -> None:
+    fixture_path = _FIXTURE_DIR / fixture_filename
+
+    parsed = parse_getscores_response(fixture_path.read_bytes())
+
+    assert parsed.error is None
+    assert parsed.response is not None
+
+
 # ---------------------------------------------------------------------------
 # Chunk framing absence (all fixtures)
 # ---------------------------------------------------------------------------
-
-
-_ALL_FIXTURE_FILES = [*_SUBMITTED_FIXTURES, "not_submitted_response.txt"]
 
 
 @pytest.mark.parametrize("fixture_filename", _ALL_FIXTURE_FILES)

@@ -19,6 +19,7 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.chat.channels import ChannelType
 from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculationState
+from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
 from osu_server.repositories.interfaces.queries.score_performance import (
     RecalculationCandidateReason,
@@ -39,7 +40,7 @@ from osu_server.repositories.sqlalchemy.models.channel import (
     PrivateMessageModel,
 )
 from osu_server.repositories.sqlalchemy.models.role import RoleModel
-from osu_server.repositories.sqlalchemy.models.score import ScoreModel
+from osu_server.repositories.sqlalchemy.models.score import ReplayModel, ScoreModel
 from osu_server.repositories.sqlalchemy.models.score_performance import (
     ScorePerformanceCalculationModel,
 )
@@ -50,6 +51,7 @@ from osu_server.repositories.sqlalchemy.queries import (
     SQLAlchemyBlobQueryRepository,
     SQLAlchemyChannelQueryRepository,
     SQLAlchemyChatHistoryQueryRepository,
+    SQLAlchemyPersonalBestQueryRepository,
     SQLAlchemyRoleQueryRepository,
     SQLAlchemyScorePerformanceQueryRepository,
     SQLAlchemyScoreQueryRepository,
@@ -68,6 +70,7 @@ if TYPE_CHECKING:
         BlobQueryRepository,
         ChannelQueryRepository,
         ChatHistoryQueryRepository,
+        PersonalBestQueryRepository,
         RoleQueryRepository,
         ScoreQueryRepository,
         UserQueryRepository,
@@ -274,6 +277,47 @@ async def test_score_and_blob_query_repositories_are_read_only() -> None:
     assert blob_by_id.sha256 == "a" * 64
     assert blob_by_sha256.id == fixture.blob.id
     assert fixture.session.closed is True
+
+
+async def test_personal_best_query_repository_returns_score_listing_read_model() -> None:
+    user = _user_model()
+    score = _score_model(score_id=501, user_id=user.id, beatmap_id=7)
+    replay = _replay_model(score_id=score.id)
+    session = FakeQuerySession(
+        execute_handler=lambda statement: _execute_from_text(
+            statement,
+            {
+                "FROM scores JOIN personal_bests": FakeResult(
+                    values=[(score, user.username, replay.score_id == score.id, 1)]
+                ),
+            },
+        )
+    )
+    factory = FakeSessionFactory(session)
+    session_factory = cast("SQLAlchemyQuerySessionFactory", cast("object", factory))
+    repository: PersonalBestQueryRepository = SQLAlchemyPersonalBestQueryRepository(
+        session_factory
+    )
+
+    personal_best = await repository.get_personal_best(
+        user_id=user.id,
+        beatmap_id=score.beatmap_id,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        category=LeaderboardCategory.GLOBAL,
+    )
+
+    assert personal_best is not None
+    assert personal_best.score_id == score.id
+    assert personal_best.user_id == user.id
+    assert personal_best.username == user.username
+    assert personal_best.score == score.score
+    assert personal_best.max_combo == score.max_combo
+    assert personal_best.n300 == score.n300
+    assert personal_best.rank == 1
+    assert personal_best.has_replay is True
+    assert factory.calls == 1
+    assert session.closed is True
 
 
 async def test_score_performance_query_repository_reads_current_and_candidates() -> None:
@@ -797,6 +841,17 @@ def _score_model(
         client_version="b20260614",
         submitted_at=_NOW,
         beatmap_status_at_submission="ranked",
+    )
+
+
+def _replay_model(*, score_id: int) -> ReplayModel:
+    return ReplayModel(
+        id=601,
+        score_id=score_id,
+        blob_id=400,
+        checksum_sha256="c" * 64,
+        byte_size=256,
+        created_at=_NOW,
     )
 
 

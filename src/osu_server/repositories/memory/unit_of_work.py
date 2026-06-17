@@ -10,6 +10,7 @@ from osu_server.repositories.memory.commands import (
     InMemoryChannelCommandRepository,
     InMemoryChatCommandRepository,
     InMemoryCommandRepositoryState,
+    InMemoryPersonalBestCommandRepository,
     InMemoryReplayCommandRepository,
     InMemoryRoleCommandRepository,
     InMemoryScoreCommandRepository,
@@ -92,6 +93,12 @@ class InMemoryUnitOfWorkFactory:
             committed.score_id_by_online_checksum,
         )
         self._state.next_score_id = committed.next_score_id
+        _replace_mapping(self._state.personal_bests_by_id, committed.personal_bests_by_id)
+        _replace_mapping(
+            self._state.personal_best_id_by_scope,
+            committed.personal_best_id_by_scope,
+        )
+        self._state.next_personal_best_id = committed.next_personal_best_id
 
         _replace_mapping(self._state.submissions_by_id, committed.submissions_by_id)
         _replace_mapping(
@@ -170,6 +177,7 @@ class InMemoryUnitOfWork:
     channels: InMemoryChannelCommandRepository
     chat: InMemoryChatCommandRepository
     scores: InMemoryScoreCommandRepository
+    personal_bests: InMemoryPersonalBestCommandRepository
     score_performance: InMemoryScorePerformanceCommandRepository
     submissions: InMemoryScoreSubmissionCommandRepository
     replays: InMemoryReplayCommandRepository
@@ -209,6 +217,7 @@ class InMemoryUnitOfWork:
         self.channels = InMemoryChannelCommandRepository(self._state)
         self.chat = InMemoryChatCommandRepository(self._state)
         self.scores = InMemoryScoreCommandRepository(self._state)
+        self.personal_bests = InMemoryPersonalBestCommandRepository(self._state)
         self.score_performance = InMemoryScorePerformanceCommandRepository(self._state)
         self.submissions = InMemoryScoreSubmissionCommandRepository(self._state)
         self.replays = InMemoryReplayCommandRepository(self._state)

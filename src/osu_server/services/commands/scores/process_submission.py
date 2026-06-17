@@ -14,6 +14,7 @@ from osu_server.domain.beatmaps import BeatmapResolveOptions, BeatmapResolveResu
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
+from osu_server.domain.scores.personal_best import PersonalBestDelta
 from osu_server.domain.scores.score import Playstyle, Ruleset, Score
 from osu_server.domain.scores.validator import ValidationError, validate_hit_counts
 from osu_server.domain.storage.blobs import BlobStoreResult
@@ -132,6 +133,11 @@ class PerformanceSubmitResponseUseCase(Protocol):
         query: PerformanceSubmitResponseQuery,
     ) -> PerformanceSubmitResponse: ...
 
+    async def get_submit_response(
+        self,
+        query: PerformanceSubmitResponseQuery,
+    ) -> PerformanceSubmitResponse: ...
+
 
 class SubmissionOutcome(Enum):
     """Submission result outcome."""
@@ -156,6 +162,9 @@ class SubmissionResult:
     passed: bool | None = None
     error_reason: str | None = None
     stable_pp: int | None = None
+    stable_pp_before: int | None = None
+    stable_pp_after: int | None = None
+    personal_best_delta: PersonalBestDelta | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +255,7 @@ def _submission_result_from_command(result: SubmitScoreCommandResult) -> Submiss
         accuracy=result.accuracy,
         passed=result.passed,
         error_reason=result.error_reason,
+        personal_best_delta=result.personal_best_delta,
     )
 
 
@@ -617,6 +627,11 @@ class ProcessScoreSubmissionUseCase:
                 replay_byte_size=replay_byte_size,
                 grade_discrepancy=grade_discrepancy,
                 opaque_field_hashes=opaque_field_hashes,
+                include_personal_best_delta=eligibility is not None
+                and eligibility.has_leaderboard,
+                update_personal_best=parsed.passed
+                and eligibility is not None
+                and eligibility.has_leaderboard,
             )
         )
         db_latency_ms = (time.perf_counter() - db_start) * 1000
@@ -705,6 +720,13 @@ class ProcessScoreSubmissionUseCase:
         if command_result.score_id is None or self._performance_response_query is None:
             return _submission_result_from_command(command_result)
 
+        personal_best_delta = command_result.personal_best_delta
+        if personal_best_delta is not None:
+            return await self._build_personal_best_submission_result(
+                command_result,
+                personal_best_delta,
+            )
+
         response = await self._performance_response_query.wait_for_submit_response(
             PerformanceSubmitResponseQuery(score_id=command_result.score_id)
         )
@@ -730,7 +752,67 @@ class ProcessScoreSubmissionUseCase:
             accuracy=command_result.accuracy,
             passed=command_result.passed,
             stable_pp=response.stable_pp,
+            stable_pp_after=response.stable_pp,
         )
+
+    async def _build_personal_best_submission_result(
+        self,
+        command_result: SubmitScoreCommandResult,
+        personal_best_delta: PersonalBestDelta,
+    ) -> SubmissionResult:
+        assert command_result.score_id is not None
+
+        pp_before = await self._stable_pp_without_wait(personal_best_delta.before_score_id)
+        pp_after = 0
+
+        if personal_best_delta.after_score_id == command_result.score_id:
+            assert self._performance_response_query is not None
+            response = await self._performance_response_query.wait_for_submit_response(
+                PerformanceSubmitResponseQuery(score_id=command_result.score_id)
+            )
+            if response.state is PerformanceSubmitResponseState.RETRYABLE:
+                return SubmissionResult(
+                    outcome=SubmissionOutcome.RETRYABLE,
+                    score_id=command_result.score_id,
+                    beatmap_id=command_result.beatmap_id,
+                    beatmapset_id=command_result.beatmapset_id,
+                    score=command_result.score,
+                    max_combo=command_result.max_combo,
+                    accuracy=command_result.accuracy,
+                    passed=command_result.passed,
+                    error_reason="performance_calculation_pending",
+                    stable_pp_before=pp_before,
+                    personal_best_delta=personal_best_delta,
+                )
+            pp_after = response.stable_pp or 0
+        elif personal_best_delta.after_score_id == personal_best_delta.before_score_id:
+            pp_after = pp_before
+        else:
+            pp_after = await self._stable_pp_without_wait(personal_best_delta.after_score_id)
+
+        return SubmissionResult(
+            outcome=SubmissionOutcome.COMPLETED,
+            score_id=command_result.score_id,
+            beatmap_id=command_result.beatmap_id,
+            beatmapset_id=command_result.beatmapset_id,
+            score=command_result.score,
+            max_combo=command_result.max_combo,
+            accuracy=command_result.accuracy,
+            passed=command_result.passed,
+            stable_pp=pp_after,
+            stable_pp_before=pp_before,
+            stable_pp_after=pp_after,
+            personal_best_delta=personal_best_delta,
+        )
+
+    async def _stable_pp_without_wait(self, score_id: int | None) -> int:
+        if score_id is None:
+            return 0
+        assert self._performance_response_query is not None
+        response = await self._performance_response_query.get_submit_response(
+            PerformanceSubmitResponseQuery(score_id=score_id)
+        )
+        return response.stable_pp or 0
 
     async def _request_score_submit_fallback_warmup(
         self,

@@ -25,6 +25,8 @@ from osu_server.services.commands.scores import (
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from osu_server.domain.scores.personal_best import PersonalBestDelta
+
 _LEGACY_FIELD_COUNT = 16
 _STABLE_MIN_FIELD_COUNT = 16
 _STABLE_MAX_FIELD_COUNT = 19
@@ -124,6 +126,9 @@ class StableScoreSubmitMapper:
                 accuracy=result.accuracy,
                 passed=result.passed,
                 stable_pp=result.stable_pp,
+                stable_pp_before=result.stable_pp_before,
+                stable_pp_after=result.stable_pp_after,
+                personal_best_delta=result.personal_best_delta,
             )
         if result.outcome in {SubmissionOutcome.RETRYABLE, SubmissionOutcome.ACCEPTED_PENDING}:
             return Response(b"error: yes", status_code=200)
@@ -216,13 +221,29 @@ def _format_completed_response(
     accuracy: float | None,
     passed: bool | None,
     stable_pp: int | None,
+    stable_pp_before: int | None,
+    stable_pp_after: int | None,
+    personal_best_delta: PersonalBestDelta | None,
 ) -> Response:
     beatmap_playcount = 1
     beatmap_passcount = 0 if passed is False else 1
-    score_value = score or 0
-    max_combo_value = max_combo or 0
-    accuracy_value = _format_accuracy_percent(accuracy)
-    pp = stable_pp or 0
+    achieved = "false" if passed is False else "true"
+    if personal_best_delta is None:
+        score_before = 0
+        max_combo_before = 0
+        accuracy_before = "0"
+        score_after = score or 0
+        max_combo_after = max_combo or 0
+        accuracy_after = _format_accuracy_percent(accuracy)
+    else:
+        score_before = personal_best_delta.before_score or 0
+        max_combo_before = personal_best_delta.before_max_combo or 0
+        accuracy_before = _format_accuracy_percent(personal_best_delta.before_accuracy)
+        score_after = personal_best_delta.after_score or 0
+        max_combo_after = personal_best_delta.after_max_combo or 0
+        accuracy_after = _format_accuracy_percent(personal_best_delta.after_accuracy)
+    pp_before = stable_pp_before or 0
+    pp_after = stable_pp_after if stable_pp_after is not None else stable_pp or 0
 
     lines = [
         _format_chart_line(
@@ -239,16 +260,17 @@ def _format_completed_response(
                 ("chartId", "beatmap"),
                 ("chartUrl", ""),
                 ("chartName", "Beatmap Ranking"),
+                ("achieved", achieved),
                 ("rankBefore", ""),
                 ("rankAfter", 0),
-                ("maxComboBefore", 0),
-                ("maxComboAfter", max_combo_value),
-                ("accuracyBefore", 0),
-                ("accuracyAfter", accuracy_value),
-                ("rankedScoreBefore", 0),
-                ("rankedScoreAfter", score_value),
-                ("ppBefore", 0),
-                ("ppAfter", pp),
+                ("maxComboBefore", max_combo_before),
+                ("maxComboAfter", max_combo_after),
+                ("accuracyBefore", accuracy_before),
+                ("accuracyAfter", accuracy_after),
+                ("rankedScoreBefore", score_before),
+                ("rankedScoreAfter", score_after),
+                ("ppBefore", pp_before),
+                ("ppAfter", pp_after),
                 ("onlineScoreId", score_id),
             )
         ),

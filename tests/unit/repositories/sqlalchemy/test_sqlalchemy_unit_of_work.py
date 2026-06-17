@@ -16,6 +16,7 @@ from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyBlobCommandRepository,
     SQLAlchemyChannelCommandRepository,
     SQLAlchemyChatCommandRepository,
+    SQLAlchemyPersonalBestCommandRepository,
     SQLAlchemyReplayCommandRepository,
     SQLAlchemyRoleCommandRepository,
     SQLAlchemyScoreCommandRepository,
@@ -24,6 +25,7 @@ from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyUserCommandRepository,
 )
 from osu_server.repositories.sqlalchemy.models.channel import ChannelModel
+from osu_server.repositories.sqlalchemy.models.personal_best import PersonalBestModel
 from osu_server.repositories.sqlalchemy.models.role import UserRoleModel
 from osu_server.repositories.sqlalchemy.models.user import UserModel
 from osu_server.repositories.sqlalchemy.unit_of_work import (
@@ -74,6 +76,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     closed: bool
     _next_user_id: int
     _next_channel_id: int
+    _next_personal_best_id: int
     _get_results: dict[tuple[type[object], object], object]
 
     def __init__(
@@ -89,6 +92,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         self.closed = False
         self._next_user_id = 10
         self._next_channel_id = 20
+        self._next_personal_best_id = 30
         self._get_results = get_results or {}
 
     @override
@@ -138,6 +142,11 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
             if isinstance(instance, ChannelModel) and getattr(instance, "id", None) is None:
                 instance.id = self._next_channel_id
                 self._next_channel_id += 1
+                instance.created_at = _NOW
+                instance.updated_at = _NOW
+            if isinstance(instance, PersonalBestModel) and getattr(instance, "id", None) is None:
+                instance.id = self._next_personal_best_id
+                self._next_personal_best_id += 1
                 instance.created_at = _NOW
                 instance.updated_at = _NOW
 
@@ -214,6 +223,7 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
         assert isinstance(uow.channels, SQLAlchemyChannelCommandRepository)
         assert isinstance(uow.chat, SQLAlchemyChatCommandRepository)
         assert isinstance(uow.scores, SQLAlchemyScoreCommandRepository)
+        assert isinstance(uow.personal_bests, SQLAlchemyPersonalBestCommandRepository)
         assert isinstance(uow.submissions, SQLAlchemyScoreSubmissionCommandRepository)
         assert isinstance(uow.replays, SQLAlchemyReplayCommandRepository)
         assert isinstance(uow.blobs, SQLAlchemyBlobCommandRepository)

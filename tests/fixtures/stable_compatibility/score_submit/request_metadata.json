@@ -1,0 +1,8 @@
+{
+  "content_type": "multipart/form-data",
+  "field_order": ["score", "iv", "pass", "x", "ft", "osuver", "token", "score"],
+  "score_field_count": 2,
+  "replay_present": true,
+  "opaque_metadata_fields": ["token"],
+  "secret_policy": "metadata-only"
+}

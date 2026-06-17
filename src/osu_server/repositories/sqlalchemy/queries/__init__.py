@@ -7,6 +7,9 @@ from osu_server.repositories.sqlalchemy.queries.beatmaps import SQLAlchemyBeatma
 from osu_server.repositories.sqlalchemy.queries.blobs import SQLAlchemyBlobQueryRepository
 from osu_server.repositories.sqlalchemy.queries.channels import SQLAlchemyChannelQueryRepository
 from osu_server.repositories.sqlalchemy.queries.chat import SQLAlchemyChatHistoryQueryRepository
+from osu_server.repositories.sqlalchemy.queries.personal_bests import (
+    SQLAlchemyPersonalBestQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
 from osu_server.repositories.sqlalchemy.queries.score_performance import (
     SQLAlchemyScorePerformanceQueryRepository,
@@ -20,6 +23,7 @@ __all__ = [
     "SQLAlchemyBlobQueryRepository",
     "SQLAlchemyChannelQueryRepository",
     "SQLAlchemyChatHistoryQueryRepository",
+    "SQLAlchemyPersonalBestQueryRepository",
     "SQLAlchemyRoleQueryRepository",
     "SQLAlchemyScorePerformanceQueryRepository",
     "SQLAlchemyScoreQueryRepository",

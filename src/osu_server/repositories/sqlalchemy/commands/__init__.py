@@ -11,6 +11,9 @@ from osu_server.repositories.sqlalchemy.commands.blobs import (
 )
 from osu_server.repositories.sqlalchemy.commands.channels import SQLAlchemyChannelCommandRepository
 from osu_server.repositories.sqlalchemy.commands.chat import SQLAlchemyChatCommandRepository
+from osu_server.repositories.sqlalchemy.commands.personal_bests import (
+    SQLAlchemyPersonalBestCommandRepository,
+)
 from osu_server.repositories.sqlalchemy.commands.replays import SQLAlchemyReplayCommandRepository
 from osu_server.repositories.sqlalchemy.commands.roles import SQLAlchemyRoleCommandRepository
 from osu_server.repositories.sqlalchemy.commands.score_performance import (
@@ -30,6 +33,7 @@ __all__ = [
     "SQLAlchemyBlobCommandRepository",
     "SQLAlchemyChannelCommandRepository",
     "SQLAlchemyChatCommandRepository",
+    "SQLAlchemyPersonalBestCommandRepository",
     "SQLAlchemyReplayCommandRepository",
     "SQLAlchemyRoleCommandRepository",
     "SQLAlchemyScoreCommandRepository",

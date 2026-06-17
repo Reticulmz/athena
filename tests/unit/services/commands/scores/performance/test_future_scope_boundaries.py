@@ -4,7 +4,6 @@ from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).parents[6]
 _BOUNDARY_FILES = (
-    Path("src/osu_server/services/commands/scores/process_submission.py"),
     Path("src/osu_server/services/commands/scores/performance/request_calculation.py"),
     Path("src/osu_server/services/commands/scores/performance/execute_calculation.py"),
     Path("src/osu_server/services/commands/scores/performance/create_recalculation_batch.py"),

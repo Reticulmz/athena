@@ -85,6 +85,16 @@ class PerformanceResponseQuery:
         current = await self._repository.get_current_for_score(query.score_id)
         return _response_from_current(current)
 
+    async def get_submit_response(
+        self,
+        query: PerformanceSubmitResponseQuery,
+    ) -> PerformanceSubmitResponse:
+        """Return current PP response data without waiting for pending work."""
+        current = await self._repository.get_current_for_score(query.score_id)
+        if current is not None and current.state.is_pending:
+            return _accepted_without_pp()
+        return _response_from_current(current)
+
 
 def _response_from_current(
     current: PerformanceCalculation | None,

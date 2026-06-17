@@ -30,6 +30,7 @@ from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepo
 from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
 from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
 from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
+from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
@@ -45,6 +46,9 @@ from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQuery
 from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryRepository
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
+from osu_server.repositories.memory.queries.personal_bests import (
+    InMemoryPersonalBestQueryRepository,
+)
 from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
 from osu_server.repositories.memory.queries.score_performance import (
     InMemoryScorePerformanceQueryRepository,
@@ -157,6 +161,10 @@ def make_in_memory_runtime_provider_set(
         replace_value(ChatHistoryQueryRepository, InMemoryChatHistoryQueryRepository(uow_factory)),
         replace_value(BeatmapQueryRepository, beatmap_query_repository),
         replace_value(BlobQueryRepository, InMemoryBlobQueryRepository(uow_factory)),
+        replace_value(
+            PersonalBestQueryRepository,
+            InMemoryPersonalBestQueryRepository(uow_factory),
+        ),
         replace_value(
             BeatmapScoreListingQueryRepository,
             InMemoryBeatmapScoreListingQueryRepository(beatmap_query_repository),

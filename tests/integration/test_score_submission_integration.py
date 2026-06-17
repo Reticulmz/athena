@@ -196,6 +196,16 @@ async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
     _ = await session.execute(
         text(
             f"""
+            DELETE FROM personal_bests
+            WHERE score_id IN (
+                SELECT id FROM scores WHERE {test_score_filter}
+            )
+            """
+        )
+    )
+    _ = await session.execute(
+        text(
+            f"""
             DELETE FROM replay_file_attachments
             WHERE score_id IN (
                 SELECT id FROM scores WHERE {test_score_filter}

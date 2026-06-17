@@ -9,6 +9,7 @@ from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyBlobCommandRepository,
     SQLAlchemyChannelCommandRepository,
     SQLAlchemyChatCommandRepository,
+    SQLAlchemyPersonalBestCommandRepository,
     SQLAlchemyReplayCommandRepository,
     SQLAlchemyRoleCommandRepository,
     SQLAlchemyScoreCommandRepository,
@@ -50,6 +51,7 @@ class SQLAlchemyUnitOfWork:
     channels: SQLAlchemyChannelCommandRepository
     chat: SQLAlchemyChatCommandRepository
     scores: SQLAlchemyScoreCommandRepository
+    personal_bests: SQLAlchemyPersonalBestCommandRepository
     score_performance: SQLAlchemyScorePerformanceCommandRepository
     submissions: SQLAlchemyScoreSubmissionCommandRepository
     replays: SQLAlchemyReplayCommandRepository
@@ -65,6 +67,10 @@ class SQLAlchemyUnitOfWork:
         self.channels = cast("SQLAlchemyChannelCommandRepository", cast("object", None))
         self.chat = cast("SQLAlchemyChatCommandRepository", cast("object", None))
         self.scores = cast("SQLAlchemyScoreCommandRepository", cast("object", None))
+        self.personal_bests = cast(
+            "SQLAlchemyPersonalBestCommandRepository",
+            cast("object", None),
+        )
         self.score_performance = cast(
             "SQLAlchemyScorePerformanceCommandRepository",
             cast("object", None),
@@ -108,6 +114,7 @@ class SQLAlchemyUnitOfWork:
         self.channels = SQLAlchemyChannelCommandRepository(session)
         self.chat = SQLAlchemyChatCommandRepository(session)
         self.scores = SQLAlchemyScoreCommandRepository(session)
+        self.personal_bests = SQLAlchemyPersonalBestCommandRepository(session)
         self.score_performance = SQLAlchemyScorePerformanceCommandRepository(session)
         self.submissions = SQLAlchemyScoreSubmissionCommandRepository(session)
         self.replays = SQLAlchemyReplayCommandRepository(session)

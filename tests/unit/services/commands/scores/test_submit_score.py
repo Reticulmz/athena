@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING, final
 import pytest
 
 from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.personal_best import (
+    LeaderboardCategory,
+    PersonalBestScope,
+)
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.scores import (
@@ -25,7 +29,13 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWork
 
 
-def _score(*, online_checksum: str = "online-checksum") -> Score:
+def _score(
+    *,
+    online_checksum: str = "online-checksum",
+    score: int = 500000,
+    max_combo: int = 99,
+    accuracy: float = 0.95,
+) -> Score:
     return Score(
         id=None,
         user_id=1000,
@@ -41,9 +51,9 @@ def _score(*, online_checksum: str = "online-checksum") -> Score:
         geki=0,
         katu=0,
         miss=2,
-        score=500000,
-        max_combo=99,
-        accuracy=0.95,
+        score=score,
+        max_combo=max_combo,
+        accuracy=accuracy,
         grade=Grade.A,
         passed=True,
         perfect=False,
@@ -192,3 +202,84 @@ async def test_completed_submission_commits_one_snapshot() -> None:
     assert retry.max_combo == 99
     assert retry.accuracy == 0.95
     assert retry.passed is True
+
+
+@pytest.mark.asyncio
+async def test_completed_submission_updates_personal_best_projection_and_snapshot_delta() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
+
+    first = await use_case.execute(
+        SubmitScoreCommand(
+            fingerprint="fingerprint-pb-1",
+            user_id=1000,
+            beatmap_checksum="abc123",
+            submitted_at=datetime.now(UTC),
+            outcome=SubmitScoreCommandOutcome.COMPLETED,
+            score=_score(online_checksum="online-pb-1", score=500000),
+            beatmap_id=1,
+            beatmapset_id=10,
+            include_personal_best_delta=True,
+            update_personal_best=True,
+            personal_best_category=LeaderboardCategory.GLOBAL,
+        )
+    )
+
+    assert first.personal_best_delta is not None
+    assert first.personal_best_delta.before_score is None
+    assert first.personal_best_delta.after_score == 500000
+    assert first.personal_best_delta.updated is True
+
+    lower = await use_case.execute(
+        SubmitScoreCommand(
+            fingerprint="fingerprint-pb-2",
+            user_id=1000,
+            beatmap_checksum="abc123",
+            submitted_at=datetime.now(UTC),
+            outcome=SubmitScoreCommandOutcome.COMPLETED,
+            score=_score(
+                online_checksum="online-pb-2",
+                score=400000,
+                max_combo=80,
+                accuracy=0.9,
+            ),
+            beatmap_id=1,
+            beatmapset_id=10,
+            include_personal_best_delta=True,
+            update_personal_best=True,
+            personal_best_category=LeaderboardCategory.GLOBAL,
+        )
+    )
+
+    assert lower.personal_best_delta is not None
+    assert lower.personal_best_delta.before_score == 500000
+    assert lower.personal_best_delta.after_score == 500000
+    assert lower.personal_best_delta.updated is False
+
+    async with factory() as uow:
+        personal_best = await uow.personal_bests.get_by_scope(
+            PersonalBestScope(
+                user_id=1000,
+                beatmap_id=1,
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                category=LeaderboardCategory.GLOBAL,
+            )
+        )
+        lower_submission = await uow.submissions.get_by_fingerprint("fingerprint-pb-2")
+
+    assert personal_best is not None
+    assert personal_best.score_id == first.score_id
+    assert lower_submission is not None
+    assert lower_submission.result_snapshot is not None
+    assert lower_submission.result_snapshot["personal_best_delta"] == {
+        "before_score_id": first.score_id,
+        "before_score": 500000,
+        "before_max_combo": 99,
+        "before_accuracy": 0.95,
+        "after_score_id": first.score_id,
+        "after_score": 500000,
+        "after_max_combo": 99,
+        "after_accuracy": 0.95,
+        "updated": False,
+    }

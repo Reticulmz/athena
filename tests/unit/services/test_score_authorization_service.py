@@ -129,6 +129,24 @@ class TestScoreAuthorizationService:
         assert result.payload_identity_match
 
     @pytest.mark.asyncio
+    async def test_repository_backed_authorization_trims_payload_username(self) -> None:
+        """Stable score payload usernames may contain trailing padding spaces."""
+        service, password_md5, user_id = await _make_repository_backed_service()
+
+        result = await service.authorize_submission(
+            password_md5=password_md5,
+            payload_username="PlayerOne ",
+            payload_user_id=0,
+        )
+
+        assert result.authorized
+        assert result.user_id == user_id
+        assert result.username == "PlayerOne"
+        assert result.password_valid
+        assert result.session_valid
+        assert result.payload_identity_match
+
+    @pytest.mark.asyncio
     async def test_invalid_password_rejection(self, service: ScoreAuthorizationService) -> None:
         """Invalid password should reject."""
         result = await service.authorize_submission(

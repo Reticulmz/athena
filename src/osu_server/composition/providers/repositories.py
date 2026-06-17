@@ -15,6 +15,7 @@ from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepo
 from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
 from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
 from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
+from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
@@ -31,6 +32,9 @@ from osu_server.repositories.sqlalchemy.queries.channels import SQLAlchemyChanne
 from osu_server.repositories.sqlalchemy.queries.chat import (
     SQLAlchemyChatHistoryQueryRepository,
 )
+from osu_server.repositories.sqlalchemy.queries.personal_bests import (
+    SQLAlchemyPersonalBestQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
 from osu_server.repositories.sqlalchemy.queries.score_performance import (
     SQLAlchemyScorePerformanceQueryRepository,
@@ -46,6 +50,7 @@ _DISHKA_RUNTIME_HINTS = (
     BlobQueryRepository,
     ChannelQueryRepository,
     ChatHistoryQueryRepository,
+    PersonalBestQueryRepository,
     RoleQueryRepository,
     ScorePerformanceQueryRepository,
     ScoreQueryRepository,
@@ -123,6 +128,13 @@ class RepositoryProviderSet(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> ScoreQueryRepository:
         return SQLAlchemyScoreQueryRepository(session_factory)
+
+    @provide
+    def personal_best_query_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> PersonalBestQueryRepository:
+        return SQLAlchemyPersonalBestQueryRepository(session_factory)
 
     @provide
     def score_performance_query_repository(

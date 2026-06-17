@@ -15,6 +15,13 @@ from osu_server.domain.scores.performance import (
     PerformanceRecalculationWorkItem,
     PerformanceRecalculationWorkItemState,
 )
+from osu_server.domain.scores.personal_best import (
+    LeaderboardCategory,
+    PersonalBest,
+    PersonalBestDelta,
+    PersonalBestScope,
+    score_beats_personal_best,
+)
 from osu_server.domain.scores.replay import Replay
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.domain.scores.submission import ScoreSubmission
@@ -29,6 +36,7 @@ __all__ = [
     "FormulaProfile",
     "FormulaProfilePolicy",
     "Grade",
+    "LeaderboardCategory",
     "Mod",
     "ModCombination",
     "ParseError",
@@ -41,6 +49,9 @@ __all__ = [
     "PerformanceRecalculationBatchStatus",
     "PerformanceRecalculationWorkItem",
     "PerformanceRecalculationWorkItemState",
+    "PersonalBest",
+    "PersonalBestDelta",
+    "PersonalBestScope",
     "Playstyle",
     "Replay",
     "Ruleset",
@@ -48,5 +59,6 @@ __all__ = [
     "ScoreSubmission",
     "ValidationError",
     "ValidationResult",
+    "score_beats_personal_best",
     "validate_hit_counts",
 ]

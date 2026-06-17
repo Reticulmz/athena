@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from osu_server.domain.scores.personal_best import (
+    LeaderboardCategory,
+    PersonalBestDelta,
+    PersonalBestScope,
+)
 from osu_server.domain.scores.replay import Replay
 from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.repositories.interfaces.commands.personal_bests import UpsertPersonalBest
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from datetime import datetime
 
     from osu_server.domain.scores.score import Score
@@ -49,6 +55,9 @@ class SubmitScoreCommand:
     replay_byte_size: int | None = None
     grade_discrepancy: Mapping[str, str] | None = None
     opaque_field_hashes: Mapping[str, str] | None = None
+    include_personal_best_delta: bool = False
+    update_personal_best: bool = False
+    personal_best_category: LeaderboardCategory = LeaderboardCategory.GLOBAL
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +75,7 @@ class SubmitScoreCommandResult:
     replay_attachment_id: int | None = None
     error_reason: str | None = None
     existing_submission: bool = False
+    personal_best_delta: PersonalBestDelta | None = None
 
 
 class SubmitScoreUseCase:
@@ -151,6 +161,13 @@ async def _record_completed(
         )
         return await _record_terminal_reject(uow, submission, duplicate_command)
 
+    personal_best_delta_before = None
+    if command.include_personal_best_delta:
+        personal_best_delta_before = await _current_personal_best_score(
+            uow,
+            _personal_best_scope(command, score),
+        )
+
     created_score = await uow.scores.create(score)
     assert created_score.id is not None, "Score ID must be set after creation"
 
@@ -168,7 +185,14 @@ async def _record_completed(
             )
         )
 
-    completion_snapshot = _completion_snapshot(command, created_score)
+    personal_best_delta = await _personal_best_delta(
+        uow,
+        command=command,
+        created_score=created_score,
+        before_score=personal_best_delta_before,
+    )
+
+    completion_snapshot = _completion_snapshot(command, created_score, personal_best_delta)
     if created_replay is not None:
         assert created_replay.id is not None, "Replay ID must be set after creation"
         completion_snapshot["replay_attachment_id"] = created_replay.id
@@ -194,6 +218,7 @@ async def _record_completed(
         accuracy=created_score.accuracy,
         passed=created_score.passed,
         replay_attachment_id=created_replay.id if created_replay is not None else None,
+        personal_best_delta=personal_best_delta,
     )
 
 
@@ -250,6 +275,7 @@ def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScore
         max_combo = _snapshot_int(snapshot.get("max_combo"))
         accuracy = _snapshot_float(snapshot.get("accuracy"))
         passed = snapshot.get("passed")
+        personal_best_delta = _snapshot_personal_best_delta(snapshot.get("personal_best_delta"))
         if score_id is not None:
             return SubmitScoreCommandResult(
                 outcome=SubmitScoreCommandOutcome.COMPLETED,
@@ -260,6 +286,7 @@ def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScore
                 max_combo=max_combo,
                 accuracy=accuracy,
                 passed=passed if isinstance(passed, bool) else None,
+                personal_best_delta=personal_best_delta,
                 existing_submission=True,
             )
 
@@ -295,6 +322,7 @@ def _snapshot_float(value: object) -> float | None:
 def _completion_snapshot(
     command: SubmitScoreCommand,
     created_score: Score,
+    personal_best_delta: PersonalBestDelta | None,
 ) -> dict[str, object]:
     beatmap_id = command.beatmap_id if command.beatmap_id is not None else created_score.beatmap_id
     beatmapset_id = command.beatmapset_id if command.beatmapset_id is not None else 0
@@ -312,7 +340,114 @@ def _completion_snapshot(
         completion_snapshot["grade_discrepancy"] = dict(command.grade_discrepancy)
     if command.opaque_field_hashes:
         completion_snapshot["opaque_fields"] = dict(command.opaque_field_hashes)
+    if personal_best_delta is not None:
+        completion_snapshot["personal_best_delta"] = _personal_best_delta_snapshot(
+            personal_best_delta
+        )
     return completion_snapshot
+
+
+async def _personal_best_delta(
+    uow: UnitOfWork,
+    *,
+    command: SubmitScoreCommand,
+    created_score: Score,
+    before_score: Score | None,
+) -> PersonalBestDelta | None:
+    if not command.include_personal_best_delta:
+        return None
+
+    scope = _personal_best_scope(command, created_score)
+    after_score = before_score
+    updated = False
+
+    if command.update_personal_best:
+        assert created_score.id is not None
+        personal_best = await uow.personal_bests.upsert_if_better(
+            UpsertPersonalBest(
+                scope=scope,
+                score_id=created_score.id,
+                ranking_value=created_score.score,
+            )
+        )
+        after_score = await uow.scores.get_by_id(personal_best.score_id)
+        updated = after_score is not None and after_score.id == created_score.id
+
+    return _personal_best_delta_from_scores(
+        before_score=before_score,
+        after_score=after_score,
+        updated=updated,
+    )
+
+
+async def _current_personal_best_score(
+    uow: UnitOfWork,
+    scope: PersonalBestScope,
+) -> Score | None:
+    personal_best = await uow.personal_bests.get_by_scope(scope)
+    if personal_best is None:
+        return None
+    return await uow.scores.get_by_id(personal_best.score_id)
+
+
+def _personal_best_scope(command: SubmitScoreCommand, score: Score) -> PersonalBestScope:
+    return PersonalBestScope(
+        user_id=command.user_id,
+        beatmap_id=score.beatmap_id,
+        ruleset=score.ruleset,
+        playstyle=score.playstyle,
+        category=command.personal_best_category,
+    )
+
+
+def _personal_best_delta_from_scores(
+    *,
+    before_score: Score | None,
+    after_score: Score | None,
+    updated: bool,
+) -> PersonalBestDelta:
+    return PersonalBestDelta(
+        before_score_id=before_score.id if before_score is not None else None,
+        before_score=before_score.score if before_score is not None else None,
+        before_max_combo=before_score.max_combo if before_score is not None else None,
+        before_accuracy=before_score.accuracy if before_score is not None else None,
+        after_score_id=after_score.id if after_score is not None else None,
+        after_score=after_score.score if after_score is not None else None,
+        after_max_combo=after_score.max_combo if after_score is not None else None,
+        after_accuracy=after_score.accuracy if after_score is not None else None,
+        updated=updated,
+    )
+
+
+def _personal_best_delta_snapshot(delta: PersonalBestDelta) -> dict[str, object]:
+    return {
+        "before_score_id": delta.before_score_id,
+        "before_score": delta.before_score,
+        "before_max_combo": delta.before_max_combo,
+        "before_accuracy": delta.before_accuracy,
+        "after_score_id": delta.after_score_id,
+        "after_score": delta.after_score,
+        "after_max_combo": delta.after_max_combo,
+        "after_accuracy": delta.after_accuracy,
+        "updated": delta.updated,
+    }
+
+
+def _snapshot_personal_best_delta(value: object) -> PersonalBestDelta | None:
+    if not isinstance(value, Mapping):
+        return None
+    snapshot = cast("Mapping[str, object]", value)
+    return PersonalBestDelta(
+        before_score_id=_snapshot_int(snapshot.get("before_score_id")),
+        before_score=_snapshot_int(snapshot.get("before_score")),
+        before_max_combo=_snapshot_int(snapshot.get("before_max_combo")),
+        before_accuracy=_snapshot_float(snapshot.get("before_accuracy")),
+        after_score_id=_snapshot_int(snapshot.get("after_score_id")),
+        after_score=_snapshot_int(snapshot.get("after_score")),
+        after_max_combo=_snapshot_int(snapshot.get("after_max_combo")),
+        after_accuracy=_snapshot_float(snapshot.get("after_accuracy")),
+        updated=snapshot.get("updated") is True,
+    )
 
 
 def _error_snapshot(

@@ -104,6 +104,14 @@ class _PerformanceResponses:
         self.queries.append(query)
         return self._responses[response_index]
 
+    async def get_submit_response(
+        self,
+        query: PerformanceSubmitResponseQuery,
+    ) -> PerformanceSubmitResponse:
+        response_index = min(len(self.queries), len(self._responses) - 1)
+        self.queries.append(query)
+        return self._responses[response_index]
+
 
 @final
 class _CalculatorIdentity:

@@ -8,6 +8,9 @@ from osu_server.repositories.memory.commands.beatmaps import (
 from osu_server.repositories.memory.commands.blobs import InMemoryBlobCommandRepository
 from osu_server.repositories.memory.commands.channels import InMemoryChannelCommandRepository
 from osu_server.repositories.memory.commands.chat import InMemoryChatCommandRepository
+from osu_server.repositories.memory.commands.personal_bests import (
+    InMemoryPersonalBestCommandRepository,
+)
 from osu_server.repositories.memory.commands.replays import InMemoryReplayCommandRepository
 from osu_server.repositories.memory.commands.roles import InMemoryRoleCommandRepository
 from osu_server.repositories.memory.commands.score_performance import (
@@ -28,6 +31,7 @@ __all__ = [
     "InMemoryChannelCommandRepository",
     "InMemoryChatCommandRepository",
     "InMemoryCommandRepositoryState",
+    "InMemoryPersonalBestCommandRepository",
     "InMemoryReplayCommandRepository",
     "InMemoryRoleCommandRepository",
     "InMemoryScoreCommandRepository",

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from osu_server.domain.identity.roles import Role
     from osu_server.domain.identity.users import User
     from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculation
+    from osu_server.domain.scores.personal_best import PersonalBest
     from osu_server.domain.scores.replay import Replay
     from osu_server.domain.scores.score import Score
     from osu_server.domain.scores.submission import ScoreSubmission
@@ -119,6 +120,12 @@ class InMemoryCommandRepositoryState:
     scores_by_id: dict[int, Score] = field(default_factory=dict)
     score_id_by_online_checksum: dict[str, int] = field(default_factory=dict)
     next_score_id: int = 1
+
+    personal_bests_by_id: dict[int, PersonalBest] = field(default_factory=dict)
+    personal_best_id_by_scope: dict[tuple[int, int, int, int, str], int] = field(
+        default_factory=dict
+    )
+    next_personal_best_id: int = 1
 
     submissions_by_id: dict[int, ScoreSubmission] = field(default_factory=dict)
     submission_id_by_fingerprint: dict[str, int] = field(default_factory=dict)

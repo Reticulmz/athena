@@ -5,7 +5,10 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
+    from osu_server.domain.scores.score import Playstyle, Ruleset
 
 
 class GetscoresParseError(Enum):
@@ -60,9 +63,35 @@ class GetscoresResolveReason(Enum):
 
 
 @dataclass(slots=True, frozen=True)
+class GetscoresPersonalBest:
+    """Display-ready score data for the stable personal-best section."""
+
+    score_id: int
+    user_id: int
+    username: str
+    beatmap_id: int
+    ruleset: Ruleset
+    playstyle: Playstyle
+    score: int
+    max_combo: int
+    n50: int
+    n100: int
+    n300: int
+    miss: int
+    katu: int
+    geki: int
+    perfect: bool
+    mods: int
+    rank: int
+    submitted_at: datetime
+    has_replay: bool
+
+
+@dataclass(slots=True, frozen=True)
 class GetscoresResolvedHeader:
     beatmap: Beatmap
     beatmapset: BeatmapSet
+    personal_best: GetscoresPersonalBest | None = None
 
 
 @dataclass(slots=True, frozen=True)

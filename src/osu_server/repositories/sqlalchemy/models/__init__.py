@@ -16,6 +16,7 @@ from osu_server.repositories.sqlalchemy.models.channel import (
     ChannelRoleOverrideModel,
     PrivateMessageModel,
 )
+from osu_server.repositories.sqlalchemy.models.personal_best import PersonalBestModel
 from osu_server.repositories.sqlalchemy.models.role import RoleModel, UserRoleModel
 from osu_server.repositories.sqlalchemy.models.score import (
     ReplayModel,
@@ -44,6 +45,7 @@ __all__ = [
     "DisallowedUsernameModel",
     "PerformanceRecalculationBatchModel",
     "PerformanceRecalculationWorkItemModel",
+    "PersonalBestModel",
     "PrivateMessageModel",
     "ReplayModel",
     "RoleModel",
