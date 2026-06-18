@@ -107,7 +107,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 4.8, 7.1, 7.5_
   - _Depends: 2.4_
 
-- [ ] 4.2 Viewer-dependent scopes と Personal Best resolution を実装する
+- [x] 4.2 Viewer-dependent scopes と Personal Best resolution を実装する
   - Global/Country/Friends PB は all-mods scope、Selected Mods PB は selected mod filter scope で解決する
   - authenticated visible viewer の PB は top rows と別枠で返し、top 50 内なら重複表示を許可する
   - non-visible viewer は PB だけ suppress し、public rows は返せるようにする

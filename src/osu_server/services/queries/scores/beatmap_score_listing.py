@@ -7,7 +7,8 @@ or background fetch workflows.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Protocol
 
 from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.compatibility.stable.getscores import (
@@ -18,6 +19,7 @@ from osu_server.domain.compatibility.stable.getscores import (
     GetscoresResolveOutcome,
     GetscoresResolveReason,
 )
+from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
 from osu_server.domain.scores.leaderboards import (
     LeaderboardModFilter,
     filter_from_mod_combination,
@@ -29,6 +31,7 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import Lead
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap
+    from osu_server.domain.identity.authorization import Privileges
     from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
         BeatmapLeaderboardQueryRepository,
         BeatmapLeaderboardRow,
@@ -39,6 +42,12 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.queries.personal_bests import (
         PersonalBestQueryRepository,
     )
+    from osu_server.repositories.interfaces.queries.users import UserQueryRepository
+    from osu_server.services.queries.identity import GetFriendEligibleUserIdsQueryUseCase
+
+
+class _PermissionReader(Protocol):
+    async def compute_permissions(self, user_id: int) -> Privileges: ...
 
 
 _DISPLAYABLE_STATUSES = {
@@ -63,22 +72,38 @@ _FRIENDS_LEADERBOARD_TYPE = 3
 _COUNTRY_LEADERBOARD_TYPE = 4
 
 
+@dataclass(slots=True, frozen=True)
+class _ViewerLeaderboardContext:
+    country: str
+    leaderboard_visible: bool
+
+
 class BeatmapScoreListingQuery:
     """Score listing beatmap resolution query use-case (read-only)."""
 
     _repository: BeatmapScoreListingQueryRepository
     _personal_bests: PersonalBestQueryRepository
     _leaderboards: BeatmapLeaderboardQueryRepository | None
+    _user_repository: UserQueryRepository | None
+    _permission_service: _PermissionReader | None
+    _friend_eligible_user_ids_query: GetFriendEligibleUserIdsQueryUseCase | None
 
     def __init__(
         self,
         repository: BeatmapScoreListingQueryRepository,
         personal_bests: PersonalBestQueryRepository,
         leaderboards: BeatmapLeaderboardQueryRepository | None = None,
+        *,
+        user_repository: UserQueryRepository | None = None,
+        permission_service: _PermissionReader | None = None,
+        friend_eligible_user_ids_query: GetFriendEligibleUserIdsQueryUseCase | None = None,
     ) -> None:
         self._repository = repository
         self._personal_bests = personal_bests
         self._leaderboards = leaderboards
+        self._user_repository = user_repository
+        self._permission_service = permission_service
+        self._friend_eligible_user_ids_query = friend_eligible_user_ids_query
 
     async def resolve(
         self,
@@ -284,11 +309,20 @@ class BeatmapScoreListingQuery:
         beatmap: Beatmap,
         user_id: int | None,
     ) -> tuple[tuple[GetscoresPersonalBest, ...], GetscoresPersonalBest | None]:
-        scope = _leaderboard_scope_from_request(
+        base_scope = _leaderboard_scope_from_request(
             request=request,
             beatmap=beatmap,
         )
-        if scope is None or self._leaderboards is None:
+        if base_scope is None or self._leaderboards is None:
+            return (), None
+
+        viewer_context = await self._resolve_viewer_context(user_id)
+        scope = await self._resolve_viewer_dependent_scope(
+            scope=base_scope,
+            user_id=user_id,
+            viewer_context=viewer_context,
+        )
+        if scope is None:
             return (), None
 
         rows = await self._leaderboards.list_top_rows(
@@ -296,7 +330,11 @@ class BeatmapScoreListingQuery:
             limit=_LEADERBOARD_ROW_LIMIT,
         )
         personal_best = None
-        if user_id is not None:
+        if (
+            user_id is not None
+            and viewer_context is not None
+            and viewer_context.leaderboard_visible
+        ):
             personal_best_row = await self._leaderboards.get_personal_best(
                 scope,
                 viewer_user_id=user_id,
@@ -305,6 +343,56 @@ class BeatmapScoreListingQuery:
                 personal_best = _leaderboard_row_to_getscores_row(personal_best_row)
 
         return tuple(_leaderboard_row_to_getscores_row(row) for row in rows), personal_best
+
+    async def _resolve_viewer_context(
+        self,
+        user_id: int | None,
+    ) -> _ViewerLeaderboardContext | None:
+        if user_id is None or self._user_repository is None:
+            return None
+
+        user = await self._user_repository.get_by_id(user_id)
+        if user is None:
+            return None
+
+        leaderboard_visible = False
+        if self._permission_service is not None:
+            privileges = await self._permission_service.compute_permissions(user_id)
+            leaderboard_visible = is_leaderboard_visible_user(privileges)
+
+        return _ViewerLeaderboardContext(
+            country=user.country,
+            leaderboard_visible=leaderboard_visible,
+        )
+
+    async def _resolve_viewer_dependent_scope(
+        self,
+        *,
+        scope: LeaderboardReadScope,
+        user_id: int | None,
+        viewer_context: _ViewerLeaderboardContext | None,
+    ) -> LeaderboardReadScope | None:
+        if scope.category is LeaderboardCategory.COUNTRY:
+            if viewer_context is None:
+                return None
+            country = _country_scope_filter(viewer_context.country)
+            if country is None:
+                return None
+            return replace(scope, country=country)
+
+        if scope.category is LeaderboardCategory.FRIENDS:
+            if (
+                user_id is None
+                or viewer_context is None
+                or self._friend_eligible_user_ids_query is None
+            ):
+                return None
+            eligible_user_ids = await self._friend_eligible_user_ids_query.execute(
+                viewer_user_id=user_id,
+            )
+            return replace(scope, eligible_user_ids=eligible_user_ids)
+
+        return scope
 
 
 def _unavailable(reason: GetscoresResolveReason) -> GetscoresResolveOutcome:
@@ -357,9 +445,6 @@ def _leaderboard_scope_from_request(
             return None
         mod_filter_key = filter_result.key
 
-    if category in {LeaderboardCategory.COUNTRY, LeaderboardCategory.FRIENDS}:
-        return None
-
     return LeaderboardReadScope(
         beatmap_id=beatmap.id,
         beatmap_checksum=beatmap.checksum_md5,
@@ -382,6 +467,13 @@ def _leaderboard_category_from_request(
     if request.leaderboard_type == _COUNTRY_LEADERBOARD_TYPE:
         return LeaderboardCategory.COUNTRY
     return None
+
+
+def _country_scope_filter(country: str) -> str | None:
+    normalized = country.strip().upper()
+    if normalized in {"", "XX"}:
+        return None
+    return normalized
 
 
 def _is_vanilla_request(request: GetscoresRequest) -> bool:

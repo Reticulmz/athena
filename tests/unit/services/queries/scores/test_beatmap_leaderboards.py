@@ -23,6 +23,8 @@ from osu_server.domain.compatibility.stable.getscores import (
     GetscoresRequest,
     GetscoresResolveReason,
 )
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.users import User
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
@@ -108,6 +110,57 @@ class BeatmapLeaderboardQueryRepositoryStub:
         return self.personal_best
 
 
+class ViewerUserQueryRepositoryStub:
+    """Typed user repository test double for viewer context resolution."""
+
+    def __init__(self) -> None:
+        self.users_by_id: dict[int, User] = {}
+        self.calls: list[int] = []
+        self.safe_username_calls: list[str] = []
+        self.email_calls: list[str] = []
+        self.username_disallowed_calls: list[str] = []
+
+    async def get_by_id(self, user_id: int) -> User | None:
+        self.calls.append(user_id)
+        return self.users_by_id.get(user_id)
+
+    async def get_by_safe_username(self, safe_username: str) -> User | None:
+        self.safe_username_calls.append(safe_username)
+        return None
+
+    async def get_by_email(self, email: str) -> User | None:
+        self.email_calls.append(email)
+        return None
+
+    async def is_username_disallowed(self, safe_username: str) -> bool:
+        self.username_disallowed_calls.append(safe_username)
+        return False
+
+
+class ViewerPermissionServiceStub:
+    """Typed permission service test double for viewer visibility checks."""
+
+    def __init__(self) -> None:
+        self.permissions_by_user_id: dict[int, Privileges] = {}
+        self.calls: list[int] = []
+
+    async def compute_permissions(self, user_id: int) -> Privileges:
+        self.calls.append(user_id)
+        return self.permissions_by_user_id.get(user_id, Privileges.NONE)
+
+
+class FriendEligibleUserIdsQueryStub:
+    """Typed friend eligibility query test double for Friends leaderboard scopes."""
+
+    def __init__(self) -> None:
+        self.result_by_viewer_user_id: dict[int, tuple[int, ...]] = {}
+        self.calls: list[int] = []
+
+    async def execute(self, *, viewer_user_id: int) -> tuple[int, ...]:
+        self.calls.append(viewer_user_id)
+        return self.result_by_viewer_user_id.get(viewer_user_id, (viewer_user_id,))
+
+
 @pytest.fixture
 def getscores_repo() -> BeatmapScoreListingQueryRepositoryStub:
     return BeatmapScoreListingQueryRepositoryStub()
@@ -121,6 +174,21 @@ def personal_best_repo() -> EmptyPersonalBestQueryRepositoryStub:
 @pytest.fixture
 def leaderboard_repo() -> BeatmapLeaderboardQueryRepositoryStub:
     return BeatmapLeaderboardQueryRepositoryStub()
+
+
+@pytest.fixture
+def user_repo() -> ViewerUserQueryRepositoryStub:
+    return ViewerUserQueryRepositoryStub()
+
+
+@pytest.fixture
+def permission_service() -> ViewerPermissionServiceStub:
+    return ViewerPermissionServiceStub()
+
+
+@pytest.fixture
+def friend_query() -> FriendEligibleUserIdsQueryStub:
+    return FriendEligibleUserIdsQueryStub()
 
 
 @pytest.fixture
@@ -176,6 +244,8 @@ class TestBeatmapLeaderboardGetscoresQuery:
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
         personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        user_repo: ViewerUserQueryRepositoryStub,
+        permission_service: ViewerPermissionServiceStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
@@ -185,8 +255,20 @@ class TestBeatmapLeaderboardGetscoresQuery:
         personal_best = _leaderboard_row(score_id=11, user_id=9, rank=4)
         leaderboard_repo.rows = (row,)
         leaderboard_repo.personal_best = personal_best
+        _add_viewer(
+            user_repo,
+            permission_service,
+            user_id=9,
+            permissions=Privileges.NORMAL | Privileges.UNRESTRICTED,
+        )
 
-        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+        result = await _query(
+            getscores_repo,
+            personal_best_repo,
+            leaderboard_repo,
+            user_repo=user_repo,
+            permission_service=permission_service,
+        ).resolve(
             _request(leaderboard_type=1),
             user_id=9,
         )
@@ -210,6 +292,341 @@ class TestBeatmapLeaderboardGetscoresQuery:
         ]
         assert leaderboard_repo.personal_best_calls == [(leaderboard_repo.top_row_calls[0][0], 9)]
         assert personal_best_repo.calls == []
+
+    async def test_personal_best_outside_top_50_is_returned_separately(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        user_repo: ViewerUserQueryRepositoryStub,
+        permission_service: ViewerPermissionServiceStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+        rows = tuple(
+            _leaderboard_row(score_id=score_id, user_id=score_id, rank=rank)
+            for rank, score_id in enumerate(range(100, 150), start=1)
+        )
+        personal_best = _leaderboard_row(score_id=200, user_id=9, rank=51)
+        leaderboard_repo.rows = rows
+        leaderboard_repo.personal_best = personal_best
+        _add_viewer(
+            user_repo,
+            permission_service,
+            user_id=9,
+            permissions=Privileges.NORMAL | Privileges.UNRESTRICTED,
+        )
+
+        result = await _query(
+            getscores_repo,
+            personal_best_repo,
+            leaderboard_repo,
+            user_repo=user_repo,
+            permission_service=permission_service,
+        ).resolve(
+            _request(leaderboard_type=1),
+            user_id=9,
+        )
+
+        assert result.header is not None
+        assert len(result.header.score_rows) == 50
+        assert all(row.user_id != 9 for row in result.header.score_rows)
+        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
+        personal_best_row = result.header.personal_best
+        assert personal_best_row is not None
+        assert personal_best_row.rank == 51
+
+    async def test_personal_best_duplicate_in_rows_is_returned_twice(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        user_repo: ViewerUserQueryRepositoryStub,
+        permission_service: ViewerPermissionServiceStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+        personal_best = _leaderboard_row(score_id=10, user_id=9, rank=1)
+        leaderboard_repo.rows = (personal_best,)
+        leaderboard_repo.personal_best = personal_best
+        _add_viewer(
+            user_repo,
+            permission_service,
+            user_id=9,
+            permissions=Privileges.NORMAL | Privileges.UNRESTRICTED,
+        )
+
+        result = await _query(
+            getscores_repo,
+            personal_best_repo,
+            leaderboard_repo,
+            user_repo=user_repo,
+            permission_service=permission_service,
+        ).resolve(
+            _request(leaderboard_type=1),
+            user_id=9,
+        )
+
+        assert result.header is not None
+        expected_row = _score_row_from_leaderboard(personal_best)
+        assert result.header.score_rows == (expected_row,)
+        assert result.header.personal_best == expected_row
+
+    async def test_selected_mods_personal_best_uses_selected_mod_scope(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        user_repo: ViewerUserQueryRepositoryStub,
+        permission_service: ViewerPermissionServiceStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+        personal_best = _leaderboard_row(score_id=10, user_id=9, rank=1)
+        leaderboard_repo.personal_best = personal_best
+        _add_viewer(
+            user_repo,
+            permission_service,
+            user_id=9,
+            permissions=Privileges.NORMAL | Privileges.UNRESTRICTED,
+        )
+
+        result = await _query(
+            getscores_repo,
+            personal_best_repo,
+            leaderboard_repo,
+            user_repo=user_repo,
+            permission_service=permission_service,
+        ).resolve(
+            _request(leaderboard_type=2, mods=int(Mod.DOUBLE_TIME)),
+            user_id=9,
+        )
+
+        assert result.header is not None
+        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
+        assert leaderboard_repo.personal_best_calls == [
+            (
+                LeaderboardReadScope(
+                    beatmap_id=sample_beatmap.id,
+                    beatmap_checksum=sample_beatmap.checksum_md5,
+                    ruleset=Ruleset.OSU,
+                    playstyle=Playstyle.VANILLA,
+                    category=LeaderboardCategory.SELECTED_MODS,
+                    mod_filter_key=int(Mod.DOUBLE_TIME),
+                ),
+                9,
+            )
+        ]
+
+    async def test_country_scope_uses_viewer_country_and_all_mods(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        user_repo: ViewerUserQueryRepositoryStub,
+        permission_service: ViewerPermissionServiceStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+        personal_best = _leaderboard_row(score_id=10, user_id=9, rank=1)
+        leaderboard_repo.personal_best = personal_best
+        _add_viewer(
+            user_repo,
+            permission_service,
+            user_id=9,
+            country="JP",
+            permissions=Privileges.NORMAL | Privileges.UNRESTRICTED,
+        )
+
+        result = await _query(
+            getscores_repo,
+            personal_best_repo,
+            leaderboard_repo,
+            user_repo=user_repo,
+            permission_service=permission_service,
+        ).resolve(
+            _request(leaderboard_type=4, mods=int(Mod.DOUBLE_TIME)),
+            user_id=9,
+        )
+
+        expected_scope = LeaderboardReadScope(
+            beatmap_id=sample_beatmap.id,
+            beatmap_checksum=sample_beatmap.checksum_md5,
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+            category=LeaderboardCategory.COUNTRY,
+            mod_filter_key=None,
+            country="JP",
+        )
+        assert result.header is not None
+        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
+        assert leaderboard_repo.top_row_calls == [(expected_scope, 50)]
+        assert leaderboard_repo.personal_best_calls == [(expected_scope, 9)]
+
+    async def test_country_scope_with_unknown_or_missing_country_returns_header_only(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        user_repo: ViewerUserQueryRepositoryStub,
+        permission_service: ViewerPermissionServiceStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+        _add_viewer(
+            user_repo,
+            permission_service,
+            user_id=9,
+            country="XX",
+            permissions=Privileges.NORMAL | Privileges.UNRESTRICTED,
+        )
+
+        result = await _query(
+            getscores_repo,
+            personal_best_repo,
+            leaderboard_repo,
+            user_repo=user_repo,
+            permission_service=permission_service,
+        ).resolve(
+            _request(leaderboard_type=4),
+            user_id=9,
+        )
+
+        assert result.header is not None
+        assert result.header.score_rows == ()
+        assert result.header.personal_best is None
+        assert leaderboard_repo.top_row_calls == []
+        assert leaderboard_repo.personal_best_calls == []
+
+        user_repo.users_by_id.clear()
+
+        result = await _query(
+            getscores_repo,
+            personal_best_repo,
+            leaderboard_repo,
+            user_repo=user_repo,
+            permission_service=permission_service,
+        ).resolve(
+            _request(leaderboard_type=4),
+            user_id=9,
+        )
+
+        assert result.header is not None
+        assert result.header.score_rows == ()
+        assert result.header.personal_best is None
+        assert leaderboard_repo.top_row_calls == []
+        assert leaderboard_repo.personal_best_calls == []
+
+    async def test_friends_scope_uses_friend_eligible_ids_and_all_mods(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        user_repo: ViewerUserQueryRepositoryStub,
+        permission_service: ViewerPermissionServiceStub,
+        friend_query: FriendEligibleUserIdsQueryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+        friend_query.result_by_viewer_user_id[9] = (9, 20)
+        personal_best = _leaderboard_row(score_id=10, user_id=9, rank=1)
+        leaderboard_repo.personal_best = personal_best
+        _add_viewer(
+            user_repo,
+            permission_service,
+            user_id=9,
+            permissions=Privileges.NORMAL | Privileges.UNRESTRICTED,
+        )
+
+        result = await _query(
+            getscores_repo,
+            personal_best_repo,
+            leaderboard_repo,
+            user_repo=user_repo,
+            permission_service=permission_service,
+            friend_query=friend_query,
+        ).resolve(
+            _request(leaderboard_type=3, mods=int(Mod.DOUBLE_TIME)),
+            user_id=9,
+        )
+
+        expected_scope = LeaderboardReadScope(
+            beatmap_id=sample_beatmap.id,
+            beatmap_checksum=sample_beatmap.checksum_md5,
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+            category=LeaderboardCategory.FRIENDS,
+            mod_filter_key=None,
+            eligible_user_ids=(9, 20),
+        )
+        assert result.header is not None
+        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
+        assert friend_query.calls == [9]
+        assert leaderboard_repo.top_row_calls == [(expected_scope, 50)]
+        assert leaderboard_repo.personal_best_calls == [(expected_scope, 9)]
+
+    async def test_non_visible_viewer_suppresses_pb_but_returns_public_rows(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        user_repo: ViewerUserQueryRepositoryStub,
+        permission_service: ViewerPermissionServiceStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+        row = _leaderboard_row(score_id=10, user_id=20, rank=1)
+        leaderboard_repo.rows = (row,)
+        leaderboard_repo.personal_best = _leaderboard_row(score_id=11, user_id=9, rank=2)
+        _add_viewer(
+            user_repo,
+            permission_service,
+            user_id=9,
+            permissions=Privileges.NORMAL,
+        )
+
+        result = await _query(
+            getscores_repo,
+            personal_best_repo,
+            leaderboard_repo,
+            user_repo=user_repo,
+            permission_service=permission_service,
+        ).resolve(
+            _request(leaderboard_type=1),
+            user_id=9,
+        )
+
+        assert result.header is not None
+        assert result.header.score_rows == (_score_row_from_leaderboard(row),)
+        assert result.header.personal_best is None
+        assert leaderboard_repo.top_row_calls == [
+            (
+                LeaderboardReadScope(
+                    beatmap_id=sample_beatmap.id,
+                    beatmap_checksum=sample_beatmap.checksum_md5,
+                    ruleset=Ruleset.OSU,
+                    playstyle=Playstyle.VANILLA,
+                    category=LeaderboardCategory.GLOBAL,
+                    mod_filter_key=None,
+                ),
+                50,
+            )
+        ]
+        assert leaderboard_repo.personal_best_calls == []
 
     async def test_supported_visibility_statuses_are_available_for_rows(
         self,
@@ -407,8 +824,19 @@ def _query(
     getscores_repo: BeatmapScoreListingQueryRepositoryStub,
     personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
     leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+    *,
+    user_repo: ViewerUserQueryRepositoryStub | None = None,
+    permission_service: ViewerPermissionServiceStub | None = None,
+    friend_query: FriendEligibleUserIdsQueryStub | None = None,
 ) -> BeatmapScoreListingQuery:
-    return BeatmapScoreListingQuery(getscores_repo, personal_best_repo, leaderboard_repo)
+    return BeatmapScoreListingQuery(
+        getscores_repo,
+        personal_best_repo,
+        leaderboard_repo,
+        user_repository=user_repo,
+        permission_service=permission_service,
+        friend_eligible_user_ids_query=friend_query,
+    )
 
 
 def _request(
@@ -455,6 +883,27 @@ def _leaderboard_row(
         has_replay=True,
         pp=Decimal("123.45"),
     )
+
+
+def _add_viewer(
+    user_repo: ViewerUserQueryRepositoryStub,
+    permission_service: ViewerPermissionServiceStub,
+    *,
+    user_id: int,
+    country: str = "JP",
+    permissions: Privileges,
+) -> None:
+    user_repo.users_by_id[user_id] = User(
+        id=user_id,
+        username=f"user-{user_id}",
+        safe_username=f"user_{user_id}",
+        email=f"user-{user_id}@example.com",
+        password_hash="hashed",
+        country=country,
+        created_at=_NOW,
+        updated_at=_NOW,
+    )
+    permission_service.permissions_by_user_id[user_id] = permissions
 
 
 def _score_row_from_leaderboard(row: BeatmapLeaderboardRow) -> GetscoresPersonalBest:
