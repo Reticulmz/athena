@@ -57,7 +57,7 @@
   - _Boundary: Beatmap leaderboard query repo_
   - _Depends: 1.1, 1.2, 1.3_
 
-- [ ] 2.4 SQLAlchemy query persistence と PP enrichment を実装する
+- [x] 2.4 SQLAlchemy query persistence と PP enrichment を実装する
   - query repository は projection、Score、Beatmap、User/Role、Replay、current Performance Calculation を read-only に join する
   - rows と PB rank は同じ filtered candidate ordering を使い、rank と display order が diverge しない
   - PP は current Ranked / Approved row の enrichment として返し、missing PP や Loved / Qualified で row を隠さない

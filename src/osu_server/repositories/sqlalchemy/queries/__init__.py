@@ -1,5 +1,8 @@
 """SQLAlchemy query repository package."""
 
+from osu_server.repositories.sqlalchemy.queries.beatmap_leaderboards import (
+    SQLAlchemyBeatmapLeaderboardQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.beatmap_score_listing import (
     SQLAlchemyBeatmapScoreListingQueryRepository,
 )
@@ -21,6 +24,7 @@ from osu_server.repositories.sqlalchemy.queries.scores import SQLAlchemyScoreQue
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 
 __all__ = [
+    "SQLAlchemyBeatmapLeaderboardQueryRepository",
     "SQLAlchemyBeatmapQueryRepository",
     "SQLAlchemyBeatmapScoreListingQueryRepository",
     "SQLAlchemyBlobQueryRepository",
