@@ -170,6 +170,7 @@ class GetscoresHandler:
             beatmap=outcome.header.beatmap,
             beatmapset=outcome.header.beatmapset,
             personal_best=outcome.header.personal_best,
+            score_rows=outcome.header.score_rows,
         )
 
     async def _prepare_metadata(
@@ -270,14 +271,13 @@ def format_getscores_header_response(
     beatmap: Beatmap,
     beatmapset: BeatmapSet,
     personal_best: GetscoresPersonalBest | None = None,
+    score_rows: tuple[GetscoresPersonalBest, ...] = (),
 ) -> Response:
     artist = _sanitize(beatmapset.artist)
     title = _sanitize(beatmapset.title)
-    personal_best_row = (
-        _format_personal_best_row(personal_best) if personal_best is not None else ""
-    )
-    score_count = 1 if personal_best is not None else 0
-    score_rows = personal_best_row
+    personal_best_row = _format_score_row(personal_best) if personal_best is not None else ""
+    score_count = len(score_rows)
+    formatted_score_rows = "\n".join(_format_score_row(row) for row in score_rows)
 
     body = (
         f"{status}|false|{beatmap.id}|{beatmap.beatmapset_id}|{score_count}||\n"
@@ -285,7 +285,7 @@ def format_getscores_header_response(
         f"[bold:0,size:20]{artist}|{title}\n"
         f"0\n"
         f"{personal_best_row}\n"
-        f"{score_rows}\n"
+        f"{formatted_score_rows}\n"
     ).encode()
     return Response(
         content=body,
@@ -294,25 +294,25 @@ def format_getscores_header_response(
     )
 
 
-def _format_personal_best_row(personal_best: GetscoresPersonalBest) -> str:
-    submitted_at_seconds = int(personal_best.submitted_at.timestamp())
+def _format_score_row(row: GetscoresPersonalBest) -> str:
+    submitted_at_seconds = int(row.submitted_at.timestamp())
     return "|".join(
         (
-            str(personal_best.score_id),
-            _sanitize(personal_best.username),
-            str(personal_best.score),
-            str(personal_best.max_combo),
-            str(personal_best.n50),
-            str(personal_best.n100),
-            str(personal_best.n300),
-            str(personal_best.miss),
-            str(personal_best.katu),
-            str(personal_best.geki),
-            "1" if personal_best.perfect else "0",
-            str(personal_best.mods),
-            str(personal_best.user_id),
-            str(personal_best.rank),
+            str(row.score_id),
+            _sanitize(row.username),
+            str(row.score),
+            str(row.max_combo),
+            str(row.n50),
+            str(row.n100),
+            str(row.n300),
+            str(row.miss),
+            str(row.katu),
+            str(row.geki),
+            "1" if row.perfect else "0",
+            str(row.mods),
+            str(row.user_id),
+            str(row.rank),
             str(submitted_at_seconds),
-            "1" if personal_best.has_replay else "0",
+            "1" if row.has_replay else "0",
         )
     )

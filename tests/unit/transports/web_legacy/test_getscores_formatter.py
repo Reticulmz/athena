@@ -96,18 +96,21 @@ def _make_beatmapset(
 
 def _make_personal_best(
     *,
+    score_id: int = 42,
+    user_id: int = 7,
     username: str = "Player",
+    score: int = 987_654,
     has_replay: bool = True,
     rank: int = 3,
 ) -> GetscoresPersonalBest:
     return GetscoresPersonalBest(
-        score_id=42,
-        user_id=7,
+        score_id=score_id,
+        user_id=user_id,
         username=username,
         beatmap_id=75,
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
-        score=987_654,
+        score=score,
         max_combo=1_234,
         n50=1,
         n100=2,
@@ -123,19 +126,28 @@ def _make_personal_best(
     )
 
 
+def _expected_score_row(row: GetscoresPersonalBest) -> bytes:
+    return (
+        f"{row.score_id}|{row.username}|{row.score}|{row.max_combo}|{row.n50}|"
+        f"{row.n100}|{row.n300}|{row.miss}|{row.katu}|{row.geki}|"
+        f"{1 if row.perfect else 0}|{row.mods}|{row.user_id}|{row.rank}|"
+        f"{int(row.submitted_at.timestamp())}|{1 if row.has_replay else 0}"
+    ).encode()
+
+
 # ---------------------------------------------------------------------------
-# Short response bodies (requirements 6.2, 7.1)
+# Short response bodies (requirements 7.5)
 # ---------------------------------------------------------------------------
 
 
 def test_format_unavailable_returns_short_body() -> None:
-    """Unavailable outcome formats as '-1|false' (requirement 7.1)."""
+    """Unavailable outcome formats as '-1|false'."""
     body = _response_body(format_getscores_unavailable_response())
     assert body == b"-1|false"
 
 
 def test_format_update_available_returns_short_body() -> None:
-    """UpdateAvailable outcome formats as '1|false' (requirement 6.2)."""
+    """UpdateAvailable outcome formats as '1|false'."""
     body = _response_body(format_getscores_update_available_response())
     assert body == b"1|false"
 
@@ -161,8 +173,8 @@ def test_header_first_line_format() -> None:
     assert first_line == b"2|false|75|1|0||"
 
 
-def test_header_score_count_is_zero_without_personal_best() -> None:
-    """Score count is 0 when there is no score row."""
+def test_header_score_count_is_zero_without_rows() -> None:
+    """Score count is 0 when there are no returned rows."""
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -175,19 +187,26 @@ def test_header_score_count_is_zero_without_personal_best() -> None:
     assert parts[4] == b"0"
 
 
-def test_header_score_count_is_one_with_personal_best_fallback_row() -> None:
-    """Personal best is emitted as the minimal score row for stable clients."""
+def test_header_score_count_uses_returned_rows_not_personal_best() -> None:
+    personal_best = _make_personal_best(score_id=99, rank=99)
+    rows = (
+        _make_personal_best(score_id=101, user_id=11, username="Top 1", rank=1),
+        _make_personal_best(score_id=102, user_id=12, username="Top 2", rank=2),
+    )
+
     body = _response_body(
         format_getscores_header_response(
             status=2,
             beatmap=_make_beatmap(),
             beatmapset=_make_beatmapset(),
-            personal_best=_make_personal_best(),
+            personal_best=personal_best,
+            score_rows=rows,
         )
     )
+
     first_line = body.split(b"\n")[0]
     parts = first_line.split(b"|")
-    assert parts[4] == b"1"
+    assert parts[4] == b"2"
 
 
 def test_header_failed_flag_is_false() -> None:
@@ -224,6 +243,18 @@ def test_header_body_line_count() -> None:
     assert lines[4] == b""
     assert lines[5] == b""
     assert lines[6] == b""
+
+
+def test_header_only_listing_has_empty_personal_best_and_rows_sections() -> None:
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+        )
+    )
+
+    assert body.split(b"\n")[4:] == [b"", b"", b""]
 
 
 def test_header_second_line_is_beatmap_offset() -> None:
@@ -279,23 +310,61 @@ def test_header_response_ends_with_newline() -> None:
 
 def test_header_personal_best_row_uses_stable_score_listing_format() -> None:
     """Personal best row follows Bancho score row field order."""
+    personal_best = _make_personal_best()
     body = _response_body(
         format_getscores_header_response(
             status=2,
             beatmap=_make_beatmap(),
             beatmapset=_make_beatmapset(),
-            personal_best=_make_personal_best(),
+            personal_best=personal_best,
+        )
+    )
+
+    lines = body.split(b"\n")
+    assert lines[0] == b"2|false|75|1|0||"
+    assert lines[4] == _expected_score_row(personal_best)
+    assert lines[5] == b""
+
+
+def test_personal_best_can_duplicate_a_returned_row() -> None:
+    personal_best = _make_personal_best(score_id=42, rank=3)
+
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+            personal_best=personal_best,
+            score_rows=(personal_best,),
         )
     )
 
     lines = body.split(b"\n")
     assert lines[0] == b"2|false|75|1|1||"
-    assert lines[4] == (
-        b"42|Player|987654|1234|1|2|300|3|4|5|1|24|7|3|"
-        + str(int(_NOW.timestamp())).encode()
-        + b"|1"
+    assert lines[4] == _expected_score_row(personal_best)
+    assert lines[5] == _expected_score_row(personal_best)
+
+
+def test_personal_best_outside_returned_rows_keeps_its_actual_rank() -> None:
+    personal_best = _make_personal_best(score_id=200, user_id=20, score=100_000, rank=51)
+    top_row = _make_personal_best(score_id=100, user_id=10, username="Top", score=999_999, rank=1)
+
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(),
+            personal_best=personal_best,
+            score_rows=(top_row,),
+        )
     )
-    assert lines[5] == lines[4]
+
+    lines = body.split(b"\n")
+    assert lines[0] == b"2|false|75|1|1||"
+    assert lines[4] == _expected_score_row(personal_best)
+    assert lines[5] == _expected_score_row(top_row)
+    assert lines[4].split(b"|")[13] == b"51"
+    assert lines[5].split(b"|")[13] == b"1"
 
 
 def test_personal_best_username_is_sanitized() -> None:

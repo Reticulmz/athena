@@ -132,7 +132,7 @@
   - _Requirements: 1.3, 1.4, 1.6, 5.1, 5.8_
   - _Depends: 1.1, 4.1_
 
-- [ ] 5.2 Stable getscores formatter を rows/PB 分離 contract に更新する
+- [x] 5.2 Stable getscores formatter を rows/PB 分離 contract に更新する
   - score count は returned rows count だけにし、PB row は count に含めない
   - PB row は rows とは別に出力し、top rows 内に同じ Score があっても dedupe しない
   - header-only listing は empty PB と empty rows を stable-compatible に出力する
