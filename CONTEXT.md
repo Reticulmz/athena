@@ -71,7 +71,7 @@ A password reset requested by an authorized operator or development tool for ano
 _Avoid_: Self-service password change, public password update
 
 ### Friend Relationship
-User が別の friendable user identity を friend として追加している片方向の social relationship。Target の online state とは独立して存在し、Stable friends list と Friends leaderboard の source of truth になる。
+User が別の friendable user identity を friend として追加している片方向の social relationship。Target の online state とは独立して存在し、Stable friends list と Friends Leaderboard Eligible Set の friend target 部分の source of truth になる。
 _Avoid_: Mutual friend, follower, symmetric friendship
 
 ### Friendable User Identity
@@ -373,17 +373,67 @@ _Avoid_: Implementation preference, guessed compatibility, test-only assumption
 1つの Beatmap に対する Personal Best の順位付き一覧。Score の source of truth ではなく、Score と current Performance Calculation から stable client や Web 表示向けに導かれる view。
 _Avoid_: User stats, global ranking, beatmap ranking, score ingestion result
 
+**Policy**:
+- 初期 Beatmap Leaderboard は vanilla Playstyle のみを対象にする
+- Ranked / Approved / Loved / Qualified の Beatmap に leaderboard を表示できる
+- PP 表示は Ranked / Approved の current Performance Calculation がある Score に限定し、PP 未計算であることは Beatmap Leaderboard row の表示可否を変えない
+- Failed Score は Beatmap Leaderboard と Personal Best の対象にしない
+- Beatmap Leaderboard eligibility は Score submission 時点の Beatmap status と Beatmap checksum で決まり、後から Beatmap が昇格しても昇格前に対象外だった Score は Personal Best 候補にしない
+- Leaderboard Visible User の Score だけを Beatmap Leaderboard と Personal Best の対象にする
+- Viewer が Leaderboard Visible User ではないことは public Beatmap Leaderboard rows の可視性を変えないが、Viewer 自身の Personal Best は表示対象にしない
+- Stable response は最大 50 件の Beatmap Leaderboard rows を返し、score count は filter 後の全候補数ではなく返した row 件数を表す。Personal Best row は別枠で返し、top 50 rows に含まれない場合でも表示対象にできる。Personal Best が top 50 rows に含まれる場合も、Personal Best row と Beatmap Leaderboard row の両方に同じ Score を表示でき、Beatmap Leaderboard rows から除外しない。Personal Best row は score count に含めない
+
+### Leaderboard Eligible Score
+Beatmap Leaderboard rows と Personal Best の候補にできる Score。Score submission 時点で Beatmap が leaderboard を表示できる状態であり、Score の beatmap checksum が current Beatmap checksum と一致し、Failed Score ではなく、表示時点でも Beatmap と Score owner が Beatmap Leaderboard の公開条件を満たす必要がある。
+_Avoid_: Stored score, all passed score, post-promotion score backfill
+
+### Leaderboard Visible User
+Beatmap Leaderboard rows と Personal Best に自身の Score を表示できる User。通常の競技参加者として扱える authorization state を持ち、NORMAL と UNRESTRICTED privileges を満たす。Viewer と Score owner は別の役割であり、public rows は Score owner の可視性で決まる。
+_Avoid_: Online user, friend target, viewer access, score owner without visibility
+
+### Beatmap Leaderboard Rank
+Beatmap Leaderboard 内の順位。Score が高い Personal Best ほど上位になり、最高 score を 1 位として表示する。同点の場合は Athena が submission を受理した時刻が早い Score を上位にし、それでも同じ場合は Score ID の昇順で順序を決定する。Stable response の Beatmap Leaderboard row rank は返却 rows 内の表示順位として `1..n` を使い、Personal Best row rank は top 50 外でも現在の Leaderboard Scope 全体での順位を使う。
+_Avoid_: User rank, global rank, PP rank
+
+### Leaderboard Scope
+Beatmap Leaderboard の候補集合を定める範囲。Beatmap、Ruleset、Playstyle、Leaderboard Category と、category 固有の selector から成り、Selected Mods では Leaderboard Mod Filter が selector になる。
+_Avoid_: Database key, raw category, score row
+
 ### Personal Best
-1人の User が特定の Beatmap / Ruleset / Playstyle / leaderboard category で持つ代表 Score。Beatmap Leaderboard の順位付け対象になる。
-_Avoid_: Score history, latest score, best attempt
+1人の User が特定の Leaderboard Scope で持つ最高 score の代表 Score。Beatmap Leaderboard の順位付け対象になり、表示 rank は現在の Leaderboard Scope 内順位として扱う。Selected Mods では Leaderboard Mod Filter 内の自己ベストになる。Viewer 自身が Leaderboard Visible User ではない場合、その Viewer の Personal Best は表示対象にしない。
+_Avoid_: Performance Best, score history, latest score, best attempt
+
+### Performance Best
+User Profile、Top Plays、User Stats、User Ranking に反映する PP 優先の代表 Score。Beatmap Leaderboard の Personal Best とは別の選択軸として扱う。
+_Avoid_: Personal Best, beatmap leaderboard row, latest score
+
+### Beatmap Performance Best
+1人の User が特定の Beatmap / Ruleset / Playstyle で持つ PP 優先の代表 Score。User Profile、Top Plays、User Stats、User Ranking の譜面別 source になり、Beatmap Leaderboard の順位付けには使わない。
+_Avoid_: Personal Best, leaderboard best, score-priority best
 
 ### Score Submit Personal Best Delta
-Stable score submit response で返す、提出前 Personal Best と提出後 Personal Best の比較値。Rank は placement projection、total score などは User Stats として別に扱う。
-_Avoid_: User stats, raw submitted score, leaderboard rank
+Stable score submit response で返す、提出前 Personal Best と提出後 Personal Best の比較値。Stable score submit は Leaderboard Category を入力に持たないため、Global / all-mods の score-priority Personal Best だけを比較対象にする。同一 submission の idempotency replay では保存済みの比較結果を返し、Personal Best を再評価しない。Rank は placement projection、total score などは User Stats として別に扱う。
+_Avoid_: User stats, raw submitted score, leaderboard rank, category-specific getscores Personal Best
 
 ### Leaderboard Category
-Stable client が選択する Beatmap Leaderboard の表示種別。Global、Country、Selected Mods、Friends の4種を扱い、Country は閲覧者の国を既定値として Score owner の国で絞り、Selected Mods は request mods と Score mods の完全一致だけを対象にする。
+Stable client が選択する Beatmap Leaderboard の表示種別。Global、Country、Selected Mods、Friends の4種を扱う。Global / Country / Friends は mods で候補を絞らず、Country は閲覧者の国を既定値として Score owner の国で絞る。閲覧者の country が未設定または `XX` の場合、Country は候補なしとして扱う。Selected Mods は Leaderboard Mod Filter で Beatmap Leaderboard rows と Personal Best の候補を絞る。
 _Avoid_: User rank category, playstyle, score status
+
+### Stable Local Leaderboard Type
+Stable client の `Local` leaderboard selection。Athena の Beatmap Leaderboard では独立した Leaderboard Category にせず、Global と同じ候補集合として扱う。
+_Avoid_: Server-local scores, offline client scores, separate local category
+
+### Stable Song Select Leaderboard Request
+Stable client が song select/editor context から送る Beatmap Leaderboard request。Beatmap の availability と header を解決するための request として扱い、Beatmap Leaderboard rows と Personal Best は表示対象にしない。
+_Avoid_: Score row listing request, gameplay result lookup
+
+### Leaderboard Mod Filter
+Selected Mods category で Beatmap Leaderboard rows と Personal Best の候補を絞る mod matching rule。NC と DT、PF と SD は filter matching では同じ候補集合に入れるが、Score row の displayed mods は元の Score mods を保持する。NoMod filter は gameplay-affecting mod がない Score を候補にし、SD / PF / MR などの preference-only mod は NoMod 候補から除外しない。NC は DT 系 gameplay mod として扱い、NoMod 候補には含めない。SD または PF を明示選択した場合は、SD/PF 系の Score だけを候補にする。複数 mod filter は選択された gameplay-affecting mod をすべて要求し、未選択の gameplay-affecting mod を含む Score を候補から外す。
+_Avoid_: Raw bitmask equality, rewriting score mods for display
+
+### Friends Leaderboard Eligible Set
+Friends category の Beatmap Leaderboard で score row 候補になる user identity 集合。Viewer 自身と viewer の Friend Relationship targets から成り、reverse Friend Relationship は含めない。
+_Avoid_: Stable friends list, mutual friends, public social graph
 
 ### User Stats
 1人の User の競技結果を ruleset / playstyle / category ごとに集約した表示用統計。Beatmap Leaderboard とは別の projection として扱う。

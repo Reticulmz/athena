@@ -30,7 +30,7 @@
 8. **score-pp-calculation** (Wave 2) — rosu-pp-py による PP/stars 計算、provenance tracking。依存: score-ingestion
 9. **friend-relationships** — Stable friends list と Friends leaderboard の source of truth になる friend relationship。関係の向き、friends list packet、将来の friend 管理 API との境界を定義する。依存: bancho-login
 10. **beatmap-leaderboards** (Wave 3) — Beatmap leaderboard projection、personal best tracking、Global / Country / Selected Mods / Friends category の getscores rows。依存: score-ingestion, score-pp-calculation, friend-relationships
-11. **user-stats** (Wave 3) — User stats 集計 (play count, ranked score, weighted PP, accuracy)。依存: score-ingestion, score-pp-calculation
+11. **user-stats** (Wave 3) — User stats 集計 (play count, ranked score, weighted PP, accuracy) と PP 優先の `beatmap_performance_bests` projection。依存: score-ingestion, score-pp-calculation
 12. **user-ranking** (Wave 4) — Global/country rank 時系列履歴、rank snapshot rebuild、ranking graph API。依存: user-stats
 
 ### Phase 3: 運用・拡張
@@ -72,3 +72,4 @@
 - **stable-presence-filter-semantics** — `RECEIVE_UPDATES`、`PRESENCE_REQUEST`、`PRESENCE_REQUEST_ALL`、friends-only visibility / roster filter の Stable client 挙動を Lekuruu / Akatsuki / 実クライアントで確認して実装する。初期 Stable Presence Roster は all active online users + explicit system presence を送る方針とし、この filter semantics は今回 scope 外にする
 - **beatmap-rank-request** — !request コマンドや WebUI からのビートマップランクリクエスト（リクエストキュー、承認フロー、BanchoBot 通知）。依存: channel-system, beatmap-mirror
 - **beatmap-rank-management** — BanchoBot / 管理コマンド / WebUI から beatmap の rank 状態を確認・変更する運用機能。外部由来の ranked status とローカル override の優先順位、変更権限、監査ログ、request 承認時の status 更新を扱う。Bot と Athena Web App は直接 DB を更新せず、この機能の共通サービス/APIを正規経路として利用する。依存: channel-system, beatmap-mirror, beatmap-rank-request, athena-web-app
+- **operator-leaderboard-inspection** — Admin / moderator などの operator が restricted user や public leaderboard から非表示になった Score / Personal Best 候補を調査できる内部表示。public stable/Web Beatmap Leaderboard とは別 surface とし、score owner visibility を無視した閲覧には明示的な権限、監査ログ、reason を要求する。依存: beatmap-leaderboards, athena-web-app, moderation-system
