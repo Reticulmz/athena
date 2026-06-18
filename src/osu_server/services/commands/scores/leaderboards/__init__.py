@@ -1,5 +1,9 @@
 """Beatmap leaderboard command workflows."""
 
+from osu_server.services.commands.leaderboard_rebuild_wake import (
+    BeatmapLeaderboardRebuildWorkerWake,
+    NoopBeatmapLeaderboardRebuildWorkerWake,
+)
 from osu_server.services.commands.scores.leaderboards.rebuild_beatmap_leaderboards import (
     RebuildBeatmapLeaderboardsForBeatmapsetCommand,
     RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
@@ -9,6 +13,8 @@ from osu_server.services.commands.scores.leaderboards.rebuild_beatmap_leaderboar
 )
 
 __all__ = [
+    "BeatmapLeaderboardRebuildWorkerWake",
+    "NoopBeatmapLeaderboardRebuildWorkerWake",
     "RebuildBeatmapLeaderboardsForBeatmapsetCommand",
     "RebuildBeatmapLeaderboardsForBeatmapsetUseCase",
     "RebuildBeatmapLeaderboardsForUserCommand",

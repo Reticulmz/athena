@@ -14,6 +14,7 @@ from taskiq import Context, InMemoryBroker, TaskiqMessage, TaskiqState
 from osu_server.infrastructure.jobs.registry import jobs
 from osu_server.jobs import beatmap_leaderboards, register_all_jobs
 from osu_server.jobs.beatmap_leaderboards import (
+    TaskiqBeatmapLeaderboardRebuildWorkerWake,
     get_beatmap_leaderboard_beatmapset_rebuild_use_case,
     get_beatmap_leaderboard_user_rebuild_use_case,
     rebuild_beatmap_leaderboards_for_beatmapset,
@@ -102,6 +103,28 @@ def _make_context(**services: object) -> Context:
         kwargs={},
     )
     return Context(message, broker)
+
+
+class _FakeEnqueueableTask:
+    def __init__(self, *, error: Exception | None = None) -> None:
+        self._error: Exception | None = error
+        self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    async def kiq(self, *args: object, **kwargs: object) -> object:
+        self.calls.append((args, kwargs))
+        if self._error is not None:
+            raise self._error
+        return object()
+
+
+class _FakeBroker:
+    def __init__(self, task: _FakeEnqueueableTask | None) -> None:
+        self._task: _FakeEnqueueableTask | None = task
+        self.task_names: list[str] = []
+
+    def find_task(self, task_name: str) -> _FakeEnqueueableTask | None:
+        self.task_names.append(task_name)
+        return self._task
 
 
 class TestBeatmapLeaderboardTaskRegistration:
@@ -397,3 +420,49 @@ class TestBeatmapLeaderboardStateGetters:
         result = get_beatmap_leaderboard_beatmapset_rebuild_use_case(state)
 
         assert result is None
+
+
+class TestTaskiqBeatmapLeaderboardRebuildWorkerWake:
+    async def test_wake_user_rebuild_enqueues_primitive_payload(self) -> None:
+        task = _FakeEnqueueableTask()
+        broker = _FakeBroker(task)
+        wake = TaskiqBeatmapLeaderboardRebuildWorkerWake(broker)
+
+        await wake.wake_user_rebuild(user_id=1000, reason="user_visibility_changed")
+
+        assert broker.task_names == ["rebuild_beatmap_leaderboards_for_user"]
+        assert task.calls == [((1000, "user_visibility_changed"), {})]
+
+    async def test_wake_beatmapset_rebuild_enqueues_primitive_payload(self) -> None:
+        task = _FakeEnqueueableTask()
+        broker = _FakeBroker(task)
+        wake = TaskiqBeatmapLeaderboardRebuildWorkerWake(broker)
+
+        await wake.wake_beatmapset_rebuild(
+            beatmapset_id=2000,
+            reason="beatmap_checksum_changed",
+        )
+
+        assert broker.task_names == ["rebuild_beatmap_leaderboards_for_beatmapset"]
+        assert task.calls == [((2000, "beatmap_checksum_changed"), {})]
+
+    async def test_wake_raises_when_task_is_not_registered(self) -> None:
+        broker = _FakeBroker(None)
+        wake = TaskiqBeatmapLeaderboardRebuildWorkerWake(broker)
+
+        with pytest.raises(
+            RuntimeError,
+            match="Beatmap Leaderboard user rebuild task is not registered",
+        ):
+            await wake.wake_user_rebuild(user_id=1000, reason="user_visibility_changed")
+
+    async def test_wake_surfaces_enqueue_failure(self) -> None:
+        task = _FakeEnqueueableTask(error=RuntimeError("broker unavailable"))
+        broker = _FakeBroker(task)
+        wake = TaskiqBeatmapLeaderboardRebuildWorkerWake(broker)
+
+        with pytest.raises(RuntimeError, match="broker unavailable"):
+            await wake.wake_beatmapset_rebuild(
+                beatmapset_id=2000,
+                reason="beatmap_checksum_changed",
+            )

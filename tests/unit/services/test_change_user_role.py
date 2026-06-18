@@ -32,6 +32,12 @@ _MODERATOR_ROLE = Role(
     permissions=Privileges.MODERATOR,
     position=10,
 )
+_SUPPORTER_ROLE = Role(
+    id=4,
+    name="Supporter",
+    permissions=Privileges.NORMAL | Privileges.UNRESTRICTED | Privileges.SUPPORTER,
+    position=15,
+)
 _ADMIN_ROLE = Role(
     id=3,
     name="Admin",
@@ -46,7 +52,7 @@ def _make_use_case() -> tuple[
     InMemorySessionStore,
 ]:
     uow_factory = InMemoryUnitOfWorkFactory()
-    uow_factory.seed_roles([_DEFAULT_ROLE, _MODERATOR_ROLE, _ADMIN_ROLE])
+    uow_factory.seed_roles([_DEFAULT_ROLE, _MODERATOR_ROLE, _SUPPORTER_ROLE, _ADMIN_ROLE])
     role_query_repository = InMemoryRoleQueryRepository(uow_factory)
     session_store = InMemorySessionStore()
     session_authorization_service = SessionAuthorizationService(
@@ -62,6 +68,27 @@ def _make_use_case() -> tuple[
         uow_factory,
         session_store,
     )
+
+
+class _LeaderboardWakeRecorder:
+    def __init__(self) -> None:
+        self.user_calls: list[tuple[int, str]] = []
+
+    async def wake_user_rebuild(self, *, user_id: int, reason: str) -> None:
+        self.user_calls.append((user_id, reason))
+
+    async def wake_beatmapset_rebuild(self, *, beatmapset_id: int, reason: str) -> None:
+        _ = (beatmapset_id, reason)
+
+
+class _FailingLeaderboardWake:
+    async def wake_user_rebuild(self, *, user_id: int, reason: str) -> None:
+        _ = (user_id, reason)
+        msg = "rebuild enqueue failed"
+        raise RuntimeError(msg)
+
+    async def wake_beatmapset_rebuild(self, *, beatmapset_id: int, reason: str) -> None:
+        _ = (beatmapset_id, reason)
 
 
 def _make_session(
@@ -124,6 +151,122 @@ async def test_change_user_role_replaces_existing_roles_with_target_role() -> No
     assert result.role_id == _ADMIN_ROLE.id
     assert result.previous_role_names == ("Default", "Moderator")
     assert result.authorization_refresh_status is AuthorizationRefreshStatus.NO_ACTIVE_SESSION
+    roles = await InMemoryRoleQueryRepository(uow_factory).get_roles_for_user(user_id)
+    assert [role.name for role in roles] == ["Admin"]
+
+
+async def test_change_user_role_wakes_leaderboard_rebuild_after_role_change() -> None:
+    _, uow_factory, _ = _make_use_case()
+    wake = _LeaderboardWakeRecorder()
+    role_query_repository = InMemoryRoleQueryRepository(uow_factory)
+    session_store = InMemorySessionStore()
+    session_authorization_service = SessionAuthorizationService(
+        permission_service=PermissionService(role_query_repository),
+        session_store=session_store,
+        role_repository=role_query_repository,
+    )
+    use_case = ChangeUserRoleCommandUseCase(
+        uow_factory=uow_factory,
+        session_authorization_service=session_authorization_service,
+        leaderboard_rebuild_wake=wake,
+    )
+    user_id = await _seed_user(uow_factory, role_ids=(_DEFAULT_ROLE.id,))
+
+    result = await use_case.execute(
+        ChangeUserRoleCommandInput(
+            username="TargetUser",
+            role_name="Admin",
+        )
+    )
+
+    assert result.status is ChangeUserRoleStatus.CHANGED
+    assert result.leaderboard_rebuild_requested is True
+    assert result.leaderboard_rebuild_failed is False
+    assert wake.user_calls == [(user_id, "user_visibility_changed")]
+
+
+async def test_change_user_role_does_not_wake_leaderboard_rebuild_when_unchanged() -> None:
+    _, uow_factory, _ = _make_use_case()
+    wake = _LeaderboardWakeRecorder()
+    role_query_repository = InMemoryRoleQueryRepository(uow_factory)
+    session_authorization_service = SessionAuthorizationService(
+        permission_service=PermissionService(role_query_repository),
+        session_store=InMemorySessionStore(),
+        role_repository=role_query_repository,
+    )
+    use_case = ChangeUserRoleCommandUseCase(
+        uow_factory=uow_factory,
+        session_authorization_service=session_authorization_service,
+        leaderboard_rebuild_wake=wake,
+    )
+    _ = await _seed_user(uow_factory, role_ids=(_ADMIN_ROLE.id,))
+
+    result = await use_case.execute(
+        ChangeUserRoleCommandInput(
+            username="TargetUser",
+            role_name="Admin",
+        )
+    )
+
+    assert result.status is ChangeUserRoleStatus.UNCHANGED
+    assert result.leaderboard_rebuild_requested is False
+    assert wake.user_calls == []
+
+
+async def test_change_user_role_does_not_wake_when_visibility_is_unchanged() -> None:
+    _, uow_factory, _ = _make_use_case()
+    wake = _LeaderboardWakeRecorder()
+    role_query_repository = InMemoryRoleQueryRepository(uow_factory)
+    session_authorization_service = SessionAuthorizationService(
+        permission_service=PermissionService(role_query_repository),
+        session_store=InMemorySessionStore(),
+        role_repository=role_query_repository,
+    )
+    use_case = ChangeUserRoleCommandUseCase(
+        uow_factory=uow_factory,
+        session_authorization_service=session_authorization_service,
+        leaderboard_rebuild_wake=wake,
+    )
+    _ = await _seed_user(uow_factory, role_ids=(_DEFAULT_ROLE.id,))
+
+    result = await use_case.execute(
+        ChangeUserRoleCommandInput(
+            username="TargetUser",
+            role_name="Supporter",
+        )
+    )
+
+    assert result.status is ChangeUserRoleStatus.CHANGED
+    assert result.leaderboard_rebuild_requested is False
+    assert wake.user_calls == []
+
+
+async def test_change_user_role_wake_failure_does_not_rollback_role_change() -> None:
+    _, uow_factory, _ = _make_use_case()
+    role_query_repository = InMemoryRoleQueryRepository(uow_factory)
+    session_authorization_service = SessionAuthorizationService(
+        permission_service=PermissionService(role_query_repository),
+        session_store=InMemorySessionStore(),
+        role_repository=role_query_repository,
+    )
+    use_case = ChangeUserRoleCommandUseCase(
+        uow_factory=uow_factory,
+        session_authorization_service=session_authorization_service,
+        leaderboard_rebuild_wake=_FailingLeaderboardWake(),
+    )
+    user_id = await _seed_user(uow_factory, role_ids=(_DEFAULT_ROLE.id,))
+
+    result = await use_case.execute(
+        ChangeUserRoleCommandInput(
+            username="TargetUser",
+            role_name="Admin",
+        )
+    )
+
+    assert result.status is ChangeUserRoleStatus.CHANGED
+    assert result.leaderboard_rebuild_requested is True
+    assert result.leaderboard_rebuild_failed is True
+    assert result.leaderboard_rebuild_error == "rebuild enqueue failed"
     roles = await InMemoryRoleQueryRepository(uow_factory).get_roles_for_user(user_id)
     assert [role.name for role in roles] == ["Admin"]
 

@@ -37,6 +37,9 @@ from osu_server.services.commands.identity.auth_service import AuthService
 from osu_server.services.commands.identity.session_authorization_service import (
     SessionAuthorizationService,
 )
+from osu_server.services.commands.leaderboard_rebuild_wake import (
+    BeatmapLeaderboardRebuildWorkerWake,
+)
 from osu_server.services.queries.identity import (
     CheckFriendRelationshipQuery,
     ComputePermissionsQueryUseCase,
@@ -53,6 +56,7 @@ _DISHKA_RUNTIME_HINTS = (
     AppConfig,
     FriendRelationshipQueryRepository,
     HIBPClient,
+    BeatmapLeaderboardRebuildWorkerWake,
     RoleQueryRepository,
     SessionStore,
     UnitOfWorkFactory,
@@ -189,10 +193,12 @@ class IdentityProviderSet(Provider):
         self,
         uow_factory: UnitOfWorkFactory,
         session_authorization_service: SessionAuthorizationService,
+        leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake,
     ) -> ChangeUserRoleCommandUseCase:
         return ChangeUserRoleCommandUseCase(
             uow_factory=uow_factory,
             session_authorization_service=session_authorization_service,
+            leaderboard_rebuild_wake=leaderboard_rebuild_wake,
             system_user_id=BANCHO_BOT_USER_ID,
         )
 

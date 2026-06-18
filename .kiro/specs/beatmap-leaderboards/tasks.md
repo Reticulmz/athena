@@ -165,7 +165,7 @@
   - _Requirements: 10.1, 10.2, 10.3, 10.5_
   - _Depends: 3.3_
 
-- [ ] 6.3 Submission、visibility、Beatmap change integration points から rebuild/update を呼び出す
+- [x] 6.3 Submission、visibility、Beatmap change integration points から rebuild/update を呼び出す
   - score submission は accepted score path の中で projection update と submit snapshot を同じ durable boundary に収める
   - user visibility、Beatmap status、Beatmap checksum change は public reads を block せず rebuild job を enqueue できる
   - pending rebuild 中でも read-time filters が public correctness を保つ
@@ -205,3 +205,7 @@
   - 完了時には relevant test gate と quality gate が成功し、未検証項目が残っていない
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 8.1, 8.2, 8.3, 8.4, 8.5, 9.1, 9.2, 9.3, 9.4, 9.5, 10.1, 10.2, 10.3, 10.4, 10.5_
   - _Depends: 7.1, 7.2, 7.3_
+
+## Implementation Notes
+
+- 6.3: rebuild wake boundary は `services.commands.leaderboard_rebuild_wake` に置き、beatmaps/identity command から score command package を runtime import しない。

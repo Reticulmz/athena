@@ -41,6 +41,9 @@ from osu_server.services.commands.beatmaps import (
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap, BeatmapMetadataProvider
     from osu_server.domain.storage.blobs import BlobStored
+    from osu_server.services.commands.leaderboard_rebuild_wake import (
+        BeatmapLeaderboardRebuildWorkerWake,
+    )
 
 _NOW = datetime(2026, 6, 5, tzinfo=UTC)
 _THIRTY_DAYS = timedelta(days=30)
@@ -90,6 +93,28 @@ class StubMetadataProvider:
         if self.exception is not None:
             raise self.exception
         return self.by_checksum.get(checksum_md5)
+
+
+class LeaderboardRebuildWakeRecorder:
+    def __init__(self) -> None:
+        self.user_calls: list[tuple[int, str]] = []
+        self.beatmapset_calls: list[tuple[int, str]] = []
+
+    async def wake_user_rebuild(self, *, user_id: int, reason: str) -> None:
+        self.user_calls.append((user_id, reason))
+
+    async def wake_beatmapset_rebuild(self, *, beatmapset_id: int, reason: str) -> None:
+        self.beatmapset_calls.append((beatmapset_id, reason))
+
+
+class FailingLeaderboardRebuildWake:
+    async def wake_user_rebuild(self, *, user_id: int, reason: str) -> None:
+        _ = (user_id, reason)
+
+    async def wake_beatmapset_rebuild(self, *, beatmapset_id: int, reason: str) -> None:
+        _ = (beatmapset_id, reason)
+        msg = "leaderboard rebuild enqueue failed"
+        raise RuntimeError(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +197,7 @@ class TestFetchBeatmapMetadataUseCase:
         repo: InMemoryBeatmapStore,
         official: StubMetadataProvider | None = None,
         mirror: StubMetadataProvider | None = None,
+        leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake | None = None,
     ) -> FetchBeatmapMetadataUseCase:
         _official: BeatmapMetadataProvider = official or StubMetadataProvider()
         _mirror: BeatmapMetadataProvider = mirror or StubMetadataProvider()
@@ -179,6 +205,7 @@ class TestFetchBeatmapMetadataUseCase:
         return FetchBeatmapMetadataUseCase(
             uow_factory=repo.uow_factory,
             metadata_provider=composite,
+            leaderboard_rebuild_wake=leaderboard_rebuild_wake,
         )
 
     # --- success path --------------------------------------------------------
@@ -197,6 +224,74 @@ class TestFetchBeatmapMetadataUseCase:
         saved = await repo.get_beatmapset(snapshot.beatmapset_id)
         assert saved is not None
         assert saved.title == "Exit This Earth's Atomosphere"
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FRESH
+
+    async def test_first_metadata_fetch_does_not_wake_leaderboard_rebuild(self) -> None:
+        repo = InMemoryBeatmapStore()
+        snapshot = _make_snapshot()
+        wake = LeaderboardRebuildWakeRecorder()
+        official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
+        job = self._make_job(repo, official=official, leaderboard_rebuild_wake=wake)
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        assert wake.beatmapset_calls == []
+
+    async def test_status_change_wakes_beatmapset_leaderboard_rebuild_after_commit(self) -> None:
+        repo = InMemoryBeatmapStore()
+        initial = _make_snapshot(official_status=BeatmapRankStatus.PENDING)
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(initial))
+        updated = _make_snapshot(official_status=BeatmapRankStatus.RANKED)
+        wake = LeaderboardRebuildWakeRecorder()
+        official = StubMetadataProvider(by_beatmap_id={2000: updated})
+        job = self._make_job(repo, official=official, leaderboard_rebuild_wake=wake)
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        saved = await repo.get_beatmapset(updated.beatmapset_id)
+        assert saved is not None
+        assert saved.beatmaps[0].effective_status is BeatmapRankStatus.RANKED
+        assert wake.beatmapset_calls == [(updated.beatmapset_id, "beatmap_status_changed")]
+
+    async def test_checksum_change_wakes_beatmapset_leaderboard_rebuild_after_commit(self) -> None:
+        repo = InMemoryBeatmapStore()
+        initial = _make_snapshot(checksum_md5=_DEFAULT_CHECKSUM)
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(initial))
+        updated = _make_snapshot(checksum_md5=_ALT_CHECKSUM)
+        wake = LeaderboardRebuildWakeRecorder()
+        official = StubMetadataProvider(by_beatmap_id={2000: updated})
+        job = self._make_job(repo, official=official, leaderboard_rebuild_wake=wake)
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        saved = await repo.get_beatmap(2000)
+        assert saved is not None
+        assert saved.checksum_md5 == _ALT_CHECKSUM
+        assert wake.beatmapset_calls == [(updated.beatmapset_id, "beatmap_checksum_changed")]
+
+    async def test_leaderboard_wake_failure_does_not_rollback_metadata_fetch(self) -> None:
+        repo = InMemoryBeatmapStore()
+        initial = _make_snapshot(official_status=BeatmapRankStatus.PENDING)
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(initial))
+        updated = _make_snapshot(official_status=BeatmapRankStatus.RANKED)
+        official = StubMetadataProvider(by_beatmap_id={2000: updated})
+        job = self._make_job(
+            repo,
+            official=official,
+            leaderboard_rebuild_wake=FailingLeaderboardRebuildWake(),
+        )
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        saved = await repo.get_beatmapset(updated.beatmapset_id)
+        assert saved is not None
+        assert saved.beatmaps[0].effective_status is BeatmapRankStatus.RANKED
         fetch_record = await repo.get_fetch_state(target)
         assert fetch_record is not None
         assert fetch_record.status is BeatmapFetchState.FRESH

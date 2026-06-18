@@ -16,6 +16,10 @@ from osu_server.domain.beatmaps import (
     BeatmapFileState,
     BeatmapSet,
 )
+from osu_server.services.commands.leaderboard_rebuild_wake import (
+    BeatmapLeaderboardRebuildWorkerWake,
+    NoopBeatmapLeaderboardRebuildWorkerWake,
+)
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import (
@@ -48,9 +52,13 @@ class FetchBeatmapMetadataUseCase:
         *,
         uow_factory: UnitOfWorkFactory,
         metadata_provider: BeatmapMetadataProvider,
+        leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake | None = None,
     ) -> None:
         self._uow_factory: UnitOfWorkFactory = uow_factory
         self._provider: BeatmapMetadataProvider = metadata_provider
+        self._leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake = (
+            leaderboard_rebuild_wake or NoopBeatmapLeaderboardRebuildWorkerWake()
+        )
 
     async def execute(self, target: BeatmapFetchTarget) -> None:
         """Run the idempotent metadata fetch cycle for *target*."""
@@ -92,9 +100,28 @@ class FetchBeatmapMetadataUseCase:
 
         beatmapset = _snapshot_to_beatmapset(snapshot)
         async with self._uow_factory() as uow:
+            previous_beatmapset = await uow.beatmaps.get_beatmapset(beatmapset.id)
+            rebuild_reason = _leaderboard_rebuild_reason(previous_beatmapset, beatmapset)
             await uow.beatmaps.save_beatmapset_snapshot(beatmapset)
             await uow.beatmaps.mark_fetch_succeeded(target, now)
             await uow.commit()
+
+        if rebuild_reason is not None:
+            try:
+                await self._leaderboard_rebuild_wake.wake_beatmapset_rebuild(
+                    beatmapset_id=beatmapset.id,
+                    reason=rebuild_reason,
+                )
+            except Exception as exc:
+                logger.error(
+                    "beatmap_leaderboard_rebuild_enqueue_failed",
+                    target_type=target.target_type,
+                    target_key=target.target_key,
+                    beatmapset_id=beatmapset.id,
+                    reason=rebuild_reason,
+                    error=str(exc),
+                    exc_info=True,
+                )
 
         logger.info(
             "beatmap_metadata_fetch_succeeded",
@@ -338,6 +365,31 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
         last_fetched_at=snapshot.last_fetched_at,
         next_refresh_at=snapshot.next_refresh_at,
     )
+
+
+def _leaderboard_rebuild_reason(
+    previous: BeatmapSet | None,
+    current: BeatmapSet,
+) -> str | None:
+    if previous is None:
+        return None
+
+    previous_by_id = {beatmap.id: beatmap for beatmap in previous.beatmaps}
+    for beatmap in current.beatmaps:
+        previous_beatmap = previous_by_id.get(beatmap.id)
+        if previous_beatmap is None:
+            continue
+        if previous_beatmap.effective_status is not beatmap.effective_status:
+            return "beatmap_status_changed"
+
+    for beatmap in current.beatmaps:
+        previous_beatmap = previous_by_id.get(beatmap.id)
+        if previous_beatmap is None:
+            continue
+        if previous_beatmap.checksum_md5 != beatmap.checksum_md5:
+            return "beatmap_checksum_changed"
+
+    return None
 
 
 __all__ = [

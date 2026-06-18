@@ -23,6 +23,9 @@ from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
     FetchBeatmapMetadataUseCase,
 )
+from osu_server.services.commands.leaderboard_rebuild_wake import (
+    BeatmapLeaderboardRebuildWorkerWake,
+)
 from osu_server.services.commands.storage.blob_storage import BlobStorageService
 from osu_server.services.queries.beatmaps import (
     ResolveBeatmapByChecksumQuery,
@@ -40,6 +43,7 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapFileProvider,
     BeatmapFreshnessPolicy,
     BeatmapMetadataProvider,
+    BeatmapLeaderboardRebuildWorkerWake,
     BeatmapQueryRepository,
     BlobStorageService,
     UnitOfWorkFactory,
@@ -111,10 +115,12 @@ class BeatmapProviderSet(Provider):
         self,
         uow_factory: UnitOfWorkFactory,
         metadata_provider: BeatmapMetadataProvider,
+        leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake,
     ) -> FetchBeatmapMetadataUseCase:
         return FetchBeatmapMetadataUseCase(
             uow_factory=uow_factory,
             metadata_provider=metadata_provider,
+            leaderboard_rebuild_wake=leaderboard_rebuild_wake,
         )
 
     @provide

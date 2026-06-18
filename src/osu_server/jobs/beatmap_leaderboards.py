@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Protocol, cast, final
 
 import structlog
 from taskiq import Context, TaskiqDepends
@@ -39,6 +39,78 @@ class BeatmapLeaderboardBeatmapsetRebuildUseCase(Protocol):
         self,
         command: RebuildBeatmapLeaderboardsForBeatmapsetCommand,
     ) -> RebuildBeatmapLeaderboardsResult: ...
+
+
+class _EnqueueableTask(Protocol):
+    async def kiq(self, *args: object, **kwargs: object) -> object:
+        """Enqueue the task with primitive payload arguments."""
+        ...
+
+
+class _TaskBroker(Protocol):
+    def find_task(self, task_name: str) -> _EnqueueableTask | None:
+        """Find a registered task by stable task name."""
+        ...
+
+
+@final
+class TaskiqBeatmapLeaderboardRebuildWorkerWake:
+    """Maps leaderboard rebuild wake requests to taskiq jobs."""
+
+    def __init__(self, broker: _TaskBroker) -> None:
+        self._broker = broker
+
+    async def wake_user_rebuild(self, *, user_id: int, reason: str) -> None:
+        task_name = REBUILD_BEATMAP_LEADERBOARDS_FOR_USER_TASK
+        task = self._broker.find_task(task_name)
+        if task is None:
+            logger.error(
+                "beatmap_leaderboard_rebuild_task_not_registered",
+                task_name=task_name,
+                target_kind="user",
+                user_id=user_id,
+                reason=reason,
+            )
+            msg = "Beatmap Leaderboard user rebuild task is not registered"
+            raise RuntimeError(msg)
+
+        try:
+            _ = await task.kiq(user_id, reason)
+        except Exception:
+            logger.exception(
+                "beatmap_leaderboard_rebuild_enqueue_failed",
+                task_name=task_name,
+                target_kind="user",
+                user_id=user_id,
+                reason=reason,
+            )
+            raise
+
+    async def wake_beatmapset_rebuild(self, *, beatmapset_id: int, reason: str) -> None:
+        task_name = REBUILD_BEATMAP_LEADERBOARDS_FOR_BEATMAPSET_TASK
+        task = self._broker.find_task(task_name)
+        if task is None:
+            logger.error(
+                "beatmap_leaderboard_rebuild_task_not_registered",
+                task_name=task_name,
+                target_kind="beatmapset",
+                beatmapset_id=beatmapset_id,
+                reason=reason,
+            )
+            msg = "Beatmap Leaderboard beatmapset rebuild task is not registered"
+            raise RuntimeError(msg)
+
+        try:
+            _ = await task.kiq(beatmapset_id, reason)
+        except Exception:
+            logger.exception(
+                "beatmap_leaderboard_rebuild_enqueue_failed",
+                task_name=task_name,
+                target_kind="beatmapset",
+                beatmapset_id=beatmapset_id,
+                reason=reason,
+            )
+            raise
 
 
 def get_beatmap_leaderboard_user_rebuild_use_case(
@@ -186,6 +258,7 @@ __all__ = [
     "REBUILD_BEATMAP_LEADERBOARDS_FOR_USER_TASK",
     "BeatmapLeaderboardBeatmapsetRebuildUseCase",
     "BeatmapLeaderboardUserRebuildUseCase",
+    "TaskiqBeatmapLeaderboardRebuildWorkerWake",
     "get_beatmap_leaderboard_beatmapset_rebuild_use_case",
     "get_beatmap_leaderboard_user_rebuild_use_case",
     "rebuild_beatmap_leaderboards_for_beatmapset",
