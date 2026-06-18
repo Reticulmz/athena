@@ -74,7 +74,7 @@
   - _Depends: 2.2_
 
 - [ ] 3. Score submission と rebuild の command workflows を実装する
-- [ ] 3.1 Score submit 時の leaderboard eligibility evidence を保存する
+- [x] 3.1 Score submit 時の leaderboard eligibility evidence を保存する
   - accepted Score は保存対象のまま、leaderboard adoption eligibility を別 evidence として持つ
   - failed score と submission-time ineligible score は projection、PB、submit PB delta に採用しない
   - pre-promotion score は後から Beatmap が promoted されても projection 候補にしない

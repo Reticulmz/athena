@@ -544,6 +544,9 @@ class ProcessScoreSubmissionUseCase:
             beatmap_result.beatmapset.id if beatmap_result.beatmapset is not None else 0
         )
         beatmap_status_at_submission = beatmap_result.beatmap.effective_status.value
+        leaderboard_eligible_at_submission = (
+            parsed.passed and eligibility is not None and eligibility.has_leaderboard
+        )
 
         await self._request_score_submit_fallback_warmup(
             user_id=auth_ctx.user_id,
@@ -605,6 +608,7 @@ class ProcessScoreSubmissionUseCase:
             client_version=input_data.osu_version or "unknown",
             submitted_at=input_data.submitted_at,
             beatmap_status_at_submission=beatmap_status_at_submission,
+            leaderboard_eligible_at_submission=leaderboard_eligible_at_submission,
         )
 
         replay_blob_id: int | None = None
@@ -627,11 +631,8 @@ class ProcessScoreSubmissionUseCase:
                 replay_byte_size=replay_byte_size,
                 grade_discrepancy=grade_discrepancy,
                 opaque_field_hashes=opaque_field_hashes,
-                include_personal_best_delta=eligibility is not None
-                and eligibility.has_leaderboard,
-                update_personal_best=parsed.passed
-                and eligibility is not None
-                and eligibility.has_leaderboard,
+                include_personal_best_delta=leaderboard_eligible_at_submission,
+                update_personal_best=leaderboard_eligible_at_submission,
             )
         )
         db_latency_ms = (time.perf_counter() - db_start) * 1000

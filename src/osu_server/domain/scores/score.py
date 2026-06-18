@@ -67,3 +67,4 @@ class Score:
     client_version: str
     submitted_at: datetime
     beatmap_status_at_submission: str | None = None
+    leaderboard_eligible_at_submission: bool = False

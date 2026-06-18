@@ -45,6 +45,7 @@ class SQLAlchemyScoreCommandRepository:
             client_version=score.client_version,
             submitted_at=score.submitted_at,
             beatmap_status_at_submission=score.beatmap_status_at_submission,
+            leaderboard_eligible_at_submission=score.leaderboard_eligible_at_submission,
         )
         self._session.add(model)
         try:
@@ -103,4 +104,5 @@ def _score_to_domain(model: ScoreModel) -> Score:
         client_version=model.client_version,
         submitted_at=model.submitted_at,
         beatmap_status_at_submission=model.beatmap_status_at_submission,
+        leaderboard_eligible_at_submission=model.leaderboard_eligible_at_submission,
     )

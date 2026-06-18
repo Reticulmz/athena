@@ -26,6 +26,9 @@ class InMemoryScoreCommandRepository:
         self._state.next_score_id += 1
         self._state.scores_by_id[created.id] = created
         self._state.score_id_by_online_checksum[created.online_checksum] = created.id
+        self._state.score_leaderboard_eligibility_by_id[created.id] = (
+            created.leaderboard_eligible_at_submission
+        )
         return created
 
     async def exists_by_online_checksum(self, checksum: str) -> bool:

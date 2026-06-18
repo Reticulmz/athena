@@ -162,7 +162,7 @@ async def _record_completed(
         return await _record_terminal_reject(uow, submission, duplicate_command)
 
     personal_best_delta_before = None
-    if command.include_personal_best_delta:
+    if command.include_personal_best_delta and _can_use_score_for_personal_best(score):
         personal_best_delta_before = await _current_personal_best_score(
             uow,
             _personal_best_scope(command, score),
@@ -354,7 +354,9 @@ async def _personal_best_delta(
     created_score: Score,
     before_score: Score | None,
 ) -> PersonalBestDelta | None:
-    if not command.include_personal_best_delta:
+    if not command.include_personal_best_delta or not _can_use_score_for_personal_best(
+        created_score
+    ):
         return None
 
     scope = _personal_best_scope(command, created_score)
@@ -388,6 +390,10 @@ async def _current_personal_best_score(
     if personal_best is None:
         return None
     return await uow.scores.get_by_id(personal_best.score_id)
+
+
+def _can_use_score_for_personal_best(score: Score) -> bool:
+    return score.passed and score.leaderboard_eligible_at_submission
 
 
 def _personal_best_scope(command: SubmitScoreCommand, score: Score) -> PersonalBestScope:
