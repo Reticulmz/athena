@@ -26,3 +26,17 @@ class ScoreCommandRepository(Protocol):
     async def get_by_id(self, score_id: int) -> Score | None:
         """Return a score by identifier for command-side consistency checks."""
         ...
+
+    async def list_leaderboard_rebuild_candidates_for_user(
+        self,
+        user_id: int,
+    ) -> tuple[Score, ...]:
+        """Return eligible source scores for rebuilding one user's leaderboard slice."""
+        ...
+
+    async def list_leaderboard_rebuild_candidates_for_beatmap_ids(
+        self,
+        beatmap_ids: tuple[int, ...],
+    ) -> tuple[Score, ...]:
+        """Return eligible source scores for rebuilding one beatmap projection slice."""
+        ...

@@ -90,7 +90,7 @@
   - _Requirements: 2.1, 2.2, 2.6, 5.7, 8.1, 8.2, 8.3, 8.4_
   - _Depends: 2.2, 3.1_
 
-- [ ] 3.3 Rebuild command workflow を実装する
+- [x] 3.3 Rebuild command workflow を実装する
   - user slice と beatmapset slice を source Score から再計算できるようにする
   - explicit projection slice replacement により eligible source がない場合も stale projection rows を消す
   - repeated rebuild は同じ public leaderboard result に収束する

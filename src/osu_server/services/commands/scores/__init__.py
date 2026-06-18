@@ -4,6 +4,13 @@ from osu_server.services.commands.scores.authorization import (
     AuthorizationContext,
     ScoreAuthorizationService,
 )
+from osu_server.services.commands.scores.leaderboards import (
+    RebuildBeatmapLeaderboardsForBeatmapsetCommand,
+    RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
+    RebuildBeatmapLeaderboardsForUserCommand,
+    RebuildBeatmapLeaderboardsForUserUseCase,
+    RebuildBeatmapLeaderboardsResult,
+)
 from osu_server.services.commands.scores.process_submission import (
     ParsedSubmissionInput,
     ProcessScoreSubmissionUseCase,
@@ -25,6 +32,11 @@ __all__ = [
     "AuthorizationContext",
     "ParsedSubmissionInput",
     "ProcessScoreSubmissionUseCase",
+    "RebuildBeatmapLeaderboardsForBeatmapsetCommand",
+    "RebuildBeatmapLeaderboardsForBeatmapsetUseCase",
+    "RebuildBeatmapLeaderboardsForUserCommand",
+    "RebuildBeatmapLeaderboardsForUserUseCase",
+    "RebuildBeatmapLeaderboardsResult",
     "ScoreAuthorizationService",
     "ScorePayloadParser",
     "SubmissionOutcome",

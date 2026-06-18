@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.exc import IntegrityError
 
 from osu_server.domain.scores.mods import ModCombination
@@ -78,6 +78,32 @@ class SQLAlchemyScoreCommandRepository:
         model = await self._session.get(ScoreModel, score_id)
         return _score_to_domain(model) if isinstance(model, ScoreModel) else None
 
+    async def list_leaderboard_rebuild_candidates_for_user(
+        self,
+        user_id: int,
+    ) -> tuple[Score, ...]:
+        models = (
+            await self._session.execute(
+                _leaderboard_rebuild_candidate_statement().where(ScoreModel.user_id == user_id)
+            )
+        ).scalars()
+        return tuple(_score_to_domain(model) for model in models)
+
+    async def list_leaderboard_rebuild_candidates_for_beatmap_ids(
+        self,
+        beatmap_ids: tuple[int, ...],
+    ) -> tuple[Score, ...]:
+        if len(beatmap_ids) == 0:
+            return ()
+        models = (
+            await self._session.execute(
+                _leaderboard_rebuild_candidate_statement().where(
+                    ScoreModel.beatmap_id.in_(beatmap_ids)
+                )
+            )
+        ).scalars()
+        return tuple(_score_to_domain(model) for model in models)
+
 
 def _score_to_domain(model: ScoreModel) -> Score:
     return Score(
@@ -105,4 +131,23 @@ def _score_to_domain(model: ScoreModel) -> Score:
         submitted_at=model.submitted_at,
         beatmap_status_at_submission=model.beatmap_status_at_submission,
         leaderboard_eligible_at_submission=model.leaderboard_eligible_at_submission,
+    )
+
+
+def _leaderboard_rebuild_candidate_statement() -> Select[tuple[ScoreModel]]:
+    return (
+        select(ScoreModel)
+        .where(
+            ScoreModel.passed.is_(True),
+            ScoreModel.leaderboard_eligible_at_submission.is_(True),
+        )
+        .order_by(
+            ScoreModel.beatmap_id.asc(),
+            ScoreModel.ruleset.asc(),
+            ScoreModel.playstyle.asc(),
+            ScoreModel.user_id.asc(),
+            ScoreModel.score.desc(),
+            ScoreModel.submitted_at.asc(),
+            ScoreModel.id.asc(),
+        )
     )

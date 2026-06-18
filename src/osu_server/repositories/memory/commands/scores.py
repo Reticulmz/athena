@@ -6,6 +6,8 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from osu_server.domain.scores.score import Score
     from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
@@ -42,3 +44,54 @@ class InMemoryScoreCommandRepository:
 
     async def get_by_id(self, score_id: int) -> Score | None:
         return self._state.scores_by_id.get(score_id)
+
+    async def list_leaderboard_rebuild_candidates_for_user(
+        self,
+        user_id: int,
+    ) -> tuple[Score, ...]:
+        return tuple(
+            sorted(
+                (
+                    score
+                    for score in self._state.scores_by_id.values()
+                    if score.user_id == user_id and _is_leaderboard_rebuild_candidate(score)
+                ),
+                key=_rebuild_candidate_sort_key,
+            )
+        )
+
+    async def list_leaderboard_rebuild_candidates_for_beatmap_ids(
+        self,
+        beatmap_ids: tuple[int, ...],
+    ) -> tuple[Score, ...]:
+        beatmap_id_set = frozenset(beatmap_ids)
+        if len(beatmap_id_set) == 0:
+            return ()
+        return tuple(
+            sorted(
+                (
+                    score
+                    for score in self._state.scores_by_id.values()
+                    if score.beatmap_id in beatmap_id_set
+                    and _is_leaderboard_rebuild_candidate(score)
+                ),
+                key=_rebuild_candidate_sort_key,
+            )
+        )
+
+
+def _is_leaderboard_rebuild_candidate(score: Score) -> bool:
+    return score.passed and score.leaderboard_eligible_at_submission and score.id is not None
+
+
+def _rebuild_candidate_sort_key(score: Score) -> tuple[int, int, int, int, int, datetime, int]:
+    assert score.id is not None
+    return (
+        score.beatmap_id,
+        score.ruleset.value,
+        score.playstyle.value,
+        score.user_id,
+        -score.score,
+        score.submitted_at,
+        score.id,
+    )

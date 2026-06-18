@@ -184,6 +184,8 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         "exists_by_online_checksum",
         "get_by_id",
         "get_by_online_checksum",
+        "list_leaderboard_rebuild_candidates_for_beatmap_ids",
+        "list_leaderboard_rebuild_candidates_for_user",
     }
     assert _public_async_methods(PersonalBestCommandRepository) == {
         "get_by_scope",
