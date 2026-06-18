@@ -149,7 +149,7 @@
   - _Depends: 5.1, 5.2_
 
 - [ ] 6. Runtime composition と background jobs を接続する
-- [ ] 6.1 App/test composition に leaderboard repositories と queries を登録する
+- [x] 6.1 App/test composition に leaderboard repositories と queries を登録する
   - production graph が SQLAlchemy query repository と leaderboard query use-case を解決できるようにする
   - test graph が in-memory repositories と self-inclusive friend query contract を使えるようにする
   - package exports と provider wiring が import boundary に合うようにする

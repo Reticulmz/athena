@@ -37,6 +37,9 @@ from osu_server.infrastructure.state.memory.channel_state_store import InMemoryC
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
+from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+    BeatmapLeaderboardQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
@@ -51,6 +54,13 @@ from osu_server.repositories.interfaces.queries.score_performance import (
 )
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
+from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
+from osu_server.repositories.memory.queries.beatmap_leaderboards import (
+    InMemoryBeatmapLeaderboardQueryRepository,
+)
+from osu_server.repositories.sqlalchemy.queries.beatmap_leaderboards import (
+    SQLAlchemyBeatmapLeaderboardQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.beatmap_score_listing import (
     SQLAlchemyBeatmapScoreListingQueryRepository,
 )
@@ -115,6 +125,7 @@ from osu_server.services.queries.chat.private_message_service import PrivateMess
 from osu_server.services.queries.identity import (
     ComputePermissionsQueryUseCase,
     ComputeSessionAuthorizationQueryUseCase,
+    GetFriendEligibleUserIdsQuery,
     ListActiveSessionsQueryUseCase,
     SessionCredentialsQueryUseCase,
 )
@@ -209,6 +220,10 @@ async def test_app_provider_graph_resolves_query_repositories() -> None:
         assert isinstance(
             await container.get(BeatmapScoreListingQueryRepository),
             SQLAlchemyBeatmapScoreListingQueryRepository,
+        )
+        assert isinstance(
+            await container.get(BeatmapLeaderboardQueryRepository),
+            SQLAlchemyBeatmapLeaderboardQueryRepository,
         )
         assert isinstance(await container.get(BlobQueryRepository), SQLAlchemyBlobQueryRepository)
         assert isinstance(
@@ -352,6 +367,37 @@ async def test_app_provider_graph_wires_single_warmup_use_case_into_stable_workf
         assert getscores_warmup is warmup
         assert status_warmup is warmup
         assert wired_warmup is warmup
+    finally:
+        await _close_common_dependencies(container)
+
+
+@pytest.mark.asyncio
+async def test_app_provider_graph_wires_getscores_to_leaderboard_query_dependencies() -> None:
+    config = make_app_config(environment="test")
+    container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
+
+    try:
+        leaderboard_repository = await container.get(BeatmapLeaderboardQueryRepository)
+        assert isinstance(leaderboard_repository, InMemoryBeatmapLeaderboardQueryRepository)
+
+        getscores = await container.get(GetscoresHandler)
+        getscores_query = cast(
+            "BeatmapScoreListingQuery",
+            object.__getattribute__(getscores, "_getscores_query"),
+        )
+        wired_leaderboard_repository = cast(
+            "BeatmapLeaderboardQueryRepository | None",
+            object.__getattribute__(getscores_query, "_leaderboards"),
+        )
+        assert wired_leaderboard_repository is leaderboard_repository
+
+        friend_eligible_query = await container.get(GetFriendEligibleUserIdsQuery)
+        uow_factory = await container.get(UnitOfWorkFactory)
+        async with uow_factory() as uow:
+            _ = await uow.friends.add_relationship(owner_user_id=10, target_user_id=20)
+            await uow.commit()
+
+        assert await friend_eligible_query.execute(viewer_user_id=10) == (10, 20)
     finally:
         await _close_common_dependencies(container)
 
