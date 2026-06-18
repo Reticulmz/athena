@@ -28,6 +28,10 @@ from osu_server.services.commands.chat import (
     PersistChannelMessageUseCase,
     PersistPrivateMessageUseCase,
 )
+from osu_server.services.commands.scores.leaderboards import (
+    RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
+    RebuildBeatmapLeaderboardsForUserUseCase,
+)
 from osu_server.services.commands.scores.performance import (
     ExecutePerformanceCalculationUseCase,
     ProcessPerformanceRecalculationBatchUseCase,
@@ -58,6 +62,8 @@ def _clear_worker_runtime_state(state: TaskiqState) -> None:
     state.beatmap_file_fetch = None
     state.score_performance_calculation_executor = None
     state.performance_recalculation_batch_processor = None
+    state.beatmap_leaderboard_user_rebuild_use_case = None
+    state.beatmap_leaderboard_beatmapset_rebuild_use_case = None
 
 
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
@@ -84,6 +90,12 @@ async def startup(state: TaskiqState) -> None:
         )
         state.performance_recalculation_batch_processor = await worker_container.get(
             ProcessPerformanceRecalculationBatchUseCase
+        )
+        state.beatmap_leaderboard_user_rebuild_use_case = await worker_container.get(
+            RebuildBeatmapLeaderboardsForUserUseCase
+        )
+        state.beatmap_leaderboard_beatmapset_rebuild_use_case = await worker_container.get(
+            RebuildBeatmapLeaderboardsForBeatmapsetUseCase
         )
     except Exception:
         _clear_worker_runtime_state(state)

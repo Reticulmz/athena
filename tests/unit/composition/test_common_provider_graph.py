@@ -101,7 +101,12 @@ from osu_server.services.commands.identity.auth_service import AuthService
 from osu_server.services.commands.identity.session_authorization_service import (
     SessionAuthorizationService,
 )
-from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase, SubmitScoreUseCase
+from osu_server.services.commands.scores import (
+    ProcessScoreSubmissionUseCase,
+    RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
+    RebuildBeatmapLeaderboardsForUserUseCase,
+    SubmitScoreUseCase,
+)
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from osu_server.services.commands.scores.performance import PerformanceRuntimeSettings
 from osu_server.services.commands.storage.blob_storage import BlobStorageService
@@ -189,6 +194,8 @@ async def test_app_provider_graph_resolves_shared_infrastructure_dependencies() 
         assert broker.find_task("fetch_beatmap_file") is not None
         assert broker.find_task("calculate_score_performance") is not None
         assert broker.find_task("process_performance_recalculation_batch") is not None
+        assert broker.find_task("rebuild_beatmap_leaderboards_for_user") is not None
+        assert broker.find_task("rebuild_beatmap_leaderboards_for_beatmapset") is not None
         assert isinstance(http_client, httpx.AsyncClient)
         assert blob_backend is not None
         assert event_bus is not None
@@ -260,6 +267,8 @@ async def test_app_provider_graph_resolves_shared_provider_groups() -> None:
         PerformanceRuntimeSettings,
         FormulaProfilePolicy,
         BeatmapScoreListingQuery,
+        RebuildBeatmapLeaderboardsForUserUseCase,
+        RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
         ListVisibleChannelsQuery,
         ListAutojoinChannelsQuery,
         ResolveChannelMessageDeliveryQuery,

@@ -12,9 +12,20 @@ from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
+from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
+from osu_server.services.commands.scores.leaderboards import (
+    RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
+    RebuildBeatmapLeaderboardsForUserUseCase,
+)
 from osu_server.services.queries.scores import BeatmapScoreListingQuery
 
-_DISHKA_RUNTIME_HINTS = (BeatmapScoreListingQueryRepository, PersonalBestQueryRepository)
+_DISHKA_RUNTIME_HINTS = (
+    BeatmapScoreListingQueryRepository,
+    PersonalBestQueryRepository,
+    RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
+    RebuildBeatmapLeaderboardsForUserUseCase,
+    UnitOfWorkFactory,
+)
 
 
 @final
@@ -34,3 +45,17 @@ class ScoreProviderSet(Provider):
         personal_bests: PersonalBestQueryRepository,
     ) -> BeatmapScoreListingQuery:
         return BeatmapScoreListingQuery(repository, personal_bests)
+
+    @provide
+    def rebuild_beatmap_leaderboards_for_user_use_case(
+        self,
+        uow_factory: UnitOfWorkFactory,
+    ) -> RebuildBeatmapLeaderboardsForUserUseCase:
+        return RebuildBeatmapLeaderboardsForUserUseCase(uow_factory)
+
+    @provide
+    def rebuild_beatmap_leaderboards_for_beatmapset_use_case(
+        self,
+        uow_factory: UnitOfWorkFactory,
+    ) -> RebuildBeatmapLeaderboardsForBeatmapsetUseCase:
+        return RebuildBeatmapLeaderboardsForBeatmapsetUseCase(uow_factory)

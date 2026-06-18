@@ -14,6 +14,7 @@ _JOB_MODULES = (
     "osu_server.jobs.chat_persistence",
     "osu_server.jobs.beatmap_fetch",
     "osu_server.jobs.score_performance",
+    "osu_server.jobs.beatmap_leaderboards",
 )
 
 

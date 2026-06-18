@@ -157,7 +157,7 @@
   - _Requirements: 1.1, 3.1, 4.3, 8.5, 9.1_
   - _Depends: 2.4, 4.3, 5.3_
 
-- [ ] 6.2 Worker job adapters と taskiq registration を追加する
+- [x] 6.2 Worker job adapters と taskiq registration を追加する
   - user visibility change と beatmapset status/checksum change から rebuild job を primitive payload で実行できるようにする
   - job adapter は use-case resolution と payload validation だけを行い、repository construction や SQLAlchemy access を直接行わない
   - missing target は no-op success、persistence failure は observable failure として扱う
