@@ -9,6 +9,7 @@ from osu_server.domain.compatibility.stable.getscores import (
     GetscoresRequest,
     GetscoresResolveReason,
 )
+from osu_server.services.queries.scores.beatmap_leaderboards import BeatmapLeaderboardQuery
 from osu_server.services.queries.scores.beatmap_score_listing import BeatmapScoreListingQuery
 
 if TYPE_CHECKING:
@@ -59,8 +60,10 @@ class EmptyBeatmapLeaderboardRepository:
 
 async def test_getscores_query_returns_unavailable_without_starting_fetch() -> None:
     query = BeatmapScoreListingQuery(
-        EmptyBeatmapScoreListingRepository(),
-        EmptyBeatmapLeaderboardRepository(),
+        BeatmapLeaderboardQuery(
+            EmptyBeatmapScoreListingRepository(),
+            EmptyBeatmapLeaderboardRepository(),
+        )
     )
 
     outcome = await query.resolve(

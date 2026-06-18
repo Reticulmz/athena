@@ -25,7 +25,10 @@ from osu_server.services.queries.identity import (
     PermissionService,
     SessionCredentialsQueryUseCase,
 )
-from osu_server.services.queries.scores import BeatmapScoreListingQuery
+from osu_server.services.queries.scores import (
+    BeatmapLeaderboardQuery,
+    BeatmapScoreListingQuery,
+)
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
@@ -38,6 +41,7 @@ from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHand
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
     BeatmapLeaderboardQueryRepository,
+    BeatmapLeaderboardQuery,
     BeatmapMirrorService,
     BeatmapScoreListingQueryRepository,
     BeatmapScoreListingQuery,
@@ -87,13 +91,14 @@ class StableWebLegacyProviderSet(Provider):
         beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
         config: AppConfig,
     ) -> GetscoresHandler:
-        getscores_query = BeatmapScoreListingQuery(
+        leaderboard_query = BeatmapLeaderboardQuery(
             getscores_repository,
             leaderboards,
             user_repository=user_repository,
             permission_service=permission_service,
             friend_eligible_user_ids_query=friend_eligible_user_ids_query,
         )
+        getscores_query = BeatmapScoreListingQuery(leaderboard_query)
         return GetscoresHandler(
             auth_query=auth_query,
             getscores_parser=getscores_parser,

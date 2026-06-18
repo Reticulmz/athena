@@ -23,6 +23,7 @@ from osu_server.domain.compatibility.stable.getscores import (
     GetscoresResolveReason,
 )
 from osu_server.domain.scores.score import Ruleset
+from osu_server.services.queries.scores.beatmap_leaderboards import BeatmapLeaderboardQuery
 from osu_server.services.queries.scores.beatmap_score_listing import BeatmapScoreListingQuery
 from osu_server.transports.stable.web_legacy.mappers import StableGetscoresLeaderboardMapper
 
@@ -98,6 +99,13 @@ def leaderboard_repo() -> EmptyBeatmapLeaderboardQueryRepositoryStub:
     return EmptyBeatmapLeaderboardQueryRepositoryStub()
 
 
+def _query(
+    getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+    leaderboard_repo: EmptyBeatmapLeaderboardQueryRepositoryStub,
+) -> BeatmapScoreListingQuery:
+    return BeatmapScoreListingQuery(BeatmapLeaderboardQuery(getscores_repo, leaderboard_repo))
+
+
 @pytest.fixture
 def sample_beatmap() -> Beatmap:
     """Sample beatmap for testing."""
@@ -156,7 +164,7 @@ class TestBeatmapScoreListingQuery:
         leaderboard_repo: EmptyBeatmapLeaderboardQueryRepositoryStub,
     ) -> None:
         """Query returns unavailable when beatmap not found."""
-        query = BeatmapScoreListingQuery(getscores_repo, leaderboard_repo)
+        query = _query(getscores_repo, leaderboard_repo)
         result = await query.resolve_by_checksum(checksum_md5="a" * 32)
 
         assert result.kind == GetscoresOutcomeKind.UNAVAILABLE
@@ -174,7 +182,7 @@ class TestBeatmapScoreListingQuery:
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        query = BeatmapScoreListingQuery(getscores_repo, leaderboard_repo)
+        query = _query(getscores_repo, leaderboard_repo)
         result = await query.resolve_by_checksum(checksum_md5="a" * 32)
 
         assert result.kind == GetscoresOutcomeKind.HEADER
@@ -192,7 +200,7 @@ class TestBeatmapScoreListingQuery:
         """Query returns unavailable when beatmapset is missing."""
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
 
-        query = BeatmapScoreListingQuery(getscores_repo, leaderboard_repo)
+        query = _query(getscores_repo, leaderboard_repo)
         result = await query.resolve_by_checksum(checksum_md5="a" * 32)
 
         assert result.kind == GetscoresOutcomeKind.UNAVAILABLE
@@ -239,7 +247,7 @@ class TestBeatmapScoreListingQuery:
         )
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        query = BeatmapScoreListingQuery(getscores_repo, leaderboard_repo)
+        query = _query(getscores_repo, leaderboard_repo)
         result = await query.resolve_by_checksum(checksum_md5="a" * 32)
 
         assert result.kind == GetscoresOutcomeKind.UNAVAILABLE
@@ -260,7 +268,7 @@ class TestBeatmapScoreListingQuery:
         )
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        query = BeatmapScoreListingQuery(getscores_repo, leaderboard_repo)
+        query = _query(getscores_repo, leaderboard_repo)
         result = await query.resolve(
             GetscoresRequest(
                 checksum_md5="b" * 32,
@@ -289,7 +297,7 @@ class TestBeatmapScoreListingQuery:
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        query = BeatmapScoreListingQuery(getscores_repo, leaderboard_repo)
+        query = _query(getscores_repo, leaderboard_repo)
         result = await query.resolve(
             _with_leaderboard_selection(
                 GetscoresRequest(
@@ -326,7 +334,7 @@ class TestBeatmapScoreListingQuery:
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        query = BeatmapScoreListingQuery(getscores_repo, leaderboard_repo)
+        query = _query(getscores_repo, leaderboard_repo)
         result = await query.resolve(
             _with_leaderboard_selection(
                 GetscoresRequest(

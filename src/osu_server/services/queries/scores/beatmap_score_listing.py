@@ -1,16 +1,9 @@
-"""Beatmap score listing query use-case.
-
-Query-side beatmap resolution for score listing compatibility. This use-case
-provides read-only beatmap resolution without triggering command-side mutations
-or background fetch workflows.
-"""
+"""Stable score listing adapter query use-case."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
-from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.compatibility.stable.getscores import (
     GetscoresOutcomeKind,
     GetscoresPersonalBest,
@@ -19,76 +12,28 @@ from osu_server.domain.compatibility.stable.getscores import (
     GetscoresResolveOutcome,
     GetscoresResolveReason,
 )
-from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
-from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
-from osu_server.repositories.interfaces.queries.beatmap_leaderboards import LeaderboardReadScope
+from osu_server.services.queries.scores.beatmap_leaderboards import (
+    BeatmapLeaderboardOutcomeKind,
+    BeatmapLeaderboardQuery,
+    BeatmapLeaderboardRequest,
+    BeatmapLeaderboardResolveReason,
+    BeatmapLeaderboardResult,
+)
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmaps import Beatmap
-    from osu_server.domain.identity.authorization import Privileges
     from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
-        BeatmapLeaderboardQueryRepository,
         BeatmapLeaderboardRow,
     )
-    from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
-        BeatmapScoreListingQueryRepository,
-    )
-    from osu_server.repositories.interfaces.queries.users import UserQueryRepository
-    from osu_server.services.queries.identity import GetFriendEligibleUserIdsQueryUseCase
-
-
-class _PermissionReader(Protocol):
-    async def compute_permissions(self, user_id: int) -> Privileges: ...
-
-
-_DISPLAYABLE_STATUSES = {
-    BeatmapRankStatus.PENDING,
-    BeatmapRankStatus.WIP,
-    BeatmapRankStatus.GRAVEYARD,
-    BeatmapRankStatus.RANKED,
-    BeatmapRankStatus.APPROVED,
-    BeatmapRankStatus.QUALIFIED,
-    BeatmapRankStatus.LOVED,
-}
-_LEADERBOARD_VISIBLE_STATUSES = {
-    BeatmapRankStatus.RANKED,
-    BeatmapRankStatus.APPROVED,
-    BeatmapRankStatus.QUALIFIED,
-    BeatmapRankStatus.LOVED,
-}
-_LEADERBOARD_ROW_LIMIT = 50
-
-
-@dataclass(slots=True, frozen=True)
-class _ViewerLeaderboardContext:
-    country: str
-    leaderboard_visible: bool
 
 
 class BeatmapScoreListingQuery:
-    """Score listing beatmap resolution query use-case (read-only)."""
+    """Adapt stable getscores requests to the Beatmap Leaderboard query boundary."""
 
-    _repository: BeatmapScoreListingQueryRepository
-    _leaderboards: BeatmapLeaderboardQueryRepository
-    _user_repository: UserQueryRepository | None
-    _permission_service: _PermissionReader | None
-    _friend_eligible_user_ids_query: GetFriendEligibleUserIdsQueryUseCase | None
+    _leaderboard_query: BeatmapLeaderboardQuery
 
-    def __init__(
-        self,
-        repository: BeatmapScoreListingQueryRepository,
-        leaderboards: BeatmapLeaderboardQueryRepository,
-        *,
-        user_repository: UserQueryRepository | None = None,
-        permission_service: _PermissionReader | None = None,
-        friend_eligible_user_ids_query: GetFriendEligibleUserIdsQueryUseCase | None = None,
-    ) -> None:
-        self._repository = repository
-        self._leaderboards = leaderboards
-        self._user_repository = user_repository
-        self._permission_service = permission_service
-        self._friend_eligible_user_ids_query = friend_eligible_user_ids_query
+    def __init__(self, leaderboard_query: BeatmapLeaderboardQuery) -> None:
+        self._leaderboard_query = leaderboard_query
 
     async def resolve(
         self,
@@ -96,54 +41,31 @@ class BeatmapScoreListingQuery:
         *,
         user_id: int | None = None,
     ) -> GetscoresResolveOutcome:
-        """Resolve a parsed getscores request without command-side mutation."""
-        if request.checksum_md5 is not None:
-            beatmap = await self._repository.find_by_checksum(request.checksum_md5)
-            if beatmap is not None:
-                return await self._evaluate_beatmap(
-                    beatmap,
-                    reason=GetscoresResolveReason.KNOWN_CHECKSUM,
-                    request=request,
-                    user_id=user_id,
-                )
-
-            if request.filename is not None and request.beatmapset_id_hint is not None:
-                return await self._resolve_update_available(
-                    checksum_md5=request.checksum_md5,
-                    beatmapset_id=request.beatmapset_id_hint,
-                    filename=request.filename,
-                    request=request,
-                    user_id=user_id,
-                )
-
-            return _unavailable(GetscoresResolveReason.NOT_FOUND)
-
-        if request.filename is not None and request.beatmapset_id_hint is not None:
-            return await self._resolve_by_filename_in_beatmapset(
-                beatmapset_id=request.beatmapset_id_hint,
-                filename=request.filename,
-                request=request,
-                user_id=user_id,
-            )
-
-        return _unavailable(GetscoresResolveReason.NOT_FOUND)
+        """Resolve a parsed stable getscores request without command-side mutation."""
+        result = await self._leaderboard_query.execute(
+            _leaderboard_request_from_getscores(request, user_id=user_id)
+        )
+        return _to_getscores_outcome(result)
 
     async def resolve_by_checksum(
         self,
         checksum_md5: str,
     ) -> GetscoresResolveOutcome:
-        """Resolve beatmap by checksum for getscores response."""
-        beatmap = await self._repository.find_by_checksum(checksum_md5)
-
-        if beatmap is None:
-            return _unavailable(GetscoresResolveReason.NOT_FOUND)
-
-        return await self._evaluate_beatmap(
-            beatmap,
-            reason=GetscoresResolveReason.KNOWN_CHECKSUM,
-            request=None,
-            user_id=None,
+        """Resolve beatmap by checksum for a stable getscores-compatible response."""
+        result = await self._leaderboard_query.execute(
+            BeatmapLeaderboardRequest(
+                beatmap_checksum=checksum_md5,
+                filename=None,
+                beatmapset_id_hint=None,
+                viewer_user_id=None,
+                ruleset=None,
+                playstyle=Playstyle.VANILLA,
+                category=None,
+                selected_mod_filter=None,
+                header_only=True,
+            )
         )
+        return _to_getscores_outcome(result)
 
     async def resolve_by_filename_in_beatmapset(
         self,
@@ -151,223 +73,39 @@ class BeatmapScoreListingQuery:
         filename: str,
     ) -> GetscoresResolveOutcome:
         """Resolve beatmap by filename within a beatmapset."""
-        return await self._resolve_by_filename_in_beatmapset(
-            beatmapset_id=beatmapset_id,
-            filename=filename,
-            request=None,
-            user_id=None,
-        )
-
-    async def _resolve_by_filename_in_beatmapset(
-        self,
-        *,
-        beatmapset_id: int,
-        filename: str,
-        request: GetscoresRequest | None,
-        user_id: int | None,
-    ) -> GetscoresResolveOutcome:
-        """Resolve beatmap by filename within a beatmapset."""
-        beatmap = await self._repository.find_by_filename_in_beatmapset(
-            beatmapset_id,
-            filename,
-        )
-
-        if beatmap is None:
-            return _unavailable(GetscoresResolveReason.NOT_FOUND)
-
-        return await self._evaluate_beatmap(
-            beatmap,
-            reason=GetscoresResolveReason.KNOWN_FILENAME_IN_SET,
-            request=request,
-            user_id=user_id,
-        )
-
-    async def _evaluate_beatmap(
-        self,
-        beatmap: Beatmap,
-        *,
-        reason: GetscoresResolveReason,
-        request: GetscoresRequest | None,
-        user_id: int | None,
-    ) -> GetscoresResolveOutcome:
-        """Evaluate a found beatmap for getscores header."""
-        beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
-
-        if beatmapset is None:
-            return _unavailable(GetscoresResolveReason.NOT_FOUND)
-
-        if not _is_displayable_in_score_listing(beatmap):
-            return _unavailable(GetscoresResolveReason.NOT_SUBMITTED)
-
-        personal_best: GetscoresPersonalBest | None = None
-        score_rows: tuple[GetscoresPersonalBest, ...] = ()
-        if _is_leaderboard_visible_beatmap(beatmap):
-            score_rows, personal_best = await self._resolve_leaderboard_listing(
-                request=request,
-                beatmap=beatmap,
-                user_id=user_id,
+        result = await self._leaderboard_query.execute(
+            BeatmapLeaderboardRequest(
+                beatmap_checksum=None,
+                filename=filename,
+                beatmapset_id_hint=beatmapset_id,
+                viewer_user_id=None,
+                ruleset=None,
+                playstyle=Playstyle.VANILLA,
+                category=None,
+                selected_mod_filter=None,
+                header_only=True,
             )
-
-        return GetscoresResolveOutcome(
-            kind=GetscoresOutcomeKind.HEADER,
-            header=GetscoresResolvedHeader(
-                beatmap=beatmap,
-                beatmapset=beatmapset,
-                personal_best=personal_best,
-                score_rows=score_rows,
-            ),
-            reason=reason,
         )
-
-    async def _resolve_update_available(
-        self,
-        *,
-        checksum_md5: str,
-        beatmapset_id: int,
-        filename: str,
-        request: GetscoresRequest,
-        user_id: int | None,
-    ) -> GetscoresResolveOutcome:
-        beatmap = await self._repository.find_by_filename_in_beatmapset(
-            beatmapset_id,
-            filename,
-        )
-        if beatmap is None:
-            return _unavailable(GetscoresResolveReason.NOT_FOUND)
-
-        if beatmap.checksum_md5 == checksum_md5:
-            return await self._evaluate_beatmap(
-                beatmap,
-                reason=GetscoresResolveReason.KNOWN_FILENAME_IN_SET,
-                request=request,
-                user_id=user_id,
-            )
-
-        beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
-        if beatmapset is None:
-            return _unavailable(GetscoresResolveReason.NOT_FOUND)
-
-        if not _is_displayable_in_score_listing(beatmap):
-            return _unavailable(GetscoresResolveReason.NOT_SUBMITTED)
-
-        return GetscoresResolveOutcome(
-            kind=GetscoresOutcomeKind.UPDATE_AVAILABLE,
-            header=GetscoresResolvedHeader(
-                beatmap=beatmap,
-                beatmapset=beatmapset,
-            ),
-            reason=GetscoresResolveReason.UPDATE_AVAILABLE,
-        )
-
-    async def _resolve_leaderboard_listing(
-        self,
-        *,
-        request: GetscoresRequest | None,
-        beatmap: Beatmap,
-        user_id: int | None,
-    ) -> tuple[tuple[GetscoresPersonalBest, ...], GetscoresPersonalBest | None]:
-        base_scope = _leaderboard_scope_from_request(
-            request=request,
-            beatmap=beatmap,
-        )
-        if base_scope is None:
-            return (), None
-
-        viewer_context = await self._resolve_viewer_context(user_id)
-        scope = await self._resolve_viewer_dependent_scope(
-            scope=base_scope,
-            user_id=user_id,
-            viewer_context=viewer_context,
-        )
-        if scope is None:
-            return (), None
-
-        rows = await self._leaderboards.list_top_rows(
-            scope,
-            limit=_LEADERBOARD_ROW_LIMIT,
-        )
-        personal_best = None
-        if (
-            user_id is not None
-            and viewer_context is not None
-            and viewer_context.leaderboard_visible
-        ):
-            personal_best_row = await self._leaderboards.get_personal_best(
-                scope,
-                viewer_user_id=user_id,
-            )
-            if personal_best_row is not None:
-                personal_best = _leaderboard_row_to_getscores_row(personal_best_row)
-
-        return tuple(_leaderboard_row_to_getscores_row(row) for row in rows), personal_best
-
-    async def _resolve_viewer_context(
-        self,
-        user_id: int | None,
-    ) -> _ViewerLeaderboardContext | None:
-        if user_id is None or self._user_repository is None:
-            return None
-
-        user = await self._user_repository.get_by_id(user_id)
-        if user is None:
-            return None
-
-        leaderboard_visible = False
-        if self._permission_service is not None:
-            privileges = await self._permission_service.compute_permissions(user_id)
-            leaderboard_visible = is_leaderboard_visible_user(privileges)
-
-        return _ViewerLeaderboardContext(
-            country=user.country,
-            leaderboard_visible=leaderboard_visible,
-        )
-
-    async def _resolve_viewer_dependent_scope(
-        self,
-        *,
-        scope: LeaderboardReadScope,
-        user_id: int | None,
-        viewer_context: _ViewerLeaderboardContext | None,
-    ) -> LeaderboardReadScope | None:
-        if scope.category is LeaderboardCategory.COUNTRY:
-            if viewer_context is None:
-                return None
-            country = _country_scope_filter(viewer_context.country)
-            if country is None:
-                return None
-            return replace(scope, country=country)
-
-        if scope.category is LeaderboardCategory.FRIENDS:
-            if (
-                user_id is None
-                or viewer_context is None
-                or self._friend_eligible_user_ids_query is None
-            ):
-                return None
-            eligible_user_ids = await self._friend_eligible_user_ids_query.execute(
-                viewer_user_id=user_id,
-            )
-            return replace(scope, eligible_user_ids=eligible_user_ids)
-
-        return scope
+        return _to_getscores_outcome(result)
 
 
-def _unavailable(reason: GetscoresResolveReason) -> GetscoresResolveOutcome:
-    """Build an unavailable outcome."""
-    return GetscoresResolveOutcome(
-        kind=GetscoresOutcomeKind.UNAVAILABLE,
-        header=None,
-        reason=reason,
+def _leaderboard_request_from_getscores(
+    request: GetscoresRequest,
+    *,
+    user_id: int | None,
+) -> BeatmapLeaderboardRequest:
+    selection = request.leaderboard_selection
+    return BeatmapLeaderboardRequest(
+        beatmap_checksum=request.checksum_md5,
+        filename=request.filename,
+        beatmapset_id_hint=request.beatmapset_id_hint,
+        viewer_user_id=user_id,
+        ruleset=_ruleset_from_request(request),
+        playstyle=Playstyle.VANILLA,
+        category=None if selection is None else selection.category,
+        selected_mod_filter=None if selection is None else selection.selected_mod_filter,
+        header_only=True if selection is None else selection.header_only,
     )
-
-
-def _is_displayable_in_score_listing(beatmap: Beatmap) -> bool:
-    """Return whether the beatmap can produce a score listing header."""
-    return beatmap.effective_status in _DISPLAYABLE_STATUSES
-
-
-def _is_leaderboard_visible_beatmap(beatmap: Beatmap) -> bool:
-    return beatmap.effective_status in _LEADERBOARD_VISIBLE_STATUSES
 
 
 def _ruleset_from_request(request: GetscoresRequest) -> Ruleset | None:
@@ -379,44 +117,52 @@ def _ruleset_from_request(request: GetscoresRequest) -> Ruleset | None:
         return None
 
 
-def _leaderboard_scope_from_request(
-    *,
-    request: GetscoresRequest | None,
-    beatmap: Beatmap,
-) -> LeaderboardReadScope | None:
-    if request is None:
-        return None
+def _to_getscores_outcome(result: BeatmapLeaderboardResult) -> GetscoresResolveOutcome:
+    kind = _to_getscores_kind(result.kind)
+    reason = _to_getscores_reason(result.reason)
+    if result.header is None:
+        return GetscoresResolveOutcome(
+            kind=kind,
+            header=None,
+            reason=reason,
+        )
 
-    ruleset = _ruleset_from_request(request)
-    if ruleset is None:
-        return None
-
-    selection = request.leaderboard_selection
-    if selection is None or selection.header_only or selection.category is None:
-        return None
-
-    mod_filter_key: int | None = None
-    if selection.category is LeaderboardCategory.SELECTED_MODS:
-        filter_result = selection.selected_mod_filter
-        if filter_result is None or not filter_result.is_supported:
-            return None
-        mod_filter_key = filter_result.key
-
-    return LeaderboardReadScope(
-        beatmap_id=beatmap.id,
-        beatmap_checksum=beatmap.checksum_md5,
-        ruleset=ruleset,
-        playstyle=Playstyle.VANILLA,
-        category=selection.category,
-        mod_filter_key=mod_filter_key,
+    return GetscoresResolveOutcome(
+        kind=kind,
+        header=GetscoresResolvedHeader(
+            beatmap=result.header.beatmap,
+            beatmapset=result.header.beatmapset,
+            personal_best=(
+                None
+                if result.personal_best is None
+                else _leaderboard_row_to_getscores_row(result.personal_best)
+            ),
+            score_rows=tuple(_leaderboard_row_to_getscores_row(row) for row in result.rows),
+        ),
+        reason=reason,
     )
 
 
-def _country_scope_filter(country: str) -> str | None:
-    normalized = country.strip().upper()
-    if normalized in {"", "XX"}:
-        return None
-    return normalized
+def _to_getscores_kind(kind: BeatmapLeaderboardOutcomeKind) -> GetscoresOutcomeKind:
+    return {
+        BeatmapLeaderboardOutcomeKind.HEADER: GetscoresOutcomeKind.HEADER,
+        BeatmapLeaderboardOutcomeKind.UNAVAILABLE: GetscoresOutcomeKind.UNAVAILABLE,
+        BeatmapLeaderboardOutcomeKind.UPDATE_AVAILABLE: GetscoresOutcomeKind.UPDATE_AVAILABLE,
+    }[kind]
+
+
+def _to_getscores_reason(
+    reason: BeatmapLeaderboardResolveReason,
+) -> GetscoresResolveReason:
+    return {
+        BeatmapLeaderboardResolveReason.KNOWN_CHECKSUM: GetscoresResolveReason.KNOWN_CHECKSUM,
+        BeatmapLeaderboardResolveReason.KNOWN_FILENAME_IN_SET: (
+            GetscoresResolveReason.KNOWN_FILENAME_IN_SET
+        ),
+        BeatmapLeaderboardResolveReason.NOT_SUBMITTED: GetscoresResolveReason.NOT_SUBMITTED,
+        BeatmapLeaderboardResolveReason.NOT_FOUND: GetscoresResolveReason.NOT_FOUND,
+        BeatmapLeaderboardResolveReason.UPDATE_AVAILABLE: GetscoresResolveReason.UPDATE_AVAILABLE,
+    }[reason]
 
 
 def _leaderboard_row_to_getscores_row(
@@ -443,3 +189,6 @@ def _leaderboard_row_to_getscores_row(
         submitted_at=row.submitted_at,
         has_replay=row.has_replay,
     )
+
+
+__all__ = ["BeatmapScoreListingQuery"]

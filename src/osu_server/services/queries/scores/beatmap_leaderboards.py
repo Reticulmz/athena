@@ -1,0 +1,406 @@
+"""Beatmap leaderboard query use-case.
+
+This read-only use-case resolves a beatmap leaderboard listing without stable
+transport request or row types crossing the leaderboard boundary.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from enum import Enum
+from typing import TYPE_CHECKING, Protocol
+
+from osu_server.domain.beatmaps import BeatmapRankStatus
+from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
+from osu_server.domain.scores.personal_best import LeaderboardCategory
+from osu_server.domain.scores.score import Playstyle, Ruleset
+from osu_server.repositories.interfaces.queries.beatmap_leaderboards import LeaderboardReadScope
+
+if TYPE_CHECKING:
+    from osu_server.domain.beatmaps import Beatmap, BeatmapSet
+    from osu_server.domain.identity.authorization import Privileges
+    from osu_server.domain.scores.leaderboards import LeaderboardModFilter
+    from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+        BeatmapLeaderboardQueryRepository,
+        BeatmapLeaderboardRow,
+    )
+    from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
+        BeatmapScoreListingQueryRepository,
+    )
+    from osu_server.repositories.interfaces.queries.users import UserQueryRepository
+    from osu_server.services.queries.identity import GetFriendEligibleUserIdsQueryUseCase
+
+
+class _PermissionReader(Protocol):
+    async def compute_permissions(self, user_id: int) -> Privileges: ...
+
+
+_DISPLAYABLE_STATUSES = {
+    BeatmapRankStatus.PENDING,
+    BeatmapRankStatus.WIP,
+    BeatmapRankStatus.GRAVEYARD,
+    BeatmapRankStatus.RANKED,
+    BeatmapRankStatus.APPROVED,
+    BeatmapRankStatus.QUALIFIED,
+    BeatmapRankStatus.LOVED,
+}
+_LEADERBOARD_VISIBLE_STATUSES = {
+    BeatmapRankStatus.RANKED,
+    BeatmapRankStatus.APPROVED,
+    BeatmapRankStatus.QUALIFIED,
+    BeatmapRankStatus.LOVED,
+}
+_LEADERBOARD_ROW_LIMIT = 50
+
+
+class BeatmapLeaderboardOutcomeKind(Enum):
+    HEADER = "header"
+    UNAVAILABLE = "unavailable"
+    UPDATE_AVAILABLE = "update_available"
+
+
+class BeatmapLeaderboardResolveReason(Enum):
+    KNOWN_CHECKSUM = "known_checksum"
+    KNOWN_FILENAME_IN_SET = "known_filename_in_set"
+    NOT_SUBMITTED = "not_submitted"
+    NOT_FOUND = "not_found"
+    UPDATE_AVAILABLE = "update_available"
+
+
+@dataclass(slots=True, frozen=True)
+class BeatmapLeaderboardRequest:
+    beatmap_checksum: str | None
+    filename: str | None
+    beatmapset_id_hint: int | None
+    viewer_user_id: int | None
+    ruleset: Ruleset | None
+    playstyle: Playstyle
+    category: LeaderboardCategory | None
+    selected_mod_filter: LeaderboardModFilter | None
+    header_only: bool
+
+
+@dataclass(slots=True, frozen=True)
+class BeatmapLeaderboardHeader:
+    beatmap: Beatmap
+    beatmapset: BeatmapSet
+
+
+@dataclass(slots=True, frozen=True)
+class BeatmapLeaderboardResult:
+    kind: BeatmapLeaderboardOutcomeKind
+    header: BeatmapLeaderboardHeader | None
+    personal_best: BeatmapLeaderboardRow | None
+    rows: tuple[BeatmapLeaderboardRow, ...]
+    reason: BeatmapLeaderboardResolveReason
+
+
+@dataclass(slots=True, frozen=True)
+class _ViewerLeaderboardContext:
+    country: str
+    leaderboard_visible: bool
+
+
+class BeatmapLeaderboardQuery:
+    """Resolve a transport-neutral beatmap leaderboard listing."""
+
+    _repository: BeatmapScoreListingQueryRepository
+    _leaderboards: BeatmapLeaderboardQueryRepository
+    _user_repository: UserQueryRepository | None
+    _permission_service: _PermissionReader | None
+    _friend_eligible_user_ids_query: GetFriendEligibleUserIdsQueryUseCase | None
+
+    def __init__(
+        self,
+        repository: BeatmapScoreListingQueryRepository,
+        leaderboards: BeatmapLeaderboardQueryRepository,
+        *,
+        user_repository: UserQueryRepository | None = None,
+        permission_service: _PermissionReader | None = None,
+        friend_eligible_user_ids_query: GetFriendEligibleUserIdsQueryUseCase | None = None,
+    ) -> None:
+        self._repository = repository
+        self._leaderboards = leaderboards
+        self._user_repository = user_repository
+        self._permission_service = permission_service
+        self._friend_eligible_user_ids_query = friend_eligible_user_ids_query
+
+    async def execute(self, request: BeatmapLeaderboardRequest) -> BeatmapLeaderboardResult:
+        """Resolve a leaderboard request without command-side mutation."""
+        if request.beatmap_checksum is not None:
+            beatmap = await self._repository.find_by_checksum(request.beatmap_checksum)
+            if beatmap is not None:
+                return await self._evaluate_beatmap(
+                    beatmap,
+                    reason=BeatmapLeaderboardResolveReason.KNOWN_CHECKSUM,
+                    request=request,
+                )
+
+            if request.filename is not None and request.beatmapset_id_hint is not None:
+                return await self._resolve_update_available(
+                    checksum_md5=request.beatmap_checksum,
+                    beatmapset_id=request.beatmapset_id_hint,
+                    filename=request.filename,
+                    request=request,
+                )
+
+            return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
+
+        if request.filename is not None and request.beatmapset_id_hint is not None:
+            return await self._resolve_by_filename_in_beatmapset(
+                beatmapset_id=request.beatmapset_id_hint,
+                filename=request.filename,
+                request=request,
+            )
+
+        return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
+
+    async def _resolve_by_filename_in_beatmapset(
+        self,
+        *,
+        beatmapset_id: int,
+        filename: str,
+        request: BeatmapLeaderboardRequest,
+    ) -> BeatmapLeaderboardResult:
+        beatmap = await self._repository.find_by_filename_in_beatmapset(
+            beatmapset_id,
+            filename,
+        )
+
+        if beatmap is None:
+            return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
+
+        return await self._evaluate_beatmap(
+            beatmap,
+            reason=BeatmapLeaderboardResolveReason.KNOWN_FILENAME_IN_SET,
+            request=request,
+        )
+
+    async def _evaluate_beatmap(
+        self,
+        beatmap: Beatmap,
+        *,
+        reason: BeatmapLeaderboardResolveReason,
+        request: BeatmapLeaderboardRequest,
+    ) -> BeatmapLeaderboardResult:
+        beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
+
+        if beatmapset is None:
+            return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
+
+        if not _is_displayable_in_score_listing(beatmap):
+            return _unavailable(BeatmapLeaderboardResolveReason.NOT_SUBMITTED)
+
+        rows: tuple[BeatmapLeaderboardRow, ...] = ()
+        personal_best: BeatmapLeaderboardRow | None = None
+        if _is_leaderboard_visible_beatmap(beatmap):
+            rows, personal_best = await self._resolve_leaderboard_listing(
+                request=request,
+                beatmap=beatmap,
+            )
+
+        return BeatmapLeaderboardResult(
+            kind=BeatmapLeaderboardOutcomeKind.HEADER,
+            header=BeatmapLeaderboardHeader(
+                beatmap=beatmap,
+                beatmapset=beatmapset,
+            ),
+            personal_best=personal_best,
+            rows=rows,
+            reason=reason,
+        )
+
+    async def _resolve_update_available(
+        self,
+        *,
+        checksum_md5: str,
+        beatmapset_id: int,
+        filename: str,
+        request: BeatmapLeaderboardRequest,
+    ) -> BeatmapLeaderboardResult:
+        beatmap = await self._repository.find_by_filename_in_beatmapset(
+            beatmapset_id,
+            filename,
+        )
+        if beatmap is None:
+            return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
+
+        if beatmap.checksum_md5 == checksum_md5:
+            return await self._evaluate_beatmap(
+                beatmap,
+                reason=BeatmapLeaderboardResolveReason.KNOWN_FILENAME_IN_SET,
+                request=request,
+            )
+
+        beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
+        if beatmapset is None:
+            return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
+
+        if not _is_displayable_in_score_listing(beatmap):
+            return _unavailable(BeatmapLeaderboardResolveReason.NOT_SUBMITTED)
+
+        return BeatmapLeaderboardResult(
+            kind=BeatmapLeaderboardOutcomeKind.UPDATE_AVAILABLE,
+            header=BeatmapLeaderboardHeader(
+                beatmap=beatmap,
+                beatmapset=beatmapset,
+            ),
+            personal_best=None,
+            rows=(),
+            reason=BeatmapLeaderboardResolveReason.UPDATE_AVAILABLE,
+        )
+
+    async def _resolve_leaderboard_listing(
+        self,
+        *,
+        request: BeatmapLeaderboardRequest,
+        beatmap: Beatmap,
+    ) -> tuple[tuple[BeatmapLeaderboardRow, ...], BeatmapLeaderboardRow | None]:
+        base_scope = _leaderboard_scope_from_request(
+            request=request,
+            beatmap=beatmap,
+        )
+        if base_scope is None:
+            return (), None
+
+        viewer_context = await self._resolve_viewer_context(request.viewer_user_id)
+        scope = await self._resolve_viewer_dependent_scope(
+            scope=base_scope,
+            user_id=request.viewer_user_id,
+            viewer_context=viewer_context,
+        )
+        if scope is None:
+            return (), None
+
+        rows = await self._leaderboards.list_top_rows(
+            scope,
+            limit=_LEADERBOARD_ROW_LIMIT,
+        )
+        personal_best = None
+        if (
+            request.viewer_user_id is not None
+            and viewer_context is not None
+            and viewer_context.leaderboard_visible
+        ):
+            personal_best = await self._leaderboards.get_personal_best(
+                scope,
+                viewer_user_id=request.viewer_user_id,
+            )
+
+        return rows, personal_best
+
+    async def _resolve_viewer_context(
+        self,
+        user_id: int | None,
+    ) -> _ViewerLeaderboardContext | None:
+        if user_id is None or self._user_repository is None:
+            return None
+
+        user = await self._user_repository.get_by_id(user_id)
+        if user is None:
+            return None
+
+        leaderboard_visible = False
+        if self._permission_service is not None:
+            privileges = await self._permission_service.compute_permissions(user_id)
+            leaderboard_visible = is_leaderboard_visible_user(privileges)
+
+        return _ViewerLeaderboardContext(
+            country=user.country,
+            leaderboard_visible=leaderboard_visible,
+        )
+
+    async def _resolve_viewer_dependent_scope(
+        self,
+        *,
+        scope: LeaderboardReadScope,
+        user_id: int | None,
+        viewer_context: _ViewerLeaderboardContext | None,
+    ) -> LeaderboardReadScope | None:
+        if scope.category is LeaderboardCategory.COUNTRY:
+            if viewer_context is None:
+                return None
+            country = _country_scope_filter(viewer_context.country)
+            if country is None:
+                return None
+            return replace(scope, country=country)
+
+        if scope.category is LeaderboardCategory.FRIENDS:
+            if (
+                user_id is None
+                or viewer_context is None
+                or self._friend_eligible_user_ids_query is None
+            ):
+                return None
+            eligible_user_ids = await self._friend_eligible_user_ids_query.execute(
+                viewer_user_id=user_id,
+            )
+            return replace(scope, eligible_user_ids=eligible_user_ids)
+
+        return scope
+
+
+def _unavailable(reason: BeatmapLeaderboardResolveReason) -> BeatmapLeaderboardResult:
+    return BeatmapLeaderboardResult(
+        kind=BeatmapLeaderboardOutcomeKind.UNAVAILABLE,
+        header=None,
+        personal_best=None,
+        rows=(),
+        reason=reason,
+    )
+
+
+def _is_displayable_in_score_listing(beatmap: Beatmap) -> bool:
+    return beatmap.effective_status in _DISPLAYABLE_STATUSES
+
+
+def _is_leaderboard_visible_beatmap(beatmap: Beatmap) -> bool:
+    return beatmap.effective_status in _LEADERBOARD_VISIBLE_STATUSES
+
+
+def _leaderboard_scope_from_request(
+    *,
+    request: BeatmapLeaderboardRequest,
+    beatmap: Beatmap,
+) -> LeaderboardReadScope | None:
+    if request.header_only:
+        return None
+
+    if request.ruleset is None or request.playstyle is not Playstyle.VANILLA:
+        return None
+
+    if request.category is None:
+        return None
+
+    mod_filter_key: int | None = None
+    if request.category is LeaderboardCategory.SELECTED_MODS:
+        filter_result = request.selected_mod_filter
+        if filter_result is None or not filter_result.is_supported:
+            return None
+        mod_filter_key = filter_result.key
+
+    return LeaderboardReadScope(
+        beatmap_id=beatmap.id,
+        beatmap_checksum=beatmap.checksum_md5,
+        ruleset=request.ruleset,
+        playstyle=request.playstyle,
+        category=request.category,
+        mod_filter_key=mod_filter_key,
+    )
+
+
+def _country_scope_filter(country: str) -> str | None:
+    normalized = country.strip().upper()
+    if normalized in {"", "XX"}:
+        return None
+    return normalized
+
+
+__all__ = [
+    "BeatmapLeaderboardHeader",
+    "BeatmapLeaderboardOutcomeKind",
+    "BeatmapLeaderboardQuery",
+    "BeatmapLeaderboardRequest",
+    "BeatmapLeaderboardResolveReason",
+    "BeatmapLeaderboardResult",
+]

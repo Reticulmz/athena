@@ -34,7 +34,7 @@ from osu_server.services.queries.identity import (
     SessionCredentialsQueryInput,
     SessionCredentialsQueryResult,
 )
-from osu_server.services.queries.scores import BeatmapScoreListingQuery
+from osu_server.services.queries.scores import BeatmapLeaderboardQuery, BeatmapScoreListingQuery
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
@@ -403,8 +403,10 @@ def _make_handler(
         auth_query=_AuthQuery(auth_result),
         getscores_parser=GetscoresQueryParser(),
         getscores_query=BeatmapScoreListingQuery(
-            repository,
-            _EmptyBeatmapLeaderboardRepository(),
+            BeatmapLeaderboardQuery(
+                repository,
+                _EmptyBeatmapLeaderboardRepository(),
+            )
         ),
         status_mapper=GetscoresStatusMapper(),
         beatmap_resolver=cast("BeatmapMirrorService", resolver),

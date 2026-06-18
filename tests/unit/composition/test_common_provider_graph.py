@@ -136,7 +136,7 @@ from osu_server.services.queries.identity import (
 )
 from osu_server.services.queries.identity.password_service import PasswordService
 from osu_server.services.queries.identity.permission_service import PermissionService
-from osu_server.services.queries.scores import BeatmapScoreListingQuery
+from osu_server.services.queries.scores import BeatmapLeaderboardQuery, BeatmapScoreListingQuery
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
@@ -394,9 +394,13 @@ async def test_app_provider_graph_wires_getscores_to_leaderboard_query_dependenc
             "BeatmapScoreListingQuery",
             object.__getattribute__(getscores, "_getscores_query"),
         )
+        leaderboard_query = cast(
+            "BeatmapLeaderboardQuery",
+            object.__getattribute__(getscores_query, "_leaderboard_query"),
+        )
         wired_leaderboard_repository = cast(
             "BeatmapLeaderboardQueryRepository | None",
-            object.__getattribute__(getscores_query, "_leaderboards"),
+            object.__getattribute__(leaderboard_query, "_leaderboards"),
         )
         assert wired_leaderboard_repository is leaderboard_repository
 

@@ -1,8 +1,8 @@
-"""Beatmap leaderboard integration tests for the getscores query."""
+"""Beatmap leaderboard query integration tests."""
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -17,14 +17,9 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
-from osu_server.domain.compatibility.stable.getscores import (
-    GetscoresOutcomeKind,
-    GetscoresPersonalBest,
-    GetscoresRequest,
-    GetscoresResolveReason,
-)
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.users import User
+from osu_server.domain.scores.leaderboards import filter_from_mod_combination
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
@@ -33,8 +28,13 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     LeaderboardReadScope,
     ScoreHitCounts,
 )
-from osu_server.services.queries.scores.beatmap_score_listing import BeatmapScoreListingQuery
-from osu_server.transports.stable.web_legacy.mappers import StableGetscoresLeaderboardMapper
+from osu_server.services.queries.scores.beatmap_leaderboards import (
+    BeatmapLeaderboardOutcomeKind,
+    BeatmapLeaderboardQuery,
+    BeatmapLeaderboardRequest,
+    BeatmapLeaderboardResolveReason,
+    BeatmapLeaderboardResult,
+)
 
 _NOW = datetime(2026, 6, 18, tzinfo=UTC)
 _CHECKSUM = "a" * 32
@@ -213,7 +213,7 @@ def sample_beatmapset() -> BeatmapSet:
     )
 
 
-class TestBeatmapLeaderboardGetscoresQuery:
+class TestBeatmapLeaderboardQuery:
     async def test_available_ranked_local_request_reads_global_rows_and_personal_best(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
@@ -246,10 +246,10 @@ class TestBeatmapLeaderboardGetscoresQuery:
             user_id=9,
         )
 
-        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.kind is BeatmapLeaderboardOutcomeKind.HEADER
         assert result.header is not None
-        assert result.header.score_rows == (_score_row_from_leaderboard(row),)
-        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
+        assert result.rows == (row,)
+        assert result.personal_best == personal_best
         assert leaderboard_repo.top_row_calls == [
             (
                 LeaderboardReadScope(
@@ -301,10 +301,10 @@ class TestBeatmapLeaderboardGetscoresQuery:
         )
 
         assert result.header is not None
-        assert len(result.header.score_rows) == 50
-        assert all(row.user_id != 9 for row in result.header.score_rows)
-        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
-        personal_best_row = result.header.personal_best
+        assert len(result.rows) == 50
+        assert all(row.user_id != 9 for row in result.rows)
+        assert result.personal_best == personal_best
+        personal_best_row = result.personal_best
         assert personal_best_row is not None
         assert personal_best_row.rank == 51
 
@@ -340,9 +340,9 @@ class TestBeatmapLeaderboardGetscoresQuery:
         )
 
         assert result.header is not None
-        expected_row = _score_row_from_leaderboard(personal_best)
-        assert result.header.score_rows == (expected_row,)
-        assert result.header.personal_best == expected_row
+        expected_row = personal_best
+        assert result.rows == (expected_row,)
+        assert result.personal_best == expected_row
 
     async def test_selected_mods_personal_best_uses_selected_mod_scope(
         self,
@@ -375,7 +375,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
         )
 
         assert result.header is not None
-        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
+        assert result.personal_best == personal_best
         assert leaderboard_repo.personal_best_calls == [
             (
                 LeaderboardReadScope(
@@ -431,7 +431,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
             country="JP",
         )
         assert result.header is not None
-        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
+        assert result.personal_best == personal_best
         assert leaderboard_repo.top_row_calls == [(expected_scope, 50)]
         assert leaderboard_repo.personal_best_calls == [(expected_scope, 9)]
 
@@ -465,8 +465,8 @@ class TestBeatmapLeaderboardGetscoresQuery:
         )
 
         assert result.header is not None
-        assert result.header.score_rows == ()
-        assert result.header.personal_best is None
+        assert result.rows == ()
+        assert result.personal_best is None
         assert leaderboard_repo.top_row_calls == []
         assert leaderboard_repo.personal_best_calls == []
 
@@ -483,8 +483,8 @@ class TestBeatmapLeaderboardGetscoresQuery:
         )
 
         assert result.header is not None
-        assert result.header.score_rows == ()
-        assert result.header.personal_best is None
+        assert result.rows == ()
+        assert result.personal_best is None
         assert leaderboard_repo.top_row_calls == []
         assert leaderboard_repo.personal_best_calls == []
 
@@ -531,7 +531,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
             eligible_user_ids=(9, 20),
         )
         assert result.header is not None
-        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
+        assert result.personal_best == personal_best
         assert friend_query.calls == [9]
         assert leaderboard_repo.top_row_calls == [(expected_scope, 50)]
         assert leaderboard_repo.personal_best_calls == [(expected_scope, 9)]
@@ -568,8 +568,8 @@ class TestBeatmapLeaderboardGetscoresQuery:
         )
 
         assert result.header is not None
-        assert result.header.score_rows == (_score_row_from_leaderboard(row),)
-        assert result.header.personal_best is None
+        assert result.rows == (row,)
+        assert result.personal_best is None
         assert leaderboard_repo.top_row_calls == [
             (
                 LeaderboardReadScope(
@@ -611,7 +611,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
                 user_id=9,
             )
 
-            assert result.kind is GetscoresOutcomeKind.HEADER
+            assert result.kind is BeatmapLeaderboardOutcomeKind.HEADER
             assert len(leaderboard_repo.top_row_calls) == 1
 
     async def test_unsupported_category_returns_header_only_without_global_fallback(
@@ -629,10 +629,10 @@ class TestBeatmapLeaderboardGetscoresQuery:
             user_id=9,
         )
 
-        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.kind is BeatmapLeaderboardOutcomeKind.HEADER
         assert result.header is not None
-        assert result.header.score_rows == ()
-        assert result.header.personal_best is None
+        assert result.rows == ()
+        assert result.personal_best is None
         assert leaderboard_repo.top_row_calls == []
         assert leaderboard_repo.personal_best_calls == []
 
@@ -654,10 +654,10 @@ class TestBeatmapLeaderboardGetscoresQuery:
             user_id=9,
         )
 
-        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.kind is BeatmapLeaderboardOutcomeKind.HEADER
         assert result.header is not None
-        assert result.header.score_rows == ()
-        assert result.header.personal_best is None
+        assert result.rows == ()
+        assert result.personal_best is None
         assert leaderboard_repo.top_row_calls == []
 
     async def test_missing_category_context_returns_header_only(
@@ -675,10 +675,10 @@ class TestBeatmapLeaderboardGetscoresQuery:
             user_id=9,
         )
 
-        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.kind is BeatmapLeaderboardOutcomeKind.HEADER
         assert result.header is not None
-        assert result.header.score_rows == ()
-        assert result.header.personal_best is None
+        assert result.rows == ()
+        assert result.personal_best is None
         assert leaderboard_repo.top_row_calls == []
 
     async def test_non_vanilla_mod_request_returns_header_only(
@@ -696,10 +696,10 @@ class TestBeatmapLeaderboardGetscoresQuery:
             user_id=9,
         )
 
-        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.kind is BeatmapLeaderboardOutcomeKind.HEADER
         assert result.header is not None
-        assert result.header.score_rows == ()
-        assert result.header.personal_best is None
+        assert result.rows == ()
+        assert result.personal_best is None
         assert leaderboard_repo.top_row_calls == []
 
     async def test_song_select_request_returns_header_only(
@@ -717,10 +717,10 @@ class TestBeatmapLeaderboardGetscoresQuery:
             user_id=9,
         )
 
-        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.kind is BeatmapLeaderboardOutcomeKind.HEADER
         assert result.header is not None
-        assert result.header.score_rows == ()
-        assert result.header.personal_best is None
+        assert result.rows == ()
+        assert result.personal_best is None
         assert leaderboard_repo.top_row_calls == []
 
     async def test_outdated_checksum_returns_update_available_without_rows(
@@ -740,11 +740,11 @@ class TestBeatmapLeaderboardGetscoresQuery:
             user_id=9,
         )
 
-        assert result.kind is GetscoresOutcomeKind.UPDATE_AVAILABLE
+        assert result.kind is BeatmapLeaderboardOutcomeKind.UPDATE_AVAILABLE
         assert result.header is not None
-        assert result.header.score_rows == ()
-        assert result.header.personal_best is None
-        assert result.reason is GetscoresResolveReason.UPDATE_AVAILABLE
+        assert result.rows == ()
+        assert result.personal_best is None
+        assert result.reason is BeatmapLeaderboardResolveReason.UPDATE_AVAILABLE
         assert leaderboard_repo.top_row_calls == []
 
     async def test_unauthenticated_viewer_dependent_category_returns_header_only(
@@ -762,11 +762,24 @@ class TestBeatmapLeaderboardGetscoresQuery:
             user_id=None,
         )
 
-        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.kind is BeatmapLeaderboardOutcomeKind.HEADER
         assert result.header is not None
-        assert result.header.score_rows == ()
-        assert result.header.personal_best is None
+        assert result.rows == ()
+        assert result.personal_best is None
         assert leaderboard_repo.top_row_calls == []
+
+
+@dataclass(slots=True)
+class _BeatmapLeaderboardQueryHarness:
+    query: BeatmapLeaderboardQuery
+
+    async def resolve(
+        self,
+        request: BeatmapLeaderboardRequest,
+        *,
+        user_id: int | None = None,
+    ) -> BeatmapLeaderboardResult:
+        return await self.query.execute(replace(request, viewer_user_id=user_id))
 
 
 def _query(
@@ -776,13 +789,15 @@ def _query(
     user_repo: ViewerUserQueryRepositoryStub | None = None,
     permission_service: ViewerPermissionServiceStub | None = None,
     friend_query: FriendEligibleUserIdsQueryStub | None = None,
-) -> BeatmapScoreListingQuery:
-    return BeatmapScoreListingQuery(
-        getscores_repo,
-        leaderboard_repo,
-        user_repository=user_repo,
-        permission_service=permission_service,
-        friend_eligible_user_ids_query=friend_query,
+) -> _BeatmapLeaderboardQueryHarness:
+    return _BeatmapLeaderboardQueryHarness(
+        query=BeatmapLeaderboardQuery(
+            getscores_repo,
+            leaderboard_repo,
+            user_repository=user_repo,
+            permission_service=permission_service,
+            friend_eligible_user_ids_query=friend_query,
+        )
     )
 
 
@@ -794,21 +809,56 @@ def _request(
     mods: int | None = 0,
     leaderboard_type: int | None = 1,
     song_select: bool | None = False,
-) -> GetscoresRequest:
-    request = GetscoresRequest(
-        checksum_md5=checksum_md5,
+) -> BeatmapLeaderboardRequest:
+    ruleset = _ruleset_from_mode(mode)
+    category = _leaderboard_category_from_type(leaderboard_type)
+    header_only = category is None or song_select is True
+    selected_mod_filter = None
+
+    if mods is None:
+        header_only = True
+    else:
+        mod_combination = ModCombination.from_bitmask(mods)
+        if mod_combination.has(Mod.RELAX) or mod_combination.has(Mod.AUTOPILOT):
+            header_only = True
+        if category is LeaderboardCategory.SELECTED_MODS:
+            selected_mod_filter = filter_from_mod_combination(mod_combination)
+            if not selected_mod_filter.is_supported:
+                header_only = True
+
+    return BeatmapLeaderboardRequest(
+        beatmap_checksum=checksum_md5,
         filename=filename,
         beatmapset_id_hint=5,
-        mode=mode,
-        mods=mods,
-        leaderboard_type=leaderboard_type,
-        leaderboard_version=4,
-        song_select=song_select,
+        viewer_user_id=None,
+        ruleset=ruleset,
+        playstyle=Playstyle.VANILLA,
+        category=category,
+        selected_mod_filter=selected_mod_filter,
+        header_only=header_only,
     )
-    return replace(
-        request,
-        leaderboard_selection=StableGetscoresLeaderboardMapper().map_request(request),
-    )
+
+
+def _ruleset_from_mode(mode: int | None) -> Ruleset | None:
+    if mode is None:
+        return None
+    try:
+        return Ruleset(mode)
+    except ValueError:
+        return None
+
+
+def _leaderboard_category_from_type(
+    leaderboard_type: int | None,
+) -> LeaderboardCategory | None:
+    if leaderboard_type is None:
+        return None
+    return {
+        1: LeaderboardCategory.GLOBAL,
+        2: LeaderboardCategory.SELECTED_MODS,
+        3: LeaderboardCategory.FRIENDS,
+        4: LeaderboardCategory.COUNTRY,
+    }.get(leaderboard_type)
 
 
 def _leaderboard_row(
@@ -855,31 +905,3 @@ def _add_viewer(
         updated_at=_NOW,
     )
     permission_service.permissions_by_user_id[user_id] = permissions
-
-
-def _score_row_from_leaderboard(row: BeatmapLeaderboardRow) -> GetscoresPersonalBest:
-    return GetscoresPersonalBest(
-        score_id=row.score_id,
-        user_id=row.user_id,
-        username=row.username,
-        beatmap_id=row.beatmap_id,
-        ruleset=row.ruleset,
-        playstyle=row.playstyle,
-        score=row.score,
-        max_combo=row.max_combo,
-        n50=row.hit_counts.n50,
-        n100=row.hit_counts.n100,
-        n300=row.hit_counts.n300,
-        miss=row.hit_counts.miss,
-        katu=row.hit_counts.katu,
-        geki=row.hit_counts.geki,
-        perfect=row.perfect,
-        mods=row.displayed_mods.to_persistence_bitmask(),
-        rank=row.rank,
-        submitted_at=row.submitted_at,
-        has_replay=row.has_replay,
-    )
-
-
-def _personal_best_from_leaderboard(row: BeatmapLeaderboardRow) -> GetscoresPersonalBest:
-    return _score_row_from_leaderboard(row)

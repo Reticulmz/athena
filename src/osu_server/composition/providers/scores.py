@@ -24,10 +24,11 @@ from osu_server.services.commands.scores.leaderboards import (
     RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
     RebuildBeatmapLeaderboardsForUserUseCase,
 )
-from osu_server.services.queries.scores import BeatmapScoreListingQuery
+from osu_server.services.queries.scores import BeatmapLeaderboardQuery, BeatmapScoreListingQuery
 
 _DISHKA_RUNTIME_HINTS = (
     AsyncBroker,
+    BeatmapLeaderboardQuery,
     BeatmapLeaderboardQueryRepository,
     BeatmapLeaderboardRebuildWorkerWake,
     BeatmapScoreListingQueryRepository,
@@ -51,10 +52,17 @@ class ScoreProviderSet(Provider):
     @provide
     def beatmap_score_listing_query(
         self,
+        leaderboard_query: BeatmapLeaderboardQuery,
+    ) -> BeatmapScoreListingQuery:
+        return BeatmapScoreListingQuery(leaderboard_query)
+
+    @provide
+    def beatmap_leaderboard_query(
+        self,
         repository: BeatmapScoreListingQueryRepository,
         leaderboards: BeatmapLeaderboardQueryRepository,
-    ) -> BeatmapScoreListingQuery:
-        return BeatmapScoreListingQuery(
+    ) -> BeatmapLeaderboardQuery:
+        return BeatmapLeaderboardQuery(
             repository,
             leaderboards,
         )
