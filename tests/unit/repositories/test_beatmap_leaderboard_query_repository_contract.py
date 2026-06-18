@@ -24,7 +24,11 @@ from osu_server.domain.scores.performance import (
     PerformanceCalculation,
     PerformanceCalculationState,
 )
-from osu_server.domain.scores.personal_best import LeaderboardCategory
+from osu_server.domain.scores.personal_best import (
+    LeaderboardCategory,
+    PersonalBest,
+    PersonalBestScope,
+)
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
@@ -367,6 +371,70 @@ async def test_current_pp_is_display_enrichment_for_ranked_approved_rows_only() 
         assert personal_best is not None
         assert personal_best.rank == 2
         assert personal_best.pp == expected_pp
+
+
+async def test_beatmap_leaderboard_personal_best_ignores_pp_priority_projection() -> None:
+    factory = _factory()
+    state = factory.snapshot()
+    _seed_beatmap(state)
+    _seed_visible_role(state)
+    viewer_user_id = 60
+    leaderboard_score_id = 60
+    pp_priority_score_id = 61
+    _seed_leaderboard_score(
+        state,
+        score_id=leaderboard_score_id,
+        user_id=viewer_user_id,
+        score=1_000_000,
+    )
+    state.scores_by_id[pp_priority_score_id] = _score(
+        score_id=pp_priority_score_id,
+        user_id=viewer_user_id,
+        score=900_000,
+        submitted_at=_NOW + timedelta(seconds=1),
+        mods=ModCombination.none(),
+        beatmap_checksum=_CURRENT_CHECKSUM,
+        passed=True,
+    )
+    state.score_leaderboard_eligibility_by_id[pp_priority_score_id] = True
+    # Retired or future stats-owned representatives must not drive Beatmap Leaderboard PB.
+    state.personal_bests_by_id[1] = PersonalBest(
+        id=1,
+        scope=PersonalBestScope(
+            user_id=viewer_user_id,
+            beatmap_id=_BEATMAP_ID,
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+            category=LeaderboardCategory.GLOBAL,
+        ),
+        score_id=pp_priority_score_id,
+        ranking_value=2_000,
+    )
+    state.personal_best_id_by_scope[
+        (
+            viewer_user_id,
+            _BEATMAP_ID,
+            Ruleset.OSU.value,
+            Playstyle.VANILLA.value,
+            LeaderboardCategory.GLOBAL.value,
+        )
+    ] = 1
+    _seed_current_performance_calculation(
+        state,
+        calculation_id=1,
+        score_id=pp_priority_score_id,
+        pp=Decimal("900.000000"),
+    )
+    factory.commit_state(state)
+    repository = InMemoryBeatmapLeaderboardQueryRepository(factory)
+
+    rows = await repository.list_top_rows(_scope(), limit=50)
+    personal_best = await repository.get_personal_best(_scope(), viewer_user_id=viewer_user_id)
+
+    assert [row.score_id for row in rows] == [leaderboard_score_id]
+    assert personal_best is not None
+    assert personal_best.score_id == leaderboard_score_id
+    assert personal_best.pp is None
 
 
 def _factory() -> InMemoryUnitOfWorkFactory:

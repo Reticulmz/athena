@@ -190,7 +190,7 @@
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 8.1, 8.2, 8.3, 8.4, 10.1, 10.2, 10.3, 10.4, 10.5_
   - _Depends: 6.3_
 
-- [ ] 7.3 PP and stats boundary regressions を検証する
+- [x] 7.3 PP and stats boundary regressions を検証する
   - current Performance Calculation は display enrichment としてだけ使われ、leaderboard rank には使われない
   - Loved / Qualified や missing PP の rows は score eligibility 条件を満たせば表示される
   - PP-priority Performance Best、User Stats、User Ranking の projection は作成または更新しない
