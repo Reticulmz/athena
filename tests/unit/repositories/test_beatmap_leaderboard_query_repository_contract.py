@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from osu_server.domain.beatmaps import (
     Beatmap,
@@ -18,6 +19,11 @@ from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.users import User
 from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import Mod, ModCombination
+from osu_server.domain.scores.performance import (
+    FormulaProfile,
+    PerformanceCalculation,
+    PerformanceCalculationState,
+)
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
@@ -303,8 +309,10 @@ async def test_current_filters_exclude_stale_or_ineligible_projection_rows() -> 
     factory.commit_state(state)
 
     pending_rows = await repository.list_top_rows(_scope(), limit=50)
+    pending_personal_best = await repository.get_personal_best(_scope(), viewer_user_id=40)
 
     assert pending_rows == ()
+    assert pending_personal_best is None
 
     state = factory.snapshot()
     state.beatmaps_by_id[_BEATMAP_ID] = replace(
@@ -318,8 +326,47 @@ async def test_current_filters_exclude_stale_or_ineligible_projection_rows() -> 
         _scope(beatmap_checksum=_NEW_CHECKSUM),
         limit=50,
     )
+    checksum_changed_personal_best = await repository.get_personal_best(
+        _scope(beatmap_checksum=_NEW_CHECKSUM),
+        viewer_user_id=40,
+    )
 
     assert checksum_changed_rows == ()
+    assert checksum_changed_personal_best is None
+
+
+async def test_current_pp_is_display_enrichment_for_ranked_approved_rows_only() -> None:
+    pp_value = Decimal("250.125000")
+    for status, expected_pp in (
+        (BeatmapRankStatus.RANKED, pp_value),
+        (BeatmapRankStatus.APPROVED, pp_value),
+        (BeatmapRankStatus.LOVED, None),
+        (BeatmapRankStatus.QUALIFIED, None),
+    ):
+        factory = _factory()
+        state = factory.snapshot()
+        _seed_beatmap(state, status=status)
+        _seed_visible_role(state)
+        _seed_leaderboard_score(state, score_id=50, user_id=50, score=2_000_000)
+        _seed_leaderboard_score(state, score_id=51, user_id=51, score=1_000_000)
+        _seed_current_performance_calculation(
+            state,
+            calculation_id=1,
+            score_id=51,
+            pp=pp_value,
+        )
+        factory.commit_state(state)
+        repository = InMemoryBeatmapLeaderboardQueryRepository(factory)
+
+        rows = await repository.list_top_rows(_scope(), limit=50)
+        personal_best = await repository.get_personal_best(_scope(), viewer_user_id=51)
+
+        assert [row.score_id for row in rows] == [50, 51]
+        assert [row.rank for row in rows] == [1, 2]
+        assert [row.pp for row in rows] == [None, expected_pp]
+        assert personal_best is not None
+        assert personal_best.rank == 2
+        assert personal_best.pp == expected_pp
 
 
 def _factory() -> InMemoryUnitOfWorkFactory:
@@ -433,6 +480,31 @@ def _seed_leaderboard_score(
     state.beatmap_leaderboard_user_best_id_by_scope[
         (_BEATMAP_ID, Ruleset.OSU.value, Playstyle.VANILLA.value, user_id, mod_filter_key)
     ] = score_id
+
+
+def _seed_current_performance_calculation(
+    state: InMemoryCommandRepositoryState,
+    *,
+    calculation_id: int,
+    score_id: int,
+    pp: Decimal,
+) -> None:
+    state.performance_calculations_by_id[calculation_id] = PerformanceCalculation(
+        id=calculation_id,
+        score_id=score_id,
+        state=PerformanceCalculationState.COMPLETED,
+        is_current=True,
+        pp=pp,
+        star_rating=Decimal("5.43210"),
+        calculator_name="rosu-pp-py",
+        calculator_version="4.0.2",
+        formula_profile=FormulaProfile.VANILLA_RANKED,
+        beatmap_file_attachment_id=55,
+        beatmap_file_checksum_md5=_CURRENT_CHECKSUM,
+        unavailable_reason=None,
+        calculated_at=_NOW,
+    )
+    state.current_performance_calculation_id_by_score_id[score_id] = calculation_id
 
 
 def _user(*, user_id: int, country: str) -> User:

@@ -15,6 +15,8 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
 )
 
 if TYPE_CHECKING:
+    from decimal import Decimal
+
     from osu_server.domain.identity.users import User
     from osu_server.domain.scores.score import Score
     from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
@@ -32,6 +34,12 @@ _VISIBLE_BEATMAP_STATUSES = frozenset(
         BeatmapRankStatus.APPROVED,
         BeatmapRankStatus.LOVED,
         BeatmapRankStatus.QUALIFIED,
+    }
+)
+_PP_VISIBLE_BEATMAP_STATUSES = frozenset(
+    {
+        BeatmapRankStatus.RANKED,
+        BeatmapRankStatus.APPROVED,
     }
 )
 _MAX_QUERY_LIMIT = 50
@@ -215,8 +223,27 @@ def _candidate_to_row(
         rank=rank,
         submitted_at=score.submitted_at,
         has_replay=any(replay.score_id == score.id for replay in state.replays_by_id.values()),
-        pp=None,
+        pp=_current_pp_for_score(state, score),
     )
+
+
+def _current_pp_for_score(
+    state: InMemoryCommandRepositoryState,
+    score: Score,
+) -> Decimal | None:
+    if score.id is None:
+        return None
+    beatmap = state.beatmaps_by_id.get(score.beatmap_id)
+    if beatmap is None or beatmap.effective_status not in _PP_VISIBLE_BEATMAP_STATUSES:
+        return None
+
+    calculation_id = state.current_performance_calculation_id_by_score_id.get(score.id)
+    if calculation_id is None:
+        return None
+    calculation = state.performance_calculations_by_id.get(calculation_id)
+    if calculation is None or calculation.score_id != score.id or not calculation.is_current:
+        return None
+    return calculation.pp
 
 
 __all__ = ["InMemoryBeatmapLeaderboardQueryRepository"]

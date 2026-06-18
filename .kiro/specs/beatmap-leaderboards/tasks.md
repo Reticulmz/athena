@@ -115,7 +115,7 @@
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 6.7, 8.5_
   - _Depends: 4.1_
 
-- [ ] 4.3 Current filters と PP display enrichment を read path に固定する
+- [x] 4.3 Current filters と PP display enrichment を read path に固定する
   - current Beatmap status、current checksum、score owner visibility、score eligibility を rows と PB rank の両方に適用する
   - current PP がある Ranked / Approved rows だけ PP を expose し、PP availability は rank や visibility に影響させない
   - Loved / Qualified rows は PP がなくても表示できる
