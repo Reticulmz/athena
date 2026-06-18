@@ -125,8 +125,8 @@ friend-relationships は、stable client の friends list、friend-only DM、将
 
 #### Acceptance Criteria
 
-1. Where Friends leaderboard filtering is requested, the Friend Relationships Feature shall define the eligible user set as the viewer's Friend Relationship targets.
-2. When the viewer has no Friend Relationships, the Friend Relationships Feature shall provide an empty eligible user set for Friends leaderboard filtering.
+1. Where Friends leaderboard filtering is requested, the Friend Relationships Feature shall define the eligible user set as the viewer and the viewer's Friend Relationship targets.
+2. When the viewer has no Friend Relationships, the Friend Relationships Feature shall provide an eligible user set containing only the viewer for Friends leaderboard filtering.
 3. When a friend target has no eligible score for the requested beatmap, the Friend Relationships Feature shall not require that target to appear in Friends leaderboard rows.
 4. The Friend Relationships Feature shall not generate Beatmap Leaderboard score rows itself.
 5. The Friend Relationships Feature shall not treat reverse Friend Relationships as eligible users for the viewer's Friends leaderboard.

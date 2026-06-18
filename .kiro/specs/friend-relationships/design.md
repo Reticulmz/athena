@@ -360,8 +360,8 @@ System command responses are emitted to the invoking sender separately and do no
 | 7.2 | system notifications not blocked | boundary, future contract | system-originated source | none |
 | 7.3 | player to BanchoBot command works | PM command, command service | bot target bypass | Friend-Only Private Message |
 | 7.4 | system response separated | chat handler | command response packets | Friend-Only Private Message |
-| 8.1 | leaderboard eligible set | friend query | `GetFriendEligibleUserIdsQuery` | Login Friends List |
-| 8.2 | no friends gives empty set | friend query | empty tuple/list | Login Friends List |
+| 8.1 | leaderboard eligible set | friend query | `GetFriendEligibleUserIdsQuery` | Future Friends Leaderboard |
+| 8.2 | no friends gives viewer-only set | friend query | viewer ID tuple | Future Friends Leaderboard |
 | 8.3 | no score row generation | boundary | no score repository write/read rows | none |
 | 8.4 | feature does not generate rows | boundary | query contract only | none |
 | 8.5 | reverse friends not eligible | friend query | owner-filtered read | Login Friends List |
@@ -539,7 +539,9 @@ class GetFriendEligibleUserIdsQuery(Protocol):
 ```
 
 - Preconditions: caller supplies authenticated owner/viewer identity.
-- Postconditions: result contains only target IDs owned by that user.
+- Postconditions: `ListFriendIdsQuery` returns only target IDs owned by that user for stable login.
+- Postconditions: `GetFriendEligibleUserIdsQuery` returns the viewer ID plus target IDs owned by that user for Friends leaderboard filtering.
+- Postconditions: when the viewer has no Friend Relationships, `GetFriendEligibleUserIdsQuery` returns a one-item tuple containing only the viewer ID.
 - Invariants: reverse edges and mutual state are not inferred.
 
 ### Persistence
@@ -724,7 +726,7 @@ Consistency:
 
 - Stable `FRIENDS_LIST` remains an int32 list packet.
 - Stable `ADD_FRIEND` / `REMOVE_FRIEND` target IDs are transport inputs and do not cross into repository layer as packet structs.
-- Future beatmap leaderboard uses `GetFriendEligibleUserIdsQuery(viewer_user_id)` and then applies score filtering in its own query boundary.
+- Future beatmap leaderboard uses self-inclusive `GetFriendEligibleUserIdsQuery(viewer_user_id)` and then applies score filtering in its own query boundary.
 
 ## Error Handling
 
