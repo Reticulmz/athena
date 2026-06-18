@@ -1,5 +1,8 @@
 """SQLAlchemy command repository package."""
 
+from osu_server.repositories.sqlalchemy.commands.beatmap_leaderboards import (
+    SQLAlchemyBeatmapLeaderboardCommandRepository,
+)
 from osu_server.repositories.sqlalchemy.commands.beatmaps import (
     BeatmapNotFoundError,
     DuplicateBeatmapChecksumError,
@@ -33,6 +36,7 @@ __all__ = [
     "DuplicateBeatmapChecksumError",
     "DuplicateBlobError",
     "SQLAlchemyBeatmapCommandRepository",
+    "SQLAlchemyBeatmapLeaderboardCommandRepository",
     "SQLAlchemyBlobCommandRepository",
     "SQLAlchemyChannelCommandRepository",
     "SQLAlchemyChatCommandRepository",

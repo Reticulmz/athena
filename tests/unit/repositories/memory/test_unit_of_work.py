@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from tests.factories.domain import make_channel, make_user
 
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
+from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.score import Playstyle, Ruleset
+from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+    BeatmapLeaderboardUserBestScope,
+    UpsertBeatmapLeaderboardUserBest,
+)
 from osu_server.repositories.memory.commands import (
     InMemoryBeatmapCommandRepository,
     InMemoryBeatmapLeaderboardCommandRepository,
@@ -23,6 +31,8 @@ from osu_server.repositories.memory.commands import (
     InMemoryUserCommandRepository,
 )
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
+
+_NOW = datetime(2026, 6, 18, tzinfo=UTC)
 
 
 async def test_commit_publishes_all_command_repository_changes() -> None:
@@ -127,6 +137,34 @@ async def test_role_assignment_replacement_commits_through_unit_of_work() -> Non
     assert [role.name for role in roles] == ["Admin"]
 
 
+async def test_beatmap_leaderboard_projection_commit_publishes_through_unit_of_work() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    scope = _leaderboard_scope()
+
+    async with factory() as uow:
+        created = await uow.beatmap_leaderboards.upsert_if_better(
+            _leaderboard_upsert(scope=scope, score_id=90, score=1_000)
+        )
+        await uow.commit()
+
+    async with factory() as uow:
+        assert await uow.beatmap_leaderboards.get_user_best(scope) == created
+
+
+async def test_beatmap_leaderboard_projection_rollback_discards_unit_of_work_changes() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    scope = _leaderboard_scope()
+
+    async with factory() as uow:
+        _ = await uow.beatmap_leaderboards.upsert_if_better(
+            _leaderboard_upsert(scope=scope, score_id=91, score=1_100)
+        )
+        await uow.rollback()
+
+    async with factory() as uow:
+        assert await uow.beatmap_leaderboards.get_user_best(scope) is None
+
+
 async def test_unit_of_work_exposes_typed_command_repositories() -> None:
     factory = InMemoryUnitOfWorkFactory()
 
@@ -153,3 +191,26 @@ async def _raise_after_command_mutation(factory: InMemoryUnitOfWorkFactory) -> N
         )
         _ = await uow.channels.create(make_channel(name="#exception"))
         raise RuntimeError("abort command")
+
+
+def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
+    return BeatmapLeaderboardUserBestScope(
+        beatmap_id=1,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=2,
+        mod_filter_key=None,
+    )
+
+
+def _leaderboard_upsert(
+    *,
+    scope: BeatmapLeaderboardUserBestScope,
+    score_id: int,
+    score: int,
+) -> UpsertBeatmapLeaderboardUserBest:
+    return UpsertBeatmapLeaderboardUserBest(
+        scope=scope,
+        score_id=score_id,
+        rank_key=ScoreRankKey(score=score, submitted_at=_NOW, score_id=score_id),
+    )

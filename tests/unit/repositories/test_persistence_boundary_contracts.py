@@ -54,6 +54,12 @@ SERVICE_FACING_TEST_ROOTS = (
     PROJECT_ROOT / "tests" / "unit" / "jobs",
     PROJECT_ROOT / "tests" / "unit" / "test_worker.py",
 )
+LEADERBOARD_PROJECTION_UPDATE_PATHS = (
+    SOURCE_ROOT / "repositories" / "interfaces" / "commands" / "beatmap_leaderboards.py",
+    SOURCE_ROOT / "repositories" / "memory" / "commands" / "beatmap_leaderboards.py",
+    SOURCE_ROOT / "repositories" / "sqlalchemy" / "commands" / "beatmap_leaderboards.py",
+    SOURCE_ROOT / "services" / "commands" / "scores" / "leaderboards",
+)
 
 COMMAND_REPOSITORY_ATTRIBUTES = {
     "users": UserCommandRepository,
@@ -273,6 +279,28 @@ def test_query_repository_interfaces_do_not_depend_on_command_boundaries() -> No
         for module in _absolute_imports(path)
         if _module_matches_root(module, "osu_server.repositories.interfaces.commands")
         or _module_matches_root(module, "osu_server.repositories.interfaces.unit_of_work")
+    ]
+
+    assert violations == []
+
+
+def test_beatmap_leaderboard_update_path_rejects_legacy_personal_bests() -> None:
+    forbidden_roots = (
+        "osu_server.domain.scores.personal_best",
+        "osu_server.repositories.interfaces.commands.PersonalBestCommandRepository",
+        "osu_server.repositories.interfaces.commands.personal_bests",
+        "osu_server.repositories.memory.commands.InMemoryPersonalBestCommandRepository",
+        "osu_server.repositories.memory.commands.personal_bests",
+        "osu_server.repositories.sqlalchemy.commands.SQLAlchemyPersonalBestCommandRepository",
+        "osu_server.repositories.sqlalchemy.commands.personal_bests",
+    )
+    violations = [
+        _format_import_violation(path, forbidden_root, module)
+        for root in LEADERBOARD_PROJECTION_UPDATE_PATHS
+        for path in _python_files(root)
+        for module in _absolute_imports(path)
+        for forbidden_root in forbidden_roots
+        if _module_matches_root(module, forbidden_root)
     ]
 
     assert violations == []

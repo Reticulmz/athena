@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyBeatmapCommandRepository,
+    SQLAlchemyBeatmapLeaderboardCommandRepository,
     SQLAlchemyBlobCommandRepository,
     SQLAlchemyChannelCommandRepository,
     SQLAlchemyChatCommandRepository,
@@ -59,6 +60,7 @@ class SQLAlchemyUnitOfWork:
     replays: SQLAlchemyReplayCommandRepository
     blobs: SQLAlchemyBlobCommandRepository
     beatmaps: SQLAlchemyBeatmapCommandRepository
+    beatmap_leaderboards: SQLAlchemyBeatmapLeaderboardCommandRepository
 
     def __init__(self, session_factory: SQLAlchemyCommandSessionFactory) -> None:
         self._session_factory: SQLAlchemyCommandSessionFactory = session_factory
@@ -85,6 +87,10 @@ class SQLAlchemyUnitOfWork:
         self.replays = cast("SQLAlchemyReplayCommandRepository", cast("object", None))
         self.blobs = cast("SQLAlchemyBlobCommandRepository", cast("object", None))
         self.beatmaps = cast("SQLAlchemyBeatmapCommandRepository", cast("object", None))
+        self.beatmap_leaderboards = cast(
+            "SQLAlchemyBeatmapLeaderboardCommandRepository",
+            cast("object", None),
+        )
 
     async def __aenter__(self) -> UnitOfWork:
         self._session = self._session_factory()
@@ -127,6 +133,7 @@ class SQLAlchemyUnitOfWork:
         self.replays = SQLAlchemyReplayCommandRepository(session)
         self.blobs = SQLAlchemyBlobCommandRepository(session)
         self.beatmaps = SQLAlchemyBeatmapCommandRepository(session)
+        self.beatmap_leaderboards = SQLAlchemyBeatmapLeaderboardCommandRepository(session)
 
     def _require_session(self) -> AsyncSession:
         if self._session is None:

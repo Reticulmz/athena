@@ -65,7 +65,7 @@
   - _Requirements: 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.1, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 7.1, 7.3, 7.4, 7.6, 8.5, 9.1, 9.2, 9.3, 9.4, 10.4_
   - _Depends: 2.3_
 
-- [ ] 2.5 Unit of Work と package exports に projection persistence を接続する
+- [x] 2.5 Unit of Work と package exports に projection persistence を接続する
   - command Unit of Work から leaderboard command repository を取得できるようにする
   - SQLAlchemy Unit of Work から leaderboard command repository を取得できるようにする
   - old Personal Best command repository 依存を leaderboard update path から取り除く

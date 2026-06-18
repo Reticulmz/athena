@@ -15,8 +15,15 @@ from osu_server.domain.identity.friends import (
     FriendableSystemUserCatalog,
     FriendMutationStatus,
 )
+from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.score import Playstyle, Ruleset
+from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+    BeatmapLeaderboardUserBestScope,
+    UpsertBeatmapLeaderboardUserBest,
+)
 from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyBeatmapCommandRepository,
+    SQLAlchemyBeatmapLeaderboardCommandRepository,
     SQLAlchemyBlobCommandRepository,
     SQLAlchemyChannelCommandRepository,
     SQLAlchemyChatCommandRepository,
@@ -28,6 +35,9 @@ from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyScorePerformanceCommandRepository,
     SQLAlchemyScoreSubmissionCommandRepository,
     SQLAlchemyUserCommandRepository,
+)
+from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
+    BeatmapLeaderboardUserBestModel,
 )
 from osu_server.repositories.sqlalchemy.models.channel import ChannelModel
 from osu_server.repositories.sqlalchemy.models.personal_best import PersonalBestModel
@@ -240,7 +250,55 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
         assert isinstance(uow.replays, SQLAlchemyReplayCommandRepository)
         assert isinstance(uow.blobs, SQLAlchemyBlobCommandRepository)
         assert isinstance(uow.beatmaps, SQLAlchemyBeatmapCommandRepository)
+        assert isinstance(
+            uow.beatmap_leaderboards,
+            SQLAlchemyBeatmapLeaderboardCommandRepository,
+        )
         assert isinstance(uow.score_performance, SQLAlchemyScorePerformanceCommandRepository)
+
+
+async def test_beatmap_leaderboard_repository_commits_through_sqlalchemy_unit_of_work() -> None:
+    scope = _leaderboard_scope()
+    session = FakeSession(
+        execute_results=[
+            FakeResult(),
+            FakeResult(value=_leaderboard_model(scope=scope, score_id=90, score=1_000)),
+        ]
+    )
+    factory = _factory(session)
+
+    async with factory() as uow:
+        created = await uow.beatmap_leaderboards.upsert_if_better(
+            _leaderboard_upsert(scope=scope, score_id=90, score=1_000)
+        )
+
+        assert created.score_id == 90
+        assert session.commits == 0
+        assert session.rollbacks == 0
+
+        await uow.commit()
+
+    assert session.commits == 1
+    assert session.rollbacks == 0
+    assert session.closed is True
+
+
+async def test_beatmap_leaderboard_repository_rolls_back_with_sqlalchemy_unit_of_work() -> None:
+    scope = _leaderboard_scope()
+    session = FakeSession(
+        execute_results=[
+            FakeResult(),
+            FakeResult(value=_leaderboard_model(scope=scope, score_id=91, score=1_100)),
+        ]
+    )
+    factory = _factory(session)
+
+    with pytest.raises(RuntimeError, match="abort leaderboard command"):
+        await _raise_after_leaderboard_mutation(factory, scope)
+
+    assert session.commits == 0
+    assert session.rollbacks == 1
+    assert session.closed is True
 
 
 async def test_friend_command_repository_uses_returning_for_mutation_outcomes() -> None:
@@ -346,3 +404,58 @@ async def _raise_after_command_mutation(factory: SQLAlchemyUnitOfWorkFactory) ->
             make_user(username="Rollback SQL", email="rollback-sql@example.com")
         )
         raise RuntimeError("abort command")
+
+
+async def _raise_after_leaderboard_mutation(
+    factory: SQLAlchemyUnitOfWorkFactory,
+    scope: BeatmapLeaderboardUserBestScope,
+) -> None:
+    async with factory() as uow:
+        _ = await uow.beatmap_leaderboards.upsert_if_better(
+            _leaderboard_upsert(scope=scope, score_id=91, score=1_100)
+        )
+        raise RuntimeError("abort leaderboard command")
+
+
+def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
+    return BeatmapLeaderboardUserBestScope(
+        beatmap_id=1,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=2,
+        mod_filter_key=None,
+    )
+
+
+def _leaderboard_upsert(
+    *,
+    scope: BeatmapLeaderboardUserBestScope,
+    score_id: int,
+    score: int,
+) -> UpsertBeatmapLeaderboardUserBest:
+    return UpsertBeatmapLeaderboardUserBest(
+        scope=scope,
+        score_id=score_id,
+        rank_key=ScoreRankKey(score=score, submitted_at=_NOW, score_id=score_id),
+    )
+
+
+def _leaderboard_model(
+    *,
+    scope: BeatmapLeaderboardUserBestScope,
+    score_id: int,
+    score: int,
+) -> BeatmapLeaderboardUserBestModel:
+    return BeatmapLeaderboardUserBestModel(
+        id=40,
+        beatmap_id=scope.beatmap_id,
+        ruleset=scope.ruleset.value,
+        playstyle=scope.playstyle.value,
+        user_id=scope.user_id,
+        mod_filter_key=scope.mod_filter_key,
+        score_id=score_id,
+        score=score,
+        submitted_at=_NOW,
+        created_at=_NOW,
+        updated_at=_NOW,
+    )
