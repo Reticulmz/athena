@@ -9,11 +9,23 @@ from dishka import Provider, Scope
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
 from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
+from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+    BeatmapLeaderboardQueryRepository,
+)
+from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
+    BeatmapScoreListingQueryRepository,
+)
+from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
+from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
 from osu_server.services.commands.identity import RegisterUserCommandUseCase
 from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase
 from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
-from osu_server.services.queries.identity import SessionCredentialsQueryUseCase
+from osu_server.services.queries.identity import (
+    GetFriendEligibleUserIdsQuery,
+    PermissionService,
+    SessionCredentialsQueryUseCase,
+)
 from osu_server.services.queries.scores import BeatmapScoreListingQuery
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.mappers import (
@@ -26,12 +38,18 @@ from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHand
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
+    BeatmapLeaderboardQueryRepository,
     BeatmapMirrorService,
+    BeatmapScoreListingQueryRepository,
     BeatmapScoreListingQuery,
+    GetFriendEligibleUserIdsQuery,
+    PermissionService,
+    PersonalBestQueryRepository,
     ProcessScoreSubmissionUseCase,
     RegisterUserCommandUseCase,
     RequestBeatmapFileWarmupUseCase,
     SessionCredentialsQueryUseCase,
+    UserQueryRepository,
 )
 
 
@@ -61,12 +79,25 @@ class StableWebLegacyProviderSet(Provider):
         self,
         auth_query: SessionCredentialsQueryUseCase,
         getscores_parser: GetscoresQueryParser,
-        getscores_query: BeatmapScoreListingQuery,
+        getscores_repository: BeatmapScoreListingQueryRepository,
+        personal_bests: PersonalBestQueryRepository,
+        leaderboards: BeatmapLeaderboardQueryRepository,
+        user_repository: UserQueryRepository,
+        permission_service: PermissionService,
+        friend_eligible_user_ids_query: GetFriendEligibleUserIdsQuery,
         status_mapper: GetscoresStatusMapper,
         beatmap_resolver: BeatmapMirrorService,
         beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
         config: AppConfig,
     ) -> GetscoresHandler:
+        getscores_query = BeatmapScoreListingQuery(
+            getscores_repository,
+            personal_bests,
+            leaderboards,
+            user_repository=user_repository,
+            permission_service=permission_service,
+            friend_eligible_user_ids_query=friend_eligible_user_ids_query,
+        )
         return GetscoresHandler(
             auth_query=auth_query,
             getscores_parser=getscores_parser,

@@ -23,6 +23,9 @@ from osu_server.infrastructure.state.memory.performance_completion_signal import
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.infrastructure.storage.local import LocalBlobStorageBackend
+from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+    BeatmapLeaderboardQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
@@ -42,6 +45,9 @@ from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.queries.beatmap_leaderboards import (
+    InMemoryBeatmapLeaderboardQueryRepository,
+)
 from osu_server.repositories.memory.queries.beatmap_score_listing import (
     InMemoryBeatmapScoreListingQueryRepository,
 )
@@ -178,6 +184,10 @@ def make_in_memory_runtime_provider_set(
         replace_value(
             BeatmapScoreListingQueryRepository,
             InMemoryBeatmapScoreListingQueryRepository(beatmap_query_repository),
+        ),
+        replace_value(
+            BeatmapLeaderboardQueryRepository,
+            InMemoryBeatmapLeaderboardQueryRepository(uow_factory),
         ),
         replace_value(
             ScorePerformanceQueryRepository,

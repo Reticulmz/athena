@@ -30,18 +30,25 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
+from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
+from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory, PersonalBestScope
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+    BeatmapLeaderboardUserBestScope,
+    UpsertBeatmapLeaderboardUserBest,
+)
 from osu_server.repositories.interfaces.commands.personal_bests import UpsertPersonalBest
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.queries.identity.password_service import PasswordService
 from tests.support.app import create_in_memory_app as create_app
 from tests.support.app import resolve_dependency
-from tests.support.persistence import seed_beatmapset, seed_user
+from tests.support.persistence import seed_beatmapset, seed_role, seed_user
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -55,6 +62,12 @@ _TEST_PASSWORD_MD5 = hashlib.md5(_TEST_PASSWORD_PLAIN.encode()).hexdigest()
 _KNOWN_CHECKSUM = "0123456789abcdef0123456789abcdef"
 _NOW = datetime(2026, 6, 7, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
+_LEADERBOARD_VISIBLE_ROLE = Role(
+    id=100,
+    name="Leaderboard Visible",
+    permissions=Privileges.NORMAL | Privileges.UNRESTRICTED,
+    position=0,
+)
 
 
 @contextmanager
@@ -114,6 +127,11 @@ async def _seed_user_with_session(app: Starlette) -> int:
             pm_private=False,
         ),
     )
+    await seed_role(app, _LEADERBOARD_VISIBLE_ROLE)
+    uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
+    async with uow_factory() as uow:
+        await uow.roles.assign_role(user.id, _LEADERBOARD_VISIBLE_ROLE.id)
+        await uow.commit()
     return user.id
 
 
@@ -161,8 +179,8 @@ async def _seed_known_beatmap(app: Starlette) -> None:
     await seed_beatmapset(app, beatmapset)
 
 
-async def _seed_personal_best(app: Starlette, *, user_id: int) -> int:
-    """Seed a score and current personal best projection for getscores."""
+async def _seed_leaderboard_best(app: Starlette, *, user_id: int) -> int:
+    """Seed a score and current beatmap leaderboard projection for getscores."""
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         score = await uow.scores.create(
@@ -190,6 +208,61 @@ async def _seed_personal_best(app: Starlette, *, user_id: int) -> int:
                 client_version="b20260617",
                 submitted_at=_NOW,
                 beatmap_status_at_submission="ranked",
+                leaderboard_eligible_at_submission=True,
+            )
+        )
+        assert score.id is not None
+        _ = await uow.beatmap_leaderboards.upsert_if_better(
+            UpsertBeatmapLeaderboardUserBest(
+                scope=BeatmapLeaderboardUserBestScope(
+                    beatmap_id=75,
+                    ruleset=Ruleset.OSU,
+                    playstyle=Playstyle.VANILLA,
+                    user_id=user_id,
+                    mod_filter_key=None,
+                ),
+                score_id=score.id,
+                rank_key=ScoreRankKey(
+                    score=score.score,
+                    submitted_at=score.submitted_at,
+                    score_id=score.id,
+                ),
+            )
+        )
+        await uow.commit()
+        return score.id
+
+
+async def _seed_legacy_personal_best(app: Starlette, *, user_id: int) -> int:
+    """Seed only the retired personal best projection for fallback regression checks."""
+    uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
+    async with uow_factory() as uow:
+        score = await uow.scores.create(
+            Score(
+                id=None,
+                user_id=user_id,
+                beatmap_id=75,
+                beatmap_checksum=_KNOWN_CHECKSUM,
+                online_checksum="getscores-legacy-pb-online-checksum",
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                mods=ModCombination.from_bitmask(24),
+                n300=300,
+                n100=2,
+                n50=1,
+                geki=5,
+                katu=4,
+                miss=3,
+                score=987_654,
+                max_combo=1_234,
+                accuracy=98.76,
+                grade=Grade.S,
+                passed=True,
+                perfect=True,
+                client_version="b20260617",
+                submitted_at=_NOW,
+                beatmap_status_at_submission="ranked",
+                leaderboard_eligible_at_submission=True,
             )
         )
         assert score.id is not None
@@ -386,8 +459,8 @@ class TestStableResponse:
                 assert parsed.response.header is not None
                 assert parsed.response.header.empty_leaderboard
 
-    def test_known_checksum_returns_personal_best_row_when_projection_exists(self) -> None:
-        """Authorized request returns the current user's PB row when available."""
+    def test_known_checksum_returns_personal_best_and_top_rows_separately(self) -> None:
+        """Authorized request returns PB separately from leaderboard rows."""
         with _test_env():
             app = create_app()
             with TestClient(
@@ -399,7 +472,7 @@ class TestStableResponse:
                 async def _setup() -> tuple[int, int]:
                     user_id = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
-                    score_id = await _seed_personal_best(app, user_id=user_id)
+                    score_id = await _seed_leaderboard_best(app, user_id=user_id)
                     return score_id, user_id
 
                 score_id, user_id = asyncio.run(_setup())
@@ -411,14 +484,12 @@ class TestStableResponse:
                 assert response.status_code == HTTPStatus.OK
                 lines = response.content.split(b"\n")
                 assert lines[0] == b"2|false|75|1|1||"
-                assert (
-                    lines[4]
-                    == (
-                        f"{score_id}|{_TEST_USERNAME}|987654|1234|1|2|300|3|4|5|1|24|"
-                        f"{user_id}|1|{int(_NOW.timestamp())}|0"
-                    ).encode()
-                )
-                assert lines[5] == lines[4]
+                expected_row = (
+                    f"{score_id}|{_TEST_USERNAME}|987654|1234|1|2|300|3|4|5|1|24|"
+                    f"{user_id}|1|{int(_NOW.timestamp())}|0"
+                ).encode()
+                assert lines[4] == expected_row
+                assert lines[5] == expected_row
                 parsed = parse_getscores_response(response.content)
                 assert parsed.error is None
                 assert parsed.response is not None
@@ -426,6 +497,37 @@ class TestStableResponse:
                 assert parsed.response.header.personal_best_row == lines[4].decode()
                 assert parsed.response.header.score_rows == (lines[5].decode(),)
                 assert not parsed.response.header.empty_leaderboard
+
+    def test_legacy_personal_best_projection_is_not_used_as_score_row(self) -> None:
+        """Old PB projection does not create fallback leaderboard rows."""
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+
+                async def _setup() -> None:
+                    user_id = await _seed_user_with_session(app)
+                    await _seed_known_beatmap(app)
+                    _ = await _seed_legacy_personal_best(app, user_id=user_id)
+
+                _ = asyncio.run(_setup())
+                response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(),
+                )
+
+                assert response.status_code == HTTPStatus.OK
+                lines = response.content.split(b"\n")
+                assert lines[0] == b"2|false|75|1|0||"
+                parsed = parse_getscores_response(response.content)
+                assert parsed.error is None
+                assert parsed.response is not None
+                assert parsed.response.header is not None
+                assert parsed.response.header.personal_best_row is None
+                assert parsed.response.header.score_rows == ()
 
     def test_unknown_checksum_returns_unavailable_short_body(self) -> None:
         """Unknown checksum returns 200 -1|false."""

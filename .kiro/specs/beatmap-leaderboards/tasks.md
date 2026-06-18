@@ -140,7 +140,7 @@
   - _Requirements: 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 7.5_
   - _Depends: 4.2_
 
-- [ ] 5.3 Stable getscores handler を new leaderboard query result に接続する
+- [x] 5.3 Stable getscores handler を new leaderboard query result に接続する
   - existing header resolution behavior を維持しつつ supported category では top rows と PB を返す
   - parse errors、not submitted、update available の existing short responses を変えない
   - old Personal Best fallback row behavior を削除し、query result を formatter に渡す

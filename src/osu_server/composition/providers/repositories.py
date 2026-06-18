@@ -8,6 +8,9 @@ from dishka import Provider, Scope
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from osu_server.composition.providers._dishka import provide
+from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+    BeatmapLeaderboardQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
@@ -26,6 +29,9 @@ from osu_server.repositories.interfaces.queries.score_performance import (
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
+from osu_server.repositories.sqlalchemy.queries.beatmap_leaderboards import (
+    SQLAlchemyBeatmapLeaderboardQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.beatmap_score_listing import (
     SQLAlchemyBeatmapScoreListingQueryRepository,
 )
@@ -51,6 +57,7 @@ from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWork
 
 _DISHKA_RUNTIME_HINTS = (
     AsyncSession,
+    BeatmapLeaderboardQueryRepository,
     BeatmapQueryRepository,
     BeatmapScoreListingQueryRepository,
     BlobQueryRepository,
@@ -121,6 +128,13 @@ class RepositoryProviderSet(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> BeatmapScoreListingQueryRepository:
         return SQLAlchemyBeatmapScoreListingQueryRepository(session_factory)
+
+    @provide
+    def beatmap_leaderboard_query_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> BeatmapLeaderboardQueryRepository:
+        return SQLAlchemyBeatmapLeaderboardQueryRepository(session_factory)
 
     @provide
     def blob_query_repository(
