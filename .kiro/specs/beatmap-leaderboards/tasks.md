@@ -174,7 +174,7 @@
   - _Depends: 3.2, 3.3, 6.1, 6.2_
 
 - [ ] 7. End-to-end scenarios と future boundary を検証する
-- [ ] 7.1 Stable getscores category scenarios を end-to-end で検証する
+- [x] 7.1 Stable getscores category scenarios を end-to-end で検証する
   - Global/Local、Country、Friends、Selected Mods が expected rows、PB、rank、count を返す
   - Friends は viewer 自身を含み、reverse-only relationship を含めない
   - NoMod、NC/DT、PF/SD、Mirror selected の stable-visible behavior が確認できる

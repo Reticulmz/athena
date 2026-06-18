@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import os
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import TYPE_CHECKING
@@ -18,6 +19,7 @@ from typing import TYPE_CHECKING
 from starlette.testclient import TestClient
 
 from athena_cli.stable_verification.parsers import (
+    GetscoresHeader,
     GetscoresResponseKind,
     parse_getscores_response,
 )
@@ -34,8 +36,8 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
-from osu_server.domain.scores.leaderboards import ScoreRankKey
-from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.leaderboards import ScoreRankKey, projection_keys_for_score
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory, PersonalBestScope
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
@@ -70,6 +72,24 @@ _LEADERBOARD_VISIBLE_ROLE = Role(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _SeededLeaderboardScore:
+    score_id: int
+    user_id: int
+    score: int
+    mods: int
+
+
+@dataclass(frozen=True, slots=True)
+class _StableScoreRow:
+    score_id: int
+    username: str
+    score: int
+    mods: int
+    user_id: int
+    rank: int
+
+
 @contextmanager
 def _test_env() -> Generator[None]:
     """Temporarily set ENVIRONMENT=test for the duration of the block."""
@@ -92,7 +112,7 @@ def _test_env() -> Generator[None]:
             os.environ["DOMAIN"] = old_domain
 
 
-async def _seed_user_with_session(app: Starlette) -> int:
+async def _seed_user_with_session(app: Starlette, *, country: str = "JP") -> int:
     """Seed an active user + session, returning the user id."""
     password_service = await resolve_dependency(app, PasswordService)
     session_store = await resolve_dependency(app, SessionStore)
@@ -106,7 +126,7 @@ async def _seed_user_with_session(app: Starlette) -> int:
             safe_username=User.normalize_username(_TEST_USERNAME),
             email="player@example.com",
             password_hash=password_hash,
-            country="JP",
+            country=country,
             created_at=_NOW,
             updated_at=_NOW,
         ),
@@ -119,7 +139,7 @@ async def _seed_user_with_session(app: Starlette) -> int:
             user_id=user.id,
             username=user.username,
             privileges=0,
-            country="JP",
+            country=country,
             osu_version="b20231130",
             utc_offset=9,
             display_city=False,
@@ -127,11 +147,38 @@ async def _seed_user_with_session(app: Starlette) -> int:
             pm_private=False,
         ),
     )
+    await _assign_leaderboard_visible_role(app, user.id)
+    return user.id
+
+
+async def _assign_leaderboard_visible_role(app: Starlette, user_id: int) -> None:
     await seed_role(app, _LEADERBOARD_VISIBLE_ROLE)
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
-        await uow.roles.assign_role(user.id, _LEADERBOARD_VISIBLE_ROLE.id)
+        await uow.roles.assign_role(user_id, _LEADERBOARD_VISIBLE_ROLE.id)
         await uow.commit()
+
+
+async def _seed_visible_user(
+    app: Starlette,
+    *,
+    username: str,
+    country: str = "JP",
+) -> int:
+    user = await seed_user(
+        app,
+        User(
+            id=0,
+            username=username,
+            safe_username=User.normalize_username(username),
+            email=f"{User.normalize_username(username)}@example.com",
+            password_hash="!test-password-hash",
+            country=country,
+            created_at=_NOW,
+            updated_at=_NOW,
+        ),
+    )
+    await _assign_leaderboard_visible_role(app, user.id)
     return user.id
 
 
@@ -233,6 +280,133 @@ async def _seed_leaderboard_best(app: Starlette, *, user_id: int) -> int:
         return score.id
 
 
+async def _seed_leaderboard_score(
+    app: Starlette,
+    *,
+    user_id: int,
+    score_value: int,
+    mods: ModCombination | None = None,
+    submitted_offset_seconds: int = 0,
+) -> _SeededLeaderboardScore:
+    """Seed a score and every matching leaderboard projection key."""
+    score_mods = mods if mods is not None else ModCombination.none()
+    uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
+    async with uow_factory() as uow:
+        score = await uow.scores.create(
+            Score(
+                id=None,
+                user_id=user_id,
+                beatmap_id=75,
+                beatmap_checksum=_KNOWN_CHECKSUM,
+                online_checksum=(
+                    f"getscores-score-{user_id}-{score_value}-"
+                    f"{score_mods.to_persistence_bitmask()}"
+                ),
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                mods=score_mods,
+                n300=300,
+                n100=2,
+                n50=1,
+                geki=5,
+                katu=4,
+                miss=3,
+                score=score_value,
+                max_combo=1_234,
+                accuracy=98.76,
+                grade=Grade.S,
+                passed=True,
+                perfect=True,
+                client_version="b20260617",
+                submitted_at=_NOW + timedelta(seconds=submitted_offset_seconds),
+                beatmap_status_at_submission="ranked",
+                leaderboard_eligible_at_submission=True,
+            )
+        )
+        assert score.id is not None
+        for mod_filter_key in projection_keys_for_score(score.mods):
+            _ = await uow.beatmap_leaderboards.upsert_if_better(
+                UpsertBeatmapLeaderboardUserBest(
+                    scope=BeatmapLeaderboardUserBestScope(
+                        beatmap_id=75,
+                        ruleset=Ruleset.OSU,
+                        playstyle=Playstyle.VANILLA,
+                        user_id=user_id,
+                        mod_filter_key=mod_filter_key,
+                    ),
+                    score_id=score.id,
+                    rank_key=ScoreRankKey(
+                        score=score.score,
+                        submitted_at=score.submitted_at,
+                        score_id=score.id,
+                    ),
+                )
+            )
+        await uow.commit()
+        return _SeededLeaderboardScore(
+            score_id=score.id,
+            user_id=user_id,
+            score=score.score,
+            mods=score.mods.to_persistence_bitmask(),
+        )
+
+
+async def _add_friend_relationships(
+    app: Starlette,
+    relationships: tuple[tuple[int, int], ...],
+) -> None:
+    uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
+    async with uow_factory() as uow:
+        for owner_user_id, target_user_id in relationships:
+            _ = await uow.friends.add_relationship(owner_user_id, target_user_id)
+        await uow.commit()
+
+
+async def _seed_selected_mod_scenario(app: Starlette) -> None:
+    viewer_id = await _seed_user_with_session(app)
+    await _seed_known_beatmap(app)
+    sd_user_id = await _seed_visible_user(app, username="SuddenDeath")
+    pf_user_id = await _seed_visible_user(app, username="Perfect")
+    mirror_user_id = await _seed_visible_user(app, username="Mirror")
+    nc_user_id = await _seed_visible_user(app, username="Nightcore")
+    dt_user_id = await _seed_visible_user(app, username="DoubleTime")
+    _ = await _seed_leaderboard_score(
+        app,
+        user_id=viewer_id,
+        score_value=1_000_000,
+    )
+    _ = await _seed_leaderboard_score(
+        app,
+        user_id=sd_user_id,
+        score_value=1_100_000,
+        mods=ModCombination(Mod.SUDDEN_DEATH),
+    )
+    _ = await _seed_leaderboard_score(
+        app,
+        user_id=pf_user_id,
+        score_value=900_000,
+        mods=ModCombination(Mod.PERFECT),
+    )
+    _ = await _seed_leaderboard_score(
+        app,
+        user_id=mirror_user_id,
+        score_value=800_000,
+        mods=ModCombination(Mod.MIRROR),
+    )
+    _ = await _seed_leaderboard_score(
+        app,
+        user_id=nc_user_id,
+        score_value=1_200_000,
+        mods=ModCombination(Mod.NIGHTCORE),
+    )
+    _ = await _seed_leaderboard_score(
+        app,
+        user_id=dt_user_id,
+        score_value=1_150_000,
+        mods=ModCombination(Mod.DOUBLE_TIME),
+    )
+
+
 async def _seed_legacy_personal_best(app: Starlette, *, user_id: int) -> int:
     """Seed only the retired personal best projection for fallback regression checks."""
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
@@ -306,6 +480,38 @@ def _query(
     if extra is not None:
         params.update(extra)
     return params
+
+
+def _parse_header(body: bytes) -> GetscoresHeader:
+    parsed = parse_getscores_response(body)
+    assert parsed.error is None
+    assert parsed.response is not None
+    assert parsed.response.kind is GetscoresResponseKind.HEADER
+    assert parsed.response.header is not None
+    return parsed.response.header
+
+
+def _parse_personal_best_row(header: GetscoresHeader) -> _StableScoreRow | None:
+    if header.personal_best_row is None:
+        return None
+    return _parse_score_row(header.personal_best_row)
+
+
+def _parse_score_rows(header: GetscoresHeader) -> tuple[_StableScoreRow, ...]:
+    return tuple(_parse_score_row(row) for row in header.score_rows)
+
+
+def _parse_score_row(row: str) -> _StableScoreRow:
+    fields = row.split("|")
+    assert len(fields) == 16
+    return _StableScoreRow(
+        score_id=int(fields[0]),
+        username=fields[1],
+        score=int(fields[2]),
+        mods=int(fields[11]),
+        user_id=int(fields[12]),
+        rank=int(fields[13]),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -528,6 +734,352 @@ class TestStableResponse:
                 assert parsed.response.header is not None
                 assert parsed.response.header.personal_best_row is None
                 assert parsed.response.header.score_rows == ()
+
+    def test_global_local_and_country_categories_return_expected_scope_rows(self) -> None:
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+
+                async def _setup() -> None:
+                    viewer_id = await _seed_user_with_session(app)
+                    await _seed_known_beatmap(app)
+                    japan_rival_id = await _seed_visible_user(
+                        app,
+                        username="JapanRival",
+                        country="JP",
+                    )
+                    us_rival_id = await _seed_visible_user(
+                        app,
+                        username="UnitedStatesRival",
+                        country="US",
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
+                        user_id=viewer_id,
+                        score_value=900_000,
+                        submitted_offset_seconds=3,
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
+                        user_id=japan_rival_id,
+                        score_value=1_100_000,
+                        submitted_offset_seconds=2,
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
+                        user_id=us_rival_id,
+                        score_value=1_200_000,
+                        submitted_offset_seconds=1,
+                    )
+
+                asyncio.run(_setup())
+
+                local_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "1"}),
+                )
+                assert local_response.status_code == HTTPStatus.OK
+                local_header = _parse_header(local_response.content)
+                local_rows = _parse_score_rows(local_header)
+                local_pb = _parse_personal_best_row(local_header)
+
+                assert local_header.score_count == 3
+                assert [row.username for row in local_rows] == [
+                    "UnitedStatesRival",
+                    "JapanRival",
+                    _TEST_USERNAME,
+                ]
+                assert [row.rank for row in local_rows] == [1, 2, 3]
+                assert local_pb is not None
+                assert local_pb.username == _TEST_USERNAME
+                assert local_pb.rank == 3
+
+                country_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "4"}),
+                )
+                assert country_response.status_code == HTTPStatus.OK
+                country_header = _parse_header(country_response.content)
+                country_rows = _parse_score_rows(country_header)
+                country_pb = _parse_personal_best_row(country_header)
+
+                assert country_header.score_count == 2
+                assert [row.username for row in country_rows] == [
+                    "JapanRival",
+                    _TEST_USERNAME,
+                ]
+                assert [row.rank for row in country_rows] == [1, 2]
+                assert country_pb is not None
+                assert country_pb.username == _TEST_USERNAME
+                assert country_pb.rank == 2
+
+    def test_friends_category_includes_self_and_excludes_reverse_only(self) -> None:
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+
+                async def _setup() -> None:
+                    viewer_id = await _seed_user_with_session(app)
+                    await _seed_known_beatmap(app)
+                    friend_id = await _seed_visible_user(app, username="FriendTarget")
+                    reverse_only_id = await _seed_visible_user(
+                        app,
+                        username="ReverseOnly",
+                    )
+                    unrelated_id = await _seed_visible_user(app, username="Unrelated")
+                    await _add_friend_relationships(
+                        app,
+                        (
+                            (viewer_id, friend_id),
+                            (reverse_only_id, viewer_id),
+                        ),
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
+                        user_id=viewer_id,
+                        score_value=1_100_000,
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
+                        user_id=friend_id,
+                        score_value=1_200_000,
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
+                        user_id=reverse_only_id,
+                        score_value=1_300_000,
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
+                        user_id=unrelated_id,
+                        score_value=1_400_000,
+                    )
+
+                asyncio.run(_setup())
+                response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "3"}),
+                )
+
+                assert response.status_code == HTTPStatus.OK
+                header = _parse_header(response.content)
+                rows = _parse_score_rows(header)
+                personal_best = _parse_personal_best_row(header)
+
+                assert header.score_count == 2
+                assert [row.username for row in rows] == ["FriendTarget", _TEST_USERNAME]
+                assert [row.rank for row in rows] == [1, 2]
+                assert "ReverseOnly" not in {row.username for row in rows}
+                assert personal_best is not None
+                assert personal_best.username == _TEST_USERNAME
+                assert personal_best.rank == 2
+
+    def test_selected_mods_no_mod_and_mirror_behavior(self) -> None:
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+                asyncio.run(_seed_selected_mod_scenario(app))
+
+                no_mod_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "2", "mods": "0"}),
+                )
+                assert no_mod_response.status_code == HTTPStatus.OK
+                no_mod_header = _parse_header(no_mod_response.content)
+                no_mod_rows = _parse_score_rows(no_mod_header)
+                no_mod_pb = _parse_personal_best_row(no_mod_header)
+
+                assert no_mod_header.score_count == 4
+                assert [row.mods for row in no_mod_rows] == [
+                    int(Mod.SUDDEN_DEATH),
+                    int(Mod.NONE),
+                    int(Mod.PERFECT),
+                    int(Mod.MIRROR),
+                ]
+                assert int(Mod.NIGHTCORE) not in {row.mods for row in no_mod_rows}
+                assert no_mod_pb is not None
+                assert no_mod_pb.username == _TEST_USERNAME
+                assert no_mod_pb.rank == 2
+
+                mirror_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "2", "mods": str(int(Mod.MIRROR))}),
+                )
+                assert mirror_response.status_code == HTTPStatus.OK
+                mirror_header = _parse_header(mirror_response.content)
+                assert mirror_header.score_count == 0
+                assert mirror_header.personal_best_row is None
+                assert mirror_header.score_rows == ()
+
+    def test_selected_mods_nc_dt_and_pf_sd_behavior(self) -> None:
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+                asyncio.run(_seed_selected_mod_scenario(app))
+
+                dt_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "2", "mods": str(int(Mod.DOUBLE_TIME))}),
+                )
+                assert dt_response.status_code == HTTPStatus.OK
+                dt_header = _parse_header(dt_response.content)
+                assert dt_header.score_count == 2
+                assert [row.mods for row in _parse_score_rows(dt_header)] == [
+                    int(Mod.NIGHTCORE),
+                    int(Mod.DOUBLE_TIME),
+                ]
+                assert dt_header.personal_best_row is None
+
+                nc_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "2", "mods": str(int(Mod.NIGHTCORE))}),
+                )
+                assert nc_response.status_code == HTTPStatus.OK
+                nc_header = _parse_header(nc_response.content)
+                assert nc_header.score_count == 2
+                assert [row.mods for row in _parse_score_rows(nc_header)] == [
+                    int(Mod.NIGHTCORE),
+                    int(Mod.DOUBLE_TIME),
+                ]
+
+                sd_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "2", "mods": str(int(Mod.SUDDEN_DEATH))}),
+                )
+                assert sd_response.status_code == HTTPStatus.OK
+                sd_header = _parse_header(sd_response.content)
+                assert sd_header.score_count == 2
+                assert [row.mods for row in _parse_score_rows(sd_header)] == [
+                    int(Mod.SUDDEN_DEATH),
+                    int(Mod.PERFECT),
+                ]
+
+                pf_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "2", "mods": str(int(Mod.PERFECT))}),
+                )
+                assert pf_response.status_code == HTTPStatus.OK
+                pf_header = _parse_header(pf_response.content)
+                assert pf_header.score_count == 2
+                assert [row.mods for row in _parse_score_rows(pf_header)] == [
+                    int(Mod.SUDDEN_DEATH),
+                    int(Mod.PERFECT),
+                ]
+
+    def test_global_top_50_limit_keeps_personal_best_with_actual_rank(self) -> None:
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+
+                async def _setup() -> _SeededLeaderboardScore:
+                    viewer_id = await _seed_user_with_session(app)
+                    await _seed_known_beatmap(app)
+                    for index in range(50):
+                        rival_id = await _seed_visible_user(
+                            app,
+                            username=f"TopFiftyRival{index}",
+                        )
+                        _ = await _seed_leaderboard_score(
+                            app,
+                            user_id=rival_id,
+                            score_value=2_000_000 - index,
+                            submitted_offset_seconds=index,
+                        )
+                    return await _seed_leaderboard_score(
+                        app,
+                        user_id=viewer_id,
+                        score_value=1_000_000,
+                        submitted_offset_seconds=100,
+                    )
+
+                viewer_score = asyncio.run(_setup())
+                response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "1"}),
+                )
+
+                assert response.status_code == HTTPStatus.OK
+                header = _parse_header(response.content)
+                rows = _parse_score_rows(header)
+                personal_best = _parse_personal_best_row(header)
+
+                assert header.score_count == 50
+                assert len(rows) == 50
+                assert [row.rank for row in rows] == list(range(1, 51))
+                assert viewer_score.score_id not in {row.score_id for row in rows}
+                assert personal_best is not None
+                assert personal_best.score_id == viewer_score.score_id
+                assert personal_best.rank == 51
+
+    def test_category_specific_empty_results_keep_header_without_rows_or_pb(self) -> None:
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+
+                async def _setup() -> None:
+                    viewer_id = await _seed_user_with_session(app, country="XX")
+                    await _seed_known_beatmap(app)
+                    rival_id = await _seed_visible_user(
+                        app,
+                        username="CountryRival",
+                        country="JP",
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
+                        user_id=viewer_id,
+                        score_value=1_000_000,
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
+                        user_id=rival_id,
+                        score_value=1_100_000,
+                    )
+
+                asyncio.run(_setup())
+
+                country_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "4"}),
+                )
+                assert country_response.status_code == HTTPStatus.OK
+                country_header = _parse_header(country_response.content)
+                assert country_header.score_count == 0
+                assert country_header.personal_best_row is None
+                assert country_header.score_rows == ()
+
+                unsupported_response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=_query(extra={"v": "99"}),
+                )
+                assert unsupported_response.status_code == HTTPStatus.OK
+                unsupported_header = _parse_header(unsupported_response.content)
+                assert unsupported_header.score_count == 0
+                assert unsupported_header.personal_best_row is None
+                assert unsupported_header.score_rows == ()
 
     def test_unknown_checksum_returns_unavailable_short_body(self) -> None:
         """Unknown checksum returns 200 -1|false."""
