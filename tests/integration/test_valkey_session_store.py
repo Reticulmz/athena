@@ -7,7 +7,6 @@ through the same test matrix.
 
 from __future__ import annotations
 
-import os
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
@@ -25,6 +24,7 @@ from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.valkey.session_store import ValkeySessionStore
+from tests.support.service_availability import require_tcp_service_url
 
 _KEY_PREFIX = "athena_test:"
 
@@ -43,10 +43,7 @@ _SESSION = SessionData(
 
 
 def _get_valkey_url() -> str:
-    url = os.environ.get("VALKEY_URL")
-    if not url:
-        pytest.skip("VALKEY_URL not set")
-    return url
+    return require_tcp_service_url("VALKEY_URL", default_port=6379)
 
 
 @pytest.fixture
@@ -82,15 +79,11 @@ def memory_store() -> InMemorySessionStore:
 
 
 @pytest.fixture(params=["valkey", "memory"])
-def store(
-    request: pytest.FixtureRequest,
-    valkey_store: ValkeySessionStore,
-    memory_store: InMemorySessionStore,
-) -> SessionStore:
-    param: str = request.param  # pyright: ignore[reportAny]
+def store(request: pytest.FixtureRequest) -> SessionStore:
+    param = cast("str", request.param)
     if param == "valkey":
-        return valkey_store
-    return memory_store
+        return cast("SessionStore", request.getfixturevalue("valkey_store"))
+    return cast("SessionStore", request.getfixturevalue("memory_store"))
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar, final
 
 from dishka import Provider, Scope
+from taskiq import AsyncBroker, InMemoryBroker
 
 from osu_server.domain.beatmaps import BeatmapMetadataProvider
 from osu_server.infrastructure.security.hibp import HIBPClient
@@ -23,6 +24,7 @@ from osu_server.infrastructure.state.memory.performance_completion_signal import
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.infrastructure.storage.local import LocalBlobStorageBackend
+from osu_server.jobs import register_all_jobs
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     BeatmapLeaderboardQueryRepository,
 )
@@ -127,6 +129,13 @@ def replace_factory[T](
     return ProviderReplacement(provides=provides, factory=factory, scope=scope)
 
 
+def make_in_memory_broker() -> AsyncBroker:
+    """Create a taskiq broker that preserves job registration without Redis."""
+    broker: AsyncBroker = InMemoryBroker()
+    register_all_jobs(broker)
+    return broker
+
+
 class PassingHIBPClient:
     """HIBP test double that never marks a password as compromised."""
 
@@ -147,6 +156,7 @@ def make_in_memory_runtime_provider_set(
     beatmap_query_repository = InMemoryBeatmapQueryRepository(uow_factory)
 
     return TestProviderSet(
+        replace_value(AsyncBroker, make_in_memory_broker(), scope=Scope.APP),
         replace_value(HIBPClient, PassingHIBPClient(), scope=Scope.APP),
         replace_value(
             PacketQueue,

@@ -7,7 +7,6 @@ compliance) plus Valkey-specific tests for atomicity, TTL, and concurrency.
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
@@ -23,15 +22,13 @@ from osu_server.infrastructure.cache.valkey_client import create_valkey_client
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.valkey.packet_queue import ValkeyPacketQueue
+from tests.support.service_availability import require_tcp_service_url
 
 _KEY_PREFIX = "athena_test:"
 
 
 def _get_valkey_url() -> str:
-    url = os.environ.get("VALKEY_URL")
-    if not url:
-        pytest.skip("VALKEY_URL not set")
-    return url
+    return require_tcp_service_url("VALKEY_URL", default_port=6379)
 
 
 @pytest.fixture
@@ -67,15 +64,11 @@ def memory_queue() -> InMemoryPacketQueue:
 
 
 @pytest.fixture(params=["valkey", "memory"])
-def queue(
-    request: pytest.FixtureRequest,
-    valkey_queue: ValkeyPacketQueue,
-    memory_queue: InMemoryPacketQueue,
-) -> PacketQueue:
-    param: str = request.param  # pyright: ignore[reportAny]
+def queue(request: pytest.FixtureRequest) -> PacketQueue:
+    param = cast("str", request.param)
     if param == "valkey":
-        return valkey_queue
-    return memory_queue
+        return cast("PacketQueue", request.getfixturevalue("valkey_queue"))
+    return cast("PacketQueue", request.getfixturevalue("memory_queue"))
 
 
 @pytest.fixture
@@ -89,15 +82,11 @@ def memory_small_queue() -> InMemoryPacketQueue:
 
 
 @pytest.fixture(params=["valkey", "memory"])
-def small_queue(
-    request: pytest.FixtureRequest,
-    valkey_small_queue: ValkeyPacketQueue,
-    memory_small_queue: InMemoryPacketQueue,
-) -> PacketQueue:
-    param: str = request.param  # pyright: ignore[reportAny]
+def small_queue(request: pytest.FixtureRequest) -> PacketQueue:
+    param = cast("str", request.param)
     if param == "valkey":
-        return valkey_small_queue
-    return memory_small_queue
+        return cast("PacketQueue", request.getfixturevalue("valkey_small_queue"))
+    return cast("PacketQueue", request.getfixturevalue("memory_small_queue"))
 
 
 # ---------------------------------------------------------------------------

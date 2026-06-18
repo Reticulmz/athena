@@ -4,7 +4,6 @@ These tests require a running Valkey instance. The connection URL is read
 from the ``VALKEY_URL`` environment variable.
 """
 
-import os
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, cast
 
@@ -15,15 +14,13 @@ if TYPE_CHECKING:
     from glide_shared.constants import TEncodable
 
 from osu_server.infrastructure.cache.valkey_client import create_valkey_client
+from tests.support.service_availability import require_tcp_service_url
 
 _KEY_PREFIX = "athena_test:"
 
 
 def _get_valkey_url() -> str:
-    url = os.environ.get("VALKEY_URL")
-    if not url:
-        pytest.skip("VALKEY_URL not set")
-    return url
+    return require_tcp_service_url("VALKEY_URL", default_port=6379)
 
 
 @pytest.fixture

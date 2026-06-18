@@ -1,56 +1,60 @@
-"""E2E integration tests for Starlette application startup and lifecycle.
+"""E2E integration tests for Starlette application startup and lifecycle."""
 
-Verifies that the app starts correctly via lifespan, responds to requests,
-and shuts down cleanly.  Requires running PostgreSQL and Redis instances.
-"""
-
-import os
 from http import HTTPStatus
+from pathlib import Path
 from typing import cast
 
-import pytest
 from dishka import AsyncContainer
 from starlette.testclient import TestClient
 
-from osu_server.app import create_app
+from osu_server.app import create_app as create_runtime_app
 from osu_server.config import AppConfig, load_routing_config
+from tests.support.app import create_in_memory_app
+from tests.support.service_availability import require_tcp_service_url
 
 _BANCHO_URL = f"http://c.{load_routing_config().domain}/"
 
 
 def _require_services() -> None:
-    """Skip the test suite if DATABASE_URL or REDIS_URL are not set."""
-    if not os.environ.get("DATABASE_URL"):
-        pytest.skip("DATABASE_URL not set")
-    if not os.environ.get("VALKEY_URL"):
-        pytest.skip("VALKEY_URL not set")
+    """Skip the test suite if required external services are unavailable."""
+    _ = require_tcp_service_url("DATABASE_URL", default_port=5432)
+    _ = require_tcp_service_url("VALKEY_URL", default_port=6379)
 
 
-class TestAppStartup:
-    """E2E tests for application lifecycle via Starlette TestClient."""
+class TestInMemoryAppStartup:
+    """App lifecycle tests that do not require external services."""
 
-    def test_app_starts_and_responds(self) -> None:
+    def test_app_starts_and_responds(self, tmp_path: Path) -> None:
         """POST / on the bancho host returns 200 when the app is running."""
-        _require_services()
-        app = create_app()
+        app = create_in_memory_app(blob_root=tmp_path / "blobs")
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.post(_BANCHO_URL)
             assert response.status_code == HTTPStatus.OK
 
-    def test_lifespan_sets_state(self) -> None:
+    def test_lifespan_sets_state(self, tmp_path: Path) -> None:
         """After startup, app.state.dishka_container and app.state.config are set."""
-        _require_services()
-        app = create_app()
+        app = create_in_memory_app(blob_root=tmp_path / "blobs")
         with TestClient(app, raise_server_exceptions=False):
             assert hasattr(app.state, "config")
             assert hasattr(app.state, "dishka_container")
             assert isinstance(cast("object", app.state.config), AppConfig)
             assert isinstance(cast("object", app.state.dishka_container), AsyncContainer)
 
-    def test_get_root_returns_ok(self) -> None:
+    def test_get_root_returns_ok(self, tmp_path: Path) -> None:
         """GET / returns 200 — bancho handler accepts GET for connectivity probes."""
+        app = create_in_memory_app(blob_root=tmp_path / "blobs")
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/")
+            assert response.status_code == HTTPStatus.OK
+
+
+class TestRuntimeAppStartupSmoke:
+    """Production provider graph smoke tests that require external services."""
+
+    def test_runtime_app_get_root_returns_ok(self) -> None:
+        """GET / works with the production provider graph when services are available."""
         _require_services()
-        app = create_app()
+        app = create_runtime_app()
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.get("/")
             assert response.status_code == HTTPStatus.OK

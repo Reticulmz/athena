@@ -176,10 +176,12 @@ class TestSetupLogging:
         assert latest_path.read_text().startswith(active_session_content)
         assert len(list(tmp_path.glob("*.jsonl.gz"))) == 1
 
-    def test_json_write_failure_does_not_crash(self) -> None:
+    def test_json_write_failure_does_not_crash(self, tmp_path: Path) -> None:
         """If JSON file path is not writable, setup_logging warns but continues."""
+        blocked_log_dir = tmp_path / "not-a-directory"
+        _ = blocked_log_dir.write_text("existing file")
         config = make_app_config(
-            log_dir="/nonexistent/impossible/path",
+            log_dir=str(blocked_log_dir),
         )
         with warnings.catch_warnings(record=True) as _w:
             warnings.simplefilter("always")

@@ -4,7 +4,6 @@ These tests require a running PostgreSQL instance. The connection URL is read
 from the ``DATABASE_URL`` environment variable.
 """
 
-import os
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -13,13 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
+from tests.support.service_availability import require_tcp_service_url
 
 
 def _get_database_url() -> str:
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        pytest.skip("DATABASE_URL not set")
-    return url
+    return require_tcp_service_url("DATABASE_URL", default_port=5432)
 
 
 @pytest.fixture

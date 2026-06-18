@@ -22,7 +22,6 @@ if TYPE_CHECKING:
     from starlette.applications import Starlette
     from structlog.typing import EventDict
 
-import pytest
 import structlog.testing
 from caterpillar.model import pack
 from starlette.testclient import TestClient
@@ -63,6 +62,7 @@ from tests.support.persistence import (
     seed_beatmapset,
     seed_role,
 )
+from tests.support.service_availability import require_tcp_service_url
 
 # -- Constants -----------------------------------------------------------
 
@@ -619,10 +619,6 @@ class TestQueueSizeLimit:
 class TestConcurrentDrainRedis:
     """Concurrent drain with Redis — no duplicate delivery (Req 1.3)."""
 
-    @pytest.mark.skipif(
-        not os.environ.get("VALKEY_URL"),
-        reason="VALKEY_URL not set",
-    )
     async def test_concurrent_drain_no_duplicates(self) -> None:
         from osu_server.infrastructure.cache.valkey_client import (
             create_valkey_client,
@@ -632,7 +628,8 @@ class TestConcurrentDrainRedis:
         )
 
         prefix = "athena_e2e_test:"
-        valkey = await create_valkey_client(os.environ["VALKEY_URL"])
+        valkey_url = require_tcp_service_url("VALKEY_URL", default_port=6379)
+        valkey = await create_valkey_client(valkey_url)
         try:
             queue = ValkeyPacketQueue(
                 valkey,
