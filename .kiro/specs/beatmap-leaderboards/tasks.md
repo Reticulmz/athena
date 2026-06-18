@@ -182,7 +182,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 4.5, 4.8, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.8_
   - _Depends: 6.3_
 
-- [ ] 7.2 Submit and reconciliation scenarios を end-to-end で検証する
+- [x] 7.2 Submit and reconciliation scenarios を end-to-end で検証する
   - accepted eligible score は Global all-mods submit PB delta と projection rows を更新する
   - same fingerprint retry は saved snapshot を返し、PB delta と projection を再計算しない
   - Beatmap status、checksum、user visibility の変更後、pending rebuild 中も public output が current filters に従う

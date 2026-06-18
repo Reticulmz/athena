@@ -33,12 +33,23 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
 )
 from osu_server.domain.scores.decryption import DecryptedPayload
+from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.mods import Mod
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
 from osu_server.domain.storage.blobs import BlobStored
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.interfaces.blob_repository import NewBlob
+from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+    BeatmapLeaderboardUserBest,
+    BeatmapLeaderboardUserBestScope,
+    BeatmapLeaderboardUserProjectionSlice,
+    UpsertBeatmapLeaderboardUserBest,
+)
 from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
+from osu_server.repositories.sqlalchemy.commands.beatmap_leaderboards import (
+    SQLAlchemyBeatmapLeaderboardCommandRepository,
+)
 from osu_server.repositories.sqlalchemy.replay_repository import SQLAlchemyReplayRepository
 from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository
 from osu_server.repositories.sqlalchemy.submission_repository import (
@@ -123,6 +134,56 @@ def _fingerprint_for(
     )
 
 
+def _leaderboard_scope(
+    *,
+    user_id: int = 1000,
+    mod_filter_key: int | None = None,
+) -> BeatmapLeaderboardUserBestScope:
+    return BeatmapLeaderboardUserBestScope(
+        beatmap_id=1,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=user_id,
+        mod_filter_key=mod_filter_key,
+    )
+
+
+async def _get_leaderboard_best(
+    session_factory: async_sessionmaker[AsyncSession],
+    scope: BeatmapLeaderboardUserBestScope,
+) -> BeatmapLeaderboardUserBest | None:
+    async with session_factory() as session:
+        repository = SQLAlchemyBeatmapLeaderboardCommandRepository(session)
+        return await repository.get_user_best(scope)
+
+
+async def _replace_user_projection_with_score(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    user_id: int,
+    score_id: int,
+    score: int,
+    submitted_at: datetime,
+) -> None:
+    async with session_factory() as session:
+        repository = SQLAlchemyBeatmapLeaderboardCommandRepository(session)
+        await repository.replace_projection_slice(
+            BeatmapLeaderboardUserProjectionSlice(user_id=user_id),
+            (
+                UpsertBeatmapLeaderboardUserBest(
+                    scope=_leaderboard_scope(user_id=user_id),
+                    score_id=score_id,
+                    rank_key=ScoreRankKey(
+                        score=score,
+                        submitted_at=submitted_at,
+                        score_id=score_id,
+                    ),
+                ),
+            ),
+        )
+        await session.commit()
+
+
 @dataclass(slots=True)
 class FakeBeatmapResolver:
     eligibility: BeatmapEligibility | None
@@ -193,6 +254,16 @@ async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
         online_checksum LIKE 'integration_test_%'
         OR online_checksum LIKE 'int_test_%'
     """
+    _ = await session.execute(
+        text(
+            f"""
+            DELETE FROM beatmap_leaderboard_user_bests
+            WHERE score_id IN (
+                SELECT id FROM scores WHERE {test_score_filter}
+            )
+            """
+        )
+    )
     _ = await session.execute(
         text(
             f"""
@@ -513,6 +584,116 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
         )
         count = query_result.scalar()
         assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_uses_snapshot(
+    service: ProcessScoreSubmissionUseCase,
+    session_factory: async_sessionmaker[AsyncSession],
+    score_decryptor: StubScorePayloadDecryptor,
+) -> None:
+    """Eligible submit updates score-priority projection; retry returns saved PB delta."""
+
+    def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
+        if encrypted == b"encrypted_data_previous_best":
+            payload = "1000:test_user:abc123:int_test_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1"
+        else:
+            payload = (
+                "1000:test_user:abc123:int_test_lb_retry:0:"
+                f"{int(Mod.DOUBLE_TIME)}:100:10:5:0:0:2:500000:99:1:1"
+            )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    previous_input = ParsedSubmissionInput(
+        encrypted_payload=b"encrypted_data_previous_best",
+        iv=b"0" * 32,
+        replay_data=b"replay_data_previous_best",
+        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        client_hash="leaderboard_previous_hash",
+        fail_time_ms=None,
+        osu_version="20240101",
+        beatmap_id=1,
+        submitted_at=datetime.fromisoformat("2024-01-01T12:00:00+00:00"),
+    )
+    previous_result = await service.execute(previous_input)
+
+    assert previous_result.outcome == SubmissionOutcome.COMPLETED
+    assert previous_result.score_id is not None
+    assert previous_result.personal_best_delta is not None
+    assert previous_result.personal_best_delta.before_score_id is None
+    assert previous_result.personal_best_delta.after_score_id == previous_result.score_id
+    assert previous_result.personal_best_delta.updated is True
+
+    new_input = ParsedSubmissionInput(
+        encrypted_payload=b"encrypted_data_new_best",
+        iv=b"0" * 32,
+        replay_data=b"replay_data_new_best",
+        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        client_hash="leaderboard_new_hash",
+        fail_time_ms=None,
+        osu_version="20240101",
+        beatmap_id=1,
+        submitted_at=datetime.fromisoformat("2024-01-01T12:01:00+00:00"),
+    )
+    new_result = await service.execute(new_input)
+
+    assert new_result.outcome == SubmissionOutcome.COMPLETED
+    assert new_result.score_id is not None
+    assert new_result.personal_best_delta is not None
+    assert new_result.personal_best_delta.before_score_id == previous_result.score_id
+    assert new_result.personal_best_delta.before_score == 400_000
+    assert new_result.personal_best_delta.after_score_id == new_result.score_id
+    assert new_result.personal_best_delta.after_score == 500_000
+    assert new_result.personal_best_delta.updated is True
+
+    all_mods_best = await _get_leaderboard_best(
+        session_factory,
+        _leaderboard_scope(),
+    )
+    selected_mods_best = await _get_leaderboard_best(
+        session_factory,
+        _leaderboard_scope(mod_filter_key=int(Mod.DOUBLE_TIME)),
+    )
+    assert all_mods_best is not None
+    assert all_mods_best.score_id == new_result.score_id
+    assert selected_mods_best is not None
+    assert selected_mods_best.score_id == new_result.score_id
+
+    await _replace_user_projection_with_score(
+        session_factory,
+        user_id=1000,
+        score_id=previous_result.score_id,
+        score=400_000,
+        submitted_at=previous_input.submitted_at,
+    )
+
+    retry_result = await service.execute(replace(new_input, submitted_at=datetime.now(UTC)))
+
+    assert retry_result.outcome == SubmissionOutcome.COMPLETED
+    assert retry_result.score_id == new_result.score_id
+    assert retry_result.personal_best_delta == new_result.personal_best_delta
+
+    all_mods_best_after_retry = await _get_leaderboard_best(
+        session_factory,
+        _leaderboard_scope(),
+    )
+    selected_mods_best_after_retry = await _get_leaderboard_best(
+        session_factory,
+        _leaderboard_scope(mod_filter_key=int(Mod.DOUBLE_TIME)),
+    )
+    assert all_mods_best_after_retry is not None
+    assert all_mods_best_after_retry.score_id == previous_result.score_id
+    assert selected_mods_best_after_retry is None
+
+    async with session_factory() as session:
+        query_result = await session.execute(
+            text("SELECT COUNT(*) FROM scores WHERE online_checksum = :checksum"),
+            {"checksum": "int_test_lb_retry"},
+        )
+        count = query_result.scalar()
+    assert count == 1
 
 
 @pytest.mark.asyncio
