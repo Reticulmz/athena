@@ -18,11 +18,21 @@ from osu_server.domain.compatibility.stable.getscores import (
     GetscoresResolveOutcome,
     GetscoresResolveReason,
 )
+from osu_server.domain.scores.leaderboards import (
+    LeaderboardModFilter,
+    filter_from_mod_combination,
+)
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
+from osu_server.repositories.interfaces.queries.beatmap_leaderboards import LeaderboardReadScope
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap
+    from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+        BeatmapLeaderboardQueryRepository,
+        BeatmapLeaderboardRow,
+    )
     from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
         BeatmapScoreListingQueryRepository,
     )
@@ -40,6 +50,17 @@ _DISPLAYABLE_STATUSES = {
     BeatmapRankStatus.QUALIFIED,
     BeatmapRankStatus.LOVED,
 }
+_LEADERBOARD_VISIBLE_STATUSES = {
+    BeatmapRankStatus.RANKED,
+    BeatmapRankStatus.APPROVED,
+    BeatmapRankStatus.QUALIFIED,
+    BeatmapRankStatus.LOVED,
+}
+_LEADERBOARD_ROW_LIMIT = 50
+_LOCAL_LEADERBOARD_TYPE = 1
+_SELECTED_MODS_LEADERBOARD_TYPE = 2
+_FRIENDS_LEADERBOARD_TYPE = 3
+_COUNTRY_LEADERBOARD_TYPE = 4
 
 
 class BeatmapScoreListingQuery:
@@ -47,14 +68,17 @@ class BeatmapScoreListingQuery:
 
     _repository: BeatmapScoreListingQueryRepository
     _personal_bests: PersonalBestQueryRepository
+    _leaderboards: BeatmapLeaderboardQueryRepository | None
 
     def __init__(
         self,
         repository: BeatmapScoreListingQueryRepository,
         personal_bests: PersonalBestQueryRepository,
+        leaderboards: BeatmapLeaderboardQueryRepository | None = None,
     ) -> None:
         self._repository = repository
         self._personal_bests = personal_bests
+        self._leaderboards = leaderboards
 
     async def resolve(
         self,
@@ -165,17 +189,28 @@ class BeatmapScoreListingQuery:
         if not _is_displayable_in_score_listing(beatmap):
             return _unavailable(GetscoresResolveReason.NOT_SUBMITTED)
 
-        personal_best = await self._resolve_personal_best(
-            request=request,
-            beatmap=beatmap,
-            user_id=user_id,
-        )
+        personal_best: GetscoresPersonalBest | None = None
+        score_rows: tuple[GetscoresPersonalBest, ...] = ()
+        if self._leaderboards is None:
+            personal_best = await self._resolve_personal_best(
+                request=request,
+                beatmap=beatmap,
+                user_id=user_id,
+            )
+        elif _is_leaderboard_visible_beatmap(beatmap):
+            score_rows, personal_best = await self._resolve_leaderboard_listing(
+                request=request,
+                beatmap=beatmap,
+                user_id=user_id,
+            )
+
         return GetscoresResolveOutcome(
             kind=GetscoresOutcomeKind.HEADER,
             header=GetscoresResolvedHeader(
                 beatmap=beatmap,
                 beatmapset=beatmapset,
                 personal_best=personal_best,
+                score_rows=score_rows,
             ),
             reason=reason,
         )
@@ -242,6 +277,35 @@ class BeatmapScoreListingQuery:
             category=LeaderboardCategory.GLOBAL,
         )
 
+    async def _resolve_leaderboard_listing(
+        self,
+        *,
+        request: GetscoresRequest | None,
+        beatmap: Beatmap,
+        user_id: int | None,
+    ) -> tuple[tuple[GetscoresPersonalBest, ...], GetscoresPersonalBest | None]:
+        scope = _leaderboard_scope_from_request(
+            request=request,
+            beatmap=beatmap,
+        )
+        if scope is None or self._leaderboards is None:
+            return (), None
+
+        rows = await self._leaderboards.list_top_rows(
+            scope,
+            limit=_LEADERBOARD_ROW_LIMIT,
+        )
+        personal_best = None
+        if user_id is not None:
+            personal_best_row = await self._leaderboards.get_personal_best(
+                scope,
+                viewer_user_id=user_id,
+            )
+            if personal_best_row is not None:
+                personal_best = _leaderboard_row_to_getscores_row(personal_best_row)
+
+        return tuple(_leaderboard_row_to_getscores_row(row) for row in rows), personal_best
+
 
 def _unavailable(reason: GetscoresResolveReason) -> GetscoresResolveOutcome:
     """Build an unavailable outcome."""
@@ -257,6 +321,10 @@ def _is_displayable_in_score_listing(beatmap: Beatmap) -> bool:
     return beatmap.effective_status in _DISPLAYABLE_STATUSES
 
 
+def _is_leaderboard_visible_beatmap(beatmap: Beatmap) -> bool:
+    return beatmap.effective_status in _LEADERBOARD_VISIBLE_STATUSES
+
+
 def _ruleset_from_request(request: GetscoresRequest) -> Ruleset | None:
     if request.mode is None:
         return None
@@ -264,3 +332,102 @@ def _ruleset_from_request(request: GetscoresRequest) -> Ruleset | None:
         return Ruleset(request.mode)
     except ValueError:
         return None
+
+
+def _leaderboard_scope_from_request(
+    *,
+    request: GetscoresRequest | None,
+    beatmap: Beatmap,
+) -> LeaderboardReadScope | None:
+    if request is None or request.song_select is True:
+        return None
+
+    ruleset = _ruleset_from_request(request)
+    if ruleset is None or not _is_vanilla_request(request):
+        return None
+
+    category = _leaderboard_category_from_request(request)
+    if category is None:
+        return None
+
+    mod_filter_key: int | None = None
+    if category is LeaderboardCategory.SELECTED_MODS:
+        filter_result = _selected_mod_filter_from_request(request)
+        if filter_result is None or not filter_result.is_supported:
+            return None
+        mod_filter_key = filter_result.key
+
+    if category in {LeaderboardCategory.COUNTRY, LeaderboardCategory.FRIENDS}:
+        return None
+
+    return LeaderboardReadScope(
+        beatmap_id=beatmap.id,
+        beatmap_checksum=beatmap.checksum_md5,
+        ruleset=ruleset,
+        playstyle=Playstyle.VANILLA,
+        category=category,
+        mod_filter_key=mod_filter_key,
+    )
+
+
+def _leaderboard_category_from_request(
+    request: GetscoresRequest,
+) -> LeaderboardCategory | None:
+    if request.leaderboard_type == _LOCAL_LEADERBOARD_TYPE:
+        return LeaderboardCategory.GLOBAL
+    if request.leaderboard_type == _SELECTED_MODS_LEADERBOARD_TYPE:
+        return LeaderboardCategory.SELECTED_MODS
+    if request.leaderboard_type == _FRIENDS_LEADERBOARD_TYPE:
+        return LeaderboardCategory.FRIENDS
+    if request.leaderboard_type == _COUNTRY_LEADERBOARD_TYPE:
+        return LeaderboardCategory.COUNTRY
+    return None
+
+
+def _is_vanilla_request(request: GetscoresRequest) -> bool:
+    mods = _mods_from_request(request)
+    if mods is None:
+        return False
+    return not (mods.has(Mod.RELAX) or mods.has(Mod.AUTOPILOT))
+
+
+def _selected_mod_filter_from_request(
+    request: GetscoresRequest,
+) -> LeaderboardModFilter | None:
+    mods = _mods_from_request(request)
+    if mods is None:
+        return None
+    return filter_from_mod_combination(mods)
+
+
+def _mods_from_request(request: GetscoresRequest) -> ModCombination | None:
+    try:
+        return ModCombination.from_bitmask(request.mods or 0)
+    except ValueError:
+        return None
+
+
+def _leaderboard_row_to_getscores_row(
+    row: BeatmapLeaderboardRow,
+) -> GetscoresPersonalBest:
+    return GetscoresPersonalBest(
+        score_id=row.score_id,
+        user_id=row.user_id,
+        username=row.username,
+        beatmap_id=row.beatmap_id,
+        ruleset=row.ruleset,
+        playstyle=row.playstyle,
+        score=row.score,
+        max_combo=row.max_combo,
+        n50=row.hit_counts.n50,
+        n100=row.hit_counts.n100,
+        n300=row.hit_counts.n300,
+        miss=row.hit_counts.miss,
+        katu=row.hit_counts.katu,
+        geki=row.hit_counts.geki,
+        perfect=row.perfect,
+        mods=row.displayed_mods.to_persistence_bitmask(),
+        rank=row.rank,
+        submitted_at=row.submitted_at,
+        has_replay=row.has_replay,
+    )

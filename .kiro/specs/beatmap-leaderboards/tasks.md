@@ -99,7 +99,7 @@
   - _Depends: 2.2, 3.1_
 
 - [ ] 4. Beatmap Leaderboard read workflow を実装する
-- [ ] 4.1 Beatmap header resolution と category guards を leaderboard query に統合する
+- [x] 4.1 Beatmap header resolution と category guards を leaderboard query に統合する
   - Ranked、Approved、Loved、Qualified の vanilla Beatmap だけ rows/PB を返す
   - unsupported category、non-vanilla、song select/editor、unauthenticated viewer-dependent category は compatible empty listing にする
   - outdated checksum は update-available response にして rows/PB を返さない

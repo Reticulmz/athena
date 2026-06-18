@@ -1,0 +1,485 @@
+"""Beatmap leaderboard integration tests for the getscores query."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from datetime import UTC, datetime
+from decimal import Decimal
+
+import pytest
+
+from osu_server.domain.beatmaps import (
+    Beatmap,
+    BeatmapFetchState,
+    BeatmapFileState,
+    BeatmapMetadataSource,
+    BeatmapRankStatus,
+    BeatmapSet,
+    BeatmapSourceVerification,
+)
+from osu_server.domain.compatibility.stable.getscores import (
+    GetscoresOutcomeKind,
+    GetscoresPersonalBest,
+    GetscoresRequest,
+    GetscoresResolveReason,
+)
+from osu_server.domain.scores.mods import Mod, ModCombination
+from osu_server.domain.scores.personal_best import LeaderboardCategory
+from osu_server.domain.scores.score import Playstyle, Ruleset
+from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+    BeatmapLeaderboardRow,
+    LeaderboardReadScope,
+    ScoreHitCounts,
+)
+from osu_server.services.queries.scores.beatmap_score_listing import BeatmapScoreListingQuery
+
+_NOW = datetime(2026, 6, 18, tzinfo=UTC)
+_CHECKSUM = "a" * 32
+_OLD_CHECKSUM = "b" * 32
+_FILENAME = "Artist - Title (Creator) [Insane].osu"
+
+
+class BeatmapScoreListingQueryRepositoryStub:
+    """Typed read-only getscores repository test double."""
+
+    def __init__(self) -> None:
+        self.beatmaps_by_checksum: dict[str, Beatmap] = {}
+        self.beatmaps_by_filename: dict[tuple[int, str], Beatmap] = {}
+        self.beatmapsets_by_id: dict[int, BeatmapSet] = {}
+
+    async def find_by_checksum(self, checksum_md5: str) -> Beatmap | None:
+        return self.beatmaps_by_checksum.get(checksum_md5)
+
+    async def find_by_filename_in_beatmapset(
+        self, beatmapset_id: int, original_filename: str
+    ) -> Beatmap | None:
+        return self.beatmaps_by_filename.get((beatmapset_id, original_filename))
+
+    async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
+        return self.beatmapsets_by_id.get(beatmapset_id)
+
+
+class EmptyPersonalBestQueryRepositoryStub:
+    """Legacy personal best repository that should not serve 4.1 leaderboard reads."""
+
+    calls: list[tuple[int, int, Ruleset, Playstyle, LeaderboardCategory]]
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def get_personal_best(
+        self,
+        *,
+        user_id: int,
+        beatmap_id: int,
+        ruleset: Ruleset,
+        playstyle: Playstyle,
+        category: LeaderboardCategory,
+    ) -> GetscoresPersonalBest | None:
+        self.calls.append((user_id, beatmap_id, ruleset, playstyle, category))
+        return None
+
+
+class BeatmapLeaderboardQueryRepositoryStub:
+    """Typed leaderboard repository test double for query-level guard tests."""
+
+    def __init__(self) -> None:
+        self.rows: tuple[BeatmapLeaderboardRow, ...] = ()
+        self.personal_best: BeatmapLeaderboardRow | None = None
+        self.top_row_calls: list[tuple[LeaderboardReadScope, int]] = []
+        self.personal_best_calls: list[tuple[LeaderboardReadScope, int]] = []
+
+    async def list_top_rows(
+        self,
+        scope: LeaderboardReadScope,
+        *,
+        limit: int,
+    ) -> tuple[BeatmapLeaderboardRow, ...]:
+        self.top_row_calls.append((scope, limit))
+        return self.rows
+
+    async def get_personal_best(
+        self,
+        scope: LeaderboardReadScope,
+        *,
+        viewer_user_id: int,
+    ) -> BeatmapLeaderboardRow | None:
+        self.personal_best_calls.append((scope, viewer_user_id))
+        return self.personal_best
+
+
+@pytest.fixture
+def getscores_repo() -> BeatmapScoreListingQueryRepositoryStub:
+    return BeatmapScoreListingQueryRepositoryStub()
+
+
+@pytest.fixture
+def personal_best_repo() -> EmptyPersonalBestQueryRepositoryStub:
+    return EmptyPersonalBestQueryRepositoryStub()
+
+
+@pytest.fixture
+def leaderboard_repo() -> BeatmapLeaderboardQueryRepositoryStub:
+    return BeatmapLeaderboardQueryRepositoryStub()
+
+
+@pytest.fixture
+def sample_beatmap() -> Beatmap:
+    return Beatmap(
+        id=75,
+        beatmapset_id=5,
+        checksum_md5=_CHECKSUM,
+        mode="osu",
+        version="Insane",
+        total_length=240,
+        hit_length=220,
+        max_combo=1_234,
+        bpm=180.0,
+        cs=4.0,
+        od=8.5,
+        ar=9.4,
+        hp=6.5,
+        difficulty_rating=5.67,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        local_status_override=None,
+        metadata_fetch_state=BeatmapFetchState.FRESH,
+        file_state=BeatmapFileState.AVAILABLE,
+        file_attachment=None,
+        last_fetched_at=_NOW,
+        next_refresh_at=None,
+    )
+
+
+@pytest.fixture
+def sample_beatmapset() -> BeatmapSet:
+    return BeatmapSet(
+        id=5,
+        artist="Artist",
+        title="Title",
+        creator="Creator",
+        artist_unicode=None,
+        title_unicode=None,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        beatmaps=(),
+        last_fetched_at=_NOW,
+        next_refresh_at=None,
+    )
+
+
+class TestBeatmapLeaderboardGetscoresQuery:
+    async def test_available_ranked_local_request_reads_global_rows_and_personal_best(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+        row = _leaderboard_row(score_id=10, user_id=20, rank=1)
+        personal_best = _leaderboard_row(score_id=11, user_id=9, rank=4)
+        leaderboard_repo.rows = (row,)
+        leaderboard_repo.personal_best = personal_best
+
+        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+            _request(leaderboard_type=1),
+            user_id=9,
+        )
+
+        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.header is not None
+        assert result.header.score_rows == (_score_row_from_leaderboard(row),)
+        assert result.header.personal_best == _personal_best_from_leaderboard(personal_best)
+        assert leaderboard_repo.top_row_calls == [
+            (
+                LeaderboardReadScope(
+                    beatmap_id=sample_beatmap.id,
+                    beatmap_checksum=sample_beatmap.checksum_md5,
+                    ruleset=Ruleset.OSU,
+                    playstyle=Playstyle.VANILLA,
+                    category=LeaderboardCategory.GLOBAL,
+                    mod_filter_key=None,
+                ),
+                50,
+            )
+        ]
+        assert leaderboard_repo.personal_best_calls == [(leaderboard_repo.top_row_calls[0][0], 9)]
+        assert personal_best_repo.calls == []
+
+    async def test_supported_visibility_statuses_are_available_for_rows(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        for status in (
+            BeatmapRankStatus.RANKED,
+            BeatmapRankStatus.APPROVED,
+            BeatmapRankStatus.LOVED,
+            BeatmapRankStatus.QUALIFIED,
+        ):
+            getscores_repo.beatmaps_by_checksum.clear()
+            getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+            getscores_repo.beatmaps_by_checksum[_CHECKSUM] = replace(
+                sample_beatmap,
+                official_status=status,
+            )
+            leaderboard_repo.top_row_calls.clear()
+
+            result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+                _request(),
+                user_id=9,
+            )
+
+            assert result.kind is GetscoresOutcomeKind.HEADER
+            assert len(leaderboard_repo.top_row_calls) == 1
+
+    async def test_unsupported_category_returns_header_only_without_global_fallback(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+
+        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+            _request(leaderboard_type=99),
+            user_id=9,
+        )
+
+        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.header is not None
+        assert result.header.score_rows == ()
+        assert result.header.personal_best is None
+        assert leaderboard_repo.top_row_calls == []
+        assert leaderboard_repo.personal_best_calls == []
+
+    async def test_displayable_but_not_leaderboard_visible_status_returns_header_only(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = replace(
+            sample_beatmap,
+            official_status=BeatmapRankStatus.PENDING,
+        )
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+
+        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+            _request(),
+            user_id=9,
+        )
+
+        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.header is not None
+        assert result.header.score_rows == ()
+        assert result.header.personal_best is None
+        assert leaderboard_repo.top_row_calls == []
+
+    async def test_missing_category_context_returns_header_only(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+
+        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+            _request(leaderboard_type=None),
+            user_id=9,
+        )
+
+        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.header is not None
+        assert result.header.score_rows == ()
+        assert result.header.personal_best is None
+        assert leaderboard_repo.top_row_calls == []
+
+    async def test_non_vanilla_mod_request_returns_header_only(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+
+        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+            _request(mods=int(Mod.RELAX)),
+            user_id=9,
+        )
+
+        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.header is not None
+        assert result.header.score_rows == ()
+        assert result.header.personal_best is None
+        assert leaderboard_repo.top_row_calls == []
+
+    async def test_song_select_request_returns_header_only(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+
+        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+            _request(song_select=True),
+            user_id=9,
+        )
+
+        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.header is not None
+        assert result.header.score_rows == ()
+        assert result.header.personal_best is None
+        assert leaderboard_repo.top_row_calls == []
+
+    async def test_outdated_checksum_returns_update_available_without_rows(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_filename[(sample_beatmap.beatmapset_id, _FILENAME)] = (
+            sample_beatmap
+        )
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+
+        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+            _request(checksum_md5=_OLD_CHECKSUM, filename=_FILENAME),
+            user_id=9,
+        )
+
+        assert result.kind is GetscoresOutcomeKind.UPDATE_AVAILABLE
+        assert result.header is not None
+        assert result.header.score_rows == ()
+        assert result.header.personal_best is None
+        assert result.reason is GetscoresResolveReason.UPDATE_AVAILABLE
+        assert leaderboard_repo.top_row_calls == []
+
+    async def test_unauthenticated_viewer_dependent_category_returns_header_only(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+        sample_beatmap: Beatmap,
+        sample_beatmapset: BeatmapSet,
+    ) -> None:
+        getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
+        getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
+
+        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+            _request(leaderboard_type=3),
+            user_id=None,
+        )
+
+        assert result.kind is GetscoresOutcomeKind.HEADER
+        assert result.header is not None
+        assert result.header.score_rows == ()
+        assert result.header.personal_best is None
+        assert leaderboard_repo.top_row_calls == []
+
+
+def _query(
+    getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+    personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
+    leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+) -> BeatmapScoreListingQuery:
+    return BeatmapScoreListingQuery(getscores_repo, personal_best_repo, leaderboard_repo)
+
+
+def _request(
+    *,
+    checksum_md5: str = _CHECKSUM,
+    filename: str | None = None,
+    mode: int | None = Ruleset.OSU.value,
+    mods: int | None = 0,
+    leaderboard_type: int | None = 1,
+    song_select: bool | None = False,
+) -> GetscoresRequest:
+    return GetscoresRequest(
+        checksum_md5=checksum_md5,
+        filename=filename,
+        beatmapset_id_hint=5,
+        mode=mode,
+        mods=mods,
+        leaderboard_type=leaderboard_type,
+        leaderboard_version=4,
+        song_select=song_select,
+    )
+
+
+def _leaderboard_row(
+    *,
+    score_id: int,
+    user_id: int,
+    rank: int,
+) -> BeatmapLeaderboardRow:
+    return BeatmapLeaderboardRow(
+        score_id=score_id,
+        user_id=user_id,
+        username=f"user-{user_id}",
+        beatmap_id=75,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        score=1_000_000 - score_id,
+        max_combo=500,
+        hit_counts=ScoreHitCounts(n50=1, n100=2, n300=300, miss=3, katu=4, geki=5),
+        perfect=True,
+        displayed_mods=ModCombination.none(),
+        rank=rank,
+        submitted_at=_NOW,
+        has_replay=True,
+        pp=Decimal("123.45"),
+    )
+
+
+def _score_row_from_leaderboard(row: BeatmapLeaderboardRow) -> GetscoresPersonalBest:
+    return GetscoresPersonalBest(
+        score_id=row.score_id,
+        user_id=row.user_id,
+        username=row.username,
+        beatmap_id=row.beatmap_id,
+        ruleset=row.ruleset,
+        playstyle=row.playstyle,
+        score=row.score,
+        max_combo=row.max_combo,
+        n50=row.hit_counts.n50,
+        n100=row.hit_counts.n100,
+        n300=row.hit_counts.n300,
+        miss=row.hit_counts.miss,
+        katu=row.hit_counts.katu,
+        geki=row.hit_counts.geki,
+        perfect=row.perfect,
+        mods=row.displayed_mods.to_persistence_bitmask(),
+        rank=row.rank,
+        submitted_at=row.submitted_at,
+        has_replay=row.has_replay,
+    )
+
+
+def _personal_best_from_leaderboard(row: BeatmapLeaderboardRow) -> GetscoresPersonalBest:
+    return _score_row_from_leaderboard(row)

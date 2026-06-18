@@ -92,6 +92,7 @@ class GetscoresResolvedHeader:
     beatmap: Beatmap
     beatmapset: BeatmapSet
     personal_best: GetscoresPersonalBest | None = None
+    score_rows: tuple[GetscoresPersonalBest, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
