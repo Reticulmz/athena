@@ -6,6 +6,7 @@ Guidance for Codex and other coding agents working in this repository.
 
 - Read existing files before writing. Do not guess APIs, versions, flags, commit SHAs, or package names.
 - Read `.claude/rules/*.md` before making architectural, implementation, validation, or operational decisions.
+- Before starting substantive work such as coding, review, debugging, test design, design changes, or documentation, check whether a skill directly matches the current action. When one matches, load only the minimum relevant skills and apply their workflow, anti-patterns, best practices, and completion criteria; for example, Python implementation uses the relevant Python skill, tests use testing skills, and bug investigation uses debugging skills. Do not load weakly related skills because they add context load.
 - Keep user-facing output concise and lead with the conclusion.
 - Do not use emoji or em dashes.
 - Skip files larger than 100 KB unless they are necessary.
@@ -227,6 +228,29 @@ Do not edit project-wide config without explicit user approval:
 
 Dependency additions also require approval. After approved environment/config changes, run the appropriate sync/update command.
 
+## Parallel Agent Worktree And PR Workflow
+
+When a task may edit files, run checks that generate artifacts, or make implementation changes while multiple coding agents may be active, isolate the work before making changes.
+
+- Create or use a task-specific git worktree and dedicated branch before editing files.
+- Use `scripts/agent-worktree.sh` when creating agent worktrees unless the task needs a custom setup.
+- Pass an agent namespace such as `--agent codex` for Codex or `--agent claude-code` for Claude Code so branches identify the originating agent.
+- Use a predictable path such as `../athena-worktrees/<task-slug>` and an agent-prefixed branch such as `codex/<task-slug>` or `claude-code/<task-slug>`.
+- Keep each agent's changes inside its own worktree. Do not share one branch across multiple active agents.
+- Prefer one owner per file. If multiple tasks need the same file, designate one owner or integrate the changes sequentially.
+- For multi-task Kiro specs, create a spec integration worktree first, using `spec/<spec-name>` at `../athena-worktrees/<spec-name>`.
+- Create each Kiro task worktree from the spec branch, using `<agent>/<spec-name>/<task-slug>` at `../athena-worktrees/<spec-name>__<task-slug>`.
+- Complete each task inside its task worktree, then integrate the task branch back into the spec worktree.
+- After all tasks are integrated and spec-level validation passes, open the final PR from `spec/<spec-name>` to `main`.
+- Run relevant tests and quality checks inside the task worktree. Before committing, run `prek run --all-files` from that worktree.
+- Commit completed work in the task branch, or clearly report uncommitted changes and do not integrate them automatically.
+- For non-trivial code, test, spec, or multi-file changes, use a pull request as the integration boundary even for solo development.
+- Open a draft PR from the task branch, watch GitHub CI and review comments, and fix failures with focused follow-up commits on the same branch.
+- Merge only after CI passes, actionable comments are resolved, the final diff is reviewed, and relevant local checks have run.
+- Do not merge PRs with failing checks, unresolved actionable comments, or uncommitted local changes.
+- Integrate back into the main worktree only after reviewing the diff and running relevant checks. Do not merge uncommitted changes from separate agents together.
+- Read-only investigation, short answers, and simple command output requests do not require a new worktree.
+
 ## Git And Commit Rules
 
 Use Conventional Commits:
@@ -241,7 +265,7 @@ Use Conventional Commits:
 - No emoji or slang.
 - Do not bypass hooks with `--no-verify`, `--no-gpg-sign`, or `-n`.
 - Before committing, run `prek run --all-files`.
-- If a coding agent creates a commit, include footer `Agent-Model: <agent product> (<model name>)`.
+- If a coding agent creates a commit, include footer `Agent-Model: <agent product> (<model name>)`. Do not guess the model name; use `unknown` when the exact model is not available.
 
 When proposing a commit, include file count summary and file list so staging can be verified.
 
