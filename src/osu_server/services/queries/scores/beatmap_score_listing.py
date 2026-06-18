@@ -20,11 +20,6 @@ from osu_server.domain.compatibility.stable.getscores import (
     GetscoresResolveReason,
 )
 from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
-from osu_server.domain.scores.leaderboards import (
-    LeaderboardModFilter,
-    filter_from_mod_combination,
-)
-from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import LeaderboardReadScope
@@ -66,10 +61,6 @@ _LEADERBOARD_VISIBLE_STATUSES = {
     BeatmapRankStatus.LOVED,
 }
 _LEADERBOARD_ROW_LIMIT = 50
-_LOCAL_LEADERBOARD_TYPE = 1
-_SELECTED_MODS_LEADERBOARD_TYPE = 2
-_FRIENDS_LEADERBOARD_TYPE = 3
-_COUNTRY_LEADERBOARD_TYPE = 4
 
 
 @dataclass(slots=True, frozen=True)
@@ -427,20 +418,20 @@ def _leaderboard_scope_from_request(
     request: GetscoresRequest | None,
     beatmap: Beatmap,
 ) -> LeaderboardReadScope | None:
-    if request is None or request.song_select is True:
+    if request is None:
         return None
 
     ruleset = _ruleset_from_request(request)
-    if ruleset is None or not _is_vanilla_request(request):
+    if ruleset is None:
         return None
 
-    category = _leaderboard_category_from_request(request)
-    if category is None:
+    selection = request.leaderboard_selection
+    if selection is None or selection.header_only or selection.category is None:
         return None
 
     mod_filter_key: int | None = None
-    if category is LeaderboardCategory.SELECTED_MODS:
-        filter_result = _selected_mod_filter_from_request(request)
+    if selection.category is LeaderboardCategory.SELECTED_MODS:
+        filter_result = selection.selected_mod_filter
         if filter_result is None or not filter_result.is_supported:
             return None
         mod_filter_key = filter_result.key
@@ -450,23 +441,9 @@ def _leaderboard_scope_from_request(
         beatmap_checksum=beatmap.checksum_md5,
         ruleset=ruleset,
         playstyle=Playstyle.VANILLA,
-        category=category,
+        category=selection.category,
         mod_filter_key=mod_filter_key,
     )
-
-
-def _leaderboard_category_from_request(
-    request: GetscoresRequest,
-) -> LeaderboardCategory | None:
-    if request.leaderboard_type == _LOCAL_LEADERBOARD_TYPE:
-        return LeaderboardCategory.GLOBAL
-    if request.leaderboard_type == _SELECTED_MODS_LEADERBOARD_TYPE:
-        return LeaderboardCategory.SELECTED_MODS
-    if request.leaderboard_type == _FRIENDS_LEADERBOARD_TYPE:
-        return LeaderboardCategory.FRIENDS
-    if request.leaderboard_type == _COUNTRY_LEADERBOARD_TYPE:
-        return LeaderboardCategory.COUNTRY
-    return None
 
 
 def _country_scope_filter(country: str) -> str | None:
@@ -474,29 +451,6 @@ def _country_scope_filter(country: str) -> str | None:
     if normalized in {"", "XX"}:
         return None
     return normalized
-
-
-def _is_vanilla_request(request: GetscoresRequest) -> bool:
-    mods = _mods_from_request(request)
-    if mods is None:
-        return False
-    return not (mods.has(Mod.RELAX) or mods.has(Mod.AUTOPILOT))
-
-
-def _selected_mod_filter_from_request(
-    request: GetscoresRequest,
-) -> LeaderboardModFilter | None:
-    mods = _mods_from_request(request)
-    if mods is None:
-        return None
-    return filter_from_mod_combination(mods)
-
-
-def _mods_from_request(request: GetscoresRequest) -> ModCombination | None:
-    try:
-        return ModCombination.from_bitmask(request.mods or 0)
-    except ValueError:
-        return None
 
 
 def _leaderboard_row_to_getscores_row(

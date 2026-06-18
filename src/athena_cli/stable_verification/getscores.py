@@ -37,6 +37,10 @@ _DEFAULT_PROBE_CASES_PATH = (
 )
 _LEADERBOARD_TYPE_QUERY_VALUES = {
     "local": "1",
+    "selected": "2",
+    "selected_mods": "2",
+    "friends": "3",
+    "country": "4",
 }
 
 

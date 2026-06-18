@@ -124,7 +124,7 @@
   - _Depends: 4.2_
 
 - [ ] 5. Stable getscores compatibility surface を更新する
-- [ ] 5.1 Stable getscores request mapping を leaderboard category に変換する
+- [x] 5.1 Stable getscores request mapping を leaderboard category に変換する
   - `v=1` は Global、`v=2` は Selected Mods、`v=3` は Friends、`v=4` は Country として扱う
   - unsupported `v` は Global fallback せず header-only empty listing にする
   - selected `mods` は stable bitmask から domain mod combination へ変換して filter policy に渡す

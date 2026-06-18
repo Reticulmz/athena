@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from osu_server.domain.beatmaps import BeatmapRankStatus
@@ -11,7 +12,12 @@ from osu_server.domain.compatibility.stable.getscores import (
     GetscoresParseResult,
     GetscoresParseWarning,
     GetscoresRequest,
+    StableLeaderboardSelection,
 )
+from osu_server.domain.compatibility.stable.mods import stable_mod_bitmask_to_mod_combination
+from osu_server.domain.scores.leaderboards import filter_from_mod_combination
+from osu_server.domain.scores.mods import Mod, ModCombination
+from osu_server.domain.scores.personal_best import LeaderboardCategory
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -30,6 +36,10 @@ _STATUS_TO_WIRE: dict[BeatmapRankStatus, int | None] = {
     BeatmapRankStatus.QUALIFIED: 4,
     BeatmapRankStatus.LOVED: 5,
 }
+_LOCAL_LEADERBOARD_TYPE = 1
+_SELECTED_MODS_LEADERBOARD_TYPE = 2
+_FRIENDS_LEADERBOARD_TYPE = 3
+_COUNTRY_LEADERBOARD_TYPE = 4
 
 
 def _parse_int(
@@ -104,19 +114,63 @@ class GetscoresQueryParser:
         if not has_checksum and not has_fallback:
             return GetscoresParseResult(error=GetscoresParseError.MISSING_IDENTITY)
 
-        return GetscoresParseResult(
-            request=GetscoresRequest(
-                checksum_md5=checksum_md5,
-                filename=filename,
-                beatmapset_id_hint=beatmapset_id_hint,
-                mode=mode,
-                mods=mods,
-                leaderboard_type=leaderboard_type,
-                leaderboard_version=leaderboard_version,
-                song_select=song_select,
-                anti_cheat_signal="a" in query,
-                parse_warnings=tuple(warnings),
+        request = GetscoresRequest(
+            checksum_md5=checksum_md5,
+            filename=filename,
+            beatmapset_id_hint=beatmapset_id_hint,
+            mode=mode,
+            mods=mods,
+            leaderboard_type=leaderboard_type,
+            leaderboard_version=leaderboard_version,
+            song_select=song_select,
+            anti_cheat_signal="a" in query,
+            parse_warnings=tuple(warnings),
+        )
+        selection = StableGetscoresLeaderboardMapper().map_request(request)
+
+        return GetscoresParseResult(request=replace(request, leaderboard_selection=selection))
+
+
+class StableGetscoresLeaderboardMapper:
+    """Map stable getscores category fields to leaderboard query selection."""
+
+    def map_request(self, request: GetscoresRequest) -> StableLeaderboardSelection:
+        category = _leaderboard_category_from_request(request)
+        if category is None:
+            return StableLeaderboardSelection(
+                category=None,
+                selected_mod_filter=None,
+                header_only=True,
+                unsupported=request.leaderboard_type is not None,
             )
+
+        mods = _mods_from_request(request)
+        if mods is None:
+            return StableLeaderboardSelection(
+                category=category,
+                selected_mod_filter=None,
+                header_only=True,
+                unsupported=True,
+            )
+
+        if mods.has(Mod.RELAX) or mods.has(Mod.AUTOPILOT):
+            return StableLeaderboardSelection(
+                category=category,
+                selected_mod_filter=None,
+                header_only=True,
+            )
+
+        selected_mod_filter = None
+        unsupported = False
+        if category is LeaderboardCategory.SELECTED_MODS:
+            selected_mod_filter = filter_from_mod_combination(mods)
+            unsupported = not selected_mod_filter.is_supported
+
+        return StableLeaderboardSelection(
+            category=category,
+            selected_mod_filter=selected_mod_filter,
+            header_only=request.song_select is True or unsupported,
+            unsupported=unsupported,
         )
 
 
@@ -125,3 +179,24 @@ class GetscoresStatusMapper:
 
     def map_header_status(self, beatmap: Beatmap) -> int | None:
         return _STATUS_TO_WIRE.get(beatmap.effective_status)
+
+
+def _leaderboard_category_from_request(
+    request: GetscoresRequest,
+) -> LeaderboardCategory | None:
+    if request.leaderboard_type == _LOCAL_LEADERBOARD_TYPE:
+        return LeaderboardCategory.GLOBAL
+    if request.leaderboard_type == _SELECTED_MODS_LEADERBOARD_TYPE:
+        return LeaderboardCategory.SELECTED_MODS
+    if request.leaderboard_type == _FRIENDS_LEADERBOARD_TYPE:
+        return LeaderboardCategory.FRIENDS
+    if request.leaderboard_type == _COUNTRY_LEADERBOARD_TYPE:
+        return LeaderboardCategory.COUNTRY
+    return None
+
+
+def _mods_from_request(request: GetscoresRequest) -> ModCombination | None:
+    try:
+        return stable_mod_bitmask_to_mod_combination(request.mods or 0)
+    except ValueError:
+        return None

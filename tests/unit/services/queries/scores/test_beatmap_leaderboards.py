@@ -34,6 +34,7 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     ScoreHitCounts,
 )
 from osu_server.services.queries.scores.beatmap_score_listing import BeatmapScoreListingQuery
+from osu_server.transports.stable.web_legacy.mappers import StableGetscoresLeaderboardMapper
 
 _NOW = datetime(2026, 6, 18, tzinfo=UTC)
 _CHECKSUM = "a" * 32
@@ -848,7 +849,7 @@ def _request(
     leaderboard_type: int | None = 1,
     song_select: bool | None = False,
 ) -> GetscoresRequest:
-    return GetscoresRequest(
+    request = GetscoresRequest(
         checksum_md5=checksum_md5,
         filename=filename,
         beatmapset_id_hint=5,
@@ -857,6 +858,10 @@ def _request(
         leaderboard_type=leaderboard_type,
         leaderboard_version=4,
         song_select=song_select,
+    )
+    return replace(
+        request,
+        leaderboard_selection=StableGetscoresLeaderboardMapper().map_request(request),
     )
 
 

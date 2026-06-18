@@ -47,14 +47,26 @@ def test_load_probe_cases_preserves_stable_query_shape_fields() -> None:
     assert cases
     assert {case.name for case in cases} == {
         "ranked_osu_local_leaderboard",
+        "ranked_osu_selected_mods_leaderboard",
+        "ranked_osu_friends_leaderboard",
+        "ranked_osu_country_leaderboard",
+        "ranked_osu_unsupported_leaderboard_type",
+        "ranked_osu_mirror_selected_mods_leaderboard",
         "ranked_mania_converted_local_leaderboard",
     }
     assert all(case.checksum for case in cases)
     assert all(case.filename.endswith(".osu") for case in cases)
     assert all(case.beatmapset_id == 1 for case in cases)
     assert {case.mode for case in cases} == {0, 3}
-    assert all(case.mods == 0 for case in cases)
-    assert all(case.leaderboard_type == "local" for case in cases)
+    assert {case.leaderboard_type for case in cases} == {
+        "local",
+        "selected_mods",
+        "friends",
+        "country",
+        "99",
+    }
+    assert any(case.mods == 64 for case in cases)
+    assert any(case.mods == 1073741824 for case in cases)
     assert all(case.request_version == 4 for case in cases)
 
 
@@ -72,6 +84,13 @@ def test_build_getscores_query_maps_probe_case_to_stable_web_legacy_shape() -> N
         "v": "1",
         "vv": "4",
     }
+
+
+def test_build_getscores_query_maps_named_leaderboard_categories() -> None:
+    assert build_getscores_query(_probe_case(leaderboard_type="selected_mods"))["v"] == "2"
+    assert build_getscores_query(_probe_case(leaderboard_type="friends"))["v"] == "3"
+    assert build_getscores_query(_probe_case(leaderboard_type="country"))["v"] == "4"
+    assert build_getscores_query(_probe_case(leaderboard_type="99"))["v"] == "99"
 
 
 def test_probe_target_uses_stable_probe_client_and_parses_response() -> None:
@@ -189,15 +208,19 @@ def test_optional_osu_py_probe_runs_only_with_target_and_prerequisites() -> None
     assert result.diagnostic_summary.message == "optional probe called"
 
 
-def _probe_case() -> GetscoresProbeCase:
+def _probe_case(
+    *,
+    leaderboard_type: str = "local",
+    mods: int = 0,
+) -> GetscoresProbeCase:
     return GetscoresProbeCase(
         name="ranked_fixture",
         checksum="0123456789abcdef0123456789abcdef",
         filename="Artist - Title (Mapper) [Difficulty].osu",
         beatmapset_id=75,
         mode=0,
-        mods=0,
-        leaderboard_type="local",
+        mods=mods,
+        leaderboard_type=leaderboard_type,
         request_version=4,
     )
 

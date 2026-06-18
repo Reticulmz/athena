@@ -8,6 +8,8 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
+    from osu_server.domain.scores.leaderboards import LeaderboardModFilter
+    from osu_server.domain.scores.personal_best import LeaderboardCategory
     from osu_server.domain.scores.score import Playstyle, Ruleset
 
 
@@ -27,6 +29,14 @@ class GetscoresParseWarning(Enum):
 
 
 @dataclass(slots=True, frozen=True)
+class StableLeaderboardSelection:
+    category: LeaderboardCategory | None
+    selected_mod_filter: LeaderboardModFilter | None
+    header_only: bool
+    unsupported: bool = False
+
+
+@dataclass(slots=True, frozen=True)
 class GetscoresRequest:
     checksum_md5: str | None
     filename: str | None
@@ -36,6 +46,7 @@ class GetscoresRequest:
     leaderboard_type: int | None
     leaderboard_version: int | None
     song_select: bool | None
+    leaderboard_selection: StableLeaderboardSelection | None = None
     anti_cheat_signal: bool = False
     parse_warnings: tuple[GetscoresParseWarning, ...] = ()
 
