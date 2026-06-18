@@ -82,7 +82,7 @@
   - _Requirements: 6.1, 6.2, 7.2, 8.3_
   - _Depends: 1.3, 2.5_
 
-- [ ] 3.2 Submit leaderboard updater を score submission transaction に統合する
+- [x] 3.2 Submit leaderboard updater を score submission transaction に統合する
   - accepted eligible score は previous Global all-mods best と比較して submit PB delta を作る
   - score の actual mods から all matching projection scopes を更新する
   - idempotency retry は保存済み submit result を返し、projection や PB delta を再計算しない

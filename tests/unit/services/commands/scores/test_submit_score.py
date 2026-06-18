@@ -19,11 +19,8 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.users import User
 from osu_server.domain.scores.leaderboards import ScoreRankKey
-from osu_server.domain.scores.mods import ModCombination
-from osu_server.domain.scores.personal_best import (
-    LeaderboardCategory,
-    PersonalBestScope,
-)
+from osu_server.domain.scores.mods import Mod, ModCombination
+from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
@@ -58,6 +55,7 @@ def _score(
     passed: bool = True,
     leaderboard_eligible_at_submission: bool = True,
     beatmap_checksum: str = "abc123",
+    mods: ModCombination | None = None,
 ) -> Score:
     return Score(
         id=None,
@@ -67,7 +65,7 @@ def _score(
         online_checksum=online_checksum,
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
-        mods=ModCombination.none(),
+        mods=mods or ModCombination.none(),
         n300=100,
         n100=10,
         n50=5,
@@ -229,9 +227,10 @@ async def test_completed_submission_commits_one_snapshot() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completed_submission_updates_personal_best_projection_and_snapshot_delta() -> None:
+async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_delta() -> None:
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
+    selected_mod_filter_key = int(Mod.HIDDEN | Mod.DOUBLE_TIME)
 
     first = await use_case.execute(
         SubmitScoreCommand(
@@ -240,7 +239,11 @@ async def test_completed_submission_updates_personal_best_projection_and_snapsho
             beatmap_checksum="abc123",
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
-            score=_score(online_checksum="online-pb-1", score=500000),
+            score=_score(
+                online_checksum="online-pb-1",
+                score=500000,
+                mods=ModCombination(Mod.HIDDEN | Mod.NIGHTCORE),
+            ),
             beatmap_id=1,
             beatmapset_id=10,
             include_personal_best_delta=True,
@@ -253,6 +256,31 @@ async def test_completed_submission_updates_personal_best_projection_and_snapsho
     assert first.personal_best_delta.before_score is None
     assert first.personal_best_delta.after_score == 500000
     assert first.personal_best_delta.updated is True
+
+    async with factory() as uow:
+        all_mods_best = await uow.beatmap_leaderboards.get_user_best(
+            BeatmapLeaderboardUserBestScope(
+                beatmap_id=1,
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                user_id=1000,
+                mod_filter_key=None,
+            )
+        )
+        selected_mods_best = await uow.beatmap_leaderboards.get_user_best(
+            BeatmapLeaderboardUserBestScope(
+                beatmap_id=1,
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                user_id=1000,
+                mod_filter_key=selected_mod_filter_key,
+            )
+        )
+
+    assert all_mods_best is not None
+    assert all_mods_best.score_id == first.score_id
+    assert selected_mods_best is not None
+    assert selected_mods_best.score_id == first.score_id
 
     lower = await use_case.execute(
         SubmitScoreCommand(
@@ -281,19 +309,19 @@ async def test_completed_submission_updates_personal_best_projection_and_snapsho
     assert lower.personal_best_delta.updated is False
 
     async with factory() as uow:
-        personal_best = await uow.personal_bests.get_by_scope(
-            PersonalBestScope(
-                user_id=1000,
+        all_mods_best_after_lower = await uow.beatmap_leaderboards.get_user_best(
+            BeatmapLeaderboardUserBestScope(
                 beatmap_id=1,
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
-                category=LeaderboardCategory.GLOBAL,
+                user_id=1000,
+                mod_filter_key=None,
             )
         )
         lower_submission = await uow.submissions.get_by_fingerprint("fingerprint-pb-2")
 
-    assert personal_best is not None
-    assert personal_best.score_id == first.score_id
+    assert all_mods_best_after_lower is not None
+    assert all_mods_best_after_lower.score_id == first.score_id
     assert lower_submission is not None
     assert lower_submission.result_snapshot is not None
     assert lower_submission.result_snapshot["personal_best_delta"] == {
@@ -307,6 +335,38 @@ async def test_completed_submission_updates_personal_best_projection_and_snapsho
         "after_accuracy": 0.95,
         "updated": False,
     }
+
+    retry = await use_case.execute(
+        SubmitScoreCommand(
+            fingerprint="fingerprint-pb-2",
+            user_id=1000,
+            beatmap_checksum="abc123",
+            submitted_at=datetime.now(UTC),
+            outcome=SubmitScoreCommandOutcome.COMPLETED,
+            score=_score(online_checksum="online-pb-2-retry", score=900000),
+            beatmap_id=1,
+            beatmapset_id=10,
+            include_personal_best_delta=True,
+            update_personal_best=True,
+            personal_best_category=LeaderboardCategory.GLOBAL,
+        )
+    )
+
+    async with factory() as uow:
+        all_mods_best_after_retry = await uow.beatmap_leaderboards.get_user_best(
+            BeatmapLeaderboardUserBestScope(
+                beatmap_id=1,
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                user_id=1000,
+                mod_filter_key=None,
+            )
+        )
+
+    assert retry.existing_submission is True
+    assert retry.score_id == lower.score_id
+    assert retry.personal_best_delta == lower.personal_best_delta
+    assert all_mods_best_after_retry == all_mods_best_after_lower
 
 
 @pytest.mark.asyncio
@@ -396,20 +456,20 @@ async def test_ineligible_submission_does_not_update_submit_personal_best_delta(
     )
 
     async with factory() as uow:
-        personal_best = await uow.personal_bests.get_by_scope(
-            PersonalBestScope(
-                user_id=1000,
+        all_mods_best = await uow.beatmap_leaderboards.get_user_best(
+            BeatmapLeaderboardUserBestScope(
                 beatmap_id=1,
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
-                category=LeaderboardCategory.GLOBAL,
+                user_id=1000,
+                mod_filter_key=None,
             )
         )
 
     assert candidate.score_id is not None
     assert candidate.personal_best_delta is None
-    assert personal_best is not None
-    assert personal_best.score_id == first.score_id
+    assert all_mods_best is not None
+    assert all_mods_best.score_id == first.score_id
 
 
 @pytest.mark.asyncio

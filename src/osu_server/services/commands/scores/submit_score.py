@@ -7,14 +7,22 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, cast
 
+from osu_server.domain.scores.leaderboards import (
+    ALL_MODS_FILTER_KEY,
+    ScoreRankKey,
+    projection_keys_for_score,
+)
 from osu_server.domain.scores.personal_best import (
     LeaderboardCategory,
     PersonalBestDelta,
-    PersonalBestScope,
 )
 from osu_server.domain.scores.replay import Replay
 from osu_server.domain.scores.submission import ScoreSubmission
-from osu_server.repositories.interfaces.commands.personal_bests import UpsertPersonalBest
+from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+    BeatmapLeaderboardUserBest,
+    BeatmapLeaderboardUserBestScope,
+    UpsertBeatmapLeaderboardUserBest,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -161,13 +169,6 @@ async def _record_completed(
         )
         return await _record_terminal_reject(uow, submission, duplicate_command)
 
-    personal_best_delta_before = None
-    if command.include_personal_best_delta and _can_use_score_for_personal_best(score):
-        personal_best_delta_before = await _current_personal_best_score(
-            uow,
-            _personal_best_scope(command, score),
-        )
-
     created_score = await uow.scores.create(score)
     assert created_score.id is not None, "Score ID must be set after creation"
 
@@ -185,11 +186,10 @@ async def _record_completed(
             )
         )
 
-    personal_best_delta = await _personal_best_delta(
+    personal_best_delta = await _submit_personal_best_delta(
         uow,
         command=command,
         created_score=created_score,
-        before_score=personal_best_delta_before,
     )
 
     completion_snapshot = _completion_snapshot(command, created_score, personal_best_delta)
@@ -347,33 +347,36 @@ def _completion_snapshot(
     return completion_snapshot
 
 
-async def _personal_best_delta(
+async def _submit_personal_best_delta(
     uow: UnitOfWork,
     *,
     command: SubmitScoreCommand,
     created_score: Score,
-    before_score: Score | None,
 ) -> PersonalBestDelta | None:
-    if not command.include_personal_best_delta or not _can_use_score_for_personal_best(
-        created_score
-    ):
+    if not _can_use_score_for_personal_best(created_score):
         return None
 
-    scope = _personal_best_scope(command, created_score)
+    scope = _all_mods_leaderboard_scope(command, created_score)
+    before_score = (
+        await _current_leaderboard_best_score(uow, scope)
+        if command.include_personal_best_delta
+        else None
+    )
     after_score = before_score
     updated = False
 
     if command.update_personal_best:
-        assert created_score.id is not None
-        personal_best = await uow.personal_bests.upsert_if_better(
-            UpsertPersonalBest(
-                scope=scope,
-                score_id=created_score.id,
-                ranking_value=created_score.score,
-            )
+        all_mods_best = await _upsert_matching_leaderboard_scopes(
+            uow,
+            command=command,
+            created_score=created_score,
         )
-        after_score = await uow.scores.get_by_id(personal_best.score_id)
+        if all_mods_best is not None and command.include_personal_best_delta:
+            after_score = await uow.scores.get_by_id(all_mods_best.score_id)
         updated = after_score is not None and after_score.id == created_score.id
+
+    if not command.include_personal_best_delta:
+        return None
 
     return _personal_best_delta_from_scores(
         before_score=before_score,
@@ -382,28 +385,65 @@ async def _personal_best_delta(
     )
 
 
-async def _current_personal_best_score(
+async def _upsert_matching_leaderboard_scopes(
     uow: UnitOfWork,
-    scope: PersonalBestScope,
+    *,
+    command: SubmitScoreCommand,
+    created_score: Score,
+) -> BeatmapLeaderboardUserBest | None:
+    assert created_score.id is not None
+    rank_key = ScoreRankKey(
+        score=created_score.score,
+        submitted_at=created_score.submitted_at,
+        score_id=created_score.id,
+    )
+    all_mods_best = None
+    for mod_filter_key in projection_keys_for_score(created_score.mods):
+        best = await uow.beatmap_leaderboards.upsert_if_better(
+            UpsertBeatmapLeaderboardUserBest(
+                scope=_leaderboard_scope(command, created_score, mod_filter_key),
+                score_id=created_score.id,
+                rank_key=rank_key,
+            )
+        )
+        if mod_filter_key is ALL_MODS_FILTER_KEY:
+            all_mods_best = best
+    return all_mods_best
+
+
+async def _current_leaderboard_best_score(
+    uow: UnitOfWork,
+    scope: BeatmapLeaderboardUserBestScope,
 ) -> Score | None:
-    personal_best = await uow.personal_bests.get_by_scope(scope)
-    if personal_best is None:
+    best = await uow.beatmap_leaderboards.get_user_best(scope)
+    if best is None:
         return None
-    return await uow.scores.get_by_id(personal_best.score_id)
+    return await uow.scores.get_by_id(best.score_id)
 
 
-def _can_use_score_for_personal_best(score: Score) -> bool:
-    return score.passed and score.leaderboard_eligible_at_submission
+def _all_mods_leaderboard_scope(
+    command: SubmitScoreCommand,
+    score: Score,
+) -> BeatmapLeaderboardUserBestScope:
+    return _leaderboard_scope(command, score, ALL_MODS_FILTER_KEY)
 
 
-def _personal_best_scope(command: SubmitScoreCommand, score: Score) -> PersonalBestScope:
-    return PersonalBestScope(
+def _leaderboard_scope(
+    command: SubmitScoreCommand,
+    score: Score,
+    mod_filter_key: int | None,
+) -> BeatmapLeaderboardUserBestScope:
+    return BeatmapLeaderboardUserBestScope(
         user_id=command.user_id,
         beatmap_id=score.beatmap_id,
         ruleset=score.ruleset,
         playstyle=score.playstyle,
-        category=command.personal_best_category,
+        mod_filter_key=mod_filter_key,
     )
+
+
+def _can_use_score_for_personal_best(score: Score) -> bool:
+    return score.passed and score.leaderboard_eligible_at_submission
 
 
 def _personal_best_delta_from_scores(
