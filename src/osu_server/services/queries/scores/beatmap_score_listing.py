@@ -34,9 +34,6 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
         BeatmapScoreListingQueryRepository,
     )
-    from osu_server.repositories.interfaces.queries.personal_bests import (
-        PersonalBestQueryRepository,
-    )
     from osu_server.repositories.interfaces.queries.users import UserQueryRepository
     from osu_server.services.queries.identity import GetFriendEligibleUserIdsQueryUseCase
 
@@ -73,8 +70,7 @@ class BeatmapScoreListingQuery:
     """Score listing beatmap resolution query use-case (read-only)."""
 
     _repository: BeatmapScoreListingQueryRepository
-    _personal_bests: PersonalBestQueryRepository
-    _leaderboards: BeatmapLeaderboardQueryRepository | None
+    _leaderboards: BeatmapLeaderboardQueryRepository
     _user_repository: UserQueryRepository | None
     _permission_service: _PermissionReader | None
     _friend_eligible_user_ids_query: GetFriendEligibleUserIdsQueryUseCase | None
@@ -82,15 +78,13 @@ class BeatmapScoreListingQuery:
     def __init__(
         self,
         repository: BeatmapScoreListingQueryRepository,
-        personal_bests: PersonalBestQueryRepository,
-        leaderboards: BeatmapLeaderboardQueryRepository | None = None,
+        leaderboards: BeatmapLeaderboardQueryRepository,
         *,
         user_repository: UserQueryRepository | None = None,
         permission_service: _PermissionReader | None = None,
         friend_eligible_user_ids_query: GetFriendEligibleUserIdsQueryUseCase | None = None,
     ) -> None:
         self._repository = repository
-        self._personal_bests = personal_bests
         self._leaderboards = leaderboards
         self._user_repository = user_repository
         self._permission_service = permission_service
@@ -207,13 +201,7 @@ class BeatmapScoreListingQuery:
 
         personal_best: GetscoresPersonalBest | None = None
         score_rows: tuple[GetscoresPersonalBest, ...] = ()
-        if self._leaderboards is None:
-            personal_best = await self._resolve_personal_best(
-                request=request,
-                beatmap=beatmap,
-                user_id=user_id,
-            )
-        elif _is_leaderboard_visible_beatmap(beatmap):
+        if _is_leaderboard_visible_beatmap(beatmap):
             score_rows, personal_best = await self._resolve_leaderboard_listing(
                 request=request,
                 beatmap=beatmap,
@@ -271,28 +259,6 @@ class BeatmapScoreListingQuery:
             reason=GetscoresResolveReason.UPDATE_AVAILABLE,
         )
 
-    async def _resolve_personal_best(
-        self,
-        *,
-        request: GetscoresRequest | None,
-        beatmap: Beatmap,
-        user_id: int | None,
-    ) -> GetscoresPersonalBest | None:
-        if request is None or user_id is None or request.song_select is True:
-            return None
-
-        ruleset = _ruleset_from_request(request)
-        if ruleset is None:
-            return None
-
-        return await self._personal_bests.get_personal_best(
-            user_id=user_id,
-            beatmap_id=beatmap.id,
-            ruleset=ruleset,
-            playstyle=Playstyle.VANILLA,
-            category=LeaderboardCategory.GLOBAL,
-        )
-
     async def _resolve_leaderboard_listing(
         self,
         *,
@@ -304,7 +270,7 @@ class BeatmapScoreListingQuery:
             request=request,
             beatmap=beatmap,
         )
-        if base_scope is None or self._leaderboards is None:
+        if base_scope is None:
             return (), None
 
         viewer_context = await self._resolve_viewer_context(user_id)

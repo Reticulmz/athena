@@ -10,10 +10,12 @@ from taskiq import AsyncBroker
 from osu_server.composition.providers._dishka import provide
 from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.jobs.beatmap_leaderboards import TaskiqBeatmapLeaderboardRebuildWorkerWake
+from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+    BeatmapLeaderboardQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
-from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.leaderboard_rebuild_wake import (
     BeatmapLeaderboardRebuildWorkerWake,
@@ -26,9 +28,9 @@ from osu_server.services.queries.scores import BeatmapScoreListingQuery
 
 _DISHKA_RUNTIME_HINTS = (
     AsyncBroker,
+    BeatmapLeaderboardQueryRepository,
     BeatmapLeaderboardRebuildWorkerWake,
     BeatmapScoreListingQueryRepository,
-    PersonalBestQueryRepository,
     RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
     RebuildBeatmapLeaderboardsForUserUseCase,
     TaskiqBeatmapLeaderboardRebuildWorkerWake,
@@ -50,9 +52,12 @@ class ScoreProviderSet(Provider):
     def beatmap_score_listing_query(
         self,
         repository: BeatmapScoreListingQueryRepository,
-        personal_bests: PersonalBestQueryRepository,
+        leaderboards: BeatmapLeaderboardQueryRepository,
     ) -> BeatmapScoreListingQuery:
-        return BeatmapScoreListingQuery(repository, personal_bests)
+        return BeatmapScoreListingQuery(
+            repository,
+            leaderboards,
+        )
 
     @provide
     def beatmap_leaderboard_rebuild_worker_wake(

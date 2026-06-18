@@ -57,7 +57,7 @@ def upgrade() -> None:
         ],
     )
 
-    op.create_table(
+    _ = op.create_table(
         "beatmap_leaderboard_user_bests",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column("beatmap_id", sa.Integer(), nullable=False),
@@ -121,7 +121,7 @@ def upgrade() -> None:
                     s.ruleset AS ruleset,
                     s.playstyle AS playstyle,
                     s.user_id AS user_id,
-                    NULL AS mod_filter_key,
+                    NULL::integer AS mod_filter_key,
                     s.id AS score_id,
                     s.score AS score,
                     s.submitted_at AS submitted_at,

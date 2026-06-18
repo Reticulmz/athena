@@ -62,27 +62,6 @@ class BeatmapScoreListingQueryRepositoryStub:
         return self.beatmapsets_by_id.get(beatmapset_id)
 
 
-class EmptyPersonalBestQueryRepositoryStub:
-    """Legacy personal best repository that should not serve 4.1 leaderboard reads."""
-
-    calls: list[tuple[int, int, Ruleset, Playstyle, LeaderboardCategory]]
-
-    def __init__(self) -> None:
-        self.calls = []
-
-    async def get_personal_best(
-        self,
-        *,
-        user_id: int,
-        beatmap_id: int,
-        ruleset: Ruleset,
-        playstyle: Playstyle,
-        category: LeaderboardCategory,
-    ) -> GetscoresPersonalBest | None:
-        self.calls.append((user_id, beatmap_id, ruleset, playstyle, category))
-        return None
-
-
 class BeatmapLeaderboardQueryRepositoryStub:
     """Typed leaderboard repository test double for query-level guard tests."""
 
@@ -168,11 +147,6 @@ def getscores_repo() -> BeatmapScoreListingQueryRepositoryStub:
 
 
 @pytest.fixture
-def personal_best_repo() -> EmptyPersonalBestQueryRepositoryStub:
-    return EmptyPersonalBestQueryRepositoryStub()
-
-
-@pytest.fixture
 def leaderboard_repo() -> BeatmapLeaderboardQueryRepositoryStub:
     return BeatmapLeaderboardQueryRepositoryStub()
 
@@ -243,7 +217,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_available_ranked_local_request_reads_global_rows_and_personal_best(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         user_repo: ViewerUserQueryRepositoryStub,
         permission_service: ViewerPermissionServiceStub,
@@ -265,7 +238,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
         result = await _query(
             getscores_repo,
-            personal_best_repo,
             leaderboard_repo,
             user_repo=user_repo,
             permission_service=permission_service,
@@ -292,12 +264,10 @@ class TestBeatmapLeaderboardGetscoresQuery:
             )
         ]
         assert leaderboard_repo.personal_best_calls == [(leaderboard_repo.top_row_calls[0][0], 9)]
-        assert personal_best_repo.calls == []
 
     async def test_personal_best_outside_top_50_is_returned_separately(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         user_repo: ViewerUserQueryRepositoryStub,
         permission_service: ViewerPermissionServiceStub,
@@ -322,7 +292,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
         result = await _query(
             getscores_repo,
-            personal_best_repo,
             leaderboard_repo,
             user_repo=user_repo,
             permission_service=permission_service,
@@ -342,7 +311,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_personal_best_duplicate_in_rows_is_returned_twice(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         user_repo: ViewerUserQueryRepositoryStub,
         permission_service: ViewerPermissionServiceStub,
@@ -363,7 +331,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
         result = await _query(
             getscores_repo,
-            personal_best_repo,
             leaderboard_repo,
             user_repo=user_repo,
             permission_service=permission_service,
@@ -380,7 +347,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_selected_mods_personal_best_uses_selected_mod_scope(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         user_repo: ViewerUserQueryRepositoryStub,
         permission_service: ViewerPermissionServiceStub,
@@ -400,7 +366,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
         result = await _query(
             getscores_repo,
-            personal_best_repo,
             leaderboard_repo,
             user_repo=user_repo,
             permission_service=permission_service,
@@ -428,7 +393,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_country_scope_uses_viewer_country_and_all_mods(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         user_repo: ViewerUserQueryRepositoryStub,
         permission_service: ViewerPermissionServiceStub,
@@ -449,7 +413,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
         result = await _query(
             getscores_repo,
-            personal_best_repo,
             leaderboard_repo,
             user_repo=user_repo,
             permission_service=permission_service,
@@ -475,7 +438,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_country_scope_with_unknown_or_missing_country_returns_header_only(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         user_repo: ViewerUserQueryRepositoryStub,
         permission_service: ViewerPermissionServiceStub,
@@ -494,7 +456,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
         result = await _query(
             getscores_repo,
-            personal_best_repo,
             leaderboard_repo,
             user_repo=user_repo,
             permission_service=permission_service,
@@ -513,7 +474,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
         result = await _query(
             getscores_repo,
-            personal_best_repo,
             leaderboard_repo,
             user_repo=user_repo,
             permission_service=permission_service,
@@ -531,7 +491,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_friends_scope_uses_friend_eligible_ids_and_all_mods(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         user_repo: ViewerUserQueryRepositoryStub,
         permission_service: ViewerPermissionServiceStub,
@@ -553,7 +512,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
         result = await _query(
             getscores_repo,
-            personal_best_repo,
             leaderboard_repo,
             user_repo=user_repo,
             permission_service=permission_service,
@@ -581,7 +539,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_non_visible_viewer_suppresses_pb_but_returns_public_rows(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         user_repo: ViewerUserQueryRepositoryStub,
         permission_service: ViewerPermissionServiceStub,
@@ -602,7 +559,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
         result = await _query(
             getscores_repo,
-            personal_best_repo,
             leaderboard_repo,
             user_repo=user_repo,
             permission_service=permission_service,
@@ -632,7 +588,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_supported_visibility_statuses_are_available_for_rows(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
@@ -651,7 +606,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
             )
             leaderboard_repo.top_row_calls.clear()
 
-            result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+            result = await _query(getscores_repo, leaderboard_repo).resolve(
                 _request(),
                 user_id=9,
             )
@@ -662,7 +617,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_unsupported_category_returns_header_only_without_global_fallback(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
@@ -670,7 +624,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+        result = await _query(getscores_repo, leaderboard_repo).resolve(
             _request(leaderboard_type=99),
             user_id=9,
         )
@@ -685,7 +639,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_displayable_but_not_leaderboard_visible_status_returns_header_only(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
@@ -696,7 +649,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
         )
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+        result = await _query(getscores_repo, leaderboard_repo).resolve(
             _request(),
             user_id=9,
         )
@@ -710,7 +663,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_missing_category_context_returns_header_only(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
@@ -718,7 +670,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+        result = await _query(getscores_repo, leaderboard_repo).resolve(
             _request(leaderboard_type=None),
             user_id=9,
         )
@@ -732,7 +684,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_non_vanilla_mod_request_returns_header_only(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
@@ -740,7 +691,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+        result = await _query(getscores_repo, leaderboard_repo).resolve(
             _request(mods=int(Mod.RELAX)),
             user_id=9,
         )
@@ -754,7 +705,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_song_select_request_returns_header_only(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
@@ -762,7 +712,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+        result = await _query(getscores_repo, leaderboard_repo).resolve(
             _request(song_select=True),
             user_id=9,
         )
@@ -776,7 +726,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_outdated_checksum_returns_update_available_without_rows(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
@@ -786,7 +735,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
         )
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+        result = await _query(getscores_repo, leaderboard_repo).resolve(
             _request(checksum_md5=_OLD_CHECKSUM, filename=_FILENAME),
             user_id=9,
         )
@@ -801,7 +750,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
     async def test_unauthenticated_viewer_dependent_category_returns_header_only(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-        personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
         leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
@@ -809,7 +757,7 @@ class TestBeatmapLeaderboardGetscoresQuery:
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
-        result = await _query(getscores_repo, personal_best_repo, leaderboard_repo).resolve(
+        result = await _query(getscores_repo, leaderboard_repo).resolve(
             _request(leaderboard_type=3),
             user_id=None,
         )
@@ -823,7 +771,6 @@ class TestBeatmapLeaderboardGetscoresQuery:
 
 def _query(
     getscores_repo: BeatmapScoreListingQueryRepositoryStub,
-    personal_best_repo: EmptyPersonalBestQueryRepositoryStub,
     leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
     *,
     user_repo: ViewerUserQueryRepositoryStub | None = None,
@@ -832,7 +779,6 @@ def _query(
 ) -> BeatmapScoreListingQuery:
     return BeatmapScoreListingQuery(
         getscores_repo,
-        personal_best_repo,
         leaderboard_repo,
         user_repository=user_repo,
         permission_service=permission_service,

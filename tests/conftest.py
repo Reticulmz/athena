@@ -7,6 +7,7 @@ import logging
 import os
 import weakref
 from contextlib import suppress
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -21,10 +22,29 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _glide_clients: list[weakref.ReferenceType[object]] = []
+_TEST_ENV_FILE = Path(".env.test")
+_TEST_SERVICE_ENV_VARS = frozenset({"DATABASE_URL", "VALKEY_URL"})
 
 
 def _track_glide_client(client: object) -> None:
     _glide_clients.append(weakref.ref(client))
+
+
+def _load_test_service_env_defaults() -> None:
+    """Expose .env.test service URLs to tests that read os.environ directly."""
+    if not _TEST_ENV_FILE.exists():
+        return
+
+    for raw_line in _TEST_ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, raw_value = line.split("=", 1)
+        key = key.strip()
+        if key not in _TEST_SERVICE_ENV_VARS:
+            continue
+        value = raw_value.strip().strip("\"'")
+        _ = os.environ.setdefault(key, value)
 
 
 @pytest.fixture(autouse=True)
@@ -58,6 +78,7 @@ _brokers: list[weakref.ReferenceType[object]] = []
 def pytest_configure(config: pytest.Config) -> None:  # noqa: ARG001  # pyright: ignore[reportUnusedParameter]
     """Patch create_valkey_client and ListQueueBroker early, before test imports."""
     _ = os.environ.setdefault("ENVIRONMENT", "test")
+    _load_test_service_env_defaults()
 
     # -- Patch create_valkey_client
     import osu_server.infrastructure.cache.valkey_client as _valkey_mod  # noqa: PLC0415

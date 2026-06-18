@@ -15,7 +15,6 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
 from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
-from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
 from osu_server.services.commands.identity import RegisterUserCommandUseCase
@@ -44,7 +43,6 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapScoreListingQuery,
     GetFriendEligibleUserIdsQuery,
     PermissionService,
-    PersonalBestQueryRepository,
     ProcessScoreSubmissionUseCase,
     RegisterUserCommandUseCase,
     RequestBeatmapFileWarmupUseCase,
@@ -80,7 +78,6 @@ class StableWebLegacyProviderSet(Provider):
         auth_query: SessionCredentialsQueryUseCase,
         getscores_parser: GetscoresQueryParser,
         getscores_repository: BeatmapScoreListingQueryRepository,
-        personal_bests: PersonalBestQueryRepository,
         leaderboards: BeatmapLeaderboardQueryRepository,
         user_repository: UserQueryRepository,
         permission_service: PermissionService,
@@ -92,7 +89,6 @@ class StableWebLegacyProviderSet(Provider):
     ) -> GetscoresHandler:
         getscores_query = BeatmapScoreListingQuery(
             getscores_repository,
-            personal_bests,
             leaderboards,
             user_repository=user_repository,
             permission_service=permission_service,

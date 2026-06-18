@@ -198,7 +198,7 @@
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
   - _Depends: 4.3, 7.1_
 
-- [ ] 7.4 Quality gates と architecture boundaries を確認する
+- [x] 7.4 Quality gates と architecture boundaries を確認する
   - unit、repository contract、integration tests が domain、persistence、query、command、stable transport、jobs を通る
   - basedpyright、ruff、ruff format、import-linter が新しい leaderboard subsystem を含めて通る
   - implementation review で stable client と worker の observable behavior が design と一致していることを確認する

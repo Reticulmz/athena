@@ -13,9 +13,10 @@ from osu_server.services.queries.scores.beatmap_score_listing import BeatmapScor
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
-    from osu_server.domain.compatibility.stable.getscores import GetscoresPersonalBest
-    from osu_server.domain.scores.personal_best import LeaderboardCategory
-    from osu_server.domain.scores.score import Playstyle, Ruleset
+    from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
+        BeatmapLeaderboardRow,
+        LeaderboardReadScope,
+    )
 
 
 class EmptyBeatmapScoreListingRepository:
@@ -36,24 +37,30 @@ class EmptyBeatmapScoreListingRepository:
         return None
 
 
-class EmptyPersonalBestRepository:
+class EmptyBeatmapLeaderboardRepository:
+    async def list_top_rows(
+        self,
+        scope: LeaderboardReadScope,
+        *,
+        limit: int,
+    ) -> tuple[BeatmapLeaderboardRow, ...]:
+        _ = (scope, limit)
+        return ()
+
     async def get_personal_best(
         self,
+        scope: LeaderboardReadScope,
         *,
-        user_id: int,
-        beatmap_id: int,
-        ruleset: Ruleset,
-        playstyle: Playstyle,
-        category: LeaderboardCategory,
-    ) -> GetscoresPersonalBest | None:
-        _ = (user_id, beatmap_id, ruleset, playstyle, category)
+        viewer_user_id: int,
+    ) -> BeatmapLeaderboardRow | None:
+        _ = (scope, viewer_user_id)
         return None
 
 
 async def test_getscores_query_returns_unavailable_without_starting_fetch() -> None:
     query = BeatmapScoreListingQuery(
         EmptyBeatmapScoreListingRepository(),
-        EmptyPersonalBestRepository(),
+        EmptyBeatmapLeaderboardRepository(),
     )
 
     outcome = await query.resolve(

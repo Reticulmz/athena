@@ -86,7 +86,7 @@ def test_legacy_personal_bests_migrate_to_all_mods_projection_from_source_scores
     assert "s.id AS score_id" in migration
     assert "s.score AS score" in migration
     assert "s.submitted_at AS submitted_at" in migration
-    assert "NULL AS mod_filter_key" in migration
+    assert "NULL::integer AS mod_filter_key" in migration
     assert "ROW_NUMBER() OVER" in migration
     assert "ORDER BY s.score DESC, s.submitted_at ASC, s.id ASC" in migration
 
@@ -104,7 +104,7 @@ def test_legacy_personal_best_source_missing_skips_are_observable() -> None:
 def test_legacy_personal_bests_do_not_seed_selected_mods_projection() -> None:
     migration = MIGRATION_PATH.read_text()
 
-    assert "NULL AS mod_filter_key" in migration
+    assert "NULL::integer AS mod_filter_key" in migration
     assert "mod_filter_key = " not in migration
     assert "s.mods AS mod_filter_key" not in migration
     assert "'selected_mods'" not in migration
