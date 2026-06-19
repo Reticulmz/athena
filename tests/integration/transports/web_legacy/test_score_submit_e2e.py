@@ -1,11 +1,9 @@
 """E2E integration tests for score submit endpoint."""
 
-# pyright: reportArgumentType=false, reportUnannotatedClassAttribute=false
-
 from __future__ import annotations
 
 import base64
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from starlette.datastructures import Headers
@@ -35,12 +33,17 @@ from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     UpsertBeatmapLeaderboardUserBest,
 )
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
-from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase
+from osu_server.services.commands.scores import (
+    ProcessScoreSubmissionUseCase,
+    ScoreSubmissionAuthorizer,
+)
 from osu_server.services.commands.scores.authorization import AuthorizationContext
 from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
+    from starlette.requests import Request
+
     from osu_server.domain.beatmaps import BeatmapResolveOptions
 
 
@@ -105,8 +108,9 @@ class MockAuthService:
     """Mock authorization service that always succeeds."""
 
     async def authorize_submission(
-        self, _password_md5: str, payload_username: str, payload_user_id: int
+        self, password_md5: str, payload_username: str, payload_user_id: int
     ) -> AuthorizationContext:
+        _ = password_md5
         return AuthorizationContext(
             user_id=payload_user_id,
             username=payload_username,
@@ -120,18 +124,23 @@ class MockBeatmapResolver:
     """Mock beatmap resolver that always returns eligible."""
 
     async def resolve_by_beatmap_id(
-        self, _beatmap_id: int, _options: BeatmapResolveOptions | None = None
+        self, beatmap_id: int, options: BeatmapResolveOptions | None = None
     ) -> BeatmapResolveResult:
+        _ = beatmap_id, options
         return _eligible_result()
 
     async def resolve_by_checksum(
-        self, _checksum_md5: str, _options: BeatmapResolveOptions | None = None
+        self, checksum_md5: str, options: BeatmapResolveOptions | None = None
     ) -> BeatmapResolveResult:
+        _ = checksum_md5, options
         return _eligible_result()
 
 
 class MockRequest:
     """Mock Starlette request for E2E testing."""
+
+    headers: Headers
+    _body: bytes
 
     def __init__(self, body_data: bytes, content_type: str) -> None:
         self.headers = Headers({"content-type": content_type})
@@ -139,6 +148,10 @@ class MockRequest:
 
     async def body(self) -> bytes:
         return self._body
+
+
+def _request(body_data: bytes, content_type: str) -> Request:
+    return cast("Request", cast("object", MockRequest(body_data, content_type)))
 
 
 def _create_valid_multipart_body(
@@ -192,7 +205,7 @@ def _score_payload_decryptor() -> StubScorePayloadDecryptor:
 
 
 def _make_process_score_submission_use_case(
-    *, auth_service: object
+    *, auth_service: ScoreSubmissionAuthorizer
 ) -> ProcessScoreSubmissionUseCase:
     uow_factory = InMemoryUnitOfWorkFactory()
     return ProcessScoreSubmissionUseCase(
@@ -260,7 +273,7 @@ async def test_e2e_score_submit_completed_response() -> None:
     handler = ScoreSubmitHandler(service)
 
     body, content_type = _create_valid_multipart_body()
-    request = MockRequest(body, content_type)
+    request = _request(body, content_type)
 
     # Act
     response = await handler(request)
@@ -309,7 +322,7 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
         replay_data=b"previous_best_replay",
         client_hash=b"previous_hash",
     )
-    previous_response = await handler(MockRequest(previous_body, previous_content_type))
+    previous_response = await handler(_request(previous_body, previous_content_type))
 
     assert previous_response.status_code == 200
     previous_response_body = bytes(previous_response.body)
@@ -322,7 +335,7 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
         replay_data=b"new_best_replay",
         client_hash=b"new_hash",
     )
-    new_response = await handler(MockRequest(new_body, new_content_type))
+    new_response = await handler(_request(new_body, new_content_type))
 
     assert new_response.status_code == 200
     new_response_body = bytes(new_response.body)
@@ -338,7 +351,7 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
 
     await _replace_projection_with_score(uow_factory, score_id=previous_best_score_id)
 
-    retry_response = await handler(MockRequest(new_body, new_content_type))
+    retry_response = await handler(_request(new_body, new_content_type))
 
     assert retry_response.status_code == 200
     assert bytes(retry_response.body) == new_response_body
@@ -360,8 +373,9 @@ async def test_e2e_score_submit_terminal_reject_format() -> None:
     # Mock auth service that always fails
     class FailingAuthService:
         async def authorize_submission(
-            self, _password_md5: str, _payload_username: str, _payload_user_id: int
+            self, password_md5: str, payload_username: str, payload_user_id: int
         ) -> AuthorizationContext:
+            _ = password_md5, payload_username, payload_user_id
             return AuthorizationContext(
                 user_id=0,
                 username="",
@@ -374,7 +388,7 @@ async def test_e2e_score_submit_terminal_reject_format() -> None:
     handler = ScoreSubmitHandler(service)
 
     body, content_type = _create_valid_multipart_body()
-    request = MockRequest(body, content_type)
+    request = _request(body, content_type)
 
     # Act
     response = await handler(request)

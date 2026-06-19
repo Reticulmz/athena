@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import structlog
 from starlette.responses import Response
 
-from osu_server.services.commands.scores import (
-    ProcessScoreSubmissionUseCase,
-    SubmissionOutcome,
-)
+from osu_server.services.commands.scores import SubmissionOutcome
 from osu_server.transports.stable.web_legacy.mappers import (
     MultipartParseError,
     StableScoreSubmitMapper,
@@ -21,8 +18,13 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
     from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
+    from osu_server.services.commands.scores import ParsedSubmissionInput, SubmissionResult
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+
+
+class ScoreSubmissionCommand(Protocol):
+    async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult: ...
 
 
 class ScoreSubmitHandler:
@@ -33,18 +35,15 @@ class ScoreSubmitHandler:
 
     def __init__(
         self,
-        submit_score_command: ProcessScoreSubmissionUseCase,
+        submit_score_command: ScoreSubmissionCommand,
         limits: MultipartLimits | None = None,
         mapper: StableScoreSubmitMapper | None = None,
     ) -> None:
-        self._submit_score_command: ProcessScoreSubmissionUseCase = submit_score_command
+        self._submit_score_command: ScoreSubmissionCommand = submit_score_command
         self._mapper: StableScoreSubmitMapper = mapper or StableScoreSubmitMapper(limits)
 
     async def __call__(self, request: Request) -> Response:
-        """Handle score submission request.
-
-        Requirements: R1.1, R2.1-2.5, R10.1-10.5
-        """
+        """Adapt a stable score submission request into the command workflow."""
         try:
             body = await request.body()
             content_type = request.headers.get("content-type", "")

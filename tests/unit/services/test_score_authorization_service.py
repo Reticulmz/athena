@@ -7,8 +7,9 @@ import pytest
 
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
+from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.scores.authorization import (
     AuthorizationContext,
     ScoreAuthorizationService,
@@ -25,23 +26,26 @@ async def _make_repository_backed_service(
     password: str = "password",
     create_session: bool = True,
 ) -> tuple[ScoreAuthorizationService, str, int]:
-    user_repo = InMemoryUserRepository()
+    uow_factory = InMemoryUnitOfWorkFactory()
+    user_repo = InMemoryUserQueryRepository(uow_factory)
     password_service = PasswordService(hibp_client=None, banned_passwords=[])
     session_store = InMemorySessionStore()
 
     password_md5 = hashlib.md5(password.encode()).hexdigest()
-    user = await user_repo.create(
-        User(
-            id=0,
-            username=username,
-            safe_username=User.normalize_username(username),
-            email="player@example.com",
-            password_hash=await password_service.hash(password_md5),
-            country="JP",
-            created_at=_NOW,
-            updated_at=_NOW,
+    async with uow_factory() as uow:
+        user = await uow.users.create(
+            User(
+                id=0,
+                username=username,
+                safe_username=User.normalize_username(username),
+                email="player@example.com",
+                password_hash=await password_service.hash(password_md5),
+                country="JP",
+                created_at=_NOW,
+                updated_at=_NOW,
+            )
         )
-    )
+        await uow.commit()
     if create_session:
         await session_store.create(
             user.id,

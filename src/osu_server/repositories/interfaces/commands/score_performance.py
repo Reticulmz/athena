@@ -187,8 +187,8 @@ class MarkScorePerformanceRecalculationWorkFailed:
     failed_at: datetime
 
 
-class ScorePerformanceCommandRepository(Protocol):
-    """Mutation port for performance calculation rows."""
+class ScorePerformanceCalculationLifecycleRepository(Protocol):
+    """Mutation port for one score performance calculation lifecycle."""
 
     async def create_or_reuse_calculation(
         self,
@@ -232,6 +232,10 @@ class ScorePerformanceCommandRepository(Protocol):
     async def get_current_for_score(self, score_id: int) -> PerformanceCalculation | None:
         """Return the current calculation for a score."""
         ...
+
+
+class ScorePerformanceRecalculationWorkRepository(Protocol):
+    """Mutation port for durable recalculation batch work."""
 
     async def create_recalculation_batch(
         self,
@@ -281,3 +285,32 @@ class ScorePerformanceCommandRepository(Protocol):
     ) -> PerformanceRecalculationWorkItem | None:
         """Return one recalculation work item by id."""
         ...
+
+
+class ScorePerformanceCommandRepository(
+    ScorePerformanceCalculationLifecycleRepository,
+    ScorePerformanceRecalculationWorkRepository,
+    Protocol,
+):
+    """Composite mutation port implemented by score performance adapters."""
+
+
+__all__ = [
+    "ClaimScorePerformanceCalculation",
+    "ClaimScorePerformanceRecalculationWork",
+    "CompleteScorePerformanceCalculation",
+    "CompleteScorePerformanceRecalculationWork",
+    "CreateScorePerformanceCalculation",
+    "CreateScorePerformanceRecalculationBatch",
+    "CreateScorePerformanceRecalculationWorkItem",
+    "MarkScorePerformanceCalculationUnavailable",
+    "MarkScorePerformanceRecalculationWorkFailed",
+    "MarkScorePerformanceRecalculationWorkUnavailable",
+    "ScorePerformanceCalculationClaimResult",
+    "ScorePerformanceCalculationLifecycleRepository",
+    "ScorePerformanceCalculationRequestResult",
+    "ScorePerformanceCommandConflictError",
+    "ScorePerformanceCommandRepository",
+    "ScorePerformanceRecalculationWorkRepository",
+    "UpdateScorePerformanceCalculationState",
+]
