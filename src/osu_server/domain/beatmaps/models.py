@@ -1,4 +1,8 @@
-"""beatmap metadata、freshness、fetch target の domain model。"""
+"""beatmap の公開状態、鮮度、取得対象を表す domain model。
+
+公式 rank status、operator のローカル上書き、metadata/file の鮮度、
+leaderboard eligibility がここで同じ語彙として扱われる。
+"""
 
 from __future__ import annotations
 
@@ -363,9 +367,46 @@ class BeatmapSetResolveResult:
     reason: str | None
 
 
+class BeatmapFetchTargetKind(Enum):
+    """beatmap fetch target encoding owned by the beatmap domain."""
+
+    METADATA_BY_BEATMAP_ID = "metadata:beatmap"
+    METADATA_BY_BEATMAPSET_ID = "metadata:beatmapset"
+    METADATA_BY_CHECKSUM = "metadata:checksum"
+    FILE_BY_BEATMAP_ID = "file:beatmap"
+
+
+class BeatmapMetadataLookupKind(Enum):
+    """metadata provider lookup shape derived from a fetch target."""
+
+    BEATMAP_ID = "beatmap_id"
+    BEATMAPSET_ID = "beatmapset_id"
+    CHECKSUM = "checksum"
+
+
+@dataclass(slots=True, frozen=True)
+class BeatmapMetadataLookupTarget:
+    """Provider-neutral metadata lookup requested by a fetch target."""
+
+    kind: BeatmapMetadataLookupKind
+    value: str
+
+    def int_value(self) -> int:
+        """Return the lookup value as a positive integer identifier."""
+        return int(self.value)
+
+
+@dataclass(slots=True, frozen=True)
+class BeatmapFetchQueuePayload:
+    """Primitive payload passed through the worker queue."""
+
+    target_type: str
+    target_key: str
+
+
 @dataclass(slots=True, frozen=True)
 class BeatmapFetchTarget:
-    """fetch queue に渡す beatmap metadata/file 取得対象。"""
+    """fetch queue encoding を隠す beatmap metadata/file 取得対象。"""
 
     target_type: str
     target_key: str
@@ -376,21 +417,93 @@ class BeatmapFetchTarget:
         if not self.target_key:
             raise ValueError("target_key must not be empty")
 
+    @property
+    def kind(self) -> BeatmapFetchTargetKind:
+        """Return the typed fetch target kind."""
+        try:
+            return BeatmapFetchTargetKind(self.target_type)
+        except ValueError as exc:
+            msg = f"unsupported beatmap fetch target type: {self.target_type}"
+            raise ValueError(msg) from exc
+
+    @property
+    def is_file_fetch(self) -> bool:
+        """Return whether this target is handled by the file fetch worker."""
+        return self.kind is BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID
+
+    def metadata_lookup_target(self) -> BeatmapMetadataLookupTarget:
+        """Return the metadata lookup represented by this fetch target."""
+        match self.kind:
+            case BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID:
+                return BeatmapMetadataLookupTarget(
+                    kind=BeatmapMetadataLookupKind.BEATMAP_ID,
+                    value=self.target_key,
+                )
+            case BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID:
+                return BeatmapMetadataLookupTarget(
+                    kind=BeatmapMetadataLookupKind.BEATMAPSET_ID,
+                    value=self.target_key,
+                )
+            case BeatmapFetchTargetKind.METADATA_BY_CHECKSUM:
+                return BeatmapMetadataLookupTarget(
+                    kind=BeatmapMetadataLookupKind.CHECKSUM,
+                    value=self.target_key,
+                )
+            case BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID:
+                msg = "file fetch target cannot be used for metadata lookup"
+                raise ValueError(msg)
+
+    def file_beatmap_id(self) -> int:
+        """Return the beatmap id represented by a file fetch target."""
+        if self.kind is not BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID:
+            msg = f"unsupported file fetch target type: {self.target_type}"
+            raise ValueError(msg)
+        return int(self.target_key)
+
+    def queue_payload(self) -> BeatmapFetchQueuePayload:
+        """Return primitive queue arguments without exposing encoding decisions."""
+        return BeatmapFetchQueuePayload(
+            target_type=self.target_type,
+            target_key=self.target_key,
+        )
+
+    @classmethod
+    def from_queue_payload(
+        cls,
+        *,
+        target_type: str,
+        target_key: str,
+    ) -> BeatmapFetchTarget:
+        """Restore a fetch target from worker queue primitives."""
+        return cls(target_type=target_type, target_key=target_key)
+
     @classmethod
     def metadata_by_beatmap_id(cls, beatmap_id: int) -> BeatmapFetchTarget:
-        return cls(target_type="metadata:beatmap", target_key=str(beatmap_id))
+        return cls(
+            target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID.value,
+            target_key=str(beatmap_id),
+        )
 
     @classmethod
     def metadata_by_beatmapset_id(cls, beatmapset_id: int) -> BeatmapFetchTarget:
-        return cls(target_type="metadata:beatmapset", target_key=str(beatmapset_id))
+        return cls(
+            target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID.value,
+            target_key=str(beatmapset_id),
+        )
 
     @classmethod
     def metadata_by_checksum(cls, checksum_md5: str) -> BeatmapFetchTarget:
-        return cls(target_type="metadata:checksum", target_key=checksum_md5)
+        return cls(
+            target_type=BeatmapFetchTargetKind.METADATA_BY_CHECKSUM.value,
+            target_key=checksum_md5,
+        )
 
     @classmethod
     def file_by_beatmap_id(cls, beatmap_id: int) -> BeatmapFetchTarget:
-        return cls(target_type="file:beatmap", target_key=str(beatmap_id))
+        return cls(
+            target_type=BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID.value,
+            target_key=str(beatmap_id),
+        )
 
 
 @dataclass(slots=True, frozen=True)

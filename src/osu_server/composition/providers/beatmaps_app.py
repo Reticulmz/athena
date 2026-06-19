@@ -61,12 +61,10 @@ class BeatmapAppProviderSet(Provider):
 
 async def enqueue_beatmap_fetch(broker: AsyncBroker, target: BeatmapFetchTarget) -> None:
     """Enqueue the worker job matching a beatmap fetch target."""
-    if target.target_type.startswith("file:"):
-        task_name = "fetch_beatmap_file"
-    else:
-        task_name = "fetch_beatmap_metadata"
+    task_name = "fetch_beatmap_file" if target.is_file_fetch else "fetch_beatmap_metadata"
     task = broker.find_task(task_name)
     if task is None:
         return
 
-    _ = await task.kiq(target.target_type, target.target_key)
+    payload = target.queue_payload()
+    _ = await task.kiq(payload.target_type, payload.target_key)

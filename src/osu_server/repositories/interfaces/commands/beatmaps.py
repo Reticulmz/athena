@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     )
 
 
+@runtime_checkable
 class BeatmapCommandRepository(Protocol):
     """Mutation and consistency-check port for beatmap refresh workflows."""
 

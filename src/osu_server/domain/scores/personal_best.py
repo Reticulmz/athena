@@ -19,6 +19,16 @@ class LeaderboardCategory(Enum):
     FRIENDS = "friends"
 
 
+def country_leaderboard_is_available(country: str | None) -> bool:
+    """Return whether country leaderboard reads can produce rows."""
+    return country is not None and country != "XX"
+
+
+def friends_leaderboard_is_available(eligible_user_ids: tuple[int, ...] | None) -> bool:
+    """Return whether friends leaderboard reads can produce rows."""
+    return eligible_user_ids is not None
+
+
 @dataclass(slots=True, frozen=True)
 class PersonalBestScope:
     """Identity dimensions for one personal best projection."""
