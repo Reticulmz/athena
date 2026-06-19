@@ -1,8 +1,4 @@
-"""Chat local listeners - best-effort disconnect cleanup.
-
-設計: ChatListeners セクション (channel-system design.md)
-要件: 6.1, 6.2, 6.5, 12.1, 12.2, 12.3
-"""
+"""chat の local listener と切断時 cleanup。"""
 
 from __future__ import annotations
 
@@ -18,9 +14,10 @@ if TYPE_CHECKING:
 
 
 class ChatListeners(ListenerGroup):
-    """Local listener for best-effort channel membership cleanup.
+    """切断 event を channel state cleanup に適応する listener。
 
-    Chat history persistence is Durable Work and is not triggered here.
+    chat history persistence は durable work 側の責務であり、この listener では
+    process-local な membership cleanup だけを best-effort で実行する。
     """
 
     _channel_state: ChannelStateStore

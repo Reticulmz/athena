@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
-import pytest
-
 from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY, SystemUserIdentity
+from tests.support.runtime_assertions import assert_rejects_setattr
 
 
 class TestSystemUserIdentityDataclass:
@@ -12,8 +9,7 @@ class TestSystemUserIdentityDataclass:
 
     def test_is_frozen(self) -> None:
         identity = SystemUserIdentity(user_id=1, username="BanchoBot")
-        with pytest.raises(FrozenInstanceError):
-            identity.user_id = 999  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(identity, "user_id", 999)
 
     def test_is_slots(self) -> None:
         assert hasattr(SystemUserIdentity, "__slots__")
@@ -51,5 +47,4 @@ class TestBanchoBotIdentity:
         assert isinstance(BANCHO_BOT_IDENTITY, SystemUserIdentity)
 
     def test_is_immutable(self) -> None:
-        with pytest.raises(FrozenInstanceError):
-            BANCHO_BOT_IDENTITY.user_id = 999  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(BANCHO_BOT_IDENTITY, "user_id", 999)

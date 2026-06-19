@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import pytest
 
 from osu_server.domain.identity.authorization import Privileges
@@ -11,6 +9,7 @@ from osu_server.domain.identity.sessions import (
     SessionAuthorization,
     UserAuthorizationRefreshResult,
 )
+from tests.support.runtime_assertions import assert_rejects_setattr
 
 
 class TestAuthorizationRefreshStatus:
@@ -63,13 +62,11 @@ class TestSessionAuthorization:
 
     def test_immutable_privileges(self) -> None:
         sa = SessionAuthorization(privileges=Privileges.NORMAL)
-        with pytest.raises(FrozenInstanceError):
-            sa.privileges = Privileges.ADMIN  # type: ignore[misc]  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(sa, "privileges", Privileges.ADMIN)
 
     def test_immutable_role_ids(self) -> None:
         sa = SessionAuthorization(privileges=Privileges.NORMAL, role_ids=(1,))
-        with pytest.raises(FrozenInstanceError):
-            sa.role_ids = (2, 3)  # type: ignore[misc]  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(sa, "role_ids", (2, 3))
 
     def test_equality_same_values(self) -> None:
         a = SessionAuthorization(privileges=Privileges.NORMAL, role_ids=(1, 2))
@@ -171,8 +168,7 @@ class TestUserAuthorizationRefreshResult:
             user_id=42,
             status=AuthorizationRefreshStatus.FAILED,
         )
-        with pytest.raises(FrozenInstanceError):
-            result.status = AuthorizationRefreshStatus.REFRESHED  # type: ignore[misc]  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(result, "status", AuthorizationRefreshStatus.REFRESHED)
 
 
 class TestRoleAuthorizationRefreshResult:
@@ -214,5 +210,4 @@ class TestRoleAuthorizationRefreshResult:
 
     def test_immutable(self) -> None:
         result = RoleAuthorizationRefreshResult(role_id=1, user_results=())
-        with pytest.raises(FrozenInstanceError):
-            result.role_id = 2  # type: ignore[misc]  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(result, "role_id", 2)

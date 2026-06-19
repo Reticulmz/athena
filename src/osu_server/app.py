@@ -1,7 +1,7 @@
-"""Public ASGI entrypoint and compatibility facade.
+"""公開 ASGI エントリポイントと互換 facade。
 
-The ``uvicorn osu_server.app:app`` contract is intentionally kept here while
-implementation details live in ``osu_server.composition``.
+``uvicorn osu_server.app:app`` の外部契約はこの module に残し、
+実装の組み立ては ``osu_server.composition`` に閉じ込める。
 """
 
 from __future__ import annotations

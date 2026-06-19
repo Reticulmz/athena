@@ -1,3 +1,9 @@
+"""stable getscores の互換表現。
+
+legacy ``/web/osu-osz2-getscores.php`` の parse 結果、解決結果、
+表示用 personal best を transport から独立した値として表す。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,11 +20,15 @@ if TYPE_CHECKING:
 
 
 class GetscoresParseError(Enum):
+    """getscores query を request に変換できない致命的な理由。"""
+
     MISSING_IDENTITY = "missing_identity"
     INVALID_CHECKSUM = "invalid_checksum"
 
 
 class GetscoresParseWarning(Enum):
+    """互換レスポンスは続行できるが入力値を無視した理由。"""
+
     INVALID_MODE = "invalid_mode"
     INVALID_MODS = "invalid_mods"
     INVALID_LEADERBOARD_TYPE = "invalid_leaderboard_type"
@@ -30,6 +40,8 @@ class GetscoresParseWarning(Enum):
 
 @dataclass(slots=True, frozen=True)
 class StableLeaderboardSelection:
+    """stable client の leaderboard 選択状態。"""
+
     category: LeaderboardCategory | None
     selected_mod_filter: LeaderboardModFilter | None
     header_only: bool
@@ -38,6 +50,8 @@ class StableLeaderboardSelection:
 
 @dataclass(slots=True, frozen=True)
 class GetscoresRequest:
+    """stable getscores query を正規化した request。"""
+
     checksum_md5: str | None
     filename: str | None
     beatmapset_id_hint: int | None
@@ -53,17 +67,23 @@ class GetscoresRequest:
 
 @dataclass(slots=True, frozen=True)
 class GetscoresParseResult:
+    """getscores parse の成功 request または失敗理由。"""
+
     request: GetscoresRequest | None = None
     error: GetscoresParseError | None = None
 
 
 class GetscoresOutcomeKind(Enum):
+    """stable getscores が返す高水準の response 種別。"""
+
     HEADER = "header"
     UNAVAILABLE = "unavailable"
     UPDATE_AVAILABLE = "update_available"
 
 
 class GetscoresResolveReason(Enum):
+    """getscores 解決結果になった理由。"""
+
     KNOWN_CHECKSUM = "known_checksum"
     KNOWN_FILENAME_IN_SET = "known_filename_in_set"
     NOT_SUBMITTED = "not_submitted"
@@ -75,7 +95,7 @@ class GetscoresResolveReason(Enum):
 
 @dataclass(slots=True, frozen=True)
 class GetscoresPersonalBest:
-    """Display-ready score data for the stable personal-best section."""
+    """stable personal-best 欄にそのまま写せる score 表示値。"""
 
     score_id: int
     user_id: int
@@ -100,6 +120,8 @@ class GetscoresPersonalBest:
 
 @dataclass(slots=True, frozen=True)
 class GetscoresResolvedHeader:
+    """beatmap header と leaderboard 行をまとめた解決済み表示値。"""
+
     beatmap: Beatmap
     beatmapset: BeatmapSet
     personal_best: GetscoresPersonalBest | None = None
@@ -108,6 +130,8 @@ class GetscoresResolvedHeader:
 
 @dataclass(slots=True, frozen=True)
 class GetscoresResolveOutcome:
+    """getscores query が response builder に渡す解決結果。"""
+
     kind: GetscoresOutcomeKind
     header: GetscoresResolvedHeader | None
     reason: GetscoresResolveReason

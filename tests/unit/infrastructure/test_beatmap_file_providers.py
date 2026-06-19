@@ -5,7 +5,6 @@ TDD: RED phase first, then GREEN.
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 from typing import runtime_checkable
 
 import httpx
@@ -23,6 +22,7 @@ from osu_server.infrastructure.http import BeatmapHttpClient
 from osu_server.services.queries.beatmaps.mirror import (
     BeatmapFileProviderService,
 )
+from tests.support.runtime_assertions import assert_rejects_setattr
 
 # ---------------------------------------------------------------------------
 # Mock httpx transport helpers
@@ -220,8 +220,7 @@ class TestOsuFileFetchResult:
             source=BeatmapFileSource.OSU_CURRENT,
             original_filename=None,
         )
-        with pytest.raises(FrozenInstanceError):
-            result.beatmap_id = 9999  # type: ignore[misc]  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(result, "beatmap_id", 9999)
 
     def test_uses_slots(self) -> None:
         result = OsuFileFetchResult(
@@ -446,7 +445,7 @@ class TestBeatmapFileProviderServiceNoMirrors:
 
 
 class TestBeatmapFileProviderServiceRateLimitObservability:
-    """Tests for rate-limit observability (Requirement 16.6)."""
+    """rate-limit error の source 情報が観測できることを検証する。"""
 
     async def test_rate_limit_error_includes_source_info(self) -> None:
         provider = _make_provider(primary_status=429, legacy_status=429, mirror_status=429)

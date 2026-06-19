@@ -1,4 +1,4 @@
-"""Score submission command use-case orchestrating the full submission pipeline."""
+"""score submission の command workflow 全体を編成する use-case。"""
 
 import hashlib
 import time
@@ -140,7 +140,7 @@ class PerformanceSubmitResponseUseCase(Protocol):
 
 
 class SubmissionOutcome(Enum):
-    """Submission result outcome."""
+    """score submission workflow の最終 outcome。"""
 
     COMPLETED = "completed"
     TERMINAL_REJECTED = "terminal_rejected"
@@ -150,7 +150,7 @@ class SubmissionOutcome(Enum):
 
 @dataclass(frozen=True, slots=True)
 class SubmissionResult:
-    """Result of score submission."""
+    """transport に返す score submission 結果。"""
 
     outcome: SubmissionOutcome
     score_id: int | None = None
@@ -169,7 +169,7 @@ class SubmissionResult:
 
 @dataclass(frozen=True, slots=True)
 class ParsedSubmissionInput:
-    """Input model for score submission."""
+    """score submit transport から正規化された command input。"""
 
     encrypted_payload: bytes
     iv: bytes
@@ -184,7 +184,7 @@ class ParsedSubmissionInput:
 
 
 def hash_submission_metadata(metadata: Mapping[str, str]) -> dict[str, str]:
-    """Return SHA-256 hashes for optional opaque score submission fields."""
+    """任意の opaque submission field を SHA-256 hash にして返す。"""
     return {
         f"{key}_sha256": hashlib.sha256(value.encode()).hexdigest()
         for key, value in sorted(metadata.items())
@@ -207,7 +207,7 @@ def _grade_discrepancy(client_grade: str | None, server_grade: str) -> dict[str,
 
 
 def generate_submission_request_hash(input_data: ParsedSubmissionInput) -> str:
-    """Hash request material that is stable across network retries."""
+    """network retry 間で安定する request material を hash 化する。"""
     hasher = hashlib.sha256()
     _update_fingerprint_bytes(hasher, b"encrypted_payload", input_data.encrypted_payload)
     _update_fingerprint_bytes(hasher, b"iv", input_data.iv)
@@ -235,7 +235,7 @@ def generate_submission_fingerprint(
     submitted_timestamp: str | None,
     request_hash: str,
 ) -> str:
-    """Generate a submission fingerprint per Requirement 6.4."""
+    """idempotency 判定に使う submission fingerprint を生成する。"""
     hasher = hashlib.sha256()
     _update_fingerprint_text(hasher, "user_id", str(user_id))
     _update_fingerprint_text(hasher, "beatmap_checksum", beatmap_checksum)
@@ -260,9 +260,11 @@ def _submission_result_from_command(result: SubmitScoreCommandResult) -> Submiss
 
 
 class ProcessScoreSubmissionUseCase:
-    """Orchestrate the score submission command workflow.
+    """score submission command workflow を編成する module。
 
-    Requirements: R1-R12 (all Wave 1 requirements)
+    decryption、parse、authorization、beatmap eligibility、validation、
+    replay storage、score persistence、performance request をこの interface の内側に
+    集中させる。
     """
 
     def __init__(
@@ -300,36 +302,21 @@ class ProcessScoreSubmissionUseCase:
     async def execute(  # noqa: PLR0911, PLR0912, PLR0915
         self, input_data: ParsedSubmissionInput
     ) -> SubmissionResult:
-        """Submit a score with full validation and persistence.
+        """score を検証し、durable state と replay blob に反映する。
 
-        Flow:
-        1. Generate submission fingerprint
-        2. Check for existing submission (idempotency)
-        3. Decrypt payload
-        4. Parse payload
-        5. Authorize (password + session + identity)
-        6. Check beatmap eligibility
-        7. Validate hit counts
-        8. Check uniqueness (online checksum, replay checksum)
-        9. Persist score + replay
-        10. Return result
+        処理順序は request hash/fingerprint の生成、payload 復号、parse、
+        authorization、beatmap eligibility、hit count validation、replay 保存、
+        score persistence、performance calculation request の順に固定する。
 
-        Requirements:
-            - R9.1-9.4: Idempotent retry handling
-            - R3.1-3.4: Decryption
-            - R4.1-4.5: Authorization
-            - R8.1-8.5: Beatmap eligibility
-            - R5.1-5.5: Validation
-            - R6.1-6.4: Uniqueness enforcement
-            - R7.1-7.5: Persistence
-            - R11.1-11.5: Security logging
+        retry で再送されても同じ request と同じ score 送信を識別できるよう、
+        request hash と submission fingerprint は durable mutation 前に生成する。
         """
         start_time = time.perf_counter()
 
         request_hash = generate_submission_request_hash(input_data)
         opaque_field_hashes = hash_submission_metadata(input_data.submission_metadata)
 
-        # 3. Decrypt payload (R3.1-3.4)
+        # Decrypt before parsing because stable submit payloads are encrypted.
         decrypt_start = time.perf_counter()
         try:
             decrypted = self._payload_decryptor.decrypt_score_payload(
@@ -362,7 +349,7 @@ class ProcessScoreSubmissionUseCase:
                 error_reason="crypto_checksum_invalid",
             )
 
-        # 4. Parse payload (R5.1)
+        # Parse the decrypted stable score fields into the command model.
         try:
             parsed = self._payload_parser.parse(decrypted.plaintext)
         except ParseError as e:
@@ -378,7 +365,7 @@ class ProcessScoreSubmissionUseCase:
                 error_reason=f"parse_failed: {e}",
             )
 
-        # 5. Authorize (R4.1-4.5)
+        # Authorize password, session, and payload identity together.
         auth_ctx = await self._auth_service.authorize_submission(
             input_data.password_md5,
             parsed.username,
@@ -414,7 +401,7 @@ class ProcessScoreSubmissionUseCase:
                 opaque_field_hashes=opaque_field_hashes,
             )
 
-        # 5.5. Check playstyle (R1.3, R1.4)
+        # Relax and Autopilot submissions are not accepted yet.
         if self._is_relax_or_autopilot(parsed.mods):
             error_reason = "playstyle_not_supported: relax_or_autopilot"
             logger.warning(
@@ -433,7 +420,7 @@ class ProcessScoreSubmissionUseCase:
                 opaque_field_hashes=opaque_field_hashes,
             )
 
-        # 6. Check beatmap eligibility (R8.1-8.5)
+        # Beatmap eligibility determines score acceptance and leaderboard writes.
         beatmap_start = time.perf_counter()
         beatmap_result = await self._beatmap_resolver.resolve_by_checksum(
             parsed.beatmap_checksum,
@@ -508,7 +495,7 @@ class ProcessScoreSubmissionUseCase:
                 error_reason=error_reason,
                 opaque_field_hashes=opaque_field_hashes,
             )
-        # 7. Validate hit counts (R5.1-5.5)
+        # Validate hit counts after eligibility so fetch-in-progress remains retryable.
         try:
             validation = validate_hit_counts(parsed)
         except ValidationError as e:
@@ -583,7 +570,7 @@ class ProcessScoreSubmissionUseCase:
                     opaque_field_hashes=opaque_field_hashes,
                 )
 
-        # 9. Persist score (R7.1-7.5, R12.1-12.4)
+        # Persist score, replay reference, and submission outcome atomically.
         score = Score(
             id=None,
             user_id=auth_ctx.user_id,
@@ -889,7 +876,7 @@ class ProcessScoreSubmissionUseCase:
         return _submission_result_from_command(result)
 
     def _format_auth_error(self, ctx: AuthorizationContext) -> str:
-        """Format authorization error without exposing credentials (R11.1)."""
+        """credential を露出せず authorization error を整形する。"""
         if not ctx.password_valid:
             return "authorization_failed: invalid_password"
         if not ctx.session_valid:
@@ -899,5 +886,5 @@ class ProcessScoreSubmissionUseCase:
         return "authorization_failed: unknown"
 
     def _is_relax_or_autopilot(self, mods: ModCombination) -> bool:
-        """Check if submission contains Relax or Autopilot mods (R1.3, R1.4)."""
+        """Relax または Autopilot mod を含む submission か判定する。"""
         return mods.has(Mod.RELAX) or mods.has(Mod.AUTOPILOT)

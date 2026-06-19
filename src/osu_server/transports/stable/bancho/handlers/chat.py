@@ -1,10 +1,7 @@
-"""ChatHandlers — C2S パケットハンドラ 4種。
+"""stable bancho chat C2S パケットを chat command に適応する。
 
 handle_send_message, handle_send_private_message, handle_join_channel,
 handle_leave_channel を @handles デコレータで実装する。
-
-設計: ChatHandlers セクション (channel-system design.md)
-要件: 3.1, 3.3, 4.1, 5.1
 """
 
 from __future__ import annotations
@@ -58,11 +55,11 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class ChatHandlers(HandlerGroup):
-    """C2S パケットハンドラ 4種。
+    """chat C2S packet の transport adapter。
 
-    各ハンドラ: Caterpillar でペイロードをパース → SessionStore から
-    username/privileges 取得 → chat command use-case に委譲し、
-    S2C パケットを PacketQueue に enqueue する。
+    各 handler は Caterpillar で payload を parse し、SessionStore から
+    sender context を補って chat command に委譲する。command result は
+    stable S2C packet に戻して PacketQueue へ enqueue する。
     """
 
     _send_channel_message: SendChannelMessageUseCase

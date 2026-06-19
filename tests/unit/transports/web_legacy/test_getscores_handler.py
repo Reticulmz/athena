@@ -5,9 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast, final
-from urllib.parse import urlencode
-
-from starlette.requests import Request
 
 from osu_server.domain.beatmaps import (
     Beatmap,
@@ -40,8 +37,11 @@ from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
 )
+from tests.support.starlette_requests import make_starlette_request
 
 if TYPE_CHECKING:
+    from starlette.requests import Request
+
     from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
         BeatmapLeaderboardRow,
         LeaderboardReadScope,
@@ -419,14 +419,10 @@ def _make_handler(
 
 
 def _request(params: dict[str, str]) -> Request:
-    return Request(
-        scope={
-            "type": "http",
-            "method": "GET",
-            "path": "/web/osu-osz2-getscores.php",
-            "query_string": urlencode(params).encode(),
-            "headers": [],
-        }
+    return make_starlette_request(
+        method="GET",
+        path="/web/osu-osz2-getscores.php",
+        query_params=params,
     )
 
 

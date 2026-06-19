@@ -1,3 +1,5 @@
+"""test が外部 I/O を使わず seam を検証するための typed fake 群。"""
+
 from __future__ import annotations
 
 import hashlib
@@ -37,7 +39,7 @@ class FakeHIBPClient:
         self.calls: list[str] = []
 
     async def is_password_compromised(self, password: str) -> bool:
-        """パスワードが漏洩しているかアサートする。"""
+        """指定パスワードを漏洩済みとして扱うか返す。"""
         self.calls.append(password)
         return password in self.compromised_passwords
 
@@ -48,10 +50,10 @@ _: HIBPClient = FakeHIBPClient()
 
 @final
 class ErrorRaisingUserRepository:
-    """UserQueryRepository that raises on get_by_safe_username when armed.
+    """armed 状態のとき get_by_safe_username で例外を投げる repository fake。
 
-    Delegates all operations to an inner UserQueryRepository.
-    Used to simulate DB failures in tests without AsyncMock monkey-patching.
+    それ以外の操作は inner UserQueryRepository に委譲する。AsyncMock の
+    monkey-patch を使わずに DB failure を再現する。
     """
 
     def __init__(self, inner: UserQueryRepository, error: Exception) -> None:
@@ -60,7 +62,7 @@ class ErrorRaisingUserRepository:
         self._armed = False
 
     def arm(self) -> None:
-        """Arm the repository to raise on get_by_safe_username calls."""
+        """次回以降の get_by_safe_username で例外を投げる状態にする。"""
         self._armed = True
 
     async def get_by_id(self, user_id: int) -> User | None:
@@ -80,7 +82,7 @@ class ErrorRaisingUserRepository:
 
 @final
 class StaticScoreUserRepository:
-    """Single-user repository for score authorization tests."""
+    """score authorization test 用の単一 user repository。"""
 
     def __init__(self, user: User) -> None:
         self._user = user
@@ -115,7 +117,7 @@ class StaticScoreUserRepository:
 
 @final
 class StaticPasswordService(PasswordService):
-    """PasswordService test double with one accepted password-md5."""
+    """1 つの password-md5 だけを受理する PasswordService fake。"""
 
     def __init__(self, accepted_password_md5: str) -> None:
         super().__init__(hibp_client=None, banned_passwords=[])
@@ -129,7 +131,7 @@ class StaticPasswordService(PasswordService):
 
 @final
 class StaticSessionStore:
-    """SessionStore test double with an optional active session."""
+    """任意の active session を 1 つ保持する SessionStore fake。"""
 
     def __init__(self, session: SessionData | None) -> None:
         self._session = session
@@ -192,7 +194,7 @@ def make_score_authorization_service(
     password_md5: str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     create_session: bool = True,
 ) -> ScoreAuthorizationService:
-    """Create repository-backed score auth with explicit test doubles."""
+    """明示的な fake で repository-backed score auth を作る。"""
     now = datetime.now(UTC)
     user = User(
         id=user_id,
@@ -227,7 +229,7 @@ def make_score_authorization_service(
 
 
 class UowScoreRepositoryView:
-    """Compatibility view over score command state for tests."""
+    """test から Unit of Work 配下の score command state を読む view。"""
 
     def __init__(self, unit_of_work_factory: InMemoryUnitOfWorkFactory) -> None:
         self._unit_of_work_factory: InMemoryUnitOfWorkFactory = unit_of_work_factory
@@ -252,7 +254,7 @@ class UowScoreRepositoryView:
 
 
 class UowScoreSubmissionRepositoryView:
-    """Compatibility view over score submission command state for tests."""
+    """test から Unit of Work 配下の submission command state を読む view。"""
 
     def __init__(self, unit_of_work_factory: InMemoryUnitOfWorkFactory) -> None:
         self._unit_of_work_factory: InMemoryUnitOfWorkFactory = unit_of_work_factory
@@ -279,7 +281,7 @@ class UowScoreSubmissionRepositoryView:
 
 
 class UowReplayRepositoryView:
-    """Compatibility view over replay command state for tests."""
+    """test から Unit of Work 配下の replay command state を読む view。"""
 
     def __init__(self, unit_of_work_factory: InMemoryUnitOfWorkFactory) -> None:
         self._unit_of_work_factory: InMemoryUnitOfWorkFactory = unit_of_work_factory
@@ -319,7 +321,7 @@ def make_submit_score_use_case(
 
 
 class StubBlobStorageService:
-    """Typed fake for tests that need blob write verification."""
+    """blob write 検証が必要な test 用の typed fake。"""
 
     def __init__(self, *, fail_writes: bool = False) -> None:
         self.fail_writes: bool = fail_writes
@@ -350,7 +352,7 @@ type ScorePayloadParseFactory = Callable[[str], ParsedScore]
 
 
 class StubScorePayloadDecryptor:
-    """Typed fake for score payload decryption in submission tests."""
+    """score submission test 用 payload decryptor の typed fake。"""
 
     def __init__(
         self,
@@ -384,7 +386,7 @@ class StubScorePayloadDecryptor:
 
 
 class StubScorePayloadParser:
-    """Typed fake for command tests that need parsed score payload values."""
+    """ParsedScore を必要とする command test 用 parser fake。"""
 
     def __init__(
         self,

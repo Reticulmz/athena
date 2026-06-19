@@ -1,3 +1,5 @@
+"""beatmap metadata、freshness、fetch target の domain model。"""
+
 from __future__ import annotations
 
 import re
@@ -12,6 +14,8 @@ _MD5_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 
 
 class BeatmapRankStatus(Enum):
+    """外部 metadata が示す公式の beatmap 公開状態。"""
+
     RANKED = "ranked"
     APPROVED = "approved"
     LOVED = "loved"
@@ -24,6 +28,8 @@ class BeatmapRankStatus(Enum):
 
 
 class LocalBeatmapStatus(Enum):
+    """Athena operator が上書きできるローカルの beatmap 公開状態。"""
+
     RANKED = "ranked"
     LOVED = "loved"
     QUALIFIED = "qualified"
@@ -35,17 +41,23 @@ class LocalBeatmapStatus(Enum):
 
 
 class BeatmapMetadataSource(Enum):
+    """beatmap metadata の取得元。"""
+
     OFFICIAL = "official"
     LEGACY_OFFICIAL = "legacy_official"
     MIRROR = "mirror"
 
 
 class BeatmapSourceVerification(Enum):
+    """metadata source を公式情報として信頼できるか。"""
+
     VERIFIED = "verified"
     UNVERIFIED = "unverified"
 
 
 class BeatmapFetchState(Enum):
+    """beatmap metadata fetch の状態。"""
+
     FRESH = "fresh"
     STALE = "stale"
     PENDING_FETCH = "pending_fetch"
@@ -53,6 +65,8 @@ class BeatmapFetchState(Enum):
 
 
 class BeatmapFileState(Enum):
+    """osu file attachment の取得状態。"""
+
     AVAILABLE = "available"
     PENDING_FETCH = "pending_fetch"
     MISSING = "missing"
@@ -61,6 +75,8 @@ class BeatmapFileState(Enum):
 
 @dataclass(slots=True, frozen=True)
 class BeatmapFileAttachment:
+    """beatmap に紐づく取得済み osu file blob。"""
+
     beatmap_id: int
     blob_id: int
     checksum_md5: str
@@ -79,6 +95,8 @@ class BeatmapFileAttachment:
 
 @dataclass(slots=True, frozen=True)
 class Beatmap:
+    """1 つの beatmap difficulty と取得状態。"""
+
     id: int
     beatmapset_id: int
     checksum_md5: str
@@ -109,6 +127,8 @@ class Beatmap:
 
     @property
     def effective_status(self) -> BeatmapRankStatus:
+        """ローカル上書きを反映した採用 status。"""
+
         if self.local_status_override is None:
             return self.official_status
         return BeatmapRankStatus(self.local_status_override.value)
@@ -116,6 +136,8 @@ class Beatmap:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapSet:
+    """同じ beatmapset に属する difficulty 群と set metadata。"""
+
     id: int
     artist: str
     title: str
@@ -163,6 +185,8 @@ _EXTERNAL_STATUS_MAP: dict[str, BeatmapRankStatus] = {
 
 
 def map_external_status(status: str) -> BeatmapRankStatus:
+    """外部 provider の status 文字列を canonical status に変換する。"""
+
     normalized = status.strip().lower()
     return _EXTERNAL_STATUS_MAP.get(normalized, BeatmapRankStatus.UNKNOWN)
 
@@ -181,6 +205,8 @@ def _is_mirror_sourced(beatmap: Beatmap) -> bool:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapFreshnessDecision:
+    """metadata freshness policy の判定結果。"""
+
     is_stale: bool
     should_refresh: bool
     requests_official_refresh: bool
@@ -190,6 +216,8 @@ class BeatmapFreshnessDecision:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapFreshnessPolicy:
+    """beatmap metadata を再取得すべきか判定する policy。"""
+
     ranked_refresh_interval: timedelta
     pending_refresh_interval: timedelta
     graveyard_refresh_interval: timedelta
@@ -203,6 +231,8 @@ class BeatmapFreshnessPolicy:
         official_sources_available: bool = False,
         force_refresh: bool = False,
     ) -> BeatmapFreshnessDecision:
+        """現在時刻と取得元から stale/refresh 判定を返す。"""
+
         next_refresh_at = beatmap.next_refresh_at or self._derive_next_refresh_at(beatmap)
         is_stale = next_refresh_at is not None and next_refresh_at <= now
 
@@ -278,6 +308,8 @@ class BeatmapFreshnessPolicy:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapEligibility:
+    """score submission と leaderboard 更新で使う beatmap 適格性。"""
+
     accepts_scores: bool
     has_leaderboard: bool
     awards_ranked_pp: bool
@@ -295,7 +327,7 @@ class BeatmapEligibility:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapResolveOptions:
-    """Options controlling beatmap resolution behavior."""
+    """beatmap resolution の挙動を制御する option。"""
 
     require_osu_file: bool = False
     wait_timeout_seconds: float = 0.0
@@ -304,7 +336,7 @@ class BeatmapResolveOptions:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapResolveResult:
-    """Structured result of a beatmap resolution for a single beatmap."""
+    """単一 beatmap resolution の構造化された結果。"""
 
     beatmap: Beatmap | None
     beatmapset: BeatmapSet | None
@@ -320,7 +352,7 @@ class BeatmapResolveResult:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapSetResolveResult:
-    """Structured result of a beatmapset resolution."""
+    """beatmapset resolution の構造化された結果。"""
 
     beatmapset: BeatmapSet | None
     metadata_status: BeatmapFetchState
@@ -333,6 +365,8 @@ class BeatmapSetResolveResult:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapFetchTarget:
+    """fetch queue に渡す beatmap metadata/file 取得対象。"""
+
     target_type: str
     target_key: str
 
@@ -361,6 +395,8 @@ class BeatmapFetchTarget:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapFetchRecord:
+    """fetch queue 上の取得試行状態。"""
+
     target: BeatmapFetchTarget
     status: BeatmapFetchState
     attempt_count: int
@@ -376,6 +412,8 @@ class BeatmapFetchRecord:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapSnapshot:
+    """provider から取り込んだ単一 beatmap の snapshot。"""
+
     beatmap_id: int
     beatmapset_id: int
     checksum_md5: str
@@ -403,6 +441,8 @@ class BeatmapSnapshot:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapsetSnapshot:
+    """provider から取り込んだ beatmapset 全体の snapshot。"""
+
     beatmapset_id: int
     artist: str
     title: str
@@ -421,12 +461,16 @@ class BeatmapsetSnapshot:
 
 @runtime_checkable
 class BeatmapMetadataProvider(Protocol):
+    """beatmap metadata provider の seam。"""
+
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None: ...
     async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None: ...
     async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None: ...
 
 
 class BeatmapFileSource(Enum):
+    """osu file を取得した source。"""
+
     OSU_CURRENT = "osu_current"
     OSU_LEGACY = "osu_legacy"
     COMMUNITY_MIRROR = "community_mirror"
@@ -435,6 +479,8 @@ class BeatmapFileSource(Enum):
 
 @dataclass(slots=True, frozen=True)
 class OsuFileFetchResult:
+    """osu file provider が返す取得済み file。"""
+
     beatmap_id: int
     body: bytes
     source: BeatmapFileSource
@@ -443,4 +489,6 @@ class OsuFileFetchResult:
 
 @runtime_checkable
 class BeatmapFileProvider(Protocol):
+    """osu file provider の seam。"""
+
     async def fetch_osu_file(self, beatmap_id: int) -> OsuFileFetchResult: ...

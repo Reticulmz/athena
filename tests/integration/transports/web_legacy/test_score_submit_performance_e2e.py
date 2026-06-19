@@ -8,13 +8,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, final
 
 import pytest
-from starlette.requests import Request
 from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,
     make_score_authorization_service,
     make_submit_score_use_case,
 )
+from tests.support.starlette_requests import make_starlette_request
 
 from osu_server.domain.beatmaps import (
     Beatmap,
@@ -43,7 +43,7 @@ from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadPa
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
-    from starlette.types import Message, Scope
+    from starlette.requests import Request
 
     from osu_server.domain.beatmaps import BeatmapResolveOptions
 
@@ -280,26 +280,12 @@ def _multipart_body() -> tuple[bytes, str]:
 
 
 def _request(body: bytes, content_type: str) -> Request:
-    received = False
-
-    async def receive() -> Message:
-        nonlocal received
-        if received:
-            return {"type": "http.disconnect"}
-        received = True
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    scope: Scope = {
-        "type": "http",
-        "method": "POST",
-        "path": "/web/osu-submit-modular-selector.php",
-        "headers": [(b"content-type", content_type.encode())],
-        "query_string": b"",
-        "server": ("testserver", 80),
-        "client": ("127.0.0.1", 1234),
-        "scheme": "http",
-    }
-    return Request(scope, receive)
+    return make_starlette_request(
+        method="POST",
+        path="/web/osu-submit-modular-selector.php",
+        headers=((b"content-type", content_type.encode()),),
+        body=body,
+    )
 
 
 def _stable_payload(online_checksum: str) -> str:

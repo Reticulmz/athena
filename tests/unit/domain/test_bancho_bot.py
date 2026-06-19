@@ -1,18 +1,6 @@
-"""Tests for BanchoBot command context and metadata value objects.
-
-Requirements covered:
-- Req 1.1: command metadata includes name, description, usage, arguments,
-  required_privileges, allowed_destinations
-- Req 2.2: argument order preservation in CommandContext.args
-- Req 3.2: invocation context with sender identity, destination, command name, arguments
-- Req 4.3: metadata includes command name for help output
-"""
+"""BanchoBot command context と metadata value object の contract test。"""
 
 from __future__ import annotations
-
-from dataclasses import FrozenInstanceError
-
-import pytest
 
 from osu_server.domain.chat.commands import (
     CommandArgument,
@@ -21,6 +9,7 @@ from osu_server.domain.chat.commands import (
     CommandMetadata,
 )
 from osu_server.domain.identity.authorization import Privileges
+from tests.support.runtime_assertions import assert_rejects_setattr, assert_rejects_setitem
 
 
 class TestCommandDestination:
@@ -54,8 +43,7 @@ class TestCommandArgument:
 
     def test_is_immutable(self) -> None:
         arg = CommandArgument(name="max", required=False, description="Maximum value")
-        with pytest.raises(FrozenInstanceError):
-            arg.name = "min"  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(arg, "name", "min")
 
 
 class TestCommandMetadata:
@@ -120,8 +108,7 @@ class TestCommandMetadata:
     def test_is_immutable(self) -> None:
         """CommandMetadata is frozen and cannot be mutated after creation."""
         meta = CommandMetadata(name="roll", description="roll")
-        with pytest.raises(FrozenInstanceError):
-            meta.name = "new_name"  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(meta, "name", "new_name")
 
 
 class TestCommandContext:
@@ -226,8 +213,7 @@ class TestCommandContext:
             destination=CommandDestination.CHANNEL,
             available_commands=available,
         )
-        with pytest.raises(FrozenInstanceError):
-            ctx.sender_id = 999  # pyright: ignore[reportAttributeAccessIssue]
+        assert_rejects_setattr(ctx, "sender_id", 999)
 
     def test_is_immutable_args(self) -> None:
         """CommandContext.args is a tuple and cannot be mutated."""
@@ -241,8 +227,7 @@ class TestCommandContext:
             destination=CommandDestination.CHANNEL,
             available_commands=available,
         )
-        with pytest.raises(TypeError):
-            ctx.args[0] = "x"  # pyright: ignore[reportIndexIssue]
+        assert_rejects_setitem(ctx.args, 0, "x")
 
     def test_is_immutable_available_commands(self) -> None:
         """CommandContext.available_commands is a tuple and cannot be mutated."""
@@ -256,8 +241,11 @@ class TestCommandContext:
             destination=CommandDestination.CHANNEL,
             available_commands=available,
         )
-        with pytest.raises(TypeError):
-            ctx.available_commands[0] = CommandMetadata(name="x", description="x")  # pyright: ignore[reportIndexIssue]
+        assert_rejects_setitem(
+            ctx.available_commands,
+            0,
+            CommandMetadata(name="x", description="x"),
+        )
 
     def test_sender_identity_captures_id_and_name(self) -> None:
         """Req 3.2: context captures sender_id and sender_name for handler use."""
