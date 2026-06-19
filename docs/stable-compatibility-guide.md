@@ -728,7 +728,7 @@ Important multipart fields handled by Athena's parser/mapper:
 | `iv` | Rijndael CBC initialization vector. |
 | `osuver` | Client version. |
 | `pass` | Password MD5. |
-| `s` | Client hash. |
+| `x` | Client hash. |
 | replay file field | Replay bytes, when uploaded. |
 | fail time field | Failure timestamp when the play failed. |
 | `i` | Flashlight cheat screenshot, referenced by bancho.py/deck and not yet fully handled by Athena. |
@@ -742,7 +742,6 @@ Additional fields and variants observed in `deck` and `lets`:
 | `fs` | Fun spoiler / client-side signal retained by deck. |
 | `pl` | Process list / client-side anti-abuse signal. |
 | `ft` | Fail time. |
-| `x` | Exit flag. |
 | query or form `pass` | Password MD5 on some submit variants. |
 
 The encrypted score payload decrypts to a colon-delimited stable payload.

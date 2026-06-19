@@ -287,13 +287,14 @@ it to `Implemented` / `Partial` / `Missing` when it is required, or demote it to
 | `POST` | `/web/osu-comment.php` | Candidate | Beatmap/replay/comment route from references. |
 | `GET` | `/web/osu-addfavourite.php`, `/web/osu-getfavourites.php` | Candidate | Favourite mutation/list routes from references. |
 | `GET` | `/web/osu-stat.php`, `/web/osu-statoth.php` | Candidate | User stats lookup routes from `deck`. |
-| `GET` | `/web/osu-getstatus.php` | Candidate | User status route from `deck`. |
+| `GET` | `/web/osu-getstatus.php` | Candidate | Beatmap checksum/status route from `deck`; request and response shape are documented in the guide. |
 | `GET` | `/web/osu-getfriends.php` | Missing | Friend relationships exist through packets, but web route is absent. |
 | `GET` | `/web/osu-markasread.php`, `/web/osu-checktweets.php`, `/web/lastfm.php` | Candidate | Compatibility no-op or social/status routes in references. |
 | `GET` | `/web/osu-getseasonal.php` | Missing | Seasonal asset JSON route missing. |
 | `GET` | `/web/osu-login.php` | Candidate | Web login route in `deck`; verify stable client usage. |
 | `GET` | `/web/osu-title-image.php`, `/menu-content.json` | Candidate | Title/menu asset routes from `deck`. |
-| `GET` | `/web/coins.php`, `/web/osu-benchmark.php` | Candidate | Client-side currency/benchmark routes in `deck`; likely optional/private-server-specific. |
+| `GET` | `/web/coins.php` | Candidate | Client-side currency route in `deck`; likely optional/private-server-specific. |
+| `POST` | `/web/osu-benchmark.php` | Candidate | Client benchmark diagnostics route in `deck`; likely optional/private-server-specific. |
 | `POST` | `/difficulty-rating` | Candidate | Present in `bancho.py`; verify whether stable clients or tooling rely on it. |
 | mixed | beatmap submission endpoints under `/web/osu-bmsubmit-*` and `/web/osu-osz2-bmsubmit-*` | Candidate | Beatmap submission/upload routes in `deck`; likely out of initial server scope but should be explicit. |
 
