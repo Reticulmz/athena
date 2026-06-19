@@ -16,7 +16,7 @@
   - _Boundary: Release Update Matrix Rows, Operational Dependency Matrix_
 
 - [ ] 2. no-update route の matrix row を監査する
-- [ ] 2.1 `/web/check-updates.php` の no-update policy を matrix に反映する
+- [x] 2.1 `/web/check-updates.php` の no-update policy を matrix に反映する
   - `/web/check-updates.php` を `required-no-update` として分類し、chosen response shape を `[]` として記録する
   - `deck` の `[]`、`bancho.py` の empty body 比較、ユーザー確認済みの current osu!stable `--devserver` behavior を evidence source として残す
   - ppy proxying は `proxy-decision-required` として扱い、初期実装既定値ではないことを matrix row から読めるようにする
