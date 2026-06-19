@@ -25,7 +25,6 @@ from osu_server.services.commands.beatmaps import (
 )
 from osu_server.services.commands.scores.authorization import (
     AuthorizationContext,
-    ScoreAuthorizationService,
 )
 from osu_server.services.commands.scores.performance import (
     RequestPerformanceCalculationCommand,
@@ -83,6 +82,15 @@ class BeatmapEligibilityResolver(Protocol):
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult: ...
+
+
+class ScoreSubmissionAuthorizer(Protocol):
+    async def authorize_submission(
+        self,
+        password_md5: str,
+        payload_username: str,
+        payload_user_id: int,
+    ) -> AuthorizationContext: ...
 
 
 class ReplayBlobStorage(Protocol):
@@ -273,7 +281,7 @@ class ProcessScoreSubmissionUseCase:
         replay_blob_storage: ReplayBlobStorage,
         payload_decryptor: ScorePayloadDecryptor,
         payload_parser: ScorePayloadParser,
-        auth_service: ScoreAuthorizationService,
+        auth_service: ScoreSubmissionAuthorizer,
         beatmap_resolver: BeatmapEligibilityResolver,
         beatmap_file_warmup_use_case: BeatmapFileWarmupUseCase | None = None,
         performance_calculation_request: PerformanceCalculationRequestUseCase | None = None,
@@ -284,7 +292,7 @@ class ProcessScoreSubmissionUseCase:
         self._replay_blob_storage: ReplayBlobStorage = replay_blob_storage
         self._payload_decryptor: ScorePayloadDecryptor = payload_decryptor
         self._payload_parser: ScorePayloadParser = payload_parser
-        self._auth_service: ScoreAuthorizationService = auth_service
+        self._auth_service: ScoreSubmissionAuthorizer = auth_service
         self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
         self._beatmap_file_warmup_use_case: BeatmapFileWarmupUseCase | None = (
             beatmap_file_warmup_use_case

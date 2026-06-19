@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from osu_server.domain.identity.authentication import LoginRequest
     from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
     from osu_server.repositories.interfaces.queries.users import UserQueryRepository
-    from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.repositories.interfaces.session_store import LoginSessionWriter
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
     from osu_server.services.queries.identity.password_service import PasswordService
     from osu_server.services.queries.identity.permission_service import PermissionService
@@ -59,7 +59,7 @@ class AuthService:
     _role_query_repo: RoleQueryRepository
     _password_service: PasswordService
     _permission_service: PermissionService
-    _session_store: SessionStore
+    _session_store: LoginSessionWriter
     _system_user_id: int
 
     def __init__(
@@ -69,7 +69,7 @@ class AuthService:
         role_query_repo: RoleQueryRepository,
         password_service: PasswordService,
         permission_service: PermissionService,
-        session_store: SessionStore,
+        session_store: LoginSessionWriter,
         *,
         system_user_id: int = 1,
     ) -> None:

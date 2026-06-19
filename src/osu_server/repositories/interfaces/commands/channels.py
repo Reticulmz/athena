@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from osu_server.domain.chat.channels import Channel, ChannelRoleOverride
 
 
+@runtime_checkable
 class ChannelCommandRepository(Protocol):
     """Mutation and consistency-check port for channels."""
 

@@ -16,7 +16,9 @@ from osu_server.repositories.interfaces.commands.personal_bests import (
 from osu_server.repositories.interfaces.commands.replays import ReplayCommandRepository
 from osu_server.repositories.interfaces.commands.roles import RoleCommandRepository
 from osu_server.repositories.interfaces.commands.score_performance import (
+    ScorePerformanceCalculationLifecycleRepository,
     ScorePerformanceCommandRepository,
+    ScorePerformanceRecalculationWorkRepository,
 )
 from osu_server.repositories.interfaces.commands.scores import ScoreCommandRepository
 from osu_server.repositories.interfaces.commands.submissions import (
@@ -35,7 +37,9 @@ __all__ = [
     "ReplayCommandRepository",
     "RoleCommandRepository",
     "ScoreCommandRepository",
+    "ScorePerformanceCalculationLifecycleRepository",
     "ScorePerformanceCommandRepository",
+    "ScorePerformanceRecalculationWorkRepository",
     "ScoreSubmissionCommandRepository",
     "UserCommandRepository",
 ]

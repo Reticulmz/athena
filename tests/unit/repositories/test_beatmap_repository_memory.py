@@ -8,6 +8,7 @@ import pytest
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileAttachment,
     BeatmapFileState,
     BeatmapMetadataSource,
@@ -16,12 +17,12 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
     LocalBeatmapStatus,
 )
-from osu_server.repositories.interfaces.beatmap_repository import (
-    BeatmapFetchTarget,
-    BeatmapRepository,
+from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
+from osu_server.repositories.memory.commands.beatmaps import (
     DuplicateBeatmapChecksumError,
+    InMemoryBeatmapCommandRepository,
 )
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 _NOW = datetime(2026, 6, 4, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
@@ -104,14 +105,18 @@ def _make_attachment(
     )
 
 
-def test_in_memory_beatmap_repository_satisfies_contract() -> None:
-    repo = InMemoryBeatmapRepository()
+def _repo() -> InMemoryBeatmapCommandRepository:
+    return InMemoryBeatmapCommandRepository(InMemoryCommandRepositoryState())
 
-    assert isinstance(repo, BeatmapRepository)
+
+def test_in_memory_beatmap_repository_satisfies_contract() -> None:
+    repo = _repo()
+
+    assert isinstance(repo, BeatmapCommandRepository)
 
 
 async def test_saves_and_resolves_beatmaps_by_id_set_id_and_checksum() -> None:
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     beatmap = _make_beatmap()
 
     await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
@@ -124,7 +129,7 @@ async def test_saves_and_resolves_beatmaps_by_id_set_id_and_checksum() -> None:
 
 
 async def test_save_rejects_checksum_reuse_for_different_beatmap() -> None:
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     await repo.save_beatmapset_snapshot(_make_beatmapset(_make_beatmap()))
 
     with pytest.raises(DuplicateBeatmapChecksumError) as exc_info:
@@ -137,7 +142,7 @@ async def test_save_rejects_checksum_reuse_for_different_beatmap() -> None:
 
 
 async def test_save_rejects_duplicate_checksum_inside_same_snapshot() -> None:
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
 
     with pytest.raises(DuplicateBeatmapChecksumError) as exc_info:
         await repo.save_beatmapset_snapshot(
@@ -154,7 +159,7 @@ async def test_save_rejects_duplicate_checksum_inside_same_snapshot() -> None:
 
 
 async def test_official_refresh_preserves_existing_local_override() -> None:
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     await repo.save_beatmapset_snapshot(
         _make_beatmapset(
             _make_beatmap(
@@ -179,7 +184,7 @@ async def test_official_refresh_preserves_existing_local_override() -> None:
 
 
 async def test_can_set_local_override_without_changing_official_status() -> None:
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     await repo.save_beatmapset_snapshot(
         _make_beatmapset(_make_beatmap(official_status=BeatmapRankStatus.PENDING))
     )
@@ -192,7 +197,7 @@ async def test_can_set_local_override_without_changing_official_status() -> None
 
 
 async def test_attachments_are_idempotent_and_update_current_file_state() -> None:
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     await repo.save_beatmapset_snapshot(_make_beatmapset(_make_beatmap()))
     attachment = _make_attachment()
 
@@ -209,7 +214,7 @@ async def test_attachments_are_idempotent_and_update_current_file_state() -> Non
 
 
 async def test_official_refresh_preserves_existing_file_attachment() -> None:
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     attachment = _make_attachment()
     await repo.save_beatmapset_snapshot(
         _make_beatmapset(_make_beatmap(file_attachment=attachment))
@@ -226,7 +231,7 @@ async def test_official_refresh_preserves_existing_file_attachment() -> None:
 
 
 async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     target = BeatmapFetchTarget.metadata_by_beatmap_id(2_000)
 
     first = await repo.try_mark_fetch_pending(target, now=_NOW)
@@ -251,7 +256,7 @@ async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
 
 
 async def test_failed_fetch_state_is_observable() -> None:
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     target = BeatmapFetchTarget.file_by_beatmap_id(2_000)
 
     _ = await repo.try_mark_fetch_pending(target, now=_NOW)
@@ -271,7 +276,7 @@ async def test_failed_fetch_state_is_observable() -> None:
 
 async def test_resolves_beatmap_by_exact_filename_in_beatmapset() -> None:
     """Exact original_filename within a beatmapset returns the matching beatmap."""
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     attachment = replace(_make_attachment(beatmap_id=2_000), original_filename="my_map.osu")
     beatmap = _make_beatmap(file_attachment=attachment)
     await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
@@ -284,7 +289,7 @@ async def test_resolves_beatmap_by_exact_filename_in_beatmapset() -> None:
 
 async def test_filename_lookup_returns_none_when_no_match_in_set() -> None:
     """Returns None when no beatmap in the set has the matching filename."""
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     attachment = replace(_make_attachment(beatmap_id=2_000), original_filename="real.osu")
     beatmap = _make_beatmap(file_attachment=attachment)
     await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
@@ -296,7 +301,7 @@ async def test_filename_lookup_returns_none_when_no_match_in_set() -> None:
 
 async def test_filename_lookup_returns_none_when_set_does_not_exist() -> None:
     """Returns None when the requested beatmapset does not exist."""
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
 
     result = await repo.get_beatmap_by_filename_in_beatmapset(999, "anything.osu")
 
@@ -305,7 +310,7 @@ async def test_filename_lookup_returns_none_when_set_does_not_exist() -> None:
 
 async def test_filename_lookup_returns_none_for_partial_filename_match() -> None:
     """Exact match only; partial filename fragments must not resolve (requirement 4.6)."""
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     attachment = replace(_make_attachment(beatmap_id=2_000), original_filename="my_map.osu")
     beatmap = _make_beatmap(file_attachment=attachment)
     await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
@@ -317,7 +322,7 @@ async def test_filename_lookup_returns_none_for_partial_filename_match() -> None
 
 async def test_filename_lookup_scoped_to_beatmapset() -> None:
     """Filename is resolved only within its matching beatmapset (requirement 4.3, 4.4)."""
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
 
     # Beatmapset 1000: beatmap 2000 with "shared.osu"
     attachment_a = replace(_make_attachment(beatmap_id=2_000), original_filename="shared.osu")
@@ -341,7 +346,7 @@ async def test_filename_lookup_scoped_to_beatmapset() -> None:
 
 async def test_filename_lookup_beatmap_without_attachment_returns_none() -> None:
     """Beatmap without a file attachment cannot be resolved by filename."""
-    repo = InMemoryBeatmapRepository()
+    repo = _repo()
     beatmap = _make_beatmap()  # no file_attachment
     await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
 

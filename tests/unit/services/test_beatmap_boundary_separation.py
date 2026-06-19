@@ -49,8 +49,10 @@ _BEATMAP_MODULES: tuple[str, ...] = (
     "osu_server.services.queries.beatmaps.mirror.metadata_provider_service",
     "osu_server.repositories.beatmaps.mappers",
     "osu_server.repositories.beatmaps.metadata_providers",
-    "osu_server.repositories.interfaces.beatmap_repository",
-    "osu_server.repositories.memory.beatmap_repository",
+    "osu_server.repositories.interfaces.commands.beatmaps",
+    "osu_server.repositories.interfaces.queries.beatmaps",
+    "osu_server.repositories.memory.commands.beatmaps",
+    "osu_server.repositories.memory.queries.beatmaps",
     "osu_server.jobs.beatmap_fetch",
 )
 

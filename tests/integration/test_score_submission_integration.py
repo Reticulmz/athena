@@ -1,12 +1,9 @@
-"""Integration tests for ProcessScoreSubmissionUseCase with real PostgreSQL.
+"""Real PostgreSQL integration tests for stable score submission.
 
-Tests E2E flow: multipart → decrypt → validate → persist → response.
-Requirements: R1-R12 (all Wave 1 requirements)
+These cases exercise the current command workflow from multipart payload
+adaptation through decrypt, validation, persistence, and stable response
+construction.
 """
-
-# pyright: reportUnknownParameterType=false, reportMissingParameterType=false
-# pyright: reportUnknownMemberType=false, reportUnusedParameter=false
-# pyright: reportArgumentType=false, reportOperatorIssue=false
 
 from __future__ import annotations
 
@@ -36,24 +33,14 @@ from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import Mod
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
-from osu_server.domain.storage.blobs import BlobStored
+from osu_server.domain.storage.blobs import BlobStored, NewBlob
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
-from osu_server.repositories.interfaces.blob_repository import NewBlob
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
     BeatmapLeaderboardUserBestScope,
     BeatmapLeaderboardUserProjectionSlice,
     UpsertBeatmapLeaderboardUserBest,
-)
-from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
-from osu_server.repositories.sqlalchemy.commands.beatmap_leaderboards import (
-    SQLAlchemyBeatmapLeaderboardCommandRepository,
-)
-from osu_server.repositories.sqlalchemy.replay_repository import SQLAlchemyReplayRepository
-from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository
-from osu_server.repositories.sqlalchemy.submission_repository import (
-    SQLAlchemyScoreSubmissionRepository,
 )
 from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
 from osu_server.services.commands.scores import (
@@ -149,25 +136,23 @@ def _leaderboard_scope(
 
 
 async def _get_leaderboard_best(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
     scope: BeatmapLeaderboardUserBestScope,
 ) -> BeatmapLeaderboardUserBest | None:
-    async with session_factory() as session:
-        repository = SQLAlchemyBeatmapLeaderboardCommandRepository(session)
-        return await repository.get_user_best(scope)
+    async with uow_factory() as uow:
+        return await uow.beatmap_leaderboards.get_user_best(scope)
 
 
 async def _replace_user_projection_with_score(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
     *,
     user_id: int,
     score_id: int,
     score: int,
     submitted_at: datetime,
 ) -> None:
-    async with session_factory() as session:
-        repository = SQLAlchemyBeatmapLeaderboardCommandRepository(session)
-        await repository.replace_projection_slice(
+    async with uow_factory() as uow:
+        await uow.beatmap_leaderboards.replace_projection_slice(
             BeatmapLeaderboardUserProjectionSlice(user_id=user_id),
             (
                 UpsertBeatmapLeaderboardUserBest(
@@ -181,7 +166,7 @@ async def _replace_user_projection_with_score(
                 ),
             ),
         )
-        await session.commit()
+        await uow.commit()
 
 
 @dataclass(slots=True)
@@ -190,9 +175,10 @@ class FakeBeatmapResolver:
 
     async def resolve_by_beatmap_id(
         self,
-        beatmap_id: int,  # noqa: ARG002
-        options: BeatmapResolveOptions | None = None,  # noqa: ARG002
+        beatmap_id: int,
+        options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        _ = (beatmap_id, options)
         return BeatmapResolveResult(
             beatmap=None,
             beatmapset=None,
@@ -208,9 +194,10 @@ class FakeBeatmapResolver:
 
     async def resolve_by_checksum(
         self,
-        checksum_md5: str,  # noqa: ARG002
-        options: BeatmapResolveOptions | None = None,  # noqa: ARG002
+        checksum_md5: str,
+        options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        _ = (checksum_md5, options)
         return BeatmapResolveResult(
             beatmap=_resolved_beatmap(),
             beatmapset=None,
@@ -228,24 +215,28 @@ class FakeBeatmapResolver:
 class SQLAlchemyBlobStorageStub:
     """Blob storage fake that persists blob metadata for FK-backed integration tests."""
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
-        self._blob_repo: SQLAlchemyBlobRepository = SQLAlchemyBlobRepository(session_factory)
+    _uow_factory: SQLAlchemyUnitOfWorkFactory
+
+    def __init__(self, uow_factory: SQLAlchemyUnitOfWorkFactory) -> None:
+        self._uow_factory = uow_factory
 
     async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
         digest = hashlib.sha256(data).hexdigest()
-        existing = await self._blob_repo.get_by_sha256(digest)
-        if existing is not None:
-            return BlobStored(existing)
+        async with self._uow_factory() as uow:
+            existing = await uow.blobs.get_by_sha256(digest)
+            if existing is not None:
+                return BlobStored(existing)
 
-        blob = await self._blob_repo.create(
-            NewBlob(
-                sha256=digest,
-                byte_size=len(data),
-                content_type=content_type,
-                storage_backend="test",
-                storage_key=f"test/replay/{digest}.osr",
+            blob = await uow.blobs.create(
+                NewBlob(
+                    sha256=digest,
+                    byte_size=len(data),
+                    content_type=content_type,
+                    storage_backend="test",
+                    storage_key=f"test/replay/{digest}.osr",
+                )
             )
-        )
+            await uow.commit()
         return BlobStored(blob)
 
 
@@ -341,24 +332,29 @@ async def session_factory(
 
 
 @pytest.fixture
+def uow_factory(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> SQLAlchemyUnitOfWorkFactory:
+    return SQLAlchemyUnitOfWorkFactory(session_factory)
+
+
+@pytest.fixture
 def score_decryptor() -> StubScorePayloadDecryptor:
     return StubScorePayloadDecryptor()
 
 
 @pytest.fixture
 def service(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> ProcessScoreSubmissionUseCase:
     """Create ProcessScoreSubmissionUseCase with SQLAlchemy repositories."""
     auth_service = make_score_authorization_service()
     beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap())
-    submit_score_use_case = SubmitScoreUseCase(
-        unit_of_work_factory=SQLAlchemyUnitOfWorkFactory(session_factory)
-    )
+    submit_score_use_case = SubmitScoreUseCase(unit_of_work_factory=uow_factory)
     return ProcessScoreSubmissionUseCase(
         submit_score_use_case,
-        SQLAlchemyBlobStorageStub(session_factory),
+        SQLAlchemyBlobStorageStub(uow_factory),
         score_decryptor,
         StableScorePayloadParser(),
         auth_service,
@@ -386,12 +382,16 @@ def valid_input() -> ParsedSubmissionInput:
 async def test_e2e_valid_submission_persists_to_database(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Valid submission creates score, replay, and submission records in DB."""
 
-    def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
+    def mock_decrypt(
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
+    ) -> DecryptedPayload:
         payload = (
             "1000:test_user:abc123:integration_test_checksum_001:0:0:100:10:5:0:0:2:500000:99:1:1"
         )
@@ -404,9 +404,8 @@ async def test_e2e_valid_submission_persists_to_database(
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
 
-    # Verify score persisted in DB
-    score_repo = SQLAlchemyScoreRepository(session_factory)
-    score = await score_repo.get_by_id(result.score_id)
+    async with uow_factory() as uow:
+        score = await uow.scores.get_by_id(result.score_id)
     assert score is not None
     assert score.user_id == 1000
     assert score.online_checksum == "integration_test_checksum_001"
@@ -415,16 +414,14 @@ async def test_e2e_valid_submission_persists_to_database(
     assert score.playstyle == Playstyle.VANILLA
     assert score.beatmap_status_at_submission == BeatmapRankStatus.RANKED.value
 
-    # Verify replay persisted in DB
-    replay_repo = SQLAlchemyReplayRepository(session_factory)
     assert valid_input.replay_data is not None
     replay_checksum = hashlib.sha256(valid_input.replay_data).hexdigest()
-    assert await replay_repo.exists_by_checksum(replay_checksum)
+    async with uow_factory() as uow:
+        assert await uow.replays.exists_by_checksum(replay_checksum)
 
-    # Verify submission record persisted in DB
-    submission_repo = SQLAlchemyScoreSubmissionRepository(session_factory)
     fingerprint = _fingerprint_for(valid_input)
-    submission = await submission_repo.get_by_fingerprint(fingerprint)
+    async with uow_factory() as uow:
+        submission = await uow.submissions.get_by_fingerprint(fingerprint)
     assert submission is not None
     assert submission.state == "completed"
     assert submission.result_snapshot is not None
@@ -438,12 +435,16 @@ async def test_e2e_valid_submission_persists_to_database(
 @pytest.mark.asyncio
 async def test_e2e_database_transaction_handling(
     service: ProcessScoreSubmissionUseCase,
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Database transactions are handled correctly."""
 
-    def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
+    def mock_decrypt(
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
+    ) -> DecryptedPayload:
         payload = (
             "1000:test_user:abc123:integration_test_checksum_002:0:0:100:10:5:0:0:2:500000:99:1:1"
         )
@@ -466,28 +467,31 @@ async def test_e2e_database_transaction_handling(
     result = await service.execute(input_data)
     assert result.outcome == SubmissionOutcome.COMPLETED
 
-    # Verify all records are committed
-    score_repo = SQLAlchemyScoreRepository(session_factory)
     assert result.score_id is not None
-    score = await score_repo.get_by_id(result.score_id)
+    async with uow_factory() as uow:
+        score = await uow.scores.get_by_id(result.score_id)
     assert score is not None
 
-    replay_repo = SQLAlchemyReplayRepository(session_factory)
     assert input_data.replay_data is not None
     replay_checksum = hashlib.sha256(input_data.replay_data).hexdigest()
-    assert await replay_repo.exists_by_checksum(replay_checksum)
+    async with uow_factory() as uow:
+        assert await uow.replays.exists_by_checksum(replay_checksum)
 
 
 @pytest.mark.asyncio
 async def test_e2e_concurrent_submission_handling(
     service: ProcessScoreSubmissionUseCase,
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Concurrent submissions with different checksums are handled correctly."""
     call_count = 0
 
-    def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
+    def mock_decrypt(
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
+    ) -> DecryptedPayload:
         nonlocal call_count
         call_count += 1
         payload = (
@@ -523,12 +527,11 @@ async def test_e2e_concurrent_submission_handling(
     score_ids = [r.score_id for r in results]
     assert len(set(score_ids)) == 3
 
-    # Verify all scores persisted
-    score_repo = SQLAlchemyScoreRepository(session_factory)
-    for score_id in score_ids:
-        assert score_id is not None
-        score = await score_repo.get_by_id(score_id)
-        assert score is not None
+    async with uow_factory() as uow:
+        for score_id in score_ids:
+            assert score_id is not None
+            score = await uow.scores.get_by_id(score_id)
+            assert score is not None
 
 
 @pytest.mark.asyncio
@@ -539,7 +542,11 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
 ) -> None:
     """E2E: Duplicate online checksum rejects a different submission."""
 
-    def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
+    def mock_decrypt(
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
+    ) -> DecryptedPayload:
         payload = "1000:test_user:abc123:int_test_dup:0:0:100:10:5:0:0:2:500000:99:1:1"
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
 
@@ -590,11 +597,16 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
 async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_uses_snapshot(
     service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Eligible submit updates score-priority projection; retry returns saved PB delta."""
 
-    def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
+    def mock_decrypt(
+        encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
+    ) -> DecryptedPayload:
         if encrypted == b"encrypted_data_previous_best":
             payload = "1000:test_user:abc123:int_test_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1"
         else:
@@ -649,11 +661,11 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
     assert new_result.personal_best_delta.updated is True
 
     all_mods_best = await _get_leaderboard_best(
-        session_factory,
+        uow_factory,
         _leaderboard_scope(),
     )
     selected_mods_best = await _get_leaderboard_best(
-        session_factory,
+        uow_factory,
         _leaderboard_scope(mod_filter_key=int(Mod.DOUBLE_TIME)),
     )
     assert all_mods_best is not None
@@ -662,7 +674,7 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
     assert selected_mods_best.score_id == new_result.score_id
 
     await _replace_user_projection_with_score(
-        session_factory,
+        uow_factory,
         user_id=1000,
         score_id=previous_result.score_id,
         score=400_000,
@@ -676,11 +688,11 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
     assert retry_result.personal_best_delta == new_result.personal_best_delta
 
     all_mods_best_after_retry = await _get_leaderboard_best(
-        session_factory,
+        uow_factory,
         _leaderboard_scope(),
     )
     selected_mods_best_after_retry = await _get_leaderboard_best(
-        session_factory,
+        uow_factory,
         _leaderboard_scope(mod_filter_key=int(Mod.DOUBLE_TIME)),
     )
     assert all_mods_best_after_retry is not None
@@ -699,12 +711,16 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
 @pytest.mark.asyncio
 async def test_e2e_failed_play_persists_to_database(
     service: ProcessScoreSubmissionUseCase,
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
     score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Failed play (passed=0) is stored in database."""
 
-    def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
+    def mock_decrypt(
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
+    ) -> DecryptedPayload:
         # passed=0 (last field)
         payload = "1000:test_user:abc123:int_test_failed:0:0:50:10:5:0:0:10:200000:40:0:0"
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
@@ -726,10 +742,9 @@ async def test_e2e_failed_play_persists_to_database(
     result = await service.execute(input_data)
     assert result.outcome == SubmissionOutcome.COMPLETED
 
-    # Verify failed score persisted in DB
-    score_repo = SQLAlchemyScoreRepository(session_factory)
     assert result.score_id is not None
-    score = await score_repo.get_by_id(result.score_id)
+    async with uow_factory() as uow:
+        score = await uow.scores.get_by_id(result.score_id)
     assert score is not None
     assert score.passed is False
     assert score.score == 200000
@@ -744,7 +759,11 @@ async def test_e2e_idempotent_retry_returns_cached_result(
 ) -> None:
     """E2E: Idempotent retry returns cached result from database."""
 
-    def mock_decrypt(encrypted: bytes, iv: bytes, osu_version: str | None) -> DecryptedPayload:  # noqa: ARG001
+    def mock_decrypt(
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
+    ) -> DecryptedPayload:
         payload = "1000:test_user:abc123:int_test_idem:0:0:100:10:5:0:0:2:500000:99:1:1"
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
 

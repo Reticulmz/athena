@@ -19,8 +19,9 @@ from osu_server.infrastructure.state.memory.channel_state_store import InMemoryC
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
 from osu_server.jobs.chat_persistence_publisher import TaskiqChatPersistenceWorkPublisher
-from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
+from osu_server.repositories.memory.commands.channels import InMemoryChannelCommandRepository
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.commands.users import InMemoryUserCommandRepository
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.friends import (
     InMemoryFriendRelationshipQueryRepository,
@@ -28,7 +29,6 @@ from osu_server.repositories.memory.queries.friends import (
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.commands.chat import (
     JoinChannelUseCase,
     LeaveChannelUseCase,
@@ -121,9 +121,9 @@ def _channel_payload(channel_name: str) -> bytes:
 async def _setup_pipeline() -> ChatPipeline:
     command_state = InMemoryCommandRepositoryState()
     uow_factory = InMemoryUnitOfWorkFactory(command_state)
-    user_repo = InMemoryUserRepository(state=command_state)
+    user_repo = InMemoryUserCommandRepository(command_state)
     session_store = InMemorySessionStore()
-    channel_repo = InMemoryChannelRepository(state=command_state)
+    channel_repo = InMemoryChannelCommandRepository(command_state)
     user_query_repo = InMemoryUserQueryRepository(uow_factory)
     channel_query_repo = InMemoryChannelQueryRepository(uow_factory)
     channel_state = InMemoryChannelStateStore()

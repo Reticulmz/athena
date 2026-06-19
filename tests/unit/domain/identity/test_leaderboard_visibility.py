@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from osu_server.domain.identity.authorization import Privileges, has_privilege
-from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
+from osu_server.domain.identity.leaderboard_visibility import (
+    LEADERBOARD_VISIBLE_PERMISSION_MASK,
+    LEADERBOARD_VISIBLE_PRIVILEGES,
+    is_leaderboard_visible_user,
+)
 
 
 def test_normal_and_unrestricted_user_is_leaderboard_visible() -> None:
@@ -32,3 +36,8 @@ def test_integer_privileges_use_same_no_bypass_policy() -> None:
     privileges = int(Privileges.NORMAL | Privileges.UNRESTRICTED)
 
     assert is_leaderboard_visible_user(privileges)
+
+
+def test_leaderboard_visible_mask_matches_policy_privileges() -> None:
+    assert LEADERBOARD_VISIBLE_PRIVILEGES == Privileges.NORMAL | Privileges.UNRESTRICTED
+    assert int(LEADERBOARD_VISIBLE_PRIVILEGES) == LEADERBOARD_VISIBLE_PERMISSION_MASK

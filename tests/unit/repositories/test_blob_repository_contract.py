@@ -5,12 +5,11 @@ from typing import get_type_hints
 
 import pytest
 
-from osu_server.domain.storage.blobs import Blob
-from osu_server.repositories.interfaces import blob_repository
-from osu_server.repositories.interfaces.blob_repository import (
-    BlobRepository,
+from osu_server.domain.storage.blobs import Blob, NewBlob
+from osu_server.repositories.interfaces.commands import blobs
+from osu_server.repositories.interfaces.commands.blobs import (
+    BlobCommandRepository,
     DuplicateBlobError,
-    NewBlob,
 )
 
 VALID_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -40,18 +39,18 @@ class ContractOnlyBlobRepository:
 def test_blob_repository_runtime_contract_accepts_create_and_lookup_only() -> None:
     repo = ContractOnlyBlobRepository()
 
-    assert isinstance(repo, BlobRepository)
-    assert hasattr(BlobRepository, "get_by_id")
-    assert hasattr(BlobRepository, "get_by_sha256")
-    assert hasattr(BlobRepository, "create")
-    assert not hasattr(BlobRepository, "update")
-    assert not hasattr(BlobRepository, "delete")
+    assert isinstance(repo, BlobCommandRepository)
+    assert hasattr(BlobCommandRepository, "get_by_id")
+    assert hasattr(BlobCommandRepository, "get_by_sha256")
+    assert hasattr(BlobCommandRepository, "create")
+    assert not hasattr(BlobCommandRepository, "update")
+    assert not hasattr(BlobCommandRepository, "delete")
 
 
 def test_create_contract_accepts_new_blob_and_returns_persisted_blob() -> None:
     hints = get_type_hints(
-        BlobRepository.create,
-        globalns={**vars(blob_repository), "Blob": Blob},
+        BlobCommandRepository.create,
+        globalns={**vars(blobs), "Blob": Blob, "NewBlob": NewBlob},
     )
 
     assert hints["blob"] is NewBlob
@@ -103,8 +102,7 @@ def test_duplicate_blob_error_carries_sha256_for_race_resolution() -> None:
 
 
 def test_contract_module_exports_only_blob_repository_types() -> None:
-    assert set(blob_repository.__all__) == {
-        "BlobRepository",
+    assert set(blobs.__all__) == {
+        "BlobCommandRepository",
         "DuplicateBlobError",
-        "NewBlob",
     }

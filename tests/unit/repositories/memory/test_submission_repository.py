@@ -1,4 +1,4 @@
-"""Unit tests for InMemoryScoreSubmissionRepository."""
+"""Unit tests for InMemoryScoreSubmissionCommandRepository."""
 
 from __future__ import annotations
 
@@ -7,15 +7,16 @@ from datetime import UTC, datetime
 import pytest
 
 from osu_server.domain.scores.submission import ScoreSubmission
-from osu_server.repositories.memory.submission_repository import (
-    InMemoryScoreSubmissionRepository,
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.commands.submissions import (
+    InMemoryScoreSubmissionCommandRepository,
 )
 
 
 @pytest.fixture
-def repository() -> InMemoryScoreSubmissionRepository:
+def repository() -> InMemoryScoreSubmissionCommandRepository:
     """Create a fresh in-memory submission repository."""
-    return InMemoryScoreSubmissionRepository()
+    return InMemoryScoreSubmissionCommandRepository(InMemoryCommandRepositoryState())
 
 
 @pytest.fixture
@@ -33,7 +34,7 @@ def sample_submission() -> ScoreSubmission:
 
 
 async def test_create_assigns_id(
-    repository: InMemoryScoreSubmissionRepository,
+    repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
     """Test that create() assigns an id to a new submission."""
@@ -44,7 +45,7 @@ async def test_create_assigns_id(
 
 
 async def test_create_increments_id(
-    repository: InMemoryScoreSubmissionRepository,
+    repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
     """Test that create() increments id for subsequent submissions."""
@@ -65,7 +66,7 @@ async def test_create_increments_id(
 
 
 async def test_create_rejects_duplicate_fingerprint(
-    repository: InMemoryScoreSubmissionRepository,
+    repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
     """Test that create() rejects duplicate fingerprint."""
@@ -84,7 +85,7 @@ async def test_create_rejects_duplicate_fingerprint(
 
 
 async def test_get_by_fingerprint_returns_submission(
-    repository: InMemoryScoreSubmissionRepository,
+    repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
     """Test that get_by_fingerprint() returns the correct submission."""
@@ -96,7 +97,7 @@ async def test_get_by_fingerprint_returns_submission(
 
 
 async def test_get_by_fingerprint_returns_none_when_not_found(
-    repository: InMemoryScoreSubmissionRepository,
+    repository: InMemoryScoreSubmissionCommandRepository,
 ) -> None:
     """Test that get_by_fingerprint() returns None when submission not found."""
     retrieved = await repository.get_by_fingerprint("nonexistent")
@@ -104,7 +105,7 @@ async def test_get_by_fingerprint_returns_none_when_not_found(
 
 
 async def test_update_state_changes_state(
-    repository: InMemoryScoreSubmissionRepository,
+    repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
     """Test that update_state() changes the submission state."""
@@ -119,7 +120,7 @@ async def test_update_state_changes_state(
 
 
 async def test_update_state_raises_when_id_not_found(
-    repository: InMemoryScoreSubmissionRepository,
+    repository: InMemoryScoreSubmissionCommandRepository,
 ) -> None:
     """Test that update_state() raises ValueError when id not found."""
     with pytest.raises(ValueError, match="Submission not found"):
@@ -127,7 +128,7 @@ async def test_update_state_raises_when_id_not_found(
 
 
 async def test_idempotent_retrieval(
-    repository: InMemoryScoreSubmissionRepository,
+    repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
     """Test idempotent retrieval: same fingerprint returns same submission."""

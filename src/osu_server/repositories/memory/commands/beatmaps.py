@@ -27,7 +27,12 @@ if TYPE_CHECKING:
 class DuplicateBeatmapChecksumError(ValueError):
     """Raised when one checksum is assigned to multiple beatmaps."""
 
+    checksum_md5: str
+    existing_beatmap_id: int
+
     def __init__(self, *, checksum_md5: str, existing_beatmap_id: int) -> None:
+        self.checksum_md5 = checksum_md5
+        self.existing_beatmap_id = existing_beatmap_id
         super().__init__(
             f"checksum {checksum_md5} already belongs to beatmap {existing_beatmap_id}"
         )

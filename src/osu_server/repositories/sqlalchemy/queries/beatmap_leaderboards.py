@@ -9,9 +9,15 @@ from typing import TYPE_CHECKING, cast
 from sqlalchemy import and_, case, func, literal, select
 
 from osu_server.domain.beatmaps import BeatmapRankStatus
-from osu_server.domain.identity.authorization import Privileges
+from osu_server.domain.identity.leaderboard_visibility import (
+    LEADERBOARD_VISIBLE_PERMISSION_MASK,
+)
 from osu_server.domain.scores.mods import ModCombination
-from osu_server.domain.scores.personal_best import LeaderboardCategory
+from osu_server.domain.scores.personal_best import (
+    LeaderboardCategory,
+    country_leaderboard_is_available,
+    friends_leaderboard_is_available,
+)
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     BeatmapLeaderboardRow,
@@ -49,7 +55,6 @@ _PP_VISIBLE_BEATMAP_STATUS_VALUES = (
     BeatmapRankStatus.RANKED.value,
     BeatmapRankStatus.APPROVED.value,
 )
-_LEADERBOARD_VISIBLE_PERMISSION_MASK = int(Privileges.NORMAL | Privileges.UNRESTRICTED)
 
 
 class SQLAlchemyBeatmapLeaderboardQueryRepository:
@@ -230,8 +235,8 @@ def _leaderboard_visible_condition(role_permissions: Subquery) -> ColumnElement[
         "ColumnElement[int]",
         func.coalesce(role_permissions.c.permissions, 0),
     )
-    return permissions.bitwise_and(_LEADERBOARD_VISIBLE_PERMISSION_MASK) == literal(
-        _LEADERBOARD_VISIBLE_PERMISSION_MASK
+    return permissions.bitwise_and(LEADERBOARD_VISIBLE_PERMISSION_MASK) == literal(
+        LEADERBOARD_VISIBLE_PERMISSION_MASK
     )
 
 
@@ -243,13 +248,15 @@ def _mod_filter_condition(scope: LeaderboardReadScope) -> ColumnElement[bool]:
 
 def _category_filter_condition(scope: LeaderboardReadScope) -> ColumnElement[bool] | None:
     if scope.category is LeaderboardCategory.COUNTRY:
-        if scope.country is None or scope.country == "XX":
+        country = scope.country
+        if not country_leaderboard_is_available(country):
             return literal(False)
-        return UserModel.country == scope.country
+        return UserModel.country == country
     if scope.category is LeaderboardCategory.FRIENDS:
-        if scope.eligible_user_ids is None:
+        eligible_user_ids = scope.eligible_user_ids
+        if eligible_user_ids is None or not friends_leaderboard_is_available(eligible_user_ids):
             return literal(False)
-        return UserModel.id.in_(scope.eligible_user_ids)
+        return UserModel.id.in_(eligible_user_ids)
     return None
 
 

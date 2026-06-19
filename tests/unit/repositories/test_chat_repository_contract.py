@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from osu_server.repositories.interfaces import chat_repository
-from osu_server.repositories.interfaces.chat_repository import (
+from osu_server.domain.chat import (
     ChatPersistenceFailureReason,
     ChatPersistenceResult,
-    ChatRepository,
 )
+from osu_server.repositories.interfaces.commands import chat
+from osu_server.repositories.interfaces.commands.chat import ChatCommandRepository
 
 
 class ContractOnlyChatRepository:
@@ -43,7 +43,7 @@ class ContractOnlyChatRepository:
 def test_contract_runtime_conformance() -> None:
     repo = ContractOnlyChatRepository()
 
-    assert isinstance(repo, ChatRepository)
+    assert isinstance(repo, ChatCommandRepository)
 
 
 def test_success_result_has_no_failure_reason() -> None:
@@ -97,13 +97,9 @@ def test_success_with_failure_reason_is_rejected() -> None:
 
 
 def test_contract_module_does_not_export_sqlalchemy_models() -> None:
-    exported_names = set(chat_repository.__all__)
+    exported_names = set(chat.__all__)
 
-    assert exported_names == {
-        "ChatPersistenceFailureReason",
-        "ChatPersistenceResult",
-        "ChatRepository",
-    }
+    assert exported_names == {"ChatCommandRepository"}
     assert "ChannelModel" not in exported_names
     assert "ChannelMessageModel" not in exported_names
     assert "PrivateMessageModel" not in exported_names

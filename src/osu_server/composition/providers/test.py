@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING, TypeVar, final
 from dishka import Provider, Scope
 from taskiq import AsyncBroker, InMemoryBroker
 
+from osu_server.composition.providers.repository_adapters import (
+    InMemoryRepositoryAdapterFamily,
+)
 from osu_server.domain.beatmaps import BeatmapMetadataProvider
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
@@ -25,51 +28,8 @@ from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimi
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.infrastructure.storage.local import LocalBlobStorageBackend
 from osu_server.jobs import register_all_jobs
-from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
-    BeatmapLeaderboardQueryRepository,
-)
-from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
-    BeatmapScoreListingQueryRepository,
-)
-from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
-from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
-from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
-from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
-from osu_server.repositories.interfaces.queries.friends import (
-    FriendRelationshipQueryRepository,
-)
-from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
-from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
-from osu_server.repositories.interfaces.queries.score_performance import (
-    ScorePerformanceQueryRepository,
-)
-from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
-from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
-from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
-from osu_server.repositories.memory.queries.beatmap_leaderboards import (
-    InMemoryBeatmapLeaderboardQueryRepository,
-)
-from osu_server.repositories.memory.queries.beatmap_score_listing import (
-    InMemoryBeatmapScoreListingQueryRepository,
-)
-from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQueryRepository
-from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryRepository
-from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
-from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
-from osu_server.repositories.memory.queries.friends import (
-    InMemoryFriendRelationshipQueryRepository,
-)
-from osu_server.repositories.memory.queries.personal_bests import (
-    InMemoryPersonalBestQueryRepository,
-)
-from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
-from osu_server.repositories.memory.queries.score_performance import (
-    InMemoryScorePerformanceQueryRepository,
-)
-from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.queries.beatmaps.mirror import InMemoryBeatmapMetadataProvider
 
 if TYPE_CHECKING:
@@ -150,10 +110,7 @@ def make_in_memory_runtime_provider_set(
     packet_queue_max_size: int = 4096,
 ) -> TestProviderSet:
     """Return provider overrides for a full in-memory app/runtime graph."""
-    command_state = InMemoryCommandRepositoryState()
-    uow_factory = InMemoryUnitOfWorkFactory(command_state)
-
-    beatmap_query_repository = InMemoryBeatmapQueryRepository(uow_factory)
+    repository_adapters = InMemoryRepositoryAdapterFamily()
 
     return TestProviderSet(
         replace_value(AsyncBroker, make_in_memory_broker(), scope=Scope.APP),
@@ -176,32 +133,9 @@ def make_in_memory_runtime_provider_set(
             LocalBlobStorageBackend(blob_root),
             scope=Scope.APP,
         ),
-        replace_value(UnitOfWorkFactory, uow_factory, scope=Scope.APP),
-        replace_value(UserQueryRepository, InMemoryUserQueryRepository(uow_factory)),
-        replace_value(RoleQueryRepository, InMemoryRoleQueryRepository(uow_factory)),
-        replace_value(ChannelQueryRepository, InMemoryChannelQueryRepository(uow_factory)),
-        replace_value(ChatHistoryQueryRepository, InMemoryChatHistoryQueryRepository(uow_factory)),
-        replace_value(
-            FriendRelationshipQueryRepository,
-            InMemoryFriendRelationshipQueryRepository(uow_factory),
-        ),
-        replace_value(BeatmapQueryRepository, beatmap_query_repository),
-        replace_value(BlobQueryRepository, InMemoryBlobQueryRepository(uow_factory)),
-        replace_value(
-            PersonalBestQueryRepository,
-            InMemoryPersonalBestQueryRepository(uow_factory),
-        ),
-        replace_value(
-            BeatmapScoreListingQueryRepository,
-            InMemoryBeatmapScoreListingQueryRepository(beatmap_query_repository),
-        ),
-        replace_value(
-            BeatmapLeaderboardQueryRepository,
-            InMemoryBeatmapLeaderboardQueryRepository(uow_factory),
-        ),
-        replace_value(
-            ScorePerformanceQueryRepository,
-            InMemoryScorePerformanceQueryRepository(uow_factory),
+        *(
+            replace_value(replacement.provides, replacement.value, scope=Scope.APP)
+            for replacement in repository_adapters.replacements()
         ),
         replace_value(
             BeatmapMetadataProvider,

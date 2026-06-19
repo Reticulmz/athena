@@ -8,9 +8,13 @@ import pytest
 
 from osu_server.domain.beatmaps import (
     Beatmap,
+    BeatmapFetchQueuePayload,
     BeatmapFetchState,
+    BeatmapFetchTarget,
+    BeatmapFetchTargetKind,
     BeatmapFileAttachment,
     BeatmapFileState,
+    BeatmapMetadataLookupKind,
     BeatmapMetadataSource,
     BeatmapRankStatus,
     BeatmapSet,
@@ -83,6 +87,38 @@ def test_rank_status_enum_preserves_approved_as_official_status() -> None:
 def test_local_status_enum_excludes_approved() -> None:
     assert "approved" not in {status.value for status in LocalBeatmapStatus}
     assert LocalBeatmapStatus.RANKED.value == "ranked"
+
+
+def test_fetch_target_exposes_typed_metadata_lookup() -> None:
+    target = BeatmapFetchTarget.metadata_by_beatmapset_id(1234)
+
+    lookup = target.metadata_lookup_target()
+
+    assert target.kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID
+    assert lookup.kind is BeatmapMetadataLookupKind.BEATMAPSET_ID
+    assert lookup.int_value() == 1234
+    assert target.queue_payload() == BeatmapFetchQueuePayload(
+        target_type="metadata:beatmapset",
+        target_key="1234",
+    )
+
+
+def test_fetch_target_restores_worker_queue_payload() -> None:
+    target = BeatmapFetchTarget.from_queue_payload(
+        target_type="file:beatmap",
+        target_key="2000",
+    )
+
+    assert target.kind is BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID
+    assert target.is_file_fetch
+    assert target.file_beatmap_id() == 2000
+
+
+def test_metadata_lookup_rejects_file_fetch_target() -> None:
+    target = BeatmapFetchTarget.file_by_beatmap_id(2000)
+
+    with pytest.raises(ValueError, match="file fetch target"):
+        _ = target.metadata_lookup_target()
 
 
 def test_beatmap_dataclass_contains_identity_status_source_and_file_fields() -> None:

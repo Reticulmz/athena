@@ -1,4 +1,4 @@
-"""Integration tests for SQLAlchemyReplayRepository.
+"""Integration tests for the SQLAlchemy replay command repository.
 
 Tests CRUD operations and unique constraint handling against real PostgreSQL.
 """
@@ -17,12 +17,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.replay import Replay
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.storage.blobs import NewBlob
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
-from osu_server.repositories.interfaces.blob_repository import NewBlob
-from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
-from osu_server.repositories.sqlalchemy.replay_repository import SQLAlchemyReplayRepository
-from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository
+from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -71,6 +69,13 @@ async def session_factory(
             await session.commit()
     except (OSError, SQLAlchemyError):
         return
+
+
+@pytest.fixture
+def uow_factory(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> SQLAlchemyUnitOfWorkFactory:
+    return SQLAlchemyUnitOfWorkFactory(session_factory)
 
 
 def _make_score(
@@ -123,40 +128,43 @@ def _make_replay(
 
 
 async def _create_blob(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
     *,
     checksum: str,
 ) -> int:
-    blob_repo = SQLAlchemyBlobRepository(session_factory)
     sha256 = hashlib.sha256(checksum.encode()).hexdigest()
-    blob = await blob_repo.create(
-        NewBlob(
-            sha256=sha256,
-            byte_size=1024,
-            content_type="application/octet-stream",
-            storage_backend="test",
-            storage_key=f"test/replay/{checksum}.osr",
+    async with uow_factory() as uow:
+        blob = await uow.blobs.create(
+            NewBlob(
+                sha256=sha256,
+                byte_size=1024,
+                content_type="application/octet-stream",
+                storage_backend="test",
+                storage_key=f"test/replay/{checksum}.osr",
+            )
         )
-    )
+        await uow.commit()
     return blob.id
 
 
 async def test_sqlalchemy_replay_repository_creates_replay(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    score_repo = SQLAlchemyScoreRepository(session_factory)
-    replay_repo = SQLAlchemyReplayRepository(session_factory)
-
     score = _make_score(online_checksum="test_replay_score_001")
-    created_score = await score_repo.create(score)
-    blob_id = await _create_blob(session_factory, checksum="test_checksum_001")
+    async with uow_factory() as uow:
+        created_score = await uow.scores.create(score)
+        await uow.commit()
+    assert created_score.id is not None
+    blob_id = await _create_blob(uow_factory, checksum="test_checksum_001")
 
     replay = _make_replay(
         checksum="test_checksum_001",
-        score_id=created_score.id,  # pyright: ignore[reportArgumentType]
+        score_id=created_score.id,
         blob_id=blob_id,
     )
-    created = await replay_repo.create(replay)
+    async with uow_factory() as uow:
+        created = await uow.replays.create(replay)
+        await uow.commit()
 
     assert created.id is not None
     assert created.score_id == replay.score_id
@@ -166,51 +174,60 @@ async def test_sqlalchemy_replay_repository_creates_replay(
 
 
 async def test_sqlalchemy_replay_repository_exists_by_checksum(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    score_repo = SQLAlchemyScoreRepository(session_factory)
-    replay_repo = SQLAlchemyReplayRepository(session_factory)
-
     score = _make_score(online_checksum="test_replay_score_002")
-    created_score = await score_repo.create(score)
-    blob_id = await _create_blob(session_factory, checksum="test_checksum_002")
+    async with uow_factory() as uow:
+        created_score = await uow.scores.create(score)
+        await uow.commit()
+    assert created_score.id is not None
+    blob_id = await _create_blob(uow_factory, checksum="test_checksum_002")
 
     replay = _make_replay(
         checksum="test_checksum_002",
-        score_id=created_score.id,  # pyright: ignore[reportArgumentType]
+        score_id=created_score.id,
         blob_id=blob_id,
     )
-    created = await replay_repo.create(replay)
+    async with uow_factory() as uow:
+        created = await uow.replays.create(replay)
+        await uow.commit()
 
-    assert await replay_repo.exists_by_checksum(created.checksum_sha256) is True
-    assert await replay_repo.exists_by_checksum("nonexistent_checksum") is False
+    async with uow_factory() as uow:
+        assert await uow.replays.exists_by_checksum(created.checksum_sha256) is True
+        assert await uow.replays.exists_by_checksum("nonexistent_checksum") is False
 
 
 async def test_sqlalchemy_replay_repository_rejects_duplicate_checksum(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    score_repo = SQLAlchemyScoreRepository(session_factory)
-    replay_repo = SQLAlchemyReplayRepository(session_factory)
-
     score1 = _make_score(online_checksum="test_replay_score_003")
-    created_score1 = await score_repo.create(score1)
+    async with uow_factory() as uow:
+        created_score1 = await uow.scores.create(score1)
+        await uow.commit()
+    assert created_score1.id is not None
 
     score2 = _make_score(online_checksum="test_replay_score_004")
-    created_score2 = await score_repo.create(score2)
-    blob_id1 = await _create_blob(session_factory, checksum="test_checksum_003")
-    blob_id2 = await _create_blob(session_factory, checksum="test_checksum_004")
+    async with uow_factory() as uow:
+        created_score2 = await uow.scores.create(score2)
+        await uow.commit()
+    assert created_score2.id is not None
+    blob_id1 = await _create_blob(uow_factory, checksum="test_checksum_003")
+    blob_id2 = await _create_blob(uow_factory, checksum="test_checksum_004")
 
     replay1 = _make_replay(
         checksum="test_checksum_003",
-        score_id=created_score1.id,  # pyright: ignore[reportArgumentType]
+        score_id=created_score1.id,
         blob_id=blob_id1,
     )
-    _ = await replay_repo.create(replay1)
+    async with uow_factory() as uow:
+        _ = await uow.replays.create(replay1)
+        await uow.commit()
 
     replay2 = _make_replay(
         checksum="test_checksum_003",
-        score_id=created_score2.id,  # pyright: ignore[reportArgumentType]
+        score_id=created_score2.id,
         blob_id=blob_id2,
     )
     with pytest.raises(ValueError, match="checksum_sha256 already exists"):
-        _ = await replay_repo.create(replay2)
+        async with uow_factory() as uow:
+            _ = await uow.replays.create(replay2)

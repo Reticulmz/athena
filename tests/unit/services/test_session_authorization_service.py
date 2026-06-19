@@ -132,9 +132,9 @@ def _make_service(
     role_repo: FakeRoleRepository | None = None,
 ) -> SessionAuthorizationService:
     return SessionAuthorizationService(
-        permission_service=perm_svc,  # pyright: ignore[reportArgumentType]
-        session_store=session_store,  # pyright: ignore[reportArgumentType]
-        role_repository=role_repo or FakeRoleRepository(),  # pyright: ignore[reportArgumentType]
+        permission_service=perm_svc,
+        session_store=session_store,
+        role_repository=role_repo or FakeRoleRepository(),
     )
 
 

@@ -61,7 +61,10 @@ async def fetch_beatmap_metadata(
         )
         msg = "beatmap metadata fetch use-case is not registered"
         raise RuntimeError(msg)
-    target = BeatmapFetchTarget(target_type=target_type, target_key=target_key)
+    target = BeatmapFetchTarget.from_queue_payload(
+        target_type=target_type,
+        target_key=target_key,
+    )
     await use_case.execute(target)
 
 
@@ -82,7 +85,10 @@ async def fetch_beatmap_file(
         )
         msg = "beatmap file fetch use-case is not registered"
         raise RuntimeError(msg)
-    target = BeatmapFetchTarget(target_type=target_type, target_key=target_key)
+    target = BeatmapFetchTarget.from_queue_payload(
+        target_type=target_type,
+        target_key=target_key,
+    )
     await use_case.execute(target)
 
 

@@ -1,4 +1,4 @@
-"""Unit tests for InMemoryScoreRepository."""
+"""Unit tests for InMemoryScoreCommandRepository."""
 
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -7,13 +7,14 @@ import pytest
 
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
-from osu_server.repositories.memory.score_repository import InMemoryScoreRepository
+from osu_server.repositories.memory.commands.scores import InMemoryScoreCommandRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 
 @pytest.fixture
-def repository() -> InMemoryScoreRepository:
-    """Create a fresh InMemoryScoreRepository."""
-    return InMemoryScoreRepository()
+def repository() -> InMemoryScoreCommandRepository:
+    """Create a fresh InMemoryScoreCommandRepository."""
+    return InMemoryScoreCommandRepository(InMemoryCommandRepositoryState())
 
 
 @pytest.fixture
@@ -49,7 +50,7 @@ class TestCreate:
     """Tests for create() method."""
 
     async def test_create_assigns_id(
-        self, repository: InMemoryScoreRepository, sample_score: Score
+        self, repository: InMemoryScoreCommandRepository, sample_score: Score
     ) -> None:
         """Test that create assigns an auto-generated id."""
         created = await repository.create(sample_score)
@@ -57,7 +58,7 @@ class TestCreate:
         assert created.id == 1
 
     async def test_create_increments_id(
-        self, repository: InMemoryScoreRepository, sample_score: Score
+        self, repository: InMemoryScoreCommandRepository, sample_score: Score
     ) -> None:
         """Test that create increments id for each score."""
         score1 = await repository.create(sample_score)
@@ -66,7 +67,7 @@ class TestCreate:
         assert score2.id == 2
 
     async def test_create_rejects_duplicate_online_checksum(
-        self, repository: InMemoryScoreRepository, sample_score: Score
+        self, repository: InMemoryScoreCommandRepository, sample_score: Score
     ) -> None:
         """Test that create rejects duplicate online_checksum."""
         _ = await repository.create(sample_score)
@@ -78,14 +79,14 @@ class TestExistsByOnlineChecksum:
     """Tests for exists_by_online_checksum() method."""
 
     async def test_returns_false_when_not_exists(
-        self, repository: InMemoryScoreRepository
+        self, repository: InMemoryScoreCommandRepository
     ) -> None:
         """Test that exists_by_online_checksum returns False when checksum not found."""
         exists = await repository.exists_by_online_checksum("nonexistent")
         assert exists is False
 
     async def test_returns_true_when_exists(
-        self, repository: InMemoryScoreRepository, sample_score: Score
+        self, repository: InMemoryScoreCommandRepository, sample_score: Score
     ) -> None:
         """Test that exists_by_online_checksum returns True when checksum exists."""
         _ = await repository.create(sample_score)
@@ -96,13 +97,15 @@ class TestExistsByOnlineChecksum:
 class TestGetByOnlineChecksum:
     """Tests for get_by_online_checksum() method."""
 
-    async def test_returns_none_when_not_found(self, repository: InMemoryScoreRepository) -> None:
+    async def test_returns_none_when_not_found(
+        self, repository: InMemoryScoreCommandRepository
+    ) -> None:
         """Test that get_by_online_checksum returns None when checksum not found."""
         score = await repository.get_by_online_checksum("nonexistent")
         assert score is None
 
     async def test_returns_score_when_found(
-        self, repository: InMemoryScoreRepository, sample_score: Score
+        self, repository: InMemoryScoreCommandRepository, sample_score: Score
     ) -> None:
         """Test that get_by_online_checksum returns score when checksum exists."""
         created = await repository.create(sample_score)
@@ -115,13 +118,15 @@ class TestGetByOnlineChecksum:
 class TestGetById:
     """Tests for get_by_id() method."""
 
-    async def test_returns_none_when_not_found(self, repository: InMemoryScoreRepository) -> None:
+    async def test_returns_none_when_not_found(
+        self, repository: InMemoryScoreCommandRepository
+    ) -> None:
         """Test that get_by_id returns None when id not found."""
         score = await repository.get_by_id(999)
         assert score is None
 
     async def test_returns_score_when_found(
-        self, repository: InMemoryScoreRepository, sample_score: Score
+        self, repository: InMemoryScoreCommandRepository, sample_score: Score
     ) -> None:
         """Test that get_by_id returns score when id found."""
         created = await repository.create(sample_score)

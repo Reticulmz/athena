@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, cast, override
 
 import structlog.testing
 from sqlalchemy.exc import SQLAlchemyError, StatementError
 
-from osu_server.repositories.interfaces.chat_repository import ChatPersistenceFailureReason
-from osu_server.repositories.sqlalchemy.chat_repository import SQLAlchemyChatRepository
+from osu_server.domain.chat import ChatPersistenceFailureReason
+from osu_server.repositories.sqlalchemy.commands.chat import SQLAlchemyChatCommandRepository
 from osu_server.repositories.sqlalchemy.models.channel import (
     ChannelMessageModel,
     PrivateMessageModel,
@@ -18,6 +18,7 @@ from osu_server.repositories.sqlalchemy.models.channel import (
 if TYPE_CHECKING:
     from types import TracebackType
 
+    from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.sql.base import Executable
 
 
@@ -38,22 +39,22 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     """Session fake for repository unit tests without a database driver."""
 
     channel_id: int | None
-    commit_error: SQLAlchemyError | None
+    flush_error: SQLAlchemyError | None
     added: list[object]
     execute_calls: int
-    commits: int
+    flushes: int
 
     def __init__(
         self,
         *,
         channel_id: int | None = None,
-        commit_error: SQLAlchemyError | None = None,
+        flush_error: SQLAlchemyError | None = None,
     ) -> None:
         self.channel_id = channel_id
-        self.commit_error = commit_error
+        self.flush_error = flush_error
         self.added = []
         self.execute_calls = 0
-        self.commits = 0
+        self.flushes = 0
 
     @override
     async def __aenter__(self) -> FakeSession:
@@ -78,27 +79,15 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     def add(self, instance: object) -> None:
         self.added.append(instance)
 
-    async def commit(self) -> None:
-        if self.commit_error is not None:
-            raise self.commit_error
-        self.commits += 1
+    async def flush(self) -> None:
+        if self.flush_error is not None:
+            raise self.flush_error
+        self.flushes += 1
 
 
-class FakeSessionFactory:
-    """Callable session factory compatible with SQLAlchemyChatRepository."""
-
-    _session: FakeSession
-
-    def __init__(self, session: FakeSession) -> None:
-        self._session = session
-
-    def __call__(self) -> FakeSession:
-        return self._session
-
-
-def make_repo(session: FakeSession) -> SQLAlchemyChatRepository:
+def make_repo(session: FakeSession) -> SQLAlchemyChatCommandRepository:
     """Create repository with a typed fake session factory."""
-    return SQLAlchemyChatRepository(FakeSessionFactory(session))
+    return SQLAlchemyChatCommandRepository(cast("AsyncSession", cast("object", session)))
 
 
 def make_statement_error(message: str) -> StatementError:
@@ -127,7 +116,7 @@ class TestSaveChannelMessage:
         assert result.success is True
         assert result.reason is None
         assert session.execute_calls == 1
-        assert session.commits == 1
+        assert session.flushes == 1
         assert len(session.added) == 1
         message = session.added[0]
         assert isinstance(message, ChannelMessageModel)
@@ -148,7 +137,7 @@ class TestSaveChannelMessage:
         assert result.success is False
         assert result.reason is ChatPersistenceFailureReason.CHANNEL_NOT_FOUND
         assert session.execute_calls == 1
-        assert session.commits == 0
+        assert session.flushes == 0
         assert session.added == []
 
 
@@ -168,7 +157,7 @@ class TestSavePrivateMessage:
         assert result.success is True
         assert result.reason is None
         assert session.execute_calls == 0
-        assert session.commits == 1
+        assert session.flushes == 1
         assert len(session.added) == 1
         message = session.added[0]
         assert isinstance(message, PrivateMessageModel)
@@ -177,7 +166,7 @@ class TestSavePrivateMessage:
         assert message.content == "secret"
 
     async def test_storage_error_returns_failure(self) -> None:
-        session = FakeSession(commit_error=make_statement_error("storage failed"))
+        session = FakeSession(flush_error=make_statement_error("storage failed"))
         repo = make_repo(session)
 
         with structlog.testing.capture_logs() as logs:
@@ -189,7 +178,7 @@ class TestSavePrivateMessage:
 
         assert result.success is False
         assert result.reason is ChatPersistenceFailureReason.STORAGE_ERROR
-        assert session.commits == 0
+        assert session.flushes == 0
 
         entries = [
             entry for entry in logs if entry.get("event") == "chat_persistence_storage_error"

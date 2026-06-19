@@ -27,6 +27,8 @@ from osu_server.services.commands.beatmaps import (
 from osu_server.services.queries.identity import SessionCredentialsQueryInput
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from starlette.requests import Request
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
@@ -52,12 +54,8 @@ def _sanitize(text: str) -> str:
     return text.replace("|", " ").replace("\r", " ").replace("\n", " ")
 
 
-class GetscoresHandler:
-    """Starlette handler for ``GET /web/osu-osz2-getscores.php``.
-
-    Receives DI dependencies in ``__init__`` and acts as a callable ASGI
-    endpoint via ``__call__``.
-    """
+class StableGetscoresExchange:
+    """Stable getscores exchange: auth, parse, warmup, and response selection."""
 
     def __init__(
         self,
@@ -77,15 +75,12 @@ class GetscoresHandler:
         self._beatmap_file_warmup: RequestBeatmapFileWarmupUseCase = beatmap_file_warmup
         self._beatmap_metadata_wait_seconds: float = beatmap_metadata_wait_seconds
 
-    async def __call__(self, request: Request) -> Response:
-        """Handle a getscores request, returning the stable wire body."""
-        username = request.query_params.get("us")
-        password_md5 = request.query_params.get("ha")
-
+    async def respond(self, query: Mapping[str, str]) -> Response:
+        """Resolve one stable getscores query into its wire response."""
         auth_query_result = await self._auth_query.execute(
             SessionCredentialsQueryInput(
-                username=username,
-                password_md5=password_md5,
+                username=query.get("us"),
+                password_md5=query.get("ha"),
             ),
         )
         auth_result = auth_query_result.outcome
@@ -99,7 +94,7 @@ class GetscoresHandler:
         user_id = auth_result.user_id
         assert user_id is not None
 
-        parse_result = self._getscores_parser.parse(request.query_params)
+        parse_result = self._getscores_parser.parse(query)
         if parse_result.error is not None or parse_result.request is None:
             error_value = parse_result.error.value if parse_result.error is not None else None
             logger.info(
@@ -247,6 +242,34 @@ class GetscoresHandler:
                 beatmap_id=beatmap_id,
                 has_checksum=checksum_md5 is not None,
             )
+
+
+class GetscoresHandler:
+    """Starlette adapter for ``GET /web/osu-osz2-getscores.php``."""
+
+    def __init__(
+        self,
+        auth_query: SessionCredentialsQuery,
+        getscores_parser: GetscoresQueryParser,
+        getscores_query: BeatmapScoreListingQuery,
+        status_mapper: GetscoresStatusMapper,
+        beatmap_resolver: BeatmapMirrorService,
+        beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
+        beatmap_metadata_wait_seconds: float,
+    ) -> None:
+        self._exchange: StableGetscoresExchange = StableGetscoresExchange(
+            auth_query=auth_query,
+            getscores_parser=getscores_parser,
+            getscores_query=getscores_query,
+            status_mapper=status_mapper,
+            beatmap_resolver=beatmap_resolver,
+            beatmap_file_warmup=beatmap_file_warmup,
+            beatmap_metadata_wait_seconds=beatmap_metadata_wait_seconds,
+        )
+
+    async def __call__(self, request: Request) -> Response:
+        """Delegate stable getscores semantics to the exchange module."""
+        return await self._exchange.respond(request.query_params)
 
 
 def format_getscores_unavailable_response() -> Response:

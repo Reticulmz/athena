@@ -24,10 +24,9 @@ from osu_server.services.queries.identity import (
 )
 from osu_server.transports.stable.bancho.listeners.lifecycle import LifecycleListeners
 from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
-from osu_server.transports.stable.bancho.protocol.writer import (
-    _HEADER_FMT,  # pyright: ignore[reportPrivateUsage]  # testing internal header format
-    write_packet,
-)
+from osu_server.transports.stable.bancho.protocol.writer import write_packet
+
+BANCHO_PACKET_HEADER_SIZE = 7
 
 
 def _snapshot(user_id: int) -> OnlineSessionSnapshot:
@@ -190,7 +189,7 @@ class TestUserQuitPacketFormat:
         assert (1, expected_packet) in packet_queue.enqueued
 
         # Verify the raw payload structure: header + 4-byte int32
-        payload = expected_packet[_HEADER_FMT.size :]
+        payload = expected_packet[BANCHO_PACKET_HEADER_SIZE:]
         assert struct.unpack("<i", payload)[0] == disconnecting_user_id
 
     async def test_enqueue_call_order_matches_online_list(

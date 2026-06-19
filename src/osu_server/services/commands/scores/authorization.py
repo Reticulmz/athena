@@ -1,7 +1,4 @@
-"""Score submission authorization service.
-
-Implements Requirement 4 (Authorization) for score-ingestion Wave 1.
-"""
+"""Score submission authorization service."""
 
 from __future__ import annotations
 
@@ -12,7 +9,7 @@ from osu_server.domain.identity.users import User
 
 if TYPE_CHECKING:
     from osu_server.repositories.interfaces.queries.users import UserQueryRepository
-    from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.repositories.interfaces.session_store import UserSessionLookup
     from osu_server.services.queries.identity.password_service import PasswordService
 
 
@@ -49,7 +46,7 @@ class ScoreAuthorizationService:
 
     _user_repo: UserQueryRepository
     _password_service: PasswordService
-    _session_store: SessionStore
+    _session_store: UserSessionLookup
 
     _NO_PAYLOAD_USER_ID: int = 0
 
@@ -58,7 +55,7 @@ class ScoreAuthorizationService:
         *,
         user_repo: UserQueryRepository,
         password_service: PasswordService,
-        session_store: SessionStore,
+        session_store: UserSessionLookup,
     ) -> None:
         self._user_repo = user_repo
         self._password_service = password_service
@@ -75,13 +72,6 @@ class ScoreAuthorizationService:
         Preconditions: password_md5 is valid MD5 hash
         Postconditions: Returns authorization result with all checks
         Invariants: No raw credentials logged
-
-        Requirements:
-            - 4.1: Valid password + active session + payload match → authorize
-            - 4.2: Invalid password → reject
-            - 4.3: No active session → reject
-            - 4.4: Payload identity mismatch → reject
-            - 4.5: No raw password-md5 logged
 
         Args:
             password_md5: MD5 hash of password (never logged)

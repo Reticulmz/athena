@@ -12,8 +12,11 @@ import pytest
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import AuthorizationRefreshStatus, SessionData
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.memory.commands.roles import InMemoryRoleCommandRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.identity.session_authorization_service import (
     SessionAuthorizationService,
 )
@@ -49,16 +52,21 @@ ALL_ROLES = [ROLE_DEFAULT, ROLE_MODERATOR, ROLE_ADMIN]
 def _make_services() -> tuple[
     SessionAuthorizationService,
     InMemorySessionStore,
-    InMemoryRoleRepository,
+    InMemoryRoleCommandRepository,
 ]:
     """Create SessionAuthorizationService with InMemory implementations."""
-    role_repo = InMemoryRoleRepository(seed_roles=ALL_ROLES)
+    state = InMemoryCommandRepositoryState()
+    uow_factory = InMemoryUnitOfWorkFactory(state)
+    role_repo = InMemoryRoleCommandRepository(state)
+    role_query_repo = InMemoryRoleQueryRepository(uow_factory)
+    for role in ALL_ROLES:
+        role_repo.add_role(role)
     session_store = InMemorySessionStore()
-    permission_service = PermissionService(role_repo=role_repo)
+    permission_service = PermissionService(role_repo=role_query_repo)
     service = SessionAuthorizationService(
         permission_service=permission_service,
         session_store=session_store,
-        role_repository=role_repo,
+        role_repository=role_query_repo,
     )
     return service, session_store, role_repo
 
@@ -172,9 +180,7 @@ class TestRefreshedAuthorizationInSession:
         )
         await store.create(user_id=1, token="token-abc", data=session_data)
 
-        # Remove Admin role from user by clearing user_roles for that role
-        # (Simulate role revoke: remove the user from the role's assignment)
-        repo._user_roles[1] = {ROLE_DEFAULT.id}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        await repo.set_roles_for_user(user_id=1, role_ids=(ROLE_DEFAULT.id,))
 
         # Refresh user authorization
         result = await svc.refresh_user_authorization(user_id=1)

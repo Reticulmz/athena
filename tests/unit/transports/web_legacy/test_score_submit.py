@@ -1,13 +1,11 @@
 """Unit tests for score submit handler."""
 
-# pyright: reportArgumentType=false
-
 import base64
 from typing import Protocol
 
 import pytest
 import structlog.testing
-from starlette.datastructures import Headers
+from starlette.requests import Request
 from starlette.responses import Response
 
 from osu_server.services.commands.scores import (
@@ -16,6 +14,7 @@ from osu_server.services.commands.scores import (
     SubmissionResult,
 )
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
+from tests.support.starlette_requests import make_starlette_request
 
 
 class ProcessScoreSubmissionUseCaseProtocol(Protocol):
@@ -36,15 +35,13 @@ class StubProcessScoreSubmissionUseCase:
         return self._result
 
 
-class StubRequest:
-    """Stub request for testing."""
-
-    def __init__(self, body_data: bytes, content_type: str) -> None:
-        self.headers: Headers = Headers({"content-type": content_type})
-        self._body: bytes = body_data
-
-    async def body(self) -> bytes:
-        return self._body
+def _score_submit_request(body: bytes, content_type: str) -> Request:
+    return make_starlette_request(
+        method="POST",
+        path="/web/osu-submit-modular-selector.php",
+        headers=((b"content-type", content_type.encode()),),
+        body=body,
+    )
 
 
 @pytest.fixture
@@ -87,15 +84,15 @@ def valid_multipart_body() -> bytes:
 
 
 @pytest.fixture
-def mock_request(valid_multipart_body: bytes) -> StubRequest:
+def mock_request(valid_multipart_body: bytes) -> Request:
     """Mock Starlette request."""
-    return StubRequest(
+    return _score_submit_request(
         valid_multipart_body, "multipart/form-data; boundary=----WebKitFormBoundary"
     )
 
 
 @pytest.mark.asyncio
-async def test_handle_score_submit_completed(mock_request: StubRequest) -> None:
+async def test_handle_score_submit_completed(mock_request: Request) -> None:
     """Test completed response format."""
     service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(
@@ -125,7 +122,7 @@ async def test_handle_score_submit_completed(mock_request: StubRequest) -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_score_submit_terminal_reject(mock_request: StubRequest) -> None:
+async def test_handle_score_submit_terminal_reject(mock_request: Request) -> None:
     """Test terminal reject response format."""
     service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(
@@ -149,7 +146,7 @@ async def test_handle_score_submit_terminal_reject(mock_request: StubRequest) ->
 
 
 @pytest.mark.asyncio
-async def test_handle_score_submit_retryable(mock_request: StubRequest) -> None:
+async def test_handle_score_submit_retryable(mock_request: Request) -> None:
     """Test retryable response format."""
     service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(
@@ -174,7 +171,7 @@ async def test_handle_score_submit_parsing_error(valid_multipart_body: bytes) ->
     )
     handler = ScoreSubmitHandler(service)
 
-    request = StubRequest(valid_multipart_body, "text/plain")
+    request = _score_submit_request(valid_multipart_body, "text/plain")
 
     with structlog.testing.capture_logs() as cap_logs:
         response = await handler(request)

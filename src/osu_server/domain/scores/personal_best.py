@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from osu_server.domain.scores.score import Playstyle, Ruleset
 
+UNKNOWN_COUNTRY_CODE = "XX"
+
 
 class LeaderboardCategory(Enum):
     """Beatmap leaderboard category dimension."""
@@ -17,6 +19,16 @@ class LeaderboardCategory(Enum):
     COUNTRY = "country"
     SELECTED_MODS = "selected_mods"
     FRIENDS = "friends"
+
+
+def country_leaderboard_is_available(country: str | None) -> bool:
+    """Return whether country leaderboard reads can produce rows."""
+    return country is not None and country != UNKNOWN_COUNTRY_CODE
+
+
+def friends_leaderboard_is_available(eligible_user_ids: tuple[int, ...] | None) -> bool:
+    """Return whether friends leaderboard reads can produce rows."""
+    return bool(eligible_user_ids)
 
 
 @dataclass(slots=True, frozen=True)

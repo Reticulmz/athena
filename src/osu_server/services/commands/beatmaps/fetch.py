@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 import structlog
 
@@ -14,6 +14,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchTarget,
     BeatmapFileAttachment,
     BeatmapFileState,
+    BeatmapMetadataLookupKind,
     BeatmapSet,
 )
 from osu_server.services.commands.leaderboard_rebuild_wake import (
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
     from osu_server.domain.storage.blobs import BlobStoreResult
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 _OSU_BEATMAP_CONTENT_TYPE = "application/x-osu-beatmap"
 
@@ -82,7 +83,21 @@ class FetchBeatmapMetadataUseCase:
             target_key=target.target_key,
         )
 
-        snapshot = await self._lookup(target)
+        try:
+            snapshot = await self._lookup(target)
+        except ValueError as exc:
+            await self._mark_failed(
+                target=target,
+                error=str(exc),
+                now=now,
+            )
+            logger.exception(
+                "beatmap_metadata_fetch_failed",
+                target_type=target.target_type,
+                target_key=target.target_key,
+                error=str(exc),
+            )
+            return
 
         if snapshot is None:
             await self._mark_failed(
@@ -133,14 +148,15 @@ class FetchBeatmapMetadataUseCase:
         )
 
     async def _lookup(self, target: BeatmapFetchTarget) -> BeatmapsetSnapshot | None:
-        target_type = target.target_type
-        if target_type == "metadata:beatmap":
-            return await self._provider.lookup_by_beatmap_id(int(target.target_key))
-        if target_type == "metadata:beatmapset":
-            return await self._provider.lookup_by_beatmapset_id(int(target.target_key))
-        if target_type == "metadata:checksum":
-            return await self._provider.lookup_by_checksum(target.target_key)
-        raise ValueError(f"unsupported metadata fetch target type: {target_type}")
+        lookup = target.metadata_lookup_target()
+        if lookup.kind is BeatmapMetadataLookupKind.BEATMAP_ID:
+            return await self._provider.lookup_by_beatmap_id(lookup.int_value())
+        if lookup.kind is BeatmapMetadataLookupKind.BEATMAPSET_ID:
+            return await self._provider.lookup_by_beatmapset_id(lookup.int_value())
+        if lookup.kind is BeatmapMetadataLookupKind.CHECKSUM:
+            return await self._provider.lookup_by_checksum(lookup.value)
+        msg = f"unsupported metadata lookup kind: {lookup.kind}"
+        raise ValueError(msg)
 
     async def _mark_failed(
         self,
@@ -190,21 +206,21 @@ class FetchBeatmapFileUseCase:
             target_key=target.target_key,
         )
 
-        if target.target_type != "file:beatmap":
+        try:
+            beatmap_id = target.file_beatmap_id()
+        except ValueError as exc:
             await self._mark_failed(
                 target=target,
-                error=f"unsupported file fetch target type: {target.target_type}",
+                error=str(exc),
                 now=now,
             )
-            logger.error(
+            logger.exception(
                 "beatmap_file_fetch_failed",
                 target_type=target.target_type,
                 target_key=target.target_key,
-                error=f"unsupported file fetch target type: {target.target_type}",
+                error=str(exc),
             )
             return
-
-        beatmap_id = int(target.target_key)
 
         async with self._uow_factory() as uow:
             beatmap = await uow.beatmaps.get_beatmap(beatmap_id)

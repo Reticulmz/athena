@@ -12,7 +12,7 @@ from osu_server.domain.identity.friends import (
 )
 
 if TYPE_CHECKING:
-    from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.repositories.interfaces.session_store import SessionPrivacyRuntime
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
 
@@ -101,8 +101,8 @@ class RemoveFriendUseCase:
 class UpdateFriendOnlyDmUseCase:
     """Patch active session Friend-Only DM state."""
 
-    def __init__(self, *, session_store: SessionStore) -> None:
-        self._session_store: SessionStore = session_store
+    def __init__(self, *, session_store: SessionPrivacyRuntime) -> None:
+        self._session_store: SessionPrivacyRuntime = session_store
 
     async def execute(self, command: UpdateFriendOnlyDmCommand) -> bool:
         return await self._session_store.update_pm_private(command.user_id, command.enabled)

@@ -9,6 +9,7 @@ import pytest
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileState,
     BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
@@ -19,10 +20,10 @@ from osu_server.domain.beatmaps import (
     BeatmapSetResolveResult,
     BeatmapSourceVerification,
 )
-from osu_server.repositories.interfaces.beatmap_repository import (
-    BeatmapFetchTarget,
-)
-from osu_server.repositories.memory.beatmap_repository import InMemoryBeatmapRepository
+from osu_server.repositories.memory.commands.beatmaps import InMemoryBeatmapCommandRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQueryRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
@@ -130,17 +131,22 @@ def freshness_policy() -> BeatmapFreshnessPolicy:
 
 
 @pytest.fixture
-def repo() -> InMemoryBeatmapRepository:
-    return InMemoryBeatmapRepository()
+def command_state() -> InMemoryCommandRepositoryState:
+    return InMemoryCommandRepositoryState()
+
+
+@pytest.fixture
+def repo(command_state: InMemoryCommandRepositoryState) -> InMemoryBeatmapCommandRepository:
+    return InMemoryBeatmapCommandRepository(command_state)
 
 
 @pytest.fixture
 def service(
-    repo: InMemoryBeatmapRepository,
+    command_state: InMemoryCommandRepositoryState,
     freshness_policy: BeatmapFreshnessPolicy,
 ) -> BeatmapMirrorService:
     return BeatmapMirrorService(
-        repository=repo,
+        repository=InMemoryBeatmapQueryRepository(InMemoryUnitOfWorkFactory(command_state)),
         eligibility_service=BeatmapEligibilityService(),
         freshness_policy=freshness_policy,
     )
@@ -154,7 +160,7 @@ def service(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_returns_cached_beatmap(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmap = _make_beatmap(
         last_fetched_at=_NOW,
@@ -197,7 +203,7 @@ async def test_resolve_by_beatmap_id_unknown_returns_pending(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_returns_failed_when_fetch_failed(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     target = BeatmapFetchTarget(target_type="metadata:beatmap", target_key="999")
     now = _NOW
@@ -213,7 +219,7 @@ async def test_resolve_by_beatmap_id_returns_failed_when_fetch_failed(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_returns_pending_for_pending_fetch(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     target = BeatmapFetchTarget(target_type="metadata:beatmap", target_key="999")
     now = _NOW
@@ -229,7 +235,7 @@ async def test_resolve_by_beatmap_id_returns_pending_for_pending_fetch(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_returns_stale_when_past_next_refresh(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     """A beatmap whose next_refresh_at is in the past should report STALE."""
     beatmap = _make_beatmap(
@@ -250,7 +256,7 @@ async def test_resolve_by_beatmap_id_returns_stale_when_past_next_refresh(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_force_refresh_overrides_freshness(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmap = _make_beatmap(
         last_fetched_at=_NOW,
@@ -272,7 +278,7 @@ async def test_resolve_by_beatmap_id_force_refresh_overrides_freshness(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_require_osu_file_when_file_missing(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmap = _make_beatmap(
         last_fetched_at=_NOW,
@@ -295,7 +301,7 @@ async def test_resolve_by_beatmap_id_require_osu_file_when_file_missing(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_file_available_ok(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmap = _make_beatmap(
         last_fetched_at=_NOW,
@@ -317,7 +323,7 @@ async def test_resolve_by_beatmap_id_file_available_ok(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_projects_eligibility(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmap = _make_beatmap(
         official_status=BeatmapRankStatus.QUALIFIED,
@@ -341,7 +347,7 @@ async def test_resolve_by_beatmap_id_projects_eligibility(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_untrusted_mirror_denies_eligibility(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmap = _make_beatmap(
         official_status=BeatmapRankStatus.RANKED,
@@ -367,7 +373,7 @@ async def test_resolve_by_beatmap_id_untrusted_mirror_denies_eligibility(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmap_id_unknown_with_file_fetch_failed(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     metadata_target = BeatmapFetchTarget(target_type="metadata:beatmap", target_key="999")
     file_target = BeatmapFetchTarget(target_type="file:beatmap", target_key="999")
@@ -391,7 +397,7 @@ async def test_resolve_by_beatmap_id_unknown_with_file_fetch_failed(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmapset_id_returns_cached_set(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmap = _make_beatmap(last_fetched_at=_NOW, next_refresh_at=_NOW + _THIRTY_DAYS)
     beatmapset = _make_beatmapset(
@@ -427,7 +433,7 @@ async def test_resolve_by_beatmapset_id_unknown_returns_pending(
 @pytest.mark.asyncio
 async def test_resolve_by_beatmapset_id_failed_fetch_returns_failed(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     target = BeatmapFetchTarget(target_type="metadata:beatmapset", target_key="999")
     now = _NOW
@@ -448,7 +454,7 @@ async def test_resolve_by_beatmapset_id_failed_fetch_returns_failed(
 @pytest.mark.asyncio
 async def test_resolve_by_checksum_returns_cached_beatmap(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmap = _make_beatmap(
         checksum_md5=_DEFAULT_CHECKSUM,
@@ -483,7 +489,7 @@ async def test_resolve_by_checksum_unknown_returns_pending(
 @pytest.mark.asyncio
 async def test_resolve_by_checksum_failed_fetch_returns_failed(
     service: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     target = BeatmapFetchTarget(target_type="metadata:checksum", target_key=_ALT_CHECKSUM)
     now = _NOW
@@ -551,7 +557,7 @@ def enqueue_spy() -> list[BeatmapFetchTarget]:
 
 @pytest.fixture
 def service_with_enqueue(
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
     freshness_policy: BeatmapFreshnessPolicy,
     enqueue_spy: list[BeatmapFetchTarget],
 ) -> BeatmapMirrorService:
@@ -613,7 +619,7 @@ async def test_unknown_checksum_enqueues_metadata_fetch(
 @pytest.mark.asyncio
 async def test_stale_beatmap_enqueues_metadata_refresh(
     service_with_enqueue: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
     enqueue_spy: list[BeatmapFetchTarget],
 ) -> None:
     beatmap = _make_beatmap(
@@ -634,7 +640,7 @@ async def test_stale_beatmap_enqueues_metadata_refresh(
 @pytest.mark.asyncio
 async def test_force_refresh_enqueues_metadata_fetch(
     service_with_enqueue: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
     enqueue_spy: list[BeatmapFetchTarget],
 ) -> None:
     beatmap = _make_beatmap(
@@ -658,7 +664,7 @@ async def test_force_refresh_enqueues_metadata_fetch(
 @pytest.mark.asyncio
 async def test_fresh_beatmap_does_not_enqueue(
     service_with_enqueue: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
     enqueue_spy: list[BeatmapFetchTarget],
 ) -> None:
     beatmap = _make_beatmap(
@@ -676,7 +682,7 @@ async def test_fresh_beatmap_does_not_enqueue(
 @pytest.mark.asyncio
 async def test_require_osu_file_missing_enqueues_file_fetch(
     service_with_enqueue: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
     enqueue_spy: list[BeatmapFetchTarget],
 ) -> None:
     beatmap = _make_beatmap(
@@ -700,7 +706,7 @@ async def test_require_osu_file_missing_enqueues_file_fetch(
 @pytest.mark.asyncio
 async def test_require_osu_file_available_does_not_enqueue(
     service_with_enqueue: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
+    repo: InMemoryBeatmapCommandRepository,
     enqueue_spy: list[BeatmapFetchTarget],
 ) -> None:
     beatmap = _make_beatmap(
@@ -745,8 +751,7 @@ async def test_unknown_beatmap_with_require_osu_enqueues_both(
 @pytest.mark.asyncio
 async def test_bounded_wait_completes_when_data_arrives(
     service_with_enqueue: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmap_id = 999
 
@@ -777,7 +782,6 @@ async def test_bounded_wait_completes_when_data_arrives(
 @pytest.mark.asyncio
 async def test_bounded_wait_returns_pending_on_timeout(
     service_with_enqueue: BeatmapMirrorService,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
 ) -> None:
     result = await service_with_enqueue.resolve_by_beatmap_id(
         999,
@@ -792,8 +796,7 @@ async def test_bounded_wait_returns_pending_on_timeout(
 @pytest.mark.asyncio
 async def test_bounded_wait_beatmapset_completes_when_data_arrives(
     service_with_enqueue: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     beatmapset_id = 999
 
@@ -830,8 +833,7 @@ async def test_bounded_wait_beatmapset_completes_when_data_arrives(
 @pytest.mark.asyncio
 async def test_bounded_wait_checksum_completes_when_data_arrives(
     service_with_enqueue: BeatmapMirrorService,
-    repo: InMemoryBeatmapRepository,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
+    repo: InMemoryBeatmapCommandRepository,
 ) -> None:
     checksum = _ALT_CHECKSUM
 
@@ -862,7 +864,6 @@ async def test_bounded_wait_checksum_completes_when_data_arrives(
 @pytest.mark.asyncio
 async def test_bounded_wait_beatmapset_returns_pending_on_timeout(
     service_with_enqueue: BeatmapMirrorService,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
 ) -> None:
     result = await service_with_enqueue.resolve_by_beatmapset_id(
         999,

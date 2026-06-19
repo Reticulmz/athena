@@ -7,10 +7,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.sessions import SessionData
-
-
-class _SessionStore(Protocol):
-    async def list_active_sessions(self) -> list[SessionData]: ...
+    from osu_server.repositories.interfaces.session_store import ActiveSessionRoster
 
 
 @dataclass(slots=True, frozen=True)
@@ -53,9 +50,9 @@ class ListActiveSessionsQuery(Protocol):
 class ListActiveSessionsQueryUseCase:
     """Read active online session snapshots."""
 
-    _session_store: _SessionStore
+    _session_store: ActiveSessionRoster
 
-    def __init__(self, *, session_store: _SessionStore) -> None:
+    def __init__(self, *, session_store: ActiveSessionRoster) -> None:
         self._session_store = session_store
 
     async def execute(

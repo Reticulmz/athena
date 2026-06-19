@@ -11,7 +11,7 @@ from osu_server.domain.identity.users import User
 
 if TYPE_CHECKING:
     from osu_server.repositories.interfaces.queries.users import UserQueryRepository
-    from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.repositories.interfaces.session_store import UserSessionLookup
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -39,10 +39,10 @@ class ResolvePrivateMessageTargetQuery:
         self,
         *,
         user_repository: UserQueryRepository,
-        session_store: SessionStore,
+        session_store: UserSessionLookup,
     ) -> None:
         self._user_repository: UserQueryRepository = user_repository
-        self._session_store: SessionStore = session_store
+        self._session_store: UserSessionLookup = session_store
 
     async def execute(
         self,

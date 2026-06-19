@@ -30,6 +30,8 @@ from osu_server.domain.scores.personal_best import (
     PersonalBest,
     PersonalBestDelta,
     PersonalBestScope,
+    country_leaderboard_is_available,
+    friends_leaderboard_is_available,
     score_beats_personal_best,
 )
 from osu_server.domain.scores.replay import Replay
@@ -74,7 +76,9 @@ __all__ = [
     "ScoreSubmission",
     "ValidationError",
     "ValidationResult",
+    "country_leaderboard_is_available",
     "filter_from_mod_combination",
+    "friends_leaderboard_is_available",
     "projection_keys_for_score",
     "score_beats_current",
     "score_beats_personal_best",

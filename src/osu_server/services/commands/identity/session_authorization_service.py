@@ -2,37 +2,51 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 
 import structlog
 
 from osu_server.domain.identity.sessions import (
     AuthorizationRefreshStatus,
     RoleAuthorizationRefreshResult,
+    SessionAuthorization,
     UserAuthorizationRefreshResult,
 )
 
 if TYPE_CHECKING:
-    from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
-    from osu_server.repositories.interfaces.session_store import SessionStore
-    from osu_server.services.queries.identity.permission_service import PermissionService
+    from osu_server.repositories.interfaces.session_store import SessionAuthorizationRuntime
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+
+class _PermissionAuthorizationComputer(Protocol):
+    async def compute_session_authorization(
+        self,
+        user_id: int,
+    ) -> SessionAuthorization: ...
+
+
+class _RoleUserLookup(Protocol):
+    async def get_user_ids_for_role(self, role_id: int) -> list[int]: ...
+
+
+logger: structlog.stdlib.BoundLogger = cast(
+    "structlog.stdlib.BoundLogger",
+    structlog.get_logger(__name__),
+)
 
 
 class SessionAuthorizationService:
     """ユーザー単位・ロール単位の認可 refresh をオーケストレーションする。"""
 
-    _permission_service: PermissionService
-    _session_store: SessionStore
-    _role_repository: RoleQueryRepository
+    _permission_service: _PermissionAuthorizationComputer
+    _session_store: SessionAuthorizationRuntime
+    _role_repository: _RoleUserLookup
 
     def __init__(
         self,
         *,
-        permission_service: PermissionService,
-        session_store: SessionStore,
-        role_repository: RoleQueryRepository,
+        permission_service: _PermissionAuthorizationComputer,
+        session_store: SessionAuthorizationRuntime,
+        role_repository: _RoleUserLookup,
     ) -> None:
         self._permission_service = permission_service
         self._session_store = session_store
