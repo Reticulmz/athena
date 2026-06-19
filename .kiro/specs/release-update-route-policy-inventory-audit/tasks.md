@@ -24,7 +24,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
   - _Boundary: Release Update Matrix Rows, Operational Dependency Matrix, Evidence Consistency Notes_
 
-- [ ] 2.2 release manifest routes と root aliases の no-update policy を matrix に反映する
+- [x] 2.2 release manifest routes と root aliases の no-update policy を matrix に反映する
   - `/release/update` と `/update` を empty body の `required-no-update` として分類する
   - `/release/update.php` と `/update.php` を `0` response の `required-no-update` として分類する
   - `/release/update2.php` と `/update2.php` を empty body の `required-no-update` として分類する
