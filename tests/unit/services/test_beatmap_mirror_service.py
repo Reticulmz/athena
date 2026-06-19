@@ -752,7 +752,6 @@ async def test_unknown_beatmap_with_require_osu_enqueues_both(
 async def test_bounded_wait_completes_when_data_arrives(
     service_with_enqueue: BeatmapMirrorService,
     repo: InMemoryBeatmapCommandRepository,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
 ) -> None:
     beatmap_id = 999
 
@@ -783,7 +782,6 @@ async def test_bounded_wait_completes_when_data_arrives(
 @pytest.mark.asyncio
 async def test_bounded_wait_returns_pending_on_timeout(
     service_with_enqueue: BeatmapMirrorService,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
 ) -> None:
     result = await service_with_enqueue.resolve_by_beatmap_id(
         999,
@@ -799,7 +797,6 @@ async def test_bounded_wait_returns_pending_on_timeout(
 async def test_bounded_wait_beatmapset_completes_when_data_arrives(
     service_with_enqueue: BeatmapMirrorService,
     repo: InMemoryBeatmapCommandRepository,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
 ) -> None:
     beatmapset_id = 999
 
@@ -837,7 +834,6 @@ async def test_bounded_wait_beatmapset_completes_when_data_arrives(
 async def test_bounded_wait_checksum_completes_when_data_arrives(
     service_with_enqueue: BeatmapMirrorService,
     repo: InMemoryBeatmapCommandRepository,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
 ) -> None:
     checksum = _ALT_CHECKSUM
 
@@ -868,7 +864,6 @@ async def test_bounded_wait_checksum_completes_when_data_arrives(
 @pytest.mark.asyncio
 async def test_bounded_wait_beatmapset_returns_pending_on_timeout(
     service_with_enqueue: BeatmapMirrorService,
-    enqueue_spy: list[BeatmapFetchTarget],  # noqa: ARG001  # pyright: ignore[reportUnusedParameter] -- consumed by fixture
 ) -> None:
     result = await service_with_enqueue.resolve_by_beatmapset_id(
         999,

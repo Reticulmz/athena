@@ -393,7 +393,11 @@ class BeatmapMetadataLookupTarget:
 
     def int_value(self) -> int:
         """Return the lookup value as a positive integer identifier."""
-        return int(self.value)
+        value = int(self.value)
+        if value <= 0:
+            msg = f"lookup value must be positive: {self.value}"
+            raise ValueError(msg)
+        return value
 
 
 @dataclass(slots=True, frozen=True)

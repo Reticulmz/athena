@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 import structlog
 from starlette.responses import Response
@@ -20,7 +20,10 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
     from osu_server.services.commands.scores import ParsedSubmissionInput, SubmissionResult
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+logger: structlog.stdlib.BoundLogger = cast(
+    "structlog.stdlib.BoundLogger",
+    structlog.get_logger(__name__),
+)
 
 
 class ScoreSubmissionCommand(Protocol):

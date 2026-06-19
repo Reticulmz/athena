@@ -41,7 +41,7 @@ def _make_service(
     roles: list[Role] | None = None,
 ) -> tuple[PermissionService, RoleAssignmentHarness]:
     uow_factory = InMemoryUnitOfWorkFactory()
-    uow_factory.seed_roles(roles or ALL_ROLES)
+    uow_factory.seed_roles(ALL_ROLES if roles is None else roles)
     repo = InMemoryRoleQueryRepository(uow_factory)
     return PermissionService(role_repo=repo), RoleAssignmentHarness(uow_factory)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 import structlog
 
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from osu_server.domain.storage.blobs import BlobStoreResult
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 _OSU_BEATMAP_CONTENT_TYPE = "application/x-osu-beatmap"
 
@@ -153,7 +153,10 @@ class FetchBeatmapMetadataUseCase:
             return await self._provider.lookup_by_beatmap_id(lookup.int_value())
         if lookup.kind is BeatmapMetadataLookupKind.BEATMAPSET_ID:
             return await self._provider.lookup_by_beatmapset_id(lookup.int_value())
-        return await self._provider.lookup_by_checksum(lookup.value)
+        if lookup.kind is BeatmapMetadataLookupKind.CHECKSUM:
+            return await self._provider.lookup_by_checksum(lookup.value)
+        msg = f"unsupported metadata lookup kind: {lookup.kind}"
+        raise ValueError(msg)
 
     async def _mark_failed(
         self,

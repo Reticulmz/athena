@@ -29,6 +29,19 @@ class _RequestHeaders(Protocol):
     headers: Mapping[str, str]
 
 
+class _MockTransportRequest(Protocol):
+    @property
+    def url(self) -> object: ...
+
+    @property
+    def method(self) -> str: ...
+
+
+def _request_url_and_method(request: httpx.Request) -> tuple[str, str]:
+    mock_request = cast("_MockTransportRequest", cast("object", request))
+    return str(mock_request.url), mock_request.method
+
+
 # ---------------------------------------------------------------------------
 # Fixtures / constants
 # ---------------------------------------------------------------------------
@@ -149,10 +162,10 @@ class _MetadataProviderMockHandler:
         self.authorization_headers = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        url_str = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
+        url_str, method = _request_url_and_method(request)
 
         # -- Token endpoint (POST) --------------------------------------------
-        if _TOKEN_URL in url_str and request.method == "POST":  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        if _TOKEN_URL in url_str and method == "POST":
             if self._token_error is not None:
                 raise self._token_error("mock token error")
             self.token_request_count += 1
@@ -302,7 +315,7 @@ class TestLookupByBeatmapsetId:
         provider = _make_provider(api_status=401)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.UNAUTHORIZED
 
@@ -311,7 +324,7 @@ class TestLookupByBeatmapsetId:
         provider = _make_provider(api_status=429)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.RATE_LIMITED
 
@@ -321,7 +334,7 @@ class TestLookupByBeatmapsetId:
         provider = _make_provider(api_status=status)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
 
@@ -330,7 +343,7 @@ class TestLookupByBeatmapsetId:
         provider = _make_provider(api_error=httpx.TimeoutException)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.TIMEOUT
 
@@ -339,7 +352,7 @@ class TestLookupByBeatmapsetId:
         provider = _make_provider(api_error=httpx.ConnectError)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
 
@@ -347,8 +360,8 @@ class TestLookupByBeatmapsetId:
         """Non-JSON response body → BeatmapSourceError(INVALID_RESPONSE)."""
 
         def bad_json(request: httpx.Request) -> httpx.Response:
-            url_str = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
-            if _TOKEN_URL in url_str and request.method == "POST":  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            url_str, method = _request_url_and_method(request)
+            if _TOKEN_URL in url_str and method == "POST":
                 return httpx.Response(
                     200,
                     content=json.dumps(_TOKEN_RESPONSE_BODY).encode(),
@@ -366,7 +379,7 @@ class TestLookupByBeatmapsetId:
         )
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.INVALID_RESPONSE
 
@@ -432,7 +445,7 @@ class TestTokenManagement:
 
         assert handler.token_request_count == 0
 
-        await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+        _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert handler.token_request_count == 1
         assert handler.authorization_headers == ["Bearer tok_deadbeef"]
@@ -441,10 +454,10 @@ class TestTokenManagement:
         """Second call reuses cached token (no new token request)."""
         provider, handler = _make_provider_with_handler()
 
-        await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+        _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         # Make a second call — token should be reused
-        await provider.lookup_by_beatmap_id(_BEATMAP_ID)  # pyright: ignore[reportUnusedCallResult]
+        _ = await provider.lookup_by_beatmap_id(_BEATMAP_ID)
 
         assert handler.token_request_count == 1
         assert handler.authorization_headers == [
@@ -459,8 +472,8 @@ class TestTokenManagement:
             token_expires_in=1,
         )
 
-        await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
-        await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+        _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
+        _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert handler.token_request_count == 2
         assert handler.authorization_headers == [
@@ -473,7 +486,7 @@ class TestTokenManagement:
         provider = _make_provider(token_status=401)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.UNAUTHORIZED
         assert exc_info.value.source == "osu_oauth"
@@ -483,7 +496,7 @@ class TestTokenManagement:
         provider = _make_provider(token_status=503)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
         assert exc_info.value.source == "osu_oauth"
@@ -493,7 +506,7 @@ class TestTokenManagement:
         provider = _make_provider(token_error=httpx.TimeoutException)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.TIMEOUT
         assert exc_info.value.source == "osu_oauth"
@@ -505,8 +518,8 @@ class TestTokenManagement:
         client = httpx.AsyncClient(transport=transport)
 
         def bad_token(request: httpx.Request) -> httpx.Response:
-            url_str = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
-            if _TOKEN_URL in url_str and request.method == "POST":  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            url_str, method = _request_url_and_method(request)
+            if _TOKEN_URL in url_str and method == "POST":
                 return httpx.Response(200, content=b"not valid json {{{", request=request)
             return httpx.Response(
                 200,
@@ -524,7 +537,7 @@ class TestTokenManagement:
         )
 
         with pytest.raises(BeatmapSourceError) as exc_info:
-            await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)  # pyright: ignore[reportUnusedCallResult]
+            _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
 
         assert exc_info.value.category is BeatmapSourceErrorCategory.INVALID_RESPONSE
         assert exc_info.value.source == "osu_oauth"

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import final
+from typing import cast, final
 
+import structlog
 from dishka import Provider, Scope
 from taskiq import AsyncBroker
 
@@ -24,6 +25,11 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapFreshnessPolicy,
     BeatmapQueryRepository,
     RequestBeatmapFileWarmupUseCase,
+)
+
+logger: structlog.stdlib.BoundLogger = cast(
+    "structlog.stdlib.BoundLogger",
+    structlog.get_logger(__name__),
 )
 
 
@@ -64,6 +70,12 @@ async def enqueue_beatmap_fetch(broker: AsyncBroker, target: BeatmapFetchTarget)
     task_name = "fetch_beatmap_file" if target.is_file_fetch else "fetch_beatmap_metadata"
     task = broker.find_task(task_name)
     if task is None:
+        logger.error(
+            "beatmap_fetch_task_not_registered",
+            task_name=task_name,
+            target_type=target.target_type,
+            target_key=target.target_key,
+        )
         return
 
     payload = target.queue_payload()

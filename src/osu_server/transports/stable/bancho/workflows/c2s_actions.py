@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import structlog
 
@@ -13,7 +13,10 @@ from osu_server.transports.stable.bancho.protocol.reader import read_packets
 if TYPE_CHECKING:
     from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+logger: structlog.stdlib.BoundLogger = cast(
+    "structlog.stdlib.BoundLogger",
+    structlog.get_logger(__name__),
+)
 
 
 @dataclass(slots=True, frozen=True)

@@ -103,13 +103,16 @@ class RuntimeResourceTracker:
                         await closeable.close()
         self._glide_clients.clear()
 
+        alive_brokers: list[weakref.ReferenceType[object]] = []
         for ref in self._brokers:
             broker = ref()
             if broker is not None:
+                alive_brokers.append(ref)
                 shutdown_broker = _as_async_shutdown_broker(broker)
                 if shutdown_broker is not None:
                     with suppress(Exception):
                         await shutdown_broker.shutdown()
+        self._brokers = alive_brokers
         if self._brokers:
             await asyncio.sleep(0)
         # _brokers is intentionally retained: module-level singleton brokers

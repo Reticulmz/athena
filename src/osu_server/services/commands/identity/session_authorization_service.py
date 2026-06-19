@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 import structlog
 
@@ -28,7 +28,10 @@ class _RoleUserLookup(Protocol):
     async def get_user_ids_for_role(self, role_id: int) -> list[int]: ...
 
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+logger: structlog.stdlib.BoundLogger = cast(
+    "structlog.stdlib.BoundLogger",
+    structlog.get_logger(__name__),
+)
 
 
 class SessionAuthorizationService:

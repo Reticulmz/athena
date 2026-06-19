@@ -23,6 +23,7 @@ from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
 )
+from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
@@ -46,6 +47,7 @@ from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryReposi
 from osu_server.repositories.memory.queries.score_performance import (
     InMemoryScorePerformanceQueryRepository,
 )
+from osu_server.repositories.memory.queries.scores import InMemoryScoreQueryRepository
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.repositories.sqlalchemy.queries.beatmap_leaderboards import (
@@ -76,8 +78,6 @@ from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWork
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-    from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +217,10 @@ class InMemoryRepositoryAdapterFamily:
             RepositoryAdapterReplacement(
                 PersonalBestQueryRepository,
                 InMemoryPersonalBestQueryRepository(self.unit_of_work_factory),
+            ),
+            RepositoryAdapterReplacement(
+                ScoreQueryRepository,
+                InMemoryScoreQueryRepository(self.unit_of_work_factory),
             ),
             RepositoryAdapterReplacement(
                 BeatmapScoreListingQueryRepository,

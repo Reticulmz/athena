@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import structlog
 
@@ -14,7 +14,10 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.messaging.local import LocalEventBus
     from osu_server.repositories.interfaces.session_store import SessionLifecycleRuntime
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+logger: structlog.stdlib.BoundLogger = cast(
+    "structlog.stdlib.BoundLogger",
+    structlog.get_logger(__name__),
+)
 
 
 class LifecycleHandlers(HandlerGroup):

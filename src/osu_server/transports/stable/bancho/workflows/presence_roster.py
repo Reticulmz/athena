@@ -30,6 +30,22 @@ if TYPE_CHECKING:
     from osu_server.services.queries.identity import OnlineSessionSnapshot
 
 _INT32_FMT = struct.Struct("<i")
+_STABLE_TIMEZONE_BASE = 24
+_STABLE_DEFAULT_COUNTRY_ID = 0
+_STABLE_DEFAULT_PERMISSIONS = 0
+_STABLE_DEFAULT_MODE = 0
+_STABLE_DEFAULT_COORDINATE = 0.0
+_STABLE_DEFAULT_RANK = 0
+_STABLE_DEFAULT_STATUS = 0
+_STABLE_EMPTY_STATUS_TEXT = ""
+_STABLE_EMPTY_BEATMAP_MD5 = ""
+_STABLE_DEFAULT_MODS = 0
+_STABLE_DEFAULT_PLAY_MODE = 0
+_STABLE_DEFAULT_BEATMAP_ID = 0
+_STABLE_DEFAULT_SCORE = 0
+_STABLE_DEFAULT_ACCURACY = 0.0
+_STABLE_DEFAULT_PLAY_COUNT = 0
+_STABLE_DEFAULT_PP = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -76,28 +92,28 @@ class StablePresenceRoster:
                 user_presence(
                     user_id=user.id,
                     username=user.username,
-                    timezone=session.utc_offset + 24,
+                    timezone=session.utc_offset + _STABLE_TIMEZONE_BASE,
                     country_id=country_code_to_id(login_response.country),
                     permissions=int(authorization_output.presence_permissions),
-                    mode=0,
-                    longitude=0.0,
-                    latitude=0.0,
-                    rank=0,
+                    mode=_STABLE_DEFAULT_MODE,
+                    longitude=_STABLE_DEFAULT_COORDINATE,
+                    latitude=_STABLE_DEFAULT_COORDINATE,
+                    rank=_STABLE_DEFAULT_RANK,
                 ),
                 user_stats(
                     user_id=user.id,
-                    status=0,
-                    status_text="",
-                    beatmap_md5="",
-                    mods=0,
-                    play_mode=0,
-                    beatmap_id=0,
-                    ranked_score=0,
-                    accuracy=0.0,
-                    play_count=0,
-                    total_score=0,
-                    rank=0,
-                    pp=0,
+                    status=_STABLE_DEFAULT_STATUS,
+                    status_text=_STABLE_EMPTY_STATUS_TEXT,
+                    beatmap_md5=_STABLE_EMPTY_BEATMAP_MD5,
+                    mods=_STABLE_DEFAULT_MODS,
+                    play_mode=_STABLE_DEFAULT_PLAY_MODE,
+                    beatmap_id=_STABLE_DEFAULT_BEATMAP_ID,
+                    ranked_score=_STABLE_DEFAULT_SCORE,
+                    accuracy=_STABLE_DEFAULT_ACCURACY,
+                    play_count=_STABLE_DEFAULT_PLAY_COUNT,
+                    total_score=_STABLE_DEFAULT_SCORE,
+                    rank=_STABLE_DEFAULT_RANK,
+                    pp=_STABLE_DEFAULT_PP,
                 ),
                 self._bot_presence_packet(),
                 *(online_session_presence_packet(session) for session in other_active_sessions),
@@ -148,13 +164,13 @@ class StablePresenceRoster:
         return user_presence(
             user_id=self._bot_identity.user_id,
             username=self._bot_identity.username,
-            timezone=24,
-            country_id=0,
-            permissions=0,
-            mode=0,
-            longitude=0.0,
-            latitude=0.0,
-            rank=0,
+            timezone=_STABLE_TIMEZONE_BASE,
+            country_id=_STABLE_DEFAULT_COUNTRY_ID,
+            permissions=_STABLE_DEFAULT_PERMISSIONS,
+            mode=_STABLE_DEFAULT_MODE,
+            longitude=_STABLE_DEFAULT_COORDINATE,
+            latitude=_STABLE_DEFAULT_COORDINATE,
+            rank=_STABLE_DEFAULT_RANK,
         )
 
     def _other_active_sessions(
