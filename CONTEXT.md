@@ -369,6 +369,24 @@ _Avoid_: Implementation preference, guessed compatibility, test-only assumption
 
 ---
 
+### Stable Compatibility Route Classification
+Stable client 互換性の観点から route の扱いを表す分類。route が必要な互換 response を返すべきか、互換 no-op として扱えるか、追加 evidence が必要か、延期または対象外かを示す。
+_Avoid_: Implementation priority, operational dependency, storage decision
+
+---
+
+### Stable Operational Dependency
+Stable compatibility route を提供するために Athena の通常実装とは別の運用判断を必要とする依存。外部 proxy や hosted artifact storage の必要性を表し、route の互換分類そのものとは分けて扱う。
+_Avoid_: Route classification, default implementation requirement, fixture requirement
+
+---
+
+### Stable Fixture Requirement
+Stable Compatibility Evidence として保存すべき request / response fixture の必要性。route が実装対象かどうかとは別に、互換 contract を固定するための evidence 要否を表す。
+_Avoid_: Operational dependency, implementation priority, broad test coverage
+
+---
+
 ### Beatmap Leaderboard
 1つの Beatmap に対する Personal Best の順位付き一覧。Score の source of truth ではなく、Score と current Performance Calculation から stable client や Web 表示向けに導かれる view。
 _Avoid_: User stats, global ranking, beatmap ranking, score ingestion result
