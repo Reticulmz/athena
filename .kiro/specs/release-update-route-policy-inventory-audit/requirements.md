@@ -21,7 +21,7 @@ Release/update route policy inventory audit は、Athena の stable compatibilit
 1. When `/web/check-updates.php` の監査行を分類する, the Athena stable compatibility audit shall classify the route as `required-no-update`.
 2. When `/web/check-updates.php` の response shape を記録する, the Athena stable compatibility audit shall record `[]` as the chosen no-update response.
 3. When `/web/check-updates.php` の evidence source を記録する, the Athena stable compatibility audit shall include the documented `deck` response, the documented `bancho.py` empty-body comparison, and the user-confirmed current osu!stable `--devserver` behavior.
-4. If `/web/check-updates.php` proxying to `osu.ppy.sh` is considered, then the Athena stable compatibility audit shall mark it as `proxy-decision-required` rather than an implementation default.
+4. When `/web/check-updates.php` no-update row is recorded, the Athena stable compatibility audit shall mark its initial operational dependency as `none` and document `osu.ppy.sh` proxying only as a future `proxy-decision-required` decision.
 5. When `/web/check-updates.php` fixture handoff is recorded, the Athena stable compatibility audit shall reference fixture identifier `check_updates_no_update_json_array`.
 
 ### Requirement 2: Release manifest and root alias no-update policy
@@ -57,8 +57,8 @@ Release/update route policy inventory audit は、Athena の stable compatibilit
 #### Acceptance Criteria
 
 1. When a release/update matrix row is updated, the Athena stable compatibility audit shall record stable compatibility route classification, stable operational dependency, evidence source, and stable fixture requirement.
-2. When multiple routes share the same no-update response shape, the Athena stable compatibility audit shall reference a shared fixture identifier instead of requiring duplicate route-specific fixtures.
+2. When multiple routes share the same no-update response bytes, the Athena stable compatibility audit shall reference a shared fixture identifier instead of requiring duplicate route-specific fixtures.
 3. When `/web/check-updates.php` fixture handoff is recorded, the Athena stable compatibility audit shall reference `check_updates_no_update_json_array`.
-4. When release manifest fixture handoff is recorded, the Athena stable compatibility audit shall reference `release_update_empty`, `release_update_php_zero`, `release_update2_empty`, or `release_patches_empty` according to the response shape.
+4. When release manifest fixture handoff is recorded, the Athena stable compatibility audit shall reference `release_no_update_empty` for empty-body responses or `release_update_php_zero` for `0` responses.
 5. Where a release file, filter, or Localisation route is deferred behind an operational decision, the Athena stable compatibility audit shall mark fixture requirement as `deferred`.
 6. If evidence is insufficient to choose a stable compatibility route classification, then the Athena stable compatibility audit shall mark the row as `needs-reference` instead of inventing a response contract.

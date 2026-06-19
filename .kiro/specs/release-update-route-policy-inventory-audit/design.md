@@ -9,9 +9,9 @@ Release/update route policy inventory audit は、Athena の stable compatibilit
 ### Goals
 
 - `/web/check-updates.php` と release manifest / root alias route の no-update contract を確定する。
-- Release file、filter、localization route を初期実装既定値から外し、必要な運用判断を明示する。
+- Release file、filter、Localisation route を初期実装既定値から外し、必要な運用判断を明示する。
 - Matrix row が互換分類、運用依存、evidence source、fixture requirement を一貫して示すようにする。
-- #17 が response shape ごとの fixture identifier を再判断せず参照できるようにする。
+- #17 が response bytes ごとの fixture identifier を再判断せず参照できるようにする。
 
 ### Non-Goals
 
@@ -27,10 +27,10 @@ Release/update route policy inventory audit は、Athena の stable compatibilit
 ### This Spec Owns
 
 - Release/update route audit の分類語彙を stable compatibility docs で使える形に固定すること。
-- `/web/check-updates.php` の no-update response shape、evidence source、proxy operational dependency、fixture identifier。
+- `/web/check-updates.php` の no-update response shape、evidence source、initial operational dependency、future proxy decision note、fixture identifier。
 - `/release/update*`、`/release/patches.php`、root `/update*`、root `/patches.php` aliases の no-update response shape、operational dependency、fixture identifiers。
 - `/release/<filename>`、`/release/filter.txt`、`/release/Localisation/<filename>`、`/release/<language>/<filename>` の deferred classification と operational dependency。
-- #17 に渡す response-shape-based fixture catalog。
+- #17 に渡す response-byte-based fixture catalog。
 
 ### Out of Boundary
 
@@ -91,7 +91,8 @@ Key decisions:
 
 - Route compatibility classification, operational dependency, and fixture requirement are separate axes.
 - `proxy-decision-required` and `hosted-artifact-decision-required` do not mean initial implementation ownership.
-- Shared no-update response shapes produce shared fixture identifiers.
+- Local no-update rows use operational dependency `none`; proxying remains a future `proxy-decision-required` decision.
+- Shared no-update response bytes produce shared fixture identifiers.
 - If evidence is insufficient, a row stays `needs-reference`; the design does not invent client behavior.
 
 ### Technology Stack
@@ -196,7 +197,7 @@ Flow decisions:
 | 3.5 | File/proxy routes are not required no-update | Deferred Route Decision Notes | Boundary Contract | Audit Flow |
 | 3.6 | Deferred file-like routes are not initial defaults | Deferred Route Decision Notes | Boundary Contract | Audit Flow |
 | 4.1 | Matrix row axes recorded | Operational Dependency Matrix | Audit Row Contract | Audit Flow |
-| 4.2 | Shared fixtures by response shape | Fixture Handoff Catalog | Fixture Handoff Contract | Audit Flow |
+| 4.2 | Shared fixtures by response bytes | Fixture Handoff Catalog | Fixture Handoff Contract | Audit Flow |
 | 4.3 | Check-updates fixture reference | Fixture Handoff Catalog | Fixture Handoff Contract | Audit Flow |
 | 4.4 | Manifest fixture references | Fixture Handoff Catalog | Fixture Handoff Contract | Audit Flow |
 | 4.5 | Deferred fixture requirement | Fixture Handoff Catalog | Fixture Handoff Contract | Audit Flow |
@@ -209,7 +210,7 @@ Flow decisions:
 | Route Classification Glossary | Documentation | Keep classification terms stable and implementation-independent | 4.1, 4.6 | `CONTEXT.md` | Glossary |
 | Release Update Matrix Rows | Documentation | Record route classification and selected response shape | 1.1-1.3, 2.1-2.4, 4.1 | Matrix, guide, research | Audit Row |
 | Operational Dependency Matrix | Documentation | Separate proxy/hosting decisions from route compatibility | 1.4, 2.5, 3.1-3.4, 4.1 | Matrix, research | Operational Dependency |
-| Fixture Handoff Catalog | Documentation | Map response shapes to #17 fixture identifiers | 1.5, 4.2-4.5 | Matrix, #17 | Fixture Handoff |
+| Fixture Handoff Catalog | Documentation | Map response bytes to #17 fixture identifiers | 1.5, 4.2-4.5 | Matrix, #17 | Fixture Handoff |
 | Deferred Route Decision Notes | Documentation | Explain why file-like routes are deferred, not no-update | 2.6, 3.1-3.6 | Guide, matrix | Boundary |
 | Evidence Consistency Notes | Documentation | Preserve source evidence and needs-reference behavior | 1.3, 4.6 | Guide, user evidence | Evidence Source |
 
@@ -254,7 +255,7 @@ Flow decisions:
 - Record stable compatibility route classification.
 - Record chosen response shape for no-update rows.
 - Record evidence source names and important comparisons.
-- Preserve existing implementation status until runtime work changes it.
+- Preserve the runtime implementation status axis separately from audit policy; promote rows selected as required no-update to `Missing` until runtime work implements them.
 
 **Dependencies**
 
@@ -289,8 +290,8 @@ Each affected matrix row must expose:
 
 **Responsibilities & Constraints**
 
-- Mark no-update manifest routes as `none`.
-- Mark ppy proxy candidates as `proxy-decision-required`.
+- Mark no-update rows as `none`.
+- Mark ppy proxy candidates or future proxy modes as `proxy-decision-required`.
 - Mark artifact byte serving candidates as `hosted-artifact-decision-required`.
 - Do not treat an operational dependency as implementation approval.
 
@@ -317,19 +318,19 @@ Allowed values for this spec:
 
 | Field | Detail |
 | --- | --- |
-| Intent | Hand #17 a response-shape-based fixture list |
+| Intent | Hand #17 a response-byte-based fixture list |
 | Requirements | 1.5, 4.2, 4.3, 4.4, 4.5 |
 
 **Responsibilities & Constraints**
 
-- Define one fixture identifier per distinct no-update response shape.
+- Define one fixture identifier per distinct no-update response byte contract.
 - Let multiple routes reference the same fixture identifier.
 - Mark deferred file/proxy routes as fixture requirement `deferred`.
 - Do not create fixture files in this spec.
 
 **Dependencies**
 
-- Inbound: Route response shape decisions — fixture grouping input (P0)
+- Inbound: Route response byte decisions — fixture grouping input (P0)
 - Outbound: GitHub Issue #17 — downstream fixture extraction (P1)
 
 **Contracts**: Fixture handoff contract.
@@ -339,10 +340,8 @@ Allowed values for this spec:
 | Fixture Identifier | Routes | Response Shape | Requirement |
 | --- | --- | --- | --- |
 | `check_updates_no_update_json_array` | `/web/check-updates.php` | `[]` | 1.5, 4.3 |
-| `release_update_empty` | `/release/update`, `/update` | empty body | 4.4 |
+| `release_no_update_empty` | `/release/update`, `/update`, `/release/update2.php`, `/update2.php`, `/release/patches.php`, `/patches.php` | empty body | 4.4 |
 | `release_update_php_zero` | `/release/update.php`, `/update.php` | `0` | 4.4 |
-| `release_update2_empty` | `/release/update2.php`, `/update2.php` | empty body | 4.4 |
-| `release_patches_empty` | `/release/patches.php`, `/patches.php` | empty body | 4.4 |
 
 **Implementation Notes**
 
@@ -429,11 +428,11 @@ No runtime monitoring is required. Reviewers validate the documentation diff and
 
 ### Documentation Validation
 
-- Verify `/web/check-updates.php` is classified as `required-no-update`, records `[]`, names evidence sources, and references `check_updates_no_update_json_array`. Covers 1.1-1.5.
+- Verify `/web/check-updates.php` is classified as `required-no-update`, records `[]`, names evidence sources, uses operational dependency `none`, documents proxying as a future `proxy-decision-required` decision, and references `check_updates_no_update_json_array`. Covers 1.1-1.5.
 - Verify `/release/update`, `/release/update.php`, `/release/update2.php`, `/release/patches.php`, and root aliases are classified as `required-no-update` with the selected response shapes and operational dependency `none`. Covers 2.1-2.5.
 - Verify file-like release routes are classified as `deferred` with the correct operational dependency and not marked `required-no-update`. Covers 3.1-3.6.
 - Verify each affected matrix row exposes classification, operational dependency, evidence source, and fixture requirement. Covers 4.1.
-- Verify shared fixture identifiers are reused by response shape and deferred routes use fixture requirement `deferred`. Covers 4.2-4.5.
+- Verify shared fixture identifiers are reused by response bytes and deferred routes use fixture requirement `deferred`. Covers 4.2-4.5.
 - Verify any unsupported or uncertain route remains `needs-reference` instead of receiving a guessed response shape. Covers 4.6.
 
 ### Boundary Validation
@@ -458,6 +457,6 @@ No runtime migration is needed. The rollout is documentation-only:
 
 1. Confirm glossary terms are present.
 2. Update release/update matrix rows with classification axes.
-3. Add fixture handoff identifiers for no-update response shapes.
+3. Add fixture handoff identifiers for no-update response bytes.
 4. Mark deferred file/proxy routes with operational dependency.
 5. Run documentation checks and review the final diff.

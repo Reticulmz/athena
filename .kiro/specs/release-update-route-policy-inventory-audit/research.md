@@ -43,7 +43,7 @@
   - Even if the client often bypasses Athena, returning `[]` is still the clearer no-update response when Athena receives the route because it is distinguishable from an accidental empty body.
 - **Implications**:
   - Classify `/web/check-updates.php` as `required-no-update` with response shape `[]`.
-  - Record proxying to `osu.ppy.sh` as `Stable Operational Dependency = proxy-decision-required`, not as the implementation default.
+  - Record the initial no-update row as `Stable Operational Dependency = none`; proxying to `osu.ppy.sh` remains a future `proxy-decision-required` decision, not the implementation default.
   - Mark a fixture for the `[]` response as required unless later traffic evidence proves the route is never Athena-observable for the supported stable client range.
 
 ## Design Decisions
@@ -85,7 +85,7 @@
   - `/release/patches.php`: empty body
   - `/update`, `/update.php`, `/update2.php`, `/patches.php`: same no-update response as the corresponding `/release/*` route
 - **Trade-offs**: This may classify aliases as implementation-relevant before target-client traffic proves direct usage, but the response is intentionally inert and keeps private-server behavior stable.
-- **Follow-up**: Matrix rows should identify which response shapes need fixtures in #17.
+- **Follow-up**: Matrix rows should identify which response bytes need fixtures in #17.
 
 ### Decision: Defer release file, filter, and Localisation routes behind operational decisions
 
@@ -103,20 +103,18 @@
 - **Trade-offs**: Deferred rows may leave some old updater flows unsupported until an operational decision is made, but this avoids silently adding external network or artifact hosting behavior.
 - **Follow-up**: Matrix rows should make clear that these are not implementation defaults for the initial no-update policy.
 
-### Decision: Group fixtures by response shape
+### Decision: Group fixtures by response bytes
 
 - **Context**: Issue #34 requires matrix rows to identify which update/release responses need fixtures in #17.
 - **Alternatives Considered**:
   1. Require one fixture per route.
-  2. Require one fixture per distinct response shape and let each matrix row reference the shared fixture.
-- **Selected Approach**: Group fixtures by response shape.
-- **Rationale**: Root aliases intentionally share the same no-update contract as their `/release/*` counterparts. Per-route fixture duplication would increase maintenance without adding new evidence.
+  2. Require one fixture per distinct response byte contract and let each matrix row reference the shared fixture.
+- **Selected Approach**: Group fixtures by response bytes.
+- **Rationale**: Root aliases intentionally share the same no-update contract as their `/release/*` counterparts, and empty-body manifest routes do not need duplicate fixture bytes. Per-route fixture duplication would increase maintenance without adding new evidence.
 - **Selected Fixture Set**:
   - `check_updates_no_update_json_array`: `/web/check-updates.php` -> `[]`
-  - `release_update_empty`: `/release/update` and `/update` -> empty body
+  - `release_no_update_empty`: `/release/update`, `/update`, `/release/update2.php`, `/update2.php`, `/release/patches.php`, and `/patches.php` -> empty body
   - `release_update_php_zero`: `/release/update.php` and `/update.php` -> `0`
-  - `release_update2_empty`: `/release/update2.php` and `/update2.php` -> empty body
-  - `release_patches_empty`: `/release/patches.php` and `/patches.php` -> empty body
 - **Trade-offs**: Shared fixtures require matrix rows to reference fixture identifiers clearly, but they avoid redundant fixture files.
 - **Follow-up**: Deferred file/proxy routes should mark fixture requirement as `deferred` until a separate operational implementation decision exists.
 
