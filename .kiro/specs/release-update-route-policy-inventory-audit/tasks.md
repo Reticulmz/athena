@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. 監査分類の土台と matrix 更新形式を整える
+- [x] 1. 監査分類の土台と matrix 更新形式を整える
 - [x] 1.1 stable release/update 監査で使う glossary を確定する
   - Stable Compatibility Route Classification、Stable Operational Dependency、Stable Fixture Requirement を互いに混同しない用語として定義する
   - 用語は route 固有の response shape や fixture identifier を含めず、後続の stable compatibility audit でも再利用できる形にする
@@ -15,7 +15,7 @@
   - _Requirements: 4.1, 4.6_
   - _Boundary: Release Update Matrix Rows, Operational Dependency Matrix_
 
-- [ ] 2. no-update route の matrix row を監査する
+- [x] 2. no-update route の matrix row を監査する
 - [x] 2.1 `/web/check-updates.php` の no-update policy を matrix に反映する
   - `/web/check-updates.php` を `required-no-update` として分類し、chosen response shape を `[]` として記録する
   - `deck` の `[]`、`bancho.py` の empty body 比較、ユーザー確認済みの current osu!stable `--devserver` behavior を evidence source として残す
