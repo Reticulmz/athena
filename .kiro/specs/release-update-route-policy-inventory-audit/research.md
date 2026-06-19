@@ -1,6 +1,7 @@
 # Research & Design Decisions
 
 ## Summary
+
 - **Feature**: `release-update-route-policy-inventory-audit`
 - **Discovery Scope**: Stable release/update compatibility inventory audit; light discovery for an existing documentation extension
 - **Key Findings**:
@@ -12,6 +13,7 @@
 ## Research Log
 
 ### Existing documentation integration points
+
 - **Context**: Design generation requires concrete files and boundaries before task generation.
 - **Sources Consulted**:
   - `docs/stable-compatibility-guide.md` Update And Release Endpoints
@@ -29,6 +31,7 @@
   - Include `CONTEXT.md`, matrix docs, guide docs, and spec docs in the File Structure Plan.
 
 ### `/web/check-updates.php` の no-update response
+
 - **Context**: Issue #34 acceptance criteria requires `/web/check-updates.php` classification with a chosen no-update response shape and evidence source.
 - **Sources Consulted**:
   - `docs/stable-compatibility-guide.md` Update And Release Endpoints
@@ -46,6 +49,7 @@
 ## Design Decisions
 
 ### Decision: Use matrix-first documentation audit pattern
+
 - **Context**: This spec classifies compatibility rows and fixture handoff; it does not implement runtime routes.
 - **Alternatives Considered**:
   1. Create a standalone release/update audit document.
@@ -56,6 +60,7 @@
 - **Follow-up**: Implementation tasks should avoid adding new docs unless the existing matrix layout cannot represent the required axes.
 
 ### Decision: Separate route classification from operational dependency
+
 - **Context**: Release/update route families include plain no-update endpoints, ppy proxy candidates, and hosted release artifact candidates.
 - **Alternatives Considered**:
   1. Put `proxy-required` and `hosted-required` directly in the route classification.
@@ -66,6 +71,7 @@
 - **Follow-up**: Requirements generation should define allowed values for `Stable Compatibility Route Classification`, `Stable Operational Dependency`, and `Stable Fixture Requirement`.
 
 ### Decision: Treat release manifest routes and root aliases as required no-update routes
+
 - **Context**: Issue #34 requires `/release/update*`, `/release/patches.php`, root `/update*`, and root `/patches.php` aliases to be classified.
 - **Alternatives Considered**:
   1. Classify only `/release/*` routes as no-update and leave root aliases as `needs-reference`.
@@ -81,8 +87,9 @@
 - **Trade-offs**: This may classify aliases as implementation-relevant before target-client traffic proves direct usage, but the response is intentionally inert and keeps private-server behavior stable.
 - **Follow-up**: Matrix rows should identify which response shapes need fixtures in #17.
 
-### Decision: Defer release file, filter, and localization routes behind operational decisions
-- **Context**: Issue #34 requires release file, localization, filter, patch, and extra-file routes to be marked no-op, deferred, proxy-required, hosted-required, or out of scope.
+### Decision: Defer release file, filter, and Localisation routes behind operational decisions
+
+- **Context**: Issue #34 requires release file, Localisation, filter, patch, and extra-file routes to be marked no-op, deferred, proxy-required, hosted-required, or out of scope.
 - **Alternatives Considered**:
   1. Treat all release file-like routes as compatibility no-op.
   2. Defer file-like routes and record whether they require proxying or hosted artifact storage.
@@ -97,6 +104,7 @@
 - **Follow-up**: Matrix rows should make clear that these are not implementation defaults for the initial no-update policy.
 
 ### Decision: Group fixtures by response shape
+
 - **Context**: Issue #34 requires matrix rows to identify which update/release responses need fixtures in #17.
 - **Alternatives Considered**:
   1. Require one fixture per route.
@@ -113,6 +121,7 @@
 - **Follow-up**: Deferred file/proxy routes should mark fixture requirement as `deferred` until a separate operational implementation decision exists.
 
 ### Decision: Do not introduce runtime or fixture-generation components
+
 - **Context**: Design synthesis requires checking whether additional components or abstractions are necessary.
 - **Alternatives Considered**:
   1. Add a lightweight audit helper script or fixture manifest file.
@@ -139,5 +148,6 @@
 - Proxying or hosting is treated as approved by classification — separate operational dependency from route compatibility.
 
 ## References
+
 - `docs/stable-compatibility-guide.md` — Update And Release Endpoints
 - `docs/stable-compatibility-matrix.md` — Stable HTTP Endpoint Coverage and Release/update files rows
