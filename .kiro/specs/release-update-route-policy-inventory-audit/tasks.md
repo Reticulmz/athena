@@ -19,7 +19,7 @@
 - [x] 2.1 `/web/check-updates.php` の no-update policy を matrix に反映する
   - `/web/check-updates.php` を `required-no-update` として分類し、chosen response shape を `[]` として記録する
   - `deck` の `[]`、`bancho.py` の empty body 比較、ユーザー確認済みの current osu!stable `--devserver` behavior を evidence source として残す
-  - ppy proxying は `proxy-decision-required` として扱い、初期実装既定値ではないことを matrix row から読めるようにする
+  - 初期 no-update row の operational dependency は `none` とし、ppy proxying は将来の `proxy-decision-required` 判断であって初期実装既定値ではないことを matrix row から読めるようにする
   - 完了時には `/web/check-updates.php` row から `check_updates_no_update_json_array` fixture handoff まで追跡できる
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
   - _Boundary: Release Update Matrix Rows, Operational Dependency Matrix, Evidence Consistency Notes_
@@ -45,12 +45,10 @@
 
 - [x] 4. #17 向け fixture handoff catalog を作る
   - `/web/check-updates.php` row に `check_updates_no_update_json_array` を fixture identifier として紐づける
-  - `/release/update` と `/update` row に `release_update_empty` を紐づける
+  - Empty-body release manifest/root alias row に `release_no_update_empty` を紐づける
   - `/release/update.php` と `/update.php` row に `release_update_php_zero` を紐づける
-  - `/release/update2.php` と `/update2.php` row に `release_update2_empty` を紐づける
-  - `/release/patches.php` と `/patches.php` row に `release_patches_empty` を紐づける
   - Deferred file/proxy routes は fixture requirement `deferred` とし、placeholder fixture identifier を作らない
-  - 完了時には #17 が response shape ごとの fixture identifier を matrix から取得できる
+  - 完了時には #17 が response bytes ごとの fixture identifier を matrix から取得できる
   - _Requirements: 1.5, 4.2, 4.3, 4.4, 4.5_
   - _Boundary: Fixture Handoff Catalog_
 
