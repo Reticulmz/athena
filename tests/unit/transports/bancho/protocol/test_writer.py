@@ -13,10 +13,11 @@ import structlog.testing
 
 from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
 from osu_server.transports.stable.bancho.protocol.writer import (
-    _HEADER_FMT,  # pyright: ignore[reportPrivateUsage]  # testing internal header format
     QUIET_S2C_PACKETS,
     write_packet,
 )
+
+BANCHO_PACKET_HEADER_SIZE = 7
 
 
 class TestWritePacketHeader:
@@ -24,7 +25,7 @@ class TestWritePacketHeader:
 
     def test_header_size(self) -> None:
         result = write_packet(ServerPacketID.PING, b"")
-        assert len(result) == _HEADER_FMT.size
+        assert len(result) == BANCHO_PACKET_HEADER_SIZE
 
     def test_header_packet_id(self) -> None:
         result = write_packet(ServerPacketID.LOGIN_REPLY, b"\x00" * 4)
@@ -82,7 +83,7 @@ class TestWritePacketDefaultPayload:
 
     def test_default_payload_is_empty(self) -> None:
         result = write_packet(ServerPacketID.PING)
-        assert len(result) == _HEADER_FMT.size
+        assert len(result) == BANCHO_PACKET_HEADER_SIZE
         content_size = cast("int", pystruct.unpack_from("<I", result, 3)[0])
         assert content_size == 0
 

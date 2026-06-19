@@ -9,13 +9,12 @@ from typing import TYPE_CHECKING
 import structlog
 
 from osu_server.domain.identity.authentication import LoginResult
-from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
-from osu_server.transports.stable.bancho.protocol.reader import read_packets
 from osu_server.transports.stable.bancho.protocol.s2c.login import login_reply
+from osu_server.transports.stable.bancho.workflows.c2s_actions import C2SActionExecutor
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
-    from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.repositories.interfaces.session_store import PollingSessionRuntime
     from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -39,16 +38,16 @@ class PollingWorkflowResult:
 class PollingWorkflow:
     """Execute the C2S dispatch and S2C drain pipeline without Starlette."""
 
-    _session_store: SessionStore
+    _session_store: PollingSessionRuntime
     _packet_queue: PacketQueue
-    _packet_dispatcher: PacketDispatcher
+    _c2s_actions: C2SActionExecutor
     _session_ttl: int
     _max_request_body_size: int
 
     def __init__(
         self,
         *,
-        session_store: SessionStore,
+        session_store: PollingSessionRuntime,
         packet_queue: PacketQueue,
         packet_dispatcher: PacketDispatcher,
         session_ttl: int = 300,
@@ -56,7 +55,7 @@ class PollingWorkflow:
     ) -> None:
         self._session_store = session_store
         self._packet_queue = packet_queue
-        self._packet_dispatcher = packet_dispatcher
+        self._c2s_actions = C2SActionExecutor(packet_dispatcher)
         self._session_ttl = session_ttl
         self._max_request_body_size = max_request_body_size
 
@@ -80,25 +79,7 @@ class PollingWorkflow:
         user_id = session.user_id
         _ = await self._session_store.refresh(workflow_input.token)
 
-        c2s_count = 0
-        if body:
-            try:
-                packets = read_packets(body)
-            except PacketReadError:
-                logger.error("c2s_parse_error", exc_info=True)
-                packets = []
-
-            for packet_id, payload in packets:
-                c2s_count += 1
-                try:
-                    await self._packet_dispatcher.dispatch(packet_id, payload, user_id)
-                except Exception:
-                    logger.error(
-                        "c2s_handler_error",
-                        packet=packet_id.name,
-                        payload_size=len(payload),
-                        exc_info=True,
-                    )
+        c2s_result = await self._c2s_actions.execute(body=body, user_id=user_id)
 
         response_data = await self._packet_queue.dequeue_all(user_id)
         await self._packet_queue.refresh_ttl(user_id, self._session_ttl)
@@ -106,7 +87,7 @@ class PollingWorkflow:
         elapsed_ms = (time.monotonic() - start) * 1000
         logger.info(
             "polling_complete",
-            c2s_count=c2s_count,
+            c2s_count=c2s_result.packet_count,
             s2c_bytes=len(response_data),
             elapsed_ms=round(elapsed_ms, 2),
         )

@@ -55,7 +55,7 @@ from osu_server.services.commands.identity.auth_service import AuthService
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.stable.bancho.protocol.types import StatusUpdate
-from tests.support.app import create_in_memory_app, resolve_dependency
+from tests.support.app import resolve_dependency
 from tests.support.persistence import (
     attach_beatmap_file,
     seed_beatmap_fetch_state,
@@ -126,22 +126,23 @@ def _make_test_app(
     max_request_body_size: int = 1_048_576,
     packet_queue_max_size: int = 4096,
     broker: AsyncBroker | None = None,
+    packet_dispatcher: PacketDispatcher | None = None,
 ) -> Starlette:
     """Create the Starlette app with full DI container and BanchoEndpoint."""
     os.environ["ENVIRONMENT"] = "test"
     os.environ["DOMAIN"] = "athena.localhost"
     os.environ["MAX_REQUEST_BODY_SIZE"] = str(max_request_body_size)
     os.environ["PACKET_QUEUE_MAX_SIZE"] = str(packet_queue_max_size)
-    if broker is not None:
-        return create_app(
-            provider_overrides=(
-                make_in_memory_runtime_provider_set(
-                    packet_queue_max_size=packet_queue_max_size,
-                ),
-                TestProviderSet(replace_value(AsyncBroker, broker)),
-            )
+    overrides: list[TestProviderSet] = [
+        make_in_memory_runtime_provider_set(
+            packet_queue_max_size=packet_queue_max_size,
         )
-    return create_in_memory_app(packet_queue_max_size=packet_queue_max_size)
+    ]
+    if broker is not None:
+        overrides.append(TestProviderSet(replace_value(AsyncBroker, broker)))
+    if packet_dispatcher is not None:
+        overrides.append(TestProviderSet(replace_value(PacketDispatcher, packet_dispatcher)))
+    return create_app(provider_overrides=tuple(overrides))
 
 
 async def _seed_default_role(app: Starlette) -> None:
@@ -230,11 +231,6 @@ async def _resolve_services(
     )
 
 
-def _clear_dispatcher(dispatcher: PacketDispatcher) -> None:
-    """Remove all registered handlers for test-isolated handler registration."""
-    dispatcher._handlers.clear()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-
-
 async def _login_and_get_token(
     auth_service: AuthService,
     client: TestClient,
@@ -262,7 +258,10 @@ class RecordingBeatmapFetchQueue:
 
         @self.broker.task(task_name="fetch_beatmap_file")
         async def fetch_beatmap_file(target_type: str, target_key: str) -> None:
-            target = BeatmapFetchTarget(target_type=target_type, target_key=target_key)
+            target = BeatmapFetchTarget.from_queue_payload(
+                target_type=target_type,
+                target_key=target_key,
+            )
             self.enqueued_targets.append(target)
             if self.file_fetch_use_case is not None:
                 await self.file_fetch_use_case.execute(target)
@@ -270,7 +269,10 @@ class RecordingBeatmapFetchQueue:
         @self.broker.task(task_name="fetch_beatmap_metadata")
         async def fetch_beatmap_metadata(target_type: str, target_key: str) -> None:
             self.enqueued_targets.append(
-                BeatmapFetchTarget(target_type=target_type, target_key=target_key)
+                BeatmapFetchTarget.from_queue_payload(
+                    target_type=target_type,
+                    target_key=target_key,
+                )
             )
 
         _ = (fetch_beatmap_file, fetch_beatmap_metadata)
@@ -286,13 +288,11 @@ class TestPollingE2EFlow:
 
     async def test_full_c2s_to_s2c_flow(self) -> None:
         """C2S handler enqueues S2C; S2C appears in same poll response."""
-        app = _make_test_app()
+        app = _make_test_app(packet_dispatcher=PacketDispatcher())
         user_id_ref: list[int] = []
 
         with TestClient(app, raise_server_exceptions=False) as client:
             dispatcher, packet_queue, session_store, auth_service = await _resolve_services(app)
-
-            _clear_dispatcher(dispatcher)
 
             @dispatcher.register(ClientPacketID.SEND_MESSAGE)
             async def handler(_payload: bytes, *_a: object, **_kw: object) -> None:
@@ -565,13 +565,11 @@ class TestHandlerExceptionEdgeCase:
     """Handler exception -> log + continue subsequent packets (Req 3.2)."""
 
     async def test_failing_handler_does_not_block_next(self) -> None:
-        app = _make_test_app()
+        app = _make_test_app(packet_dispatcher=PacketDispatcher())
         results: list[str] = []
 
         with TestClient(app, raise_server_exceptions=False) as client:
             dispatcher, _, _, auth_service = await _resolve_services(app)
-
-            _clear_dispatcher(dispatcher)
 
             @dispatcher.register(ClientPacketID.JOIN_CHANNEL)
             async def failing(_payload: bytes, *_a: object, **_kw: object) -> None:
