@@ -63,6 +63,31 @@ The audit fields have these meanings:
 | `stable_operational_dependency` | Operational decision required before implementation, using the values below. This does not approve proxying or artifact hosting. |
 | `stable_fixture_requirement` | Downstream fixture handoff state: shared fixture identifier, `deferred`, `not-required`, or `needs-reference`. |
 
+### Release/Update Fixture Handoff Catalog
+
+Use this catalog as the #17 fixture handoff source for release/update
+no-update response shapes. The `Source Row Fixture Requirement` value must match
+the affected matrix row's `stable_fixture_requirement` audit field.
+
+| Fixture Identifier | Routes | Response Shape | Source Row Fixture Requirement |
+| --- | --- | --- | --- |
+| `check_updates_no_update_json_array` | `/web/check-updates.php` | `[]` | `check_updates_no_update_json_array` |
+| `release_update_empty` | `/release/update`, `/update` | empty body | `release_update_empty` |
+| `release_update_php_zero` | `/release/update.php`, `/update.php` | `0` | `release_update_php_zero` |
+| `release_update2_empty` | `/release/update2.php`, `/update2.php` | empty body | `release_update2_empty` |
+| `release_patches_empty` | `/release/patches.php`, `/patches.php` | empty body | `release_patches_empty` |
+
+Deferred release file/proxy routes keep fixture requirement `deferred` and have
+no fixture identifier. #17 should not create placeholder fixture files or
+identifiers for these routes.
+
+| Fixture Requirement | Routes | Response Shape | Fixture Identifier |
+| --- | --- | --- | --- |
+| `deferred` | `/release/<filename>` | deferred file bytes | none |
+| `deferred` | `/release/filter.txt` | deferred proxy response | none |
+| `deferred` | `/release/Localisation/<filename>` | deferred proxy response | none |
+| `deferred` | `/release/<language>/<filename>` | deferred file bytes | none |
+
 ### Operational Dependency Matrix
 
 Use these operational dependency values for release/update audit rows:

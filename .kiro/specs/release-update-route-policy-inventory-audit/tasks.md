@@ -43,7 +43,7 @@
   - _Requirements: 2.6, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
   - _Boundary: Deferred Route Decision Notes, Operational Dependency Matrix_
 
-- [ ] 4. #17 向け fixture handoff catalog を作る
+- [x] 4. #17 向け fixture handoff catalog を作る
   - `/web/check-updates.php` row に `check_updates_no_update_json_array` を fixture identifier として紐づける
   - `/release/update` と `/update` row に `release_update_empty` を紐づける
   - `/release/update.php` と `/update.php` row に `release_update_php_zero` を紐づける
