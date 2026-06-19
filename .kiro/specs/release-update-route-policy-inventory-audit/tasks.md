@@ -8,7 +8,7 @@
   - _Requirements: 4.1, 4.6_
   - _Boundary: Route Classification Glossary_
 
-- [ ] 1.2 release/update matrix row の監査軸を決める
+- [x] 1.2 release/update matrix row の監査軸を決める
   - Matrix row から route classification、response shape、evidence source、operational dependency、fixture requirement を読める表現を決める
   - 既存 implementation status を互換分類で上書きせず、runtime 実装状況と audit policy を分けて読めるようにする
   - 完了時には後続 route row が同じ監査軸で更新でき、proxying や hosting が実装既定値として読まれない

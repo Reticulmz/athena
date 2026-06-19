@@ -18,7 +18,7 @@ inventory.
 Every stable compatibility item should eventually have:
 
 - a stable packet, endpoint, request shape, or response shape identifier,
-- an implementation status,
+- an implementation status that describes runtime code state only,
 - the owning module or planned module,
 - reference paths from the relevant implementation family,
 - verification evidence through tests, golden fixtures, or real-client probes.
@@ -35,6 +35,49 @@ Reference sources, in order of preference:
 Reference implementations are comparison targets, not architecture targets.
 Athena should preserve compatible behavior without copying their process-global
 state, large dispatch files, or persistence coupling.
+
+## Release/Update Audit Row Contract
+
+Release/update rows keep the existing `Status` column as runtime implementation
+state. Audit policy is recorded separately so `Missing`, `Candidate`, or
+`Implemented` is not overwritten by compatibility classification.
+
+Use this structured note form in the row's Notes cell unless a future matrix
+section explicitly adds dedicated columns:
+
+```text
+Audit: stable_compatibility_route_classification=<value>;
+response_shape=<value>;
+evidence_source=<source-list>;
+stable_operational_dependency=<value>;
+stable_fixture_requirement=<value>.
+```
+
+The audit fields have these meanings:
+
+| Field | Meaning |
+| --- | --- |
+| `stable_compatibility_route_classification` | Stable compatibility policy for the route, such as `required-no-update`, `deferred`, or `needs-reference`. This is not the runtime implementation status. |
+| `response_shape` | Selected client-observable response shape for no-update rows, or `deferred` when the response contract is intentionally not selected yet. |
+| `evidence_source` | Source names used to justify the selected classification and response shape. Use `needs-reference` when evidence is insufficient. |
+| `stable_operational_dependency` | Operational decision required before implementation, using the values below. This does not approve proxying or artifact hosting. |
+| `stable_fixture_requirement` | Downstream fixture handoff state: shared fixture identifier, `deferred`, `not-required`, or `needs-reference`. |
+
+### Operational Dependency Matrix
+
+Use these operational dependency values for release/update audit rows:
+
+| Value | Meaning |
+| --- | --- |
+| `none` | The audited policy does not require external proxying or hosted release artifacts. |
+| `proxy-decision-required` | Implementing the route would require an explicit decision about external proxying. |
+| `hosted-artifact-decision-required` | Implementing the route would require an explicit decision about Athena-hosted release artifacts. |
+
+If evidence cannot support a stable route classification, set
+`stable_compatibility_route_classification` to `needs-reference` and do not
+invent a response contract. If a row appears to need both proxying and hosted
+artifacts, keep it at `needs-reference` until evidence separates the
+operational dependency.
 
 ## Reference Implementation Map
 
