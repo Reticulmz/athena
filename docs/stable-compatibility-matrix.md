@@ -104,6 +104,24 @@ invent a response contract. If a row appears to need both proxying and hosted
 artifacts, keep it at `needs-reference` until evidence separates the
 operational dependency.
 
+### Release/Update Evidence Consistency Notes
+
+The audited release/update rows are consistent with the guide's
+`Update And Release Endpoints` section. Selected no-update response shapes use
+guide-backed responses: `[]` for `/web/check-updates.php`, empty body for
+`/release/update`, `/release/update2.php`, and `/release/patches.php`, and `0`
+for `/release/update.php`. Root aliases share the corresponding release route
+contracts recorded by the research decision.
+
+Deferred release file, filter, and localization rows also match the guide's
+file bytes or proxy behavior and keep `response_shape=deferred`. There are
+currently no release/update `needs-reference` rows because every audited row
+has an `evidence_source` field. Future release/update evidence gaps must be
+left in the matrix as
+`stable_compatibility_route_classification=needs-reference` and
+`stable_fixture_requirement=needs-reference` rather than filled with guessed
+response contracts.
+
 ## Reference Implementation Map
 
 Use these repositories to audit stable packets, endpoints, request forms, and

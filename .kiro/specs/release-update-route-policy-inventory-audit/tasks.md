@@ -54,7 +54,7 @@
   - _Requirements: 1.5, 4.2, 4.3, 4.4, 4.5_
   - _Boundary: Fixture Handoff Catalog_
 
-- [ ] 5. evidence consistency と needs-reference behavior を確認する
+- [x] 5. evidence consistency と needs-reference behavior を確認する
   - Matrix row と guide の Update And Release Endpoints section を照合し、response shape と evidence source が矛盾していないか確認する
   - 確認済み evidence で解決できる場合だけ guide を補正し、未確認の場合は matrix 側に evidence gap として残す
   - Evidence が不足する route は `needs-reference` とし、推測で response contract を作らない
