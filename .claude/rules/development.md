@@ -21,6 +21,12 @@
   3. 上記いずれも存在しない場合のみ、自前実装する
   - 新規ライブラリ導入時は、プロジェクトに適切で思想が一致しているか独断せず、ユーザーの承認を得てから `uv add` する
 
+### Python Docstring Language
+
+- Python の docstring は日本語で記述する。新規または変更する公開 class / function / method では、挙動、引数、戻り値、例外、制約を日本語で説明する。
+- 外部仕様名、wire field 名、エラーコード、プロトコル値、引用元の英語表現は原文のまま書いてよい。ただし、それらの意味や Athena 側の判断は日本語で補足する。
+- Ruff RUF002 を避けるため、日本語 docstring でも括弧や記号は曖昧な全角文字を避け、ASCII の `()`, `:`, `/`, `-` などを使う。
+
 ### Quality Assurance
 
 #### Completion Criteria
@@ -59,7 +65,7 @@ Pyright / Ruff / ruff-format のエラーに対して、その場しのぎの抑
 | ファイルレベル `# pyright: reportXxx=false` | ファイル全体の型チェックを無効化 | 型を正しく定義する、InMemory 実装を使う |
 | `# type: ignore` の乱用 | 根本原因を隠す | 型を修正するか、正しい型アノテーションを付ける |
 | `AsyncMock` で `reportAny` を抑制 | Mock の戻り値が `Any` になる | InMemory 実装やプロトコル準拠の stub を使う |
-| 全角文字を docstring に使って ruff を回避 | RUF002 が繰り返し発生 | docstring は ASCII 括弧 `()` を使う |
+| 曖昧な全角記号を docstring に使って ruff を回避 | RUF002 が繰り返し発生 | 日本語 docstring でも ASCII 括弧 `()` などの明確な記号を使う |
 | `# noqa` の安易な追加 | リンターの警告を無視 | コードを修正して警告が出ない構造にする |
 | インライン `# pyright: ignore[reportXxx]` | 外部ライブラリ含め型問題を隠蔽 | 判断基準の手順を全て試す（stub生成含む） |
 
