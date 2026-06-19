@@ -16,8 +16,9 @@ from datetime import UTC, datetime
 
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
+from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.queries.chat.private_message_service import (
     PMDeliveryResult,
     PrivateMessageService,
@@ -56,21 +57,32 @@ def _make_session(*, user_id: int, username: str) -> SessionData:
     )
 
 
-_ServiceDeps = tuple[
-    PrivateMessageService,
-    InMemoryUserRepository,
-    InMemorySessionStore,
-]
+class UserCommandHarness:
+    _uow_factory: InMemoryUnitOfWorkFactory
+
+    def __init__(self, uow_factory: InMemoryUnitOfWorkFactory) -> None:
+        self._uow_factory = uow_factory
+
+    async def create(self, user: User) -> User:
+        async with self._uow_factory() as uow:
+            created = await uow.users.create(user)
+            await uow.commit()
+            return created
+
+
+_ServiceDeps = tuple[PrivateMessageService, UserCommandHarness, InMemorySessionStore]
 
 
 def _make_service() -> _ServiceDeps:
-    user_repo = InMemoryUserRepository()
+    uow_factory = InMemoryUnitOfWorkFactory()
+    user_repo = InMemoryUserQueryRepository(uow_factory)
+    user_commands = UserCommandHarness(uow_factory)
     session_store = InMemorySessionStore()
     svc = PrivateMessageService(
         user_repo=user_repo,
         session_store=session_store,
     )
-    return svc, user_repo, session_store
+    return svc, user_commands, session_store
 
 
 # ===========================================================================

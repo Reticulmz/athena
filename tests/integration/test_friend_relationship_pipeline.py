@@ -14,13 +14,13 @@ from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.commands.users import InMemoryUserCommandRepository
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.friends import (
     InMemoryFriendRelationshipQueryRepository,
 )
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.commands.identity import (
     AddFriendUseCase,
     RemoveFriendUseCase,
@@ -67,7 +67,7 @@ class FriendPipeline:
 async def _setup_pipeline() -> FriendPipeline:
     command_state = InMemoryCommandRepositoryState()
     uow_factory = InMemoryUnitOfWorkFactory(command_state)
-    user_repo = InMemoryUserRepository(state=command_state)
+    user_repo = InMemoryUserCommandRepository(command_state)
     await user_repo.sync_system_user(BANCHO_BOT_IDENTITY)
     owner = await user_repo.create(make_user(username="Owner", email="owner@example.com"))
     target = await user_repo.create(make_user(username="Target", email="target@example.com"))

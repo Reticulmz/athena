@@ -16,7 +16,7 @@ from osu_server.domain.identity.users import User
 
 if TYPE_CHECKING:
     from osu_server.repositories.interfaces.queries.users import UserQueryRepository
-    from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.repositories.interfaces.session_store import UserSessionLookup
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -38,13 +38,13 @@ class PrivateMessageService:
     """
 
     _user_repo: UserQueryRepository
-    _session_store: SessionStore
+    _session_store: UserSessionLookup
 
     def __init__(
         self,
         *,
         user_repo: UserQueryRepository,
-        session_store: SessionStore,
+        session_store: UserSessionLookup,
     ) -> None:
         self._user_repo = user_repo
         self._session_store = session_store

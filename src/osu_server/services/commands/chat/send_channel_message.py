@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from osu_server.config import AppConfig
     from osu_server.domain.chat import SendChannelMessageInput
     from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
-    from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.repositories.interfaces.session_store import UserSessionLookup
     from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
     from osu_server.services.commands.chat.persistence_work import ChatPersistenceWorkPublisher
     from osu_server.services.queries.chat import ResolveChannelMessageDeliveryQuery
@@ -46,14 +46,14 @@ class SendChannelMessageUseCase:
         *,
         channel_delivery_query: ResolveChannelMessageDeliveryQuery,
         command_service: CommandService,
-        session_store: SessionStore,
+        session_store: UserSessionLookup,
         persistence_publisher: ChatPersistenceWorkPublisher,
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> None:
         self._channel_delivery_query: ResolveChannelMessageDeliveryQuery = channel_delivery_query
         self._command_service: CommandService = command_service
-        self._session_store: SessionStore = session_store
+        self._session_store: UserSessionLookup = session_store
         self._persistence_publisher: ChatPersistenceWorkPublisher = persistence_publisher
         self._rate_limiter: RateLimiter = rate_limiter
         self._config: AppConfig = config

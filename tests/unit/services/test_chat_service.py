@@ -27,8 +27,9 @@ from osu_server.infrastructure.state.memory.channel_state_store import (
     InMemoryChannelStateStore,
 )
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
-from osu_server.repositories.memory.channel_repository import InMemoryChannelRepository
+from osu_server.repositories.memory.commands.channels import InMemoryChannelCommandRepository
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.commands.users import InMemoryUserCommandRepository
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.friends import (
     InMemoryFriendRelationshipQueryRepository,
@@ -36,7 +37,6 @@ from osu_server.repositories.memory.queries.friends import (
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
-from osu_server.repositories.memory.user_repository import InMemoryUserRepository
 from osu_server.services.commands.chat import (
     ChannelMessagePersistenceWork,
     ChatPersistenceWorkPublisher,
@@ -109,8 +109,10 @@ def uow_factory(command_state: InMemoryCommandRepositoryState) -> InMemoryUnitOf
 
 
 @pytest.fixture
-def channel_repo(command_state: InMemoryCommandRepositoryState) -> InMemoryChannelRepository:
-    return InMemoryChannelRepository(state=command_state)
+def channel_repo(
+    command_state: InMemoryCommandRepositoryState,
+) -> InMemoryChannelCommandRepository:
+    return InMemoryChannelCommandRepository(command_state)
 
 
 @pytest.fixture
@@ -119,8 +121,8 @@ def channel_state() -> InMemoryChannelStateStore:
 
 
 @pytest.fixture
-def user_repo(command_state: InMemoryCommandRepositoryState) -> InMemoryUserRepository:
-    return InMemoryUserRepository(state=command_state)
+def user_repo(command_state: InMemoryCommandRepositoryState) -> InMemoryUserCommandRepository:
+    return InMemoryUserCommandRepository(command_state)
 
 
 @pytest.fixture
@@ -189,7 +191,7 @@ def config() -> AppConfig:
 
 @pytest.fixture
 async def channel_delivery_query(
-    channel_repo: InMemoryChannelRepository,
+    channel_repo: InMemoryChannelCommandRepository,
     channel_state: InMemoryChannelStateStore,
     uow_factory: InMemoryUnitOfWorkFactory,
 ) -> ResolveChannelMessageDeliveryQuery:
@@ -431,7 +433,7 @@ async def test_send_channel_message_success(
 @pytest.mark.asyncio
 async def test_send_private_message_success(
     chat_service: ChatUseCaseHarness,
-    user_repo: InMemoryUserRepository,
+    user_repo: InMemoryUserCommandRepository,
     session_store: InMemorySessionStore,
     persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
@@ -502,7 +504,7 @@ async def test_send_private_message_success(
 @pytest.mark.asyncio
 async def test_friend_only_private_message_blocks_non_friend_without_persistence(
     chat_service: ChatUseCaseHarness,
-    user_repo: InMemoryUserRepository,
+    user_repo: InMemoryUserCommandRepository,
     session_store: InMemorySessionStore,
     persistence_publisher: FakeChatPersistenceWorkPublisher,
 ) -> None:
@@ -575,7 +577,7 @@ async def test_friend_only_private_message_blocks_non_friend_without_persistence
 @pytest.mark.asyncio
 async def test_friend_only_private_message_allows_target_friend(
     chat_service: ChatUseCaseHarness,
-    user_repo: InMemoryUserRepository,
+    user_repo: InMemoryUserCommandRepository,
     session_store: InMemorySessionStore,
     uow_factory: InMemoryUnitOfWorkFactory,
     persistence_publisher: FakeChatPersistenceWorkPublisher,

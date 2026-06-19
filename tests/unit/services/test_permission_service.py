@@ -5,9 +5,8 @@ from structlog.testing import capture_logs
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import SessionAuthorization
-from osu_server.repositories.memory.role_repository import (
-    InMemoryRoleRepository,
-)
+from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.queries.identity.permission_service import PermissionService
 
 # ── Seed data ────────────────────────────────────────────────────────
@@ -26,11 +25,25 @@ ROLE_DEVELOPER = Role(id=5, name="Developer", permissions=Privileges.DEVELOPER, 
 ALL_ROLES = [ROLE_DEFAULT, ROLE_SUPPORTER, ROLE_MODERATOR, ROLE_ADMIN, ROLE_DEVELOPER]
 
 
+class RoleAssignmentHarness:
+    _uow_factory: InMemoryUnitOfWorkFactory
+
+    def __init__(self, uow_factory: InMemoryUnitOfWorkFactory) -> None:
+        self._uow_factory = uow_factory
+
+    async def assign_role(self, *, user_id: int, role_id: int) -> None:
+        async with self._uow_factory() as uow:
+            await uow.roles.assign_role(user_id=user_id, role_id=role_id)
+            await uow.commit()
+
+
 def _make_service(
     roles: list[Role] | None = None,
-) -> tuple[PermissionService, InMemoryRoleRepository]:
-    repo = InMemoryRoleRepository(seed_roles=roles or ALL_ROLES)
-    return PermissionService(role_repo=repo), repo
+) -> tuple[PermissionService, RoleAssignmentHarness]:
+    uow_factory = InMemoryUnitOfWorkFactory()
+    uow_factory.seed_roles(roles or ALL_ROLES)
+    repo = InMemoryRoleQueryRepository(uow_factory)
+    return PermissionService(role_repo=repo), RoleAssignmentHarness(uow_factory)
 
 
 # ── compute_permissions ──────────────────────────────────────────────

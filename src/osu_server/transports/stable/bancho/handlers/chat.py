@@ -42,7 +42,7 @@ from osu_server.transports.stable.bancho.protocol.s2c.chat import (
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
-    from osu_server.repositories.interfaces.session_store import SessionStore
+    from osu_server.repositories.interfaces.session_store import UserSessionLookup
     from osu_server.services.commands.chat import (
         JoinChannelUseCase,
         LeaveChannelUseCase,
@@ -57,7 +57,7 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 class ChatHandlers(HandlerGroup):
     """chat C2S packet の transport adapter。
 
-    各 handler は Caterpillar で payload を parse し、SessionStore から
+    各 handler は Caterpillar で payload を parse し、active session から
     sender context を補って chat command に委譲する。command result は
     stable S2C packet に戻して PacketQueue へ enqueue する。
     """
@@ -66,7 +66,7 @@ class ChatHandlers(HandlerGroup):
     _send_private_message: SendPrivateMessageUseCase
     _join_channel: JoinChannelUseCase
     _leave_channel: LeaveChannelUseCase
-    _session_store: SessionStore
+    _session_store: UserSessionLookup
     _packet_queue: PacketQueue
 
     def __init__(
@@ -76,7 +76,7 @@ class ChatHandlers(HandlerGroup):
         send_private_message: SendPrivateMessageUseCase,
         join_channel: JoinChannelUseCase,
         leave_channel: LeaveChannelUseCase,
-        session_store: SessionStore,
+        session_store: UserSessionLookup,
         packet_queue: PacketQueue,
     ) -> None:
         self._send_channel_message = send_channel_message
