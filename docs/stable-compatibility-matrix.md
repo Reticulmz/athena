@@ -18,7 +18,7 @@ inventory.
 Every stable compatibility item should eventually have:
 
 - a stable packet, endpoint, request shape, or response shape identifier,
-- an implementation status,
+- an implementation status that describes runtime code state only,
 - the owning module or planned module,
 - reference paths from the relevant implementation family,
 - verification evidence through tests, golden fixtures, or real-client probes.
@@ -35,6 +35,92 @@ Reference sources, in order of preference:
 Reference implementations are comparison targets, not architecture targets.
 Athena should preserve compatible behavior without copying their process-global
 state, large dispatch files, or persistence coupling.
+
+## Release/Update Audit Row Contract
+
+Release/update rows keep the existing `Status` column as runtime implementation
+state. Audit policy is recorded separately so `Missing`, `Candidate`, or
+`Implemented` is not overwritten by compatibility classification.
+
+Use this structured note form in the row's Notes cell unless a future matrix
+section explicitly adds dedicated columns:
+
+```text
+Audit: stable_compatibility_route_classification=<value>;
+response_shape=<value>;
+evidence_source=<source-list>;
+stable_operational_dependency=<value>;
+stable_fixture_requirement=<value>.
+```
+
+The audit fields have these meanings:
+
+| Field | Meaning |
+| --- | --- |
+| `stable_compatibility_route_classification` | Stable compatibility policy for the route, such as `required-no-update`, `deferred`, or `needs-reference`. This is not the runtime implementation status. |
+| `response_shape` | Selected client-observable response shape for no-update rows, or `deferred` when the response contract is intentionally not selected yet. |
+| `evidence_source` | Source names used to justify the selected classification and response shape. Use `needs-reference` when evidence is insufficient. |
+| `stable_operational_dependency` | Operational decision required before implementation, using the values below. This does not approve proxying or artifact hosting. |
+| `stable_fixture_requirement` | Downstream fixture handoff state: shared fixture identifier, `deferred`, `not-required`, or `needs-reference`. |
+
+### Release/Update Fixture Handoff Catalog
+
+Use this catalog as the #17 fixture handoff source for release/update
+no-update response shapes. The `Source Row Fixture Requirement` value must match
+the affected matrix row's `stable_fixture_requirement` audit field.
+
+| Fixture Identifier | Routes | Response Shape | Source Row Fixture Requirement |
+| --- | --- | --- | --- |
+| `check_updates_no_update_json_array` | `/web/check-updates.php` | `[]` | `check_updates_no_update_json_array` |
+| `release_update_empty` | `/release/update`, `/update` | empty body | `release_update_empty` |
+| `release_update_php_zero` | `/release/update.php`, `/update.php` | `0` | `release_update_php_zero` |
+| `release_update2_empty` | `/release/update2.php`, `/update2.php` | empty body | `release_update2_empty` |
+| `release_patches_empty` | `/release/patches.php`, `/patches.php` | empty body | `release_patches_empty` |
+
+Deferred release file/proxy routes keep fixture requirement `deferred` and have
+no fixture identifier. #17 should not create placeholder fixture files or
+identifiers for these routes.
+
+| Fixture Requirement | Routes | Response Shape | Fixture Identifier |
+| --- | --- | --- | --- |
+| `deferred` | `/release/<filename>` | deferred file bytes | none |
+| `deferred` | `/release/filter.txt` | deferred proxy response | none |
+| `deferred` | `/release/Localisation/<filename>` | deferred proxy response | none |
+| `deferred` | `/release/<language>/<filename>` | deferred file bytes | none |
+
+### Operational Dependency Matrix
+
+Use these operational dependency values for release/update audit rows:
+
+| Value | Meaning |
+| --- | --- |
+| `none` | The audited policy does not require external proxying or hosted release artifacts. |
+| `proxy-decision-required` | Implementing the route would require an explicit decision about external proxying. |
+| `hosted-artifact-decision-required` | Implementing the route would require an explicit decision about Athena-hosted release artifacts. |
+
+If evidence cannot support a stable route classification, set
+`stable_compatibility_route_classification` to `needs-reference` and do not
+invent a response contract. If a row appears to need both proxying and hosted
+artifacts, keep it at `needs-reference` until evidence separates the
+operational dependency.
+
+### Release/Update Evidence Consistency Notes
+
+The audited release/update rows are consistent with the guide's
+`Update And Release Endpoints` section. Selected no-update response shapes use
+guide-backed responses: `[]` for `/web/check-updates.php`, empty body for
+`/release/update`, `/release/update2.php`, and `/release/patches.php`, and `0`
+for `/release/update.php`. Root aliases share the corresponding release route
+contracts recorded by the research decision.
+
+Deferred release file, filter, and localization rows also match the guide's
+file bytes or proxy behavior and keep `response_shape=deferred`. There are
+currently no release/update `needs-reference` rows because every audited row
+has an `evidence_source` field. Future release/update evidence gaps must be
+left in the matrix as
+`stable_compatibility_route_classification=needs-reference` and
+`stable_fixture_requirement=needs-reference` rather than filled with guessed
+response contracts.
 
 ## Reference Implementation Map
 
@@ -271,9 +357,15 @@ it to `Implemented` / `Partial` / `Missing` when it is required, or demote it to
 | `GET` | `/web/osu-getscores.php` through `/web/osu-getscores6.php` | Candidate | Older getscores variants in `deck`; decide target client build coverage. |
 | `GET` | `/web/osu-getreplay.php` | Missing | Replay download flow missing. |
 | `GET` | `/web/replays/<id>` | Candidate | Full replay route in `lets`; verify client usage. |
-| `GET` | `/web/check-updates.php` | Missing | Stable update compatibility route in `lets`, `deck`, and `bancho.py`; initial Athena policy is no-update/no-op unless traffic requires proxying. |
-| `GET` | `/release/update`, `/release/update.php`, `/release/update2.php`, `/release/patches.php`, `/update`, `/update.php`, `/update2.php`, `/patches.php` | Candidate | Stable release/update routes in `deck` and external references; initial Athena policy is no-update/no-op, not hosted updater. |
-| `GET` | `/release/<filename>`, `/release/filter.txt`, `/release/Localisation/<filename>`, `/release/<language>/<filename>` | Candidate | Release files/localization/filter routes in `deck`; proxy/hosting requires an explicit operational decision. |
+| `GET` | `/web/check-updates.php` | Missing | Stable update compatibility route in `lets`, `deck`, and `bancho.py`; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=[]; evidence_source=deck [] + bancho.py empty body + user-confirmed current osu!stable --devserver behavior (TargetUsr, issue #34 spec discussion, 2026-06-20 JST); stable_operational_dependency=proxy-decision-required; stable_fixture_requirement=check_updates_no_update_json_array. Proxying to `osu.ppy.sh` remains a separate ppy proxying decision requirement, not the initial implementation default. |
+| `GET` | `/release/update`, `/update` | Candidate | Stable release manifest route and root alias; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=empty body; evidence_source=stable-compatibility-guide `/release/update` empty string + research decision; stable_operational_dependency=none; stable_fixture_requirement=release_update_empty. The hosted update metadata or artifact distribution behavior is outside initial no-update policy. |
+| `GET` | `/release/update.php`, `/update.php` | Candidate | Stable release file-check manifest route and root alias; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=0; evidence_source=stable-compatibility-guide `/release/update.php` `0` + research decision; stable_operational_dependency=none; stable_fixture_requirement=release_update_php_zero. The hosted update metadata or artifact distribution behavior is outside initial no-update policy. |
+| `GET` | `/release/update2.php`, `/update2.php` | Candidate | Stable release secondary manifest route and root alias; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=empty body; evidence_source=stable-compatibility-guide `/release/update2.php` empty string + research decision; stable_operational_dependency=none; stable_fixture_requirement=release_update2_empty. The hosted update metadata or artifact distribution behavior is outside initial no-update policy. |
+| `GET` | `/release/patches.php`, `/patches.php` | Candidate | Stable release patch manifest route and root alias; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=empty body; evidence_source=stable-compatibility-guide `/release/patches.php` empty string + research decision; stable_operational_dependency=none; stable_fixture_requirement=release_patches_empty. The hosted update metadata or artifact distribution behavior is outside initial no-update policy. |
+| `GET` | `/release/<filename>` | Candidate | Release file route in `deck`; stable-compatibility-guide records release, patch, or extra file bytes with content headers. Audit: stable_compatibility_route_classification=deferred; response_shape=deferred; evidence_source=stable-compatibility-guide `/release/<filename>` file bytes + research decision; stable_operational_dependency=hosted-artifact-decision-required; stable_fixture_requirement=deferred. File bytes serving is not `required-no-update` and is not an initial implementation default. |
+| `GET` | `/release/filter.txt` | Candidate | Filter route in `deck`; stable-compatibility-guide records proxying `https://m1.ppy.sh/release/filter.txt`. Audit: stable_compatibility_route_classification=deferred; response_shape=deferred; evidence_source=stable-compatibility-guide `/release/filter.txt` proxy + research decision; stable_operational_dependency=proxy-decision-required; stable_fixture_requirement=deferred. External proxy route behavior is not `required-no-update` and is not an initial implementation default. |
+| `GET` | `/release/Localisation/<filename>` | Candidate | Localization route in `deck`; stable-compatibility-guide records proxying `https://m1.ppy.sh/release/Localisation/<filename>?<version>`. Audit: stable_compatibility_route_classification=deferred; response_shape=deferred; evidence_source=stable-compatibility-guide `/release/Localisation/<filename>` proxy + research decision; stable_operational_dependency=proxy-decision-required; stable_fixture_requirement=deferred. External proxy route behavior is not `required-no-update` and is not an initial implementation default. |
+| `GET` | `/release/<language>/<filename>` | Candidate | Localization DLL route in `deck`; stable-compatibility-guide records stored localization DLL bytes. Audit: stable_compatibility_route_classification=deferred; response_shape=deferred; evidence_source=stable-compatibility-guide `/release/<language>/<filename>` stored DLL bytes + research decision; stable_operational_dependency=hosted-artifact-decision-required; stable_fixture_requirement=deferred. File bytes serving is not `required-no-update` and is not an initial implementation default. |
 | `GET` | `/web/osu-search.php`, `/web/osu-search-set.php` | Missing | osu!direct search and set details missing. |
 | `GET` | `/d/<set>`, `/s/<set>`, `/bss/<set>`, `/osu/<map>`, `/web/maps/<file>`, `b.$DOMAIN/<path>`, `s.$DOMAIN/<path>`, `d.$DOMAIN/d/<set>` | Candidate | Beatmap download and `.osu` file routes from references. |
 | `GET` | `/mt/*`, `/thumb/*`, `/images/map-thumb/*`, `/preview/*`, `/mp3/preview/*` | Candidate | Beatmap thumbnails and preview media routes from `deck`. |
