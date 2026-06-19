@@ -733,6 +733,12 @@ Important multipart fields handled by Athena's parser/mapper:
 | fail time field | Failure timestamp when the play failed. |
 | `i` | Flashlight cheat screenshot, referenced by bancho.py/deck and not yet fully handled by Athena. |
 
+Compatibility note: Athena's current multipart parser treats `x` as the client
+hash for handled score-submit requests. The separate golden quit/failed fixtures
+under `tests/fixtures/golden/` contain `x=1` plus a distinct `s` field; that
+shape is evidence for future compatibility research and must not be treated as
+supported without first defining how `x` and `s` map for that client variant.
+
 Additional fields and variants observed in `deck` and `lets`:
 
 | Field/source | Meaning |
