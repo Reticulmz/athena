@@ -34,7 +34,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
   - _Boundary: Release Update Matrix Rows, Operational Dependency Matrix_
 
-- [ ] 3. file-like release route の deferred policy を明示する
+- [x] 3. file-like release route の deferred policy を明示する
   - `/release/<filename>` を `deferred` とし、operational dependency を `hosted-artifact-decision-required` として記録する
   - `/release/filter.txt` を `deferred` とし、operational dependency を `proxy-decision-required` として記録する
   - `/release/Localisation/<filename>` を `deferred` とし、operational dependency を `proxy-decision-required` として記録する
