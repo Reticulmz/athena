@@ -1,4 +1,4 @@
-"""Tests for RoleRepository Protocol + InMemoryRoleRepository."""
+"""Tests for the role command repository memory adapter."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import pytest
 
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
-from osu_server.repositories.interfaces.role_repository import RoleRepository
-from osu_server.repositories.memory.role_repository import InMemoryRoleRepository
+from osu_server.repositories.interfaces.commands.roles import RoleCommandRepository
+from osu_server.repositories.memory.commands.roles import InMemoryRoleCommandRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 
 def _make_role(
@@ -34,33 +35,36 @@ _SEED_ROLES: list[Role] = [
 
 
 @pytest.fixture
-def repo() -> InMemoryRoleRepository:
-    return InMemoryRoleRepository(seed_roles=_SEED_ROLES)
+def repo() -> InMemoryRoleCommandRepository:
+    repository = InMemoryRoleCommandRepository(InMemoryCommandRepositoryState())
+    for role in _SEED_ROLES:
+        repository.add_role(role)
+    return repository
 
 
 @pytest.fixture
-def empty_repo() -> InMemoryRoleRepository:
-    return InMemoryRoleRepository()
+def empty_repo() -> InMemoryRoleCommandRepository:
+    return InMemoryRoleCommandRepository(InMemoryCommandRepositoryState())
 
 
 class TestProtocolConformance:
-    """InMemoryRoleRepository satisfies RoleRepository Protocol at runtime."""
+    """InMemoryRoleCommandRepository satisfies RoleCommandRepository at runtime."""
 
-    def test_is_instance_of_protocol(self, repo: InMemoryRoleRepository) -> None:
-        assert isinstance(repo, RoleRepository)
+    def test_is_instance_of_protocol(self, repo: InMemoryRoleCommandRepository) -> None:
+        assert isinstance(repo, RoleCommandRepository)
 
 
 class TestGetById:
     """get_by_id() retrieves a role by primary key."""
 
-    async def test_found(self, repo: InMemoryRoleRepository) -> None:
+    async def test_found(self, repo: InMemoryRoleCommandRepository) -> None:
         result = await repo.get_by_id(1)
 
         assert result is not None
         assert result.id == 1
         assert result.name == "Default"
 
-    async def test_not_found_returns_none(self, repo: InMemoryRoleRepository) -> None:
+    async def test_not_found_returns_none(self, repo: InMemoryRoleCommandRepository) -> None:
         result = await repo.get_by_id(9999)
 
         assert result is None
@@ -69,14 +73,14 @@ class TestGetById:
 class TestGetByName:
     """get_by_name() retrieves a role by its name."""
 
-    async def test_found(self, repo: InMemoryRoleRepository) -> None:
+    async def test_found(self, repo: InMemoryRoleCommandRepository) -> None:
         result = await repo.get_by_name("Moderator")
 
         assert result is not None
         assert result.id == 2
         assert result.name == "Moderator"
 
-    async def test_not_found_returns_none(self, repo: InMemoryRoleRepository) -> None:
+    async def test_not_found_returns_none(self, repo: InMemoryRoleCommandRepository) -> None:
         result = await repo.get_by_name("Nonexistent")
 
         assert result is None
@@ -85,12 +89,12 @@ class TestGetByName:
 class TestGetRolesForUser:
     """get_roles_for_user() returns roles assigned to a user, sorted by position ascending."""
 
-    async def test_no_roles_returns_empty_list(self, repo: InMemoryRoleRepository) -> None:
+    async def test_no_roles_returns_empty_list(self, repo: InMemoryRoleCommandRepository) -> None:
         result = await repo.get_roles_for_user(user_id=1)
 
         assert result == []
 
-    async def test_single_role(self, repo: InMemoryRoleRepository) -> None:
+    async def test_single_role(self, repo: InMemoryRoleCommandRepository) -> None:
         await repo.assign_role(user_id=1, role_id=1)
 
         result = await repo.get_roles_for_user(user_id=1)
@@ -99,7 +103,7 @@ class TestGetRolesForUser:
         assert result[0].name == "Default"
 
     async def test_multiple_roles_sorted_by_position_ascending(
-        self, repo: InMemoryRoleRepository
+        self, repo: InMemoryRoleCommandRepository
     ) -> None:
         # Assign in reverse position order to verify sorting
         await repo.assign_role(user_id=1, role_id=3)  # Admin, position=20
@@ -115,7 +119,7 @@ class TestGetRolesForUser:
 
     async def test_different_users_have_independent_roles(
         self,
-        repo: InMemoryRoleRepository,
+        repo: InMemoryRoleCommandRepository,
     ) -> None:
         await repo.assign_role(user_id=1, role_id=1)
         await repo.assign_role(user_id=2, role_id=2)
@@ -132,7 +136,7 @@ class TestGetRolesForUser:
 class TestAssignRole:
     """assign_role() stores user_id → role_id mappings."""
 
-    async def test_assign_and_retrieve(self, repo: InMemoryRoleRepository) -> None:
+    async def test_assign_and_retrieve(self, repo: InMemoryRoleCommandRepository) -> None:
         await repo.assign_role(user_id=1, role_id=2)
 
         roles = await repo.get_roles_for_user(user_id=1)
@@ -140,7 +144,9 @@ class TestAssignRole:
         assert len(roles) == 1
         assert roles[0].id == 2
 
-    async def test_assign_duplicate_is_idempotent(self, repo: InMemoryRoleRepository) -> None:
+    async def test_assign_duplicate_is_idempotent(
+        self, repo: InMemoryRoleCommandRepository
+    ) -> None:
         await repo.assign_role(user_id=1, role_id=1)
         await repo.assign_role(user_id=1, role_id=1)
 
@@ -152,13 +158,15 @@ class TestAssignRole:
 class TestGetDefaultRole:
     """get_default_role() returns the role named 'Default'."""
 
-    async def test_returns_default_role(self, repo: InMemoryRoleRepository) -> None:
+    async def test_returns_default_role(self, repo: InMemoryRoleCommandRepository) -> None:
         result = await repo.get_default_role()
 
         assert result.name == "Default"
         assert result.permissions == Privileges.NORMAL
 
-    async def test_raises_when_no_default_role(self, empty_repo: InMemoryRoleRepository) -> None:
+    async def test_raises_when_no_default_role(
+        self, empty_repo: InMemoryRoleCommandRepository
+    ) -> None:
         with pytest.raises(LookupError, match="Default"):
             _ = await empty_repo.get_default_role()
 
@@ -167,16 +175,16 @@ class TestGetUserIdsForRoleProtocol:
     """get_user_ids_for_role() contract is declared on the Protocol."""
 
     def test_protocol_declares_method(self) -> None:
-        assert hasattr(RoleRepository, "get_user_ids_for_role")
+        assert hasattr(RoleCommandRepository, "get_user_ids_for_role")
 
-    def test_memory_impl_satisfies_protocol(self, repo: InMemoryRoleRepository) -> None:
-        assert isinstance(repo, RoleRepository)
+    def test_memory_impl_satisfies_protocol(self, repo: InMemoryRoleCommandRepository) -> None:
+        assert isinstance(repo, RoleCommandRepository)
 
 
 class TestGetUserIdsForRole:
     """get_user_ids_for_role() returns assigned user IDs sorted ascending."""
 
-    async def test_returns_user_ids_for_role(self, repo: InMemoryRoleRepository) -> None:
+    async def test_returns_user_ids_for_role(self, repo: InMemoryRoleCommandRepository) -> None:
         await repo.assign_role(user_id=1, role_id=2)
         await repo.assign_role(user_id=3, role_id=2)
         await repo.assign_role(user_id=2, role_id=2)
@@ -185,12 +193,16 @@ class TestGetUserIdsForRole:
 
         assert result == [1, 2, 3]
 
-    async def test_returns_empty_for_unassigned_role(self, repo: InMemoryRoleRepository) -> None:
+    async def test_returns_empty_for_unassigned_role(
+        self, repo: InMemoryRoleCommandRepository
+    ) -> None:
         result = await repo.get_user_ids_for_role(role_id=9999)
 
         assert result == []
 
-    async def test_excludes_users_with_other_roles(self, repo: InMemoryRoleRepository) -> None:
+    async def test_excludes_users_with_other_roles(
+        self, repo: InMemoryRoleCommandRepository
+    ) -> None:
         await repo.assign_role(user_id=1, role_id=1)  # Default
         await repo.assign_role(user_id=2, role_id=2)  # Moderator
         await repo.assign_role(user_id=3, role_id=1)  # Default
@@ -199,7 +211,7 @@ class TestGetUserIdsForRole:
 
         assert result == [2]  # Only user 2 has Moderator
 
-    async def test_returns_sorted_ascending(self, repo: InMemoryRoleRepository) -> None:
+    async def test_returns_sorted_ascending(self, repo: InMemoryRoleCommandRepository) -> None:
         # Assign in non-sorted order
         await repo.assign_role(user_id=100, role_id=1)
         await repo.assign_role(user_id=1, role_id=1)
@@ -209,7 +221,9 @@ class TestGetUserIdsForRole:
 
         assert result == [1, 50, 100]
 
-    async def test_empty_repo_returns_empty(self, empty_repo: InMemoryRoleRepository) -> None:
+    async def test_empty_repo_returns_empty(
+        self, empty_repo: InMemoryRoleCommandRepository
+    ) -> None:
         result = await empty_repo.get_user_ids_for_role(role_id=1)
 
         assert result == []

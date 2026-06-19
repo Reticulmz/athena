@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from osu_server.domain.storage.blobs import Blob, NewBlob
+from osu_server.repositories.interfaces.commands.blobs import DuplicateBlobError
 
 if TYPE_CHECKING:
     from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
@@ -28,8 +29,7 @@ class InMemoryBlobCommandRepository:
 
     async def create(self, blob: NewBlob) -> Blob:
         if blob.sha256 in self._state.blob_id_by_sha256:
-            msg = f"blob already exists for sha256 {blob.sha256}"
-            raise ValueError(msg)
+            raise DuplicateBlobError(blob.sha256)
 
         created = Blob(
             id=self._state.next_blob_id,

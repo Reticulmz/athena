@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.system_users import SystemUserIdentity
     from osu_server.domain.identity.users import User
 
 
+@runtime_checkable
 class UserCommandRepository(Protocol):
     """Mutation and consistency-check port for users."""
 

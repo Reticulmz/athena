@@ -1,4 +1,4 @@
-"""Test ScoreRepository Protocol compliance."""
+"""Test ScoreCommandRepository Protocol compliance."""
 
 from datetime import UTC, datetime
 
@@ -6,7 +6,7 @@ import pytest
 
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
-from osu_server.repositories.interfaces.score_repository import ScoreRepository
+from osu_server.repositories.interfaces.commands.scores import ScoreCommandRepository
 
 
 class ConcreteScoreRepository:
@@ -24,11 +24,25 @@ class ConcreteScoreRepository:
     async def get_by_id(self, _score_id: int) -> Score | None:
         return None
 
+    async def list_leaderboard_rebuild_candidates_for_user(
+        self,
+        user_id: int,
+    ) -> tuple[Score, ...]:
+        _ = user_id
+        return ()
+
+    async def list_leaderboard_rebuild_candidates_for_beatmap_ids(
+        self,
+        beatmap_ids: tuple[int, ...],
+    ) -> tuple[Score, ...]:
+        _ = beatmap_ids
+        return ()
+
 
 def test_score_repository_protocol_compliance() -> None:
-    """Verify ConcreteScoreRepository implements ScoreRepository Protocol."""
+    """Verify ConcreteScoreRepository implements ScoreCommandRepository."""
     repo = ConcreteScoreRepository()
-    assert isinstance(repo, ScoreRepository)
+    assert isinstance(repo, ScoreCommandRepository)
 
 
 @pytest.mark.asyncio

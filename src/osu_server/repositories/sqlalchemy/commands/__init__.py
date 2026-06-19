@@ -1,5 +1,6 @@
 """SQLAlchemy command repository package."""
 
+from osu_server.repositories.interfaces.commands.blobs import DuplicateBlobError
 from osu_server.repositories.sqlalchemy.commands.beatmap_leaderboards import (
     SQLAlchemyBeatmapLeaderboardCommandRepository,
 )
@@ -8,10 +9,7 @@ from osu_server.repositories.sqlalchemy.commands.beatmaps import (
     DuplicateBeatmapChecksumError,
     SQLAlchemyBeatmapCommandRepository,
 )
-from osu_server.repositories.sqlalchemy.commands.blobs import (
-    DuplicateBlobError,
-    SQLAlchemyBlobCommandRepository,
-)
+from osu_server.repositories.sqlalchemy.commands.blobs import SQLAlchemyBlobCommandRepository
 from osu_server.repositories.sqlalchemy.commands.channels import SQLAlchemyChannelCommandRepository
 from osu_server.repositories.sqlalchemy.commands.chat import SQLAlchemyChatCommandRepository
 from osu_server.repositories.sqlalchemy.commands.friends import (

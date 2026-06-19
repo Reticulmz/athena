@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from osu_server.domain.chat import ChatPersistenceResult
 
 
+@runtime_checkable
 class ChatCommandRepository(Protocol):
     """Mutation port for accepted chat history persistence."""
 
@@ -30,3 +31,6 @@ class ChatCommandRepository(Protocol):
     ) -> ChatPersistenceResult:
         """Persist accepted private chat history."""
         ...
+
+
+__all__ = ["ChatCommandRepository"]

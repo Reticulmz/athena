@@ -8,20 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from osu_server.domain.storage.blobs import Blob, NewBlob
+from osu_server.repositories.interfaces.commands.blobs import DuplicateBlobError
 from osu_server.repositories.sqlalchemy.models.blob import BlobModel
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-
-class DuplicateBlobError(ValueError):
-    """Raised when creating a blob whose SHA-256 already exists."""
-
-    sha256: str
-
-    def __init__(self, sha256: str) -> None:
-        self.sha256 = sha256
-        super().__init__(f"blob already exists for sha256 {sha256}")
 
 
 class SQLAlchemyBlobCommandRepository:

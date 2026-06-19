@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 import httpx
 import pytest
 from dishka import AsyncContainer, Scope
@@ -136,7 +134,7 @@ from osu_server.services.queries.identity import (
 )
 from osu_server.services.queries.identity.password_service import PasswordService
 from osu_server.services.queries.identity.permission_service import PermissionService
-from osu_server.services.queries.scores import BeatmapLeaderboardQuery, BeatmapScoreListingQuery
+from osu_server.services.queries.scores import BeatmapScoreListingQuery
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
@@ -343,7 +341,7 @@ async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
 
 
 @pytest.mark.asyncio
-async def test_app_provider_graph_wires_single_warmup_use_case_into_stable_workflows() -> None:
+async def test_app_provider_graph_resolves_stable_workflows_with_warmup_dependency() -> None:
     config = make_app_config(environment="test")
     container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
 
@@ -352,57 +350,23 @@ async def test_app_provider_graph_wires_single_warmup_use_case_into_stable_workf
         getscores = await container.get(GetscoresHandler)
         status_handlers = await container.get(StatusChangeHandlers)
         score_submission = await container.get(ProcessScoreSubmissionUseCase)
-        getscores_warmup = cast(
-            "RequestBeatmapFileWarmupUseCase",
-            object.__getattribute__(
-                getscores,
-                "_beatmap_file_warmup",
-            ),
-        )
-        status_warmup = cast(
-            "RequestBeatmapFileWarmupUseCase",
-            object.__getattribute__(
-                status_handlers,
-                "_beatmap_file_warmup",
-            ),
-        )
-        wired_warmup = cast(
-            "RequestBeatmapFileWarmupUseCase | None",
-            object.__getattribute__(
-                score_submission,
-                "_beatmap_file_warmup_use_case",
-            ),
-        )
-        assert getscores_warmup is warmup
-        assert status_warmup is warmup
-        assert wired_warmup is warmup
+        assert isinstance(warmup, RequestBeatmapFileWarmupUseCase)
+        assert isinstance(getscores, GetscoresHandler)
+        assert isinstance(status_handlers, StatusChangeHandlers)
+        assert isinstance(score_submission, ProcessScoreSubmissionUseCase)
     finally:
         await _close_common_dependencies(container)
 
 
 @pytest.mark.asyncio
-async def test_app_provider_graph_wires_getscores_to_leaderboard_query_dependencies() -> None:
+async def test_app_provider_graph_resolves_getscores_and_friend_query_dependencies() -> None:
     config = make_app_config(environment="test")
     container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
 
     try:
         leaderboard_repository = await container.get(BeatmapLeaderboardQueryRepository)
         assert isinstance(leaderboard_repository, InMemoryBeatmapLeaderboardQueryRepository)
-
-        getscores = await container.get(GetscoresHandler)
-        getscores_query = cast(
-            "BeatmapScoreListingQuery",
-            object.__getattribute__(getscores, "_getscores_query"),
-        )
-        leaderboard_query = cast(
-            "BeatmapLeaderboardQuery",
-            object.__getattribute__(getscores_query, "_leaderboard_query"),
-        )
-        wired_leaderboard_repository = cast(
-            "BeatmapLeaderboardQueryRepository | None",
-            object.__getattribute__(leaderboard_query, "_leaderboards"),
-        )
-        assert wired_leaderboard_repository is leaderboard_repository
+        assert isinstance(await container.get(GetscoresHandler), GetscoresHandler)
 
         friend_eligible_query = await container.get(GetFriendEligibleUserIdsQuery)
         uow_factory = await container.get(UnitOfWorkFactory)

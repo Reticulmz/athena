@@ -1,6 +1,0 @@
-src/osu_server/repositories/memory/beatmap_repository.py	osu_server.repositories.interfaces.beatmap_repository
-src/osu_server/repositories/memory/blob_repository.py	osu_server.repositories.interfaces.blob_repository
-src/osu_server/repositories/memory/chat_repository.py	osu_server.repositories.interfaces.chat_repository
-src/osu_server/repositories/sqlalchemy/beatmap_repository.py	osu_server.repositories.interfaces.beatmap_repository
-src/osu_server/repositories/sqlalchemy/blob_repository.py	osu_server.repositories.interfaces.blob_repository
-src/osu_server/repositories/sqlalchemy/chat_repository.py	osu_server.repositories.interfaces.chat_repository

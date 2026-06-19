@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, cast, override
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileAttachment,
     BeatmapFileState,
     BeatmapMetadataSource,
@@ -18,13 +18,12 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
     LocalBeatmapStatus,
 )
-from osu_server.repositories.interfaces.beatmap_repository import (
-    BeatmapFetchTarget,
+from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
+from osu_server.repositories.sqlalchemy.commands.beatmaps import (
     BeatmapNotFoundError,
-    BeatmapRepository,
     DuplicateBeatmapChecksumError,
+    SQLAlchemyBeatmapCommandRepository,
 )
-from osu_server.repositories.sqlalchemy.beatmap_repository import SQLAlchemyBeatmapRepository
 from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
@@ -35,6 +34,8 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
 if TYPE_CHECKING:
     from types import TracebackType
 
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.sql.base import Executable
 
 _NOW = datetime(2026, 6, 4, tzinfo=UTC)
@@ -66,16 +67,15 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         *,
         get_results: dict[tuple[type[object], int], object] | None = None,
         execute_results: list[FakeResult] | None = None,
-        commit_error: IntegrityError | None = None,
+        flush_error: IntegrityError | None = None,
     ) -> None:
         self.get_results: dict[tuple[type[object], int], object] = get_results or {}
         self.execute_results: list[FakeResult] = execute_results or []
-        self.commit_error: IntegrityError | None = commit_error
+        self.flush_error: IntegrityError | None = flush_error
         self.added: list[object] = []
         self.merged: list[object] = []
         self.refreshed: list[object] = []
-        self.commits: int = 0
-        self.rollbacks: int = 0
+        self.flushes: int = 0
 
     @override
     async def __aenter__(self) -> FakeSession:
@@ -108,13 +108,10 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     def add(self, instance: object) -> None:
         self.added.append(instance)
 
-    async def commit(self) -> None:
-        if self.commit_error is not None:
-            raise self.commit_error
-        self.commits += 1
-
-    async def rollback(self) -> None:
-        self.rollbacks += 1
+    async def flush(self) -> None:
+        if self.flush_error is not None:
+            raise self.flush_error
+        self.flushes += 1
 
     async def refresh(self, instance: object) -> None:
         if isinstance(instance, BeatmapFileAttachmentModel):
@@ -126,18 +123,8 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         self.refreshed.append(instance)
 
 
-class FakeSessionFactory:
-    _session: FakeSession
-
-    def __init__(self, session: FakeSession) -> None:
-        self._session = session
-
-    def __call__(self) -> FakeSession:
-        return self._session
-
-
-def _repo(session: FakeSession) -> SQLAlchemyBeatmapRepository:
-    return SQLAlchemyBeatmapRepository(FakeSessionFactory(session))
+def _repo(session: FakeSession) -> SQLAlchemyBeatmapCommandRepository:
+    return SQLAlchemyBeatmapCommandRepository(cast("AsyncSession", cast("object", session)))
 
 
 def _beatmap_model(
@@ -279,7 +266,7 @@ def _attachment_domain() -> BeatmapFileAttachment:
 
 
 def test_sqlalchemy_beatmap_repository_satisfies_contract() -> None:
-    assert isinstance(_repo(FakeSession()), BeatmapRepository)
+    assert isinstance(_repo(FakeSession()), BeatmapCommandRepository)
 
 
 async def test_get_beatmap_maps_model_and_current_attachment_to_domain() -> None:
@@ -318,18 +305,17 @@ async def test_save_snapshot_preserves_existing_local_override() -> None:
         _beatmapset_domain(_beatmap_domain(official_status=BeatmapRankStatus.LOVED))
     )
 
-    assert session.commits == 1
+    assert session.flushes == 1
     beatmap_models = [model for model in session.merged if isinstance(model, BeatmapModel)]
     assert len(beatmap_models) == 1
     assert beatmap_models[0].official_status == "loved"
     assert beatmap_models[0].local_status_override == "ranked"
 
 
-async def test_save_snapshot_maps_integrity_error_to_duplicate_checksum() -> None:
+async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -> None:
     conflicting_model = _beatmap_model(id=999, checksum_md5=_CHECKSUM)
     session = FakeSession(
-        commit_error=IntegrityError("insert", {}, Exception("duplicate")),
-        execute_results=[FakeResult(values=[conflicting_model])],
+        execute_results=[FakeResult(conflicting_model)],
     )
 
     with pytest.raises(DuplicateBeatmapChecksumError) as exc_info:
@@ -337,17 +323,20 @@ async def test_save_snapshot_maps_integrity_error_to_duplicate_checksum() -> Non
 
     assert exc_info.value.checksum_md5 == _CHECKSUM
     assert exc_info.value.existing_beatmap_id == 999
-    assert session.rollbacks == 1
+    assert session.flushes == 0
 
 
 async def test_attach_osu_file_returns_existing_duplicate_attachment() -> None:
-    session = FakeSession(execute_results=[FakeResult(_attachment_model())])
+    session = FakeSession(
+        get_results={(BeatmapModel, 2_000): _beatmap_model()},
+        execute_results=[FakeResult(_attachment_model())],
+    )
 
     result = await _repo(session).attach_osu_file(_attachment_domain())
 
     assert result == _attachment_domain()
     assert session.added == []
-    assert session.commits == 0
+    assert session.flushes == 0
 
 
 async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
@@ -360,7 +349,7 @@ async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
     retry_session = FakeSession(execute_results=[FakeResult(completed)])
 
     assert await _repo(retry_session).try_mark_fetch_pending(target, now=_NOW) is True
-    assert retry_session.commits == 1
+    assert retry_session.flushes == 1
     assert completed.status == "pending_fetch"
     assert completed.attempt_count == 2
 
@@ -402,7 +391,7 @@ async def test_set_local_status_override_updates_model_and_returns_domain() -> N
     assert model.local_status_override == "ranked"
     assert result.local_status_override is LocalBeatmapStatus.RANKED
     assert result.official_status is BeatmapRankStatus.PENDING
-    assert session.commits == 1
+    assert session.flushes == 1
 
 
 async def test_set_local_status_override_clears_override_with_none() -> None:
@@ -416,7 +405,7 @@ async def test_set_local_status_override_clears_override_with_none() -> None:
 
     assert model.local_status_override is None
     assert result.local_status_override is None
-    assert session.commits == 1
+    assert session.flushes == 1
 
 
 async def test_set_local_status_override_raises_not_found() -> None:
@@ -437,7 +426,7 @@ async def test_mark_fetch_succeeded_transitions_state_to_fresh() -> None:
     assert model.last_error is None
     assert model.pending_since is None
     assert model.last_attempted_at == _NOW
-    assert session.commits == 1
+    assert session.flushes == 1
 
 
 async def test_mark_fetch_failed_records_error_and_transitions_state() -> None:
@@ -451,11 +440,12 @@ async def test_mark_fetch_failed_records_error_and_transitions_state() -> None:
     assert model.last_error == "timeout"
     assert model.pending_since is None
     assert model.last_attempted_at == _NOW
-    assert session.commits == 1
+    assert session.flushes == 1
 
 
 async def test_attach_osu_file_inserts_new_attachment() -> None:
     session = FakeSession(
+        get_results={(BeatmapModel, 2_000): _beatmap_model()},
         execute_results=[FakeResult()],
     )
 
@@ -466,7 +456,7 @@ async def test_attach_osu_file_inserts_new_attachment() -> None:
     assert isinstance(session.added[0], BeatmapFileAttachmentModel)
     assert session.added[0].beatmap_id == 2_000
     assert session.added[0].checksum_md5 == _CHECKSUM
-    assert session.commits == 1
+    assert session.flushes == 1
     assert len(session.refreshed) == 1
 
 
@@ -481,4 +471,4 @@ async def test_save_new_beatmapset_snapshot_merges_set_and_beatmaps() -> None:
     assert set_models[0].id == 1_000
     assert len(beatmap_models) == 1
     assert beatmap_models[0].id == 2_000
-    assert session.commits == 1
+    assert session.flushes == 1

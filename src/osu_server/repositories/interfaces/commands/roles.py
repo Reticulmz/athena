@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.roles import Role
 
 
+@runtime_checkable
 class RoleCommandRepository(Protocol):
     """Mutation and consistency-check port for roles and assignments."""
 

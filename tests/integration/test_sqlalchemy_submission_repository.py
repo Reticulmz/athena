@@ -1,4 +1,4 @@
-"""Integration tests for SQLAlchemyScoreSubmissionRepository.
+"""Integration tests for the SQLAlchemy score submission command repository.
 
 Tests idempotent retrieval and fingerprint uniqueness against real PostgreSQL.
 """
@@ -16,9 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from osu_server.domain.scores.submission import ScoreSubmission
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
-from osu_server.repositories.sqlalchemy.submission_repository import (
-    SQLAlchemyScoreSubmissionRepository,
-)
+from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -62,6 +60,13 @@ async def session_factory(
         return
 
 
+@pytest.fixture
+def uow_factory(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> SQLAlchemyUnitOfWorkFactory:
+    return SQLAlchemyUnitOfWorkFactory(session_factory)
+
+
 def _make_submission(
     *,
     fingerprint: str = "test_fp_001",
@@ -81,55 +86,57 @@ def _make_submission(
 
 
 async def test_sqlalchemy_submission_repository_creates_and_retrieves_by_fingerprint(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreSubmissionRepository(session_factory)
-
     submission = _make_submission(fingerprint="test_fp_001")
-    created = await repo.create(submission)
+    async with uow_factory() as uow:
+        created = await uow.submissions.create(submission)
+        await uow.commit()
 
     assert created.id is not None
     assert created.fingerprint == submission.fingerprint
     assert created.user_id == submission.user_id
 
-    retrieved = await repo.get_by_fingerprint(created.fingerprint)
+    async with uow_factory() as uow:
+        retrieved = await uow.submissions.get_by_fingerprint(created.fingerprint)
     assert retrieved is not None
     assert retrieved.id == created.id
     assert retrieved.fingerprint == created.fingerprint
 
 
 async def test_sqlalchemy_submission_repository_returns_none_for_nonexistent_fingerprint(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreSubmissionRepository(session_factory)
-
-    retrieved = await repo.get_by_fingerprint("nonexistent_fingerprint")
+    async with uow_factory() as uow:
+        retrieved = await uow.submissions.get_by_fingerprint("nonexistent_fingerprint")
     assert retrieved is None
 
 
 async def test_sqlalchemy_submission_repository_rejects_duplicate_fingerprint(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreSubmissionRepository(session_factory)
-
     submission1 = _make_submission(fingerprint="test_fp_002", user_id=1000)
-    _ = await repo.create(submission1)
+    async with uow_factory() as uow:
+        _ = await uow.submissions.create(submission1)
+        await uow.commit()
 
     submission2 = _make_submission(fingerprint="test_fp_002", user_id=2000)
     with pytest.raises(ValueError, match="fingerprint already exists"):
-        _ = await repo.create(submission2)
+        async with uow_factory() as uow:
+            _ = await uow.submissions.create(submission2)
 
 
 async def test_sqlalchemy_submission_repository_idempotent_retrieval(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreSubmissionRepository(session_factory)
-
     submission = _make_submission(fingerprint="test_fp_003")
-    created = await repo.create(submission)
+    async with uow_factory() as uow:
+        created = await uow.submissions.create(submission)
+        await uow.commit()
 
-    first_retrieval = await repo.get_by_fingerprint(created.fingerprint)
-    second_retrieval = await repo.get_by_fingerprint(created.fingerprint)
+    async with uow_factory() as uow:
+        first_retrieval = await uow.submissions.get_by_fingerprint(created.fingerprint)
+        second_retrieval = await uow.submissions.get_by_fingerprint(created.fingerprint)
 
     assert first_retrieval is not None
     assert second_retrieval is not None
@@ -138,43 +145,46 @@ async def test_sqlalchemy_submission_repository_idempotent_retrieval(
 
 
 async def test_sqlalchemy_submission_repository_updates_state(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreSubmissionRepository(session_factory)
-
     submission = _make_submission(fingerprint="test_fp_004", state="received")
-    created = await repo.create(submission)
+    async with uow_factory() as uow:
+        created = await uow.submissions.create(submission)
+        await uow.commit()
 
     assert created.id is not None
     assert created.state == "received"
 
-    await repo.update_state(created.id, "completed")
+    async with uow_factory() as uow:
+        await uow.submissions.update_state(created.id, "completed")
+        await uow.commit()
 
-    retrieved = await repo.get_by_fingerprint(created.fingerprint)
+    async with uow_factory() as uow:
+        retrieved = await uow.submissions.get_by_fingerprint(created.fingerprint)
     assert retrieved is not None
     assert retrieved.state == "completed"
 
 
 async def test_sqlalchemy_submission_repository_update_state_raises_for_nonexistent_id(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreSubmissionRepository(session_factory)
-
     with pytest.raises(ValueError, match="Submission not found"):
-        await repo.update_state(999999, "completed")
+        async with uow_factory() as uow:
+            await uow.submissions.update_state(999999, "completed")
 
 
 async def test_sqlalchemy_submission_repository_preserves_result_snapshot(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreSubmissionRepository(session_factory)
-
     submission = _make_submission(fingerprint="test_fp_005")
     submission.result_snapshot = {"status": "completed", "score_id": 12345}
-    created = await repo.create(submission)
+    async with uow_factory() as uow:
+        created = await uow.submissions.create(submission)
+        await uow.commit()
 
     assert created.id is not None
-    retrieved = await repo.get_by_fingerprint(created.fingerprint)
+    async with uow_factory() as uow:
+        retrieved = await uow.submissions.get_by_fingerprint(created.fingerprint)
 
     assert retrieved is not None
     assert retrieved.result_snapshot is not None

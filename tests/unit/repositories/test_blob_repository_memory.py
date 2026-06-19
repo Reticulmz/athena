@@ -4,12 +4,13 @@ from datetime import datetime
 
 import pytest
 
-from osu_server.repositories.interfaces.blob_repository import (
-    BlobRepository,
+from osu_server.domain.storage.blobs import NewBlob
+from osu_server.repositories.interfaces.commands.blobs import (
+    BlobCommandRepository,
     DuplicateBlobError,
-    NewBlob,
 )
-from osu_server.repositories.memory.blob_repository import InMemoryBlobRepository
+from osu_server.repositories.memory.commands.blobs import InMemoryBlobCommandRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 VALID_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OTHER_SHA256 = "f" * 64
@@ -32,16 +33,20 @@ def _new_blob(
     )
 
 
-def test_in_memory_blob_repository_satisfies_contract() -> None:
-    repo = InMemoryBlobRepository()
+def _repo() -> InMemoryBlobCommandRepository:
+    return InMemoryBlobCommandRepository(InMemoryCommandRepositoryState())
 
-    assert isinstance(repo, BlobRepository)
+
+def test_in_memory_blob_repository_satisfies_contract() -> None:
+    repo = _repo()
+
+    assert isinstance(repo, BlobCommandRepository)
     assert not hasattr(repo, "update")
     assert not hasattr(repo, "delete")
 
 
 async def test_create_assigns_identity_and_creation_time() -> None:
-    repo = InMemoryBlobRepository()
+    repo = _repo()
 
     created = await repo.create(_new_blob())
 
@@ -55,7 +60,7 @@ async def test_create_assigns_identity_and_creation_time() -> None:
 
 
 async def test_get_by_id_returns_created_blob() -> None:
-    repo = InMemoryBlobRepository()
+    repo = _repo()
     created = await repo.create(_new_blob())
 
     assert await repo.get_by_id(created.id) == created
@@ -63,7 +68,7 @@ async def test_get_by_id_returns_created_blob() -> None:
 
 
 async def test_get_by_sha256_returns_created_blob() -> None:
-    repo = InMemoryBlobRepository()
+    repo = _repo()
     created = await repo.create(_new_blob())
 
     assert await repo.get_by_sha256(VALID_SHA256) == created
@@ -71,7 +76,7 @@ async def test_get_by_sha256_returns_created_blob() -> None:
 
 
 async def test_create_assigns_monotonic_ids() -> None:
-    repo = InMemoryBlobRepository()
+    repo = _repo()
 
     first = await repo.create(_new_blob())
     second = await repo.create(_new_blob(sha256=OTHER_SHA256, storage_key="ff/ff/blob"))
@@ -81,7 +86,7 @@ async def test_create_assigns_monotonic_ids() -> None:
 
 
 async def test_create_rejects_duplicate_sha256_without_creating_second_record() -> None:
-    repo = InMemoryBlobRepository()
+    repo = _repo()
     created = await repo.create(_new_blob())
 
     with pytest.raises(DuplicateBlobError) as exc_info:

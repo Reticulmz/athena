@@ -1,4 +1,4 @@
-"""Integration tests for SQLAlchemyScoreRepository.
+"""Integration tests for the SQLAlchemy score command repository.
 
 Tests CRUD operations and unique constraint handling against real PostgreSQL.
 """
@@ -17,7 +17,7 @@ from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
-from osu_server.repositories.sqlalchemy.score_repository import SQLAlchemyScoreRepository
+from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -61,6 +61,13 @@ async def session_factory(
         return
 
 
+@pytest.fixture
+def uow_factory(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> SQLAlchemyUnitOfWorkFactory:
+    return SQLAlchemyUnitOfWorkFactory(session_factory)
+
+
 def _make_score(
     *,
     online_checksum: str = "test_checksum_001",
@@ -96,18 +103,19 @@ def _make_score(
 
 
 async def test_sqlalchemy_score_repository_creates_and_retrieves_score(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreRepository(session_factory)
-
     score = _make_score(online_checksum="test_checksum_001")
-    created = await repo.create(score)
+    async with uow_factory() as uow:
+        created = await uow.scores.create(score)
+        await uow.commit()
 
     assert created.id is not None
     assert created.user_id == score.user_id
     assert created.online_checksum == score.online_checksum
 
-    retrieved = await repo.get_by_id(created.id)
+    async with uow_factory() as uow:
+        retrieved = await uow.scores.get_by_id(created.id)
     assert retrieved is not None
     assert retrieved.id == created.id
     assert retrieved.online_checksum == created.online_checksum
@@ -115,81 +123,86 @@ async def test_sqlalchemy_score_repository_creates_and_retrieves_score(
 
 
 async def test_sqlalchemy_score_repository_exists_by_online_checksum(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreRepository(session_factory)
-
     score = _make_score(online_checksum="test_checksum_002")
-    created = await repo.create(score)
+    async with uow_factory() as uow:
+        created = await uow.scores.create(score)
+        await uow.commit()
 
-    assert await repo.exists_by_online_checksum(created.online_checksum) is True
-    assert await repo.exists_by_online_checksum("nonexistent_checksum") is False
+    async with uow_factory() as uow:
+        assert await uow.scores.exists_by_online_checksum(created.online_checksum) is True
+        assert await uow.scores.exists_by_online_checksum("nonexistent_checksum") is False
 
 
 async def test_sqlalchemy_score_repository_get_by_online_checksum(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreRepository(session_factory)
-
     score = _make_score(online_checksum="test_checksum_get_by_online")
-    created = await repo.create(score)
+    async with uow_factory() as uow:
+        created = await uow.scores.create(score)
+        await uow.commit()
 
-    retrieved = await repo.get_by_online_checksum(created.online_checksum)
-    assert retrieved is not None
-    assert retrieved.id == created.id
-    assert retrieved.online_checksum == created.online_checksum
-    assert await repo.get_by_online_checksum("nonexistent_checksum") is None
+    async with uow_factory() as uow:
+        retrieved = await uow.scores.get_by_online_checksum(created.online_checksum)
+        assert retrieved is not None
+        assert retrieved.id == created.id
+        assert retrieved.online_checksum == created.online_checksum
+        assert await uow.scores.get_by_online_checksum("nonexistent_checksum") is None
 
 
 async def test_sqlalchemy_score_repository_rejects_duplicate_online_checksum(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreRepository(session_factory)
-
     score1 = _make_score(online_checksum="test_checksum_003", user_id=1000)
-    _ = await repo.create(score1)
+    async with uow_factory() as uow:
+        _ = await uow.scores.create(score1)
+        await uow.commit()
 
     score2 = _make_score(online_checksum="test_checksum_003", user_id=2000)
     with pytest.raises(ValueError, match="online_checksum already exists"):
-        _ = await repo.create(score2)
+        async with uow_factory() as uow:
+            _ = await uow.scores.create(score2)
 
 
 async def test_sqlalchemy_score_repository_handles_failed_scores(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreRepository(session_factory)
-
     score = _make_score(online_checksum="test_checksum_004")
     score.passed = False
     score.score = 50000
     score.accuracy = 0.65
     score.grade = Grade.D
 
-    created = await repo.create(score)
+    async with uow_factory() as uow:
+        created = await uow.scores.create(score)
+        await uow.commit()
 
     assert created.id is not None
     assert created.passed is False
 
-    retrieved = await repo.get_by_id(created.id)
+    async with uow_factory() as uow:
+        retrieved = await uow.scores.get_by_id(created.id)
     assert retrieved is not None
     assert retrieved.passed is False
     assert retrieved.score == 50000
 
 
 async def test_sqlalchemy_score_repository_preserves_all_fields(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyScoreRepository(session_factory)
-
     score = _make_score(online_checksum="test_checksum_005")
     score.ruleset = Ruleset.TAIKO
     score.mods = ModCombination.from_bitmask(72)  # HD+DT
     score.perfect = True
 
-    created = await repo.create(score)
+    async with uow_factory() as uow:
+        created = await uow.scores.create(score)
+        await uow.commit()
 
     assert created.id is not None
-    retrieved = await repo.get_by_id(created.id)
+    async with uow_factory() as uow:
+        retrieved = await uow.scores.get_by_id(created.id)
 
     assert retrieved is not None
     assert retrieved.ruleset == Ruleset.TAIKO

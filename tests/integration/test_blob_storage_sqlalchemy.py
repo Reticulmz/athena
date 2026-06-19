@@ -8,10 +8,11 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from osu_server.domain.storage.blobs import NewBlob
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
-from osu_server.repositories.interfaces.blob_repository import DuplicateBlobError, NewBlob
-from osu_server.repositories.sqlalchemy.blob_repository import SQLAlchemyBlobRepository
+from osu_server.repositories.interfaces.commands.blobs import DuplicateBlobError
+from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -59,6 +60,13 @@ async def session_factory(
         return
 
 
+@pytest.fixture
+def uow_factory(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> SQLAlchemyUnitOfWorkFactory:
+    return SQLAlchemyUnitOfWorkFactory(session_factory)
+
+
 def _digest(value: str) -> str:
     return sha256(value.encode()).hexdigest()
 
@@ -75,24 +83,28 @@ def _new_blob(*, label: str = "blob repository integration one") -> NewBlob:
 
 
 async def test_sqlalchemy_blob_repository_persists_and_retrieves_blob(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyBlobRepository(session_factory)
+    async with uow_factory() as uow:
+        created = await uow.blobs.create(_new_blob())
+        await uow.commit()
 
-    created = await repo.create(_new_blob())
-
-    assert await repo.get_by_id(created.id) == created
-    assert await repo.get_by_sha256(created.sha256) == created
+    async with uow_factory() as uow:
+        assert await uow.blobs.get_by_id(created.id) == created
+        assert await uow.blobs.get_by_sha256(created.sha256) == created
 
 
 async def test_sqlalchemy_blob_repository_rejects_duplicate_sha256(
-    session_factory: async_sessionmaker[AsyncSession],
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    repo = SQLAlchemyBlobRepository(session_factory)
-    created = await repo.create(_new_blob(label="blob repository integration two"))
+    async with uow_factory() as uow:
+        created = await uow.blobs.create(_new_blob(label="blob repository integration two"))
+        await uow.commit()
 
     with pytest.raises(DuplicateBlobError) as exc_info:
-        _ = await repo.create(_new_blob(label="blob repository integration two"))
+        async with uow_factory() as uow:
+            _ = await uow.blobs.create(_new_blob(label="blob repository integration two"))
 
     assert exc_info.value.sha256 == created.sha256
-    assert await repo.get_by_sha256(created.sha256) == created
+    async with uow_factory() as uow:
+        assert await uow.blobs.get_by_sha256(created.sha256) == created

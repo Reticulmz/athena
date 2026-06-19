@@ -1,17 +1,18 @@
-"""Unit tests for InMemoryReplayRepository."""
+"""Unit tests for InMemoryReplayCommandRepository."""
 
 from __future__ import annotations
 
 import pytest
 
 from osu_server.domain.scores.replay import Replay
-from osu_server.repositories.memory.replay_repository import InMemoryReplayRepository
+from osu_server.repositories.memory.commands.replays import InMemoryReplayCommandRepository
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 
 @pytest.fixture
-def repository() -> InMemoryReplayRepository:
+def repository() -> InMemoryReplayCommandRepository:
     """Create a fresh in-memory replay repository."""
-    return InMemoryReplayRepository()
+    return InMemoryReplayCommandRepository(InMemoryCommandRepositoryState())
 
 
 @pytest.fixture
@@ -27,7 +28,7 @@ def sample_replay() -> Replay:
 
 
 async def test_create_assigns_id(
-    repository: InMemoryReplayRepository, sample_replay: Replay
+    repository: InMemoryReplayCommandRepository, sample_replay: Replay
 ) -> None:
     """Test that create() assigns an id to a new replay."""
     created = await repository.create(sample_replay)
@@ -37,7 +38,7 @@ async def test_create_assigns_id(
 
 
 async def test_create_increments_id(
-    repository: InMemoryReplayRepository, sample_replay: Replay
+    repository: InMemoryReplayCommandRepository, sample_replay: Replay
 ) -> None:
     """Test that create() increments id for subsequent replays."""
     first = await repository.create(sample_replay)
@@ -55,7 +56,7 @@ async def test_create_increments_id(
 
 
 async def test_create_rejects_duplicate_checksum(
-    repository: InMemoryReplayRepository, sample_replay: Replay
+    repository: InMemoryReplayCommandRepository, sample_replay: Replay
 ) -> None:
     """Test that create() rejects duplicate checksum_sha256."""
     _ = await repository.create(sample_replay)
@@ -71,7 +72,7 @@ async def test_create_rejects_duplicate_checksum(
 
 
 async def test_exists_by_checksum_returns_true_when_exists(
-    repository: InMemoryReplayRepository, sample_replay: Replay
+    repository: InMemoryReplayCommandRepository, sample_replay: Replay
 ) -> None:
     """Test that exists_by_checksum() returns True when replay exists."""
     _ = await repository.create(sample_replay)
@@ -80,7 +81,7 @@ async def test_exists_by_checksum_returns_true_when_exists(
 
 
 async def test_exists_by_checksum_returns_false_when_not_exists(
-    repository: InMemoryReplayRepository,
+    repository: InMemoryReplayCommandRepository,
 ) -> None:
     """Test that exists_by_checksum() returns False when replay not found."""
     exists = await repository.exists_by_checksum("nonexistent_checksum")
