@@ -8,7 +8,7 @@ Usage:
 
 Options:
   --base <ref>       Base ref for a new branch. Default: HEAD
-  --root <dir>       Worktree root directory. Default: ../athena-worktrees
+  --root <dir>       Worktree root directory. Default: ../athena_worktree
   --agent <name>     Agent branch namespace when --branch is omitted. Default: agent
   --namespace <name> Alias for --agent
   --branch <name>    Branch name. Default: <namespace>/<task-slug>
@@ -74,7 +74,7 @@ default_worktree_root() {
         primary_root=$repo_root
     fi
 
-    printf '%s\n' "${primary_root}/../athena-worktrees"
+    printf '%s\n' "${primary_root}/../athena_worktree"
 }
 
 resolve_root() {

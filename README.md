@@ -173,43 +173,22 @@ under `domain/compatibility/stable`.
 
 ## Compatibility Roadmap
 
-This checklist tracks broad compatibility areas, using existing private server
-implementations such as bancho.py and the local design notes as reference points.
-Checked items mean the repository has an implemented surface and tests or fixtures
-for that surface; they do not imply production completeness.
-
 The detailed packet, endpoint, request, response, and persistence inventory lives
 in [docs/stable-compatibility-matrix.md](docs/stable-compatibility-matrix.md).
+That matrix is the source of truth for stable compatibility progress; this README
+only summarizes the current direction so the two documents do not drift.
 The processing and data-shape guide lives in
 [docs/stable-compatibility-guide.md](docs/stable-compatibility-guide.md).
 
-- [x] Stable account registration through the legacy web endpoint.
-- [x] Stable bancho login and token-authenticated packet polling.
-- [x] Basic stable channel chat and private messages.
-- [x] Friend add/remove and friend-only private-message preference packets.
-- [x] Legacy getscores endpoint and stable text response mapping.
-- [x] Stable score submission endpoint, replay storage boundary, and score pipeline.
-- [ ] Full C2S/S2C packet coverage beyond the current core handlers.
-- [ ] Complete presence, user stats, and status propagation for online users.
-- [ ] Multiplayer lobby, match lifecycle, team modes, invites, and tournament packets.
-- [ ] Spectator start/stop, frame relay, and fellow spectator notifications.
-- [ ] osu!direct-style beatmap search/download flows and broader beatmap info replies.
-- [ ] Stable static/media routes for avatars, screenshots, beatmap thumbnails,
-  preview audio, `.osu` files, and `.osz` downloads.
-- [ ] Stable update/release compatibility routes or an explicitly documented
-  no-op/proxy policy for clients that call them.
-- [ ] Complete leaderboard rows, user statistics, global rank, and country rank projections.
-- [ ] Akatsuki-compatible Relax and Autopilot leaderboard/read-model support,
-  including mode separation and stats projection policy.
-- [ ] Medals, achievements, notifications, and scheduled maintenance jobs.
-- [ ] Moderation and operator workflows such as ban, silence, restrict, role changes,
-  and audit logging.
-- [ ] First-party public/admin API and Web UI surfaces.
-- [ ] Lazer REST API v2 compatibility and SignalR hubs.
-- [ ] Production deployment hardening: container images, secret handling, observability,
-  backups, migration operations, and runbooks.
-- [ ] Anti-abuse and anti-cheat checks beyond basic payload and consistency validation.
-- [ ] Broader real-client compatibility testing and reference fixture coverage.
+Current focus areas:
+
+- Core stable login, packet polling, chat, friends, getscores, and score submit
+  surfaces are implemented or partially implemented.
+- Remaining stable work is tracked in the matrix across packet coverage,
+  presence/stats, multiplayer, spectator, osu!direct, static/media delivery,
+  update/release policy, leaderboard projections, and moderation workflows.
+- Akatsuki-compatible Relax and Autopilot leaderboards are tracked as an
+  explicit compatibility extension, not as a baseline osu!stable requirement.
 
 ## Agent Workflow
 
@@ -219,6 +198,9 @@ should use isolated git worktrees and agent-prefixed branches:
 ```bash
 ./scripts/agent-worktree.sh <task-slug> --agent codex
 ```
+
+By default, worktrees are created under the repo-sibling
+`../athena_worktree/<task-slug>` directory.
 
 For non-trivial changes, use a pull request as the integration boundary. Run local
 checks in the task worktree, push the branch, let GitHub CI validate it, then merge

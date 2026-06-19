@@ -124,7 +124,8 @@ class TestServerPacketID:
         assert ServerPacketID.PING == 8
         assert ServerPacketID.USER_STATS == 11
         assert ServerPacketID.USER_QUIT == 12
-        assert ServerPacketID.MATCH_START == 45
+        assert ServerPacketID.ALL_PLAYERS_LOADED == 45
+        assert ServerPacketID.MATCH_START == 46
         assert ServerPacketID.CHANNEL_JOIN_SUCCESS == 64
         assert ServerPacketID.LOGIN_PERMISSIONS == 71
         assert ServerPacketID.PROTOCOL_VERSION == 75
@@ -133,6 +134,11 @@ class TestServerPacketID:
         assert ServerPacketID.ACCOUNT_RESTRICTED == 104
         assert ServerPacketID.RTX == 105
         assert ServerPacketID.SWITCH_TOURNAMENT_SERVER == 107
+
+    def test_match_start_and_all_players_loaded_match_lekuruu(self) -> None:
+        """Guard S2C 45/46 ordering from Lekuruu packet file names."""
+        assert ServerPacketID.ALL_PLAYERS_LOADED == 45
+        assert ServerPacketID.MATCH_START == 46
 
     def test_all_expected_members(self) -> None:
         """Verify every expected S2C member exists with correct value."""
@@ -161,8 +167,8 @@ class TestServerPacketID:
             "MATCH_JOIN_FAIL": 37,
             "FELLOW_SPECTATOR_JOINED": 42,
             "FELLOW_SPECTATOR_LEFT": 43,
-            "MATCH_START": 45,
-            "ALL_PLAYERS_LOADED": 46,
+            "ALL_PLAYERS_LOADED": 45,
+            "MATCH_START": 46,
             "MATCH_SCORE_UPDATE": 48,
             "MATCH_TRANSFER_HOST": 50,
             "MATCH_ALL_PLAYERS_LOADED": 53,

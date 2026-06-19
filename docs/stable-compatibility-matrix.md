@@ -172,8 +172,8 @@ implementation.
 | 37 | `MATCH_JOIN_FAIL` | Missing | Multiplayer support missing. |
 | 42 | `FELLOW_SPECTATOR_JOINED` | Missing | Spectator support missing. |
 | 43 | `FELLOW_SPECTATOR_LEFT` | Missing | Spectator support missing. |
-| 45 | `ALL_PLAYERS_LOADED` | Missing | Lekuruu marks this unused; prefer `MATCH_ALL_PLAYERS_LOADED` (53). Athena enum currently appears swapped with 46 and needs audit before implementation. |
-| 46 | `MATCH_START` | Missing | Multiplayer start packet with `Match` payload. Athena enum currently appears swapped with 45 and needs audit before implementation. |
+| 45 | `ALL_PLAYERS_LOADED` | Missing | Lekuruu marks this unused; prefer `MATCH_ALL_PLAYERS_LOADED` (53). Enum value is guarded by a regression test. |
+| 46 | `MATCH_START` | Missing | Multiplayer start packet with `Match` payload. Enum value is guarded by a regression test. |
 | 48 | `MATCH_SCORE_UPDATE` | Missing | Multiplayer support missing. |
 | 50 | `MATCH_TRANSFER_HOST` | Missing | Multiplayer support missing. |
 | 53 | `MATCH_ALL_PLAYERS_LOADED` | Missing | Multiplayer support missing. |
@@ -218,38 +218,43 @@ local transport wire types before packet handlers/builders depend on them.
 Exact current field layouts and enum values are summarized in
 [stable-compatibility-guide.md](stable-compatibility-guide.md#bancho-struct-field-reference).
 
-| Type | Status | Notes |
-| --- | --- | --- |
-| `String` | Implemented | Implemented as `BanchoString`. |
-| `Message` | Implemented | Used by chat C2S/S2C packets. |
-| `IntList` | Implemented | Used by friends and presence bundle packets. |
-| `Channel` | Implemented | Used by channel list packets. |
-| `StatusUpdate` | Implemented | Used by `STATUS_CHANGE`; behavior is still partial. |
-| `Status` | Missing | Needs explicit enum/value audit for stable status values. |
-| `Mode` | Missing | Needs explicit stable mode enum and converted-mode policy audit. |
-| `Mods` | Missing | Needs explicit stable mod bitmask coverage and conversion tests. |
-| `Grade` | Missing | Needed for score submit, getscores, and leaderboard display. |
-| `ButtonState` | Missing | Needed by replay/spectator frame structs. |
-| `PresenceFilter` | Missing | Needed by `RECEIVE_UPDATES` behavior. |
-| `QuitState` | Missing | Needed by `USER_QUIT`. |
-| `ReplayAction` | Missing | Needed by replay/spectator frame structs. |
-| `ReplayFrame` | Missing | Needed by spectator frame relay. |
-| `ScoreFrame` | Missing | Needed by multiplayer/spectator score updates. |
-| `ReplayFrameBundle` | Missing | Needed by `SEND_FRAMES` and `SPECTATE_FRAMES`. |
-| `BeatmapInfo` | Missing | Needed by beatmap info request/reply flow. |
-| `BeatmapInfoRequest` | Missing | Needed by C2S `BEATMAP_INFO`. |
-| `BeatmapInfoReply` | Missing | Needed by S2C `BEATMAP_INFO_REPLY`. |
-| `UserPresence` | Partial | Builder-local shape exists; needs canonical struct and golden tests. |
-| `UserPresenceBundle` | Partial | Built as `IntList`; needs canonical naming and tests. |
-| `UserStats` | Partial | Builder-local shape exists; stats projection is incomplete. |
-| `Match` | Missing | Needed by multiplayer packets. |
-| `MatchJoin` | Missing | Needed by match join/create packet payloads. |
+| Type | Status | Blocking packet dependencies | Notes |
+| --- | --- | --- | --- |
+| `String` | Implemented | Chat, login, channel, match, beatmap info packets | Implemented as `BanchoString`. |
+| `Message` | Implemented | C2S/S2C `SEND_MESSAGE`, private message packets | Used by chat C2S/S2C packets. |
+| `IntList` | Implemented | `FRIENDS_LIST`, `USER_PRESENCE_BUNDLE` | Used by friends and presence bundle packets. |
+| `Channel` | Implemented | `CHANNEL_AVAILABLE`, `CHANNEL_AVAILABLE_AUTOJOIN` | Used by channel list packets. |
+| `StatusUpdate` | Implemented | C2S `STATUS_CHANGE`, S2C `USER_STATS` | Used by `STATUS_CHANGE`; behavior is still partial. |
+| `Status` | Missing | `STATUS_CHANGE`, `USER_STATS` | Needs explicit enum/value audit for stable status values. |
+| `Mode` | Missing | `STATUS_CHANGE`, `USER_STATS`, `USER_PRESENCE`, score modes | Needs stable mode enum and converted-mode policy audit. |
+| `Mods` | Missing | `STATUS_CHANGE`, score submit, `MATCH`, leaderboard family policy | Needs stable mod bitmask coverage and conversion tests. |
+| `Grade` | Missing | score submit, getscores, `BEATMAP_INFO_REPLY` | Needed for score submit, getscores, and leaderboard display. |
+| `ButtonState` | Missing | `SEND_FRAMES`, `SPECTATE_FRAMES` | Needed by replay/spectator frame structs. |
+| `PresenceFilter` | Missing | `RECEIVE_UPDATES` | Needed by update subscription behavior. |
+| `QuitState` | Missing | `USER_QUIT` | Needed by modern `USER_QUIT`. |
+| `ReplayAction` | Missing | `SEND_FRAMES`, `SPECTATE_FRAMES` | Needed by replay/spectator frame structs. |
+| `ReplayFrame` | Missing | `SEND_FRAMES`, `SPECTATE_FRAMES` | Blocks spectator frame relay. |
+| `ScoreFrame` | Missing | C2S 47 `MATCH_SCORE_UPDATE`, S2C 48 `MATCH_SCORE_UPDATE`, `SPECTATE_FRAMES` | Critical blocker for multiplayer/spectator score updates. |
+| `ReplayFrameBundle` | Missing | C2S `SEND_FRAMES`, S2C `SPECTATE_FRAMES` | Critical blocker for spectator frame relay. |
+| `BeatmapInfo` | Missing | C2S `BEATMAP_INFO`, S2C `BEATMAP_INFO_REPLY`, `/web/osu-getbeatmapinfo.php` | Needed by beatmap info request/reply flow. |
+| `BeatmapInfoRequest` | Missing | C2S `BEATMAP_INFO` | Needed by C2S `BEATMAP_INFO`. |
+| `BeatmapInfoReply` | Missing | S2C `BEATMAP_INFO_REPLY` | Needed by S2C `BEATMAP_INFO_REPLY`. |
+| `UserPresence` | Partial | `USER_PRESENCE`, `USER_PRESENCE_SINGLE`, login presence bundle | Builder-local shape exists; needs canonical struct and golden tests. |
+| `UserPresenceBundle` | Partial | `USER_PRESENCE_BUNDLE`, login online user list | Built as `IntList`; needs canonical naming and tests. |
+| `UserStats` | Partial | `USER_STATS`, login stats, requested stats | Builder-local shape exists; stats projection is incomplete. |
+| `Match` | Missing | `CREATE_MATCH`, `JOIN_MATCH`, `MATCH_UPDATE`, `NEW_MATCH`, `MATCH_START`, `MATCH_JOIN_SUCCESS` | Critical blocker for multiplayer packets. |
+| `MatchJoin` | Missing | C2S `CREATE_MATCH`, C2S `JOIN_MATCH` | Needed by match join/create packet payloads. |
 
 ## Stable HTTP Endpoint Coverage
 
 Implemented route source: `src/osu_server/composition/application.py`. Candidate
 rows are derived from `osuRipple/lets` and `osuTitanic/deck`; confirm each by
 target client traffic before making it a required Athena surface.
+
+Candidate rows must not remain indefinite. For each candidate endpoint, create a
+tracking issue that records whether target stable clients call it, then promote
+it to `Implemented` / `Partial` / `Missing` when it is required, or demote it to
+`Out of scope` when traffic and reference review show it is unnecessary.
 
 | Method | Endpoint | Status | Notes |
 | --- | --- | --- | --- |
@@ -266,9 +271,9 @@ target client traffic before making it a required Athena surface.
 | `GET` | `/web/osu-getscores.php` through `/web/osu-getscores6.php` | Candidate | Older getscores variants in `deck`; decide target client build coverage. |
 | `GET` | `/web/osu-getreplay.php` | Missing | Replay download flow missing. |
 | `GET` | `/web/replays/<id>` | Candidate | Full replay route in `lets`; verify client usage. |
-| `GET` | `/web/check-updates.php` | Missing | Stable update compatibility route in `lets`, `deck`, and `bancho.py`. |
-| `GET` | `/release/update`, `/release/update.php`, `/release/update2.php`, `/release/patches.php`, `/update`, `/update.php`, `/update2.php`, `/patches.php` | Candidate | Stable release/update routes in `deck` and external references; scope as no-op, proxy, or hosted updates. |
-| `GET` | `/release/<filename>`, `/release/filter.txt`, `/release/Localisation/<filename>`, `/release/<language>/<filename>` | Candidate | Release files/localization/filter routes in `deck`; verify target client calls. |
+| `GET` | `/web/check-updates.php` | Missing | Stable update compatibility route in `lets`, `deck`, and `bancho.py`; initial Athena policy is no-update/no-op unless traffic requires proxying. |
+| `GET` | `/release/update`, `/release/update.php`, `/release/update2.php`, `/release/patches.php`, `/update`, `/update.php`, `/update2.php`, `/patches.php` | Candidate | Stable release/update routes in `deck` and external references; initial Athena policy is no-update/no-op, not hosted updater. |
+| `GET` | `/release/<filename>`, `/release/filter.txt`, `/release/Localisation/<filename>`, `/release/<language>/<filename>` | Candidate | Release files/localization/filter routes in `deck`; proxy/hosting requires an explicit operational decision. |
 | `GET` | `/web/osu-search.php`, `/web/osu-search-set.php` | Missing | osu!direct search and set details missing. |
 | `GET` | `/d/<set>`, `/s/<set>`, `/bss/<set>`, `/osu/<map>`, `/web/maps/<file>`, `b.$DOMAIN/<path>`, `s.$DOMAIN/<path>`, `d.$DOMAIN/d/<set>` | Candidate | Beatmap download and `.osu` file routes from references. |
 | `GET` | `/mt/*`, `/thumb/*`, `/images/map-thumb/*`, `/preview/*`, `/mp3/preview/*` | Candidate | Beatmap thumbnails and preview media routes from `deck`. |
@@ -298,6 +303,12 @@ These are not baseline osu!stable requirements, but they are part of the
 Akatsuki behavior set the project is using as an integrated reference. Keep them
 visible so Athena does not accidentally design leaderboard persistence that
 cannot support them later.
+
+Decision status: RX/AP is not part of the initial vanilla stable compatibility
+baseline, but score ingestion, leaderboard query repositories, and stats
+projections must preserve a `leaderboard_family` or equivalent read-model key so
+Athena can add separated vanilla, Relax, and Autopilot boards without a schema
+redesign. The family belongs to score/stat projections, not to beatmap identity.
 
 | Surface | Status | Requirement |
 | --- | --- | --- |
@@ -462,22 +473,26 @@ limits during this audit. Public repository pages for `osuAkatsuki/bancho.py`
 and `osuTitanic/deck` were reachable, and detailed route behavior was audited
 from the local clones listed above.
 
-| Area | Durable data to audit | Stable surfaces affected | Status |
-| --- | --- | --- | --- |
-| Identity and login | user id, username/safe name, password hash, email, country, activation, latest activity, preferred mode, play style, supporter/donor state | Bancho login, registration, profile/user lookup | Partial |
-| Permissions and moderation | role/group membership, Bancho permissions, silence end, restricted/banned state, infringement/report/audit logs | login replies, channel access, chat, restrictions, admin actions | Partial |
-| Client integrity | client hashes, executable/path hashes, adapters, unique id, disk signature, verified hardware exceptions, login history | login validation, multi-account policy, score submit validation | Missing |
-| Social graph | friends, blocks, friend-only DMs, direct messages/read state | friend packets, private messages, DM privacy | Partial |
-| Chat and channels | channel definitions, read/write permissions, autojoin channels, persisted messages, chat filters | login channel list, channel join/leave, public/private chat | Partial |
-| Beatmaps and beatmapsets | beatmap id, set id, md5, filename, status, metadata, mode, difficulty stats, play/pass counts, mirrors/resources, favourites, ratings, comments | getscores, beatmap info packet, osu!direct, downloads, comments | Partial |
-| Scores and leaderboard | score id, user id, beatmap id/md5, score checksum, client version/hash, mode, mods, hit counts, grade, combo, pp, accuracy, status, submitted time, replay md5, fail time, leaderboard family for vanilla/Relax/Autopilot where enabled | score submit, getscores, rankings, user stats, replay download, Akatsuki-compatible RX/AP boards | Partial |
-| User stats and rankings | total/ranked score, pp, accuracy, play count, playtime, max combo, total hits, grade counts, rank, country rank, rank history | user stats packets, presence panels, profile/ranking views | Partial |
-| Replays and media | replay object key/checksum, replay view counts, screenshots, avatars, beatmap files, seasonal assets, update files | replay download, screenshot upload/download, static endpoints, updater | Missing |
-| Static/media delivery | screenshot id, screenshot owner, created-at checksum, hidden/expiry flags, avatar hash, avatar update time, beatmap background key, preview audio key, `.osu` object key, `.osz` object key, full/no-video sizes, content length, last-modified time, mirror URL, download-server routing | `/ss/*`, `/a/*`, `/mt/*`, `/thumb/*`, `/preview/*`, `/osu/*`, `/d/*`, `/bss/*`, `/s/*` | Missing |
-| Release/update files | release version, file hash, patch URL, full file URL, release timestamp, extra file md5, extra download key, localization language/file key | `/web/check-updates.php`, `/release/update*`, `/release/<file>`, root `/update*` and `/patches.php` aliases | Missing |
-| Ratings/comments/favourites | beatmap ratings by user, comments by target type/id, favourite set relationships, read markers | `/web/osu-rate.php`, `/rating/ingame-rate.php`, `/rating/ingame-rate2.php`, `/web/osu-comment.php`, `/web/osu-addfavourite.php`, `/web/osu-getfavourites.php`, `/web/osu-markasread.php` | Missing |
-| Achievements and notifications | achievement definitions/unlocks, notifications, user badges/profile badges | score submit unlock flow, profile display, notification packets | Missing |
-| Multiplayer and tournaments | match records, match events, pool definitions, pool maps, host/slot/team settings as durable audit where needed | multiplayer packet family, tournament packet family | Missing |
+| Area | Domain owner | Durable data to audit | Primary consumers | Current gap | Status |
+| --- | --- | --- | --- | --- | --- |
+| Identity and login | `domain/identity` user/session aggregates | user id, username/safe name, password hash, email, country, activation, latest activity, preferred mode, play style, supporter/donor state | Bancho login, registration, profile/user lookup | Core user/login data exists; activation/supporter/profile projection coverage is incomplete. | Partial |
+| Permissions and moderation | `domain/identity` authorization plus moderation aggregate | role/group membership, Bancho permissions, silence end, restricted/banned state, infringement/report/audit logs | login replies, channel access, chat, restrictions, admin actions | Role/permission language exists; moderation audit and infringement history are incomplete. | Partial |
+| Client integrity | stable compatibility client-integrity aggregate | client hashes, executable/path hashes, adapters, unique id, disk signature, verified hardware exceptions, login history | login validation, multi-account policy, score submit validation | No durable integrity model yet. | Missing |
+| Social graph | identity relationship aggregate | friends, blocks, friend-only DMs, direct messages/read state | friend packets, private messages, DM privacy | Friend and DM preference support exists; blocks and read-state persistence are incomplete. | Partial |
+| Chat and channels | `domain/chat` channel/message aggregates | channel definitions, read/write permissions, autojoin channels, persisted messages, chat filters | login channel list, channel join/leave, public/private chat | Channel/chat flows exist; persisted history and moderation filters are incomplete. | Partial |
+| Beatmaps and beatmapsets | `domain/beatmaps` beatmap/beatmapset aggregates | beatmap id, set id, md5, filename, status, metadata, mode, difficulty stats, play/pass counts, mirrors/resources, favourites, ratings, comments | getscores, beatmap info packet, osu!direct, downloads, comments | Metadata and mirror boundaries exist; osu!direct, ratings, comments, and full file serving are incomplete. | Partial |
+| Scores and leaderboard | `domain/scores` score plus leaderboard read model | score id, user id, beatmap id/md5, score checksum, client version/hash, mode, mods, hit counts, grade, combo, pp, accuracy, status, submitted time, replay md5, fail time, leaderboard family for vanilla/Relax/Autopilot where enabled | score submit, getscores, rankings, user stats, replay download, Akatsuki-compatible RX/AP boards | Submission path exists; complete rows, ranking projections, and RX/AP family separation are incomplete. | Partial |
+| User stats and rankings | scores/stat projection read model | total/ranked score, pp, accuracy, play count, playtime, max combo, total hits, grade counts, rank, country rank, rank history | user stats packets, presence panels, profile/ranking views | Placeholder stats exist; rank/country-rank/history projections are incomplete. | Partial |
+| Replays and media metadata | `domain/scores` replay plus `domain/storage` blob metadata | replay object key/checksum, replay view counts, screenshot metadata, avatar metadata, beatmap asset metadata, seasonal asset metadata, update file metadata | replay download, screenshot upload/download, avatar/static endpoints, updater | Object metadata model and endpoint coverage are missing. | Missing |
+| Static/media delivery | `domain/storage` asset delivery read model | screenshot id, screenshot owner, created-at checksum, hidden/expiry flags, avatar hash, avatar update time, beatmap background key, preview audio key, `.osu` object key, `.osz` object key, full/no-video sizes, content length, last-modified time, mirror URL, download-server routing | `/ss/*`, `/a/*`, `/mt/*`, `/thumb/*`, `/preview/*`, `/osu/*`, `/d/*`, `/bss/*`, `/s/*` | Delivery routing, cache headers, and object lookup projections are missing. | Missing |
+| Release/update files | release/update asset aggregate | release version, file hash, patch URL, full file URL, release timestamp, extra file md5, extra download key, localization language/file key | `/web/check-updates.php`, `/release/update*`, `/release/<file>`, root `/update*` and `/patches.php` aliases | Initial no-update/no-op policy is documented; hosted/proxy update storage is missing. | Missing |
+| Ratings/comments/favourites | beatmap social aggregate | beatmap ratings by user, comments by target type/id, favourite set relationships, read markers | `/web/osu-rate.php`, `/rating/ingame-rate.php`, `/rating/ingame-rate2.php`, `/web/osu-comment.php`, `/web/osu-addfavourite.php`, `/web/osu-getfavourites.php`, `/web/osu-markasread.php` | Durable ratings/comments/favourites/read markers are missing. | Missing |
+| Achievements and notifications | achievement/notification aggregates | achievement definitions/unlocks, notifications, user badges/profile badges | score submit unlock flow, profile display, notification packets | Achievement and notification models are missing. | Missing |
+| Multiplayer and tournaments | multiplayer match/tournament aggregates | match records, match events, pool definitions, pool maps, host/slot/team settings as durable audit where needed | multiplayer packet family, tournament packet family | Runtime and durable multiplayer models are missing. | Missing |
+
+Use `Replays and media metadata` for ownership of stored object facts and audit
+metadata. Use `Static/media delivery` for HTTP routing, cache behavior, mirrors,
+and response headers over those objects.
 
 ## GitHub Project Shape
 
@@ -505,7 +520,7 @@ Recommended initial Project epics:
   migrations, and query usage in `lets` and `pep.py`.
 - Request/response fixture extraction for each implemented endpoint.
 - Bancho struct golden fixture extraction from Lekuruu `Types/*.md`.
-- S2C 45/46 enum audit against Lekuruu before multiplayer implementation.
+- Match payload builder and golden fixtures for multiplayer packet implementation.
 - Presence and user stats completion.
 - Beatmap info, osu!direct, replay, and file-serving compatibility.
 - Score, leaderboard, personal best, user stats, and rank projection completion.
@@ -513,6 +528,19 @@ Recommended initial Project epics:
 - Spectator packet family.
 - Moderation, restrictions, silence, and audit workflows.
 - Real-client probe suite and golden fixture expansion.
+
+Recommended dependency order:
+
+1. Complete protocol, legacy web, and persistence inventory audits.
+2. Extract struct and request/response golden fixtures from confirmed references.
+3. Finish core presence, user stats, score, leaderboard, beatmap info, and file
+   serving projections.
+4. Implement multiplayer and spectator packet families after `Match`,
+   `ScoreFrame`, and `ReplayFrameBundle` fixtures exist.
+5. Add moderation, restrictions, release/update policy, and optional RX/AP
+   compatibility once core stable gameplay behavior is fixture-backed.
+6. Promote the real-client probe suite into CI after it can run deterministically
+   against local services and seeded fixture data.
 
 ## Completion Rule
 
@@ -525,6 +553,14 @@ Do not call stable compatibility complete until all of these are true:
    backed by a documented reason for deferral.
 4. Every observed stable `/web/*.php`, static/media, and update/release request
    has a row in this document.
-5. Every implemented stable surface has at least one automated verification path.
+5. Every implemented stable surface has automated verification. Packet and
+   wire-format surfaces require at least unit plus golden fixture coverage;
+   HTTP endpoints require route integration plus response fixture coverage.
 6. A real stable client probe has covered login, idle polling, chat, score submit,
    getscores, beatmap download/search scope, and reconnect behavior.
+
+Promotion from `Partial` to `Implemented` requires explicit exit criteria in the
+tracking issue. For example, getscores requires full header and row projection,
+personal best handling, ranking status mapping, and fixture coverage; score
+submit requires durable replay metadata, leaderboard reconciliation, stats/rank
+projection, and real-client probe coverage for the response body.

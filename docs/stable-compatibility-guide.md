@@ -287,10 +287,10 @@ Implementation rule: when adding a packet parser or builder, first mirror the
 Lekuruu struct in a local type, then add a golden encode/decode test. Use
 reference implementations only to clarify behavior around the struct.
 
-Known protocol audit issue: Lekuruu's current packet enum maps S2C 45 to
-`AllPlayersLoaded` and S2C 46 to `MatchStart`. Athena's current `ServerPacketID`
-enum appears to have those two names swapped. Treat Lekuruu as authoritative and
-fix the enum before implementing multiplayer packet builders.
+S2C 45/46 ordering must follow Lekuruu packet file names: 45 is
+`AllPlayersLoaded` and 46 is `MatchStart`. Athena's `ServerPacketID` enum is
+covered by a regression test for this ordering; keep that test in place before
+adding multiplayer packet builders.
 
 Athena also currently emits `USER_QUIT` as the old 4-byte `UserId` form. The
 modern stable packet is `UserId` plus `QuitState`; keep this marked partial until
@@ -302,6 +302,23 @@ documented.
 This section normalizes the current Lekuruu `Types/*.md` layouts into an
 implementation checklist. Historical shapes should be used only when Athena
 intentionally targets an older client build.
+
+Lekuruu notation maps to Athena protocol primitives as follows:
+
+| Notation | Wire size | Implementation target |
+| --- | --- | --- |
+| `char` / `u8` | 1 byte | `int` constrained to `0..255` |
+| `bool` | 1 byte | `bool` encoded as `0` or `1` |
+| `sShort` / `uShort` | 2 bytes | little-endian `int` with signedness preserved |
+| `sInt` / `uInt` | 4 bytes | little-endian `int` with signedness preserved |
+| `sLongLong` | 8 bytes | little-endian signed `int` |
+| `float` / `double` | 4 / 8 bytes | little-endian Python `float` |
+| `String` | variable | `BanchoString` |
+
+Golden encode/decode fixtures are required before implementing packet handlers
+that depend on these structs. Pay special attention to `UserPresence`
+`permissions | (mode << 5)` packing and the C2S/S2C `ScoreFrame` size
+difference.
 
 | Type | Current stable layout or values |
 | --- | --- |
@@ -479,9 +496,8 @@ Packets:
 Current Athena behavior:
 
 - Missing.
-- Athena's current S2C enum appears to swap `ALL_PLAYERS_LOADED` (45) and
-  `MATCH_START` (46) compared with Lekuruu. Correct that before implementing
-  multiplayer builders.
+- S2C `ALL_PLAYERS_LOADED` (45) and `MATCH_START` (46) now follow Lekuruu and
+  are guarded by enum tests.
 
 Required processing:
 
@@ -827,6 +843,15 @@ Current Athena behavior:
 
 - Missing.
 
+Athena decision:
+
+- Use a compatibility no-op/proxy policy for the initial implementation.
+- `/web/check-updates.php` and simple release manifest routes should return a
+  stable-compatible no-update response unless target-client traffic proves a
+  proxy to ppy or hosted release manifest is needed.
+- Release file hosting remains out of the core server path until Athena
+  intentionally supports stable client update artifact distribution.
+
 Reference request and response shapes from `deck`:
 
 | Endpoint | Request | Response |
@@ -843,9 +868,9 @@ Reference request and response shapes from `deck`:
 
 `lets` takes a proxy-oriented approach for `/web/check-updates.php`: it forwards
 all query parameters to `https://osu.ppy.sh/web/check-updates.php`, returns
-`nope` for `action=put`, and returns an empty body on errors. Athena should
-choose and document one of three policies before implementation: no-op response,
-ppy proxy, or self-hosted release manifest.
+`nope` for `action=put`, and returns an empty body on errors. Athena should not
+proxy or host release artifacts by default; that requires a separate operational
+decision because it changes external dependency and storage behavior.
 
 Required processing:
 
