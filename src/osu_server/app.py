@@ -1,7 +1,7 @@
-"""公開 ASGI エントリポイントと互換 facade。
+"""公開 ASGI エントリポイント。
 
-``uvicorn osu_server.app:app`` の外部契約はこの module に残し、
-実装の組み立ては ``osu_server.composition`` に閉じ込める。
+``uvicorn osu_server.app:app`` から参照される runtime object を公開し、
+ルーティング、middleware、依存 graph の構築は composition package に委譲する。
 """
 
 from __future__ import annotations

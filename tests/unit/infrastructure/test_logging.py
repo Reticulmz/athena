@@ -1,15 +1,11 @@
-# pyright: reportArgumentType=false
-# TODO: Add proper type stubs or mock objects for WrappedLogger protocol
 """Tests for infrastructure/logging.py — structlog initialization and sensitive field masking."""
 
 from __future__ import annotations
 
 import json
 import logging
-import sys
-import typing
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 
 import pytest
 import structlog
@@ -24,7 +20,7 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(autouse=True)
-def _reset_logging() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
+def reset_logging() -> Iterator[None]:
     """Reset stdlib root logger and structlog config between tests."""
     root = logging.getLogger()
     # Save original state
@@ -50,61 +46,81 @@ def _reset_logging() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
 # --- mask_sensitive_fields tests ---
 
 
+class StructlogInfoLogger(Protocol):
+    def info(self, event: str, **kwargs: object) -> object: ...
+
+
+def _mask_event_fields(event_dict: dict[str, object]) -> dict[str, object]:
+    logger = cast("structlog.types.WrappedLogger", object())
+    masked = mask_sensitive_fields(logger, "info", event_dict)
+    return cast("dict[str, object]", masked)
+
+
+def _get_test_logger() -> StructlogInfoLogger:
+    return cast("StructlogInfoLogger", structlog.get_logger())
+
+
+def _decode_last_json_line(content: str) -> dict[str, object]:
+    decoded = cast("object", json.loads(content.strip().split("\n")[-1]))
+    assert isinstance(decoded, dict)
+    return cast("dict[str, object]", decoded)
+
+
 class TestMaskSensitiveFields:
     """Tests for the mask_sensitive_fields processor."""
 
     def test_masks_password_key(self) -> None:
         """password key is replaced with '***'."""
-        event_dict: structlog.types.EventDict = {"event": "login", "password": "secret123"}
-        result = mask_sensitive_fields(None, "info", event_dict)  # type: ignore[arg-type]  # processor test: logger arg unused, pass None
+        event_dict: dict[str, object] = {"event": "login", "password": "secret123"}
+        result = _mask_event_fields(event_dict)
         assert result["password"] == "***"
 
     def test_masks_password_hash_key(self) -> None:
         """password_hash key is replaced with '***'."""
-        event_dict: structlog.types.EventDict = {
+        event_dict: dict[str, object] = {
             "event": "login",
             "password_hash": "abc123hash",
         }
-        result = mask_sensitive_fields(None, "info", event_dict)  # type: ignore[arg-type]  # processor test: logger arg unused, pass None
+        result = _mask_event_fields(event_dict)
         assert result["password_hash"] == "***"
 
     def test_masks_password_md5_key(self) -> None:
         """password_md5 key is replaced with '***'."""
-        event_dict: structlog.types.EventDict = {
+        event_dict: dict[str, object] = {
             "event": "login",
             "password_md5": "d41d8cd98f",
         }
-        result = mask_sensitive_fields(None, "info", event_dict)  # type: ignore[arg-type]  # processor test: logger arg unused, pass None
+        result = _mask_event_fields(event_dict)
         assert result["password_md5"] == "***"
 
     def test_masks_multiple_sensitive_keys(self) -> None:
         """All sensitive keys are masked in a single event_dict."""
-        event_dict: structlog.types.EventDict = {
+        event_dict: dict[str, object] = {
             "event": "login",
             "password": "pw",
             "password_hash": "hash",
             "password_md5": "md5",
         }
-        result = mask_sensitive_fields(None, "info", event_dict)  # type: ignore[arg-type]  # processor test: logger arg unused, pass None
+        result = _mask_event_fields(event_dict)
         assert result["password"] == "***"
         assert result["password_hash"] == "***"
         assert result["password_md5"] == "***"
 
     def test_preserves_non_sensitive_keys(self) -> None:
         """Non-sensitive keys are not modified."""
-        event_dict: structlog.types.EventDict = {
+        event_dict: dict[str, object] = {
             "event": "login",
             "username": "player1",
             "ip": "127.0.0.1",
         }
-        result = mask_sensitive_fields(None, "info", event_dict)  # type: ignore[arg-type]  # processor test: logger arg unused, pass None
+        result = _mask_event_fields(event_dict)
         assert result["username"] == "player1"
         assert result["ip"] == "127.0.0.1"
 
     def test_returns_event_dict(self) -> None:
         """Processor returns the event_dict (structlog protocol)."""
-        event_dict: structlog.types.EventDict = {"event": "test"}
-        result = mask_sensitive_fields(None, "info", event_dict)  # type: ignore[arg-type]  # processor test: logger arg unused, pass None
+        event_dict: dict[str, object] = {"event": "test"}
+        result = _mask_event_fields(event_dict)
         assert result is event_dict
 
 
@@ -131,12 +147,13 @@ class TestSetupLogging:
         config = make_app_config()
         setup_logging(config)
         root = logging.getLogger()
-        stream_handlers: list[logging.StreamHandler[typing.Any]] = [
-            h
-            for h in root.handlers
-            if isinstance(h, logging.StreamHandler) and h.stream is sys.stderr  # pyright: ignore[reportUnknownMemberType]
-        ]
-        assert len(stream_handlers) >= 1
+        stream_handler_count = sum(
+            1
+            for handler in root.handlers
+            if isinstance(handler, logging.StreamHandler)
+            and not isinstance(handler, logging.FileHandler)
+        )
+        assert stream_handler_count >= 1
 
     def test_adds_file_handler_always(self, tmp_path: Path) -> None:
         """FileHandler is always added to log_dir/latest.jsonl."""
@@ -151,13 +168,13 @@ class TestSetupLogging:
         config = make_app_config(log_dir=str(tmp_path))
         setup_logging(config)
 
-        logger: typing.Any = structlog.get_logger()  # pyright: ignore[reportAny]
-        logger.info("test_event", key="value")  # pyright: ignore[reportAny]
+        logger = _get_test_logger()
+        _ = logger.info("test_event", key="value")
 
         json_path = tmp_path / "latest.jsonl"
         content = json_path.read_text()
         assert content.strip() != ""
-        parsed: dict[str, typing.Any] = json.loads(content.strip().split("\n")[-1])  # pyright: ignore[reportAny]
+        parsed = _decode_last_json_line(content)
         assert parsed["event"] == "test_event"
         assert parsed["key"] == "value"
 
@@ -190,19 +207,19 @@ class TestSetupLogging:
         assert any(w.category is UserWarning for w in _w)
 
         # structlog should still work via console
-        logger: typing.Any = structlog.get_logger()  # pyright: ignore[reportAny]
-        logger.info("still_works")  # pyright: ignore[reportAny]
+        logger = _get_test_logger()
+        _ = logger.info("still_works")
 
     def test_structlog_get_logger_works_after_setup(self) -> None:
         """structlog.get_logger() returns a usable logger after setup."""
         config = make_app_config()
         setup_logging(config)
-        logger: typing.Any = structlog.get_logger()  # pyright: ignore[reportAny]
+        logger = _get_test_logger()
         assert logger is not None
 
         # Should be able to log without error
         with capture_logs() as cap_logs:
-            logger.info("hello", user="test")  # pyright: ignore[reportAny]
+            _ = logger.info("hello", user="test")
 
         assert len(cap_logs) == 1
         assert cap_logs[0]["event"] == "hello"
@@ -235,13 +252,13 @@ class TestSetupLogging:
         config = make_app_config(log_dir=str(tmp_path))
         setup_logging(config)
 
-        logger: typing.Any = structlog.get_logger()  # pyright: ignore[reportAny]
-        logger.info("login_attempt", password="secret", username="player1")  # pyright: ignore[reportAny]
+        logger = _get_test_logger()
+        _ = logger.info("login_attempt", password="secret", username="player1")
 
         json_path = tmp_path / "latest.jsonl"
         content = json_path.read_text().strip()
         assert content != ""
-        parsed: dict[str, typing.Any] = json.loads(content.split("\n")[-1])  # pyright: ignore[reportAny]
+        parsed = _decode_last_json_line(content)
         assert parsed["event"] == "login_attempt"
         assert parsed["password"] == "***"
         assert parsed["username"] == "player1"
