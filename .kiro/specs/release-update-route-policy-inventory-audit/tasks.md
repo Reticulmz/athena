@@ -62,7 +62,7 @@
   - _Requirements: 1.3, 4.1, 4.6_
   - _Boundary: Evidence Consistency Notes_
 
-- [ ] 6. 最終 validation と scope review を行う
+- [x] 6. 最終 validation と scope review を行う
   - Release/update matrix row が route classification、operational dependency、evidence source、fixture requirement を持つことを確認する
   - `CONTEXT.md` が glossary-only であり、route 固有の response shape や fixture identifier を含んでいないことを確認する
   - `src/`、`tests/fixtures/`、migration、dependency、runtime configuration が変更されていないことを確認する
