@@ -236,20 +236,24 @@ When a task may edit files, run checks that generate artifacts, or make implemen
 - Use `scripts/agent-worktree.sh` when creating agent worktrees unless the task needs a custom setup.
 - Pass an agent namespace such as `--agent codex` for Codex or `--agent claude-code` for Claude Code so branches identify the originating agent.
 - Use the default repo-sibling path `../athena_worktree/<task-slug>` and an agent-prefixed branch such as `codex/<task-slug>` or `claude-code/<task-slug>`.
-- After entering a worktree, run project commands through `devenv shell` so hooks, `uv`, and `.devenv/state/venv` resolve inside that worktree. For non-interactive commands, prefer `devenv shell env ... <command>`.
+- After entering a worktree, run project toolchain commands through `devenv shell` so hooks, `uv`, and `.devenv/state/venv` resolve inside that worktree. For non-interactive commands, prefer `devenv shell env ... <command>`.
+- Commands that execute the project toolchain or hooks must use `devenv shell`: `uv run`, `pytest`, `prek`, `ruff`, `basedpyright`, `import-linter`, `alembic`, `uvicorn`, `taskiq`, and `git commit`.
+- Commands that do not execute project toolchains or hooks may run directly: `git status`, `git diff`, `git log`, `git add`, `git push`, `git pull`, `gh pr`, `rg`, `sed`, `ls`, and similar Git/GitHub/utility commands that do not depend on project toolchains.
 - Keep each agent's changes inside its own worktree. Do not share one branch across multiple active agents.
 - Prefer one owner per file. If multiple tasks need the same file, designate one owner or integrate the changes sequentially.
 - For multi-task Kiro specs, create a spec integration worktree first, using `spec/<spec-name>` at `../athena_worktree/<spec-name>`.
 - Create each Kiro task worktree from the spec branch, using `<agent>/<spec-name>/<task-slug>` at `../athena_worktree/<spec-name>__<task-slug>`.
 - Complete each task inside its task worktree, then integrate the task branch back into the spec worktree.
 - After all tasks are integrated and spec-level validation passes, open the final PR from `spec/<spec-name>` to `main`.
-- Run relevant tests and quality checks inside the task worktree through `devenv shell`. Before committing, run `prek run --all-files` from that worktree; if hooks import app config, provide test settings such as `ENVIRONMENT=test`, `DATABASE_URL`, and `VALKEY_URL`.
+- Run relevant tests and quality checks inside the task worktree through `devenv shell`. Before committing, run `devenv shell env ... prek run --all-files` from that worktree; if hooks import app config, provide test settings such as `ENVIRONMENT=test`, `DATABASE_URL`, and `VALKEY_URL`.
 - Commit completed work in the task branch, or clearly report uncommitted changes and do not integrate them automatically.
 - For non-trivial code, test, spec, or multi-file changes, use a pull request as the integration boundary even for solo development.
 - Open a draft PR from the task branch, watch GitHub CI and review comments, and fix failures with focused follow-up commits on the same branch.
 - Merge only after CI passes, actionable comments are resolved, the final diff is reviewed, and relevant local checks have run.
 - Do not merge PRs with failing checks, unresolved actionable comments, or uncommitted local changes.
 - Integrate back into the main worktree only after reviewing the diff and running relevant checks. Do not merge uncommitted changes from separate agents together.
+- After a task branch is merged, pulled into the main worktree, and confirmed no longer needed, remove the task worktree to save disk space. Confirm `git status --short --branch` is clean in that worktree first, then use `git worktree remove <path>` from the main repository and run `git worktree prune` when stale metadata remains.
+- Do not remove a worktree that has uncommitted, unpushed, or unmerged work unless the user explicitly approves discarding it.
 - Read-only investigation, short answers, and simple command output requests do not require a new worktree.
 
 ## Git And Commit Rules
