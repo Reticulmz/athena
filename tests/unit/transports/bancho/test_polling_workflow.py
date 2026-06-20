@@ -187,6 +187,7 @@ class TestPollingWorkflow:
         ]
         assert dispatcher.operations == []
         assert packet_queue.operations == [
+            f"queue.refresh:{_USER_ID}:{_SESSION_TTL}",
             f"queue.dequeue:{_USER_ID}",
             f"queue.refresh:{_USER_ID}:{_SESSION_TTL}",
         ]
@@ -213,15 +214,16 @@ class TestPollingWorkflow:
             (ClientPacketID.PONG, b"one", _USER_ID),
             (ClientPacketID.EXIT, b"two", _USER_ID),
         ]
-        assert [
-            *session_store.operations,
-            *dispatcher.operations,
-            *packet_queue.operations,
-        ] == [
+        assert session_store.operations == [
             f"session.get:{_TOKEN}",
             f"session.refresh:{_TOKEN}",
+        ]
+        assert dispatcher.operations == [
             f"dispatch:{ClientPacketID.PONG.name}:6f6e65:{_USER_ID}",
             f"dispatch:{ClientPacketID.EXIT.name}:74776f:{_USER_ID}",
+        ]
+        assert packet_queue.operations == [
+            f"queue.refresh:{_USER_ID}:{_SESSION_TTL}",
             f"queue.dequeue:{_USER_ID}",
             f"queue.refresh:{_USER_ID}:{_SESSION_TTL}",
         ]

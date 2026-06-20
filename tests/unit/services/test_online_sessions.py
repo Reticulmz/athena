@@ -8,6 +8,8 @@ from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.services.queries.identity import (
+    GetActiveSessionsByUserIdsQueryInput,
+    GetActiveSessionsByUserIdsQueryUseCase,
     ListActiveSessionsQueryInput,
     ListActiveSessionsQueryUseCase,
     OnlineSessionSnapshot,
@@ -84,3 +86,42 @@ async def test_list_active_sessions_reflects_deleted_sessions() -> None:
     result = await use_case.execute(ListActiveSessionsQueryInput())
 
     assert tuple(session.user_id for session in result.sessions) == (2,)
+
+
+async def test_get_active_sessions_by_user_ids_returns_requested_online_sessions() -> None:
+    store = InMemorySessionStore()
+    use_case = GetActiveSessionsByUserIdsQueryUseCase(session_store=store)
+    session_2 = replace(_SESSION, user_id=2, username="cookiezi", country="US", utc_offset=-5)
+
+    await store.create(user_id=1, token="t1", data=_SESSION)
+    await store.create(user_id=2, token="t2", data=session_2)
+
+    result = await use_case.execute(GetActiveSessionsByUserIdsQueryInput(user_ids=(2, 99, 1)))
+
+    assert result.sessions == (
+        OnlineSessionSnapshot(
+            user_id=2,
+            username="cookiezi",
+            privileges=1,
+            country="US",
+            utc_offset=-5,
+        ),
+        OnlineSessionSnapshot(
+            user_id=1,
+            username="peppy",
+            privileges=1,
+            country="JP",
+            utc_offset=9,
+        ),
+    )
+
+
+async def test_get_active_sessions_by_user_ids_deduplicates_lookup_order() -> None:
+    store = InMemorySessionStore()
+    use_case = GetActiveSessionsByUserIdsQueryUseCase(session_store=store)
+
+    await store.create(user_id=1, token="t1", data=_SESSION)
+
+    result = await use_case.execute(GetActiveSessionsByUserIdsQueryInput(user_ids=(1, 1, 1)))
+
+    assert tuple(session.user_id for session in result.sessions) == (1,)

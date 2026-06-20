@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from osu_server.domain.compatibility.stable.permissions import (
     BanchoClientPermission,
     to_bancho_client_permissions,
+    to_user_presence_permissions,
 )
 
 if TYPE_CHECKING:
@@ -29,7 +30,7 @@ def map_stable_bancho_authorization(
     client_permissions = to_bancho_client_permissions(privileges)
     return StableBanchoAuthorizationOutput(
         login_permissions=client_permissions,
-        presence_permissions=client_permissions,
+        presence_permissions=to_user_presence_permissions(client_permissions),
     )
 
 

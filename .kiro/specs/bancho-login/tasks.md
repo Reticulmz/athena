@@ -6,7 +6,7 @@
   - User dataclass: id, username, safe_username, email, password_hash, country, created_at, updated_at + `normalize_username()` 静的メソッド（小文字化 + スペース→アンダースコア）
   - Role dataclass: id, name, permissions (Privileges IntFlag), position
   - Privileges IntFlag: NONE, NORMAL, VERIFIED, SUPPORTER, MODERATOR, ADMIN, DEVELOPER, TOURNAMENT, UNRESTRICTED
-  - ClientPermissions IntFlag: NORMAL(1), MODERATOR(2), SUPPORTER(4), PEPPY(8), DEVELOPER(16)
+  - ClientPermissions IntFlag: NORMAL(1), NOMINATOR(2), SUPPORTER(4), FRIEND(8), PEPPY(16), TOURNAMENT_STAFF(32)
   - SessionData dataclass: user_id, username, privileges, country, osu_version, utc_offset, display_city, client_hashes, pm_private
   - LoginResult IntEnum: AUTHENTICATION_FAILED(-1) 〜 PASSWORD_RESET(-7) の全コード定義
   - LoginRequest dataclass + ClientInfo dataclass
@@ -96,7 +96,7 @@
 
 - [x] 3.4 (P) PermissionService（RBAC 計算 + クライアントフラグ変換）
   - compute_permissions(user_id): RoleRepository から全ロール取得 → permissions を OR 結合して Privileges 返却
-  - to_client_flags(privileges): Privileges → ClientPermissions 変換（MODERATOR→2, SUPPORTER→4, ADMIN→8, DEVELOPER→16, else→1）
+  - to_client_flags(privileges): Privileges → ClientPermissions 変換（MODERATOR→NOMINATOR=2, SUPPORTER→4, ADMIN/DEVELOPER→PEPPY=16, TOURNAMENT→TOURNAMENT_STAFF=32, else→1）
   - テスト: 単一ロール計算、複数ロール OR 結合、クライアントフラグ変換（全組み合わせ）、ロールなし → Privileges.NONE
   - `pytest tests/unit/services/test_permission_service.py` が全パスすること
   - _Requirements: 8.3, 8.5_

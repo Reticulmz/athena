@@ -21,6 +21,10 @@ from osu_server.services.queries.identity.friend_relationships import (
     ListFriendIdsQueryUseCase,
 )
 from osu_server.services.queries.identity.online_sessions import (
+    GetActiveSessionsByUserIdsQuery,
+    GetActiveSessionsByUserIdsQueryInput,
+    GetActiveSessionsByUserIdsQueryResult,
+    GetActiveSessionsByUserIdsQueryUseCase,
     ListActiveSessionsQuery,
     ListActiveSessionsQueryInput,
     ListActiveSessionsQueryResult,
@@ -47,6 +51,10 @@ __all__ = [
     "ComputeSessionAuthorizationQueryInput",
     "ComputeSessionAuthorizationQueryResult",
     "ComputeSessionAuthorizationQueryUseCase",
+    "GetActiveSessionsByUserIdsQuery",
+    "GetActiveSessionsByUserIdsQueryInput",
+    "GetActiveSessionsByUserIdsQueryResult",
+    "GetActiveSessionsByUserIdsQueryUseCase",
     "GetFriendEligibleUserIdsQuery",
     "GetFriendEligibleUserIdsQueryUseCase",
     "ListActiveSessionsQuery",

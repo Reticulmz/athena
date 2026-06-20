@@ -90,3 +90,19 @@ class TestDIRegistration:
             assert ClientPacketID.STATUS_CHANGE in dispatcher.get_handlers()
         finally:
             await container.close()
+
+    @pytest.mark.asyncio
+    async def test_resolved_dispatcher_registers_presence_handlers(self) -> None:
+        config = make_app_config(environment="test")
+        container = make_app_container(
+            config,
+            overrides=(make_in_memory_runtime_provider_set(),),
+        )
+
+        try:
+            dispatcher = await container.get(PacketDispatcher)
+            handlers = dispatcher.get_handlers()
+            assert ClientPacketID.PRESENCE_REQUEST in handlers
+            assert ClientPacketID.PRESENCE_REQUEST_ALL in handlers
+        finally:
+            await container.close()

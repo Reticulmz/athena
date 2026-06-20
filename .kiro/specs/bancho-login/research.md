@@ -81,7 +81,7 @@
 - **Context**: RBAC の Permission 体系
 - **Selected**: IntFlag 8フラグ（NONE, NORMAL, VERIFIED, SUPPORTER, MODERATOR, ADMIN, DEVELOPER, TOURNAMENT, UNRESTRICTED）
 - **Default Role シード**: Default (NORMAL|VERIFIED|UNRESTRICTED, position=0), Admin (全フラグ, position=100)
-- **Client 変換**: MODERATOR→2, SUPPORTER→4, ADMIN→8, DEVELOPER→16, else→1
+- **Client 変換**: MODERATOR→NOMINATOR=2, SUPPORTER→4, ADMIN/DEVELOPER→PEPPY=16, TOURNAMENT→TOURNAMENT_STAFF=32, else→1
 
 ## Risks & Mitigations
 - **argon2 ブロッキング**: `run_in_executor` でイベントループブロック回避

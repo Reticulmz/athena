@@ -287,7 +287,7 @@ class TestPollingE2EFlow:
     """Login -> poll -> C2S -> S2C complete flow (Req 1.1, 2.1, 2.4)."""
 
     async def test_full_c2s_to_s2c_flow(self) -> None:
-        """C2S handler enqueues S2C; S2C appears in same poll response."""
+        """C2S handler enqueue on first poll appears in the same response."""
         app = _make_test_app(packet_dispatcher=PacketDispatcher())
         user_id_ref: list[int] = []
 
@@ -301,8 +301,6 @@ class TestPollingE2EFlow:
             _ = handler
 
             token = await _login_and_get_token(auth_service, client)
-            # First poll to activate queue
-            _ = client.post(_BANCHO_URL, headers={"osu-token": token})
 
             session = await session_store.get(token)
             assert session is not None

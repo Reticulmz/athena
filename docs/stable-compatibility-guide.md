@@ -338,7 +338,7 @@ difference.
 | `ReplayFrame` | `ButtonState`, legacy byte, `float mouse_x`, `float mouse_y`, `sInt time`. |
 | `ScoreFrame` | `sInt time`, `char slot_id`, six `uShort` hit counts, `sInt total_score`, `uShort max_combo`, `uShort current_combo`, `bool perfect`, `char current_hp`, `char tag_byte`, `bool scorev2_enabled`, optional `double combo_portion`, optional `double bonus_portion`. C2S 47 is documented as 28 bytes, while S2C 48 is 45 bytes because the server fills slot/tag/ScoreV2 fields. |
 | `ReplayFrameBundle` | `sInt extra`, `uShort frame_count`, `ReplayFrame[frame_count]`, `ReplayAction`, optional `ScoreFrame`, `uShort sequence`. `extra` is spectated user id or mania random seed. |
-| `UserPresence` | `sInt user_id`, `String username`, `char timezone_plus_24`, `char country_id`, `char permissions_or_mode` where value is `permissions | (mode << 5)`, `float longitude`, `float latitude`, `sInt rank`. |
+| `UserPresence` | `sInt user_id`, `String username`, `char timezone_plus_24`, `char country_id`, `char permissions_or_mode` where value is `permissions OR (mode << 5)`, `float longitude`, `float latitude`, `sInt rank`. The low five permission bits are client-visible display rank; do not pass Athena's full internal privilege mask through this field. |
 | `UserPresenceBundle` | `sShort length`, then `sInt[length]` user ids. |
 | `UserStats` | `sInt user_id`, `StatusUpdate`, `sLongLong ranked_score`, `float accuracy`, `sInt play_count`, `sLongLong total_score`, `sInt rank`, `uShort pp`. |
 | `BeatmapInfo` | `sShort request_index`, `sInt beatmap_id`, `sInt beatmapset_id`, `sInt thread_id`, `char ranked`, `Grade osu`, `Grade fruits`, `Grade taiko`, `Grade mania`, `String md5`. Request index is the filename index, or `-1` for id-based requests. |
@@ -420,8 +420,12 @@ Packets:
 Current Athena behavior:
 
 - `STATUS_CHANGE` is decoded and used to request beatmap file warmup.
-- Full presence state, status broadcasting, rank/stat projection, and requested
-  status responses are incomplete.
+- `PRESENCE_REQUEST` is decoded and responds with `USER_PRESENCE` for requested
+  online users.
+- `PRESENCE_REQUEST_ALL` is decoded and responds with online `USER_PRESENCE`
+  packets plus a `USER_PRESENCE_BUNDLE`.
+- Status broadcasting, rank/stat projection, and requested status responses are
+  incomplete.
 
 Required processing:
 

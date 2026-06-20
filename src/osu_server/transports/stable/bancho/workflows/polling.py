@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import structlog
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.session_store import PollingSessionRuntime
     from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 
 @dataclass(slots=True, frozen=True)
@@ -78,6 +78,7 @@ class PollingWorkflow:
 
         user_id = session.user_id
         _ = await self._session_store.refresh(workflow_input.token)
+        await self._packet_queue.refresh_ttl(user_id, self._session_ttl)
 
         c2s_result = await self._c2s_actions.execute(body=body, user_id=user_id)
 

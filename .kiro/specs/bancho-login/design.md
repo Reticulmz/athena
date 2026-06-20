@@ -392,11 +392,12 @@ class Privileges(IntFlag):
 
 class ClientPermissions(IntFlag):
     """osu! クライアントが理解するフラグ"""
-    NORMAL    = 1
-    MODERATOR = 2
-    SUPPORTER = 4
-    PEPPY     = 8
-    DEVELOPER = 16
+    NORMAL           = 1
+    NOMINATOR        = 2
+    SUPPORTER        = 4
+    FRIEND           = 8
+    PEPPY            = 16
+    TOURNAMENT_STAFF = 32
 
 @dataclass(slots=True)
 class Role:

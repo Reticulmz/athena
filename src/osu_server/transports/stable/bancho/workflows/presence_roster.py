@@ -12,6 +12,7 @@ from osu_server.transports.stable.bancho.mappers.permissions import (
     map_stable_bancho_authorization,
 )
 from osu_server.transports.stable.bancho.mappers.presence import (
+    bot_presence_packet,
     online_session_presence_packet,
 )
 from osu_server.transports.stable.bancho.protocol.enums import ServerPacketID
@@ -115,7 +116,7 @@ class StablePresenceRoster:
                     rank=_STABLE_DEFAULT_RANK,
                     pp=_STABLE_DEFAULT_PP,
                 ),
-                self._bot_presence_packet(),
+                bot_presence_packet(self._bot_identity),
                 *(online_session_presence_packet(session) for session in other_active_sessions),
             ),
             bundle_packet=user_presence_bundle(roster_ids),
@@ -158,19 +159,6 @@ class StablePresenceRoster:
             recipient_user_ids=tuple(
                 session.user_id for session in active_sessions if session.user_id != user_id
             ),
-        )
-
-    def _bot_presence_packet(self) -> bytes:
-        return user_presence(
-            user_id=self._bot_identity.user_id,
-            username=self._bot_identity.username,
-            timezone=_STABLE_TIMEZONE_BASE,
-            country_id=_STABLE_DEFAULT_COUNTRY_ID,
-            permissions=_STABLE_DEFAULT_PERMISSIONS,
-            mode=_STABLE_DEFAULT_MODE,
-            longitude=_STABLE_DEFAULT_COORDINATE,
-            latitude=_STABLE_DEFAULT_COORDINATE,
-            rank=_STABLE_DEFAULT_RANK,
         )
 
     def _other_active_sessions(

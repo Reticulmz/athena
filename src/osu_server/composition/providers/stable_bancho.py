@@ -33,6 +33,7 @@ from osu_server.services.queries.chat import (
     ListVisibleChannelsQuery,
 )
 from osu_server.services.queries.identity import (
+    GetActiveSessionsByUserIdsQueryUseCase,
     ListActiveSessionsQueryUseCase,
     ListFriendIdsQuery,
 )
@@ -41,6 +42,7 @@ from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.stable.bancho.handlers.friends import FriendHandlers
 from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
+from osu_server.transports.stable.bancho.handlers.presence import PresenceHandlers
 from osu_server.transports.stable.bancho.handlers.status import StatusChangeHandlers
 from osu_server.transports.stable.bancho.listeners import setup_listeners
 from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
@@ -57,6 +59,7 @@ _DISHKA_RUNTIME_HINTS = (
     JoinChannelUseCase,
     LeaveChannelUseCase,
     AddFriendUseCase,
+    GetActiveSessionsByUserIdsQueryUseCase,
     ListActiveSessionsQueryUseCase,
     ListAutojoinChannelsQuery,
     ListFriendIdsQuery,
@@ -168,6 +171,21 @@ class StableBanchoProviderSet(Provider):
         )
 
     @provide
+    def presence_handlers(
+        self,
+        active_sessions_query: ListActiveSessionsQueryUseCase,
+        active_sessions_by_user_ids_query: GetActiveSessionsByUserIdsQueryUseCase,
+        packet_queue: PacketQueue,
+        bot_identity: SystemUserIdentity,
+    ) -> PresenceHandlers:
+        return PresenceHandlers(
+            active_sessions_query=active_sessions_query,
+            active_sessions_by_user_ids_query=active_sessions_by_user_ids_query,
+            packet_queue=packet_queue,
+            bot_identity=bot_identity,
+        )
+
+    @provide
     def app_event_listeners(
         self,
         event_bus: LocalEventBus,
@@ -185,6 +203,7 @@ class StableBanchoProviderSet(Provider):
         chat_handlers: ChatHandlers,
         friend_handlers: FriendHandlers,
         status_change_handlers: StatusChangeHandlers,
+        presence_handlers: PresenceHandlers,
         listeners: AppEventListeners,
     ) -> PacketDispatcher:
         _ = listeners
@@ -193,6 +212,7 @@ class StableBanchoProviderSet(Provider):
         chat_handlers.register_all(dispatcher)
         friend_handlers.register_all(dispatcher)
         status_change_handlers.register_all(dispatcher)
+        presence_handlers.register_all(dispatcher)
         return dispatcher
 
     @provide

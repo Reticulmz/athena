@@ -44,6 +44,7 @@ from osu_server.services.queries.identity import (
     CheckFriendRelationshipQuery,
     ComputePermissionsQueryUseCase,
     ComputeSessionAuthorizationQueryUseCase,
+    GetActiveSessionsByUserIdsQueryUseCase,
     GetFriendEligibleUserIdsQuery,
     ListActiveSessionsQueryUseCase,
     ListFriendIdsQuery,
@@ -239,6 +240,13 @@ class IdentityProviderSet(Provider):
         session_store: SessionStore,
     ) -> ListActiveSessionsQueryUseCase:
         return ListActiveSessionsQueryUseCase(session_store=session_store)
+
+    @provide
+    def active_sessions_by_user_ids_query(
+        self,
+        session_store: SessionStore,
+    ) -> GetActiveSessionsByUserIdsQueryUseCase:
+        return GetActiveSessionsByUserIdsQueryUseCase(session_store=session_store)
 
     @provide
     def list_friend_ids_query(

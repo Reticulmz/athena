@@ -8,13 +8,17 @@ from osu_server.domain.identity.authorization import Privileges
 
 
 class BanchoClientPermission(IntFlag):
-    """Flags the stable osu! client understands for login permission packets."""
+    """Flags the stable osu! client understands for bancho permission packets."""
 
     NORMAL = 1
-    MODERATOR = 2
+    NOMINATOR = 2
+    MODERATOR = NOMINATOR
     SUPPORTER = 4
-    PEPPY = 8
+    OWNER = 8
+    FRIEND = OWNER
     DEVELOPER = 16
+    PEPPY = DEVELOPER
+    TOURNAMENT_STAFF = 32
 
 
 def to_bancho_client_permissions(privileges: Privileges) -> BanchoClientPermission:
@@ -22,10 +26,11 @@ def to_bancho_client_permissions(privileges: Privileges) -> BanchoClientPermissi
     flags = BanchoClientPermission.NORMAL
 
     mapping: tuple[tuple[Privileges, BanchoClientPermission], ...] = (
-        (Privileges.MODERATOR, BanchoClientPermission.MODERATOR),
+        (Privileges.MODERATOR, BanchoClientPermission.NOMINATOR),
         (Privileges.SUPPORTER, BanchoClientPermission.SUPPORTER),
-        (Privileges.ADMIN, BanchoClientPermission.PEPPY),
+        (Privileges.ADMIN, BanchoClientPermission.DEVELOPER),
         (Privileges.DEVELOPER, BanchoClientPermission.DEVELOPER),
+        (Privileges.TOURNAMENT, BanchoClientPermission.TOURNAMENT_STAFF),
     )
 
     for privilege, client_flag in mapping:
@@ -33,3 +38,18 @@ def to_bancho_client_permissions(privileges: Privileges) -> BanchoClientPermissi
             flags |= client_flag
 
     return flags
+
+
+def to_user_presence_permissions(
+    permissions: BanchoClientPermission,
+) -> BanchoClientPermission:
+    """Return the dominant client-visible rank for stable UserPresence."""
+    rank_order = (
+        BanchoClientPermission.DEVELOPER,
+        BanchoClientPermission.NOMINATOR,
+        BanchoClientPermission.SUPPORTER,
+    )
+    for rank in rank_order:
+        if rank in permissions:
+            return rank
+    return BanchoClientPermission.NORMAL

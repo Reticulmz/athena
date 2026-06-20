@@ -22,6 +22,18 @@ INTERNAL_AUTHORIZATION_MODULES = (
     SOURCE_ROOT / "services" / "queries" / "chat" / "channels.py",
     SOURCE_ROOT / "services" / "commands" / "chat" / "bancho_bot" / "command_service.py",
 )
+CAPTURED_FULL_PRIVILEGES_MASK = 0x1FF
+
+
+def test_stable_client_permission_values_match_bancho_reference() -> None:
+    assert BanchoClientPermission.NORMAL == 1
+    assert BanchoClientPermission.NOMINATOR == 2
+    assert BanchoClientPermission.SUPPORTER == 4
+    assert BanchoClientPermission.OWNER == 8
+    assert BanchoClientPermission.FRIEND == 8
+    assert BanchoClientPermission.DEVELOPER == 16
+    assert BanchoClientPermission.PEPPY == 16
+    assert BanchoClientPermission.TOURNAMENT_STAFF == 32
 
 
 def test_stable_bancho_authorization_output_is_derived_from_privileges() -> None:
@@ -29,46 +41,70 @@ def test_stable_bancho_authorization_output_is_derived_from_privileges() -> None
         Privileges.SUPPORTER | Privileges.MODERATOR | Privileges.UNRESTRICTED
     )
 
-    expected = (
+    expected_login = (
         BanchoClientPermission.NORMAL
-        | BanchoClientPermission.MODERATOR
+        | BanchoClientPermission.NOMINATOR
         | BanchoClientPermission.SUPPORTER
     )
-    assert output.login_permissions == expected
-    assert output.presence_permissions == expected
+    assert output.login_permissions == expected_login
+    assert output.presence_permissions == BanchoClientPermission.NOMINATOR
 
 
 def test_stable_bancho_authorization_maps_all_supported_privileges() -> None:
     output = map_stable_bancho_authorization(
-        Privileges.MODERATOR | Privileges.SUPPORTER | Privileges.ADMIN | Privileges.DEVELOPER
+        Privileges.MODERATOR
+        | Privileges.SUPPORTER
+        | Privileges.ADMIN
+        | Privileges.DEVELOPER
+        | Privileges.TOURNAMENT
     )
 
-    expected = (
+    expected_login = (
         BanchoClientPermission.NORMAL
-        | BanchoClientPermission.MODERATOR
+        | BanchoClientPermission.NOMINATOR
         | BanchoClientPermission.SUPPORTER
         | BanchoClientPermission.PEPPY
-        | BanchoClientPermission.DEVELOPER
     )
-    assert output.login_permissions == expected
-    assert output.presence_permissions == expected
+    assert output.login_permissions == expected_login | BanchoClientPermission.TOURNAMENT_STAFF
+    assert output.presence_permissions == BanchoClientPermission.PEPPY
 
 
-def test_stable_bancho_authorization_maps_admin_and_developer() -> None:
+def test_stable_bancho_authorization_maps_captured_full_privileges_to_peppy_presence() -> None:
+    output = map_stable_bancho_authorization(Privileges(CAPTURED_FULL_PRIVILEGES_MASK))
+
+    assert output.login_permissions == (
+        BanchoClientPermission.NORMAL
+        | BanchoClientPermission.NOMINATOR
+        | BanchoClientPermission.SUPPORTER
+        | BanchoClientPermission.PEPPY
+        | BanchoClientPermission.TOURNAMENT_STAFF
+    )
+    assert output.presence_permissions == BanchoClientPermission.PEPPY
+
+
+def test_stable_bancho_authorization_maps_admin_and_developer_to_peppy() -> None:
     output = map_stable_bancho_authorization(Privileges.ADMIN | Privileges.DEVELOPER)
 
-    expected = (
-        BanchoClientPermission.NORMAL
-        | BanchoClientPermission.PEPPY
-        | BanchoClientPermission.DEVELOPER
-    )
+    expected = BanchoClientPermission.NORMAL | BanchoClientPermission.PEPPY
     assert output.login_permissions == expected
-    assert output.presence_permissions == expected
+    assert output.presence_permissions == BanchoClientPermission.PEPPY
+
+
+def test_stable_bancho_authorization_keeps_tournament_staff_out_of_presence() -> None:
+    output = map_stable_bancho_authorization(Privileges.TOURNAMENT)
+
+    assert output.login_permissions == (
+        BanchoClientPermission.NORMAL | BanchoClientPermission.TOURNAMENT_STAFF
+    )
+    assert output.presence_permissions == BanchoClientPermission.NORMAL
 
 
 def test_stable_bancho_authorization_output_ignores_internal_only_privileges() -> None:
     output = map_stable_bancho_authorization(
-        Privileges.VERIFIED | Privileges.UNRESTRICTED | Privileges.TOURNAMENT
+        Privileges.VERIFIED
+        | Privileges.UNRESTRICTED
+        | Privileges.EDIT_CHANNEL
+        | Privileges.BYPASS_CHANNEL_ACL
     )
 
     assert output.login_permissions == BanchoClientPermission.NORMAL
@@ -82,15 +118,14 @@ def test_stable_bancho_authorization_full_privileges_set() -> None:
 
     output = map_stable_bancho_authorization(all_privileges)
 
-    expected = (
+    expected_login = (
         BanchoClientPermission.NORMAL
-        | BanchoClientPermission.MODERATOR
+        | BanchoClientPermission.NOMINATOR
         | BanchoClientPermission.SUPPORTER
         | BanchoClientPermission.PEPPY
-        | BanchoClientPermission.DEVELOPER
     )
-    assert output.login_permissions == expected
-    assert output.presence_permissions == expected
+    assert output.login_permissions == expected_login | BanchoClientPermission.TOURNAMENT_STAFF
+    assert output.presence_permissions == BanchoClientPermission.PEPPY
 
 
 def test_stable_client_permissions_are_not_internal_authorization_inputs() -> None:

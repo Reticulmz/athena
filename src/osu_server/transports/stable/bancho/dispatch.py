@@ -21,6 +21,7 @@ QUIET_C2S_PACKETS: frozenset[ClientPacketID] = frozenset(
         ClientPacketID.PONG,
         ClientPacketID.STATS_REQUEST,
         ClientPacketID.PRESENCE_REQUEST,
+        ClientPacketID.PRESENCE_REQUEST_ALL,
     }
 )
 

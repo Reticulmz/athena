@@ -201,6 +201,9 @@ class TestQuietC2sPackets:
     def test_contains_presence_request(self) -> None:
         assert ClientPacketID.PRESENCE_REQUEST in QUIET_C2S_PACKETS
 
+    def test_contains_presence_request_all(self) -> None:
+        assert ClientPacketID.PRESENCE_REQUEST_ALL in QUIET_C2S_PACKETS
+
     def test_is_frozenset(self) -> None:
         assert isinstance(QUIET_C2S_PACKETS, frozenset)
 
