@@ -304,8 +304,79 @@ _Avoid_: chat event, pub/sub message, listener side effect
 ## Score Submission Context
 
 ### Stable Surface
+
 Athena が stable client に対して公開している外部観測可能な endpoint、packet flow、response contract の集合。内部 package や test suite の構造ではなく、stable client から見える互換対象を指す。
 _Avoid_: Stable transport package, test scope, implementation module
+
+### Stable Gameplay Core Workflow
+
+Stable client で login/play loop を成立させる優先 workflow。Score submission、player online state / presence sharing、user stats display など、通常プレイと他プレイヤー状態の観測に直接必要な surface を指す。
+_Avoid_: Static/media polish, menu asset delivery, cosmetic route compatibility
+
+### Static/Media Route Inventory
+
+Stable Surface のうち、stable client が avatars、screenshots、menu assets、beatmap thumbnails、preview audio、host-based aliases などの静的またはメディア asset を取得・送信するために観測する route 候補の分類表。`.osu` / `.osz` 配信 route は関連 route として一覧に含めるが、詳細な download/search contract は beatmap/direct 側の scope で扱う。
+_Avoid_: Internal router table, storage backend plan, osu!direct contract
+
+### Host-Based Alias
+
+Stable client が asset 種別ごとの host を前提に送る static/media request を、Athena の同等 Stable Surface に対応付ける compatibility route。必要な互換対象として扱うが、exact host/path の組み合わせは target stable client traffic または同等の evidence で確認する。
+_Avoid_: Internal reverse proxy rule, storage bucket name, confirmed path without evidence
+
+### Static/Media Behavior Contract
+
+Static/Media Route Inventory の各 route family で確認すべき stable client-visible behavior。Cache headers、content type、redirect、missing asset response、expiry behavior を含み、未確認の場合は `needs-reference` として扱う。
+_Avoid_: Storage implementation detail, generic HTTP defaults, unknown behavior
+
+### Static/Media Asset Source
+
+Static/media serving route が返す blob asset と metadata を Athena に投入・参照可能にする入力経路。Serving contract の前提として扱うが、user-facing upload/update workflow そのものとは分けて判断する。
+_Avoid_: Serving route, avatar update UI, storage backend implementation
+
+### Screenshot Compatibility Workflow
+
+Stable client の screenshot upload request で blob asset を投入し、返却した screenshot id から stable serving route で同じ asset を取得できる一連の compatibility workflow。Upload response、blob metadata、expiry、hidden/missing behavior、serving headers を分けずに扱う。
+_Avoid_: Generic file upload, debug image storage, avatar asset source
+
+### Screenshot Expiry Policy
+
+Screenshot Compatibility Workflow で screenshot asset を serving 対象から外すかどうかを決める operator-controlled policy。Athena の既定は unlimited とし、期限切れを基本動作にしない。
+_Avoid_: Blob deletion policy, default seven-day expiry, cache max-age
+
+### Screenshot Serving Checksum
+
+Stable screenshot serving URL で screenshot id と一緒に観測される checksum path component。Redirect URL や cache identity に関わる client-visible value であり、md5 形式を candidate とするが、source value は Stable Compatibility Evidence で確認する。
+_Avoid_: Upload file hash assumption, blob storage key, security token
+
+### Avatar Serving Variant
+
+Stable client-visible avatar size variant。Avatar serving route の `s` query などで要求される 25、128、256 px の表示用 asset を指し、User が持つ canonical avatar identity そのものとは分けて扱う。
+_Avoid_: Original avatar upload, user profile identity, storage backend file
+
+### Beatmap Media Mirror Cache
+
+Upstream mirror から取得した beatmap thumbnail や preview audio を Athena の blob asset として保持し、stable client へ Athena-controlled behavior で配信する cache。Upstream の HTTP response contract を Stable Surface に直接漏らさない。
+_Avoid_: Direct upstream redirect, beatmap metadata source, permanent source of truth
+
+### Beatmap Media Source Priority
+
+Beatmap thumbnail や preview audio を Athena に取り込むときの取得元優先順。公式 source を第一候補とし、取得失敗や unavailable の場合に mirror source へ fallback する。
+_Avoid_: Stable serving route priority, permanent mirror trust, client-visible redirect order
+
+### Beatmap Media Negative Cache
+
+Beatmap thumbnail や preview audio が公式 source と mirror source のどちらからも取得できなかった状態を短時間保持し、stable serving route が同じ missing asset を繰り返し upstream に問い合わせないようにする cache。
+_Avoid_: Permanent missing state, beatmap metadata failure, client-visible redirect
+
+### Fixture Extraction Row
+
+Stable Compatibility Evidence として fixture 化する最小の client-observable contract 単位。Route family 単位ではなく、request method、path pattern、host alias、response shape、redirect などが異なる observable behavior ごとに分ける。
+_Avoid_: Broad feature group, implementation test case, internal handler branch
+
+### Stable Reference Candidate
+
+既存の private server 実装、protocol documentation、または過去の互換資料から推定できる stable compatibility contract 候補。Target stable client の traffic capture や fixture で確認されるまでは Stable Compatibility Evidence とは区別し、実装の source of truth にはしない。
+_Avoid_: Confirmed client behavior, implementation requirement, guessed contract
 
 ---
 

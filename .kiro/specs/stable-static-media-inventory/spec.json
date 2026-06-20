@@ -1,0 +1,22 @@
+{
+  "feature_name": "stable-static-media-inventory",
+  "created_at": "2026-06-19T23:38:08+09:00",
+  "updated_at": "2026-06-20T05:43:19+09:00",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": false
+}
