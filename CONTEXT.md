@@ -380,6 +380,12 @@ _Avoid_: Confirmed client behavior, implementation requirement, guessed contract
 
 ---
 
+### Target Stable Client
+Athena の stable compatibility で primary target にする現行 osu!stable client。これ以前の legacy stable client は、確認済み evidence と互換性リスクに基づいて可能な範囲で support するが、P0 core login/play の required 判定では現行 client を優先する。
+_Avoid_: every historical stable build, reference server behavior, private-server-specific client
+
+---
+
 ### Score Submission
 Client からの score submit request を記録する entity。Network error や processing delay による retry を検出し、idempotent response を保証する。
 
@@ -437,6 +443,44 @@ _Avoid_: Beatmap metadata lookup, synchronous file fetch, PP calculation
 ### Stable Compatibility Evidence
 Stable client または stable client emulator から観測できる request / response contract。Athena の stable transport 互換性を判断する根拠であり、内部実装の都合より優先する。
 _Avoid_: Implementation preference, guessed compatibility, test-only assumption
+
+---
+
+### Legacy Web Endpoint Inventory Classification
+Stable legacy web-family endpoint を、target stable client 互換性のためにどう扱うかを示す監査分類。分類は `required`、`compatibility no-op`、`deferred`、`out of scope`、`needs reference evidence` のいずれかに固定し、監査後の最終状態として `candidate` は使わない。
+_Avoid_: implementation status, route decorator list, open-work label
+
+### Required Legacy Web Endpoint
+Target stable client の P0 core login/play workflow に real behavior が必要で、static response、empty response、または fixed sentinel だけでは通常プレイ体験が壊れる legacy web-family endpoint。Durable mutation、read-model query、auth validation、file/replay/leaderboard response など、workflow 固有の挙動を Athena が提供する必要がある。
+_Avoid_: compatibility no-op, candidate route, optional private-server extension
+
+### Legacy Stable Client Endpoint Alias
+現行 Target Stable Client より古い stable client build のために reference implementation が持つ getscores、submit、または同等 workflow の endpoint alias。可能なら support するが、alias ごとの response variant、request parameters、error sentinel が未確認の間は Required Legacy Web Endpoint として扱わず、Needs Reference Evidence として分類する。
+_Avoid_: modern endpoint alias, required P0 route, formatter reuse without evidence
+
+### Compatibility No-op Legacy Web Endpoint
+Target stable client の互換性維持のため route と response contract は必要だが、real behavior、dynamic content management、または durable state mutation は不要で、観測済みまたは reference implementation で確認済みの empty body、JSON、sentinel、または static response で十分な legacy web-family endpoint。Response shape が未確認の場合は no-op と決めず、Needs Reference Evidence として扱う。
+_Avoid_: unimplemented endpoint, silent failure, guessed success response
+
+### Deferred Legacy Web Endpoint
+互換 surface として妥当性はあるが、initial stable compatibility scope では要求されず、後続 milestone、operator policy、または追加 product decision まで実装判断を延期する legacy web-family endpoint。
+_Avoid_: out of scope, needs evidence, backlog without reason
+
+### Legacy Beatmap Submission Endpoint
+Stable client の beatmap creator / upload workflow に関わる legacy web-family endpoint。Athena では将来 support する計画があるが、P0 core login/play 完成後の scope とし、legacy web endpoint inventory audit では Deferred Legacy Web Endpoint として扱う。
+_Avoid_: P0 play endpoint, out-of-scope route, normal beatmap download
+
+### Out-of-scope Legacy Web Endpoint
+Target stable client 互換性では要求しないと明示した legacy web-family endpoint。Reference implementation に存在しても、private-server-specific feature、removed client workflow、または Athena の product scope 外であることを理由に含めない。
+_Avoid_: deferred feature, missing route, compatibility no-op
+
+### Needs Reference Evidence Legacy Web Endpoint
+Request parameters、response body、error sentinel、auth behavior、または target stable client traffic が不足しており、required / compatibility no-op / deferred / out of scope をまだ判断できない legacy web-family endpoint。解除根拠は target stable client traffic、公式または準公式 protocol docs、既存 reference implementation、または Athena の focused fixture/test に限定する。
+_Avoid_: guessed classification, implementation-ready endpoint, candidate as final state
+
+### Legacy Web Endpoint Evidence Note
+Legacy web-family endpoint の監査結果に添える compatibility evidence summary。Endpoint family ごとに auth method、required request params、success response、auth failure response、domain/data-not-found response、malformed request response を確認済み、未確認、または scope 外として明示する。
+_Avoid_: success-only route note, implementation placeholder, undocumented sentinel
 
 ---
 

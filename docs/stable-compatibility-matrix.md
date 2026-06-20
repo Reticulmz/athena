@@ -143,6 +143,11 @@ Athena behavior in the implementation issue.
 
 ## Status Labels
 
+These labels describe the existing implementation or inventory status of a
+stable surface. They are not the Issue #32 final audit classification for
+legacy web-family endpoints. In particular, `Candidate` is a pre-audit input
+status for rows derived from docs, traffic, or reference implementations.
+
 | Status | Meaning |
 | --- | --- |
 | `Implemented` | The surface has a runtime implementation and at least basic verification. |
@@ -152,6 +157,29 @@ Athena behavior in the implementation issue.
 | `Missing` | No meaningful implementation exists yet. |
 | `Candidate` | Likely stable surface that needs confirmation from docs, traffic, or reference code. |
 | `Out of scope` | Known surface intentionally excluded from the current stable scope. |
+
+## Legacy Web Final Audit Classification Contract
+
+Issue #32 records a second, final classification axis for legacy web-family
+endpoint audit rows. Later matrix updates must keep this axis separate from the
+status labels above: a row may start as `Candidate`, `Missing`, `Partial`, or
+`Implemented`, but after audit its final classification must be exactly one of
+the values below. Final audited rows must not use `candidate`.
+
+| Final audit classification | Use when |
+| --- | --- |
+| `required` | Current osu!stable P0 core login/play traffic needs endpoint-specific real behavior, such as auth validation, durable mutation, read-model data, replay/file bytes, or leaderboard response content. A reference-only endpoint with no current osu!stable traffic evidence is not P0 `required`. |
+| `compatibility no-op` | Current osu!stable compatibility needs the route and a confirmed empty, static, JSON, or sentinel response contract, but not dynamic behavior or durable state mutation. Unknown response shape cannot be `compatibility no-op`. |
+| `deferred` | The endpoint is a plausible compatibility surface, but implementation is intentionally moved to a later milestone, operator policy, or product decision. The reason must be stated. |
+| `out of scope` | The endpoint is intentionally excluded because it belongs to removed workflow, private-server-specific behavior, adjacent release/static/media/download scope, or Athena product scope outside this audit. The exclusion reason must be stated. |
+| `needs reference evidence` | Request parameters, response body, error sentinel, auth behavior, or target-client traffic evidence is insufficient to choose another final classification. This is the safe classification for unknown response shape, unresolved alias variants, and reference-only endpoints that lack current osu!stable traffic evidence. |
+
+Evidence that can move a row out of `needs reference evidence` is limited to
+current osu!stable traffic, official or semi-official protocol docs, existing
+reference implementations, or Athena focused fixtures/tests. When the evidence
+does not confirm response shape, keep the row in `needs reference evidence`
+instead of guessing `compatibility no-op`. When the evidence is only a reference
+route with no current osu!stable traffic, do not mark it P0 `required`.
 
 ## Audit Classification And Evidence Notes
 
@@ -499,53 +527,235 @@ tracking issue that records whether target stable clients call it, then promote
 it to `Implemented` / `Partial` / `Missing` when it is required, or demote it to
 `Out of scope` when traffic and reference review show it is unnecessary.
 
-| Method | Endpoint | Status | Notes |
-| --- | --- | --- | --- |
-| `POST` | `/` on `c.$DOMAIN`, `c<int>.$DOMAIN`, `ce.$DOMAIN` | Implemented | Bancho login and packet polling entrypoint. |
-| `POST` | `/` on `cho.$DOMAIN`, `mahbahowc.$DOMAIN`, `server.$DOMAIN` | Candidate | Bancho host aliases observed in `osuTitanic/titanic`; not currently routed by Athena. |
-| `POST` | `/users` on `osu.$DOMAIN` | Implemented | Stable registration endpoint. |
-| `POST` | `/web/users` local fallback | Implemented | Development fallback route for registration. |
-| `GET` | `/web/bancho_connect.php` | Partial | Reachability handshake only; credential validation is delegated to login. |
-| `GET` | `/web/osu-osz2-getscores.php` | Partial | Stable response mapping exists; full score rows depend on leaderboard projections. |
-| `POST` | `/web/osu-submit-modular-selector.php` | Partial | Score submission exists; rank/stat projection fields are incomplete. |
-| `POST` | `/web/osu-submit-modular.php` | Candidate | Legacy score submit variant in `lets` and `deck`; decide whether target clients need it. |
-| `POST` | `/web/osu-submit.php`, `/web/osu-submit-new.php` | Candidate | Older score submit variants in `deck`; likely legacy-only but should be explicitly scoped. |
-| `POST` | `/web/osu-session.php` | Candidate | Listed as unhandled in `bancho.py`; verify whether target clients still call it. |
-| `GET` | `/web/osu-getscores.php` through `/web/osu-getscores6.php` | Candidate | Older getscores variants in `deck`; decide target client build coverage. |
-| `GET` | `/web/osu-getreplay.php` | Missing | Replay download flow missing. |
-| `GET` | `/web/replays/<id>` | Candidate | Full replay route in `lets`; verify client usage. |
-| `GET` | `/web/check-updates.php` | Missing | Stable update compatibility route in `lets`, `deck`, and `bancho.py`; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=[]; evidence_source=deck [] + bancho.py empty body + user-confirmed current osu!stable --devserver behavior (TargetUsr, issue #34 spec discussion, 2026-06-20 JST); stable_operational_dependency=none; stable_fixture_requirement=check_updates_no_update_json_array. Proxying to `osu.ppy.sh` remains a separate future ppy proxying decision requirement (`proxy-decision-required`), not the initial implementation default. |
-| `GET` | `/release/update`, `/update` | Missing | Stable release manifest route and root alias; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=empty body; evidence_source=stable-compatibility-guide `/release/update` empty string + research decision; stable_operational_dependency=none; stable_fixture_requirement=release_no_update_empty. The hosted update metadata or artifact distribution behavior is outside initial no-update policy. |
-| `GET` | `/release/update.php`, `/update.php` | Missing | Stable release file-check manifest route and root alias; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=0; evidence_source=stable-compatibility-guide `/release/update.php` `0` + research decision; stable_operational_dependency=none; stable_fixture_requirement=release_update_php_zero. The hosted update metadata or artifact distribution behavior is outside initial no-update policy. |
-| `GET` | `/release/update2.php`, `/update2.php` | Missing | Stable release secondary manifest route and root alias; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=empty body; evidence_source=stable-compatibility-guide `/release/update2.php` empty string + research decision; stable_operational_dependency=none; stable_fixture_requirement=release_no_update_empty. The hosted update metadata or artifact distribution behavior is outside initial no-update policy. |
-| `GET` | `/release/patches.php`, `/patches.php` | Missing | Stable release patch manifest route and root alias; initial Athena policy is no-update/no-op. Audit: stable_compatibility_route_classification=required-no-update; response_shape=empty body; evidence_source=stable-compatibility-guide `/release/patches.php` empty string + research decision; stable_operational_dependency=none; stable_fixture_requirement=release_no_update_empty. The hosted update metadata or artifact distribution behavior is outside initial no-update policy. |
-| `GET` | `/release/<filename>` | Candidate | Release file route in `deck`; stable-compatibility-guide records release, patch, or extra file bytes with content headers. Audit: stable_compatibility_route_classification=deferred; response_shape=deferred; evidence_source=stable-compatibility-guide `/release/<filename>` file bytes + research decision; stable_operational_dependency=hosted-artifact-decision-required; stable_fixture_requirement=deferred. File bytes serving is not `required-no-update` and is not an initial implementation default. |
-| `GET` | `/release/filter.txt` | Candidate | Filter route in `deck`; stable-compatibility-guide records proxying `https://m1.ppy.sh/release/filter.txt`. Audit: stable_compatibility_route_classification=deferred; response_shape=deferred; evidence_source=stable-compatibility-guide `/release/filter.txt` proxy + research decision; stable_operational_dependency=proxy-decision-required; stable_fixture_requirement=deferred. External proxy route behavior is not `required-no-update` and is not an initial implementation default. |
-| `GET` | `/release/Localisation/<filename>` | Candidate | Localisation route in `deck`; stable-compatibility-guide records proxying `https://m1.ppy.sh/release/Localisation/<filename>?<version>`. Audit: stable_compatibility_route_classification=deferred; response_shape=deferred; evidence_source=stable-compatibility-guide `/release/Localisation/<filename>` proxy + research decision; stable_operational_dependency=proxy-decision-required; stable_fixture_requirement=deferred. External proxy route behavior is not `required-no-update` and is not an initial implementation default. |
-| `GET` | `/release/<language>/<filename>` | Candidate | Localisation DLL route in `deck`; stable-compatibility-guide records stored Localisation DLL bytes. Audit: stable_compatibility_route_classification=deferred; response_shape=deferred; evidence_source=stable-compatibility-guide `/release/<language>/<filename>` stored DLL bytes + research decision; stable_operational_dependency=hosted-artifact-decision-required; stable_fixture_requirement=deferred. File bytes serving is not `required-no-update` and is not an initial implementation default. |
-| `GET` | `/web/osu-search.php`, `/web/osu-search-set.php` | Missing | osu!direct search and set details missing. |
-| `GET` | `/d/<set>`, `/s/<set>`, `/bss/<set>`, `/osu/<map>`, `/web/maps/<file>`, `b.$DOMAIN/<path>`, `s.$DOMAIN/<path>`, `d.$DOMAIN/d/<set>` | Candidate | Beatmap download and `.osu` file routes from references. |
-| `GET` | `/mt/*`, `/thumb/*`, `/images/map-thumb/*`, `/preview/*`, `/mp3/preview/*` | Candidate | Beatmap thumbnails and preview media routes from `deck`. |
-| `POST` | `/web/osu-getbeatmapinfo.php` | Missing | Legacy web beatmap info endpoint in `deck`; separate from Bancho packet 68/69. |
-| `GET` | `/web/osu-gethashes.php`, `/web/osu-osz2-getfileinfo.php`, `/web/osu-osz2-getrawheader.php`, `/web/osu-osz2-getfilecontents.php`, `/web/osu-magnet.php` | Candidate | osz2/hash/file-content helper endpoints in `deck`. |
-| `POST` | `/web/osu-screenshot.php`, `/web/osu-ss.php` | Missing | Screenshot upload flow missing. |
-| `GET` | `/ss/`, `/ss/<id>`, `/ss/<id>/<checksum>`, `/ss/<id>.<extension>` | Candidate | Screenshot serving routes from `deck` and `bancho.py`. |
-| `GET` | `/a/`, `/a/<filename>`, `/forum/download.php`, `/assets/menu-content.json`, `/menu-content.json` | Candidate | Avatar and menu/static routes from `deck` and `titanic`. |
-| `POST` | `/web/osu-error.php` | Candidate | Client error report route in `lets` and `deck`. |
-| `GET` | `/web/osu-rate.php`, `/rating/ingame-rate.php`, `/rating/ingame-rate2.php` | Candidate | Beatmap rating routes from references. |
-| `POST` | `/web/osu-comment.php` | Candidate | Beatmap/replay/comment route from references. |
-| `GET` | `/web/osu-addfavourite.php`, `/web/osu-getfavourites.php` | Candidate | Favourite mutation/list routes from references. |
-| `GET` | `/web/osu-stat.php`, `/web/osu-statoth.php` | Candidate | User stats lookup routes from `deck`. |
-| `GET` | `/web/osu-getstatus.php` | Candidate | Beatmap checksum/status route from `deck`; request and response shape are documented in the guide. |
-| `GET` | `/web/osu-getfriends.php` | Missing | Friend relationships exist through packets, but web route is absent. |
-| `GET` | `/web/osu-markasread.php`, `/web/osu-checktweets.php`, `/web/lastfm.php` | Candidate | Compatibility no-op or social/status routes in references. |
-| `GET` | `/web/osu-getseasonal.php` | Missing | Seasonal asset JSON route missing. |
-| `GET` | `/web/osu-login.php` | Candidate | Web login route in `deck`; verify stable client usage. |
-| `GET` | `/web/osu-title-image.php`, `/menu-content.json` | Candidate | Title/menu asset routes from `deck`. |
-| `GET` | `/web/coins.php` | Candidate | Client-side currency route in `deck`; likely optional/private-server-specific. |
-| `POST` | `/web/osu-benchmark.php` | Candidate | Client benchmark diagnostics route in `deck`; likely optional/private-server-specific. |
-| `POST` | `/difficulty-rating` | Candidate | Present in `bancho.py`; verify whether stable clients or tooling rely on it. |
-| mixed | beatmap submission endpoints under `/web/osu-bmsubmit-*` and `/web/osu-osz2-bmsubmit-*` | Candidate | Beatmap submission/upload routes in `deck`; likely out of initial server scope but should be explicit. |
+The `Current status` column remains implementation or inventory state. The
+`Final audit classification` column is the Issue #32 legacy web-family audit
+axis. Bancho host/login and adjacent registration rows use `N/A` because they
+are not legacy endpoint body rows. Adjacent release, static, media, download,
+and non-web diagnostic rows use `out of scope` when they are listed here only to
+preserve overlap boundaries for later specs.
+
+| Method | Endpoint | Current status | Final audit classification | Concise reason / evidence |
+| --- | --- | --- | --- | --- |
+| `POST` | `/` on `c.$DOMAIN`, `c<int>.$DOMAIN`, `ce.$DOMAIN` | Implemented | N/A | Bancho login and packet polling entrypoint; outside Issue #32 legacy web-family endpoint audit. |
+| `POST` | `/` on `cho.$DOMAIN`, `mahbahowc.$DOMAIN`, `server.$DOMAIN` | Candidate | N/A | Bancho host aliases observed in `osuTitanic/titanic`; not currently routed by Athena and not a legacy web body row. |
+| `POST` | `/users` on `osu.$DOMAIN` | Implemented | N/A | Adjacent registration context, not a legacy PHP exact path. Evidence: `src/osu_server/composition/application.py`, `src/osu_server/transports/stable/web_legacy/registration.py`; guide `/users` evidence note. |
+| `POST` | `/web/users` local fallback | Implemented | N/A | Development registration fallback, not a legacy PHP exact path. Evidence: `src/osu_server/composition/application.py`, `src/osu_server/transports/stable/web_legacy/registration.py`; guide `/users` evidence note. |
+| `GET` | `/web/bancho_connect.php` | Partial | `needs reference evidence` | Bancho reachability: current route returns reachability-only empty 200 and delegates credentials to login, but reference alternatives still leave pre-login validation, country-code/IP response, and malformed-query fixture gaps open. |
+| `GET` | `/web/osu-osz2-getscores.php` | Partial | `required` | Modern getscores: stable response mapping exists, but full score rows, branch fixtures, and real-client evidence remain incomplete; guide `/web/osu-osz2-getscores.php` evidence note. |
+| `POST` | `/web/osu-submit-modular-selector.php` | Partial | `required` | Modern score submit selector: score submission route exists, but rank/stat projection fields, auth-specific sentinels, and fixture coverage remain incomplete; guide `/web/osu-submit-modular-selector.php` evidence note. |
+| `POST` | `/web/osu-submit-modular.php` | Candidate | `needs reference evidence` | Legacy score submit aliases: no Athena route and alias-specific request/response fixtures are missing; guide Legacy score submit aliases / Task 2.3 evidence note. |
+| `POST` | `/web/osu-submit.php`, `/web/osu-submit-new.php` | Candidate | `needs reference evidence` | Legacy score submit aliases: no Athena routes and current target-client traffic is unconfirmed; guide Legacy score submit aliases / Task 2.3 evidence note. |
+| `POST` | `/web/osu-session.php` | Candidate | `needs reference evidence` | Session candidate: no Athena route; `bancho.py` lists it as unhandled, but no source Reference Route Inventory exact row or current target-client traffic confirms the contract; guide `/web/osu-session.php` evidence note. |
+| `GET` | `/web/osu-getscores.php` through `/web/osu-getscores6.php` | Candidate | `needs reference evidence` | Legacy getscores aliases: per-path response variants must not share the modern osz2 formatter without fixtures; guide Legacy getscores aliases / Task 2.3 evidence note. |
+| `GET` | `/web/osu-getreplay.php` | Missing | `needs reference evidence` | Replay download PHP route: missing implementation plus unresolved auth, target path choice, fixture, and traffic evidence; guide Replay Download / Task 2.2 evidence note. |
+| `GET` | `/web/replays/<id>` | Candidate | N/A | Adjacent non-PHP replay alias from `lets`; keep beside `/web/osu-getreplay.php` without classifying it as a legacy PHP exact path. |
+| `GET` | `/web/check-updates.php` | Missing | `compatibility no-op` | Update check PHP route: initial no-update policy selects `[]` as the stable-compatible body; release/update audit records fixture handoff `check_updates_no_update_json_array`, no external operational dependency, `deck` JSON-array evidence, `bancho.py` empty-body contrast, and user-confirmed current osu!stable `--devserver` behavior. Proxy/nope variants remain future operational policy. |
+| `GET` | `/release/update`, `/release/update.php`, `/release/update2.php`, `/release/patches.php`, `/update`, `/update.php`, `/update2.php`, `/patches.php` | Missing | `out of scope` | Adjacent release-update scope, not legacy web-family body audit rows; no Athena routes are registered, and release/update audit records no-update sibling contracts with empty-body and `0` fixture handoffs for later implementation. |
+| `GET` | `/release/<filename>`, `/release/filter.txt`, `/release/Localisation/<filename>`, `/release/<language>/<filename>` | Candidate | `out of scope` | Release files, filters, and localisation artifacts are adjacent release-update scope; hosted artifact and proxy routes remain deferred behind explicit operational decisions. |
+| `GET` | `/web/osu-search.php`, `/web/osu-search-set.php` | Missing | `needs reference evidence` | osu!direct search and set lookup: real compatibility surface, but P0/deferred timing needs target-client traffic and failure fixtures; guide Task 2.4 osu!direct PHP evidence note. |
+| `GET` | `/d/<set>`, `/s/<set>`, `/bss/<set>`, `/osu/<map>`, `/web/maps/<file>`, `b.$DOMAIN/<path>`, `s.$DOMAIN/<path>`, `d.$DOMAIN/d/<set>` | Candidate | `out of scope` | Adjacent beatmap file delivery scope; keep file bytes, redirects, and download headers outside the legacy PHP body audit. |
+| `GET` | `/mt/*`, `/thumb/*`, `/images/map-thumb/*`, `/preview/*`, `/mp3/preview/*` | Candidate | `out of scope` | Adjacent beatmap media delivery scope; thumbnail and preview fixtures belong to static/media follow-up work. |
+| `POST` | `/web/osu-getbeatmapinfo.php` | Missing | `needs reference evidence` | Legacy beatmap info: separate from Bancho packet 68/69, and exact current-client traffic plus body fixtures are unconfirmed; guide Task 2.4 `/web/osu-getbeatmapinfo.php` evidence note. |
+| `GET` | `/web/osu-gethashes.php`, `/web/osu-osz2-getfileinfo.php`, `/web/osu-osz2-getrawheader.php`, `/web/osu-osz2-getfilecontents.php`, `/web/osu-magnet.php` | Candidate | `needs reference evidence` | OSZ2/hash helpers: reference-only variants require per-path auth, success bytes/text, not-found, 501, malformed params, and traffic fixtures; guide Task 2.4 OSZ2/hash helper evidence note. |
+| `POST` | `/web/osu-screenshot.php`, `/web/osu-ss.php` | Missing | `needs reference evidence` | Screenshot upload and client diagnostics: upload response variants differ across references and `/ss/*` serving remains adjacent media scope; guide Task 2.5 screenshots and diagnostics evidence note. |
+| `GET` | `/ss/`, `/ss/<id>`, `/ss/<id>/<checksum>`, `/ss/<id>.<extension>` | Candidate | `out of scope` | Adjacent screenshot media serving scope; keep separate from `/web/osu-screenshot.php` and `/web/osu-ss.php` upload classifications. |
+| `GET` | `/a/`, `/a/<filename>`, `/forum/download.php` | Candidate | `out of scope` | Adjacent static/media context; avatar delivery belongs to static/media scope. |
+| `GET` | `/assets/menu-content.json`, `/menu-content.json` | Candidate | `needs reference evidence` | Title/menu UI: client-visible menu JSON contract is named by Requirement 7.3 and needs current-client traffic, exact JSON body, cache, and disabled/missing-asset fixtures. |
+| `POST` | `/web/osu-error.php` | Candidate | `needs reference evidence` | Screenshot upload and client diagnostics: client error report route needs request body and success/failure response fixtures before no-op or required behavior can be chosen. |
+| `GET` | `/web/osu-rate.php`, `/rating/ingame-rate.php`, `/rating/ingame-rate2.php` | Candidate | `needs reference evidence` | Ratings: response sentinels are reference-documented, but current-client traffic and per-path fixtures are missing; guide Task 2.5 ratings evidence note. |
+| `POST` | `/web/osu-comment.php` | Candidate | `needs reference evidence` | Comments and favourites: comment get/post variants and moderation/error sentinels require fixtures; guide Task 2.5 comments and favourites evidence note. |
+| `GET` | `/web/osu-addfavourite.php`, `/web/osu-getfavourites.php` | Candidate | `needs reference evidence` | Comments and favourites: favourite mutation/list behavior needs auth, limit, already-state, and not-found fixtures; guide Task 2.5 comments and favourites evidence note. |
+| `GET` | `/web/osu-stat.php`, `/web/osu-statoth.php` | Candidate | `needs reference evidence` | Stats and friends: stats/avatar row shape is reference-documented, but current-client traffic and projection ownership are unresolved; guide Task 2.5 stats and friends evidence note. |
+| `GET` | `/web/osu-getstatus.php` | Candidate | `needs reference evidence` | Beatmap checksum status: checksum/status shape is reference-documented, but current-client traffic and fixture coverage are missing; guide `/web/osu-getstatus.php` evidence note. |
+| `GET` | `/web/osu-getfriends.php` | Missing | `needs reference evidence` | Stats and friends: friend packets exist, but this web route has no Athena implementation or target-client traffic fixture; guide Task 2.5 stats and friends evidence note. |
+| `GET` | `/web/osu-markasread.php`, `/web/osu-checktweets.php`, `/web/lastfm.php` | Candidate | `needs reference evidence` | Social/status no-op candidates: exact empty/static response body, `/web/lastfm.php` request shape, and current-client traffic are unconfirmed; guide Task 2.5 social/status no-op evidence note. |
+| `GET` | `/web/osu-getseasonal.php` | Missing | `needs reference evidence` | Seasonal UI: current osu!stable call is confirmed and reference behavior is a JSON array, but the exact empty-array body and cache contract still need a focused fixture before final no-op classification. |
+| `GET` | `/web/osu-login.php` | Candidate | `needs reference evidence` | Login preflight: web login usage, `1`/`0` failure behavior, and relationship to Bancho login need current-client traffic and auth fixtures; guide Task 2.5 login preflight evidence note. |
+| `GET` | `/web/osu-title-image.php` | Candidate | `needs reference evidence` | Title/menu UI: image bytes, empty body, redirect variants, and paired menu JSON body/cache behavior are unresolved; guide Task 2.5 title/menu evidence note. |
+| `GET` | `/web/coins.php` | Candidate | `out of scope` | Private-server currency and benchmark: private-server currency is outside current osu!stable normal-play compatibility; guide Task 2.5 private-server decision. |
+| `POST` | `/web/osu-benchmark.php` | Candidate | `out of scope` | Private-server currency and benchmark: benchmark diagnostics are outside current osu!stable normal-play compatibility; guide Task 2.5 private-server decision. |
+| `POST` | `/difficulty-rating` | Candidate | `out of scope` | Non-web diagnostics: outside the legacy `/web/*.php` and `/rating/ingame-rate*.php` audit boundary; product-scope revalidation remains future work if Athena supports it. |
+| mixed | beatmap submission endpoints under `/web/osu-bmsubmit-*` and `/web/osu-osz2-bmsubmit-*` | Candidate | `deferred` | Beatmap submission is planned after core login/play/score compatibility and is not implemented by this audit; guide Task 2.5 beatmap submission decision. |
+
+### Legacy Web Audit Scope Index
+
+Task 1.1 locks the Issue #32 inventory boundary before classification work.
+In-scope rows are legacy `/web/*.php` exact paths plus the same-family
+`/rating/ingame-rate*.php` aliases. Release, static, media, and download rows
+that overlap a legacy web family stay visible as adjacent context, but their
+body policy is not classified by this audit scope.
+
+| Endpoint family | Stable HTTP Endpoint Coverage grouped row | In-scope exact path rows |
+| --- | --- | --- |
+| Bancho reachability | `/web/bancho_connect.php` | `/web/bancho_connect.php` |
+| Modern getscores | `/web/osu-osz2-getscores.php` | `/web/osu-osz2-getscores.php` |
+| Legacy getscores aliases | `/web/osu-getscores.php` through `/web/osu-getscores6.php` | `/web/osu-getscores.php`, `/web/osu-getscores2.php`, `/web/osu-getscores3.php`, `/web/osu-getscores4.php`, `/web/osu-getscores5.php`, `/web/osu-getscores6.php` |
+| Modern score submit selector | `/web/osu-submit-modular-selector.php` | `/web/osu-submit-modular-selector.php` |
+| Legacy score submit aliases | `/web/osu-submit-modular.php`; `/web/osu-submit.php`, `/web/osu-submit-new.php` | `/web/osu-submit-modular.php`, `/web/osu-submit.php`, `/web/osu-submit-new.php` |
+| Session candidate | `/web/osu-session.php` | `/web/osu-session.php` grouped-row-only candidate; `bancho.py` unhandled-route trace exists, but no matching Reference Route Inventory row yet |
+| Replay download PHP route | `/web/osu-getreplay.php` | `/web/osu-getreplay.php` |
+| Update check PHP route | `/web/check-updates.php` | `/web/check-updates.php`; release/update artifact routes are adjacent context |
+| osu!direct search and set lookup | `/web/osu-search.php`, `/web/osu-search-set.php` | `/web/osu-search.php`, `/web/osu-search-set.php` |
+| Legacy beatmap info | `/web/osu-getbeatmapinfo.php` | `/web/osu-getbeatmapinfo.php` |
+| Beatmap checksum status | `/web/osu-getstatus.php` | `/web/osu-getstatus.php` |
+| OSZ2/hash helpers | `/web/osu-gethashes.php`, `/web/osu-osz2-getfileinfo.php`, `/web/osu-osz2-getrawheader.php`, `/web/osu-osz2-getfilecontents.php`, `/web/osu-magnet.php` | `/web/osu-gethashes.php`, `/web/osu-osz2-getfileinfo.php`, `/web/osu-osz2-getrawheader.php`, `/web/osu-osz2-getfilecontents.php`, `/web/osu-magnet.php` |
+| Screenshot upload and client diagnostics | `/web/osu-screenshot.php`, `/web/osu-ss.php`; `/web/osu-error.php` | `/web/osu-screenshot.php`, `/web/osu-ss.php`, `/web/osu-error.php`; `/ss/*` serving routes are adjacent media context |
+| Ratings | `/web/osu-rate.php`, `/rating/ingame-rate.php`, `/rating/ingame-rate2.php` | `/web/osu-rate.php`, `/rating/ingame-rate.php`, `/rating/ingame-rate2.php` |
+| Comments and favourites | `/web/osu-comment.php`; `/web/osu-addfavourite.php`, `/web/osu-getfavourites.php` | `/web/osu-comment.php`, `/web/osu-addfavourite.php`, `/web/osu-getfavourites.php` |
+| Stats and friends | `/web/osu-stat.php`, `/web/osu-statoth.php`; `/web/osu-getfriends.php` | `/web/osu-stat.php`, `/web/osu-statoth.php`, `/web/osu-getfriends.php` |
+| Social/status no-op candidates | `/web/osu-markasread.php`, `/web/osu-checktweets.php`, `/web/lastfm.php` | `/web/osu-markasread.php`, `/web/osu-checktweets.php`, `/web/lastfm.php` |
+| Seasonal UI | `/web/osu-getseasonal.php` | `/web/osu-getseasonal.php` |
+| Title/menu UI | `/web/osu-title-image.php`, `/assets/menu-content.json`, `/menu-content.json` | `/web/osu-title-image.php`, `/assets/menu-content.json`, `/menu-content.json` |
+| Login preflight | `/web/osu-login.php` | `/web/osu-login.php` |
+| Private-server currency and benchmark | `/web/coins.php`, `/web/osu-benchmark.php` | `/web/coins.php`, `/web/osu-benchmark.php` |
+| Beatmap submission | Beatmap submission endpoints under `/web/osu-bmsubmit-*` and `/web/osu-osz2-bmsubmit-*` | `/web/osu-osz2-bmsubmit-getid.php`, `/web/osu-osz2-bmsubmit-upload.php`, `/web/osu-osz2-bmsubmit-post.php`, `/web/osu-get-beatmap-topic.php`, `/web/osu-bmsubmit-getid5.php`, `/web/osu-bmsubmit-getid4.php`, `/web/osu-bmsubmit-getid3.php`, `/web/osu-bmsubmit-getid2.php`, `/web/osu-bmsubmit-getid.php`, `/web/osu-bmsubmit-upload.php`, `/web/osu-bmsubmit-novideo.php`, `/web/osu-bmsubmit-post3.php`, `/web/osu-bmsubmit-post2.php`, `/web/osu-bmsubmit-post.php` |
+
+Adjacent context rows that must not be absorbed into the Issue #32 body audit:
+
+| Adjacent context | Matrix rows / exact paths | Scope note |
+| --- | --- | --- |
+| Registration fallback | `/users` on `osu.$DOMAIN`; `/web/users` local fallback | Stable web registration context, but not a legacy `/web/*.php` route. |
+| Replay non-PHP alias | `/web/replays/<id>` grouped row; `/web/replays/{id}` exact alias | Keep as replay download context beside `/web/osu-getreplay.php`. |
+| Release/update artifacts | `/release/update*`, `/update*`, `/patches.php`, `/release/<filename>`, `/release/filter.txt`, `/release/Localisation/<filename>`, `/release/<language>/<filename>` | Body policy belongs to release/update scope; only `/web/check-updates.php` is in the legacy web path inventory. |
+| Beatmap downloads and files | `/d/*`, `/s/*`, `/bss/*`, `/osu/*`, `/web/maps/{query}`, download host aliases | Download and `.osu` file delivery scope, adjacent to osu!direct and OSZ2 helpers. |
+| Static/media serving | `/ss/*`, `/a/*`, `/forum/download.php`, `/mt/*`, `/thumb/*`, `/images/map-thumb/*`, `/preview/*`, `/mp3/preview/*`, static host aliases | Media delivery scope; PHP upload or menu routes remain listed above when they match in-scope path rules. |
+| Menu JSON | `/assets/menu-content.json`, `/menu-content.json` | Title/menu UI needs-evidence context adjacent to `/web/osu-title-image.php`; not a `/web/*.php` exact path but named by Requirement 7.3. |
+| Non-web diagnostics | `/difficulty-rating` | Outside the legacy web-family path rules. |
+
+### Task 2.2 P0 Play-Adjacent Family Audit
+
+This table records current implementation status separately from final audit
+classification and evidence gaps. `Missing implementation` means Athena does
+not currently register a route in `src/osu_server/composition/application.py`.
+`Missing evidence` means request/response fixtures or branch-specific evidence
+are absent. `Missing traffic evidence` means no current osu!stable client probe
+has confirmed that exact path and behavior.
+
+| Endpoint family | Current implementation status | Task 2.2 classification / audit result | Evidence source | Separated gaps |
+| --- | --- | --- | --- | --- |
+| Registration fallback | Implemented on `POST /users` and local `POST /web/users` fallback | Adjacent required registration context; not a legacy `/web/*.php` final-audit row | `src/osu_server/composition/application.py`; `src/osu_server/transports/stable/web_legacy/registration.py`; guide `/users` evidence note | Missing evidence: malformed-form fixture and stable registration traffic branch evidence. Missing traffic evidence: local fallback usage is development-oriented. |
+| Bancho reachability | Partial | `needs reference evidence` until the reachability-only empty response, pre-login validation, and country-code/IP variants are fixture-backed | `src/osu_server/composition/application.py`; `src/osu_server/transports/stable/web_legacy/bancho_connect.py`; guide `/web/bancho_connect.php` evidence note | Missing evidence: real-client fixture proving empty body is sufficient across target builds. Missing traffic evidence: pre-login validation/country-code need is unconfirmed. |
+| Modern getscores | Partial | `required` | `src/osu_server/composition/application.py`; `src/osu_server/transports/stable/web_legacy/getscores.py`; `src/osu_server/transports/stable/web_legacy/mappers/getscores.py`; guide `/web/osu-osz2-getscores.php` evidence note | Missing evidence: branch fixtures for auth failure, unavailable, update available, header/rows, malformed identity, friends/country selections, and real-client probes. Missing implementation: complete leaderboard projections remain partial. |
+| Modern score submit selector | Partial | `required` | `src/osu_server/composition/application.py`; `src/osu_server/transports/stable/web_legacy/score_submit.py`; `src/osu_server/transports/stable/web_legacy/mappers/score_submit.py`; guide `/web/osu-submit-modular-selector.php` evidence note | Missing evidence: auth-specific sentinel mapping, multipart variant fixtures, failure branch fixtures, and real-client probes. Missing implementation: rank/stat/achievement projection and some post-submit durability remain partial. |
+| Replay download PHP route | Missing | `needs reference evidence` until target path, auth, and response fixtures are confirmed | Stable HTTP Endpoint Coverage row; guide Replay Download section; Reference Route Inventory `/web/osu-getreplay.php` row | Missing implementation: no Athena route. Missing evidence: success bytes, auth failure, malformed request, and missing-replay fixture coverage. Missing traffic evidence: current target-client path choice between `/web/osu-getreplay.php` and adjacent `/web/replays/{id}` is unconfirmed. |
+| Session candidate | Candidate only | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide `/web/osu-session.php` evidence note; `bancho.py` unhandled-route trace | Missing implementation: no Athena route. Missing evidence: auth method, params, success body, failure sentinels, and exact Reference Route Inventory row. Missing traffic evidence: no current target-client probe confirms the path is still called. |
+
+### Task 2.3 Legacy Alias Audit
+
+These aliases are best effort support candidates for older stable clients. They
+are not part of the current osu!stable P0 required path while target-client
+traffic is unconfirmed. Keep them `needs reference evidence` until exact
+request, response, auth failure, domain failure, and malformed request fixtures
+exist per alias.
+
+| Exact path | Family | Current implementation status | Task 2.3 classification / audit result | Variant and evidence note |
+| --- | --- | --- | --- | --- |
+| `/web/osu-getscores6.php` | Legacy getscores alias | Candidate only | `needs reference evidence` | Reference inventory lists the path in `deck`, but the exact response delta from `/web/osu-osz2-getscores.php` still needs a fixture. |
+| `/web/osu-getscores5.php` | Legacy getscores alias | Candidate only | `needs reference evidence` | Reference inventory lists the path in `deck`; per-version omitted fields and failure sentinels are unconfirmed. |
+| `/web/osu-getscores4.php` | Legacy getscores alias | Candidate only | `needs reference evidence` | Reference inventory lists the path in `deck`; per-version omitted fields and failure sentinels are unconfirmed. |
+| `/web/osu-getscores3.php` | Legacy getscores alias | Candidate only | `needs reference evidence` | Reference inventory lists the path in `deck`; per-version omitted fields and failure sentinels are unconfirmed. |
+| `/web/osu-getscores2.php` | Legacy getscores alias | Candidate only | `needs reference evidence` | Reference inventory lists the path in `deck`; per-version omitted fields and failure sentinels are unconfirmed. |
+| `/web/osu-getscores.php` | Legacy getscores alias | Candidate only | `needs reference evidence` | Guide notes the oldest route returns legacy score rows separated by `:`, but auth, not-found, malformed, and current-client traffic evidence are still missing. |
+| `/web/osu-submit-modular.php` | Legacy score submit alias | Candidate only | `needs reference evidence` | Reference inventory lists the alias in `lets` and `deck`; request source, multipart/query variant, and response sentinel mapping are unconfirmed. |
+| `/web/osu-submit.php` | Legacy score submit alias | Candidate only | `needs reference evidence` | Reference inventory lists the alias in `deck`; old payload shape, auth failure, and malformed request behavior are unconfirmed. |
+| `/web/osu-submit-new.php` | Legacy score submit alias | Candidate only | `needs reference evidence` | Reference inventory lists the alias in `deck`; request/response variant and target-client traffic evidence are unconfirmed. |
+
+### Task 2.4 Beatmap Lookup And File-Helper Audit
+
+This audit keeps legacy PHP lookup endpoints separate from adjacent file,
+download, and static/media delivery routes. `/web/maps/{query}` is adjacent
+because it returns `.osu` file bytes rather than a PHP response contract, even
+though the path starts with `/web/`.
+
+| Endpoint family | In-scope exact paths | Current implementation status | Task 2.4 classification / audit result | Evidence source | Separated gaps |
+| --- | --- | --- | --- | --- | --- |
+| osu!direct search and set lookup | `/web/osu-search.php`, `/web/osu-search-set.php` | Missing | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.4 osu!direct PHP evidence note; Reference Route Inventory rows | Missing implementation: no Athena routes. Missing evidence: auth variants, search/set success fixtures, 401/404/error fixtures, pagination variants, and current-client traffic. Timing may become deferred only after target-client evidence proves it is outside P0. |
+| Legacy beatmap info | `/web/osu-getbeatmapinfo.php` | Missing | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.4 `/web/osu-getbeatmapinfo.php` evidence note; Reference Route Inventory row | Missing implementation: no Athena route. Missing evidence: exact request body encoding, auth behavior, >100 request sentinel, malformed body behavior, and relationship to Bancho packet 68/69. |
+| Beatmap checksum status | `/web/osu-getstatus.php` | Candidate only | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide `/web/osu-getstatus.php` evidence note; Reference Route Inventory row | Missing implementation: no Athena route. Missing evidence: current-client traffic, checksum limit behavior, malformed checksum list behavior, and status mapping fixtures. |
+| OSZ2/hash helpers | `/web/osu-gethashes.php`, `/web/osu-osz2-getfileinfo.php`, `/web/osu-osz2-getrawheader.php`, `/web/osu-osz2-getfilecontents.php`, `/web/osu-magnet.php` | Candidate only | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.4 OSZ2/hash helper evidence note; Reference Route Inventory rows | Missing implementation: no Athena routes. Missing evidence: per-path auth, success bytes/text, file-not-found behavior, 501 magnet policy, malformed params, and current-client traffic. |
+| Adjacent beatmap file delivery | `/web/maps/{query}`, `/d/*`, `/s/*`, `/bss/*`, `/osu/*`, download host aliases | Adjacent context | Not classified by Issue #32 body audit | Adjacent context table; guide file/media behavior table | Missing implementation/evidence belongs to static/media/download route scope, not this legacy PHP audit. |
+| Adjacent beatmap media delivery | `/mt/*`, `/thumb/*`, `/images/map-thumb/*`, `/preview/*`, `/mp3/preview/*` | Adjacent context | Not classified by Issue #32 body audit | Adjacent context table; guide file/media behavior table | Missing implementation/evidence belongs to static/media/download route scope, not this legacy PHP audit. |
+
+### Task 2.5 Social, UI, And Private-Server Audit
+
+This table records remaining social/status/UI/private-server families. It
+keeps confirmed no-op candidates separate from dynamic routes that need fixtures
+or later product scope decisions.
+
+| Endpoint family | In-scope exact paths | Current implementation status | Task 2.5 classification / audit result | Evidence source | Separated gaps |
+| --- | --- | --- | --- | --- | --- |
+| Screenshot upload and client diagnostics | `/web/osu-screenshot.php`, `/web/osu-ss.php`, `/web/osu-error.php` | Missing/candidate | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.5 screenshots and diagnostics evidence note | Missing implementation: no Athena routes. Missing evidence: upload/error request bodies, success bodies, failure sentinels, media-serving handoff, and current-client traffic. |
+| Ratings | `/web/osu-rate.php`, `/rating/ingame-rate.php`, `/rating/ingame-rate2.php` | Candidate only | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.5 ratings evidence note | Missing implementation: no Athena routes. Missing evidence: per-path success variants, failure sentinels, malformed request behavior, and target-client traffic. |
+| Comments and favourites | `/web/osu-comment.php`, `/web/osu-addfavourite.php`, `/web/osu-getfavourites.php` | Candidate only | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.5 comments and favourites evidence note | Missing implementation: no Athena routes. Missing evidence: auth, get/post variants, favourite limit/already state, malformed request behavior, and current-client traffic. |
+| Stats and friends | `/web/osu-stat.php`, `/web/osu-statoth.php`, `/web/osu-getfriends.php` | Candidate/missing | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.5 stats and friends evidence note | Missing implementation: no Athena routes. Missing evidence: stats projection ownership, avatar hash source, auth failure, empty friends response, and current-client traffic. |
+| Social/status no-op candidates | `/web/osu-markasread.php`, `/web/osu-checktweets.php`, `/web/lastfm.php` | Candidate only | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.5 social/status no-op evidence note | Missing implementation: no Athena routes. Missing evidence: exact empty/static body, unknown-channel behavior, malformed request behavior, and current-client traffic. |
+| Seasonal UI | `/web/osu-getseasonal.php` | Missing | `needs reference evidence` | User-confirmed current osu!stable call; guide Task 2.5 seasonal UI evidence note; reference JSON array family shape | Missing implementation: no Athena route. Missing evidence: focused fixture for exact empty JSON array body, cache headers, and dynamic seasonal asset management follow-up. |
+| Title/menu UI | `/web/osu-title-image.php`, `/assets/menu-content.json`, `/menu-content.json` | Candidate only | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.5 title/menu evidence note | Missing implementation: no Athena routes. Missing evidence: current-client traffic, image/empty/redirect variant selection, menu JSON body/cache, missing-asset behavior, and static asset policy. |
+| Login preflight | `/web/osu-login.php` | Candidate only | `needs reference evidence` | Stable HTTP Endpoint Coverage row; guide Task 2.5 login preflight evidence note | Missing implementation: no Athena route. Missing evidence: current-client usage, auth failure behavior, malformed params, and relationship to Bancho login. |
+| Private-server currency and benchmark | `/web/coins.php`, `/web/osu-benchmark.php` | Candidate only | `out of scope` | Stable HTTP Endpoint Coverage row; guide Task 2.5 private-server decision and evidence note | Missing implementation intentionally remains outside current normal-play compatibility unless product scope changes. |
+| Beatmap submission | `/web/osu-osz2-bmsubmit-*`, `/web/osu-bmsubmit-*`, `/web/osu-get-beatmap-topic.php` | Candidate only | `deferred` | Stable HTTP Endpoint Coverage row; guide Task 2.5 beatmap submission decision and evidence note | Missing implementation/evidence tracked as post-core compatibility work after login/play/score core is complete. |
+
+### Task 5.1 Requirement Coverage And Classification Completeness
+
+This verification table ties every Issue #32 requirement ID to the audit docs
+that now prove it. It does not introduce new runtime scope; it only records
+where the matrix, guide, or follow-up checklist demonstrates coverage.
+
+| Requirement | Verification evidence |
+| --- | --- |
+| 1.1 | Legacy Web Audit Scope Index lists every in-scope legacy `/web/*.php` family and exact path from the Issue #32 source inventory. |
+| 1.2 | Legacy Web Audit Scope Index and Reference Route Inventory include `/rating/ingame-rate.php` and `/rating/ingame-rate2.php` under Ratings. |
+| 1.3 | Stable HTTP Endpoint Coverage, Legacy Web Audit Scope Index, Reference Route Inventory, and Coverage Rows Without Reference Exact Routes cross-check grouped rows against exact paths. |
+| 1.4 | Adjacent context table keeps release, static, media, download, menu JSON, replay alias, registration, and non-web diagnostics out of the body audit. |
+| 2.1 | Final Audit Classification Contract in the guide and the matrix policy define the allowed final classifications. |
+| 2.2 | Stable HTTP Endpoint Coverage separates `Current status` from `Final audit classification`; the final classification column has no `candidate` value. |
+| 2.3 | Modern getscores and modern score submit selector are classified `required` because their current osu!stable workflows need real behavior. |
+| 2.4 | Bancho reachability remains `needs reference evidence` until pre-login validation, country-code/IP response, and malformed-query fixture gaps are closed; Seasonal UI remains `needs reference evidence` until its exact no-op body/cache contract is fixture-backed. |
+| 2.5 | Unknown aliases, response shapes, auth sentinels, and target-client traffic gaps remain `needs reference evidence` instead of guessed classifications. |
+| 3.1 | Guide endpoint family evidence notes include an Auth method row for every audited family updated by Tasks 2.2 through 2.5. |
+| 3.2 | Guide endpoint family evidence notes include a Required request params row for every audited family updated by Tasks 2.2 through 2.5. |
+| 3.3 | Guide endpoint family evidence notes include a Success response row for every audited family updated by Tasks 2.2 through 2.5. |
+| 3.4 | Guide endpoint family evidence notes include an Auth failure response row for every audited family updated by Tasks 2.2 through 2.5. |
+| 3.5 | Guide endpoint family evidence notes include a Domain/data-not-found response row for every audited family updated by Tasks 2.2 through 2.5. |
+| 3.6 | Guide endpoint family evidence notes include a Malformed request response row for every audited family updated by Tasks 2.2 through 2.5. |
+| 4.1 | Stable HTTP Endpoint Coverage concise reasons, task audit tables, and Reference Route Inventory traceability name the matrix row, guide note, or implementation evidence source. |
+| 4.2 | Final Audit Classification Contract states the evidence sources needed to leave `needs reference evidence`; follow-up checklist rows keep unresolved evidence visible. |
+| 4.3 | Rows with unknown response shape, including old aliases, title/menu, ratings, and social/status, remain `needs reference evidence` rather than `compatibility no-op`; `/web/check-updates.php` is excluded from that unknown set because release/update evidence selected the `[]` no-update body. |
+| 4.4 | Reference-only routes without current osu!stable traffic, including session, legacy aliases, OSZ2 helpers, and social/status routes, are not marked P0 `required`. |
+| 5.1 | Guide Final Audit Classification Contract and legacy alias notes state current osu!stable is the primary target. |
+| 5.2 | Legacy getscores alias table keeps `/web/osu-getscores.php` through `/web/osu-getscores6.php` as `needs reference evidence` until per-alias variants are known. |
+| 5.3 | Legacy score submit alias table keeps `/web/osu-submit-modular.php`, `/web/osu-submit.php`, and `/web/osu-submit-new.php` as `needs reference evidence`. |
+| 5.4 | Legacy alias audit text identifies those aliases as best effort support candidates for older stable clients, not current-client P0 requirements. |
+| 6.1 | Beatmap submission grouped and exact path rows are classified `deferred`. |
+| 6.2 | `/web/coins.php` is classified `out of scope` with private-server currency rationale. |
+| 6.3 | `/web/osu-benchmark.php` is classified `out of scope` with benchmark diagnostics rationale. |
+| 6.4 | Deferred and out-of-scope reasons appear in Stable HTTP Endpoint Coverage and the guide private-server / beatmap submission decision table. |
+| 7.1 | Seasonal UI row records user-confirmed current osu!stable traffic for `/web/osu-getseasonal.php`. |
+| 7.2 | Seasonal UI keeps current-client traffic evidence visible but remains `needs reference evidence` until the exact empty-array/cache fixture confirms the no-op contract; dynamic seasonal asset management stays follow-up scope. |
+| 7.3 | Title/menu UI keeps `/web/osu-title-image.php`, `/assets/menu-content.json`, and `/menu-content.json` as `needs reference evidence` until current-client traffic and exact body/cache behavior are confirmed. |
+| 7.4 | Social/status no-op candidates remain `needs reference evidence` until exact empty/static bodies are confirmed in guide evidence notes. |
+| 8.1 | Task 2.2 through 2.5 audit tables provide family-level classification or evidence gap for every in-scope family. |
+| 8.2 | Reference Route Inventory exact rows point back to grouped rows, classification, and guide evidence notes. |
+| 8.3 | Legacy getscores, submit aliases, OSZ2 helpers, title/menu, and screenshot rows preserve per-path variant gaps instead of collapsing them into family summaries. |
+| 8.4 | Legacy Web Audit Scope Index maps each grouped Stable HTTP Endpoint Coverage row to its in-scope exact path rows. |
+| 9.1 | Stable HTTP Endpoint Coverage includes the Final audit classification column and concise reason for each grouped row. |
+| 9.2 | Reference Route Inventory includes Audit traceability for exact paths and Coverage Rows Without Reference Exact Routes for grouped rows without source exact rows. |
+| 9.3 | Guide endpoint family evidence notes record detailed evidence gaps for every audited family that needs detail beyond the matrix. |
+| 9.4 | Matrix and guide disagreements or insufficient behavior evidence are represented as `needs reference evidence` and unresolved follow-up gaps. |
+| 10.1 | Audit-only Boundary Verification states this spec does not complete route implementation. |
+| 10.2 | Audit-only Boundary Verification states this spec does not create golden fixture files. |
+| 10.3 | Audit-only Boundary Verification states this spec does not execute real-client traffic capture. |
+| 10.4 | Legacy Web Follow-up Checklist separates missing implementation work from audit completion. |
+| 10.5 | Legacy Web Follow-up Checklist separates missing fixture/reference evidence and missing current-client traffic from audit completion. |
+
+Classification completeness check:
+
+| Check | Result |
+| --- | --- |
+| In-scope grouped rows have a final audit decision | Complete: every in-scope Stable HTTP Endpoint Coverage row has `required`, `compatibility no-op`, `deferred`, `out of scope`, or `needs reference evidence`. Non-legacy adjacent rows use `N/A` only when the final-audit axis does not apply. |
+| Final `candidate` values are absent | Complete: `Candidate` remains only a `Current status`, source-inventory, or prose term. The `Final audit classification` column does not use `candidate`. |
+| Evidence gaps remain explicit | Complete: unresolved request/response/auth/traffic gaps are classified `needs reference evidence` and carried into guide evidence notes or the follow-up checklist. |
+| Audit-only scope remains intact | Complete: missing implementation, fixture, and traffic work are recorded as follow-up work rather than completed by this audit. |
 
 ## Akatsuki-Compatible Score Extensions
 
@@ -575,131 +785,146 @@ This exact-path inventory is used to audit the grouped endpoint rows above.
 Entries come from `osuTitanic/deck` route decorators, `osuTitanic/titanic`
 host routing, and `osuAkatsuki/bancho.py` routes. Keep this list exact enough
 for mechanical diff checks; implementation issues can still group related rows.
+Task 3.1 adds traceability from each exact path back to the grouped matrix row
+and to the final audit classification or evidence note that owns the current
+decision. Adjacent static, media, download, release, and host-rewrite rows stay
+separate from the legacy web-family final classification.
 
 ### Deck Web Routes
 
-| Method | Endpoint | Area |
-| --- | --- | --- |
-| `GET` | `/web/bancho_connect.php` | connection |
-| `GET` | `/web/check-updates.php` | update |
-| `POST` | `/web/osu-error.php` | diagnostics |
-| `POST` | `/web/osu-screenshot.php` | screenshots |
-| `POST` | `/web/osu-ss.php` | screenshots/monitor |
-| `GET` | `/web/osu-osz2-getscores.php` | leaderboards |
-| `GET` | `/web/osu-getscores6.php` | legacy leaderboards |
-| `GET` | `/web/osu-getscores5.php` | legacy leaderboards |
-| `GET` | `/web/osu-getscores4.php` | legacy leaderboards |
-| `GET` | `/web/osu-getscores3.php` | legacy leaderboards |
-| `GET` | `/web/osu-getscores2.php` | legacy leaderboards |
-| `GET` | `/web/osu-getscores.php` | legacy leaderboards |
-| `POST` | `/web/osu-submit-modular-selector.php` | score submit |
-| `POST` | `/web/osu-submit-modular.php` | score submit |
-| `POST` | `/web/osu-submit.php` | legacy score submit |
-| `POST` | `/web/osu-submit-new.php` | legacy score submit |
-| `GET` | `/web/osu-getreplay.php` | replays |
-| `GET` | `/web/osu-search.php` | osu!direct |
-| `GET` | `/web/osu-search-set.php` | osu!direct |
-| `POST` | `/web/osu-getbeatmapinfo.php` | beatmaps |
-| `GET` | `/web/osu-getstatus.php` | beatmaps |
-| `GET` | `/web/maps/{query}` | beatmap files |
-| `GET` | `/web/osu-gethashes.php` | osz2 |
-| `GET` | `/web/osu-osz2-getfileinfo.php` | osz2 |
-| `GET` | `/web/osu-osz2-getrawheader.php` | osz2 |
-| `GET` | `/web/osu-osz2-getfilecontents.php` | osz2 |
-| `GET` | `/web/osu-magnet.php` | osz2 |
-| `GET` | `/web/osu-getfriends.php` | social |
-| `GET` | `/web/osu-addfavourite.php` | favourites |
-| `GET` | `/web/osu-getfavourites.php` | favourites |
-| `GET` | `/web/osu-rate.php` | ratings |
-| `POST` | `/web/osu-comment.php` | comments |
-| `GET` | `/web/osu-stat.php` | stats |
-| `GET` | `/web/osu-statoth.php` | stats |
-| `GET` | `/web/osu-markasread.php` | social |
-| `GET` | `/web/osu-checktweets.php` | social |
-| `GET` | `/web/osu-getseasonal.php` | seasonal |
-| `GET` | `/web/osu-login.php` | login |
-| `GET` | `/web/osu-title-image.php` | menu |
-| `GET` | `/web/coins.php` | optional/private-server |
-| `POST` | `/web/osu-benchmark.php` | diagnostics |
-| `GET` | `/web/osu-osz2-bmsubmit-getid.php` | beatmap submission |
-| `POST` | `/web/osu-osz2-bmsubmit-upload.php` | beatmap submission |
-| `POST` | `/web/osu-osz2-bmsubmit-post.php` | beatmap submission |
-| `GET` | `/web/osu-get-beatmap-topic.php` | beatmap submission |
-| `POST` | `/web/osu-bmsubmit-getid5.php` | legacy beatmap submission |
-| `POST` | `/web/osu-bmsubmit-getid4.php` | legacy beatmap submission |
-| `POST` | `/web/osu-bmsubmit-getid3.php` | legacy beatmap submission |
-| `POST` | `/web/osu-bmsubmit-getid2.php` | legacy beatmap submission |
-| `POST` | `/web/osu-bmsubmit-getid.php` | legacy beatmap submission |
-| `POST` | `/web/osu-bmsubmit-upload.php` | legacy beatmap submission |
-| `GET` | `/web/osu-bmsubmit-novideo.php` | legacy beatmap submission |
-| `POST` | `/web/osu-bmsubmit-post3.php` | legacy beatmap submission |
-| `POST` | `/web/osu-bmsubmit-post2.php` | legacy beatmap submission |
-| `POST` | `/web/osu-bmsubmit-post.php` | legacy beatmap submission |
+| Method | Endpoint | Area | Audit traceability |
+| --- | --- | --- | --- |
+| `GET` | `/web/bancho_connect.php` | connection | Grouped row: Bancho reachability. Task 2.2 classification: `needs reference evidence`; evidence: guide `/web/bancho_connect.php` evidence note. |
+| `GET` | `/web/check-updates.php` | update | Grouped row: Update check PHP route. Task 3.2 classification: `compatibility no-op`; release/update audit selected the `[]` no-update body and fixture handoff `check_updates_no_update_json_array`, while proxy/nope variants and release artifacts remain adjacent future policy. |
+| `POST` | `/web/osu-error.php` | diagnostics | Grouped row: Screenshot upload and client diagnostics. Task 2.5 classification: `needs reference evidence`; evidence: guide Task 2.5 screenshots and diagnostics evidence note. |
+| `POST` | `/web/osu-screenshot.php` | screenshots | Grouped row: Screenshot upload and client diagnostics. Task 2.5 classification: `needs reference evidence`; response variants differ across references, and `/ss/*` serving is adjacent media scope. |
+| `POST` | `/web/osu-ss.php` | screenshots/monitor | Grouped row: Screenshot upload and client diagnostics. Task 2.5 classification: `needs reference evidence`; response variant is not assumed to match `/web/osu-screenshot.php`. |
+| `GET` | `/web/osu-osz2-getscores.php` | leaderboards | Grouped row: Modern getscores. Task 2.2 classification: `required`; evidence: guide `/web/osu-osz2-getscores.php` evidence note. |
+| `GET` | `/web/osu-getscores6.php` | legacy leaderboards | Grouped row: Legacy getscores aliases. Task 2.3 classification: `needs reference evidence`; variant gap: exact response delta from modern osz2 formatter still needs a fixture. |
+| `GET` | `/web/osu-getscores5.php` | legacy leaderboards | Grouped row: Legacy getscores aliases. Task 2.3 classification: `needs reference evidence`; variant gap: per-version omitted fields and failure sentinels are unconfirmed. |
+| `GET` | `/web/osu-getscores4.php` | legacy leaderboards | Grouped row: Legacy getscores aliases. Task 2.3 classification: `needs reference evidence`; variant gap: per-version omitted fields and failure sentinels are unconfirmed. |
+| `GET` | `/web/osu-getscores3.php` | legacy leaderboards | Grouped row: Legacy getscores aliases. Task 2.3 classification: `needs reference evidence`; variant gap: per-version omitted fields and failure sentinels are unconfirmed. |
+| `GET` | `/web/osu-getscores2.php` | legacy leaderboards | Grouped row: Legacy getscores aliases. Task 2.3 classification: `needs reference evidence`; variant gap: per-version omitted fields and failure sentinels are unconfirmed. |
+| `GET` | `/web/osu-getscores.php` | legacy leaderboards | Grouped row: Legacy getscores aliases. Task 2.3 classification: `needs reference evidence`; guide notes oldest-route `:` separated legacy rows, with auth/not-found/malformed evidence still missing. |
+| `POST` | `/web/osu-submit-modular-selector.php` | score submit | Grouped row: Modern score submit selector. Task 2.2 classification: `required`; evidence: guide `/web/osu-submit-modular-selector.php` evidence note. |
+| `POST` | `/web/osu-submit-modular.php` | score submit | Grouped row: Legacy score submit aliases. Task 2.3 classification: `needs reference evidence`; request source, multipart/query variant, and response sentinel mapping are unconfirmed. |
+| `POST` | `/web/osu-submit.php` | legacy score submit | Grouped row: Legacy score submit aliases. Task 2.3 classification: `needs reference evidence`; old payload shape, auth failure, and malformed request behavior are unconfirmed. |
+| `POST` | `/web/osu-submit-new.php` | legacy score submit | Grouped row: Legacy score submit aliases. Task 2.3 classification: `needs reference evidence`; request/response variant and target-client traffic evidence are unconfirmed. |
+| `GET` | `/web/osu-getreplay.php` | replays | Grouped row: Replay download PHP route. Task 2.2 classification: `needs reference evidence`; evidence: guide Replay Download section. |
+| `GET` | `/web/osu-search.php` | osu!direct | Grouped row: osu!direct search and set lookup. Task 2.4 classification: `needs reference evidence`; evidence: guide Task 2.4 osu!direct PHP evidence note. |
+| `GET` | `/web/osu-search-set.php` | osu!direct | Grouped row: osu!direct search and set lookup. Task 2.4 classification: `needs reference evidence`; evidence: guide Task 2.4 osu!direct PHP evidence note. |
+| `POST` | `/web/osu-getbeatmapinfo.php` | beatmaps | Grouped row: Legacy beatmap info. Task 2.4 classification: `needs reference evidence`; evidence: guide Task 2.4 `/web/osu-getbeatmapinfo.php` evidence note. |
+| `GET` | `/web/osu-getstatus.php` | beatmaps | Grouped row: Beatmap checksum status. Task 2.4 classification: `needs reference evidence`; evidence: guide `/web/osu-getstatus.php` evidence note. |
+| `GET` | `/web/maps/{query}` | beatmap files | Adjacent beatmap file delivery context. Not classified by the legacy PHP body audit; see Task 2.4 adjacent beatmap file delivery row and guide file/media behavior table. |
+| `GET` | `/web/osu-gethashes.php` | osz2 | Grouped row: OSZ2/hash helpers. Task 2.4 classification: `needs reference evidence`; evidence: guide Task 2.4 OSZ2/hash helper evidence note. |
+| `GET` | `/web/osu-osz2-getfileinfo.php` | osz2 | Grouped row: OSZ2/hash helpers. Task 2.4 classification: `needs reference evidence`; per-path file-info response fixtures are missing. |
+| `GET` | `/web/osu-osz2-getrawheader.php` | osz2 | Grouped row: OSZ2/hash helpers. Task 2.4 classification: `needs reference evidence`; raw-header byte/text success and failure fixtures are missing. |
+| `GET` | `/web/osu-osz2-getfilecontents.php` | osz2 | Grouped row: OSZ2/hash helpers. Task 2.4 classification: `needs reference evidence`; file-content success bytes and not-found behavior need fixtures. |
+| `GET` | `/web/osu-magnet.php` | osz2 | Grouped row: OSZ2/hash helpers. Task 2.4 classification: `needs reference evidence`; magnet-specific 501 policy and malformed params need fixtures. |
+| `GET` | `/web/osu-getfriends.php` | social | Grouped row: Stats and friends. Task 2.5 classification: `needs reference evidence`; evidence: guide Task 2.5 stats and friends evidence note. |
+| `GET` | `/web/osu-addfavourite.php` | favourites | Grouped row: Comments and favourites. Task 2.5 classification: `needs reference evidence`; evidence: guide Task 2.5 comments and favourites evidence note. |
+| `GET` | `/web/osu-getfavourites.php` | favourites | Grouped row: Comments and favourites. Task 2.5 classification: `needs reference evidence`; list response, auth, and not-found variants remain unconfirmed. |
+| `GET` | `/web/osu-rate.php` | ratings | Grouped row: Ratings. Task 2.5 classification: `needs reference evidence`; evidence: guide Task 2.5 ratings evidence note. |
+| `POST` | `/web/osu-comment.php` | comments | Grouped row: Comments and favourites. Task 2.5 classification: `needs reference evidence`; get/post variants and moderation/error sentinels require fixtures. |
+| `GET` | `/web/osu-stat.php` | stats | Grouped row: Stats and friends. Task 2.5 classification: `needs reference evidence`; stats projection and avatar hash source are unresolved. |
+| `GET` | `/web/osu-statoth.php` | stats | Grouped row: Stats and friends. Task 2.5 classification: `needs reference evidence`; alternate stats row shape and auth failure behavior need fixtures. |
+| `GET` | `/web/osu-markasread.php` | social | Grouped row: Social/status no-op candidates. Task 2.5 classification: `needs reference evidence`; exact empty/static body and unknown-channel behavior need fixtures. |
+| `GET` | `/web/osu-checktweets.php` | social | Grouped row: Social/status no-op candidates. Task 2.5 classification: `needs reference evidence`; current-client traffic and exact static/no-op response are unconfirmed. |
+| `GET` | `/web/osu-getseasonal.php` | seasonal | Grouped row: Seasonal UI. Task 2.5 classification: `needs reference evidence`; evidence: guide Task 2.5 seasonal UI evidence note, user-confirmed current client traffic, and missing exact empty-array/cache fixture. |
+| `GET` | `/web/osu-login.php` | login | Grouped row: Login preflight. Task 2.5 classification: `needs reference evidence`; evidence: guide Task 2.5 login preflight evidence note. |
+| `GET` | `/web/osu-title-image.php` | menu | Grouped row: Title/menu UI. Task 2.5 classification: `needs reference evidence`; image bytes, empty body, and redirect variants need fixtures alongside menu JSON. |
+| `GET` | `/web/coins.php` | optional/private-server | Grouped row: Private-server currency and benchmark. Task 2.5 classification: `out of scope`; evidence: guide Task 2.5 private-server decision and evidence note. |
+| `POST` | `/web/osu-benchmark.php` | diagnostics | Grouped row: Private-server currency and benchmark. Task 2.5 classification: `out of scope`; evidence: guide Task 2.5 private-server decision and evidence note. |
+| `GET` | `/web/osu-osz2-bmsubmit-getid.php` | beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; evidence: guide Task 2.5 beatmap submission decision and evidence note. |
+| `POST` | `/web/osu-osz2-bmsubmit-upload.php` | beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; upload workflow remains post-core compatibility work. |
+| `POST` | `/web/osu-osz2-bmsubmit-post.php` | beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; post workflow remains post-core compatibility work. |
+| `GET` | `/web/osu-get-beatmap-topic.php` | beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; topic lookup remains post-core compatibility work. |
+| `POST` | `/web/osu-bmsubmit-getid5.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; legacy alias variant remains post-core compatibility work. |
+| `POST` | `/web/osu-bmsubmit-getid4.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; legacy alias variant remains post-core compatibility work. |
+| `POST` | `/web/osu-bmsubmit-getid3.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; legacy alias variant remains post-core compatibility work. |
+| `POST` | `/web/osu-bmsubmit-getid2.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; legacy alias variant remains post-core compatibility work. |
+| `POST` | `/web/osu-bmsubmit-getid.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; legacy alias variant remains post-core compatibility work. |
+| `POST` | `/web/osu-bmsubmit-upload.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; legacy upload variant remains post-core compatibility work. |
+| `GET` | `/web/osu-bmsubmit-novideo.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; no-video submission variant remains post-core compatibility work. |
+| `POST` | `/web/osu-bmsubmit-post3.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; legacy post variant remains post-core compatibility work. |
+| `POST` | `/web/osu-bmsubmit-post2.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; legacy post variant remains post-core compatibility work. |
+| `POST` | `/web/osu-bmsubmit-post.php` | legacy beatmap submission | Grouped row: Beatmap submission. Task 2.5 classification: `deferred`; legacy post variant remains post-core compatibility work. |
 
 ### Static, Release, Rating, And Host Routes
 
-| Method | Endpoint | Area |
-| --- | --- | --- |
-| `GET` | `/a/` | avatars |
-| `GET` | `/a/{filename}` | avatars |
-| `GET` | `/forum/download.php` | avatars |
-| `GET` | `/mt/{filename}` | beatmap thumbnails |
-| `GET` | `/thumb/{filename}` | beatmap thumbnails |
-| `GET` | `/images/map-thumb/{filename}` | beatmap thumbnails |
-| `GET` | `/preview/{filename}` | preview audio |
-| `GET` | `/mp3/preview/{filename}` | preview audio |
-| `GET` | `/d/{filename}` | beatmap downloads |
-| `GET` | `/bss/{filename}` | beatmap downloads |
-| `GET` | `/osu/{query}` | beatmap files |
-| `GET` | `/ss/` | screenshots |
-| `GET` | `/ss/{id}` | screenshots |
-| `GET` | `/ss/{id}/{checksum}` | screenshots |
-| `GET` | `/assets/menu-content.json` | menu |
-| `GET` | `/menu-content.json` | menu host rewrite |
-| `GET` | `/release/update` | update |
-| `GET` | `/release/patches.php` | update |
-| `GET` | `/release/update.php` | update |
-| `GET` | `/release/update2.php` | update |
-| `GET` | `/update` | root update alias |
-| `GET` | `/update.php` | root update alias |
-| `GET` | `/update2.php` | root update alias |
-| `GET` | `/patches.php` | root update alias |
-| `GET` | `/release/{filename}` | release files |
-| `GET` | `/release/filter.txt` | release files |
-| `GET` | `/release/Localisation/{filename}` | release files |
-| `GET` | `/release/{language}/{filename}` | release files |
-| `GET` | `/rating/ingame-rate.php` | ratings |
-| `GET` | `/rating/ingame-rate2.php` | ratings |
-| `GET` | `a.$DOMAIN/*` | avatar host rewrite to `/a{uri}` |
-| `GET` | `a.$DOMAIN/avatar/*` | external avatar host variant |
-| `GET` | `a.$DOMAIN/ss/*.jpg` | external screenshot host variant |
-| `GET` | `b.$DOMAIN/d/*` | beatmap download host |
-| `GET` | `b.$DOMAIN/mt/*` | beatmap thumbnail host |
-| `GET` | `b.$DOMAIN/thumb/*` | beatmap thumbnail host |
-| `GET` | `b.$DOMAIN/images/map-thumb/*` | beatmap thumbnail host |
-| `GET` | `b.$DOMAIN/preview/*` | preview audio host |
-| `GET` | `b.$DOMAIN/mp3/preview/*` | preview audio host |
-| `GET` | `d.$DOMAIN/d/*` | beatmap download host |
-| `GET` | `d.osu.$DOMAIN/d/*` | beatmap download host |
-| `GET` | `s.$DOMAIN/images/map-thumb/*` | static host |
-| `GET` | `s.$DOMAIN/images/*` | static image host |
-| `GET` | `s.$DOMAIN/a/*` | static avatar host |
-| `GET` | `s.$DOMAIN/thumb/*` | static thumbnail host |
-| `GET` | `s.$DOMAIN/mt/*` | static thumbnail host |
-| `GET` | `s.$DOMAIN/preview/*` | static preview host |
-| `GET` | `s.$DOMAIN/mp3/preview/*` | static preview host |
+| Method | Endpoint | Area | Audit traceability |
+| --- | --- | --- | --- |
+| `GET` | `/a/` | avatars | Adjacent static/media context. Not classified by the legacy web-family body audit; see Adjacent context table and guide file/media behavior table. |
+| `GET` | `/a/{filename}` | avatars | Adjacent static/media context. Avatar delivery belongs to static/media scope, not the `/web/*.php` final classification. |
+| `GET` | `/forum/download.php` | avatars | Adjacent static/media context. Kept separate from legacy web-family classification. |
+| `GET` | `/mt/{filename}` | beatmap thumbnails | Adjacent beatmap media delivery context. Not classified by Issue #32 body audit. |
+| `GET` | `/thumb/{filename}` | beatmap thumbnails | Adjacent beatmap media delivery context. Not classified by Issue #32 body audit. |
+| `GET` | `/images/map-thumb/{filename}` | beatmap thumbnails | Adjacent beatmap media delivery context. Not classified by Issue #32 body audit. |
+| `GET` | `/preview/{filename}` | preview audio | Adjacent beatmap media delivery context. Not classified by Issue #32 body audit. |
+| `GET` | `/mp3/preview/{filename}` | preview audio | Adjacent beatmap media delivery context. Not classified by Issue #32 body audit. |
+| `GET` | `/d/{filename}` | beatmap downloads | Adjacent beatmap file delivery context. Not classified by the legacy PHP body audit. |
+| `GET` | `/bss/{filename}` | beatmap downloads | Adjacent beatmap file delivery context. Not classified by the legacy PHP body audit. |
+| `GET` | `/osu/{query}` | beatmap files | Adjacent beatmap file delivery context. Not classified by the legacy PHP body audit. |
+| `GET` | `/ss/` | screenshots | Adjacent screenshot media delivery context. Kept separate from `/web/osu-screenshot.php` and `/web/osu-ss.php` upload classifications. |
+| `GET` | `/ss/{id}` | screenshots | Adjacent screenshot media delivery context. Kept separate from upload response classification. |
+| `GET` | `/ss/{id}/{checksum}` | screenshots | Adjacent screenshot media delivery context. Kept separate from upload response classification. |
+| `GET` | `/assets/menu-content.json` | menu | Grouped row: Title/menu UI. Task 2.5 classification: `needs reference evidence`; JSON body, cache behavior, and current-client usage need fixtures. |
+| `GET` | `/menu-content.json` | menu host rewrite | Grouped row: Title/menu UI. Task 2.5 classification: `needs reference evidence`; host rewrite and disabled/missing-content behavior need fixtures. |
+| `GET` | `/release/update` | update | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/release/patches.php` | update | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/release/update.php` | update | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/release/update2.php` | update | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/update` | root update alias | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/update.php` | root update alias | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/update2.php` | root update alias | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/patches.php` | root update alias | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/release/{filename}` | release files | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/release/filter.txt` | release files | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/release/Localisation/{filename}` | release files | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/release/{language}/{filename}` | release files | Adjacent release/update context. Not classified by legacy web-family final audit. |
+| `GET` | `/rating/ingame-rate.php` | ratings | Grouped row: Ratings. Task 2.5 classification: `needs reference evidence`; evidence: guide Task 2.5 ratings evidence note. |
+| `GET` | `/rating/ingame-rate2.php` | ratings | Grouped row: Ratings. Task 2.5 classification: `needs reference evidence`; response sentinel variant must be checked per alias. |
+| `GET` | `a.$DOMAIN/*` | avatar host rewrite to `/a{uri}` | Adjacent static/media host rewrite. Not classified by legacy web-family final audit. |
+| `GET` | `a.$DOMAIN/avatar/*` | external avatar host variant | Adjacent static/media host rewrite. Not classified by legacy web-family final audit. |
+| `GET` | `a.$DOMAIN/ss/*.jpg` | external screenshot host variant | Adjacent screenshot media host rewrite. Not classified by legacy web-family final audit. |
+| `GET` | `b.$DOMAIN/d/*` | beatmap download host | Adjacent beatmap download host route. Not classified by legacy web-family final audit. |
+| `GET` | `b.$DOMAIN/mt/*` | beatmap thumbnail host | Adjacent beatmap media host route. Not classified by legacy web-family final audit. |
+| `GET` | `b.$DOMAIN/thumb/*` | beatmap thumbnail host | Adjacent beatmap media host route. Not classified by legacy web-family final audit. |
+| `GET` | `b.$DOMAIN/images/map-thumb/*` | beatmap thumbnail host | Adjacent beatmap media host route. Not classified by legacy web-family final audit. |
+| `GET` | `b.$DOMAIN/preview/*` | preview audio host | Adjacent beatmap media host route. Not classified by legacy web-family final audit. |
+| `GET` | `b.$DOMAIN/mp3/preview/*` | preview audio host | Adjacent beatmap media host route. Not classified by legacy web-family final audit. |
+| `GET` | `d.$DOMAIN/d/*` | beatmap download host | Adjacent beatmap download host route. Not classified by legacy web-family final audit. |
+| `GET` | `d.osu.$DOMAIN/d/*` | beatmap download host | Adjacent beatmap download host route. Not classified by legacy web-family final audit. |
+| `GET` | `s.$DOMAIN/images/map-thumb/*` | static host | Adjacent static/media host route. Not classified by legacy web-family final audit. |
+| `GET` | `s.$DOMAIN/images/*` | static image host | Adjacent static/media host route. Not classified by legacy web-family final audit. |
+| `GET` | `s.$DOMAIN/a/*` | static avatar host | Adjacent static/media host route. Not classified by legacy web-family final audit. |
+| `GET` | `s.$DOMAIN/thumb/*` | static thumbnail host | Adjacent static/media host route. Not classified by legacy web-family final audit. |
+| `GET` | `s.$DOMAIN/mt/*` | static thumbnail host | Adjacent static/media host route. Not classified by legacy web-family final audit. |
+| `GET` | `s.$DOMAIN/preview/*` | static preview host | Adjacent static/media host route. Not classified by legacy web-family final audit. |
+| `GET` | `s.$DOMAIN/mp3/preview/*` | static preview host | Adjacent static/media host route. Not classified by legacy web-family final audit. |
 
 ### Lets Route Aliases
 
-| Method | Endpoint | Area |
-| --- | --- | --- |
-| `GET` | `/d/{filename}` | beatmap downloads |
-| `GET` | `/s/{filename}` | beatmap downloads |
-| `GET` | `/web/replays/{id}` | replay download |
-| `GET` | `/ss/{filename}` | screenshots |
-| `GET` | `/p/changelog` | public web redirect/content |
-| `GET` | `/p/verify` | verification redirect |
-| `GET` | `/u/{user}` | profile redirect |
+| Method | Endpoint | Area | Audit traceability |
+| --- | --- | --- | --- |
+| `GET` | `/d/{filename}` | beatmap downloads | Adjacent beatmap download alias. Not classified by legacy web-family final audit. |
+| `GET` | `/s/{filename}` | beatmap downloads | Adjacent beatmap download alias. Not classified by legacy web-family final audit. |
+| `GET` | `/web/replays/{id}` | replay download | Adjacent non-PHP replay alias. Kept beside `/web/osu-getreplay.php`; not classified as a legacy PHP exact path. |
+| `GET` | `/ss/{filename}` | screenshots | Adjacent screenshot media alias. Kept separate from `/web/osu-screenshot.php` upload classification. |
+| `GET` | `/p/changelog` | public web redirect/content | Adjacent public web route. Outside legacy web-family final classification. |
+| `GET` | `/p/verify` | verification redirect | Adjacent public web route. Outside legacy web-family final classification. |
+| `GET` | `/u/{user}` | profile redirect | Adjacent public web route. Outside legacy web-family final classification. |
+
+### Coverage Rows Without Reference Exact Routes
+
+These Stable HTTP Endpoint Coverage rows are still part of the traceability
+surface, but this Reference Route Inventory has no matching exact reference
+route row from the sources above.
+
+| Method | Endpoint | Grouped row | Audit traceability |
+| --- | --- | --- | --- |
+| `POST` | `/web/osu-session.php` | Session candidate | Task 2.2 classification: `needs reference evidence`; evidence: guide `/web/osu-session.php` evidence note and `bancho.py` unhandled-route trace. Missing reference exact row and missing current-client traffic remain explicit gaps. |
+| `GET` | `/web/lastfm.php` | Social/status no-op candidates | Task 2.5 classification: `needs reference evidence`; evidence: guide Task 2.5 social/status no-op evidence note. Missing reference exact row, request shape, response body, and current-client traffic remain explicit gaps. |
 
 ## Persistence Inventory Coverage
 

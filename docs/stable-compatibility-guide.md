@@ -574,6 +574,95 @@ Required processing:
 Stable web endpoints live on `osu.$DOMAIN` under `/web/*.php`, plus static/media
 paths used by the client. Athena currently implements only a small subset.
 
+### Audit Scope Index
+
+Issue #32 covers the legacy web-family path inventory, not runtime route
+implementation. Treat every `/web/*.php` exact path and the
+`/rating/ingame-rate*.php` aliases as in-scope. Keep release, static, media,
+and download overlaps as adjacent context so later matrix and guide updates do
+not merge their body policy into the legacy web audit.
+
+| Guide update target | In-scope exact paths | Adjacent context to keep separate |
+| --- | --- | --- |
+| Bancho reachability | `/web/bancho_connect.php` | Stable login and packet polling live on `/` host routes, not in this path inventory. |
+| Modern getscores | `/web/osu-osz2-getscores.php` | Leaderboard projections and RX/AP extension policy are separate behavior inputs. |
+| Legacy getscores aliases | `/web/osu-getscores.php`, `/web/osu-getscores2.php`, `/web/osu-getscores3.php`, `/web/osu-getscores4.php`, `/web/osu-getscores5.php`, `/web/osu-getscores6.php` | Modern `/web/osu-osz2-getscores.php` formatting must not be reused for aliases without per-path evidence. |
+| Modern score submit selector | `/web/osu-submit-modular-selector.php` | Replay storage, stat projection, and worker durability remain score submission behavior inputs. |
+| Legacy score submit aliases | `/web/osu-submit-modular.php`, `/web/osu-submit.php`, `/web/osu-submit-new.php` | Modern selector parsing and response mapping must not be reused for aliases without per-path evidence. |
+| Session candidate | `/web/osu-session.php` | `bancho.py` lists the route as unhandled; keep it as a grouped-row candidate until a Reference Route Inventory exact row or traffic evidence is found. |
+| Replay download PHP route | `/web/osu-getreplay.php` | `/web/replays/{id}` is a non-PHP replay download alias from `lets`. |
+| Update check PHP route | `/web/check-updates.php` | `/release/update*`, root `/update*`, `/patches.php`, release file, filter, and localisation routes remain release-update context. |
+| osu!direct search and set lookup | `/web/osu-search.php`, `/web/osu-search-set.php` | `/web/maps/{query}`, `/d/*`, `/s/*`, `/bss/*`, `/osu/*`, and download host aliases remain file/download context. |
+| Legacy beatmap info | `/web/osu-getbeatmapinfo.php` | Bancho packet 68/69 and file delivery behavior remain separate compatibility surfaces. |
+| Beatmap checksum status | `/web/osu-getstatus.php` | `.osu` and `.osz` bytes, thumbnails, preview audio, and mirror routing remain static/media/download context. |
+| OSZ2/hash helpers | `/web/osu-gethashes.php`, `/web/osu-osz2-getfileinfo.php`, `/web/osu-osz2-getrawheader.php`, `/web/osu-osz2-getfilecontents.php`, `/web/osu-magnet.php` | `.osu` and `.osz` bytes, thumbnails, preview audio, and mirror routing remain static/media/download context. |
+| Screenshot upload and client diagnostics | `/web/osu-screenshot.php`, `/web/osu-ss.php`, `/web/osu-error.php` | `/ss/*` serving routes remain media delivery context. |
+| Ratings | `/web/osu-rate.php`, `/rating/ingame-rate.php`, `/rating/ingame-rate2.php` | Durable rating state belongs to follow-up implementation work. |
+| Comments and favourites | `/web/osu-comment.php`, `/web/osu-addfavourite.php`, `/web/osu-getfavourites.php` | Durable comment/favourite state belongs to follow-up implementation work. |
+| Stats and friends | `/web/osu-stat.php`, `/web/osu-statoth.php`, `/web/osu-getfriends.php` | Stats projection and friend read models belong to follow-up implementation work. |
+| Social/status no-op candidates | `/web/osu-markasread.php`, `/web/osu-checktweets.php`, `/web/lastfm.php` | Durable social/read-marker state belongs to follow-up implementation work. |
+| Seasonal UI | `/web/osu-getseasonal.php` | Dynamic seasonal asset management remains follow-up scope. |
+| Title/menu UI | `/web/osu-title-image.php`, `/assets/menu-content.json`, `/menu-content.json` | Avatar routes and other title/menu static bytes remain static/menu context. |
+| Login preflight | `/web/osu-login.php` | Main Bancho login remains on the Bancho HTTP transport. |
+| Private-server currency and benchmark | `/web/coins.php`, `/web/osu-benchmark.php` | Private-server currency and benchmark diagnostics stay outside current normal-play compatibility. |
+| Beatmap submission | `/web/osu-osz2-bmsubmit-getid.php`, `/web/osu-osz2-bmsubmit-upload.php`, `/web/osu-osz2-bmsubmit-post.php`, `/web/osu-get-beatmap-topic.php`, `/web/osu-bmsubmit-getid5.php`, `/web/osu-bmsubmit-getid4.php`, `/web/osu-bmsubmit-getid3.php`, `/web/osu-bmsubmit-getid2.php`, `/web/osu-bmsubmit-getid.php`, `/web/osu-bmsubmit-upload.php`, `/web/osu-bmsubmit-novideo.php`, `/web/osu-bmsubmit-post3.php`, `/web/osu-bmsubmit-post2.php`, `/web/osu-bmsubmit-post.php` | Beatmap submission workflow implementation is deferred from P0 core login/play scope. |
+
+### Final Audit Classification Contract
+
+Use the matrix `Current status` column only for existing implementation or
+inventory state such as `Implemented`, `Partial`, `Missing`, or `Candidate`.
+Use the matrix `Final audit classification` column for Issue #32 legacy web
+audit results. The final classification must be exactly one of `required`,
+`compatibility no-op`, `deferred`, `out of scope`, or
+`needs reference evidence`; non-legacy rows may use explicit `N/A`. `candidate`
+is only a pre-audit status and must not remain as the final audited
+classification.
+
+Apply the final classifications with these rules:
+
+| Final audit classification | Rule |
+| --- | --- |
+| `required` | Use only when current osu!stable P0 core login/play traffic needs real endpoint behavior. Do not mark a reference-only endpoint P0 `required` when current osu!stable traffic evidence is missing. |
+| `compatibility no-op` | Use only when a route contract and exact empty, static, JSON, or sentinel response shape are confirmed and no dynamic behavior or durable mutation is needed. Unknown response shape cannot be `compatibility no-op`. |
+| `deferred` | Use when the endpoint is a plausible compatibility surface, but implementation waits for a later milestone, operator policy, or product decision. Record that reason. |
+| `out of scope` | Use when the endpoint belongs to removed workflow, private-server-specific behavior, adjacent release/static/media/download scope, or Athena product scope outside the audit. Record that reason. |
+| `needs reference evidence` | Use when request parameters, response body, auth behavior, error sentinel, or target-client traffic evidence is incomplete. This is the default for unresolved alias variants, unknown response shape, and reference-only routes with no current osu!stable traffic evidence. |
+
+Rows may leave `needs reference evidence` only with current osu!stable traffic,
+official or semi-official protocol docs, existing reference implementations, or
+Athena focused fixtures/tests. A success-only reference is not enough to infer
+auth failure, not-found, malformed-request, or no-op response behavior.
+
+### Endpoint Family Evidence Note Template
+
+For each endpoint family note, use one table with the six evidence fields below.
+Set every field's state to exactly one of `confirmed`, `unconfirmed`, or
+`scope outside`. Use `scope outside` only when the endpoint family boundary
+intentionally excludes that behavior; otherwise missing evidence is
+`unconfirmed`.
+
+`scope outside` is a field-level evidence state, not a final endpoint
+classification. Use it when a confirmed route contract or explicit audit
+boundary says that behavior has no branch for this endpoint family. For example,
+an unauthenticated public route may mark Auth method and Auth failure response
+as `scope outside` only when the documented request shape has no credential
+field and no auth gate is expected. Do not use `scope outside` merely because
+evidence is missing; unknown auth, params, response, or error behavior must stay
+`unconfirmed`.
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `confirmed` / `unconfirmed` / `scope outside` | Source or boundary reason. |
+| Required request params | `confirmed` / `unconfirmed` / `scope outside` | Source or boundary reason. |
+| Success response | `confirmed` / `unconfirmed` / `scope outside` | Source or boundary reason. |
+| Auth failure response | `confirmed` / `unconfirmed` / `scope outside` | Source or boundary reason. |
+| Domain/data-not-found response | `confirmed` / `unconfirmed` / `scope outside` | Source or boundary reason. |
+| Malformed request response | `confirmed` / `unconfirmed` / `scope outside` | Source or boundary reason. |
+
+This is an audit note format only. Success-only evidence is not
+implementation-ready until failure sentinel behavior and malformed request
+behavior are also confirmed or explicitly marked `scope outside`.
+
 ### `/web/bancho_connect.php`
 
 Method: `GET`
@@ -609,6 +698,20 @@ Athena decision:
 - Keep reachability-only behavior for now.
 - If real-client traffic or compatibility failures require pre-login validation,
   add it here without bypassing the main Bancho login command.
+- Keep the final audit classification as `needs reference evidence` until the
+  pre-login validation, country-code/IP response, and malformed-query contract
+  are selected by focused fixtures or reference evidence.
+
+Task 2.2 `/web/bancho_connect.php` evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `scope outside` | Current Athena route intentionally delegates credential validation to Bancho login `POST /`; `src/osu_server/transports/stable/web_legacy/bancho_connect.py` reads `u` and `h` only as reachability context. |
+| Required request params | `confirmed` | `v`, `u`, `h`, `fail`, `retry`, `fx`, and `ch` are documented from current parser/reference notes; Athena does not require them for the empty reachability response. |
+| Success response | `confirmed` | Athena returns HTTP 200 with an empty body, but this only confirms the current route body. The Task 2.2 classification stays `needs reference evidence` until pre-login validation and country-code/IP variants are settled. |
+| Auth failure response | `scope outside` | Auth failure is handled by the main Bancho login workflow unless future traffic proves pre-login validation is required here. |
+| Domain/data-not-found response | `scope outside` | This endpoint is not a domain lookup route; no data-not-found branch is expected for the current reachability-only behavior. |
+| Malformed request response | `unconfirmed` | No fixture proves whether malformed query combinations must still return the empty 200 response for all target stable builds. |
 
 ### `/users`
 
@@ -637,6 +740,17 @@ Required processing:
 3. If `check=1`, return validation result without creating a user.
 4. If `check=0`, create user through the identity command boundary.
 
+Task 2.2 evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `scope outside` | Registration is unauthenticated by design; the audit treats `POST /users` and local `POST /web/users` as adjacent required registration context, not as legacy PHP exact paths. |
+| Required request params | `confirmed` | `user[username]`, `user[user_email]`, `user[password]`, and `check` are documented above and implemented by `src/osu_server/transports/stable/web_legacy/registration.py`. |
+| Success response | `confirmed` | Current Athena success body is `ok` with HTTP 200. |
+| Auth failure response | `scope outside` | No authenticated session or credential check exists for this registration form. |
+| Domain/data-not-found response | `scope outside` | Registration validates submitted identity fields rather than looking up a pre-existing domain object. |
+| Malformed request response | `unconfirmed` | Validation-failure JSON is documented, but malformed form fixture coverage and stable client branch evidence are not complete. |
+
 ### `/web/osu-osz2-getscores.php`
 
 Method: `GET`
@@ -662,8 +776,8 @@ Current Athena response bodies:
 | Outcome | Body |
 | --- | --- |
 | Authentication failure | HTTP 401, empty body |
-| Unavailable | `-1|false` |
-| Update available | `1|false` |
+| Unavailable | `-1\|false` |
+| Update available | `1\|false` |
 | Header/rows | Stable text response with header, title line, personal best row, and score rows |
 
 Current header response shape:
@@ -717,6 +831,54 @@ Akatsuki-compatible extension requirement:
 - RX/AP support must define whether ranking sorts by score or pp, how invalid
   mod combinations are filtered, and how these modes appear in stable
   getscores, first-party API responses, and future profile/ranking pages.
+
+Task 2.2 evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `confirmed` | Athena parses stable credentials from `us` and `ha`; current failure behavior is documented as HTTP 401 with an empty body. |
+| Required request params | `confirmed` | Athena-handled params are documented above: `us`, `ha`, `c`, `f`, `i`, `m`, `mods`, `v`, `vv`, `s`, and `a`. |
+| Success response | `confirmed` | The modern osz2 header/row text shape is documented above and implemented through `getscores.py` and `mappers/getscores.py`. |
+| Auth failure response | `confirmed` | Current Athena auth failure response is HTTP 401 with an empty body; target-client fixture coverage is still missing. |
+| Domain/data-not-found response | `confirmed` | Current Athena documents unavailable as `-1\|false` and update available as `1\|false`. |
+| Malformed request response | `unconfirmed` | Malformed identity, checksum, mode/mod, friends leaderboard, and country leaderboard branches still need fixtures and traffic evidence. |
+
+### Legacy getscores aliases
+
+Endpoint candidates:
+
+- `/web/osu-getscores6.php`
+- `/web/osu-getscores5.php`
+- `/web/osu-getscores4.php`
+- `/web/osu-getscores3.php`
+- `/web/osu-getscores2.php`
+- `/web/osu-getscores.php`
+
+Task 2.3 decision:
+
+- Keep these as best effort support candidates for older stable clients.
+- Classify each alias as `needs reference evidence` until alias-specific
+  response fixtures and current target-client traffic evidence exist.
+- Do not point these aliases at the modern `/web/osu-osz2-getscores.php`
+  formatter without proving the response variant for that exact path.
+
+Known reference distinctions:
+
+| Alias group | Known distinction | Missing evidence |
+| --- | --- | --- |
+| `/web/osu-getscores6.php` through `/web/osu-getscores2.php` | `deck` exposes separate routes with per-version response differences such as omitted osz2 update flag or rating/difficulty fields. | Exact per-path row shape, auth failure sentinel, unavailable/update sentinels, malformed request behavior, and current-client traffic. |
+| `/web/osu-getscores.php` | Oldest route is documented as legacy score rows separated by `:`. | Full success body, auth failure sentinel, data-not-found behavior, malformed request behavior, and current-client traffic. |
+
+Task 2.3 legacy score submit aliases evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `unconfirmed` | Do not assume the alias family is uniformly credentialed. Reference rows for `/web/osu-getscores3.php`, `/web/osu-getscores2.php`, and `/web/osu-getscores.php` use beatmap/query inputs without username/password fields; newer aliases still need exact per-path auth evidence and fixtures. |
+| Required request params | `unconfirmed` | Exact accepted params per alias are unknown; do not assume the modern osz2 query parser is valid for every older path. |
+| Success response | `unconfirmed` | Reference notes prove that variants exist, not that Athena has an implementation-ready body for each exact path. |
+| Auth failure response | `unconfirmed` | Alias-specific auth failure status/body is unknown. |
+| Domain/data-not-found response | `unconfirmed` | Missing beatmap, unavailable, and update-required sentinels may differ from the modern osz2 route and need fixtures. |
+| Malformed request response | `unconfirmed` | Bad identity, checksum, mode/mod, and omitted parameter behavior has no per-alias fixture coverage. |
 
 ### `/web/osu-submit-modular-selector.php`
 
@@ -808,6 +970,53 @@ Known gaps:
   Akatsuki maps stable `RX` and `AP` mod submissions into separate leaderboard
   mode families instead of mixing them with vanilla leaderboards.
 
+Task 2.2 `/web/osu-submit-modular-selector.php` evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `confirmed` | Athena authenticates score submit with the submitted stable credential material, including the `pass` password MD5 and decrypted score identity. |
+| Required request params | `confirmed` | The handled multipart fields are documented above: `score`, `iv`, `osuver`, `pass`, `x`, replay bytes, fail time, and `i` for future screenshot handling. |
+| Success response | `confirmed` | Current completed response is the multi-line chart body documented above and implemented through `score_submit.py` and `mappers/score_submit.py`. |
+| Auth failure response | `unconfirmed` | Current sentinel mapping includes `error: yes` and `error: no`, but auth-specific branch fixtures and target-client interpretation are incomplete. |
+| Domain/data-not-found response | `unconfirmed` | Missing beatmap, replay, duplicate score, and storage/durability branches need focused fixtures before this route is implementation-ready. |
+| Malformed request response | `unconfirmed` | Multipart variant fixtures, duplicate-field handling fixtures, malformed encrypted payload fixtures, and older submit variant traffic are still missing. |
+
+### Legacy score submit aliases
+
+Endpoint candidates:
+
+- `/web/osu-submit-modular.php`
+- `/web/osu-submit.php`
+- `/web/osu-submit-new.php`
+
+Task 2.3 decision:
+
+- Keep these as best effort support candidates for older stable clients.
+- Classify each alias as `needs reference evidence` until alias-specific
+  request shape, success body, failure sentinels, and target-client traffic are
+  confirmed.
+- Do not treat Athena's current
+  `/web/osu-submit-modular-selector.php` mapper as covering these aliases.
+
+Known reference distinctions:
+
+| Exact path | Known distinction | Missing evidence |
+| --- | --- | --- |
+| `/web/osu-submit-modular.php` | Reference inventory lists a legacy modular submit route in `lets` and `deck`. | Whether the stable score payload is query or multipart, duplicate field behavior, replay field name, auth failure sentinel, and malformed request response. |
+| `/web/osu-submit.php` | Reference inventory lists an older legacy score submit route in `deck`. | Exact payload shape, success body, retryable/terminal failure sentinel, and current-client traffic. |
+| `/web/osu-submit-new.php` | Reference inventory lists an additional legacy score submit route in `deck`. | Exact payload shape, success body, retryable/terminal failure sentinel, and current-client traffic. |
+
+Task 2.3 evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `unconfirmed` | Password MD5 appears in legacy submit variants, but per-alias credential source and auth failure behavior are not confirmed for Athena. |
+| Required request params | `unconfirmed` | Query-vs-form payload source, encrypted score field naming, replay field naming, and fail-time field naming are unresolved per alias. |
+| Success response | `unconfirmed` | It is unknown whether each alias returns the same chart body as the selector route or an older response body. |
+| Auth failure response | `unconfirmed` | Auth-specific `error: yes` / `error: no` mapping is not fixture-backed per alias. |
+| Domain/data-not-found response | `unconfirmed` | Missing beatmap, duplicate score, storage failure, and replay failure behavior are unconfirmed per alias. |
+| Malformed request response | `unconfirmed` | Malformed encrypted payloads, missing fields, duplicate fields, and old-client payload variants have no per-alias fixture coverage. |
+
 ### Replay Download
 
 Endpoint candidates:
@@ -829,6 +1038,42 @@ Required processing:
    for missing, hidden, or storage-missing replays.
 6. When authenticated, update latest activity and replay-view counters with a
    cooldown so repeated self or duplicate views are not counted.
+
+Task 2.2 `/web/osu-getreplay.php` evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `unconfirmed` | The audit has not confirmed whether current target builds require credentials for `/web/osu-getreplay.php`. |
+| Required request params | `unconfirmed` | Expected replay lookup params such as score id `c` and mode `m` are documented as required processing, but exact current-client request shape remains unconfirmed. |
+| Success response | `unconfirmed` | Replay bytes are the expected behavior, but Athena has no route and no golden success fixture for `/web/osu-getreplay.php`. |
+| Auth failure response | `unconfirmed` | No reference-backed auth failure sentinel has been selected for Athena. |
+| Domain/data-not-found response | `unconfirmed` | `deck` returns 404 for missing, hidden, or storage-missing replays, but Athena needs target-path evidence before locking this contract. |
+| Malformed request response | `unconfirmed` | Malformed score id, mode, and missing parameter behavior has no fixture coverage. |
+
+### `/web/osu-session.php`
+
+Method: `POST`
+
+Current Athena behavior:
+
+- Missing.
+
+Task 2.2 decision:
+
+- Keep this as `needs reference evidence`. The current matrix has a grouped
+  candidate row, but no Athena route, no exact Reference Route Inventory row,
+  and no current target-client traffic confirmation for this path.
+
+Task 2.2 `/web/osu-session.php` evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `unconfirmed` | No current-client request capture or exact reference row confirms how this endpoint authenticates. |
+| Required request params | `unconfirmed` | Required form/query fields are unknown. |
+| Success response | `unconfirmed` | Success body and status code are unknown. |
+| Auth failure response | `unconfirmed` | Auth failure sentinel is unknown. |
+| Domain/data-not-found response | `unconfirmed` | Domain-specific missing-data behavior is unknown. |
+| Malformed request response | `unconfirmed` | Malformed request behavior is unknown. |
 
 ### Update And Release Endpoints
 
@@ -854,10 +1099,17 @@ Current Athena behavior:
 
 Athena decision:
 
-- Use a compatibility no-op/proxy policy for the initial implementation.
-- `/web/check-updates.php` and simple release manifest routes should return a
-  stable-compatible no-update response unless target-client traffic proves a
-  proxy to ppy or hosted release manifest is needed.
+- Use a no-update compatibility no-op for `/web/check-updates.php` with the
+  stable-compatible JSON array body `[]`. This is the initial Athena policy
+  selected by the release/update audit and fixture handoff
+  `check_updates_no_update_json_array`.
+- Keep proxying, update metadata, and `nope` variants out of the initial
+  policy. They require a future operational decision rather than changing the
+  selected no-update body.
+- Release manifest routes can use the no-update/no-op response shapes recorded
+  by the release/update audit: empty body for `/release/update`,
+  `/release/update2.php`, and `/release/patches.php`, and `0` for
+  `/release/update.php`.
 - Release file hosting remains out of the core server path until Athena
   intentionally supports stable client update artifact distribution.
 
@@ -889,6 +1141,17 @@ Required processing:
 
 For private server use, this may be intentionally minimized, but the decision
 must be explicit because stable clients call these endpoints.
+
+Task 3.2 Update check PHP route evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `scope outside` | No auth requirement is documented for `/web/check-updates.php` in the reference notes. |
+| Required request params | `confirmed` | `action=check|path|error` and `stream=cuttingedge|stable40|beta40|stable` are documented above from `deck`; proxy-style `lets` behavior forwards all query params. |
+| Success response | `confirmed` | Initial Athena no-update compatibility returns `[]`; release/update audit records fixture handoff `check_updates_no_update_json_array` and keeps proxy/nope variants as future operational policy. |
+| Auth failure response | `scope outside` | No auth branch is expected from the documented request shape. |
+| Domain/data-not-found response | `scope outside` | This endpoint is an update policy route, not a domain object lookup route. |
+| Malformed request response | `unconfirmed` | Missing action/stream, unknown action, and proxy-error behavior need fixtures before implementation. |
 
 ### osu!direct And Beatmap File Endpoints
 
@@ -931,6 +1194,27 @@ Reference osu!direct search shapes from `deck`:
 <osz_filename>|<artist>|<title>|<creator>|<status>|<rating>|<last_update>|<set_id>|<topic_id>|<has_video>|<has_storyboard>|<osz_filesize>|<osz_filesize_novideo>|<version@mode,...>|<post_id>
 ```
 
+Task 2.4 `/web/osu-search.php` and `/web/osu-search-set.php` evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `unconfirmed` | `deck` documents optional `u`/`h` and legacy `c` credential fields, but current target-client auth usage and failure bodies are not fixture-backed. |
+| Required request params | `confirmed` | Reference params for `/web/osu-search.php` and `/web/osu-search-set.php` are documented above; Athena still needs per-path parser fixtures before implementation. |
+| Success response | `confirmed` | `deck` documents result-count plus beatmapset rows for search and one beatmapset row for set lookup. |
+| Auth failure response | `unconfirmed` | `/web/osu-search-set.php` may return 401, but exact body/status behavior and `/web/osu-search.php` credential failure behavior need fixtures. |
+| Domain/data-not-found response | `unconfirmed` | Search error `-1\n<message>` and set lookup 404 are reference-documented, but current-client interpretation and exact messages are unconfirmed. |
+| Malformed request response | `unconfirmed` | Bad mode/status/page, missing selector, ambiguous selector, and malformed credential behavior have no Athena fixture coverage. |
+
+Task 2.4 decision:
+
+- Classify `/web/osu-search.php` and `/web/osu-search-set.php` as
+  `needs reference evidence`. They are real osu!direct compatibility surfaces,
+  but P0 vs later-milestone timing needs target-client traffic and
+  failure-branch fixtures.
+- Keep download and static/media serving paths as adjacent context. `/web/maps`
+  starts with `/web/`, but it serves `.osu` bytes and belongs with file delivery
+  policy rather than legacy PHP response-body classification.
+
 Reference file/media behavior:
 
 | Endpoint | Request | Response |
@@ -941,6 +1225,13 @@ Reference file/media behavior:
 | `b.$DOMAIN/<path>` in bancho.py | Any path. | 301 redirect to `https://b.ppy.sh<path>`; useful fallback when Athena does not host bmap assets. |
 | `/mt/<filename>`, `/thumb/<filename>`, `/images/map-thumb/<filename>` | Filename key before first dot; optional `c=<checksum>`. | JPEG background bytes. 404 when missing. Adds `Cache-Control: public, max-age=86400` when `c` is present. |
 | `/preview/<filename>`, `/mp3/preview/<filename>` | Numeric filename key before first dot; optional `c=<checksum>`. | MP3 preview bytes. 404 when invalid/missing. Adds the same one-day cache header when `c` is present. |
+
+Task 2.4 adjacent file/media boundary note:
+
+| Adjacent family | Paths | Boundary decision | Evidence gap |
+| --- | --- | --- | --- |
+| Beatmap file delivery | `/web/maps/{query}`, `/d/*`, `/s/*`, `/bss/*`, `/osu/*`, download host aliases | Not classified by Issue #32 final audit vocabulary; keep as adjacent static/media/download scope. | Missing route implementation, file byte fixtures, redirect/streaming policy, cache/header fixtures, and current-client traffic belong to the static/media/download follow-up. |
+| Beatmap media delivery | `/mt/*`, `/thumb/*`, `/images/map-thumb/*`, `/preview/*`, `/mp3/preview/*` | Not classified by Issue #32 final audit vocabulary; keep as adjacent static/media/download scope. | Missing thumbnail/preview object model, 404 behavior, cache/header fixtures, and host-alias traffic belong to the static/media/download follow-up. |
 
 Host routing observed in `osuTitanic/titanic`:
 
@@ -978,6 +1269,47 @@ Reference request and response shapes from `deck`:
 | `/web/osu-osz2-getrawheader.php` | `u`, `h`, `s=<set_id>`. | Raw osz2 header bytes up to package data offset. |
 | `/web/osu-osz2-getfilecontents.php` | `u`, `h`, `s=<set_id>`, `f=<filename>`. | Raw file bytes from the osz2 package. |
 | `/web/osu-magnet.php` | `u`, `h`, `s=<set_id>`, `v=<no_video>`. | `deck` validates auth and map availability, then returns 501 because magnet support is not implemented. |
+
+Task 2.4 `/web/osu-getbeatmapinfo.php` evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `confirmed` | `deck` documents query credentials `u` and `h`; Athena still needs target-client traffic and fixture coverage. |
+| Required request params | `confirmed` | `deck` documents body fields `Filenames` and `Ids`; exact body encoding and client limits need fixtures. |
+| Success response | `confirmed` | Newline beatmap info rows are documented above. |
+| Auth failure response | `unconfirmed` | Exact status/body for credential failure is not documented in this guide. |
+| Domain/data-not-found response | `unconfirmed` | `deck` returns an empty body for 0 or more than 100 requested maps, but unknown-map row behavior still needs fixtures. |
+| Malformed request response | `unconfirmed` | Malformed body, mixed filename/id selectors, and over-limit behavior need focused fixtures. |
+
+Task 2.4 `/web/osu-getstatus.php` evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `scope outside` | Reference request shape uses only checksum query `c`; no credential field is documented for this endpoint. |
+| Required request params | `confirmed` | `c=<md5,md5,...>` with at most 60 checksums is documented above. |
+| Success response | `confirmed` | Newline checksum status rows are documented above. |
+| Auth failure response | `scope outside` | No auth branch is expected from the documented reference request shape. |
+| Domain/data-not-found response | `unconfirmed` | Unknown checksum handling and status mapping need fixture-backed confirmation. |
+| Malformed request response | `unconfirmed` | Empty checksum list, over-limit list, invalid md5, and mixed valid/invalid behavior have no Athena fixture coverage. |
+
+Task 2.4 OSZ2/hash helper evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `unconfirmed` | Some helper routes use `u`/`h`, while `/web/osu-gethashes.php` documents only `s`; per-path auth policy needs fixtures. |
+| Required request params | `confirmed` | Reference params are documented above for hashes, file info, raw header, file contents, and magnet. |
+| Success response | `confirmed` | Reference success text/byte shapes are documented above, including raw OSZ2 header and file bytes. |
+| Auth failure response | `unconfirmed` | Per-helper credential failure body/status is not documented. |
+| Domain/data-not-found response | `unconfirmed` | Unknown set/file behavior, storage-missing behavior, and `/web/osu-magnet.php` 501 policy need per-path fixtures. |
+| Malformed request response | `unconfirmed` | Missing set id, invalid filename, traversal-like filename, and bad no-video value behavior are unconfirmed. |
+
+Task 2.4 decision:
+
+- Classify `/web/osu-getbeatmapinfo.php`, `/web/osu-getstatus.php`, and the
+  OSZ2/hash helper routes as `needs reference evidence`.
+- Do not implement or mark these routes complete in this audit. Missing
+  implementation, missing fixtures, and missing traffic evidence remain
+  follow-up work.
 
 ### Screenshots
 
@@ -1113,6 +1445,196 @@ Reference request and response shapes from `deck`:
 | `/web/coins.php` | `u`, `h`, `c=<count>`, `cs=md5(username + count + osuycoins)`, `action=earn|use|recharge`. | Current coin count as text; private-server-specific candidate. |
 | `/web/osu-benchmark.php` | Form `u`, `p`, `s`, `f`, `r`, `c`, `h=<hardware-json>`. | Benchmark id as text; custom/private-server endpoint, not normal stable requirement. |
 
+Task 2.5 ratings evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `confirmed` | Reference routes use `u` plus `p`/password credential material. |
+| Required request params | `confirmed` | `c=<beatmap_md5>` and optional `v=<0..10>` are documented for `/web/osu-rate.php` and `/rating/ingame-rate*.php`. |
+| Success response | `confirmed` | Reference success sentinels and average variants are documented above. |
+| Auth failure response | `confirmed` | `auth fail` is documented above, but Athena still needs focused fixtures. |
+| Domain/data-not-found response | `confirmed` | `no exist`, `not ranked`, `owner`, and `alreadyvoted` sentinels are documented above, but per-path fixture coverage is missing. |
+| Malformed request response | `unconfirmed` | Missing/invalid vote value, malformed checksum, and duplicate vote edge cases need fixtures. |
+
+Task 2.5 comments and favourites evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `confirmed` | Reference routes use `u` plus `p` or `h` credential material. |
+| Required request params | `confirmed` | Comment `a=get|post`, beatmap/replay selectors, and favourite set id/list params are documented above. |
+| Success response | `confirmed` | Comment rows, post response, favourite success text, and favourites list shape are documented above. |
+| Auth failure response | `unconfirmed` | Exact auth failure status/body differs by route and needs fixtures. |
+| Domain/data-not-found response | `unconfirmed` | Unknown beatmap/replay/set, favourite limit, and already-favourited behavior need per-path fixtures. |
+| Malformed request response | `unconfirmed` | Bad selector, missing comment fields, oversized content, and malformed set ids have no Athena fixture coverage. |
+
+Task 2.5 stats and friends evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `confirmed` | Stats routes use `c=md5(username + prettyplease!!!)` or `p=<password>`; friends route uses `u` and `h`. |
+| Required request params | `confirmed` | Required params and output row shapes are documented above. |
+| Success response | `confirmed` | Stats pipe row and newline friend id list are documented above. |
+| Auth failure response | `unconfirmed` | Exact failure body/status needs fixtures. |
+| Domain/data-not-found response | `unconfirmed` | Unknown user, empty stats projection, empty friend list, and avatar hash fallback behavior need fixtures. |
+| Malformed request response | `unconfirmed` | Bad checksum, missing user, malformed password hash, and projection-unavailable behavior have no fixture coverage. |
+
+Task 2.5 social/status no-op evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `unconfirmed` | `/web/osu-markasread.php` uses `u`/`h`, while `/web/osu-checktweets.php` has no documented auth; `/web/lastfm.php` lacks a documented shape here. |
+| Required request params | `unconfirmed` | `channel=<name>` is documented for mark-as-read, but lastfm params and current-client usage are unconfirmed. |
+| Success response | `unconfirmed` | Empty 200 or static status text is plausible for some routes, but exact no-op body is not confirmed for all paths. |
+| Auth failure response | `unconfirmed` | Per-route auth failure behavior needs fixtures. |
+| Domain/data-not-found response | `unconfirmed` | Unknown DM target/channel returns 404 for mark-as-read in the reference notes; other routes are unconfirmed. |
+| Malformed request response | `unconfirmed` | Missing channel, bad user credentials, and unknown lastfm payload behavior need fixtures. |
+
+Task 2.5 seasonal UI evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `scope outside` | `/web/osu-getseasonal.php` has no documented auth requirement. |
+| Required request params | `scope outside` | No request params are documented. |
+| Success response | `unconfirmed` | Current osu!stable client traffic is confirmed by user report, and reference behavior is a JSON array of seasonal background paths. The exact empty-array body and cache contract still need a focused fixture before final `compatibility no-op` classification. |
+| Auth failure response | `scope outside` | No auth branch is expected. |
+| Domain/data-not-found response | `scope outside` | No domain error branch is expected; exact empty-array behavior needs fixture confirmation. |
+| Malformed request response | `unconfirmed` | Cache headers and behavior with unexpected query params need a focused fixture. |
+
+Task 2.5 title/menu evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `scope outside` | `/web/osu-title-image.php`, `/assets/menu-content.json`, and `/menu-content.json` have no documented auth requirement. |
+| Required request params | `confirmed` | Title image optional `c` and `l=1` plus menu JSON with no params are documented above. |
+| Success response | `unconfirmed` | Title image may return bytes, empty body, or redirect; menu JSON returns a JSON `images` array. Exact target behavior and cache policy need fixtures. |
+| Auth failure response | `scope outside` | No auth branch is expected for title/menu assets. |
+| Domain/data-not-found response | `unconfirmed` | Missing image/menu asset and disabled menu policy need an explicit response decision. |
+| Malformed request response | `unconfirmed` | Bad checksum param, redirect query variants, and unexpected menu JSON query params need fixtures. |
+
+Task 2.5 login preflight evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `confirmed` | `/web/osu-login.php` uses username/password preflight credentials in the reference notes. |
+| Required request params | `confirmed` | Login `username` and `password` params are documented above. |
+| Success response | `unconfirmed` | Reference notes return `1` on success, but current-client traffic and relationship to Bancho login need fixtures. |
+| Auth failure response | `unconfirmed` | Reference notes return `0` on failure, but exact status/body and relationship to Bancho login need fixtures. |
+| Domain/data-not-found response | `scope outside` | No separate domain not-found branch is documented for login preflight. |
+| Malformed request response | `unconfirmed` | Missing login params and malformed credential behavior need fixtures. |
+
+Task 2.5 private-server and beatmap submission decision:
+
+| Family | Decision | Reason |
+| --- | --- | --- |
+| `/web/coins.php` | `out of scope` | Private-server currency is outside current osu!stable normal-play compatibility. Decision source: GitHub Issue #32 scope encoded in `.kiro/specs/legacy-web-endpoint-inventory-audit/requirements.md` Requirement 6.2 and `research.md` private-server finding. |
+| `/web/osu-benchmark.php` | `out of scope` | Benchmark diagnostics are outside current osu!stable normal-play compatibility. Decision source: GitHub Issue #32 scope encoded in `.kiro/specs/legacy-web-endpoint-inventory-audit/requirements.md` Requirement 6.3 and `research.md` private-server finding. |
+| Beatmap submission endpoints | `deferred` | Beatmap submission is planned after P0 core login/play and score compatibility, and this audit does not implement upload workflows. Decision source: GitHub Issue #32 scope encoded in `.kiro/specs/legacy-web-endpoint-inventory-audit/requirements.md` Requirement 6.1 and `design.md` non-goals; revisit when the core stable compatibility milestone is complete. |
+
+Task 2.5 private-server currency and benchmark evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `scope outside` | `/web/coins.php` and `/web/osu-benchmark.php` are classified `out of scope` for current normal-play compatibility, so their credential contracts are not implementation input for this audit. |
+| Required request params | `scope outside` | Reference request shapes are documented above, but product scope excludes implementing or fixture-locking these private-server/diagnostic params in this audit. |
+| Success response | `scope outside` | Reference success bodies are documented above, but Athena intentionally does not select a compatibility response contract while the family remains `out of scope`. |
+| Auth failure response | `scope outside` | Auth failure behavior is not required while the family remains outside current product scope. |
+| Domain/data-not-found response | `scope outside` | Currency balance and benchmark diagnostics do not become Athena domain contracts in this audit. |
+| Malformed request response | `scope outside` | Malformed request behavior is not fixture scope unless product scope later includes these routes. |
+
+Task 2.5 beatmap submission evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `unconfirmed` | Beatmap submission is deferred until after core login/play/score compatibility; per-route credential material and failure behavior still need fixtures before implementation. |
+| Required request params | `unconfirmed` | get-id, upload, post, novideo, and topic request variants are not fixture-backed for Athena. |
+| Success response | `unconfirmed` | Upload/session ids, post success bodies, and topic lookup responses need route-specific reference evidence. |
+| Auth failure response | `unconfirmed` | Auth failure status/body and retryability are unknown for each submission alias. |
+| Domain/data-not-found response | `unconfirmed` | Beatmapset/topic not-found and duplicate upload behavior need future evidence. |
+| Malformed request response | `unconfirmed` | Malformed multipart upload, missing metadata, and invalid topic/get-id payload behavior need future fixtures. |
+
+Task 2.5 screenshots and diagnostics evidence note:
+
+| Evidence field | Evidence state | Evidence note |
+| --- | --- | --- |
+| Auth method | `unconfirmed` | Screenshot references use `u` plus `p` or `h`, but `/web/osu-error.php` auth behavior is not yet separated per route. |
+| Required request params | `unconfirmed` | Screenshot upload fields and size/type constraints are documented in the Screenshots section; `/web/osu-error.php` request body still needs detail. |
+| Success response | `unconfirmed` | Screenshot response variants differ across `deck`, `lets`, and `bancho.py`; error report success body is not fixture-backed. |
+| Auth failure response | `unconfirmed` | Per-route auth failure status/body needs fixtures. |
+| Domain/data-not-found response | `unconfirmed` | Screenshot serving handoff and missing media behavior belong partly to adjacent `/ss/*` media scope. |
+| Malformed request response | `unconfirmed` | Bad image type, oversized upload, missing file, and malformed error report behavior need fixtures. |
+
+### Legacy Web Follow-up Checklist
+
+This audit records follow-up work only; it does not complete route
+implementation, fixture extraction, or real-client traffic capture. A family may
+remain `required`, `compatibility no-op`, `deferred`, `out of scope`, or
+`needs reference evidence` while one or more follow-up columns below still need a
+separate issue.
+
+| Endpoint family | Missing implementation follow-up | Missing fixture / reference-evidence follow-up | Missing current-client traffic follow-up |
+| --- | --- | --- | --- |
+| Bancho reachability | No new route work for the current empty-body route unless traffic proves pre-login validation is required. | Empty-body compatibility, country-code/IP response, and malformed-query fixtures. | Pre-login validation, country-code, and client retry behavior probes. |
+| Modern getscores | Complete leaderboard row projections and remaining branch behavior. | Auth failure, unavailable, update-required, row/header, malformed identity, friends, and country fixtures. | Real-client probes for target leaderboard modes and selection branches. |
+| Modern score submit selector | Complete rank/stat/achievement projection and post-submit durability gaps. | Auth sentinel, multipart variant, malformed encrypted payload, duplicate, and storage failure fixtures. | Real-client probes for submit success, failure, and retry interpretation. |
+| Replay download PHP route | Add `/web/osu-getreplay.php` only after target path and auth contract are confirmed. | Replay bytes, auth failure, missing replay, malformed score id, and mode fixtures. | Confirm current client path choice between `/web/osu-getreplay.php` and adjacent replay aliases. |
+| Session candidate | Add a route only if exact reference row or traffic proves the surface is still called; preserve the `bancho.py` unhandled-route trace as a reference lead. | Auth, params, success body, failure sentinel, and malformed request evidence. | Current target-client call confirmation for `/web/osu-session.php`. |
+| Legacy getscores aliases | Add alias routes only after per-path response variants are confirmed. | Per-version row shape, auth failure, unavailable/update sentinels, not-found, and malformed request fixtures. | Older-client or target-client probes proving which aliases Athena should support. |
+| Legacy score submit aliases | Add alias routes only after per-path payload and response contracts are confirmed. | Payload shape, success body, retryable/terminal failure sentinel, auth failure, and malformed payload fixtures. | Older-client or target-client probes proving which submit aliases remain needed. |
+| Update check PHP route | Add `/web/check-updates.php` no-update behavior using the selected `[]` body; proxy/update metadata remains future operational policy. | `check_updates_no_update_json_array`, missing action/stream, and unknown action fixtures. Proxy response and `nope` variants are needed only if Athena later opts into that policy. | Target-client probes for update action and stream combinations. |
+| osu!direct search and set lookup | Add search/set routes when P0 timing and read-model ownership are decided. | Auth variants, search/set success rows, 401/404/error sentinels, pagination, and malformed selector fixtures. | Current-client traffic proving P0 vs later-milestone timing. |
+| Legacy beatmap info | Add route after request body encoding and Bancho packet relationship are confirmed. | Success rows, auth failure, over-limit, malformed body, and unknown beatmap fixtures. | Current-client probes for whether web beatmap info is still called. |
+| Beatmap checksum status | Add route after checksum list limits and status mapping are fixture-backed. | Unknown checksum, invalid MD5, empty/over-limit list, mixed valid/invalid, and status mapping fixtures. | Current-client probes for checksum/status usage. |
+| OSZ2/hash helpers | Add helper routes only after per-path file and auth contracts are confirmed. | Per-path auth, success bytes/text, file-not-found, storage-missing, magnet 501, and malformed params fixtures. | Current-client probes for OSZ2 helper and magnet usage. |
+| Screenshot upload and client diagnostics | Add upload/error routes after upload and report body contracts are separated per path. | Upload success body, error report body, auth failure, oversized/bad file, missing file, and media handoff fixtures. | Current-client probes for screenshot, monitor screenshot, and error report flows. |
+| Ratings | Add rating routes only after durable rating ownership and sentinels are confirmed. | Success, `auth fail`, `no exist`, `not ranked`, `owner`, `alreadyvoted`, and malformed vote fixtures. | Current-client probes for rating route usage. |
+| Comments and favourites | Add comment/favourite routes after beatmap social ownership is planned. | Comment get/post, favourite add/list, auth failure, limit/already state, not-found, and malformed selector fixtures. | Current-client probes for comment and favourite workflows. |
+| Stats and friends | Add stats/friends routes after projection ownership and friend read model are planned. | Stats row, avatar hash, auth failure, unknown user, empty stats, empty friends, and malformed credential fixtures. | Current-client probes for stats, other-stats, and web friends usage. |
+| Social/status no-op candidates | Add no-op routes only after exact empty/static bodies are known. | Mark-as-read, checktweets, lastfm success/error bodies, unknown-channel, auth failure, and malformed request fixtures. | Current-client probes proving which social/status no-op candidates are called. |
+| Seasonal UI | Add `/web/osu-getseasonal.php` only after the no-op JSON body and cache behavior are fixture-backed. | Empty JSON array, cache headers, unexpected query params, and dynamic seasonal asset management fixtures. | Current osu!stable call is confirmed; add probes only for query/cache variants. |
+| Title/menu UI | Add title image and menu JSON only after target behavior is confirmed. | Image bytes, empty body, redirect, menu JSON body, cache policy, missing asset, and malformed query fixtures. | Current-client probes for title image and menu JSON usage. |
+| Login preflight | Add `/web/osu-login.php` only after target behavior is confirmed. | Login `1`/`0`, auth failure, missing credential, malformed param, and Bancho-login relationship fixtures. | Current-client probes for web login preflight. |
+| Beatmap submission | Implement after core login/play/score compatibility reaches the planned milestone. | Submit get-id/upload/post branch fixtures and topic lookup fixtures before implementation. | Beatmap submission traffic probes when the deferred workflow becomes active. |
+| Private-server currency and benchmark | No active implementation issue while these remain `out of scope`. | Product-scope revalidation evidence if Athena later chooses to support them. | Traffic probes only after product scope changes. |
+
+Task 5.1 coverage note: this checklist is the requirement 10.4 / 10.5 evidence
+surface. Missing implementation, missing fixture/reference evidence, and
+missing current-client traffic stay separate from audit completion, and the
+matrix Task 5.1 verification table maps the remaining requirement IDs to the
+matrix or guide section that proves them.
+
+### Audit-only Boundary Verification
+
+Task 4.2 keeps this spec as a documentation audit. The feature diff is expected
+to remain limited to Kiro spec files, `CONTEXT.md`, and the stable
+compatibility docs. It must not contain `src/`, `tests/`, runtime route stubs,
+golden fixture files, or captured traffic artifacts.
+
+Compatibility no-op rows still keep their own follow-up gaps. Existing partial
+routes such as `/web/bancho_connect.php` need fixture and probe follow-up, while
+seasonal and future social/status no-op candidates need separate route,
+fixture, and probe work before they can be called implemented.
+
+### Task 5.2 Markdown And Diff Review
+
+Task 5.2 is the final docs review for the legacy web endpoint inventory audit.
+It verifies Markdown readability, feature diff boundaries, and unresolved
+follow-up reporting without changing runtime behavior.
+
+| Review item | Result |
+| --- | --- |
+| Matrix headings | Reviewed: Stable HTTP Endpoint Coverage, Legacy Web Audit Scope Index, Task 2.2 through Task 5.1 audit sections, Reference Route Inventory, Coverage Rows Without Reference Exact Routes, and Persistence Inventory Coverage remain distinct headings. |
+| Matrix tables | Reviewed: grouped coverage rows, exact path traceability rows, requirement coverage rows, and classification completeness rows retain header and separator rows and remain readable as Markdown tables. |
+| Guide headings | Reviewed: Legacy Web Endpoints, Audit Scope Index, Final Audit Classification Contract, Endpoint Family Evidence Note Template, endpoint family evidence notes, Legacy Web Follow-up Checklist, and Audit-only Boundary Verification remain distinct headings. |
+| Guide tables | Reviewed: evidence note tables keep the six required evidence fields, and the follow-up checklist keeps separate columns for missing implementation, missing fixture/reference evidence, and missing current-client traffic. |
+| Feature diff boundary | Reviewed with `git diff --name-only main...HEAD`: the feature diff is limited to `.kiro/specs/legacy-web-endpoint-inventory-audit/*`, `CONTEXT.md`, `docs/stable-compatibility-guide.md`, and `docs/stable-compatibility-matrix.md`. |
+| Runtime boundary | Clean: the feature diff does not include `src/`, `tests/`, runtime route stubs, golden fixture files, or captured traffic artifacts. |
+| Unresolved follow-up reporting | Complete for this audit: unresolved work remains in the Legacy Web Follow-up Checklist and in `needs reference evidence`, `deferred`, or `out of scope` classifications rather than being treated as implemented. |
+
+Docs-only audit completion condition: all Kiro tasks may be marked complete only
+after the task list is checked, the feature diff remains within docs/spec/glossary
+scope, full hooks pass, and the final validation report confirms no runtime,
+fixture, or traffic-capture work entered this spec.
+
 ## Implementation Flow By Boundary
 
 Use this boundary sequence for new stable work:
@@ -1168,7 +1690,9 @@ golden fixtures for the exact branch being implemented:
   osu!direct search, beatmap info, screenshots, avatars, media, and old
   getscores/submit aliases,
 - traffic confirmation for ambiguous candidates such as `/web/osu-session.php`,
-  `/difficulty-rating`, root `/update*` aliases, external avatar host variants,
-  and private-server-only endpoints like coins/benchmark,
+  root `/update*` aliases, external avatar host variants, and private-server-only
+  endpoints like coins/benchmark,
+- product-scope revalidation for non-web out-of-scope diagnostics such as
+  `/difficulty-rating` if Athena later chooses to support that surface,
 - Akatsuki-compatible Relax/Autopilot score-submit, getscores, stats, and rank
   projection fixtures if Athena chooses to support those extension boards.
