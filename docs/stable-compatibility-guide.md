@@ -258,7 +258,7 @@ Use Lekuruu `Types/*.md` as the source for struct details.
 
 | Type | Wire format | Athena status |
 | --- | --- | --- |
-| `String` | `0x00` for empty, or `0x0b` + ULEB128 byte length + UTF-8 bytes | Implemented as `BanchoString`. |
+| `String` | Presence byte `0x00` for absent/empty, or `0x0b` followed by ULEB128 byte length and UTF-8 bytes. `0x0b 0x00` is therefore a present zero-length string; stable C2S chat payloads have been observed using it for the empty sender field, so Athena accepts it when parsing. | Implemented as `BanchoString`. |
 | `Message` | `String sender`, `String message`, `String target`, `i32 sender_id` for modern stable | Implemented. |
 | `IntList` | `u16 count` followed by `i32[count]` | Implemented. |
 | `Channel` | `String name`, `String topic`, `i16 user_count` | Implemented. |
@@ -322,7 +322,7 @@ difference.
 
 | Type | Current stable layout or values |
 | --- | --- |
-| `String` | Empty string is `0x00`; non-empty is `0x0b`, ULEB128 byte length, then UTF-8 bytes. |
+| `String` | Empty/absent string is `0x00`; present string is `0x0b`, ULEB128 byte length, then UTF-8 bytes. C2S chat parsing also accepts present zero-length strings as `0x0b 0x00`, matching the observed stable client empty sender payload. |
 | `Message` | `String sender`, `String message`, `String target`, `sInt sender_id`. |
 | `IntList` | `uShort length`, then `sInt[length]`. |
 | `Channel` | `String name`, `String topic`, `sShort user_count`. |

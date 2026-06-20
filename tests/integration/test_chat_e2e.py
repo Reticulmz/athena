@@ -26,6 +26,9 @@ from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.services.commands.identity.auth_service import AuthService
+from osu_server.transports.stable.bancho.protocol.c2s import (
+    message_payload as c2s_message_payload,
+)
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.stable.bancho.protocol.s2c.chat import (
     channel_join_success,
@@ -38,7 +41,7 @@ from osu_server.transports.stable.bancho.protocol.s2c.login import (
     user_presence,
     user_presence_bundle,
 )
-from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
+from osu_server.transports.stable.bancho.protocol.types import BanchoString
 from tests.factories.domain import make_channel, make_channel_role_override
 from tests.support.app import create_in_memory_app as create_app
 from tests.support.app import resolve_dependency
@@ -51,6 +54,8 @@ _PASSWORD = "SecurePass1234"
 _PASSWORD_MD5 = hashlib.md5(_PASSWORD.encode()).hexdigest()
 _CLIENT_INFO = "20231111|9|1|hash1:hash2:hash3|0"
 _BANCHO_URL = "http://c.athena.localhost/"
+_STABLE_CLIENT_EMPTY_SENDER = ""
+_STABLE_CLIENT_EMPTY_SENDER_ID = 0
 
 _DEFAULT_ROLE = Role(
     id=1,
@@ -140,8 +145,13 @@ def _channel_payload(channel_name: str) -> bytes:
     return pack(channel_name, BanchoString)
 
 
-def _message_payload(*, sender: str, content: str, target: str, sender_id: int) -> bytes:
-    return pack(Message(sender=sender, content=content, target=target, sender_id=sender_id))
+def _stable_client_message_payload(*, content: str, target: str) -> bytes:
+    return c2s_message_payload(
+        sender=_STABLE_CLIENT_EMPTY_SENDER,
+        content=content,
+        target=target,
+        sender_id=_STABLE_CLIENT_EMPTY_SENDER_ID,
+    )
 
 
 async def _register_user(auth_service: AuthService, username: str, email: str) -> None:
@@ -213,11 +223,9 @@ class TestChannelLifecycleE2E:
                 sender_token,
                 _c2s_packet(
                     ClientPacketID.SEND_MESSAGE,
-                    _message_payload(
-                        sender="Sender",
+                    _stable_client_message_payload(
                         content="hello channel",
                         target="#osu",
-                        sender_id=sender_id,
                     ),
                 ),
             )
@@ -260,11 +268,9 @@ class TestPrivateMessageE2E:
                 sender_token,
                 _c2s_packet(
                     ClientPacketID.SEND_PRIVATE_MESSAGE,
-                    _message_payload(
-                        sender="Sender",
+                    _stable_client_message_payload(
                         content="hello pm",
                         target="Target",
-                        sender_id=sender_id,
                     ),
                 ),
             )
@@ -434,11 +440,10 @@ class TestBanchoBotIdentityE2E:
         app = _make_test_app()
 
         with TestClient(app) as client:
-            auth_service, session_store, _ = await _resolve_services(app)
+            auth_service, _, _ = await _resolve_services(app)
             await _register_user(auth_service, "Sender", "sender@example.com")
 
             token = _login(client, "Sender")
-            sender_id = await _user_id_for_token(session_store, token)
             assert _poll(client, token) == b""
 
             join_resp = _poll(
@@ -456,11 +461,9 @@ class TestBanchoBotIdentityE2E:
                 token,
                 _c2s_packet(
                     ClientPacketID.SEND_MESSAGE,
-                    _message_payload(
-                        sender="Sender",
+                    _stable_client_message_payload(
                         content="!help",
                         target="#osu",
-                        sender_id=sender_id,
                     ),
                 ),
             )

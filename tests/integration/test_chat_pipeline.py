@@ -51,18 +51,24 @@ from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.stable.bancho.handlers.friends import FriendHandlers
 from osu_server.transports.stable.bancho.listeners.chat import ChatListeners
+from osu_server.transports.stable.bancho.protocol.c2s import (
+    message_payload as c2s_message_payload,
+)
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
 from osu_server.transports.stable.bancho.protocol.s2c.chat import (
     channel_join_success,
     send_message,
     user_dm_blocked,
 )
-from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
+from osu_server.transports.stable.bancho.protocol.types import BanchoString
 from tests.factories.domain import make_channel, make_user
 
 if TYPE_CHECKING:
     import pytest
     from taskiq import AsyncBroker
+
+_STABLE_CLIENT_EMPTY_SENDER = ""
+_STABLE_CLIENT_EMPTY_SENDER_ID = 0
 
 
 class SpyTask:
@@ -110,8 +116,13 @@ def _session(user_id: int, username: str) -> SessionData:
     )
 
 
-def _message_payload(*, sender: str, content: str, target: str, sender_id: int) -> bytes:
-    return pack(Message(sender=sender, content=content, target=target, sender_id=sender_id))
+def _stable_client_message_payload(*, content: str, target: str) -> bytes:
+    return c2s_message_payload(
+        sender=_STABLE_CLIENT_EMPTY_SENDER,
+        content=content,
+        target=target,
+        sender_id=_STABLE_CLIENT_EMPTY_SENDER_ID,
+    )
 
 
 def _channel_payload(channel_name: str) -> bytes:
@@ -237,11 +248,9 @@ class TestChannelMessagePipeline:
 
         await pipeline.dispatcher.dispatch(
             ClientPacketID.SEND_MESSAGE,
-            _message_payload(
-                sender="Sender",
+            _stable_client_message_payload(
                 content="hello channel",
                 target="#osu",
-                sender_id=pipeline.sender_id,
             ),
             pipeline.sender_id,
         )
@@ -268,11 +277,9 @@ class TestPrivateMessagePipeline:
 
         await pipeline.dispatcher.dispatch(
             ClientPacketID.SEND_PRIVATE_MESSAGE,
-            _message_payload(
-                sender="Sender",
+            _stable_client_message_payload(
                 content="hello pm",
                 target="Target",
-                sender_id=pipeline.sender_id,
             ),
             pipeline.sender_id,
         )
@@ -298,11 +305,9 @@ class TestPrivateMessagePipeline:
 
         await pipeline.dispatcher.dispatch(
             ClientPacketID.SEND_PRIVATE_MESSAGE,
-            _message_payload(
-                sender="Sender",
+            _stable_client_message_payload(
                 content="offline pm",
                 target="Offline",
-                sender_id=pipeline.sender_id,
             ),
             pipeline.sender_id,
         )
@@ -328,11 +333,9 @@ class TestPrivateMessagePipeline:
         )
         await pipeline.dispatcher.dispatch(
             ClientPacketID.SEND_PRIVATE_MESSAGE,
-            _message_payload(
-                sender="Sender",
+            _stable_client_message_payload(
                 content="blocked pm",
                 target="Target",
-                sender_id=pipeline.sender_id,
             ),
             pipeline.sender_id,
         )
@@ -359,11 +362,9 @@ class TestPrivateMessagePipeline:
         )
         await pipeline.dispatcher.dispatch(
             ClientPacketID.SEND_PRIVATE_MESSAGE,
-            _message_payload(
-                sender="Sender",
+            _stable_client_message_payload(
                 content="friend pm",
                 target="Target",
-                sender_id=pipeline.sender_id,
             ),
             pipeline.sender_id,
         )
@@ -404,11 +405,9 @@ class TestPrivateMessagePipeline:
         )
         await pipeline.dispatcher.dispatch(
             ClientPacketID.SEND_PRIVATE_MESSAGE,
-            _message_payload(
-                sender="Sender",
+            _stable_client_message_payload(
                 content="!roll 100",
                 target=BANCHO_BOT_IDENTITY.username,
-                sender_id=pipeline.sender_id,
             ),
             pipeline.sender_id,
         )
@@ -444,11 +443,9 @@ class TestCommandPipeline:
 
         await pipeline.dispatcher.dispatch(
             ClientPacketID.SEND_MESSAGE,
-            _message_payload(
-                sender="Sender",
+            _stable_client_message_payload(
                 content="!roll 100",
                 target="#osu",
-                sender_id=pipeline.sender_id,
             ),
             pipeline.sender_id,
         )
