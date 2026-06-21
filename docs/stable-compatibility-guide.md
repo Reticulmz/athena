@@ -1117,7 +1117,7 @@ Reference request and response shapes from `deck`:
 
 | Endpoint | Request | Response |
 | --- | --- | --- |
-| `/web/check-updates.php` | `action=check|path|error`, `stream=cuttingedge|stable40|beta40|stable` | `[]` in `deck`; `bancho.py` returns an empty body. |
+| `/web/check-updates.php` | `action=check\|path\|error`, `stream=cuttingedge\|stable40\|beta40\|stable` | `[]` in `deck`; `bancho.py` returns an empty body. |
 | `/release/update` | `t=<time>`, `v=<current_version>` | Newline-separated file rows: `<filename> <md5> - noup <filename>` plus extra rows `<filename> <md5> <description> extra <download>`. Empty string means no update data. |
 | `/release/update.php` | `f=<filename>`, `h=<checksum>`, `t=<ticks>` | `0` in `deck` until file checks are implemented. |
 | `/release/update2.php` | no required query in `deck` | Empty string. |
@@ -1147,7 +1147,7 @@ Task 3.2 Update check PHP route evidence note:
 | Evidence field | Evidence state | Evidence note |
 | --- | --- | --- |
 | Auth method | `scope outside` | No auth requirement is documented for `/web/check-updates.php` in the reference notes. |
-| Required request params | `confirmed` | `action=check|path|error` and `stream=cuttingedge|stable40|beta40|stable` are documented above from `deck`; proxy-style `lets` behavior forwards all query params. |
+| Required request params | `confirmed` | `action=check\|path\|error` and `stream=cuttingedge\|stable40\|beta40\|stable` are documented above from `deck`; proxy-style `lets` behavior forwards all query params. |
 | Success response | `confirmed` | Initial Athena no-update compatibility returns `[]`; release/update audit records fixture handoff `check_updates_no_update_json_array` and keeps proxy/nope variants as future operational policy. |
 | Auth failure response | `scope outside` | No auth branch is expected from the documented request shape. |
 | Domain/data-not-found response | `scope outside` | This endpoint is an update policy route, not a domain object lookup route. |
@@ -1430,10 +1430,10 @@ Reference request and response shapes from `deck`:
 | `/web/osu-rate.php` | `u=<username>`, `p=<password>`, `c=<beatmap_md5>`, optional `v=<0..10>`. | String sentinel: `auth fail`, `no exist`, `not ranked`, `owner`, `alreadyvoted\n<avg>`, `ok`, `no`, or `ok\n<avg>`. |
 | `/rating/ingame-rate.php` | Same query shape as `/web/osu-rate.php`. | Same failure sentinels, but successful vote returns only `<avg>` and previous vote returns `alreadyvoted` without the average. |
 | `/rating/ingame-rate2.php` | Same query shape as `/web/osu-rate.php`. | Same as `ingame-rate.php`, except previous vote returns `alreadyvoted\n<avg>`. |
-| `/web/osu-comment.php` | Form `u`, `p`, `a=get|post`, `b=<beatmap_id>`, optional `r`, `m`, `s`, `comment`, `starttime`, `f`, `target`. | `get` returns newline comments; legacy rows are `<time>|<comment>`, newer rows are tab-delimited `<time>\t<Target>\t<format>\t<comment>`. `post` returns `<time>|<content>\n`. |
+| `/web/osu-comment.php` | Form `u`, `p`, `a=get\|post`, `b=<beatmap_id>`, optional `r`, `m`, `s`, `comment`, `starttime`, `f`, `target`. | `get` returns newline comments; legacy rows are `<time>\|<comment>`, newer rows are tab-delimited `<time>\t<Target>\t<format>\t<comment>`. `post` returns `<time>\|<content>\n`. |
 | `/web/osu-addfavourite.php` | `u`, `h`, `a=<set_id>`. | Human-readable success or limit/already-favourited string; HTTP errors for auth/missing map. |
 | `/web/osu-getfavourites.php` | `u`, `h`. | Newline-separated beatmapset ids. |
-| `/web/osu-stat.php`, `/web/osu-statoth.php` | `u=<username>`, either `c=md5(username + prettyplease!!!)` or `p=<password>`. | Pipe row: `<capped_score>|<accuracy>|<total_score>|<user_id>|<rank>|<user_id>_<avatar_checksum>.png`. |
+| `/web/osu-stat.php`, `/web/osu-statoth.php` | `u=<username>`, either `c=md5(username + prettyplease!!!)` or `p=<password>`. | Pipe row: `<capped_score>\|<accuracy>\|<total_score>\|<user_id>\|<rank>\|<user_id>_<avatar_checksum>.png`. |
 | `/web/osu-getfriends.php` | `u`, `h`. | Newline-separated friend user ids. |
 | `/web/osu-getstatus.php` | `c=<comma-separated-md5s>` up to 60 checksums. | Newline rows: `<checksum>,<status>,<beatmap_id>,<set_id>,<topic_id>`. |
 | `/web/osu-markasread.php` | `u`, `h`, `channel=<name>`. | Empty 200 for public channels or successful DM read marking; 404 for unknown DM target. |
@@ -1461,7 +1461,7 @@ Task 2.5 comments and favourites evidence note:
 | Evidence field | Evidence state | Evidence note |
 | --- | --- | --- |
 | Auth method | `confirmed` | Reference routes use `u` plus `p` or `h` credential material. |
-| Required request params | `confirmed` | Comment `a=get|post`, beatmap/replay selectors, and favourite set id/list params are documented above. |
+| Required request params | `confirmed` | Comment `a=get\|post`, beatmap/replay selectors, and favourite set id/list params are documented above. |
 | Success response | `confirmed` | Comment rows, post response, favourite success text, and favourites list shape are documented above. |
 | Auth failure response | `unconfirmed` | Exact auth failure status/body differs by route and needs fixtures. |
 | Domain/data-not-found response | `unconfirmed` | Unknown beatmap/replay/set, favourite limit, and already-favourited behavior need per-path fixtures. |
