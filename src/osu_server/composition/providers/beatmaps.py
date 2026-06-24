@@ -115,11 +115,16 @@ class BeatmapProviderSet(Provider):
         self,
         uow_factory: UnitOfWorkFactory,
         metadata_provider: BeatmapMetadataProvider,
+        freshness_policy: BeatmapFreshnessPolicy,
+        config: AppConfig,
         leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake,
     ) -> FetchBeatmapMetadataUseCase:
+        """metadata fetch use-case を freshness policy と共に構成する。"""
         return FetchBeatmapMetadataUseCase(
             uow_factory=uow_factory,
             metadata_provider=metadata_provider,
+            freshness_policy=freshness_policy,
+            official_sources_available=config.beatmap_official_sources_enabled,
             leaderboard_rebuild_wake=leaderboard_rebuild_wake,
         )
 

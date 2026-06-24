@@ -236,6 +236,7 @@ async def _save_beatmap_metadata(
     metadata_job = FetchBeatmapMetadataUseCase(
         uow_factory=repo.uow_factory,
         metadata_provider=composite,
+        freshness_policy=_make_freshness_policy(),
     )
     target = BeatmapFetchTarget.metadata_by_beatmap_id(beatmap_id)
     await metadata_job.execute(target)

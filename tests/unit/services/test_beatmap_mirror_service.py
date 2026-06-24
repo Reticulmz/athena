@@ -635,6 +635,7 @@ async def test_stale_beatmap_enqueues_metadata_refresh(
     target = enqueue_spy[0]
     assert target.target_type == "metadata:beatmap"
     assert target.target_key == str(_BEATMAP_ID)
+    assert target.force_refresh is False
 
 
 @pytest.mark.asyncio
@@ -659,6 +660,7 @@ async def test_force_refresh_enqueues_metadata_fetch(
     target = enqueue_spy[0]
     assert target.target_type == "metadata:beatmap"
     assert target.target_key == str(_BEATMAP_ID)
+    assert target.force_refresh is True
 
 
 @pytest.mark.asyncio

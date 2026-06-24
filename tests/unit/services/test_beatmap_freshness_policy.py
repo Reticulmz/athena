@@ -122,6 +122,37 @@ def test_pending_like_status_refreshes_when_interval_has_elapsed() -> None:
     assert decision.reason == "stale"
 
 
+def test_next_refresh_placeholder_uses_policy_deadline() -> None:
+    fetched_at = _NOW - timedelta(seconds=1)
+    beatmap = _make_beatmap(
+        BeatmapRankStatus.RANKED,
+        last_fetched_at=fetched_at,
+        next_refresh_at=fetched_at,
+    )
+
+    decision = _make_policy().evaluate(beatmap, now=_NOW)
+
+    assert decision.next_refresh_at == fetched_at + timedelta(days=30)
+    assert decision.is_stale is False
+    assert decision.should_refresh is False
+
+
+def test_mirror_sourced_next_refresh_placeholder_uses_mirror_interval() -> None:
+    fetched_at = _NOW - timedelta(seconds=1)
+    beatmap = _make_beatmap(
+        BeatmapRankStatus.RANKED,
+        source=BeatmapMetadataSource.MIRROR,
+        last_fetched_at=fetched_at,
+        next_refresh_at=fetched_at,
+    )
+
+    decision = _make_policy().evaluate(beatmap, now=_NOW)
+
+    assert decision.next_refresh_at == fetched_at + timedelta(hours=6)
+    assert decision.is_stale is False
+    assert decision.should_refresh is False
+
+
 def test_graveyard_status_uses_longer_refresh_interval_than_pending_like_statuses() -> None:
     policy = _make_policy()
     pending = policy.evaluate(

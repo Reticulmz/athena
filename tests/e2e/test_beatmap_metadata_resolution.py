@@ -154,7 +154,11 @@ def _build_service_with_job(
         official=official_provider,
         mirror=InMemoryBeatmapMetadataProvider(),
     )
-    job = FetchBeatmapMetadataUseCase(uow_factory=repo.uow_factory, metadata_provider=composite)
+    job = FetchBeatmapMetadataUseCase(
+        uow_factory=repo.uow_factory,
+        metadata_provider=composite,
+        freshness_policy=_make_freshness_policy(),
+    )
     enqueued: list[BeatmapFetchTarget] = []
 
     async def _enqueue(target: BeatmapFetchTarget) -> None:
@@ -241,6 +245,7 @@ class TestMetadataResolutionByBeatmapIdE2E:
         job = FetchBeatmapMetadataUseCase(
             uow_factory=repo.uow_factory,
             metadata_provider=composite,
+            freshness_policy=_make_freshness_policy(),
         )
         enqueued: list[BeatmapFetchTarget] = []
 
@@ -428,6 +433,7 @@ class TestMetadataResolutionBoundedWaitE2E:
         job = FetchBeatmapMetadataUseCase(
             uow_factory=repo.uow_factory,
             metadata_provider=composite,
+            freshness_policy=_make_freshness_policy(),
         )
         enqueued: list[BeatmapFetchTarget] = []
 

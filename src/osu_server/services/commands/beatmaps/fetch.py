@@ -25,10 +25,14 @@ from osu_server.services.commands.leaderboard_rebuild_wake import (
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import (
         BeatmapFileProvider,
+        BeatmapFreshnessPolicy,
         BeatmapMetadataProvider,
         BeatmapsetSnapshot,
     )
     from osu_server.domain.storage.blobs import BlobStoreResult
+    from osu_server.repositories.interfaces.commands.beatmaps import (
+        BeatmapCommandRepository,
+    )
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
 logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
@@ -46,36 +50,56 @@ class BeatmapBlobStorage(Protocol):
 
 
 class FetchBeatmapMetadataUseCase:
-    """Fetch beatmap metadata idempotently from a metadata provider."""
+    """beatmap metadata を provider から取得し DB cache を更新する use-case。"""
 
     def __init__(
         self,
         *,
         uow_factory: UnitOfWorkFactory,
         metadata_provider: BeatmapMetadataProvider,
+        freshness_policy: BeatmapFreshnessPolicy,
+        official_sources_available: bool = True,
         leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake | None = None,
     ) -> None:
+        """依存関係と cache freshness 判定条件を設定する。"""
         self._uow_factory: UnitOfWorkFactory = uow_factory
         self._provider: BeatmapMetadataProvider = metadata_provider
+        self._freshness_policy: BeatmapFreshnessPolicy = freshness_policy
+        self._official_sources_available: bool = official_sources_available
         self._leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake = (
             leaderboard_rebuild_wake or NoopBeatmapLeaderboardRebuildWorkerWake()
         )
 
     async def execute(self, target: BeatmapFetchTarget) -> None:
-        """Run the idempotent metadata fetch cycle for *target*."""
+        """target の metadata fetch を冪等に実行する。"""
         now = datetime.now(UTC)
 
         async with self._uow_factory() as uow:
+            previous_fetch_record = await uow.beatmaps.get_fetch_state(target)
             acquired = await uow.beatmaps.try_mark_fetch_pending(target, now)
-            if acquired:
+            if not acquired:
+                logger.debug(
+                    "beatmap_fetch_already_pending",
+                    target_type=target.target_type,
+                    target_key=target.target_key,
+                )
+                return
+            if await self._has_reusable_cached_metadata(
+                uow.beatmaps,
+                target,
+                now,
+                previous_fetch_failed=previous_fetch_record is not None
+                and previous_fetch_record.status is BeatmapFetchState.FAILED,
+            ):
+                await uow.beatmaps.mark_fetch_succeeded(target, now)
                 await uow.commit()
-        if not acquired:
-            logger.debug(
-                "beatmap_fetch_already_pending",
-                target_type=target.target_type,
-                target_key=target.target_key,
-            )
-            return
+                logger.info(
+                    "beatmap_metadata_fetch_cache_hit",
+                    target_type=target.target_type,
+                    target_key=target.target_key,
+                )
+                return
+            await uow.commit()
 
         logger.info(
             "beatmap_metadata_fetch_started",
@@ -146,6 +170,53 @@ class FetchBeatmapMetadataUseCase:
             source=snapshot.official_status_source.value,
             verified=(snapshot.official_status_verified.value == "verified"),
         )
+
+    async def _has_reusable_cached_metadata(
+        self,
+        repository: BeatmapCommandRepository,
+        target: BeatmapFetchTarget,
+        now: datetime,
+        *,
+        previous_fetch_failed: bool = False,
+    ) -> bool:
+        if target.force_refresh:
+            return False
+        if previous_fetch_failed:
+            return False
+
+        cached_beatmaps = await self._cached_beatmaps_for_target(repository, target)
+        if not cached_beatmaps:
+            return False
+
+        return all(
+            not self._freshness_policy.evaluate(
+                beatmap,
+                now=now,
+                official_sources_available=self._official_sources_available,
+            ).should_refresh
+            for beatmap in cached_beatmaps
+        )
+
+    async def _cached_beatmaps_for_target(
+        self,
+        repository: BeatmapCommandRepository,
+        target: BeatmapFetchTarget,
+    ) -> tuple[Beatmap, ...]:
+        try:
+            lookup = target.metadata_lookup_target()
+            if lookup.kind is BeatmapMetadataLookupKind.BEATMAP_ID:
+                beatmap = await repository.get_beatmap(lookup.int_value())
+                return () if beatmap is None else (beatmap,)
+            if lookup.kind is BeatmapMetadataLookupKind.BEATMAPSET_ID:
+                beatmapset = await repository.get_beatmapset(lookup.int_value())
+                return () if beatmapset is None else beatmapset.beatmaps
+        except ValueError:
+            return ()
+
+        if lookup.kind is BeatmapMetadataLookupKind.CHECKSUM:
+            beatmap = await repository.get_beatmap_by_checksum(lookup.value)
+            return () if beatmap is None else (beatmap,)
+        return ()
 
     async def _lookup(self, target: BeatmapFetchTarget) -> BeatmapsetSnapshot | None:
         lookup = target.metadata_lookup_target()

@@ -25,6 +25,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchTarget,
     BeatmapFileSource,
     BeatmapFileState,
+    BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
     BeatmapRankStatus,
     BeatmapSet,
@@ -43,6 +44,7 @@ from osu_server.services.commands.beatmaps import (
 )
 
 _NOW = datetime(2026, 6, 5, tzinfo=UTC)
+_ONE_HOUR = timedelta(hours=1)
 _THIRTY_DAYS = timedelta(days=30)
 _DEFAULT_CHECKSUM = "0123456789abcdef0123456789abcdef"
 
@@ -198,6 +200,16 @@ def _make_mirror_snapshot(**kwargs: object) -> BeatmapsetSnapshot:
     )
 
 
+def _make_freshness_policy() -> BeatmapFreshnessPolicy:
+    """metadata cache の refresh 判定 policy を作る。"""
+    return BeatmapFreshnessPolicy(
+        ranked_refresh_interval=_THIRTY_DAYS,
+        pending_refresh_interval=_ONE_HOUR,
+        graveyard_refresh_interval=_THIRTY_DAYS,
+        mirror_refresh_interval=_ONE_HOUR,
+    )
+
+
 _FILE_BODY = b"osu file format v14\n[General]\nAudioFilename: audio.mp3\n"
 _FILE_BODY_MD5 = "c76db67ba86527673e81495b1602f24b"
 _FILE_BODY_MISMATCH = b"osu file format v14\n[General]\nAudioFilename: wrong.mp3\n"
@@ -214,6 +226,7 @@ class TestMetadataFetchJobLogging:
     @staticmethod
     def _make_job(
         repo: InMemoryBeatmapStore,
+        *,
         official: StubMetadataProvider | None = None,
         mirror: StubMetadataProvider | None = None,
     ) -> FetchBeatmapMetadataUseCase:
@@ -223,6 +236,7 @@ class TestMetadataFetchJobLogging:
         return FetchBeatmapMetadataUseCase(
             uow_factory=repo.uow_factory,
             metadata_provider=composite,
+            freshness_policy=_make_freshness_policy(),
         )
 
     async def test_logs_start_and_success_for_beatmap_id(self) -> None:
@@ -345,6 +359,29 @@ class TestMetadataFetchJobLogging:
         mirror_events = [e for e in logs if e.get("event") == "beatmap_mirror_fallback_used"]
         assert len(mirror_events) == 0
 
+    async def test_logs_cache_hit_without_provider_fetch_lifecycle(self) -> None:
+        """fresh cache hit は provider fetch lifecycle と区別できる event で記録する。"""
+        repo = InMemoryBeatmapStore()
+        snapshot = _make_snapshot()
+        official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
+        job = self._make_job(repo, official=official)
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+        await job.execute(target)
+
+        with capture_logs() as logs:
+            await job.execute(target)
+
+        cache_hits = [e for e in logs if e.get("event") == "beatmap_metadata_fetch_cache_hit"]
+        assert len(cache_hits) == 1
+        assert cache_hits[0]["target_type"] == "metadata:beatmap"
+        assert cache_hits[0]["target_key"] == "2000"
+
+        started = [e for e in logs if e.get("event") == "beatmap_metadata_fetch_started"]
+        assert started == []
+        succeeded = [e for e in logs if e.get("event") == "beatmap_metadata_fetch_succeeded"]
+        assert succeeded == []
+        assert official.calls == ["beatmap_id:2000"]
+
     async def test_no_api_credentials_in_logs(self) -> None:
         """Log events must not include API credentials, tokens, or authorization values."""
         repo = InMemoryBeatmapStore()
@@ -442,6 +479,7 @@ class TestFileFetchJobLogging:
     @staticmethod
     def _make_job(
         repo: InMemoryBeatmapStore,
+        *,
         file_provider: StubFileProvider | None = None,
         blob_storage: StubBlobStorageService | None = None,
     ) -> FetchBeatmapFileUseCase:

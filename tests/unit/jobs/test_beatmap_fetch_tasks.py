@@ -178,6 +178,7 @@ class TestBeatmapFetchTaskExecution:
         assert len(fake.calls) == 1
         assert fake.calls[0].target_type == "metadata:beatmap"
         assert fake.calls[0].target_key == "2000"
+        assert fake.calls[0].force_refresh is False
 
     async def test_file_task_delegates_to_service(self) -> None:
         fake = _FakeJob()
@@ -203,6 +204,19 @@ class TestBeatmapFetchTaskExecution:
         assert len(fake.calls) == 1
         assert fake.calls[0].target_type == "metadata:checksum"
         assert fake.calls[0].target_key == "md5:checksum-for-test"
+
+    async def test_metadata_task_preserves_force_refresh_flag(self) -> None:
+        fake = _FakeJob()
+        context = _make_context(beatmap_metadata_fetch=fake)
+        await fetch_beatmap_metadata(
+            target_type="metadata:beatmap",
+            target_key="2000",
+            force_refresh=True,
+            context=context,
+        )
+
+        assert len(fake.calls) == 1
+        assert fake.calls[0].force_refresh is True
 
     async def test_file_task_constructs_beatmap_fetch_target(self) -> None:
         """The task constructs a BeatmapFetchTarget from string params."""

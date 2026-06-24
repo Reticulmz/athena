@@ -49,8 +49,10 @@ async def fetch_beatmap_metadata(
     target_type: str,
     target_key: str,
     context: Annotated[Context, TaskiqDepends()],
+    *,
+    force_refresh: bool = False,
 ) -> None:
-    """Taskiq adapter for the beatmap metadata fetch command."""
+    """beatmap metadata fetch command を Taskiq payload から呼び出す。"""
     use_case = get_beatmap_metadata_fetch(context.state)
     if use_case is None:
         logger.error(
@@ -64,6 +66,7 @@ async def fetch_beatmap_metadata(
     target = BeatmapFetchTarget.from_queue_payload(
         target_type=target_type,
         target_key=target_key,
+        force_refresh=force_refresh,
     )
     await use_case.execute(target)
 
@@ -73,8 +76,10 @@ async def fetch_beatmap_file(
     target_type: str,
     target_key: str,
     context: Annotated[Context, TaskiqDepends()],
+    *,
+    force_refresh: bool = False,
 ) -> None:
-    """Taskiq adapter for the beatmap file fetch command."""
+    """beatmap file fetch command を Taskiq payload から呼び出す。"""
     use_case = get_beatmap_file_fetch(context.state)
     if use_case is None:
         logger.error(
@@ -88,6 +93,7 @@ async def fetch_beatmap_file(
     target = BeatmapFetchTarget.from_queue_payload(
         target_type=target_type,
         target_key=target_key,
+        force_refresh=force_refresh,
     )
     await use_case.execute(target)
 

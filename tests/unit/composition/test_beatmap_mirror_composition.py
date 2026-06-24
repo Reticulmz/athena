@@ -33,9 +33,17 @@ if TYPE_CHECKING:
 class _FakeTask:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.force_refresh_calls: list[bool] = []
 
-    async def kiq(self, target_type: str, target_key: str) -> None:
+    async def kiq(
+        self,
+        target_type: str,
+        target_key: str,
+        *,
+        force_refresh: bool = False,
+    ) -> None:
         self.calls.append((target_type, target_key))
+        self.force_refresh_calls.append(force_refresh)
 
 
 class _FakeBroker:
@@ -93,6 +101,20 @@ async def test_beatmap_fetch_enqueue_routes_metadata_targets_to_metadata_job() -
     assert broker.metadata.calls == [
         ("metadata:checksum", "0123456789abcdef0123456789abcdef"),
     ]
+    assert broker.file.calls == []
+
+
+@pytest.mark.asyncio
+async def test_beatmap_fetch_enqueue_preserves_force_refresh_flag() -> None:
+    broker = _FakeBroker()
+
+    await enqueue_beatmap_fetch(
+        cast("AsyncBroker", cast("object", broker)),
+        BeatmapFetchTarget.metadata_by_beatmap_id(1, force_refresh=True),
+    )
+
+    assert broker.metadata.calls == [("metadata:beatmap", "1")]
+    assert broker.metadata.force_refresh_calls == [True]
     assert broker.file.calls == []
 
 

@@ -101,6 +101,7 @@ def test_fetch_target_exposes_typed_metadata_lookup() -> None:
         target_type="metadata:beatmapset",
         target_key="1234",
     )
+    assert target.queue_payload().force_refresh is False
 
 
 def test_fetch_target_restores_worker_queue_payload() -> None:
@@ -110,8 +111,28 @@ def test_fetch_target_restores_worker_queue_payload() -> None:
     )
 
     assert target.kind is BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID
+    assert target.force_refresh is False
     assert target.is_file_fetch
     assert target.file_beatmap_id() == 2000
+
+
+def test_fetch_target_roundtrips_force_refresh_queue_payload() -> None:
+    target = BeatmapFetchTarget.metadata_by_beatmap_id(2000, force_refresh=True)
+
+    payload = target.queue_payload()
+    restored = BeatmapFetchTarget.from_queue_payload(
+        target_type=payload.target_type,
+        target_key=payload.target_key,
+        force_refresh=payload.force_refresh,
+    )
+
+    assert payload == BeatmapFetchQueuePayload(
+        target_type="metadata:beatmap",
+        target_key="2000",
+        force_refresh=True,
+    )
+    assert restored.force_refresh is True
+    assert restored == BeatmapFetchTarget.metadata_by_beatmap_id(2000)
 
 
 def test_metadata_lookup_rejects_file_fetch_target() -> None:

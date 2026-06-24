@@ -21,6 +21,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchTarget,
     BeatmapFileSource,
     BeatmapFileState,
+    BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
     BeatmapRankStatus,
     BeatmapSet,
@@ -46,7 +47,10 @@ if TYPE_CHECKING:
     )
 
 _NOW = datetime(2026, 6, 5, tzinfo=UTC)
+_STALE_REFRESH_AT = datetime(2020, 1, 1, tzinfo=UTC)
+_ONE_HOUR = timedelta(hours=1)
 _THIRTY_DAYS = timedelta(days=30)
+_STALE_FETCHED_AT = _STALE_REFRESH_AT - _THIRTY_DAYS
 _DEFAULT_CHECKSUM = "0123456789abcdef0123456789abcdef"
 _ALT_CHECKSUM = "abcdef0123456789abcdef0123456789"
 
@@ -184,6 +188,16 @@ def _make_mirror_snapshot(**kwargs: object) -> BeatmapsetSnapshot:
     )
 
 
+def _make_freshness_policy() -> BeatmapFreshnessPolicy:
+    """metadata cache の refresh 判定 policy を作る。"""
+    return BeatmapFreshnessPolicy(
+        ranked_refresh_interval=_THIRTY_DAYS,
+        pending_refresh_interval=_ONE_HOUR,
+        graveyard_refresh_interval=_THIRTY_DAYS,
+        mirror_refresh_interval=_ONE_HOUR,
+    )
+
+
 # ---------------------------------------------------------------------------
 # FetchBeatmapMetadataUseCase tests
 # ---------------------------------------------------------------------------
@@ -195,9 +209,11 @@ class TestFetchBeatmapMetadataUseCase:
     @staticmethod
     def _make_job(
         repo: InMemoryBeatmapStore,
+        *,
         official: StubMetadataProvider | None = None,
         mirror: StubMetadataProvider | None = None,
         leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake | None = None,
+        official_sources_available: bool = True,
     ) -> FetchBeatmapMetadataUseCase:
         _official: BeatmapMetadataProvider = official or StubMetadataProvider()
         _mirror: BeatmapMetadataProvider = mirror or StubMetadataProvider()
@@ -205,6 +221,8 @@ class TestFetchBeatmapMetadataUseCase:
         return FetchBeatmapMetadataUseCase(
             uow_factory=repo.uow_factory,
             metadata_provider=composite,
+            freshness_policy=_make_freshness_policy(),
+            official_sources_available=official_sources_available,
             leaderboard_rebuild_wake=leaderboard_rebuild_wake,
         )
 
@@ -242,7 +260,11 @@ class TestFetchBeatmapMetadataUseCase:
 
     async def test_status_change_wakes_beatmapset_leaderboard_rebuild_after_commit(self) -> None:
         repo = InMemoryBeatmapStore()
-        initial = _make_snapshot(official_status=BeatmapRankStatus.PENDING)
+        initial = _make_snapshot(
+            official_status=BeatmapRankStatus.PENDING,
+            last_fetched_at=_STALE_FETCHED_AT,
+            next_refresh_at=_STALE_REFRESH_AT,
+        )
         await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(initial))
         updated = _make_snapshot(official_status=BeatmapRankStatus.RANKED)
         wake = LeaderboardRebuildWakeRecorder()
@@ -259,7 +281,11 @@ class TestFetchBeatmapMetadataUseCase:
 
     async def test_checksum_change_wakes_beatmapset_leaderboard_rebuild_after_commit(self) -> None:
         repo = InMemoryBeatmapStore()
-        initial = _make_snapshot(checksum_md5=_DEFAULT_CHECKSUM)
+        initial = _make_snapshot(
+            checksum_md5=_DEFAULT_CHECKSUM,
+            last_fetched_at=_STALE_FETCHED_AT,
+            next_refresh_at=_STALE_REFRESH_AT,
+        )
         await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(initial))
         updated = _make_snapshot(checksum_md5=_ALT_CHECKSUM)
         wake = LeaderboardRebuildWakeRecorder()
@@ -276,7 +302,11 @@ class TestFetchBeatmapMetadataUseCase:
 
     async def test_leaderboard_wake_failure_does_not_rollback_metadata_fetch(self) -> None:
         repo = InMemoryBeatmapStore()
-        initial = _make_snapshot(official_status=BeatmapRankStatus.PENDING)
+        initial = _make_snapshot(
+            official_status=BeatmapRankStatus.PENDING,
+            last_fetched_at=_STALE_FETCHED_AT,
+            next_refresh_at=_STALE_REFRESH_AT,
+        )
         await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(initial))
         updated = _make_snapshot(official_status=BeatmapRankStatus.RANKED)
         official = StubMetadataProvider(by_beatmap_id={2000: updated})
@@ -403,6 +433,28 @@ class TestFetchBeatmapMetadataUseCase:
         assert fetch_record is not None
         assert fetch_record.status is BeatmapFetchState.FRESH
 
+    async def test_cache_hit_does_not_clear_pending_force_refresh(self) -> None:
+        """通常 job の cache hit は進行中の force refresh lock を解除しない。"""
+        repo = InMemoryBeatmapStore()
+        snapshot = _make_snapshot()
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(snapshot))
+        force_target = BeatmapFetchTarget.metadata_by_beatmap_id(
+            2000,
+            force_refresh=True,
+        )
+        _ = await repo.try_mark_fetch_pending(force_target, _NOW)
+
+        official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
+        job = self._make_job(repo, official=official)
+        normal_target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+
+        await job.execute(normal_target)
+
+        assert official.calls == []
+        fetch_record = await repo.get_fetch_state(force_target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.PENDING_FETCH
+
     # --- local override preservation -----------------------------------------
 
     async def test_official_refresh_preserves_local_status_override(self) -> None:
@@ -412,7 +464,10 @@ class TestFetchBeatmapMetadataUseCase:
 
         repo = InMemoryBeatmapStore()
         # Save initial snapshot with local override set on the beatmap.
-        initial_snapshot = _make_snapshot()
+        initial_snapshot = _make_snapshot(
+            last_fetched_at=_STALE_FETCHED_AT,
+            next_refresh_at=_STALE_REFRESH_AT,
+        )
         initial_beatset = _snapshot_to_beatmapset(initial_snapshot)
         await repo.save_beatmapset_snapshot(initial_beatset)
         _ = await repo.set_local_status_override(2000, LocalBeatmapStatus.LOVED)
@@ -464,23 +519,122 @@ class TestFetchBeatmapMetadataUseCase:
 
     # --- fetch state after re-fetch -----------------------------------------
 
-    async def test_re_fetch_after_fresh_state_marks_succeeded(self) -> None:
-        """After a successful fetch, a subsequent fetch still proceeds
-        (state is FRESH, not PENDING_FETCH) and succeeds normally."""
+    async def test_re_fetch_after_fresh_cache_skips_provider_lookup(self) -> None:
+        """metadata が fresh cache にある場合は重複 job で provider を呼ばない。"""
         repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
         job = self._make_job(repo, official=official)
         target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
 
-        # First fetch
         await job.execute(target)
-        # Second fetch
         await job.execute(target)
 
+        assert official.calls == ["beatmap_id:2000"]
         fetch_record = await repo.get_fetch_state(target)
         assert fetch_record is not None
         assert fetch_record.status is BeatmapFetchState.FRESH
+
+    async def test_force_refresh_fetches_provider_even_with_fresh_cache(self) -> None:
+        """force refresh target は fresh cache があっても provider を呼ぶ。"""
+        repo = InMemoryBeatmapStore()
+        cached = _make_snapshot(title="Cached Title")
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(cached))
+        updated = _make_snapshot(title="Updated Title")
+        official = StubMetadataProvider(by_beatmap_id={2000: updated})
+        job = self._make_job(repo, official=official)
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000, force_refresh=True)
+
+        await job.execute(target)
+
+        assert official.calls == ["beatmap_id:2000"]
+        saved = await repo.get_beatmapset(updated.beatmapset_id)
+        assert saved is not None
+        assert saved.title == "Updated Title"
+
+    async def test_failed_fetch_state_retries_provider_even_with_fresh_cache(self) -> None:
+        """前回失敗した metadata fetch は fresh cache があっても再試行する."""
+        repo = InMemoryBeatmapStore()
+        cached = _make_snapshot(title="Cached Title")
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(cached))
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+        async with repo.uow_factory() as uow:
+            await uow.beatmaps.mark_fetch_failed(target, "official down", _NOW)
+            await uow.commit()
+
+        updated = _make_snapshot(title="Updated Title")
+        official = StubMetadataProvider(by_beatmap_id={2000: updated})
+        job = self._make_job(repo, official=official)
+
+        await job.execute(target)
+
+        assert official.calls == ["beatmap_id:2000"]
+        saved = await repo.get_beatmapset(updated.beatmapset_id)
+        assert saved is not None
+        assert saved.title == "Updated Title"
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FRESH
+
+    async def test_cached_beatmapset_target_skips_provider_lookup(self) -> None:
+        """beatmapset target でも fresh cache があれば provider を呼ばない。"""
+        repo = InMemoryBeatmapStore()
+        snapshot = _make_snapshot(beatmapset_id=5678)
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(snapshot))
+        official = StubMetadataProvider(by_beatmapset_id={5678: snapshot})
+        job = self._make_job(repo, official=official)
+        target = BeatmapFetchTarget.metadata_by_beatmapset_id(5678)
+
+        await job.execute(target)
+
+        assert official.calls == []
+
+    async def test_cached_checksum_target_skips_provider_lookup(self) -> None:
+        """checksum target でも fresh cache があれば provider を呼ばない。"""
+        repo = InMemoryBeatmapStore()
+        snapshot = _make_snapshot(checksum_md5=_DEFAULT_CHECKSUM)
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(snapshot))
+        official = StubMetadataProvider(by_checksum={_DEFAULT_CHECKSUM: snapshot})
+        job = self._make_job(repo, official=official)
+        target = BeatmapFetchTarget.metadata_by_checksum(_DEFAULT_CHECKSUM)
+
+        await job.execute(target)
+
+        assert official.calls == []
+
+    async def test_stale_cached_beatmap_still_fetches_provider(self) -> None:
+        """metadata cache が stale の場合は provider から再取得する。"""
+        repo = InMemoryBeatmapStore()
+        stale_snapshot = _make_snapshot(
+            last_fetched_at=_STALE_FETCHED_AT,
+            next_refresh_at=_STALE_REFRESH_AT,
+        )
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(stale_snapshot))
+        updated = _make_snapshot(title="Updated Title")
+        official = StubMetadataProvider(by_beatmap_id={2000: updated})
+        job = self._make_job(repo, official=official)
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        assert official.calls == ["beatmap_id:2000"]
+        saved = await repo.get_beatmapset(updated.beatmapset_id)
+        assert saved is not None
+        assert saved.title == "Updated Title"
+
+    async def test_mirror_cached_beatmap_refreshes_when_official_is_available(self) -> None:
+        """mirror 由来 cache は official source が使える時に再取得する。"""
+        repo = InMemoryBeatmapStore()
+        mirror_snapshot = _make_mirror_snapshot()
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(mirror_snapshot))
+        official_snapshot = _make_snapshot()
+        official = StubMetadataProvider(by_beatmap_id={2000: official_snapshot})
+        job = self._make_job(repo, official=official)
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        assert official.calls == ["beatmap_id:2000"]
 
     # --- lookup by beatmapset_id ---------------------------------------------
 

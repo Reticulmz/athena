@@ -186,7 +186,12 @@ class BeatmapMirrorService:
         )
 
         if decision.should_refresh:
-            await self._try_enqueue(BeatmapFetchTarget.metadata_by_beatmap_id(beatmap.id))
+            await self._try_enqueue(
+                BeatmapFetchTarget.metadata_by_beatmap_id(
+                    beatmap.id,
+                    force_refresh=opts.force_refresh,
+                )
+            )
 
         if opts.require_osu_file and beatmap.file_state is not BeatmapFileState.AVAILABLE:
             await self._try_enqueue(BeatmapFetchTarget.file_by_beatmap_id(beatmap.id))

@@ -7,7 +7,7 @@ leaderboard eligibility がここで同じ語彙として扱われる。
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -237,7 +237,7 @@ class BeatmapFreshnessPolicy:
     ) -> BeatmapFreshnessDecision:
         """現在時刻と取得元から stale/refresh 判定を返す。"""
 
-        next_refresh_at = beatmap.next_refresh_at or self._derive_next_refresh_at(beatmap)
+        next_refresh_at = self._effective_next_refresh_at(beatmap)
         is_stale = next_refresh_at is not None and next_refresh_at <= now
 
         if force_refresh:
@@ -296,9 +296,21 @@ class BeatmapFreshnessPolicy:
             reason=None,
         )
 
+    def _effective_next_refresh_at(self, beatmap: Beatmap) -> datetime | None:
+        if beatmap.last_fetched_at is None:
+            return beatmap.next_refresh_at
+        if beatmap.next_refresh_at is None:
+            return self._derive_next_refresh_at(beatmap)
+        if beatmap.next_refresh_at <= beatmap.last_fetched_at:
+            return self._derive_next_refresh_at(beatmap)
+        return beatmap.next_refresh_at
+
     def _derive_next_refresh_at(self, beatmap: Beatmap) -> datetime | None:
         if beatmap.last_fetched_at is None:
             return None
+
+        if _is_mirror_sourced(beatmap):
+            return beatmap.last_fetched_at + self.mirror_refresh_interval
 
         status = beatmap.effective_status
         if status in _STABLE_STATUSES:
@@ -402,10 +414,11 @@ class BeatmapMetadataLookupTarget:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapFetchQueuePayload:
-    """Primitive payload passed through the worker queue."""
+    """worker queue に渡す primitive payload。"""
 
     target_type: str
     target_key: str
+    force_refresh: bool = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -414,6 +427,7 @@ class BeatmapFetchTarget:
 
     target_type: str
     target_key: str
+    force_refresh: bool = field(default=False, compare=False, hash=False)
 
     def __post_init__(self) -> None:
         if not self.target_type:
@@ -465,10 +479,11 @@ class BeatmapFetchTarget:
         return int(self.target_key)
 
     def queue_payload(self) -> BeatmapFetchQueuePayload:
-        """Return primitive queue arguments without exposing encoding decisions."""
+        """encoding の詳細を隠して worker queue payload を返す。"""
         return BeatmapFetchQueuePayload(
             target_type=self.target_type,
             target_key=self.target_key,
+            force_refresh=self.force_refresh,
         )
 
     @classmethod
@@ -477,29 +492,46 @@ class BeatmapFetchTarget:
         *,
         target_type: str,
         target_key: str,
+        force_refresh: bool = False,
     ) -> BeatmapFetchTarget:
-        """Restore a fetch target from worker queue primitives."""
-        return cls(target_type=target_type, target_key=target_key)
+        """worker queue payload から fetch target を復元する。"""
+        return cls(
+            target_type=target_type,
+            target_key=target_key,
+            force_refresh=force_refresh,
+        )
 
     @classmethod
-    def metadata_by_beatmap_id(cls, beatmap_id: int) -> BeatmapFetchTarget:
+    def metadata_by_beatmap_id(
+        cls, beatmap_id: int, *, force_refresh: bool = False
+    ) -> BeatmapFetchTarget:
+        """beatmap id を指定した metadata fetch target を作る。"""
         return cls(
             target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID.value,
             target_key=str(beatmap_id),
+            force_refresh=force_refresh,
         )
 
     @classmethod
-    def metadata_by_beatmapset_id(cls, beatmapset_id: int) -> BeatmapFetchTarget:
+    def metadata_by_beatmapset_id(
+        cls, beatmapset_id: int, *, force_refresh: bool = False
+    ) -> BeatmapFetchTarget:
+        """beatmapset id を指定した metadata fetch target を作る。"""
         return cls(
             target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID.value,
             target_key=str(beatmapset_id),
+            force_refresh=force_refresh,
         )
 
     @classmethod
-    def metadata_by_checksum(cls, checksum_md5: str) -> BeatmapFetchTarget:
+    def metadata_by_checksum(
+        cls, checksum_md5: str, *, force_refresh: bool = False
+    ) -> BeatmapFetchTarget:
+        """MD5 checksum を指定した metadata fetch target を作る。"""
         return cls(
             target_type=BeatmapFetchTargetKind.METADATA_BY_CHECKSUM.value,
             target_key=checksum_md5,
+            force_refresh=force_refresh,
         )
 
     @classmethod
