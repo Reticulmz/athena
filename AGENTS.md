@@ -23,7 +23,7 @@ Guidance for coding agents working in this repository.
 
 - Python 3.14+
 - Package management: `uv`
-- Environment: Nix / devenv
+- Environment: Nix flake + process-compose
 - ASGI: uvicorn, Starlette, FastAPI
 - Binary protocol: Caterpillar
 - API I/O: Pydantic v2
@@ -41,8 +41,11 @@ Guidance for coding agents working in this repository.
 
 ```bash
 # Environment
-devenv shell
+nix develop              # or: direnv allow (automatic via .envrc)
 uv sync
+
+# Services
+process-compose up       # start postgres, valkey, app, worker, nginx, cloudflared
 
 # App / worker
 uvicorn osu_server.app:app --reload
@@ -63,6 +66,11 @@ import-linter
 # Migrations
 alembic upgrade head
 alembic revision --autogenerate -m "..."
+
+# Test database tasks
+scripts/dev-tasks.sh db:test:create
+scripts/dev-tasks.sh db:test:migrate
+scripts/dev-tasks.sh db:test:run
 ```
 
 Before reporting implementation work as complete, run the relevant tests and quality checks. For broad changes, prefer the project gates: `./scripts/ci.sh quality` and `./scripts/ci.sh test`.
@@ -298,8 +306,8 @@ When work may run in parallel, touch overlapping files, generate artifacts, or i
 - Use `scripts/agent-worktree.sh` when creating agent worktrees unless the task needs a custom setup.
 - Pass an agent namespace such as `--agent codex` for Codex or `--agent claude-code` for Claude Code so branches identify the originating agent.
 - Use the default repo-sibling path `../athena_worktree/<task-slug>` and an agent-prefixed branch such as `codex/<task-slug>` or `claude-code/<task-slug>`.
-- After entering a worktree, run project toolchain commands through `devenv shell` so hooks, `uv`, and `.devenv/state/venv` resolve inside that worktree. For non-interactive commands, prefer `devenv shell env ... <command>`.
-- Commands that execute the project toolchain or hooks must use `devenv shell`: `uv run`, `pytest`, `prek`, `ruff`, `basedpyright`, `import-linter`, `alembic`, `uvicorn`, `taskiq`, and `git commit`.
+- After entering a worktree, run project toolchain commands through `nix develop` so hooks, `uv`, and `.venv` resolve inside that worktree. For non-interactive commands, prefer `nix develop --command <command>`.
+- Commands that execute the project toolchain or hooks must use `nix develop`: `uv run`, `pytest`, `prek`, `ruff`, `basedpyright`, `import-linter`, `alembic`, `uvicorn`, `taskiq`, and `git commit`.
 - Commands that do not execute project toolchains or hooks may run directly: `git status`, `git diff`, `git log`, `git add`, `git push`, `git pull`, `gh pr`, `rg`, `sed`, `ls`, and similar Git/GitHub/utility commands that do not depend on project toolchains.
 - Keep each agent's changes inside its own worktree. Do not share one branch across multiple active agents.
 - Prefer one owner per file. If multiple tasks need the same file, designate one owner or integrate the changes sequentially.
@@ -309,7 +317,7 @@ When work may run in parallel, touch overlapping files, generate artifacts, or i
 - Sequential small Kiro tasks may be implemented directly on the spec branch when no other agent is expected to edit the same files and no generated artifacts or long-running checks require isolation.
 - For sequential Kiro task commits, include `Kiro-Task: <spec-name> <task-number>` in the commit body.
 - After all tasks are integrated and spec-level validation passes, open the final PR from `spec/<spec-name>` to `main`.
-- Run relevant tests and quality checks inside the task worktree through `devenv shell`. Before committing, run `devenv shell env ... prek run --all-files` from that worktree; if hooks import app config, provide test settings such as `ENVIRONMENT=test`, `DATABASE_URL`, and `VALKEY_URL`.
+- Run relevant tests and quality checks inside the task worktree through `nix develop`. Before committing, run `prek run --all-files` from that worktree; if hooks import app config, provide test settings such as `ENVIRONMENT=test`, `DATABASE_URL`, and `VALKEY_URL`.
 - Commit completed work in the task branch, or clearly report uncommitted changes and do not integrate them automatically.
 - For non-trivial code, test, spec, or multi-file changes, use a pull request as the integration boundary even for solo development.
 - Open a draft PR from the task branch, watch GitHub CI and review comments, and fix failures with focused follow-up commits on the same branch.
@@ -399,8 +407,8 @@ Do not edit project-wide config without explicit user approval:
 - `uv.lock`
 - `.python-version`
 - `alembic.ini`
-- `devenv.nix`
 - `flake.nix`
+- `process-compose.yml`
 - CI, hook, linter, type-checker, or import-linter configuration
 
 Dependency additions also require approval. After approved environment/config changes, run the appropriate sync/update command.

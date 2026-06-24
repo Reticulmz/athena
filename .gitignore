@@ -18,10 +18,11 @@ htmlcov/
 # Virtual environments
 .venv
 
-# Devenv
-.devenv*
-devenv.local.nix
-devenv.local.yaml
+# Nix / flake
+result
+
+# Development state (postgres, valkey, nginx)
+.state/
 
 # Local nginx config (copy from nginx.dev.conf.example and customize)
 nginx.dev.conf

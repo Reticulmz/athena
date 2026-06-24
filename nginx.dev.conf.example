@@ -5,22 +5,22 @@
 # nginx.dev.conf is gitignored.
 
 worker_processes 1;
-pid .devenv/state/nginx/nginx.pid;
-error_log .devenv/state/nginx/error.log;
+pid .state/nginx/nginx.pid;
+error_log .state/nginx/error.log;
 
 events {
     worker_connections 64;
 }
 
 http {
-    client_body_temp_path .devenv/state/nginx/client-body;
-    proxy_temp_path       .devenv/state/nginx/proxy;
-    fastcgi_temp_path     .devenv/state/nginx/fastcgi;
-    uwsgi_temp_path       .devenv/state/nginx/uwsgi;
-    scgi_temp_path        .devenv/state/nginx/scgi;
+    client_body_temp_path .state/nginx/client-body;
+    proxy_temp_path       .state/nginx/proxy;
+    fastcgi_temp_path     .state/nginx/fastcgi;
+    uwsgi_temp_path       .state/nginx/uwsgi;
+    scgi_temp_path        .state/nginx/scgi;
 
-    access_log .devenv/state/nginx/access.log;
-    error_log  .devenv/state/nginx/error.log;
+    access_log .state/nginx/access.log;
+    error_log  .state/nginx/error.log;
 
     # --- HTTP (port 80) ---
     server {

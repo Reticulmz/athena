@@ -1,0 +1,76 @@
+version: "0.5"
+
+# 環境変数 ATHENA_STATE, PGDATA, PGHOST, PGPORT は
+# flake.nix shellHook で設定済み
+
+processes:
+  postgres:
+    command: |
+      set -e
+      if [ ! -f "$PGDATA/PG_VERSION" ]; then
+        echo "initializing postgres data directory..."
+        initdb -D "$PGDATA" --no-locale --encoding=UTF8
+        echo "listen_addresses = '127.0.0.1'" >> "$PGDATA/postgresql.conf"
+        echo "unix_socket_directories = '$PGDATA'" >> "$PGDATA/postgresql.conf"
+        echo "port = 5432" >> "$PGDATA/postgresql.conf"
+      fi
+      exec postgres -D "$PGDATA"
+    readiness_probe:
+      exec:
+        command: pg_isready -h 127.0.0.1 -p 5432
+      initial_delay_seconds: 2
+      period_seconds: 5
+    shutdown:
+      signal: SIGINT
+      timeout_seconds: 30
+
+  postgres-init:
+    command: createdb -h 127.0.0.1 -p 5432 athena 2>/dev/null || true
+    depends_on:
+      postgres:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  valkey:
+    command: >-
+      valkey-server
+      --port 6379
+      --dir "$ATHENA_STATE/valkey"
+      --daemonize no
+    readiness_probe:
+      exec:
+        command: valkey-cli -p 6379 ping
+      initial_delay_seconds: 1
+      period_seconds: 5
+    shutdown:
+      signal: SIGTERM
+      timeout_seconds: 10
+
+  app:
+    command: uv run python -m osu_server
+    depends_on:
+      postgres-init:
+        condition: process_completed_successfully
+      valkey:
+        condition: process_healthy
+
+  worker:
+    command: uv run taskiq worker osu_server.worker:broker
+    depends_on:
+      postgres-init:
+        condition: process_completed_successfully
+      valkey:
+        condition: process_healthy
+
+  nginx:
+    command: >-
+      mkdir -p .state/nginx &&
+      sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1;
+      nginx -p ./ -c ./nginx.dev.conf -g 'daemon off;'
+    shutdown:
+      signal: SIGQUIT
+      timeout_seconds: 5
+
+  cloudflared:
+    command: cloudflared tunnel --config cloudflared/config.yml --no-autoupdate run
