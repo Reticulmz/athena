@@ -78,6 +78,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         self.merged: list[object] = []
         self.refreshed: list[object] = []
         self.executed: list[Executable] = []
+        self.get_calls: list[tuple[type[object], int, bool]] = []
         self.flushes: int = 0
 
     @override
@@ -95,7 +96,14 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         _ = exc
         _ = traceback
 
-    async def get(self, model_type: type[object], identity: int) -> object | None:
+    async def get(
+        self,
+        model_type: type[object],
+        identity: int,
+        *,
+        populate_existing: bool = False,
+    ) -> object | None:
+        self.get_calls.append((model_type, identity, populate_existing))
         return self.get_results.get((model_type, identity))
 
     async def execute(self, statement: Executable) -> FakeResult:
@@ -371,6 +379,18 @@ async def test_fetch_pending_marker_uses_atomic_conflict_update() -> None:
     assert "RETURNING beatmap_fetch_states.id" in statement_text
     assert session.added == []
     assert session.flushes == 0
+
+
+async def test_fetch_pending_marker_refreshes_identity_map_after_upsert() -> None:
+    target = BeatmapFetchTarget.metadata_by_checksum(_CHECKSUM)
+    session = FakeSession(
+        get_results={(BeatmapFetchStateModel, 1): _fetch_state_model()},
+        execute_results=[FakeResult(1)],
+    )
+
+    assert await _repo(session).try_mark_fetch_pending(target, now=_NOW) is True
+
+    assert session.get_calls == [(BeatmapFetchStateModel, 1, True)]
 
 
 async def test_get_beatmap_by_checksum_resolves_model_and_attachment() -> None:
