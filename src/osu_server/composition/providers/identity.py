@@ -37,9 +37,6 @@ from osu_server.services.commands.identity.auth_service import AuthService
 from osu_server.services.commands.identity.session_authorization_service import (
     SessionAuthorizationService,
 )
-from osu_server.services.commands.leaderboard_rebuild_wake import (
-    BeatmapLeaderboardRebuildWorkerWake,
-)
 from osu_server.services.queries.identity import (
     CheckFriendRelationshipQuery,
     ComputePermissionsQueryUseCase,
@@ -52,6 +49,9 @@ from osu_server.services.queries.identity import (
 )
 from osu_server.services.queries.identity.password_service import PasswordService
 from osu_server.services.queries.identity.permission_service import PermissionService
+from osu_server.shared.ports import (
+    BeatmapLeaderboardRebuildWorkerWake,
+)
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,

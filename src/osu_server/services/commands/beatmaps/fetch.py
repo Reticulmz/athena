@@ -17,7 +17,7 @@ from osu_server.domain.beatmaps import (
     BeatmapMetadataLookupKind,
     BeatmapSet,
 )
-from osu_server.services.commands.leaderboard_rebuild_wake import (
+from osu_server.shared.ports import (
     BeatmapLeaderboardRebuildWorkerWake,
     NoopBeatmapLeaderboardRebuildWorkerWake,
 )

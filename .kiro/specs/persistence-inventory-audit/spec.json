@@ -1,0 +1,22 @@
+{
+  "feature_name": "persistence-inventory-audit",
+  "created_at": "2026-06-23T15:49:31Z",
+  "updated_at": "2026-06-23T17:10:00Z",
+  "language": "ja",
+  "phase": "completed",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}

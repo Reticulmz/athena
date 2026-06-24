@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -12,7 +13,9 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceErrorCategory,
     OsuFileFetchResult,
 )
-from osu_server.infrastructure.http import BeatmapHttpClient, is_permanent_error
+
+if TYPE_CHECKING:
+    from osu_server.infrastructure.http.interfaces import BeatmapHttpClient
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -35,10 +38,10 @@ class BeatmapFileProviderService:
     Permanent failures (404, 401) do not fall through to mirrors.
     """
 
+    http_client: BeatmapHttpClient
     osu_current_url_template: str = "https://osu.ppy.sh/osu/{beatmap_id}"
     osu_legacy_url_template: str = "https://old.ppy.sh/osu/{beatmap_id}"
     mirror_url_templates: list[str] = field(default_factory=list)
-    http_client: BeatmapHttpClient = field(default_factory=BeatmapHttpClient)
 
     async def fetch_osu_file(self, beatmap_id: int) -> OsuFileFetchResult:
         """Fetch .osu file with fallback priority.
@@ -60,7 +63,7 @@ class BeatmapFileProviderService:
         except _FoundError as found:
             return found.result
         except BeatmapSourceError as direct_error:
-            if is_permanent_error(direct_error):
+            if direct_error.is_permanent():
                 raise
             # temporary: fall through to mirrors
 
@@ -127,7 +130,7 @@ class BeatmapFileProviderService:
                 raise _FoundError(result)
             except BeatmapSourceError as exc:
                 last_error = exc
-                if is_permanent_error(exc):
+                if exc.is_permanent():
                     raise
 
         assert last_error is not None
@@ -154,7 +157,7 @@ class BeatmapFileProviderService:
                 raise _FoundError(result)
             except BeatmapSourceError as exc:
                 last_error = exc
-                if is_permanent_error(exc):
+                if exc.is_permanent():
                     raise
 
         if last_error is not None:

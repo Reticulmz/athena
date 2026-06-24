@@ -10,7 +10,7 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
 from osu_server.domain.identity.system_users import BANCHO_BOT_USER_ID
 from osu_server.domain.identity.users import User
-from osu_server.services.commands.leaderboard_rebuild_wake import (
+from osu_server.shared.ports import (
     BeatmapLeaderboardRebuildWorkerWake,
     NoopBeatmapLeaderboardRebuildWorkerWake,
 )

@@ -14,6 +14,9 @@ from osu_server.domain.beatmaps import (
     BeatmapFreshnessPolicy,
     BeatmapMetadataProvider,
 )
+from osu_server.infrastructure.http.beatmap_http_client import (
+    BeatmapHttpClient as ConcreteBeatmapHttpClient,
+)
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
@@ -22,9 +25,6 @@ from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
     FetchBeatmapMetadataUseCase,
-)
-from osu_server.services.commands.leaderboard_rebuild_wake import (
-    BeatmapLeaderboardRebuildWorkerWake,
 )
 from osu_server.services.commands.storage.blob_storage import BlobStorageService
 from osu_server.services.queries.beatmaps import (
@@ -36,6 +36,9 @@ from osu_server.services.queries.beatmaps.mirror import (
     BeatmapFileProviderService,
     MirrorMetadataProviderService,
     OsuApiMetadataProviderService,
+)
+from osu_server.shared.ports import (
+    BeatmapLeaderboardRebuildWorkerWake,
 )
 
 _DISHKA_RUNTIME_HINTS = (
@@ -78,8 +81,10 @@ class BeatmapProviderSet(Provider):
         official = OsuApiMetadataProviderService(
             client_id=config.beatmap_official_api_client_id or "",
             client_secret=config.beatmap_official_api_client_secret or "",
+            http_client=ConcreteBeatmapHttpClient(),
         )
         mirror = MirrorMetadataProviderService(
+            http_client=ConcreteBeatmapHttpClient(),
             base_urls=config.beatmap_metadata_mirror_base_urls,
         )
         return CompositeBeatmapMetadataProvider(official=official, mirror=mirror)
@@ -87,6 +92,7 @@ class BeatmapProviderSet(Provider):
     @provide
     def beatmap_file_provider(self, config: AppConfig) -> BeatmapFileProvider:
         return BeatmapFileProviderService(
+            http_client=ConcreteBeatmapHttpClient(),
             osu_current_url_template=config.beatmap_osu_current_url_template,
             osu_legacy_url_template=config.beatmap_osu_legacy_url_template,
             mirror_url_templates=list(config.beatmap_community_mirror_url_templates),

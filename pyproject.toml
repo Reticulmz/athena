@@ -165,6 +165,32 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "Services don't import concrete infrastructure backends"
+type = "forbidden"
+source_modules = ["osu_server.services"]
+forbidden_modules = [
+    "osu_server.infrastructure.http.beatmap_http_client",
+    "osu_server.infrastructure.state.valkey",
+    "osu_server.infrastructure.state.memory",
+    "osu_server.infrastructure.storage.local",
+    "osu_server.infrastructure.performance.rosu_calculator",
+    "osu_server.infrastructure.messaging.memory",
+    "osu_server.infrastructure.database",
+]
+
+[[tool.importlinter.contracts]]
+name = "Cross-domain protocols live in shared ports"
+type = "forbidden"
+source_modules = [
+    "osu_server.services.commands.identity",
+    "osu_server.services.commands.beatmaps",
+    "osu_server.services.commands.scores",
+]
+forbidden_modules = [
+    "osu_server.services.commands.leaderboard_rebuild_wake",
+]
+
+[[tool.importlinter.contracts]]
 name = "Server runtime doesn't depend on CLI"
 type = "forbidden"
 source_modules = ["osu_server"]

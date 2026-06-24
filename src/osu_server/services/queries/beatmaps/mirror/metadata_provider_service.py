@@ -16,7 +16,6 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceErrorCategory,
     BeatmapSourceVerification,
 )
-from osu_server.infrastructure.http import BeatmapHttpClient
 from osu_server.repositories.beatmaps.mappers import (
     beatmap_json_to_snapshot,
     beatmap_v1_json_to_snapshot,
@@ -26,6 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from osu_server.domain.beatmaps import BeatmapsetSnapshot
+    from osu_server.infrastructure.http.interfaces import BeatmapHttpClient
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -73,15 +73,15 @@ class OsuApiMetadataProviderService:
         *,
         client_id: str,
         client_secret: str,
+        http_client: BeatmapHttpClient,
         base_url: str = "https://osu.ppy.sh/api/v2",
         token_url: str = "https://osu.ppy.sh/oauth/token",
-        http_client: BeatmapHttpClient | None = None,
     ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
         self._base_url = base_url.rstrip("/")
         self._token_url = token_url
-        self._http_client = http_client or BeatmapHttpClient()
+        self._http_client = http_client
         self._access_token: str | None = None
         self._token_expiry: float = 0.0
 
@@ -128,7 +128,7 @@ class OsuApiMetadataProviderService:
 
         if response.status_code == HTTPStatus.OK:
             try:
-                data: dict[str, object] = response.json()  # pyright: ignore[reportAny]
+                parsed: object = response.json()
             except Exception as exc:
                 raise BeatmapSourceError(
                     category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
@@ -137,7 +137,15 @@ class OsuApiMetadataProviderService:
                     message=f"Invalid JSON from {source_label}",
                     original_error=exc,
                 ) from exc
-            return beatmap_json_to_snapshot(data)
+            if not isinstance(parsed, dict):
+                actual = type(parsed).__name__
+                raise BeatmapSourceError(
+                    category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                    source=source_label,
+                    lookup_key=lookup_key,
+                    message=f"Expected JSON object from {source_label}, got {actual}",
+                )
+            return beatmap_json_to_snapshot(cast("dict[str, object]", parsed))
 
         if response.status_code == HTTPStatus.NOT_FOUND:
             return None
@@ -232,7 +240,7 @@ class OsuApiMetadataProviderService:
             )
 
         try:
-            data = response.json()  # pyright: ignore[reportAny]
+            parsed: object = response.json()
         except Exception as exc:
             raise BeatmapSourceError(
                 category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
@@ -242,8 +250,39 @@ class OsuApiMetadataProviderService:
                 original_error=exc,
             ) from exc
 
-        self._access_token = str(data["access_token"])  # pyright: ignore[reportAny]
-        self._token_expiry = time.time() + float(data.get("expires_in", 86400)) - 60  # pyright: ignore[reportAny]
+        if not isinstance(parsed, dict):
+            actual = type(parsed).__name__
+            raise BeatmapSourceError(
+                category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                source=source_label,
+                lookup_key="token",
+                message=f"Expected JSON object from token endpoint, got {actual}",
+            )
+        data = cast("Mapping[str, object]", parsed)
+
+        access_token = data.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise BeatmapSourceError(
+                category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                source=source_label,
+                lookup_key="token",
+                message="Token response missing valid access_token",
+            )
+
+        expires_in = data.get("expires_in", 86400)
+        try:
+            expires_seconds = float(cast("int | float | str", expires_in))
+        except (TypeError, ValueError) as exc:
+            raise BeatmapSourceError(
+                category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                source=source_label,
+                lookup_key="token",
+                message="Token response has invalid expires_in",
+                original_error=exc,
+            ) from exc
+
+        self._access_token = access_token
+        self._token_expiry = time.time() + expires_seconds - 60
         return self._access_token
 
 
@@ -267,14 +306,14 @@ class MirrorMetadataProviderService:
     def __init__(
         self,
         *,
+        http_client: BeatmapHttpClient,
         base_url: str | None = None,
         base_urls: Sequence[str] | None = None,
         api_version: str = "v2",
-        http_client: BeatmapHttpClient | None = None,
     ) -> None:
         self._base_urls = _normalize_base_urls(base_url=base_url, base_urls=base_urls)
         self._api_version = api_version
-        self._http_client = http_client or BeatmapHttpClient()
+        self._http_client = http_client
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
         return await self._lookup(

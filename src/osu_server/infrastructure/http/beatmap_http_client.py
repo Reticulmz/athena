@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from http import HTTPStatus
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import httpx
 import structlog
@@ -14,9 +13,12 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
+from osu_server.infrastructure.http.interfaces import HttpFetchResult
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from osu_server.infrastructure.http.interfaces import BeatmapHttpTransport
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -117,14 +119,6 @@ def is_permanent_error(error: BeatmapSourceError) -> bool:
     }
 
 
-@dataclass(slots=True)
-class HttpFetchResult:
-    """Raw HTTP fetch result."""
-
-    content: bytes
-    filename: str | None
-
-
 class BeatmapHttpClient:
     """HTTP client for beatmap mirror sources."""
 
@@ -138,8 +132,8 @@ class BeatmapHttpClient:
             self._client = httpx.AsyncClient()
         return self._client
 
-    def get_client(self) -> httpx.AsyncClient:
-        """Get the underlying httpx client for custom requests."""
+    def get_client(self) -> BeatmapHttpTransport:
+        """認証付き request 等に利用する低水準 transport を返します."""
         return self._get_client()
 
     async def fetch(
@@ -192,22 +186,27 @@ class BeatmapHttpClient:
         source: str,
         lookup_key: str,
     ) -> dict[str, object] | list[object]:
-        """Fetch JSON from URL.
+        """URL から JSON を取得し, object または array として返します.
 
         Args:
-            url: URL to fetch
-            source: Source label for error messages
-            lookup_key: Lookup key for error messages
+            url: 取得対象 URL です.
+            source: error と log に使う取得元 label です.
+            lookup_key: error と log に使う検索 key です.
 
         Returns:
-            Parsed JSON object or array
+            JSON object (dict) または array (list) です.
 
         Raises:
-            BeatmapSourceError: On HTTP error, connection failure, or JSON decode error
+            BeatmapSourceError: HTTP error, 接続失敗, JSON decode 失敗,
+                または top-level JSON primitive (int, str, bool, null) の場合は
+                INVALID_RESPONSE category で送出します.
+
+        Constraints:
+            JSON primitive は contract 違反のため INVALID_RESPONSE として拒否します.
         """
         result = await self.fetch(url, source=source, lookup_key=lookup_key)
         try:
-            return httpx.Response(200, content=result.content).json()  # pyright: ignore[reportAny]
+            parsed = cast("object", httpx.Response(200, content=result.content).json())
         except Exception as exc:
             raise BeatmapSourceError(
                 category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
@@ -216,3 +215,15 @@ class BeatmapHttpClient:
                 message=f"JSON decode error from {source}: {exc}",
                 original_error=exc,
             ) from exc
+
+        if isinstance(parsed, dict):
+            return cast("dict[str, object]", parsed)
+        if isinstance(parsed, list):
+            return cast("list[object]", parsed)
+        actual = type(parsed).__name__
+        raise BeatmapSourceError(
+            category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+            source=source,
+            lookup_key=lookup_key,
+            message=f"Expected JSON object or array from {source}, got {actual}",
+        )

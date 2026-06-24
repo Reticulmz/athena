@@ -43,3 +43,10 @@ class BeatmapSourceError(RuntimeError):
         self.lookup_key = lookup_key
         self.original_error = original_error
         super().__init__(message)
+
+    def is_permanent(self) -> bool:
+        """このエラーが永続的 (404, 401) でリトライ不要かを判定します."""
+        return self.category in {
+            BeatmapSourceErrorCategory.NOT_FOUND,
+            BeatmapSourceErrorCategory.UNAUTHORIZED,
+        }

@@ -17,14 +17,14 @@ from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
-from osu_server.services.commands.leaderboard_rebuild_wake import (
-    BeatmapLeaderboardRebuildWorkerWake,
-)
 from osu_server.services.commands.scores.leaderboards import (
     RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
     RebuildBeatmapLeaderboardsForUserUseCase,
 )
 from osu_server.services.queries.scores import BeatmapLeaderboardQuery, BeatmapScoreListingQuery
+from osu_server.shared.ports import (
+    BeatmapLeaderboardRebuildWorkerWake,
+)
 
 _DISHKA_RUNTIME_HINTS = (
     AsyncBroker,

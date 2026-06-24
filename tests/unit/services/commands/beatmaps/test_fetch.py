@@ -42,7 +42,7 @@ from osu_server.services.commands.beatmaps import (
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap, BeatmapMetadataProvider
     from osu_server.domain.storage.blobs import BlobStored
-    from osu_server.services.commands.leaderboard_rebuild_wake import (
+    from osu_server.shared.ports import (
         BeatmapLeaderboardRebuildWorkerWake,
     )
 
