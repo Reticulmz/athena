@@ -13,7 +13,12 @@ from osu_server.services.queries.scores.beatmap_leaderboards import BeatmapLeade
 from osu_server.services.queries.scores.beatmap_score_listing import BeatmapScoreListingQuery
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmaps import Beatmap, BeatmapSet
+    from osu_server.domain.beatmaps import (
+        Beatmap,
+        BeatmapFetchRecord,
+        BeatmapFetchTarget,
+        BeatmapSet,
+    )
     from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
         BeatmapLeaderboardRow,
         LeaderboardReadScope,
@@ -35,6 +40,10 @@ class EmptyBeatmapScoreListingRepository:
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
         _ = beatmapset_id
+        return None
+
+    async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        _ = target
         return None
 
 

@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmaps import Beatmap, BeatmapSet
+    from osu_server.domain.beatmaps import (
+        Beatmap,
+        BeatmapFetchRecord,
+        BeatmapFetchTarget,
+        BeatmapSet,
+    )
     from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 
 
@@ -28,3 +33,7 @@ class InMemoryBeatmapScoreListingQueryRepository:
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
         return await self._beatmaps.get_beatmapset(beatmapset_id)
+
+    async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        """fetch target の現在の取得状態を返す."""
+        return await self._beatmaps.get_fetch_state(target)

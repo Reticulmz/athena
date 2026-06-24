@@ -542,6 +542,9 @@ async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
         "artist - title.osu",
     )
     legacy_beatmapset = await legacy_getscores.get_beatmapset(fixture.beatmapset.id)
+    legacy_fetch_state = await legacy_getscores.get_fetch_state(
+        BeatmapFetchTarget(target_type="beatmap", target_key="7")
+    )
 
     assert beatmap_by_id is not None
     assert beatmapset is not None
@@ -562,6 +565,8 @@ async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
     assert legacy_by_checksum.id == fixture.beatmap.id
     assert legacy_by_filename.id == fixture.beatmap.id
     assert legacy_beatmapset.id == fixture.beatmapset.id
+    assert legacy_fetch_state is not None
+    assert legacy_fetch_state.status is BeatmapFetchState.FRESH
     assert fixture.session.closed is True
 
 

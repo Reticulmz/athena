@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from typing import TYPE_CHECKING, Protocol
 
-from osu_server.domain.beatmaps import BeatmapRankStatus
+from osu_server.domain.beatmaps import BeatmapFetchState, BeatmapFetchTarget, BeatmapRankStatus
 from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
@@ -64,6 +64,8 @@ class BeatmapLeaderboardResolveReason(Enum):
     KNOWN_FILENAME_IN_SET = "known_filename_in_set"
     NOT_SUBMITTED = "not_submitted"
     NOT_FOUND = "not_found"
+    PENDING_FETCH = "pending_fetch"
+    FAILED_METADATA = "failed_metadata"
     UPDATE_AVAILABLE = "update_available"
 
 
@@ -137,14 +139,16 @@ class BeatmapLeaderboardQuery:
                 )
 
             if request.filename is not None and request.beatmapset_id_hint is not None:
-                return await self._resolve_update_available(
+                update_result = await self._resolve_update_available(
                     checksum_md5=request.beatmap_checksum,
                     beatmapset_id=request.beatmapset_id_hint,
                     filename=request.filename,
                     request=request,
                 )
+                if update_result.reason is not BeatmapLeaderboardResolveReason.NOT_FOUND:
+                    return update_result
 
-            return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
+            return await self._resolve_checksum_miss(request.beatmap_checksum)
 
         if request.filename is not None and request.beatmapset_id_hint is not None:
             return await self._resolve_by_filename_in_beatmapset(
@@ -153,6 +157,18 @@ class BeatmapLeaderboardQuery:
                 request=request,
             )
 
+        return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
+
+    async def _resolve_checksum_miss(self, checksum_md5: str) -> BeatmapLeaderboardResult:
+        fetch_record = await self._repository.get_fetch_state(
+            BeatmapFetchTarget.metadata_by_checksum(checksum_md5)
+        )
+        if fetch_record is None:
+            return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
+        if fetch_record.status is BeatmapFetchState.PENDING_FETCH:
+            return _unavailable(BeatmapLeaderboardResolveReason.PENDING_FETCH)
+        if fetch_record.status is BeatmapFetchState.FAILED:
+            return _unavailable(BeatmapLeaderboardResolveReason.FAILED_METADATA)
         return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
 
     async def _resolve_by_filename_in_beatmapset(

@@ -10,7 +10,9 @@ import pytest
 
 from osu_server.domain.beatmaps import (
     Beatmap,
+    BeatmapFetchRecord,
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileState,
     BeatmapMetadataSource,
     BeatmapRankStatus,
@@ -49,6 +51,7 @@ class BeatmapScoreListingQueryRepositoryStub:
         self.beatmaps_by_checksum: dict[str, Beatmap] = {}
         self.beatmaps_by_filename: dict[tuple[int, str], Beatmap] = {}
         self.beatmapsets_by_id: dict[int, BeatmapSet] = {}
+        self.fetch_records: dict[BeatmapFetchTarget, BeatmapFetchRecord] = {}
 
     async def find_by_checksum(self, checksum_md5: str) -> Beatmap | None:
         return self.beatmaps_by_checksum.get(checksum_md5)
@@ -60,6 +63,9 @@ class BeatmapScoreListingQueryRepositoryStub:
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
         return self.beatmapsets_by_id.get(beatmapset_id)
+
+    async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        return self.fetch_records.get(target)
 
 
 class BeatmapLeaderboardQueryRepositoryStub:
@@ -214,6 +220,52 @@ def sample_beatmapset() -> BeatmapSet:
 
 
 class TestBeatmapLeaderboardQuery:
+    async def test_unknown_checksum_with_pending_fetch_state_returns_pending_fetch(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+    ) -> None:
+        target = BeatmapFetchTarget.metadata_by_checksum(_CHECKSUM)
+        getscores_repo.fetch_records[target] = BeatmapFetchRecord(
+            target=target,
+            status=BeatmapFetchState.PENDING_FETCH,
+            attempt_count=1,
+            last_error=None,
+            pending_since=_NOW,
+            last_attempted_at=_NOW,
+        )
+
+        result = await _query(getscores_repo, leaderboard_repo).resolve(
+            _request(filename=_FILENAME),
+            user_id=9,
+        )
+
+        assert result.kind is BeatmapLeaderboardOutcomeKind.UNAVAILABLE
+        assert result.reason is BeatmapLeaderboardResolveReason.PENDING_FETCH
+
+    async def test_unknown_checksum_with_failed_fetch_state_returns_failed_metadata(
+        self,
+        getscores_repo: BeatmapScoreListingQueryRepositoryStub,
+        leaderboard_repo: BeatmapLeaderboardQueryRepositoryStub,
+    ) -> None:
+        target = BeatmapFetchTarget.metadata_by_checksum(_CHECKSUM)
+        getscores_repo.fetch_records[target] = BeatmapFetchRecord(
+            target=target,
+            status=BeatmapFetchState.FAILED,
+            attempt_count=1,
+            last_error="not found",
+            pending_since=None,
+            last_attempted_at=_NOW,
+        )
+
+        result = await _query(getscores_repo, leaderboard_repo).resolve(
+            _request(filename=_FILENAME),
+            user_id=9,
+        )
+
+        assert result.kind is BeatmapLeaderboardOutcomeKind.UNAVAILABLE
+        assert result.reason is BeatmapLeaderboardResolveReason.FAILED_METADATA
+
     async def test_available_ranked_local_request_reads_global_rows_and_personal_best(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,

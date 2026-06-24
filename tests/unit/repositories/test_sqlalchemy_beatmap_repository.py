@@ -5,6 +5,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast, override
 
 import pytest
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.elements import ClauseElement
 
 from osu_server.domain.beatmaps import (
     Beatmap,
@@ -75,6 +77,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         self.added: list[object] = []
         self.merged: list[object] = []
         self.refreshed: list[object] = []
+        self.executed: list[Executable] = []
         self.flushes: int = 0
 
     @override
@@ -96,7 +99,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         return self.get_results.get((model_type, identity))
 
     async def execute(self, statement: Executable) -> FakeResult:
-        _ = statement
+        self.executed.append(statement)
         if not self.execute_results:
             return FakeResult()
         return self.execute_results.pop(0)
@@ -341,17 +344,33 @@ async def test_attach_osu_file_returns_existing_duplicate_attachment() -> None:
 
 async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
     target = BeatmapFetchTarget.metadata_by_beatmap_id(2_000)
-    pending_session = FakeSession(execute_results=[FakeResult(_fetch_state_model())])
+    pending_session = FakeSession(execute_results=[FakeResult()])
 
     assert await _repo(pending_session).try_mark_fetch_pending(target, now=_NOW) is False
+    assert pending_session.flushes == 0
 
-    completed = _fetch_state_model(status="fresh")
-    retry_session = FakeSession(execute_results=[FakeResult(completed)])
+    retry_session = FakeSession(execute_results=[FakeResult(1)])
 
     assert await _repo(retry_session).try_mark_fetch_pending(target, now=_NOW) is True
-    assert retry_session.flushes == 1
-    assert completed.status == "pending_fetch"
-    assert completed.attempt_count == 2
+    assert retry_session.flushes == 0
+
+
+async def test_fetch_pending_marker_uses_atomic_conflict_update() -> None:
+    target = BeatmapFetchTarget.metadata_by_checksum(_CHECKSUM)
+    session = FakeSession(execute_results=[FakeResult(1)])
+
+    assert await _repo(session).try_mark_fetch_pending(target, now=_NOW) is True
+
+    assert len(session.executed) == 1
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    statement_text = str(statement.compile(dialect=postgresql.dialect()))
+    assert "ON CONFLICT" in statement_text
+    assert "DO UPDATE" in statement_text
+    assert "WHERE beatmap_fetch_states.status != " in statement_text
+    assert "RETURNING beatmap_fetch_states.id" in statement_text
+    assert session.added == []
+    assert session.flushes == 0
 
 
 async def test_get_beatmap_by_checksum_resolves_model_and_attachment() -> None:

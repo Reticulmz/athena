@@ -42,6 +42,7 @@ from tests.support.starlette_requests import make_starlette_request
 if TYPE_CHECKING:
     from starlette.requests import Request
 
+    from osu_server.domain.beatmaps import BeatmapFetchRecord, BeatmapFetchTarget
     from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
         BeatmapLeaderboardRow,
         LeaderboardReadScope,
@@ -86,6 +87,10 @@ class _ScoreListingRepository:
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
         return self.beatmapsets_by_id.get(beatmapset_id)
+
+    async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        _ = target
+        return None
 
 
 @final

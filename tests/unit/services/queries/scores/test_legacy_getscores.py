@@ -10,7 +10,9 @@ import pytest
 
 from osu_server.domain.beatmaps import (
     Beatmap,
+    BeatmapFetchRecord,
     BeatmapFetchState,
+    BeatmapFetchTarget,
     BeatmapFileState,
     BeatmapMetadataSource,
     BeatmapRankStatus,
@@ -41,6 +43,7 @@ class BeatmapScoreListingQueryRepositoryStub:
         self.beatmaps_by_checksum: dict[str, Beatmap] = {}
         self.beatmaps_by_filename: dict[tuple[int, str], Beatmap] = {}
         self.beatmapsets_by_id: dict[int, BeatmapSet] = {}
+        self.fetch_records: dict[BeatmapFetchTarget, BeatmapFetchRecord] = {}
 
     async def find_by_checksum(self, checksum_md5: str) -> Beatmap | None:
         return self.beatmaps_by_checksum.get(checksum_md5)
@@ -52,6 +55,9 @@ class BeatmapScoreListingQueryRepositoryStub:
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
         return self.beatmapsets_by_id.get(beatmapset_id)
+
+    async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        return self.fetch_records.get(target)
 
 
 class EmptyBeatmapLeaderboardQueryRepositoryStub:

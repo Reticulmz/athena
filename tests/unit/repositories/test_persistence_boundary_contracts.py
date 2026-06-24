@@ -249,6 +249,7 @@ def test_query_repository_contracts_are_read_only() -> None:
         "find_by_checksum",
         "find_by_filename_in_beatmapset",
         "get_beatmapset",
+        "get_fetch_state",
     }
     assert _public_async_methods(ScorePerformanceQueryRepository) == {
         "get_current_for_score",

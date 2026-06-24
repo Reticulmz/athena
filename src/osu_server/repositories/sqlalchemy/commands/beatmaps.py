@@ -5,7 +5,8 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
 from osu_server.domain.beatmaps import (
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.sql.dml import ReturningInsert
 
 
 class DuplicateBeatmapChecksumError(ValueError):
@@ -180,29 +182,24 @@ class SQLAlchemyBeatmapCommandRepository:
         return _fetch_state_to_domain(model) if model is not None else None
 
     async def try_mark_fetch_pending(self, target: BeatmapFetchTarget, now: datetime) -> bool:
-        model = await self._get_fetch_state_model(target)
-        if model is not None and model.status == BeatmapFetchState.PENDING_FETCH.value:
-            return False
+        """fetch target を pending_fetch に atomically 遷移する.
 
-        if model is None:
-            model = BeatmapFetchStateModel(
-                target_type=target.target_type,
-                target_key=target.target_key,
-                status=BeatmapFetchState.PENDING_FETCH.value,
-                attempt_count=1,
-                last_error=None,
-                pending_since=now,
-                last_attempted_at=now,
-            )
-            self._session.add(model)
-        else:
-            model.status = BeatmapFetchState.PENDING_FETCH.value
-            model.attempt_count += 1
-            model.last_error = None
-            model.pending_since = now
-            model.last_attempted_at = now
-        await self._session.flush()
-        return True
+        Args:
+            target: fetch state の対象.
+            now: pending_since/last_attempted_at に保存する時刻.
+
+        Returns:
+            この呼び出しが fetch lock を取得した場合は True. 既に pending_fetch
+            の場合は False.
+
+        Raises:
+            SQLAlchemy 由来の永続化例外を上位へ送出する.
+
+        Constraints:
+            PostgreSQL の ON CONFLICT で判定し, 並列 INSERT 競合を起こさない.
+        """
+        result = await self._session.execute(_mark_fetch_pending_statement(target, now))
+        return result.scalar_one_or_none() is not None
 
     async def mark_fetch_succeeded(self, target: BeatmapFetchTarget, now: datetime) -> None:
         await self._mark_fetch_completed(
@@ -320,6 +317,36 @@ class SQLAlchemyBeatmapCommandRepository:
             )
         ).scalar_one_or_none()
         return model if isinstance(model, BeatmapFetchStateModel) else None
+
+
+def _mark_fetch_pending_statement(
+    target: BeatmapFetchTarget,
+    now: datetime,
+) -> ReturningInsert[tuple[int]]:
+    insert_statement = insert(BeatmapFetchStateModel).values(
+        target_type=target.target_type,
+        target_key=target.target_key,
+        status=BeatmapFetchState.PENDING_FETCH.value,
+        attempt_count=1,
+        last_error=None,
+        pending_since=now,
+        last_attempted_at=now,
+    )
+    return insert_statement.on_conflict_do_update(
+        index_elements=[
+            BeatmapFetchStateModel.target_type,
+            BeatmapFetchStateModel.target_key,
+        ],
+        set_={
+            "status": BeatmapFetchState.PENDING_FETCH.value,
+            "attempt_count": BeatmapFetchStateModel.attempt_count + 1,
+            "last_error": None,
+            "pending_since": now,
+            "last_attempted_at": now,
+            "updated_at": func.now(),
+        },
+        where=BeatmapFetchStateModel.status != BeatmapFetchState.PENDING_FETCH.value,
+    ).returning(BeatmapFetchStateModel.id)
 
 
 def _beatmapset_to_model(beatmapset: BeatmapSet) -> BeatmapSetModel:

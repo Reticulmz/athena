@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmaps import Beatmap, BeatmapSet
+    from osu_server.domain.beatmaps import (
+        Beatmap,
+        BeatmapFetchRecord,
+        BeatmapFetchTarget,
+        BeatmapSet,
+    )
 
 
 class BeatmapScoreListingQueryRepository(Protocol):
@@ -23,4 +28,8 @@ class BeatmapScoreListingQueryRepository(Protocol):
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
         """Return the beatmap set for response header construction."""
+        ...
+
+    async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        """fetch target の現在の取得状態を返す."""
         ...

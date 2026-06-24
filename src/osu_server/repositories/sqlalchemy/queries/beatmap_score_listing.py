@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 from osu_server.repositories.sqlalchemy.queries.beatmaps import SQLAlchemyBeatmapQueryRepository
 
 if TYPE_CHECKING:
-    from osu_server.domain.beatmaps import Beatmap, BeatmapSet
+    from osu_server.domain.beatmaps import (
+        Beatmap,
+        BeatmapFetchRecord,
+        BeatmapFetchTarget,
+        BeatmapSet,
+    )
     from osu_server.repositories.sqlalchemy.queries._shared import SQLAlchemyQuerySessionFactory
 
 
@@ -32,3 +37,7 @@ class SQLAlchemyBeatmapScoreListingQueryRepository:
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
         return await self._beatmaps.get_beatmapset(beatmapset_id)
+
+    async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        """fetch target の現在の取得状態を返す."""
+        return await self._beatmaps.get_fetch_state(target)

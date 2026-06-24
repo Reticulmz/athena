@@ -161,6 +161,8 @@ def _to_getscores_reason(
         ),
         BeatmapLeaderboardResolveReason.NOT_SUBMITTED: GetscoresResolveReason.NOT_SUBMITTED,
         BeatmapLeaderboardResolveReason.NOT_FOUND: GetscoresResolveReason.NOT_FOUND,
+        BeatmapLeaderboardResolveReason.PENDING_FETCH: GetscoresResolveReason.PENDING_FETCH,
+        BeatmapLeaderboardResolveReason.FAILED_METADATA: GetscoresResolveReason.FAILED_METADATA,
         BeatmapLeaderboardResolveReason.UPDATE_AVAILABLE: GetscoresResolveReason.UPDATE_AVAILABLE,
     }[reason]
 
