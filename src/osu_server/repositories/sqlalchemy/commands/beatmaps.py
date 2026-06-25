@@ -199,7 +199,15 @@ class SQLAlchemyBeatmapCommandRepository:
             PostgreSQL の ON CONFLICT で判定し, 並列 INSERT 競合を起こさない.
         """
         result = await self._session.execute(_mark_fetch_pending_statement(target, now))
-        return result.scalar_one_or_none() is not None
+        row_id = result.scalar_one_or_none()
+        if row_id is None:
+            return False
+        _ = await self._session.get(
+            BeatmapFetchStateModel,
+            row_id,
+            populate_existing=True,
+        )
+        return True
 
     async def mark_fetch_succeeded(self, target: BeatmapFetchTarget, now: datetime) -> None:
         await self._mark_fetch_completed(
