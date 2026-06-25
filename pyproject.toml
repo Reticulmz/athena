@@ -40,6 +40,7 @@ dev = [
     "import-linter",
     "gitlint-core",
     "pytest-fixture-classes>=1.0.4",
+    "httpx2>=2.4.0",
 ]
 
 [tool.uv]
