@@ -40,7 +40,18 @@ run_fix() {
 
 run_test() {
     echo "=== Running tests ==="
-    run_with_test_valkey uv run pytest tests/ -v
+    if command -v valkey-server >/dev/null 2>&1 && command -v valkey-cli >/dev/null 2>&1; then
+        run_with_test_valkey uv run pytest tests/ -v
+        return
+    fi
+
+    if [ -z "${VALKEY_URL:-}" ]; then
+        echo "VALKEY_URL must be set when valkey-server is unavailable" >&2
+        return 1
+    fi
+
+    export ENVIRONMENT=test
+    uv run pytest tests/ -v
 }
 
 make_temp_dir() {

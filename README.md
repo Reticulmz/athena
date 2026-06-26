@@ -84,7 +84,8 @@ uv sync
 ```
 
 The flake shell resolves the current git worktree root and keeps `.venv`,
-`.state`, and generated certificates inside that worktree.
+`.state`, and generated certificates inside that worktree. uv package caches
+are shared through `UV_CACHE_DIR`, defaulting to `$HOME/.uv/cache/athena`.
 
 Create an environment file:
 

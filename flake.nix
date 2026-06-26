@@ -153,6 +153,8 @@
 
               # Python venv (per-worktree).
               export UV_PYTHON_PREFERENCE=only-system
+              export UV_CACHE_DIR="''${UV_CACHE_DIR:-$HOME/.uv/cache/athena}"
+              mkdir -p "$UV_CACHE_DIR"
               export UV_PROJECT_ENVIRONMENT="$ATHENA_WORKTREE_ROOT/.venv"
               export VIRTUAL_ENV="$UV_PROJECT_ENVIRONMENT"
               uv sync --project "$ATHENA_WORKTREE_ROOT" --all-groups --quiet 2>/dev/null || true
