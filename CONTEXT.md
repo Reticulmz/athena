@@ -823,3 +823,61 @@ Athena の設計は以下の既存実装を参考にしています:
 - Historical data retention policy
 - Rebuild strategy (incremental vs full rebuild)
 - Tie-break ordering (PP → ranked score → user ID)
+
+## Stable Wire Format Decisions
+
+### Accuracy Wire Representation
+
+Stable `UserStats` パケット (S2C 11) の accuracy フィールドは 0.0-1.0 ratio を f32 (IEEE 754 little-endian) として送る。
+
+- bancho.py: 内部 0-100 を `/ 100.0` して送信
+- titanic (chio.py): 内部 0-1 をそのまま送信
+- Athena: `scores.accuracy` は 0-1 保存。変換不要
+
+getscores text response (`/web/osu-osz2-getscores.php`) では accuracy を 0-100 に変換して送る必要がある。ADR-0012 参照。
+
+### UserPresence permissions_mode Packing
+
+`UserPresence` (S2C 83) の `permissions_mode` バイトは `permissions | (mode << 5)` で1バイトにパックする。
+
+- permissions は `to_user_presence_permissions()` が最大 16 (DEVELOPER) に制限済み。5ビットに収まる
+- mode は 0-3 (2ビット)。`<< 5` で上位に配置
+- ビット衝突なし (permissions 最大 16 = 0b10000, mode << 5 最大 96 = 0b1100000)
+
+### pp Wire Representation
+
+`UserStats` の pp は uint16 (0-65535) でパック。65535 を超える場合は 65535 に clamp する。
+
+### Stable Enum Placement
+
+Stable wire 固有の enum (`StableStatus`, `StableMode`, `StablePresenceFilter`, `StableGrade`) は `domain/compatibility/stable/` にファイル分割で配置する (`status.py`, `mode.py`, `presence_filter.py`)。命名は `Stable` プレフィックス。
+
+### StatusUpdate Wire Type
+
+`StatusUpdate` は独立 cpstruct (caterpillar) に分離し、C2S `STATUS_CHANGE` parser と S2C `USER_STATS` builder で共有する。caterpillar はネスト対応済み。
+
+### Mods Stable/Lazer 分離
+
+Stable Mods (bitmask) と Lazer Mods は仕様が異なるため分離して管理する。
+
+- `domain/scores/mods.py`: Athena 内部の共通 Mods 表現 (`ModCombination`)
+- `domain/compatibility/stable/mods.py`: Stable wire bitmask への変換
+
+### Golden Fixture Pattern
+
+Bancho struct の golden bytes fixture はテスト内にバイト列リテラルとしてインラインで記述する (`test_known_bytes` パターン)。encode + decode 両方を検証する。
+
+テストファイルは責務別に分割:
+- `test_stable_enums.py`: StableStatus/Mode/PresenceFilter の値テスト
+- `test_presence_fixtures.py`: UserPresence golden bytes
+- `test_stats_fixtures.py`: UserStats golden bytes
+
+既存 `test_s2c_login.py` の UserPresence/UserStats/UserPresenceBundle テストは新規ファイルに移動する。
+
+### USER_QUIT Wire Format
+
+モダン形式 (user_id sInt + QuitState byte) のみを採用する。古い 4-byte user_id 形式は将来必要になったらサポートを検討する。
+
+### BanchoBot Presence/Stats
+
+BanchoBot にも UserPresence/UserStats を送る。bot=true, stats=0 固定。

@@ -116,8 +116,8 @@ indent-style = "space"
 pythonVersion = "3.14"
 pythonPlatform = "Linux"
 typeCheckingMode = "all"
-venvPath = ".devenv/state"
-venv = "venv"
+venvPath = "."
+venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

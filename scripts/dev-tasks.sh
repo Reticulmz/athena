@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # athena development task runner
-# devenv tasks の代替スクリプト
+# Nix flake shell 用の開発タスク helper
 set -euo pipefail
 
 PG_PORT="${PGPORT:-5432}"

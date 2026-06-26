@@ -40,7 +40,89 @@ run_fix() {
 
 run_test() {
     echo "=== Running tests ==="
+    if command -v valkey-server >/dev/null 2>&1 && command -v valkey-cli >/dev/null 2>&1; then
+        run_with_test_valkey uv run pytest tests/ -v
+        return
+    fi
+
+    if [ -z "${VALKEY_URL:-}" ]; then
+        echo "VALKEY_URL must be set when valkey-server is unavailable" >&2
+        return 1
+    fi
+
+    export ENVIRONMENT=test
     uv run pytest tests/ -v
+}
+
+make_temp_dir() {
+    local prefix="$1"
+    local path
+
+    for _ in $(seq 1 20); do
+        path="${TMPDIR:-/tmp}/${prefix}.${RANDOM}.${RANDOM}"
+        if mkdir "${path}" 2>/dev/null; then
+            echo "${path}"
+            return 0
+        fi
+    done
+
+    echo "Failed to allocate temporary directory for ${prefix}" >&2
+    return 1
+}
+
+find_free_valkey_port() {
+    local port
+
+    for port in $(seq 6380 6399); do
+        if ! (:</dev/tcp/127.0.0.1/"${port}") >/dev/null 2>&1; then
+            echo "${port}"
+            return 0
+        fi
+    done
+
+    echo "No free Valkey test port found in 6380-6399" >&2
+    return 1
+}
+
+run_with_test_valkey() {
+    local valkey_dir
+    local valkey_port
+    local status=0
+
+    valkey_dir="$(make_temp_dir "athena-ci-valkey")"
+    valkey_port="${ATHENA_CI_VALKEY_PORT:-$(find_free_valkey_port)}"
+
+    valkey-server \
+        --port "${valkey_port}" \
+        --bind 127.0.0.1 \
+        --dir "${valkey_dir}" \
+        --save "" \
+        --appendonly no \
+        --daemonize yes \
+        --pidfile "${valkey_dir}/valkey.pid" \
+        --logfile "${valkey_dir}/valkey.log"
+
+    for _ in $(seq 1 50); do
+        if valkey-cli -h 127.0.0.1 -p "${valkey_port}" ping >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    if ! valkey-cli -h 127.0.0.1 -p "${valkey_port}" ping >/dev/null 2>&1; then
+        echo "Valkey test server did not become ready" >&2
+        cat "${valkey_dir}/valkey.log" >&2
+        rm -rf "${valkey_dir}"
+        return 1
+    fi
+
+    export ENVIRONMENT=test
+    export VALKEY_URL="redis://127.0.0.1:${valkey_port}/1"
+    "$@" || status=$?
+
+    valkey-cli -h 127.0.0.1 -p "${valkey_port}" shutdown nosave >/dev/null 2>&1 || true
+    rm -rf "${valkey_dir}"
+    return "${status}"
 }
 
 case "${1:-}" in

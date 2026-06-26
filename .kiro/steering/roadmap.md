@@ -4,7 +4,7 @@
 
 - **bancho-protocol** — パケット解析（read_packets）、ディスパッチャー、S2C パケット定義・ビルダー
 - **bancho-login** — ログイン・登録・セッション管理・RBAC・Host ベースルーティング
-- **dev-proxy** — nginx リバースプロキシ（HTTP/HTTPS）・mkcert・devenv 統合・ヘルスチェック
+- **dev-proxy** — nginx リバースプロキシ（HTTP/HTTPS）・mkcert・Nix flake 統合・ヘルスチェック
 - **valkey-migration** — Redis → Valkey 移行（redis-py → valkey-glide、ARQ → taskiq + taskiq-redis）
 - **packet-polling** — ログイン後の POST `/`（osu-token あり）でキューに溜まった S2C パケットを返す
 - **c2s-handlers** — C2S パケットハンドラ群（PONG、EXIT、USER_QUIT ブロードキャスト）
