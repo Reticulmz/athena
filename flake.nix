@@ -132,30 +132,39 @@
             ];
 
             shellHook = ''
-              ${pre-commit-check.shellHook}
+              _ATHENA_ORIGINAL_PWD="$PWD"
+              _WORKTREE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+              export ATHENA_WORKTREE_ROOT="$_WORKTREE_ROOT"
 
-              # Shared state directory (worktree 間で共有)
-              _REPO_ROOT="$(realpath "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null || pwd)"
-              export ATHENA_STATE="$_REPO_ROOT/.state"
+              # git-hooks.nix writes .pre-commit-config.yaml relative to cwd.
+              # Run it from the current worktree root so linked worktrees do not
+              # accidentally reuse the primary checkout's generated config.
+              cd "$ATHENA_WORKTREE_ROOT"
+              ${pre-commit-check.shellHook}
+              cd "$_ATHENA_ORIGINAL_PWD"
+
+              # Per-worktree state directory.
+              export ATHENA_STATE="$ATHENA_WORKTREE_ROOT/.state"
               mkdir -p "$ATHENA_STATE"/{postgres,valkey,nginx}
 
               export PGDATA="$ATHENA_STATE/postgres"
               export PGHOST="127.0.0.1"
               export PGPORT="5432"
 
-              # Python venv (per-worktree, uv が .venv を自動管理)
+              # Python venv (per-worktree).
               export UV_PYTHON_PREFERENCE=only-system
-              uv sync --all-groups --quiet 2>/dev/null || true
-              export VIRTUAL_ENV="$PWD/.venv"
+              export UV_PROJECT_ENVIRONMENT="$ATHENA_WORKTREE_ROOT/.venv"
+              export VIRTUAL_ENV="$UV_PROJECT_ENVIRONMENT"
+              uv sync --project "$ATHENA_WORKTREE_ROOT" --all-groups --quiet 2>/dev/null || true
               export PATH="$VIRTUAL_ENV/bin:$PATH"
 
               # mkcert 証明書の自動生成 (未作成時のみ)
-              if [ ! -f certs/_wildcard.athena.localhost.pem ]; then
+              if [ ! -f "$ATHENA_WORKTREE_ROOT/certs/_wildcard.athena.localhost.pem" ]; then
                 echo "generating mkcert certificates..."
-                mkdir -p certs
+                mkdir -p "$ATHENA_WORKTREE_ROOT/certs"
                 mkcert -install 2>/dev/null
-                mkcert -cert-file certs/_wildcard.athena.localhost.pem \
-                       -key-file certs/_wildcard.athena.localhost-key.pem \
+                mkcert -cert-file "$ATHENA_WORKTREE_ROOT/certs/_wildcard.athena.localhost.pem" \
+                       -key-file "$ATHENA_WORKTREE_ROOT/certs/_wildcard.athena.localhost-key.pem" \
                        "*.athena.localhost" 2>/dev/null
               fi
 

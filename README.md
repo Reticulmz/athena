@@ -83,6 +83,9 @@ nix develop
 uv sync
 ```
 
+The flake shell resolves the current git worktree root and keeps `.venv`,
+`.state`, and generated certificates inside that worktree.
+
 Create an environment file:
 
 ```bash
