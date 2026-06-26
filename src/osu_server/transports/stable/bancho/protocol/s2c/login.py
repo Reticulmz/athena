@@ -21,6 +21,7 @@ from osu_server.transports.stable.bancho.protocol.types import (
     BanchoStringT,
     Channel,
     IntList,
+    StatusUpdate,
 )
 from osu_server.transports.stable.bancho.protocol.writer import write_packet
 
@@ -121,21 +122,10 @@ def user_presence(
 
 @cpstruct(order=LittleEndian)
 class _UserStatsData:
-    """Wire format for UserStats payload (Req 6.6).
-
-    Embeds StatusUpdate fields inline rather than nesting,
-    since the wire format is a flat sequence.
-    """
+    """UserStats payload の wire format。"""
 
     user_id: Annotated[int, int32]
-    # StatusUpdate fields (inline)
-    status: Annotated[int, uint8]
-    status_text: Annotated[str, BanchoString]
-    beatmap_md5: Annotated[str, BanchoString]
-    mods: Annotated[int, int32]
-    play_mode: Annotated[int, uint8]
-    beatmap_id: Annotated[int, int32]
-    # Stats fields
+    status_update: StatusUpdate
     ranked_score: Annotated[int, int64]
     accuracy: Annotated[float, float32]
     play_count: Annotated[int, int32]
@@ -160,21 +150,48 @@ def user_stats(
     rank: int,
     pp: int,
 ) -> bytes:
-    """Req 6.6: UserStats."""
+    """UserStats packet を構築する。
+
+    引数:
+        user_id: stable client に通知する user id。
+        status: StatusUpdate.status の wire 値。
+        status_text: Stable status text。
+        beatmap_md5: 現在の beatmap md5。未設定時は空文字。
+        mods: Stable mods bitmask。
+        play_mode: Stable mode wire 値。
+        beatmap_id: 現在の beatmap id。未設定時は 0。
+        ranked_score: Ranked score。
+        accuracy: 0.0-1.0 ratio の f32 値。
+        play_count: Play count。
+        total_score: Total score。
+        rank: Global rank。未設定時は 0。
+        pp: Stable wire の uint16 pp 値。65535 を超える値は丸める。
+
+    戻り値:
+        7 byte header と payload を含む complete packet。
+
+    例外:
+        値が wire type の範囲外の場合は Caterpillar の pack error を送出する。
+
+    制約:
+        外部シグネチャは互換性維持のため変更しない。
+    """
     data = _UserStatsData(
         user_id=user_id,
-        status=status,
-        status_text=status_text,
-        beatmap_md5=beatmap_md5,
-        mods=mods,
-        play_mode=play_mode,
-        beatmap_id=beatmap_id,
+        status_update=StatusUpdate(
+            status=status,
+            status_text=status_text,
+            beatmap_md5=beatmap_md5,
+            mods=mods,
+            play_mode=play_mode,
+            beatmap_id=beatmap_id,
+        ),
         ranked_score=ranked_score,
         accuracy=accuracy,
         play_count=play_count,
         total_score=total_score,
         rank=rank,
-        pp=pp,
+        pp=min(pp, 65535),
     )
     payload: bytes = pack(data)
     return write_packet(ServerPacketID.USER_STATS, payload)

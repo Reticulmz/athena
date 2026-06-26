@@ -100,7 +100,7 @@
               pytest = {
                 enable = true;
                 name = "pytest";
-                entry = "uv run pytest tests/unit/ -x -q --timeout=30";
+                entry = "env ENVIRONMENT=test DATABASE_URL=postgresql://localhost:5432/athena_test VALKEY_URL=redis://localhost:6379/1 uv run pytest tests/unit/ -x -q --timeout=30";
                 files = "\\.py$";
                 pass_filenames = false;
                 priority = 20;

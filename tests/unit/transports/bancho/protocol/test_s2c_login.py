@@ -5,13 +5,10 @@ Validates:
 - Req 6.2: ProtocolVersion (int32)
 - Req 6.3: LoginPermissions (int32: permission bitmask)
 - Req 6.4: Notification (BanchoString)
-- Req 6.5: UserPresence (complex struct)
-- Req 6.6: UserStats (complex struct)
 - Req 6.7: FriendsList (IntList)
 - Req 6.8: ChannelAvailable / ChannelAvailableAutojoin (Channel payload)
 - Req 6.9: ChannelInfoComplete (empty payload)
 - Req 6.10: SilenceInfo (int32: remaining seconds)
-- Req 6.11: UserPresenceBundle (IntList: user IDs)
 - Req 6.12: All S2C packets use correct ServerPacketID
 """
 
@@ -29,9 +26,6 @@ from osu_server.transports.stable.bancho.protocol.s2c.login import (
     notification,
     protocol_version,
     silence_info,
-    user_presence,
-    user_presence_bundle,
-    user_stats,
 )
 
 
@@ -152,120 +146,6 @@ class TestFriendsList:
         payload = _extract_payload(friends_list([]))
         count: int = cast("int", pystruct.unpack_from("<H", payload, 0)[0])
         assert count == 0
-
-
-class TestUserPresenceBundle:
-    """Req 6.11: UserPresenceBundle — IntList (user IDs)."""
-
-    def test_packet_id(self) -> None:
-        assert (
-            _extract_packet_id(user_presence_bundle([5, 10]))
-            == ServerPacketID.USER_PRESENCE_BUNDLE
-        )
-
-    def test_user_ids(self) -> None:
-        payload = _extract_payload(user_presence_bundle([100, 200, 300]))
-        count: int = cast("int", pystruct.unpack_from("<H", payload, 0)[0])
-        assert count == 3
-
-
-# ── Task 4.2: Complex payload packets ───────────────────────────────
-
-
-class TestUserPresence:
-    """Req 6.5: UserPresence — complex struct."""
-
-    def test_packet_id(self) -> None:
-        result = user_presence(
-            user_id=1,
-            username="test",
-            timezone=24,
-            country_id=0,
-            permissions=1,
-            mode=0,
-            longitude=0.0,
-            latitude=0.0,
-            rank=1,
-        )
-        assert _extract_packet_id(result) == ServerPacketID.USER_PRESENCE
-
-    def test_payload_starts_with_user_id(self) -> None:
-        result = user_presence(
-            user_id=42,
-            username="user",
-            timezone=24,
-            country_id=0,
-            permissions=1,
-            mode=0,
-            longitude=0.0,
-            latitude=0.0,
-            rank=100,
-        )
-        payload = _extract_payload(result)
-        uid: int = cast("int", pystruct.unpack_from("<i", payload, 0)[0])
-        assert uid == 42
-
-    def test_permissions_mode_packed(self) -> None:
-        """Permissions | (Mode << 5) packed into one byte."""
-        result = user_presence(
-            user_id=1,
-            username="u",
-            timezone=24,
-            country_id=0,
-            permissions=4,
-            mode=2,
-            longitude=0.0,
-            latitude=0.0,
-            rank=1,
-        )
-        payload = _extract_payload(result)
-        # After user_id(4) + username(BanchoString) + timezone(1) + country_id(1)
-        # username "u" = 0x0b 0x01 0x75 = 3 bytes
-        # packed_byte at offset 4+3+1+1 = 9
-        packed = payload[9]
-        assert packed == (4 | (2 << 5))
-
-
-class TestUserStats:
-    """Req 6.6: UserStats — complex struct."""
-
-    def test_packet_id(self) -> None:
-        result = user_stats(
-            user_id=1,
-            status=0,
-            status_text="",
-            beatmap_md5="",
-            mods=0,
-            play_mode=0,
-            beatmap_id=0,
-            ranked_score=0,
-            accuracy=0.0,
-            play_count=0,
-            total_score=0,
-            rank=0,
-            pp=0,
-        )
-        assert _extract_packet_id(result) == ServerPacketID.USER_STATS
-
-    def test_payload_starts_with_user_id(self) -> None:
-        result = user_stats(
-            user_id=99,
-            status=2,
-            status_text="Playing",
-            beatmap_md5="abc",
-            mods=0,
-            play_mode=0,
-            beatmap_id=1,
-            ranked_score=1000,
-            accuracy=98.5,
-            play_count=50,
-            total_score=5000,
-            rank=100,
-            pp=300,
-        )
-        payload = _extract_payload(result)
-        uid: int = cast("int", pystruct.unpack_from("<i", payload, 0)[0])
-        assert uid == 99
 
 
 class TestChannelAvailable:

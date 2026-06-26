@@ -64,7 +64,7 @@ See [docs/architecture.md](docs/architecture.md) for the full boundary contract.
 
 - Python 3.14+
 - uv for package and environment workflows
-- Nix / devenv for local services and reproducible development shells
+- Nix flake for local services and reproducible development shells
 - Starlette and FastAPI for ASGI boundaries
 - Caterpillar for bancho binary protocol modeling
 - Pydantic v2 and pydantic-settings for API/configuration I/O
@@ -79,7 +79,7 @@ See [docs/architecture.md](docs/architecture.md) for the full boundary contract.
 Enter the development shell and sync dependencies:
 
 ```bash
-devenv shell
+nix develop
 uv sync
 ```
 
@@ -96,10 +96,10 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/athena
 VALKEY_URL=redis://localhost:6379
 ```
 
-Start local services and processes through devenv:
+Start local services and processes from the Nix shell:
 
 ```bash
-devenv up
+process-compose up
 ```
 
 Useful direct commands:
@@ -154,9 +154,9 @@ uv run alembic revision --autogenerate -m "describe change"
 The development environment also exposes database helper tasks:
 
 ```bash
-devenv tasks run db:test:create
-devenv tasks run db:test:migrate
-devenv tasks run db:test:run
+scripts/dev-tasks.sh db:test:create
+scripts/dev-tasks.sh db:test:migrate
+scripts/dev-tasks.sh db:test:run
 ```
 
 ## Stable Client Compatibility

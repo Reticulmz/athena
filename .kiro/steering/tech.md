@@ -18,7 +18,7 @@
 | Lint/Format | ruff | |
 | テスト | pytest + pytest-asyncio | |
 | import 規則 | import-linter | レイヤー違反検出 |
-| 環境構築 | devenv (Nix) | 設定済み |
+| 環境構築 | Nix flake + process-compose | 設定済み |
 
 ## 追加決定事項
 
