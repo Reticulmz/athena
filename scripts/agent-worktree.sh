@@ -18,6 +18,11 @@ Options:
   --dry-run          Print actions without creating the worktree
   -h, --help         Show this help
 
+Worktree includes:
+  Local untracked or ignored files matching .worktreeinclude entries are copied
+  from the current checkout into the target worktree. Entries are Git pathspecs
+  evaluated from the repository root. Blank lines and # comments are ignored.
+
 Examples:
   scripts/agent-worktree.sh valkey-timeout
   scripts/agent-worktree.sh valkey-timeout --agent codex
@@ -36,6 +41,8 @@ fail() {
 warn() {
     echo "warning: $*" >&2
 }
+
+worktree_include_matches=()
 
 print_next_steps() {
     local worktree_path=$1
@@ -86,6 +93,142 @@ resolve_root() {
     else
         printf '%s\n' "${repo_root}/${root_arg}"
     fi
+}
+
+trim_line() {
+    local value=$1
+
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+
+    printf '%s\n' "$value"
+}
+
+valid_worktree_include_pattern() {
+    local pattern=$1
+
+    [[ -n "$pattern" ]] || return 1
+    [[ "$pattern" != /* ]] || return 1
+    [[ "$pattern" != ../* ]] || return 1
+    [[ "$pattern" != */../* ]] || return 1
+    [[ "$pattern" != ".git" ]] || return 1
+    [[ "$pattern" != .git/* ]] || return 1
+}
+
+add_worktree_include_match() {
+    local match=$1
+    local existing
+
+    for existing in "${worktree_include_matches[@]}"; do
+        [[ "$existing" != "$match" ]] || return 0
+    done
+
+    worktree_include_matches+=("$match")
+}
+
+remove_worktree_include_match() {
+    local match=$1
+    local existing
+    local kept=()
+
+    for existing in "${worktree_include_matches[@]}"; do
+        if [[ "$existing" != "$match" ]]; then
+            kept+=("$existing")
+        fi
+    done
+
+    worktree_include_matches=("${kept[@]}")
+}
+
+collect_worktree_include_matches() {
+    local source_root=$1
+    local include_file="${source_root}/.worktreeinclude"
+    local raw_line
+    local pattern
+    local negate
+    local match
+
+    worktree_include_matches=()
+
+    [[ -f "$include_file" ]] || return 0
+
+    while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+        pattern=$(trim_line "$raw_line")
+        [[ -n "$pattern" ]] || continue
+        [[ "$pattern" != \#* ]] || continue
+
+        negate=false
+        if [[ "$pattern" == !* ]]; then
+            negate=true
+            pattern=$(trim_line "${pattern:1}")
+        fi
+
+        if ! valid_worktree_include_pattern "$pattern"; then
+            warn "ignoring invalid .worktreeinclude entry: $raw_line"
+            continue
+        fi
+
+        while IFS= read -r -d '' match; do
+            if [[ "$negate" == "true" ]]; then
+                remove_worktree_include_match "$match"
+            else
+                add_worktree_include_match "$match"
+            fi
+        done < <(
+            git -C "$source_root" ls-files -z --others --exclude-standard -- "$pattern"
+            git -C "$source_root" ls-files -z --others --ignored --exclude-standard -- "$pattern"
+        )
+    done < "$include_file"
+}
+
+copy_worktree_includes() {
+    local source_root=$1
+    local target_root=$2
+    local is_dry_run=$3
+    local match
+    local source_path
+    local target_path
+    local target_parent
+
+    collect_worktree_include_matches "$source_root"
+
+    for match in "${worktree_include_matches[@]}"; do
+        source_path="${source_root}/${match}"
+        target_path="${target_root}/${match}"
+        target_parent=$(dirname "$target_path")
+
+        if [[ "$is_dry_run" == "true" ]]; then
+            echo "Would copy .worktreeinclude match: $match"
+            continue
+        fi
+
+        if [[ -e "$target_path" || -L "$target_path" ]]; then
+            warn "worktree include already exists, skipping: $match"
+            continue
+        fi
+
+        mkdir -p "$target_parent"
+        cp -a "$source_path" "$target_path"
+        echo "Copied .worktreeinclude match: $match"
+    done
+}
+
+print_worktree_create_plan() {
+    local worktree_root=$1
+    local worktree_path=$2
+    local command=$3
+
+    echo "Would create root: $worktree_root"
+    echo "Would run: $command"
+    copy_worktree_includes "$repo_root" "$worktree_path" "true"
+}
+
+finish_worktree() {
+    local worktree_path=$1
+    local branch=$2
+
+    copy_worktree_includes "$repo_root" "$worktree_path" "false"
+    print_next_steps "$worktree_path" "$branch"
 }
 
 if [[ $# -eq 0 ]]; then
@@ -213,14 +356,13 @@ if [[ "$reuse" == "false" ]]; then
     [[ "$branch_exists" == "false" ]] || fail "branch already exists: $branch"
 
     if [[ "$dry_run" == "true" ]]; then
-        echo "Would create root: $worktree_root"
-        echo "Would run: git worktree add -b $branch $worktree_path $base_ref"
+        print_worktree_create_plan "$worktree_root" "$worktree_path" "git worktree add -b $branch $worktree_path $base_ref"
         exit 0
     fi
 
     mkdir -p "$worktree_root"
     git worktree add -b "$branch" "$worktree_path" "$base_ref"
-    print_next_steps "$worktree_path" "$branch"
+    finish_worktree "$worktree_path" "$branch"
     exit 0
 fi
 
@@ -229,7 +371,7 @@ if [[ "$path_exists" == "true" ]]; then
     existing_branch=$(git -C "$worktree_path" branch --show-current)
     [[ "$existing_branch" == "$branch" ]] || fail "existing worktree uses branch '$existing_branch', expected '$branch'"
 
-    print_next_steps "$worktree_path" "$branch"
+    finish_worktree "$worktree_path" "$branch"
     exit 0
 fi
 
@@ -239,23 +381,21 @@ if [[ "$branch_exists" == "true" ]]; then
     fi
 
     if [[ "$dry_run" == "true" ]]; then
-        echo "Would create root: $worktree_root"
-        echo "Would run: git worktree add $worktree_path $branch"
+        print_worktree_create_plan "$worktree_root" "$worktree_path" "git worktree add $worktree_path $branch"
         exit 0
     fi
 
     mkdir -p "$worktree_root"
     git worktree add "$worktree_path" "$branch"
-    print_next_steps "$worktree_path" "$branch"
+    finish_worktree "$worktree_path" "$branch"
     exit 0
 fi
 
 if [[ "$dry_run" == "true" ]]; then
-    echo "Would create root: $worktree_root"
-    echo "Would run: git worktree add -b $branch $worktree_path $base_ref"
+    print_worktree_create_plan "$worktree_root" "$worktree_path" "git worktree add -b $branch $worktree_path $base_ref"
     exit 0
 fi
 
 mkdir -p "$worktree_root"
 git worktree add -b "$branch" "$worktree_path" "$base_ref"
-print_next_steps "$worktree_path" "$branch"
+finish_worktree "$worktree_path" "$branch"
