@@ -77,7 +77,7 @@ class AppConfig(BaseSettings):
     beatmap_pending_refresh_interval_seconds: int = 86_400
     beatmap_graveyard_refresh_interval_seconds: int = 604_800
     beatmap_mirror_refresh_interval_seconds: int = 86_400
-    beatmap_default_bounded_wait_seconds: float = 0.5
+    beatmap_default_bounded_wait_seconds: float = 3.0
     beatmap_max_bounded_wait_seconds: float = 3.0
 
     @field_validator("blob_storage_backend")

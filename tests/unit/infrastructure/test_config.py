@@ -340,9 +340,9 @@ class TestBeatmapMirrorConfig:
         assert config.beatmap_osu_legacy_url_template == "https://old.ppy.sh/osu/{beatmap_id}"
         assert config.beatmap_community_mirror_url_templates == []
         assert config.beatmap_metadata_mirror_base_urls == []
-        assert config.beatmap_default_bounded_wait_seconds > 0
+        assert config.beatmap_default_bounded_wait_seconds == 3.0
         assert (
-            config.beatmap_default_bounded_wait_seconds <= config.beatmap_max_bounded_wait_seconds
+            config.beatmap_default_bounded_wait_seconds == config.beatmap_max_bounded_wait_seconds
         )
 
     def test_development_requires_official_credentials_when_sources_enabled(self) -> None:
