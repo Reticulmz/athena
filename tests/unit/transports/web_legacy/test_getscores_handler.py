@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import TYPE_CHECKING, cast, final
+from typing import TYPE_CHECKING, cast, final, override
 
 from osu_server.domain.beatmaps import (
     Beatmap,
@@ -37,6 +37,7 @@ from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
 )
+from tests.factories.config import make_app_config
 from tests.support.starlette_requests import make_starlette_request
 
 if TYPE_CHECKING:
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
 _NOW = datetime(2026, 6, 15, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
 _CHECKSUM = "3b0aecd99eba50ffc7bff8da117d0e06"
+_MENU_METADATA_AVAILABLE_AFTER_SECONDS = 1.0
 
 
 @final
@@ -114,8 +116,12 @@ class _EmptyBeatmapLeaderboardRepository:
         return None
 
 
-@final
 class _RecordingBeatmapResolver:
+    repository: _ScoreListingRepository
+    beatmap: Beatmap
+    beatmapset: BeatmapSet
+    calls: list[tuple[str, str, bool, float]]
+
     def __init__(
         self,
         repository: _ScoreListingRepository,
@@ -125,7 +131,7 @@ class _RecordingBeatmapResolver:
         self.repository = repository
         self.beatmap = beatmap
         self.beatmapset = beatmapset
-        self.calls: list[tuple[str, str, bool, float]] = []
+        self.calls = []
 
     async def resolve_by_checksum(
         self,
@@ -249,6 +255,42 @@ class _UnavailableBeatmapResolver:
 
 
 @final
+class _DelayedBeatmapResolver(_RecordingBeatmapResolver):
+    def __init__(
+        self,
+        repository: _ScoreListingRepository,
+        beatmap: Beatmap,
+        beatmapset: BeatmapSet,
+        *,
+        available_after_seconds: float,
+    ) -> None:
+        super().__init__(repository, beatmap, beatmapset)
+        self.available_after_seconds = available_after_seconds
+
+    @override
+    async def resolve_by_checksum(
+        self,
+        checksum_md5: str,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "checksum",
+                checksum_md5,
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        if opts.wait_timeout_seconds < self.available_after_seconds:
+            return _metadata_pending_result()
+
+        self.repository.beatmaps_by_checksum[checksum_md5] = self.beatmap
+        self.repository.beatmapsets_by_id[self.beatmapset.id] = self.beatmapset
+        return _resolve_result(self.beatmap, self.beatmapset)
+
+
+@final
 class _RecordingWarmupUseCase:
     def __init__(self, outcome: BeatmapFileWarmupOutcome) -> None:
         self.outcome = outcome
@@ -287,7 +329,7 @@ async def test_getscores_resolves_metadata_before_returning_not_found() -> None:
     assert response.status_code == HTTPStatus.OK
     assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
     assert resolver.calls == [
-        ("checksum", _CHECKSUM, False, 1.25),
+        ("checksum", _CHECKSUM, False, _default_metadata_wait_seconds()),
     ]
     assert warmup.requests == [
         BeatmapFileWarmupRequest(
@@ -360,7 +402,7 @@ async def test_getscores_unavailable_uses_parsed_checksum_for_warmup() -> None:
     assert response.status_code == HTTPStatus.OK
     assert response.body == b"-1|false"
     assert resolver.calls == [
-        ("checksum", _CHECKSUM, False, 1.25),
+        ("checksum", _CHECKSUM, False, _default_metadata_wait_seconds()),
     ]
     assert warmup.requests == [
         BeatmapFileWarmupRequest(
@@ -397,12 +439,40 @@ async def test_getscores_warmup_failure_does_not_change_response_body() -> None:
     ]
 
 
+async def test_getscores_default_wait_covers_menu_transition_metadata_fetch() -> None:
+    repository = _ScoreListingRepository()
+    beatmap = _make_beatmap()
+    beatmapset = _make_beatmapset(beatmap=beatmap)
+    resolver = _DelayedBeatmapResolver(
+        repository,
+        beatmap,
+        beatmapset,
+        available_after_seconds=_MENU_METADATA_AVAILABLE_AFTER_SECONDS,
+    )
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.REQUESTED)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        warmup=warmup,
+        auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
+    )
+
+    response = await handler(_request(_query()))
+
+    assert response.status_code == HTTPStatus.OK
+    assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
+    assert resolver.calls == [
+        ("checksum", _CHECKSUM, False, _default_metadata_wait_seconds()),
+    ]
+
+
 def _make_handler(
     *,
     repository: _ScoreListingRepository,
     resolver: object,
     warmup: _RecordingWarmupUseCase,
     auth_result: LegacyWebAuthResult,
+    beatmap_metadata_wait_seconds: float | None = None,
 ) -> GetscoresHandler:
     return GetscoresHandler(
         auth_query=_AuthQuery(auth_result),
@@ -419,8 +489,16 @@ def _make_handler(
             "RequestBeatmapFileWarmupUseCase",
             cast("object", warmup),
         ),
-        beatmap_metadata_wait_seconds=1.25,
+        beatmap_metadata_wait_seconds=(
+            _default_metadata_wait_seconds()
+            if beatmap_metadata_wait_seconds is None
+            else beatmap_metadata_wait_seconds
+        ),
     )
+
+
+def _default_metadata_wait_seconds() -> float:
+    return make_app_config().beatmap_default_bounded_wait_seconds
 
 
 def _request(params: dict[str, str]) -> Request:
