@@ -21,7 +21,8 @@ Options:
 Worktree includes:
   Local untracked or ignored files matching .worktreeinclude entries are copied
   from the current checkout into the target worktree. Entries are Git pathspecs
-  evaluated from the repository root. Blank lines and # comments are ignored.
+  without pathspec magic, evaluated from the repository root. Blank lines and
+  # comments are ignored.
 
 Examples:
   scripts/agent-worktree.sh valkey-timeout
@@ -109,6 +110,9 @@ valid_worktree_include_pattern() {
 
     [[ -n "$pattern" ]] || return 1
     [[ "$pattern" != /* ]] || return 1
+    [[ "$pattern" != :* ]] || return 1
+    [[ "$pattern" != !* ]] || return 1
+    [[ "$pattern" != ^* ]] || return 1
     [[ "$pattern" != ".." ]] || return 1
     [[ "$pattern" != ../* ]] || return 1
     [[ "$pattern" != */../* ]] || return 1
@@ -142,13 +146,42 @@ remove_worktree_include_match() {
     worktree_include_matches=("${kept[@]}")
 }
 
+collect_worktree_include_pattern_matches() {
+    local source_root=$1
+    local pattern=$2
+    local negate=$3
+    local match_file
+    local match
+
+    match_file=$(mktemp)
+
+    if ! git -C "$source_root" ls-files -z --others --exclude-standard -- "$pattern" > "$match_file"; then
+        rm -f "$match_file"
+        fail "failed to collect .worktreeinclude matches for: $pattern"
+    fi
+
+    if ! git -C "$source_root" ls-files -z --others --ignored --exclude-standard -- "$pattern" >> "$match_file"; then
+        rm -f "$match_file"
+        fail "failed to collect ignored .worktreeinclude matches for: $pattern"
+    fi
+
+    while IFS= read -r -d '' match; do
+        if [[ "$negate" == "true" ]]; then
+            remove_worktree_include_match "$match"
+        else
+            add_worktree_include_match "$match"
+        fi
+    done < "$match_file"
+
+    rm -f "$match_file"
+}
+
 collect_worktree_include_matches() {
     local source_root=$1
     local include_file="${source_root}/.worktreeinclude"
     local raw_line
     local pattern
     local negate
-    local match
 
     worktree_include_matches=()
 
@@ -170,17 +203,32 @@ collect_worktree_include_matches() {
             continue
         fi
 
-        while IFS= read -r -d '' match; do
-            if [[ "$negate" == "true" ]]; then
-                remove_worktree_include_match "$match"
-            else
-                add_worktree_include_match "$match"
-            fi
-        done < <(
-            git -C "$source_root" ls-files -z --others --exclude-standard -- "$pattern"
-            git -C "$source_root" ls-files -z --others --ignored --exclude-standard -- "$pattern"
-        )
+        collect_worktree_include_pattern_matches "$source_root" "$pattern" "$negate"
     done < "$include_file"
+}
+
+target_is_git_worktree() {
+    local target_root=$1
+
+    [[ -d "$target_root/.git" || -f "$target_root/.git" ]]
+}
+
+target_ignores_worktree_include() {
+    local target_root=$1
+    local match=$2
+    local status
+
+    if git -C "$target_root" check-ignore --quiet -- "$match"; then
+        return 0
+    else
+        status=$?
+    fi
+
+    if [[ "$status" -eq 1 ]]; then
+        return 1
+    fi
+
+    fail "failed to check target ignore rules for .worktreeinclude match: $match"
 }
 
 copy_worktree_includes() {
@@ -198,6 +246,15 @@ copy_worktree_includes() {
         source_path="${source_root}/${match}"
         target_path="${target_root}/${match}"
         target_parent=$(dirname "$target_path")
+
+        if target_is_git_worktree "$target_root" && ! target_ignores_worktree_include "$target_root" "$match"; then
+            if [[ "$is_dry_run" == "true" ]]; then
+                echo "Would skip non-ignored .worktreeinclude match: $match"
+            else
+                warn "target worktree does not ignore .worktreeinclude match, skipping: $match"
+            fi
+            continue
+        fi
 
         if [[ "$is_dry_run" == "true" ]]; then
             echo "Would copy .worktreeinclude match: $match"

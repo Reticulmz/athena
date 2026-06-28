@@ -1,5 +1,5 @@
 # Local files copied from the current checkout into agent worktrees.
-# Patterns are Git pathspecs evaluated from the repository root.
+# Patterns are repository-root Git pathspecs without pathspec magic.
 .env
 .env.development
 .env.test

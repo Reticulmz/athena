@@ -207,9 +207,10 @@ By default, worktrees are created under the repo-sibling
 `../athena_worktree/<task-slug>` directory.
 
 Local files listed in `.worktreeinclude` are copied from the current checkout
-into the target worktree after creation or reuse. This keeps ignored development
-files such as `.env.development` and `.env.test` available in agent worktrees
-without committing secrets.
+into the target worktree after creation or reuse. Entries are repository-root
+pathspecs without Git pathspec magic. The script only copies files that are
+ignored by the target worktree, keeping development files such as
+`.env.development` and `.env.test` available without exposing them to `git add`.
 
 For non-trivial changes, use a pull request as the integration boundary. Run local
 checks in the task worktree, push the branch, let GitHub CI validate it, then merge
