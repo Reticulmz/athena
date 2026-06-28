@@ -109,8 +109,10 @@ valid_worktree_include_pattern() {
 
     [[ -n "$pattern" ]] || return 1
     [[ "$pattern" != /* ]] || return 1
+    [[ "$pattern" != ".." ]] || return 1
     [[ "$pattern" != ../* ]] || return 1
     [[ "$pattern" != */../* ]] || return 1
+    [[ "$pattern" != */.. ]] || return 1
     [[ "$pattern" != ".git" ]] || return 1
     [[ "$pattern" != .git/* ]] || return 1
 }
@@ -231,6 +233,16 @@ finish_worktree() {
     print_next_steps "$worktree_path" "$branch"
 }
 
+print_worktree_reuse_plan() {
+    local worktree_path=$1
+    local branch=$2
+
+    echo "Would reuse worktree:"
+    echo "  path:   ${worktree_path}"
+    echo "  branch: ${branch}"
+    copy_worktree_includes "$repo_root" "$worktree_path" "true"
+}
+
 if [[ $# -eq 0 ]]; then
     usage
     exit 1
@@ -335,11 +347,6 @@ else
 fi
 worktree_path="${worktree_root}/${worktree_name}"
 
-dirty_status=$(git status --short)
-if [[ -n "$dirty_status" ]]; then
-    warn "current worktree has uncommitted changes; the new worktree will be based on committed ${base_ref}"
-fi
-
 path_exists=false
 branch_exists=false
 
@@ -349,6 +356,11 @@ fi
 
 if git show-ref --verify --quiet "refs/heads/${branch}"; then
     branch_exists=true
+fi
+
+dirty_status=$(git status --short)
+if [[ -n "$dirty_status" && "$path_exists" == "false" ]]; then
+    warn "current worktree has uncommitted changes; target checkout uses committed git state"
 fi
 
 if [[ "$reuse" == "false" ]]; then
@@ -370,6 +382,11 @@ if [[ "$path_exists" == "true" ]]; then
     [[ -d "$worktree_path/.git" || -f "$worktree_path/.git" ]] || fail "path exists but is not a git worktree: $worktree_path"
     existing_branch=$(git -C "$worktree_path" branch --show-current)
     [[ "$existing_branch" == "$branch" ]] || fail "existing worktree uses branch '$existing_branch', expected '$branch'"
+
+    if [[ "$dry_run" == "true" ]]; then
+        print_worktree_reuse_plan "$worktree_path" "$branch"
+        exit 0
+    fi
 
     finish_worktree "$worktree_path" "$branch"
     exit 0
