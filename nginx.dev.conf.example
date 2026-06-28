@@ -1,5 +1,5 @@
 # athena development reverse proxy
-# Usage: nginx -c /path/to/nginx.dev.conf -g 'daemon off;'
+# Usage: nginx -p ./ -e .state/nginx/error.log -c ./nginx.dev.conf -g 'daemon off;'
 #
 # This is a template. Copy to nginx.dev.conf and replace example.com with your domain.
 # nginx.dev.conf is gitignored.

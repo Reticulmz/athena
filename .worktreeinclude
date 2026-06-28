@@ -3,3 +3,5 @@
 .env
 .env.development
 .env.test
+nginx.dev.conf
+certs/

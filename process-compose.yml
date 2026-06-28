@@ -67,7 +67,7 @@ processes:
     command: >-
       mkdir -p .state/nginx &&
       sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1;
-      nginx -p ./ -c ./nginx.dev.conf -g 'daemon off;'
+      nginx -p ./ -e .state/nginx/error.log -c ./nginx.dev.conf -g 'daemon off;'
     shutdown:
       signal: 3
       timeout_seconds: 5
