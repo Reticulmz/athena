@@ -17,6 +17,7 @@ from osu_server.domain.scores.performance import (
     PerformanceCalculationState,
 )
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.user_stats import UserStatsScope
 from osu_server.infrastructure.performance import (
     PerformanceCalculatorCompleted,
     PerformanceCalculatorInput,
@@ -26,7 +27,12 @@ from osu_server.infrastructure.performance import (
 from osu_server.infrastructure.state.interfaces.performance_completion_signal import (
     PerformanceCompletionSignalPayload,
 )
+from osu_server.repositories.interfaces.commands.beatmap_performance_bests import (
+    BeatmapPerformanceBestScope,
+    UpsertBeatmapPerformanceBest,
+)
 from osu_server.repositories.interfaces.commands.score_performance import (
+    CompleteScorePerformanceCalculation,
     CreateScorePerformanceCalculation,
     UpdateScorePerformanceCalculationState,
 )
@@ -118,11 +124,13 @@ class _Calculator:
         *,
         factory: _CountingUnitOfWorkFactory | None = None,
         calculation_id: int | None = None,
+        calculator_version: str = _CALCULATOR_VERSION,
         expected_state_at_call: PerformanceCalculationState | None = None,
     ) -> None:
         self._result = result
         self._factory = factory
         self._calculation_id = calculation_id
+        self._calculator_version = calculator_version
         self._expected_state_at_call = expected_state_at_call
         self.inputs: list[PerformanceCalculatorInput] = []
 
@@ -130,7 +138,7 @@ class _Calculator:
         return _CALCULATOR_NAME
 
     def calculator_version(self) -> str:
-        return _CALCULATOR_VERSION
+        return self._calculator_version
 
     def calculate(
         self,
@@ -217,6 +225,39 @@ async def test_execute_calculation_claims_calculates_commits_and_signals_complet
     assert len(calculator.inputs) == 1
     assert calculator.inputs[0].score == replace(score, id=score_id)
     assert calculator.inputs[0].osu_file_bytes == b"osu file bytes"
+    projection_rows = tuple(factory.snapshot().beatmap_performance_bests_by_id.values())
+    assert len(projection_rows) == 1
+    projection = projection_rows[0]
+    assert projection.scope == BeatmapPerformanceBestScope(
+        user_id=score.user_id,
+        beatmap_id=score.beatmap_id,
+        ruleset=score.ruleset,
+        playstyle=score.playstyle,
+    )
+    assert projection.score_id == score_id
+    assert projection.performance_calculation_id == calculation_id
+    assert projection.pp == Decimal("123.456789")
+    assert projection.accuracy == score.accuracy
+    assert projection.score == score.score
+    async with factory() as uow:
+        stats_projection = await uow.current_user_stats.get(
+            UserStatsScope(
+                user_id=score.user_id,
+                ruleset=score.ruleset,
+                playstyle=score.playstyle,
+            )
+        )
+    assert stats_projection is not None
+    assert stats_projection.pp == Decimal("123.456789")
+    assert stats_projection.accuracy == score.accuracy
+    assert stats_projection.play_count == 1
+    assert stats_projection.ranked_score == score.score
+    assert stats_projection.total_score == score.score
+    assert stats_projection.max_combo == score.max_combo
+    assert stats_projection.hit_totals.count_300 == 300
+    assert stats_projection.hit_totals.count_100 == 50
+    assert stats_projection.hit_totals.count_50 == 10
+    assert stats_projection.hit_totals.count_miss == 5
     assert completion_signal.calls == [
         _SignalCall(
             payload=PerformanceCompletionSignalPayload(
@@ -227,6 +268,177 @@ async def test_execute_calculation_claims_calculates_commits_and_signals_complet
             commit_count_at_call=3,
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_execute_calculation_rebuilds_projection_when_replacement_pp_drops() -> None:
+    factory = _CountingUnitOfWorkFactory()
+    old_score = _score(
+        score=900_000,
+        accuracy=0.99,
+        online_checksum="1" * 32,
+        submitted_at=_NOW,
+    )
+    fallback_score = _score(
+        score=850_000,
+        accuracy=0.97,
+        online_checksum="2" * 32,
+        submitted_at=_NOW + timedelta(seconds=1),
+    )
+    old_score_id = await _persist_score(factory, old_score)
+    fallback_score_id = await _persist_score(factory, fallback_score)
+    old_current_id = await _complete_current_calculation(
+        factory,
+        score_id=old_score_id,
+        pp=Decimal("250"),
+        calculator_version="4.0.2",
+    )
+    fallback_calculation_id = await _complete_current_calculation(
+        factory,
+        score_id=fallback_score_id,
+        pp=Decimal("180"),
+        calculator_version="4.0.2",
+    )
+    await _seed_projection(
+        factory,
+        score=replace(old_score, id=old_score_id),
+        calculation_id=old_current_id,
+        pp=Decimal("250"),
+    )
+    replacement_id = await _create_replacement_calculation(
+        factory,
+        score_id=old_score_id,
+        calculator_version="4.1.0",
+    )
+    factory.reset_commit_count()
+    use_case = _use_case(
+        factory,
+        file_provider=_FileProvider(_ready_file()),
+        calculator=_Calculator(
+            PerformanceCalculatorCompleted(
+                pp=Decimal("150"),
+                star_rating=Decimal("4.5"),
+            ),
+            calculator_version="4.1.0",
+        ),
+        completion_signal=_CompletionSignal(factory),
+    )
+
+    result = await use_case.execute(_command(calculation_id=replacement_id))
+
+    assert result.outcome is ExecutePerformanceCalculationOutcome.COMPLETED
+    async with factory() as uow:
+        projection = await uow.beatmap_performance_bests.get_best(
+            BeatmapPerformanceBestScope(
+                user_id=old_score.user_id,
+                beatmap_id=old_score.beatmap_id,
+                ruleset=old_score.ruleset,
+                playstyle=old_score.playstyle,
+            )
+        )
+        old_current = await uow.score_performance.get_current_for_score(old_score_id)
+        stats_projection = await uow.current_user_stats.get(
+            UserStatsScope(
+                user_id=old_score.user_id,
+                ruleset=old_score.ruleset,
+                playstyle=old_score.playstyle,
+            )
+        )
+
+    assert old_current is not None
+    assert old_current.id == replacement_id
+    assert old_current.pp == Decimal("150")
+    assert projection is not None
+    assert projection.score_id == fallback_score_id
+    assert projection.performance_calculation_id == fallback_calculation_id
+    assert projection.pp == Decimal("180")
+    assert stats_projection is not None
+    assert stats_projection.pp == Decimal("180")
+
+
+@pytest.mark.asyncio
+async def test_execute_calculation_rebuilds_projection_when_replacement_unavailable() -> None:
+    factory = _CountingUnitOfWorkFactory()
+    old_score = _score(
+        score=900_000,
+        accuracy=0.99,
+        online_checksum="1" * 32,
+        submitted_at=_NOW,
+    )
+    fallback_score = _score(
+        score=850_000,
+        accuracy=0.97,
+        online_checksum="2" * 32,
+        submitted_at=_NOW + timedelta(seconds=1),
+    )
+    old_score_id = await _persist_score(factory, old_score)
+    fallback_score_id = await _persist_score(factory, fallback_score)
+    old_current_id = await _complete_current_calculation(
+        factory,
+        score_id=old_score_id,
+        pp=Decimal("250"),
+        calculator_version="4.0.2",
+    )
+    fallback_calculation_id = await _complete_current_calculation(
+        factory,
+        score_id=fallback_score_id,
+        pp=Decimal("180"),
+        calculator_version="4.0.2",
+    )
+    await _seed_projection(
+        factory,
+        score=replace(old_score, id=old_score_id),
+        calculation_id=old_current_id,
+        pp=Decimal("250"),
+    )
+    replacement_id = await _create_replacement_calculation(
+        factory,
+        score_id=old_score_id,
+        calculator_version="4.1.0",
+    )
+    factory.reset_commit_count()
+    use_case = _use_case(
+        factory,
+        file_provider=_FileProvider(_ready_file()),
+        calculator=_Calculator(
+            PerformanceCalculatorUnavailable(
+                PerformanceCalculatorUnavailableReason.CALCULATOR_INPUT_INVALID
+            ),
+            calculator_version="4.1.0",
+        ),
+        completion_signal=_CompletionSignal(factory),
+    )
+
+    result = await use_case.execute(_command(calculation_id=replacement_id))
+
+    assert result.outcome is ExecutePerformanceCalculationOutcome.UNAVAILABLE
+    async with factory() as uow:
+        projection = await uow.beatmap_performance_bests.get_best(
+            BeatmapPerformanceBestScope(
+                user_id=old_score.user_id,
+                beatmap_id=old_score.beatmap_id,
+                ruleset=old_score.ruleset,
+                playstyle=old_score.playstyle,
+            )
+        )
+        old_current = await uow.score_performance.get_current_for_score(old_score_id)
+        stats_projection = await uow.current_user_stats.get(
+            UserStatsScope(
+                user_id=old_score.user_id,
+                ruleset=old_score.ruleset,
+                playstyle=old_score.playstyle,
+            )
+        )
+
+    assert old_current is not None
+    assert old_current.id == replacement_id
+    assert old_current.state is PerformanceCalculationState.UNAVAILABLE
+    assert projection is not None
+    assert projection.score_id == fallback_score_id
+    assert projection.performance_calculation_id == fallback_calculation_id
+    assert projection.pp == Decimal("180")
+    assert stats_projection is not None
+    assert stats_projection.pp == Decimal("180")
 
 
 @pytest.mark.asyncio
@@ -587,13 +799,19 @@ def _command(
     )
 
 
-def _score() -> Score:
+def _score(
+    *,
+    score: int = 500_000,
+    accuracy: float = 0.95,
+    online_checksum: str = "abcdef0123456789abcdef0123456789",
+    submitted_at: datetime = _NOW,
+) -> Score:
     return Score(
         id=None,
         user_id=1000,
         beatmap_id=2000,
         beatmap_checksum="0123456789abcdef0123456789abcdef",
-        online_checksum="abcdef0123456789abcdef0123456789",
+        online_checksum=online_checksum,
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         mods=ModCombination.none(),
@@ -603,15 +821,16 @@ def _score() -> Score:
         geki=0,
         katu=0,
         miss=5,
-        score=500000,
+        score=score,
         max_combo=350,
-        accuracy=0.95,
+        accuracy=accuracy,
         grade=Grade.A,
         passed=True,
         perfect=False,
         client_version="b20250101",
-        submitted_at=_NOW,
+        submitted_at=submitted_at,
         beatmap_status_at_submission=BeatmapRankStatus.RANKED.value,
+        leaderboard_eligible_at_submission=True,
     )
 
 
@@ -660,19 +879,91 @@ async def _create_pending_calculation(
     factory: _CountingUnitOfWorkFactory,
     *,
     score_id: int,
+    calculator_version: str = _CALCULATOR_VERSION,
 ) -> int:
     async with factory() as uow:
         result = await uow.score_performance.create_or_reuse_calculation(
             CreateScorePerformanceCalculation(
                 score_id=score_id,
                 calculator_name=_CALCULATOR_NAME,
-                calculator_version=_CALCULATOR_VERSION,
+                calculator_version=calculator_version,
                 formula_profile=FormulaProfile.VANILLA_RANKED,
                 requested_at=_NOW,
             )
         )
         await uow.commit()
     return _require_calculation_id(result.calculation)
+
+
+async def _complete_current_calculation(
+    factory: _CountingUnitOfWorkFactory,
+    *,
+    score_id: int,
+    pp: Decimal,
+    calculator_version: str,
+) -> int:
+    calculation_id = await _create_pending_calculation(
+        factory,
+        score_id=score_id,
+        calculator_version=calculator_version,
+    )
+    async with factory() as uow:
+        completed = await uow.score_performance.mark_completed(
+            CompleteScorePerformanceCalculation(
+                calculation_id=calculation_id,
+                pp=pp,
+                star_rating=Decimal("5.0"),
+                calculator_name=_CALCULATOR_NAME,
+                calculator_version=calculator_version,
+                formula_profile=FormulaProfile.VANILLA_RANKED,
+                beatmap_file_attachment_id=55,
+                beatmap_file_checksum_md5="a" * 32,
+                calculated_at=_NOW,
+            )
+        )
+        await uow.commit()
+    assert completed is not None
+    return calculation_id
+
+
+async def _create_replacement_calculation(
+    factory: _CountingUnitOfWorkFactory,
+    *,
+    score_id: int,
+    calculator_version: str,
+) -> int:
+    return await _create_pending_calculation(
+        factory,
+        score_id=score_id,
+        calculator_version=calculator_version,
+    )
+
+
+async def _seed_projection(
+    factory: _CountingUnitOfWorkFactory,
+    *,
+    score: Score,
+    calculation_id: int,
+    pp: Decimal,
+) -> None:
+    async with factory() as uow:
+        _ = await uow.beatmap_performance_bests.upsert_if_better(
+            UpsertBeatmapPerformanceBest(
+                scope=BeatmapPerformanceBestScope(
+                    user_id=score.user_id,
+                    beatmap_id=score.beatmap_id,
+                    ruleset=score.ruleset,
+                    playstyle=score.playstyle,
+                ),
+                score_id=_require_score_id(score),
+                performance_calculation_id=calculation_id,
+                pp=pp,
+                accuracy=score.accuracy,
+                score=score.score,
+                submitted_at=score.submitted_at,
+            )
+        )
+        await uow.commit()
 
 
 async def _advance_calculation_to_calculating(
@@ -707,3 +998,10 @@ def _require_calculation_id(calculation: PerformanceCalculation) -> int:
         msg = "calculation id must be assigned"
         raise AssertionError(msg)
     return calculation.id
+
+
+def _require_score_id(score: Score) -> int:
+    if score.id is None:
+        msg = "score id must be assigned"
+        raise AssertionError(msg)
+    return score.id

@@ -14,6 +14,9 @@ from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
+from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
+    StableUserStatusStore,
+)
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
 from osu_server.services.commands.chat import (
@@ -37,12 +40,14 @@ from osu_server.services.queries.identity import (
     ListActiveSessionsQueryUseCase,
     ListFriendIdsQuery,
 )
+from osu_server.services.queries.scores import CurrentUserStatsQuery
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
 from osu_server.transports.stable.bancho.handlers.friends import FriendHandlers
 from osu_server.transports.stable.bancho.handlers.lifecycle import LifecycleHandlers
 from osu_server.transports.stable.bancho.handlers.presence import PresenceHandlers
+from osu_server.transports.stable.bancho.handlers.stats import StatsRequestHandler
 from osu_server.transports.stable.bancho.handlers.status import StatusChangeHandlers
 from osu_server.transports.stable.bancho.listeners import setup_listeners
 from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
@@ -65,12 +70,15 @@ _DISHKA_RUNTIME_HINTS = (
     ListFriendIdsQuery,
     ListVisibleChannelsQuery,
     LoginCommandUseCase,
+    CurrentUserStatsQuery,
     PacketQueue,
     RequestBeatmapFileWarmupUseCase,
     RemoveFriendUseCase,
     SendChannelMessageUseCase,
     SendPrivateMessageUseCase,
     SessionStore,
+    StableUserStatusStore,
+    StatsRequestHandler,
     SystemUserIdentity,
     UpdateFriendOnlyDmUseCase,
 )
@@ -96,6 +104,8 @@ class StableBanchoProviderSet(Provider):
         autojoin_channels_query: ListAutojoinChannelsQuery,
         friend_ids_query: ListFriendIdsQuery,
         active_sessions_query: ListActiveSessionsQueryUseCase,
+        current_user_stats_query: CurrentUserStatsQuery,
+        stable_user_status_store: StableUserStatusStore,
         bot_identity: SystemUserIdentity,
     ) -> LoginResponseBuilder:
         return LoginResponseBuilder(
@@ -103,6 +113,8 @@ class StableBanchoProviderSet(Provider):
             autojoin_channels_query=autojoin_channels_query,
             friend_ids_query=friend_ids_query,
             active_sessions_query=active_sessions_query,
+            current_user_stats_query=current_user_stats_query,
+            stable_user_status_store=stable_user_status_store,
             bot_identity=bot_identity,
         )
 
@@ -165,9 +177,17 @@ class StableBanchoProviderSet(Provider):
     def status_change_handlers(
         self,
         beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
+        current_user_stats_query: CurrentUserStatsQuery,
+        active_sessions_query: ListActiveSessionsQueryUseCase,
+        packet_queue: PacketQueue,
+        stable_user_status_store: StableUserStatusStore,
     ) -> StatusChangeHandlers:
         return StatusChangeHandlers(
             beatmap_file_warmup=beatmap_file_warmup,
+            stable_user_status_store=stable_user_status_store,
+            current_user_stats_query=current_user_stats_query,
+            packet_queue=packet_queue,
+            active_sessions_query=active_sessions_query,
         )
 
     @provide
@@ -177,11 +197,30 @@ class StableBanchoProviderSet(Provider):
         active_sessions_by_user_ids_query: GetActiveSessionsByUserIdsQueryUseCase,
         packet_queue: PacketQueue,
         bot_identity: SystemUserIdentity,
+        stable_user_status_store: StableUserStatusStore,
     ) -> PresenceHandlers:
         return PresenceHandlers(
             active_sessions_query=active_sessions_query,
             active_sessions_by_user_ids_query=active_sessions_by_user_ids_query,
             packet_queue=packet_queue,
+            bot_identity=bot_identity,
+            stable_user_status_store=stable_user_status_store,
+        )
+
+    @provide
+    def stats_request_handler(
+        self,
+        current_user_stats_query: CurrentUserStatsQuery,
+        active_sessions_by_user_ids_query: GetActiveSessionsByUserIdsQueryUseCase,
+        packet_queue: PacketQueue,
+        stable_user_status_store: StableUserStatusStore,
+        bot_identity: SystemUserIdentity,
+    ) -> StatsRequestHandler:
+        return StatsRequestHandler(
+            current_user_stats_query=current_user_stats_query,
+            packet_queue=packet_queue,
+            stable_user_status_store=stable_user_status_store,
+            active_sessions_by_user_ids_query=active_sessions_by_user_ids_query,
             bot_identity=bot_identity,
         )
 
@@ -191,9 +230,18 @@ class StableBanchoProviderSet(Provider):
         event_bus: LocalEventBus,
         packet_queue: PacketQueue,
         active_sessions_query: ListActiveSessionsQueryUseCase,
+        current_user_stats_query: CurrentUserStatsQuery,
         channel_state: ChannelStateStore,
+        stable_user_status_store: StableUserStatusStore,
     ) -> AppEventListeners:
-        setup_listeners(event_bus, packet_queue, active_sessions_query, channel_state)
+        setup_listeners(
+            event_bus,
+            packet_queue,
+            active_sessions_query,
+            channel_state,
+            current_user_stats_query,
+            stable_user_status_store,
+        )
         return AppEventListeners()
 
     @provide
@@ -204,6 +252,7 @@ class StableBanchoProviderSet(Provider):
         friend_handlers: FriendHandlers,
         status_change_handlers: StatusChangeHandlers,
         presence_handlers: PresenceHandlers,
+        stats_request_handler: StatsRequestHandler,
         listeners: AppEventListeners,
     ) -> PacketDispatcher:
         _ = listeners
@@ -213,6 +262,7 @@ class StableBanchoProviderSet(Provider):
         friend_handlers.register_all(dispatcher)
         status_change_handlers.register_all(dispatcher)
         presence_handlers.register_all(dispatcher)
+        stats_request_handler.register_all(dispatcher)
         return dispatcher
 
     @provide
@@ -221,12 +271,14 @@ class StableBanchoProviderSet(Provider):
         session_store: SessionStore,
         packet_queue: PacketQueue,
         packet_dispatcher: PacketDispatcher,
+        stable_user_status_store: StableUserStatusStore,
         config: AppConfig,
     ) -> PollingWorkflow:
         return PollingWorkflow(
             session_store=session_store,
             packet_queue=packet_queue,
             packet_dispatcher=packet_dispatcher,
+            stable_user_status_store=stable_user_status_store,
             session_ttl=config.session_ttl,
             max_request_body_size=config.max_request_body_size,
         )

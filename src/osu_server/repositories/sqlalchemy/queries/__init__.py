@@ -21,6 +21,9 @@ from osu_server.repositories.sqlalchemy.queries.score_performance import (
     SQLAlchemyScorePerformanceQueryRepository,
 )
 from osu_server.repositories.sqlalchemy.queries.scores import SQLAlchemyScoreQueryRepository
+from osu_server.repositories.sqlalchemy.queries.user_stats import (
+    SQLAlchemyUserStatsQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 
 __all__ = [
@@ -36,4 +39,5 @@ __all__ = [
     "SQLAlchemyScorePerformanceQueryRepository",
     "SQLAlchemyScoreQueryRepository",
     "SQLAlchemyUserQueryRepository",
+    "SQLAlchemyUserStatsQueryRepository",
 ]

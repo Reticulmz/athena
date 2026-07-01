@@ -1,18 +1,27 @@
 """Unit tests for score submit handler."""
 
 import base64
-from typing import Protocol
+from decimal import Decimal
+from typing import Protocol, final
 
 import pytest
 import structlog.testing
 from starlette.requests import Request
 from starlette.responses import Response
 
+from osu_server.domain.events.scores import CurrentUserStatsUpdated
+from osu_server.domain.scores import Playstyle, Ruleset
+from osu_server.domain.scores.user_stats import UserCurrentStats
 from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
     SubmissionOutcome,
     SubmissionResult,
 )
+from osu_server.services.queries.scores import (
+    CurrentUserStatsQueryInput,
+    CurrentUserStatsQueryResult,
+)
+from osu_server.transports.stable.web_legacy.mappers import StableScoreSubmitMapper
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 from tests.support.starlette_requests import make_starlette_request
 
@@ -33,6 +42,32 @@ class StubProcessScoreSubmissionUseCase:
     async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult:
         self.last_input = input_data
         return self._result
+
+
+@final
+class StubCurrentUserStatsQuery:
+    def __init__(self, stats: tuple[UserCurrentStats, ...]) -> None:
+        self._stats = stats
+        self.inputs: list[CurrentUserStatsQueryInput] = []
+
+    async def execute(
+        self,
+        input_data: CurrentUserStatsQueryInput,
+    ) -> CurrentUserStatsQueryResult:
+        self.inputs.append(input_data)
+        return CurrentUserStatsQueryResult(stats=self._stats)
+
+
+@final
+class StubLocalEventBus:
+    def __init__(self) -> None:
+        self.events: list[object] = []
+
+    async def fire(self, event: object) -> None:
+        self.events.append(event)
+
+    def subscribe(self, event_type: type[object], handler: object) -> None:
+        _ = (event_type, handler)
 
 
 def _score_submit_request(body: bytes, content_type: str) -> Request:
@@ -119,6 +154,127 @@ async def test_handle_score_submit_completed(mock_request: Request) -> None:
         and entry["replay_byte_size"] == len(b"replay_binary_data")
         for entry in cap_logs
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_score_submit_fires_current_user_stats_event(
+    mock_request: Request,
+) -> None:
+    service = StubProcessScoreSubmissionUseCase(
+        SubmissionResult(
+            outcome=SubmissionOutcome.COMPLETED,
+            user_id=20,
+            score_id=12345,
+            ruleset=Ruleset.MANIA,
+            playstyle=Playstyle.VANILLA,
+        )
+    )
+    current_stats = UserCurrentStats(
+        user_id=20,
+        pp=Decimal("122.5"),
+        accuracy=0.9876,
+        global_rank=12,
+        play_count=34,
+        ranked_score=123_456_789,
+        total_score=9_876_543_210,
+        max_combo=1234,
+    )
+    stats_query = StubCurrentUserStatsQuery((current_stats,))
+    event_bus = StubLocalEventBus()
+    handler = ScoreSubmitHandler(
+        service,
+        mapper=StableScoreSubmitMapper(stable_web_base_url="https://osu.athena.localhost"),
+        current_user_stats_query=stats_query,
+        event_bus=event_bus,
+    )
+
+    response = await handler(mock_request)
+
+    assert response.status_code == 200
+    response_body = bytes(response.body)
+    assert (
+        b"chartId:overall|chartUrl:https://osu.athena.localhost/u/20|chartName:Overall Ranking|"
+    ) in response_body
+    assert b"rankAfter:12" in response_body
+    assert b"rankedScoreAfter:123456789" in response_body
+    assert b"totalScoreAfter:9876543210" in response_body
+    assert b"maxComboAfter:1234" in response_body
+    assert b"accuracyAfter:98.76" in response_body
+    assert b"ppAfter:123" in response_body
+    assert stats_query.inputs == [
+        CurrentUserStatsQueryInput(
+            user_ids=(20,),
+            ruleset=Ruleset.MANIA,
+            playstyle=Playstyle.VANILLA,
+        )
+    ]
+    assert event_bus.events == [
+        CurrentUserStatsUpdated(
+            user_id=20,
+            ruleset=Ruleset.MANIA,
+            playstyle=Playstyle.VANILLA,
+            current_stats=current_stats,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_handle_score_submit_uses_result_current_stats_for_response_and_event(
+    mock_request: Request,
+) -> None:
+    overall_stats_after = UserCurrentStats(
+        user_id=20,
+        pp=Decimal("248.5"),
+        accuracy=0.9876,
+        global_rank=1,
+        play_count=8,
+        ranked_score=500_000,
+        total_score=1_400_000,
+    )
+    service = StubProcessScoreSubmissionUseCase(
+        SubmissionResult(
+            outcome=SubmissionOutcome.COMPLETED,
+            user_id=20,
+            score_id=12345,
+            ruleset=Ruleset.MANIA,
+            playstyle=Playstyle.VANILLA,
+            overall_stats_before=UserCurrentStats(
+                user_id=20,
+                pp=Decimal("122.4"),
+                accuracy=0.9567,
+                global_rank=2,
+                play_count=7,
+                ranked_score=400_000,
+                total_score=900_000,
+            ),
+            overall_stats_after=overall_stats_after,
+        )
+    )
+    stats_query = StubCurrentUserStatsQuery(())
+    event_bus = StubLocalEventBus()
+    handler = ScoreSubmitHandler(
+        service,
+        current_user_stats_query=stats_query,
+        event_bus=event_bus,
+    )
+
+    response = await handler(mock_request)
+
+    assert response.status_code == 200
+    response_body = bytes(response.body)
+    assert b"rankBefore:2" in response_body
+    assert b"rankAfter:1" in response_body
+    assert b"rankedScoreBefore:400000" in response_body
+    assert b"rankedScoreAfter:500000" in response_body
+    assert stats_query.inputs == []
+    assert event_bus.events == [
+        CurrentUserStatsUpdated(
+            user_id=20,
+            ruleset=Ruleset.MANIA,
+            playstyle=Playstyle.VANILLA,
+            current_stats=overall_stats_after,
+        )
+    ]
 
 
 @pytest.mark.asyncio

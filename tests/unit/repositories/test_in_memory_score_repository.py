@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from osu_server.domain.scores.mods import ModCombination
-from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.mods import Mod, ModCombination
+from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.repositories.memory.commands.scores import InMemoryScoreCommandRepository
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
@@ -130,7 +130,100 @@ class TestGetById:
     ) -> None:
         """Test that get_by_id returns score when id found."""
         created = await repository.create(sample_score)
-        retrieved = await repository.get_by_id(created.id)  # pyright: ignore[reportArgumentType]
+        assert created.id is not None
+        retrieved = await repository.get_by_id(created.id)
         assert retrieved is not None
         assert retrieved.id == created.id
         assert retrieved.online_checksum == created.online_checksum
+
+    async def test_returns_score_with_timing_fields(
+        self, repository: InMemoryScoreCommandRepository, sample_score: Score
+    ) -> None:
+        """Test that get_by_id preserves submit timing values."""
+        score = replace(
+            sample_score,
+            fail_time_ms=7_112,
+            play_time_seconds=7,
+            play_time_source=PlayTimeSource.FAIL_TIME,
+            submit_exit_classification="1",
+        )
+
+        created = await repository.create(score)
+        assert created.id is not None
+        retrieved = await repository.get_by_id(created.id)
+
+        assert retrieved is not None
+        assert retrieved.fail_time_ms == 7_112
+        assert retrieved.play_time_seconds == 7
+        assert retrieved.play_time_source is PlayTimeSource.FAIL_TIME
+        assert retrieved.submit_exit_classification == "1"
+
+
+class TestCountSubmissionsForBeatmap:
+    """count_submissions_for_beatmap() の tests。"""
+
+    async def test_counts_all_plays_and_passed_scores_for_target_beatmap(
+        self, repository: InMemoryScoreCommandRepository, sample_score: Score
+    ) -> None:
+        """beatmap の submitted play 数と pass 数を集計する。"""
+        _ = await repository.create(sample_score)
+        _ = await repository.create(replace(sample_score, online_checksum="failed", passed=False))
+        _ = await repository.create(
+            replace(sample_score, online_checksum="other-beatmap", beatmap_id=101)
+        )
+
+        counts = await repository.count_submissions_for_beatmap(100)
+
+        assert counts.play_count == 2
+        assert counts.pass_count == 1
+
+    async def test_returns_zero_counts_for_unknown_beatmap(
+        self, repository: InMemoryScoreCommandRepository
+    ) -> None:
+        """score がない beatmap は 0 件として返す。"""
+        counts = await repository.count_submissions_for_beatmap(100)
+
+        assert counts.play_count == 0
+        assert counts.pass_count == 0
+
+
+class TestListCurrentStatsScoresForUser:
+    """list_current_stats_scores_for_user() の tests。"""
+
+    async def test_filters_user_mode_and_excludes_relax_autopilot(
+        self,
+        repository: InMemoryScoreCommandRepository,
+        sample_score: Score,
+    ) -> None:
+        """current UserStats 対象の score だけを返す。"""
+        included = await repository.create(sample_score)
+        _ = await repository.create(replace(sample_score, online_checksum="other-user", user_id=2))
+        _ = await repository.create(
+            replace(
+                sample_score,
+                online_checksum="other-ruleset",
+                ruleset=Ruleset.MANIA,
+            )
+        )
+        _ = await repository.create(
+            replace(
+                sample_score,
+                online_checksum="relax",
+                mods=ModCombination(Mod.RELAX),
+            )
+        )
+        _ = await repository.create(
+            replace(
+                sample_score,
+                online_checksum="autopilot",
+                mods=ModCombination(Mod.AUTOPILOT),
+            )
+        )
+
+        scores = await repository.list_current_stats_scores_for_user(
+            1,
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+        )
+
+        assert scores == (included,)

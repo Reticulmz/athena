@@ -23,10 +23,15 @@ if TYPE_CHECKING:
     from osu_server.domain.scores.replay import Replay
     from osu_server.domain.scores.score import Score
     from osu_server.domain.scores.submission import ScoreSubmission
+    from osu_server.domain.scores.user_stats import UserStatsProjection
     from osu_server.domain.storage.blobs import Blob
     from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
         BeatmapLeaderboardUserBest,
     )
+    from osu_server.repositories.interfaces.commands.beatmap_performance_bests import (
+        BeatmapPerformanceBest,
+    )
+    from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
 
 
 @dataclass(slots=True, frozen=True)
@@ -154,6 +159,19 @@ class InMemoryCommandRepositoryState:
     ] = field(default_factory=dict)
     next_beatmap_leaderboard_user_best_id: int = 1
 
+    beatmap_performance_bests_by_id: dict[int, BeatmapPerformanceBest] = field(
+        default_factory=dict
+    )
+    beatmap_performance_best_id_by_scope: dict[
+        tuple[int, int, int, int],
+        int,
+    ] = field(default_factory=dict)
+    next_beatmap_performance_best_id: int = 1
+
+    current_user_stats_by_scope: dict[tuple[int, int, int], UserStatsProjection] = field(
+        default_factory=dict
+    )
+
     submissions_by_id: dict[int, ScoreSubmission] = field(default_factory=dict)
     submission_id_by_fingerprint: dict[str, int] = field(default_factory=dict)
     next_submission_id: int = 1
@@ -169,6 +187,9 @@ class InMemoryCommandRepositoryState:
     beatmapsets_by_id: dict[int, BeatmapSet] = field(default_factory=dict)
     beatmaps_by_id: dict[int, Beatmap] = field(default_factory=dict)
     beatmap_id_by_checksum: dict[str, int] = field(default_factory=dict)
+    beatmap_submission_counts_by_id: dict[int, BeatmapSubmissionCounts] = field(
+        default_factory=dict
+    )
     attachments_by_key: dict[tuple[int, str], BeatmapFileAttachment] = field(default_factory=dict)
     attachment_keys_by_beatmap_id: dict[int, list[tuple[int, str]]] = field(default_factory=dict)
     fetch_states_by_target: dict[BeatmapFetchTarget, BeatmapFetchRecord] = field(

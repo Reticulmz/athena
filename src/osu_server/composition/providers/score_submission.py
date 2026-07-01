@@ -19,7 +19,11 @@ from osu_server.services.commands.scores.performance import RequestPerformanceCa
 from osu_server.services.commands.storage.blob_storage import BlobStorageService
 from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 from osu_server.services.queries.identity.password_service import PasswordService
-from osu_server.services.queries.scores import PerformanceResponseQuery
+from osu_server.services.queries.scores import (
+    BeatmapPersonalBestRankQuery,
+    CurrentUserStatsQuery,
+    PerformanceResponseQuery,
+)
 from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
 
 _DISHKA_RUNTIME_HINTS = (
@@ -28,6 +32,8 @@ _DISHKA_RUNTIME_HINTS = (
     PasswordService,
     PerformanceCalculator,
     PerformanceResponseQuery,
+    BeatmapPersonalBestRankQuery,
+    CurrentUserStatsQuery,
     RequestPerformanceCalculationUseCase,
     ScoreCryptoService,
     SessionStore,
@@ -79,6 +85,8 @@ class ScoreSubmissionProviderSet(Provider):
         performance_calculation_request: RequestPerformanceCalculationUseCase,
         performance_calculator: PerformanceCalculator,
         performance_response_query: PerformanceResponseQuery,
+        current_user_stats_query: CurrentUserStatsQuery,
+        beatmap_personal_best_rank_query: BeatmapPersonalBestRankQuery,
     ) -> ProcessScoreSubmissionUseCase:
         return ProcessScoreSubmissionUseCase(
             submit_score_use_case=submit_score_use_case,
@@ -91,4 +99,6 @@ class ScoreSubmissionProviderSet(Provider):
             performance_calculation_request=performance_calculation_request,
             performance_calculator_identity=performance_calculator,
             performance_response_query=performance_response_query,
+            current_user_stats_query=current_user_stats_query,
+            beatmap_personal_best_rank_query=beatmap_personal_best_rank_query,
         )

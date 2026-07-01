@@ -126,20 +126,17 @@ class LocalBlobStorageBackend:
 
     def _validate_final_storage_directory(self) -> None:
         probe_directory = self._root / "sha256" / "00" / "00"
-        cleanup_candidates = (
-            probe_directory,
-            probe_directory.parent,
-            probe_directory.parent.parent,
-        )
-        existed_before_probe = {path: path.exists() for path in cleanup_candidates}
         probe_path: Path | None = None
 
         try:
             probe_directory.mkdir(parents=True, exist_ok=True)
             _ensure_probe_directory(probe_directory)
-            probe_path = probe_directory / ".probe"
-            _ = probe_path.write_bytes(b"")
-            probe_path.unlink()
+            file_descriptor, path = tempfile.mkstemp(
+                prefix=".probe-",
+                dir=probe_directory,
+            )
+            os.close(file_descriptor)
+            probe_path = Path(path)
         except BlobStorageConfigurationError:
             raise
         except OSError as exc:
@@ -150,10 +147,6 @@ class LocalBlobStorageBackend:
             if probe_path is not None:
                 with suppress(OSError):
                     probe_path.unlink(missing_ok=True)
-            for path in cleanup_candidates:
-                if not existed_before_probe[path]:
-                    with suppress(OSError):
-                        path.rmdir()
 
 
 class _LocalStagedBlobWrite:

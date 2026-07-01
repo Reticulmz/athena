@@ -18,6 +18,9 @@ from osu_server.domain.events.users import UserConnected, UserDisconnected
 from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue  # noqa: TC001
+from osu_server.infrastructure.state.memory.stable_user_status_store import (
+    InMemoryStableUserStatusStore,
+)
 from osu_server.services.queries.identity import (
     ListActiveSessionsQuery,
     ListActiveSessionsQueryInput,
@@ -99,7 +102,11 @@ def _expected_user_quit_packet(user_id: int) -> bytes:
     return write_packet(ServerPacketID.USER_QUIT, struct.pack("<i", user_id))
 
 
-def _expected_user_presence_packet(session: OnlineSessionSnapshot) -> bytes:
+def _expected_user_presence_packet(
+    session: OnlineSessionSnapshot,
+    *,
+    play_mode: int = 0,
+) -> bytes:
     """Build the expected USER_PRESENCE S2C packet for an online session."""
     return user_presence(
         user_id=session.user_id,
@@ -107,7 +114,7 @@ def _expected_user_presence_packet(session: OnlineSessionSnapshot) -> bytes:
         timezone=session.utc_offset + 24,
         country_id=country_code_to_id(session.country),
         permissions=int(BanchoClientPermission.NORMAL),
-        mode=0,
+        mode=play_mode,
         longitude=0.0,
         latitude=0.0,
         rank=0,
@@ -150,6 +157,36 @@ class TestUserPresenceBroadcast:
         target_ids = [uid for uid, _ in packet_queue.enqueued]
         assert connected_user_id not in target_ids
         assert target_ids == [99]
+
+    async def test_connected_user_presence_uses_current_mode(
+        self,
+        online_users: FakeListActiveSessionsQuery,
+        packet_queue: FakePacketQueue,
+    ) -> None:
+        """UserConnected fan-out は対象 user の current mode を USER_PRESENCE に載せる。"""
+        connected_user_id = 20
+        status_store = InMemoryStableUserStatusStore()
+        await status_store.set_play_mode(connected_user_id, 3)
+        listeners = LifecycleListeners(
+            active_sessions_query=typing.cast(
+                "ListActiveSessionsQuery",
+                typing.cast("object", online_users),
+            ),
+            packet_queue=typing.cast("PacketQueue", typing.cast("object", packet_queue)),
+            stable_user_status_store=status_store,
+        )
+        online_users.user_ids = [10, connected_user_id, 30]
+
+        await listeners.on_user_connected(UserConnected(user_id=connected_user_id))
+
+        expected_packet = _expected_user_presence_packet(
+            _snapshot(connected_user_id),
+            play_mode=3,
+        )
+        assert packet_queue.enqueued == [
+            (10, expected_packet),
+            (30, expected_packet),
+        ]
 
     async def test_connected_event_without_active_session_is_noop(
         self,

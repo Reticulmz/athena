@@ -37,6 +37,8 @@ def _make_beatmap(
     checksum_md5: str = _CHECKSUM,
     official_status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
     local_status_override: LocalBeatmapStatus | None = None,
+    local_status_override_changed_at: datetime | None = None,
+    official_last_updated_at: datetime | None = None,
     file_attachment: BeatmapFileAttachment | None = None,
 ) -> Beatmap:
     return Beatmap(
@@ -65,6 +67,8 @@ def _make_beatmap(
         file_attachment=file_attachment,
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
+        official_last_updated_at=official_last_updated_at,
+        local_status_override_changed_at=local_status_override_changed_at,
     )
 
 
@@ -160,11 +164,13 @@ async def test_save_rejects_duplicate_checksum_inside_same_snapshot() -> None:
 
 async def test_official_refresh_preserves_existing_local_override() -> None:
     repo = _repo()
+    override_changed_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
     await repo.save_beatmapset_snapshot(
         _make_beatmapset(
             _make_beatmap(
                 official_status=BeatmapRankStatus.PENDING,
                 local_status_override=LocalBeatmapStatus.RANKED,
+                local_status_override_changed_at=override_changed_at,
             )
         )
     )
@@ -180,7 +186,34 @@ async def test_official_refresh_preserves_existing_local_override() -> None:
     assert refreshed is not None
     assert refreshed.official_status is BeatmapRankStatus.LOVED
     assert refreshed.local_status_override is LocalBeatmapStatus.RANKED
+    assert refreshed.local_status_override_changed_at == override_changed_at
     assert refreshed.effective_status is BeatmapRankStatus.RANKED
+
+
+async def test_official_refresh_preserves_existing_last_updated_when_source_omits_it() -> None:
+    repo = _repo()
+    official_last_updated_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
+    await repo.save_beatmapset_snapshot(
+        _make_beatmapset(_make_beatmap(official_last_updated_at=official_last_updated_at))
+    )
+
+    await repo.save_beatmapset_snapshot(_make_beatmapset(_make_beatmap()))
+
+    refreshed = await repo.get_beatmap(2_000)
+    assert refreshed is not None
+    assert refreshed.official_last_updated_at == official_last_updated_at
+
+
+async def test_increment_submission_counts_returns_cumulative_values() -> None:
+    repo = _repo()
+
+    failed = await repo.increment_submission_counts(2_000, passed=False)
+    passed = await repo.increment_submission_counts(2_000, passed=True)
+
+    assert failed.play_count == 1
+    assert failed.pass_count == 0
+    assert passed.play_count == 2
+    assert passed.pass_count == 1
 
 
 async def test_can_set_local_override_without_changing_official_status() -> None:
@@ -193,7 +226,22 @@ async def test_can_set_local_override_without_changing_official_status() -> None
 
     assert updated.official_status is BeatmapRankStatus.PENDING
     assert updated.local_status_override is LocalBeatmapStatus.RANKED
+    assert updated.local_status_override_changed_at is not None
     assert updated.effective_status is BeatmapRankStatus.RANKED
+
+
+async def test_clearing_local_override_clears_changed_at() -> None:
+    repo = _repo()
+    await repo.save_beatmapset_snapshot(
+        _make_beatmapset(_make_beatmap(official_status=BeatmapRankStatus.PENDING))
+    )
+    ranked = await repo.set_local_status_override(2_000, LocalBeatmapStatus.RANKED)
+    assert ranked.local_status_override_changed_at is not None
+
+    cleared = await repo.set_local_status_override(2_000, None)
+
+    assert cleared.local_status_override is None
+    assert cleared.local_status_override_changed_at is None
 
 
 async def test_attachments_are_idempotent_and_update_current_file_state() -> None:

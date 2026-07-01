@@ -124,6 +124,8 @@ class Beatmap:
     file_attachment: BeatmapFileAttachment | None
     last_fetched_at: datetime | None
     next_refresh_at: datetime | None
+    official_last_updated_at: datetime | None = None
+    local_status_override_changed_at: datetime | None = None
 
     def __post_init__(self) -> None:
         _validate_md5(self.checksum_md5)
@@ -583,6 +585,7 @@ class BeatmapSnapshot:
     difficulty_rating: float | None = None
     last_fetched_at: datetime | None = None
     next_refresh_at: datetime | None = None
+    official_last_updated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         _validate_md5(self.checksum_md5)

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
@@ -22,6 +24,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
     LocalBeatmapStatus,
 )
+from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
 from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
@@ -30,8 +33,6 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
 )
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.sql.dml import ReturningInsert
 
@@ -134,7 +135,41 @@ class SQLAlchemyBeatmapCommandRepository:
                     if beatmap.local_status_override is not None
                     else None
                 )
-                _ = await self._session.merge(_beatmap_to_model(beatmap, local_override))
+                local_override_changed_at = (
+                    existing.local_status_override_changed_at
+                    if isinstance(existing, BeatmapModel)
+                    else beatmap.local_status_override_changed_at
+                )
+                official_last_updated_at = (
+                    beatmap.official_last_updated_at
+                    if beatmap.official_last_updated_at is not None
+                    else existing.official_last_updated_at
+                    if isinstance(existing, BeatmapModel)
+                    else None
+                )
+                play_count = (
+                    _existing_count(existing.play_count)
+                    if isinstance(existing, BeatmapModel)
+                    else 0
+                )
+                pass_count = (
+                    _existing_count(existing.pass_count)
+                    if isinstance(existing, BeatmapModel)
+                    else 0
+                )
+                stored_beatmap = replace(
+                    beatmap,
+                    official_last_updated_at=official_last_updated_at,
+                )
+                _ = await self._session.merge(
+                    _beatmap_to_model(
+                        stored_beatmap,
+                        local_override,
+                        local_override_changed_at,
+                        play_count,
+                        pass_count,
+                    )
+                )
             await self._session.flush()
         except IntegrityError as exc:
             checksum_md5 = snapshot.beatmaps[0].checksum_md5 if snapshot.beatmaps else ""
@@ -150,10 +185,35 @@ class SQLAlchemyBeatmapCommandRepository:
         if not isinstance(model, BeatmapModel):
             raise BeatmapNotFoundError(beatmap_id)
 
-        model.local_status_override = status.value if status is not None else None
+        new_status = status.value if status is not None else None
+        if model.local_status_override != new_status:
+            model.local_status_override = new_status
+            model.local_status_override_changed_at = (
+                datetime.now(UTC) if new_status is not None else None
+            )
+        elif new_status is not None and model.local_status_override_changed_at is None:
+            model.local_status_override_changed_at = datetime.now(UTC)
         await self._session.flush()
         attachment = await self._get_current_file_attachment_model(beatmap_id=beatmap_id)
         return _beatmap_to_domain(model, attachment)
+
+    async def increment_submission_counts(
+        self,
+        beatmap_id: int,
+        *,
+        passed: bool,
+    ) -> BeatmapSubmissionCounts:
+        result = await self._session.execute(
+            _increment_submission_counts_statement(beatmap_id, passed=passed)
+        )
+        row = result.one_or_none()
+        if row is None:
+            raise BeatmapNotFoundError(beatmap_id)
+        play_count, pass_count = cast("tuple[object, object]", cast("object", row))
+        return BeatmapSubmissionCounts(
+            play_count=_count_value(play_count),
+            pass_count=_count_value(pass_count),
+        )
 
     async def get_current_file_attachment(self, beatmap_id: int) -> BeatmapFileAttachment | None:
         model = await self._get_current_file_attachment_model(beatmap_id=beatmap_id)
@@ -357,6 +417,20 @@ def _mark_fetch_pending_statement(
     ).returning(BeatmapFetchStateModel.id)
 
 
+def _increment_submission_counts_statement(beatmap_id: int, *, passed: bool):
+    pass_increment = 1 if passed else 0
+    return (
+        update(BeatmapModel)
+        .where(BeatmapModel.id == beatmap_id)
+        .values(
+            play_count=BeatmapModel.play_count + literal(1),
+            pass_count=BeatmapModel.pass_count + literal(pass_increment),
+            updated_at=func.now(),
+        )
+        .returning(BeatmapModel.play_count, BeatmapModel.pass_count)
+    )
+
+
 def _beatmapset_to_model(beatmapset: BeatmapSet) -> BeatmapSetModel:
     return BeatmapSetModel(
         id=beatmapset.id,
@@ -375,7 +449,13 @@ def _beatmapset_to_model(beatmapset: BeatmapSet) -> BeatmapSetModel:
     )
 
 
-def _beatmap_to_model(beatmap: Beatmap, local_status_override: str | None) -> BeatmapModel:
+def _beatmap_to_model(
+    beatmap: Beatmap,
+    local_status_override: str | None,
+    local_status_override_changed_at: datetime | None,
+    play_count: int,
+    pass_count: int,
+) -> BeatmapModel:
     return BeatmapModel(
         id=beatmap.id,
         beatmapset_id=beatmap.beatmapset_id,
@@ -397,6 +477,10 @@ def _beatmap_to_model(beatmap: Beatmap, local_status_override: str | None) -> Be
             beatmap.official_status_verified is BeatmapSourceVerification.VERIFIED
         ),
         local_status_override=local_status_override,
+        local_status_override_changed_at=local_status_override_changed_at,
+        play_count=play_count,
+        pass_count=pass_count,
+        official_last_updated_at=beatmap.official_last_updated_at,
         last_fetched_at=beatmap.last_fetched_at,
         next_refresh_at=beatmap.next_refresh_at,
     )
@@ -455,6 +539,8 @@ def _beatmap_to_domain(
         file_attachment=attachment,
         last_fetched_at=model.last_fetched_at,
         next_refresh_at=model.next_refresh_at,
+        official_last_updated_at=model.official_last_updated_at,
+        local_status_override_changed_at=model.local_status_override_changed_at,
     )
 
 
@@ -505,3 +591,16 @@ def _decimal_or_none(value: float | None) -> Decimal | None:
     if value is None:
         return None
     return Decimal(str(value))
+
+
+def _count_value(value: object) -> int:
+    if not isinstance(value, int):
+        msg = f"expected integer count value, got {type(value).__name__}"
+        raise TypeError(msg)
+    return value
+
+
+def _existing_count(value: object) -> int:
+    if value is None:
+        return 0
+    return _count_value(value)

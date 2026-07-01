@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import struct
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, cast, final
 
 from osu_server.domain.chat.channels import Channel, ChannelType
+from osu_server.domain.compatibility.stable import StableUserStatus
 from osu_server.domain.identity.authentication import LoginResponse
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
 from osu_server.domain.identity.users import User
+from osu_server.domain.scores import Playstyle, Ruleset
+from osu_server.domain.scores.user_stats import UserCurrentStats
 from osu_server.infrastructure.country.codes import country_code_to_id
 from osu_server.services.queries.chat import ChannelCatalogQueryResult
 from osu_server.services.queries.identity import (
@@ -20,6 +24,10 @@ from osu_server.services.queries.identity import (
     ListFriendIdsQueryInput,
     ListFriendIdsQueryResult,
     OnlineSessionSnapshot,
+)
+from osu_server.services.queries.scores import (
+    CurrentUserStatsQueryInput,
+    CurrentUserStatsQueryResult,
 )
 from osu_server.transports.stable.bancho.mappers.permissions import (
     map_stable_bancho_authorization,
@@ -40,6 +48,9 @@ from osu_server.transports.stable.bancho.workflows.login_response_builder import
 )
 
 if TYPE_CHECKING:
+    from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
+        StableUserStatusStore,
+    )
     from osu_server.services.queries.chat import (
         ListAutojoinChannelsQuery,
         ListVisibleChannelsQuery,
@@ -48,6 +59,7 @@ if TYPE_CHECKING:
         ListActiveSessionsQueryUseCase,
         ListFriendIdsQueryUseCase,
     )
+    from osu_server.services.queries.scores import CurrentUserStatsQuery
 
 # -- packet header parsing ----------------------------------------------------
 
@@ -123,6 +135,72 @@ class _FakeActiveSessionsQuery:
     ) -> ListActiveSessionsQueryResult:
         assert isinstance(input_data, ListActiveSessionsQueryInput)
         return ListActiveSessionsQueryResult(sessions=self._sessions)
+
+
+@final
+class _FakeCurrentUserStatsQuery:
+    """Current user stats query stub for login stream tests."""
+
+    def __init__(
+        self,
+        *,
+        stats: tuple[UserCurrentStats, ...] = (),
+        error: Exception | None = None,
+    ) -> None:
+        self._stats = stats
+        self._error = error
+        self.calls: list[tuple[int, ...]] = []
+        self.inputs: list[CurrentUserStatsQueryInput] = []
+
+    async def execute(
+        self,
+        input_data: CurrentUserStatsQueryInput,
+    ) -> CurrentUserStatsQueryResult:
+        self.calls.append(input_data.user_ids)
+        self.inputs.append(input_data)
+        if self._error is not None:
+            raise self._error
+        return CurrentUserStatsQueryResult(stats=self._stats)
+
+
+@final
+class _FakeStableUserStatusStore:
+    def __init__(self, statuses: dict[int, StableUserStatus] | None = None) -> None:
+        self._statuses = statuses or {}
+        self.requests: list[tuple[int, ...]] = []
+
+    async def set_status(self, user_id: int, status: StableUserStatus) -> None:
+        self._statuses[user_id] = status
+
+    async def get_statuses(
+        self,
+        user_ids: tuple[int, ...],
+    ) -> dict[int, StableUserStatus]:
+        self.requests.append(user_ids)
+        return {
+            user_id: status
+            for user_id in user_ids
+            if (status := self._statuses.get(user_id)) is not None
+        }
+
+    async def set_play_mode(self, user_id: int, play_mode: int) -> None:
+        current = self._statuses.get(user_id)
+        if current is not None:
+            self._statuses[user_id] = current.with_play_mode(play_mode)
+
+    async def get_play_mode(self, user_id: int) -> int | None:
+        status = self._statuses.get(user_id)
+        return None if status is None else status.play_mode
+
+    async def get_play_modes(self, user_ids: tuple[int, ...]) -> dict[int, int]:
+        return {
+            user_id: status.play_mode
+            for user_id in user_ids
+            if (status := self._statuses.get(user_id)) is not None
+        }
+
+    async def refresh_ttl(self, user_id: int, ttl: int) -> None:
+        _ = (user_id, ttl)
 
 
 # -- helpers -----------------------------------------------------------------
@@ -209,7 +287,10 @@ def _make_builder(
     autojoin: list[tuple[Channel, int]] | None = None,
     friend_ids: tuple[int, ...] = (),
     active_sessions: tuple[OnlineSessionSnapshot, ...] = (),
+    current_stats_query: _FakeCurrentUserStatsQuery | None = None,
+    stable_user_status_store: _FakeStableUserStatusStore | None = None,
 ) -> LoginResponseBuilder:
+    stats_query = current_stats_query or _FakeCurrentUserStatsQuery()
     return LoginResponseBuilder(
         visible_channels_query=cast(
             "ListVisibleChannelsQuery",
@@ -226,6 +307,14 @@ def _make_builder(
         active_sessions_query=cast(
             "ListActiveSessionsQueryUseCase",
             cast("object", _FakeActiveSessionsQuery(active_sessions)),
+        ),
+        current_user_stats_query=cast(
+            "CurrentUserStatsQuery",
+            cast("object", stats_query),
+        ),
+        stable_user_status_store=cast(
+            "StableUserStatusStore | None",
+            stable_user_status_store,
         ),
     )
 
@@ -277,6 +366,36 @@ class TestLoginResponseBuilder:
             latitude=0.0,
             rank=0,
         )
+        assert expected in result
+
+    async def test_banchobot_presence_uses_login_user_current_mode(self) -> None:
+        status_store = _FakeStableUserStatusStore(
+            {
+                42: StableUserStatus(
+                    status=0,
+                    status_text="",
+                    beatmap_md5="",
+                    mods=0,
+                    play_mode=Ruleset.MANIA.value,
+                    beatmap_id=0,
+                )
+            }
+        )
+        builder = _make_builder(stable_user_status_store=status_store)
+        result = await builder.build(_login_response(user_id=42))
+
+        expected = user_presence(
+            user_id=BANCHO_BOT_IDENTITY.user_id,
+            username=BANCHO_BOT_IDENTITY.username,
+            timezone=24,
+            country_id=0,
+            permissions=0,
+            mode=Ruleset.MANIA.value,
+            longitude=0.0,
+            latitude=0.0,
+            rank=0,
+        )
+        assert status_store.requests == [(42,)]
         assert expected in result
 
     async def test_banchobot_presence_before_bundle(self) -> None:
@@ -395,6 +514,178 @@ class TestLoginResponseBuilder:
 
         assert friends_list([]) in result
         assert friends_list([BANCHO_BOT_IDENTITY.user_id]) not in result
+
+    async def test_logged_in_user_stats_uses_current_stats_values(self) -> None:
+        stats_query = _FakeCurrentUserStatsQuery(
+            stats=(
+                UserCurrentStats(
+                    user_id=42,
+                    pp=Decimal("122.5"),
+                    accuracy=0.9876,
+                    global_rank=12,
+                    play_count=34,
+                    ranked_score=123_456_789,
+                    total_score=9_876_543_210,
+                    play_time_seconds=3600,
+                ),
+            )
+        )
+        builder = _make_builder(current_stats_query=stats_query)
+
+        result = await builder.build(_login_response(user_id=42))
+
+        assert stats_query.calls == [(42,)]
+        assert (
+            user_stats(
+                user_id=42,
+                status=0,
+                status_text="",
+                beatmap_md5="",
+                mods=0,
+                play_mode=0,
+                beatmap_id=0,
+                ranked_score=123_456_789,
+                accuracy=0.9876,
+                play_count=34,
+                total_score=9_876_543_210,
+                rank=12,
+                pp=123,
+            )
+            in result
+        )
+
+    async def test_login_stats_read_failure_falls_back_to_default_stats(self) -> None:
+        stats_query = _FakeCurrentUserStatsQuery(error=RuntimeError("stats unavailable"))
+        builder = _make_builder(current_stats_query=stats_query)
+
+        result = await builder.build(_login_response(user_id=42))
+
+        assert stats_query.calls == [(42,)]
+        assert (
+            user_stats(
+                user_id=42,
+                status=0,
+                status_text="",
+                beatmap_md5="",
+                mods=0,
+                play_mode=0,
+                beatmap_id=0,
+                ranked_score=0,
+                accuracy=0.0,
+                play_count=0,
+                total_score=0,
+                rank=0,
+                pp=0,
+            )
+            in result
+        )
+
+    async def test_online_roster_users_get_user_stats_packets(self) -> None:
+        stats_query = _FakeCurrentUserStatsQuery(
+            stats=(UserCurrentStats(user_id=100, pp=Decimal("50"), global_rank=20),)
+        )
+        builder = _make_builder(
+            active_sessions=(_online_session(user_id=100, username="OnlineUser"),),
+            current_stats_query=stats_query,
+        )
+
+        result = await builder.build(_login_response(user_id=42))
+
+        assert stats_query.calls == [(42, 100)]
+        assert (
+            user_stats(
+                user_id=100,
+                status=0,
+                status_text="",
+                beatmap_md5="",
+                mods=0,
+                play_mode=0,
+                beatmap_id=0,
+                ranked_score=0,
+                accuracy=0.0,
+                play_count=0,
+                total_score=0,
+                rank=20,
+                pp=50,
+            )
+            in result
+        )
+
+    async def test_online_roster_users_use_current_status_mode_on_login(self) -> None:
+        stats_query = _FakeCurrentUserStatsQuery(
+            stats=(
+                UserCurrentStats(user_id=42, pp=Decimal("10"), global_rank=30),
+                UserCurrentStats(user_id=100, pp=Decimal("50"), global_rank=20),
+            )
+        )
+        status_store = _FakeStableUserStatusStore(
+            {
+                100: StableUserStatus(
+                    status=2,
+                    status_text="playing mania",
+                    beatmap_md5="a" * 32,
+                    mods=64,
+                    play_mode=Ruleset.MANIA.value,
+                    beatmap_id=1234,
+                )
+            }
+        )
+        online_user = _online_session(user_id=100, username="OnlineUser")
+        builder = _make_builder(
+            active_sessions=(online_user,),
+            current_stats_query=stats_query,
+            stable_user_status_store=status_store,
+        )
+
+        result = await builder.build(_login_response(user_id=42))
+
+        assert status_store.requests == [(42, 100)]
+        assert stats_query.inputs == [
+            CurrentUserStatsQueryInput(
+                user_ids=(42,),
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+            ),
+            CurrentUserStatsQueryInput(
+                user_ids=(100,),
+                ruleset=Ruleset.MANIA,
+                playstyle=Playstyle.VANILLA,
+            ),
+        ]
+        assert (
+            user_presence(
+                user_id=100,
+                username="OnlineUser",
+                timezone=33,
+                country_id=country_code_to_id("JP"),
+                permissions=int(
+                    map_stable_bancho_authorization(Privileges.NORMAL).presence_permissions
+                ),
+                mode=3,
+                longitude=0.0,
+                latitude=0.0,
+                rank=0,
+            )
+            in result
+        )
+        assert (
+            user_stats(
+                user_id=100,
+                status=2,
+                status_text="playing mania",
+                beatmap_md5="a" * 32,
+                mods=64,
+                play_mode=3,
+                beatmap_id=1234,
+                ranked_score=0,
+                accuracy=0.0,
+                play_count=0,
+                total_score=0,
+                rank=20,
+                pp=50,
+            )
+            in result
+        )
 
     # -- existing packet order tests ---------------------------------------
 

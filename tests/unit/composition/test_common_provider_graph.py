@@ -31,9 +31,15 @@ from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
+    StableUserStatusStore,
+)
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.infrastructure.state.memory.stable_user_status_store import (
+    InMemoryStableUserStatusStore,
+)
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     BeatmapLeaderboardQueryRepository,
@@ -51,6 +57,7 @@ from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
+from osu_server.repositories.interfaces.queries.user_stats import UserStatsQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.repositories.memory.queries.beatmap_leaderboards import (
@@ -74,6 +81,9 @@ from osu_server.repositories.sqlalchemy.queries.score_performance import (
     SQLAlchemyScorePerformanceQueryRepository,
 )
 from osu_server.repositories.sqlalchemy.queries.scores import SQLAlchemyScoreQueryRepository
+from osu_server.repositories.sqlalchemy.queries.user_stats import (
+    SQLAlchemyUserStatsQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
@@ -103,6 +113,8 @@ from osu_server.services.commands.scores import (
     ProcessScoreSubmissionUseCase,
     RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
     RebuildBeatmapLeaderboardsForUserUseCase,
+    SubmissionOutcome,
+    SubmissionResult,
     SubmitScoreUseCase,
 )
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
@@ -134,7 +146,7 @@ from osu_server.services.queries.identity import (
 )
 from osu_server.services.queries.identity.password_service import PasswordService
 from osu_server.services.queries.identity.permission_service import PermissionService
-from osu_server.services.queries.scores import BeatmapScoreListingQuery
+from osu_server.services.queries.scores import BeatmapScoreListingQuery, CurrentUserStatsQuery
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.handlers.chat import ChatHandlers
@@ -161,6 +173,7 @@ def _runtime_state_overrides() -> TestProviderSet:
         replace_value(PacketQueue, InMemoryPacketQueue(), scope=Scope.APP),
         replace_value(ChannelStateStore, InMemoryChannelStateStore(), scope=Scope.APP),
         replace_value(RateLimiter, InMemoryRateLimiter(), scope=Scope.APP),
+        replace_value(StableUserStatusStore, InMemoryStableUserStatusStore(), scope=Scope.APP),
     )
 
 
@@ -242,6 +255,10 @@ async def test_app_provider_graph_resolves_query_repositories() -> None:
             await container.get(ScorePerformanceQueryRepository),
             SQLAlchemyScorePerformanceQueryRepository,
         )
+        assert isinstance(
+            await container.get(UserStatsQueryRepository),
+            SQLAlchemyUserStatsQueryRepository,
+        )
     finally:
         await _close_common_dependencies(container)
 
@@ -265,6 +282,7 @@ async def test_app_provider_graph_resolves_shared_provider_groups() -> None:
         PerformanceRuntimeSettings,
         FormulaProfilePolicy,
         BeatmapScoreListingQuery,
+        CurrentUserStatsQuery,
         RebuildBeatmapLeaderboardsForUserUseCase,
         RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
         ListVisibleChannelsQuery,
@@ -356,6 +374,30 @@ async def test_app_provider_graph_resolves_stable_workflows_with_warmup_dependen
         assert isinstance(score_submission, ProcessScoreSubmissionUseCase)
     finally:
         await _close_common_dependencies(container)
+
+
+@pytest.mark.asyncio
+async def test_app_provider_graph_configures_score_submit_chart_urls() -> None:
+    config = make_app_config(environment="test", domain="example.com")
+    container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
+
+    try:
+        mapper = await container.get(StableScoreSubmitMapper)
+        response = mapper.to_response(
+            SubmissionResult(
+                outcome=SubmissionOutcome.COMPLETED,
+                user_id=1001,
+                score_id=12345,
+                beatmap_id=654,
+                beatmapset_id=321,
+            )
+        )
+    finally:
+        await _close_common_dependencies(container)
+
+    body = bytes(response.body)
+    assert b"chartUrl:https://osu.example.com/b/654" in body
+    assert b"chartUrl:https://osu.example.com/u/1001" in body
 
 
 @pytest.mark.asyncio

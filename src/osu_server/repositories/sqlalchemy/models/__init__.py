@@ -36,17 +36,23 @@ from osu_server.repositories.sqlalchemy.models.user import (
     DisallowedUsernameModel,
     UserModel,
 )
+from osu_server.repositories.sqlalchemy.models.user_stats import (
+    BeatmapPerformanceBestModel,
+    CurrentUserStatsModel,
+)
 
 __all__ = [
     "BeatmapFetchStateModel",
     "BeatmapFileAttachmentModel",
     "BeatmapLeaderboardUserBestModel",
     "BeatmapModel",
+    "BeatmapPerformanceBestModel",
     "BeatmapSetModel",
     "BlobModel",
     "ChannelMessageModel",
     "ChannelModel",
     "ChannelRoleOverrideModel",
+    "CurrentUserStatsModel",
     "DisallowedUsernameModel",
     "PerformanceRecalculationBatchModel",
     "PerformanceRecalculationWorkItemModel",

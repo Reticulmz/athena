@@ -32,6 +32,19 @@ def test_status_change_payload_round_trips_status_update() -> None:
     assert result.beatmap_id == 1234
 
 
+def test_status_change_payload_accepts_stable_client_present_empty_strings() -> None:
+    payload = bytes.fromhex("000b000b0000000000016bb92000")
+
+    result = parse_status_change_payload(payload)
+
+    assert result.status == 0
+    assert result.status_text == ""
+    assert result.beatmap_md5 == ""
+    assert result.mods == 0
+    assert result.play_mode == 1
+    assert result.beatmap_id == 2_144_619
+
+
 def test_status_change_payload_rejects_malformed_payload() -> None:
     with pytest.raises(PacketReadError):
         _ = parse_status_change_payload(b"\x02\x0b")

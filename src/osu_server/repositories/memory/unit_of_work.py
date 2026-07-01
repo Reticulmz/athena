@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING, Self, cast
 from osu_server.repositories.memory.commands import (
     InMemoryBeatmapCommandRepository,
     InMemoryBeatmapLeaderboardCommandRepository,
+    InMemoryBeatmapPerformanceBestCommandRepository,
     InMemoryBlobCommandRepository,
     InMemoryChannelCommandRepository,
     InMemoryChatCommandRepository,
     InMemoryCommandRepositoryState,
+    InMemoryCurrentUserStatsCommandRepository,
     InMemoryFriendRelationshipCommandRepository,
     InMemoryPersonalBestCommandRepository,
     InMemoryReplayCommandRepository,
@@ -101,6 +103,7 @@ class InMemoryUnitOfWorkFactory:
         )
         self._state.next_personal_best_id = committed.next_personal_best_id
         self._commit_beatmap_leaderboard_state(committed)
+        self._commit_beatmap_performance_best_state(committed)
 
         _replace_mapping(self._state.submissions_by_id, committed.submissions_by_id)
         _replace_mapping(
@@ -120,6 +123,10 @@ class InMemoryUnitOfWorkFactory:
         _replace_mapping(self._state.beatmapsets_by_id, committed.beatmapsets_by_id)
         _replace_mapping(self._state.beatmaps_by_id, committed.beatmaps_by_id)
         _replace_mapping(self._state.beatmap_id_by_checksum, committed.beatmap_id_by_checksum)
+        _replace_mapping(
+            self._state.beatmap_submission_counts_by_id,
+            committed.beatmap_submission_counts_by_id,
+        )
         _replace_mapping(self._state.attachments_by_key, committed.attachments_by_key)
         _replace_mapping(
             self._state.attachment_keys_by_beatmap_id,
@@ -180,6 +187,24 @@ class InMemoryUnitOfWorkFactory:
             committed.next_beatmap_leaderboard_user_best_id
         )
 
+    def _commit_beatmap_performance_best_state(
+        self,
+        committed: InMemoryCommandRepositoryState,
+    ) -> None:
+        _replace_mapping(
+            self._state.beatmap_performance_bests_by_id,
+            committed.beatmap_performance_bests_by_id,
+        )
+        _replace_mapping(
+            self._state.beatmap_performance_best_id_by_scope,
+            committed.beatmap_performance_best_id_by_scope,
+        )
+        self._state.next_beatmap_performance_best_id = committed.next_beatmap_performance_best_id
+        _replace_mapping(
+            self._state.current_user_stats_by_scope,
+            committed.current_user_stats_by_scope,
+        )
+
     def _commit_score_state(
         self,
         committed: InMemoryCommandRepositoryState,
@@ -218,6 +243,8 @@ class InMemoryUnitOfWork:
     blobs: InMemoryBlobCommandRepository
     beatmaps: InMemoryBeatmapCommandRepository
     beatmap_leaderboards: InMemoryBeatmapLeaderboardCommandRepository
+    beatmap_performance_bests: InMemoryBeatmapPerformanceBestCommandRepository
+    current_user_stats: InMemoryCurrentUserStatsCommandRepository
 
     def __init__(self, factory: InMemoryUnitOfWorkFactory) -> None:
         self._factory: InMemoryUnitOfWorkFactory = factory
@@ -260,3 +287,7 @@ class InMemoryUnitOfWork:
         self.blobs = InMemoryBlobCommandRepository(self._state)
         self.beatmaps = InMemoryBeatmapCommandRepository(self._state)
         self.beatmap_leaderboards = InMemoryBeatmapLeaderboardCommandRepository(self._state)
+        self.beatmap_performance_bests = InMemoryBeatmapPerformanceBestCommandRepository(
+            self._state
+        )
+        self.current_user_stats = InMemoryCurrentUserStatsCommandRepository(self._state)

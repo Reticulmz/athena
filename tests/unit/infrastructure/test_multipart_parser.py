@@ -146,6 +146,44 @@ def test_parse_with_fail_time():
     assert result.fail_time_ms == 12345
 
 
+def test_parse_malformed_fail_time_as_unavailable():
+    """Invalid ft should not reject otherwise valid submissions."""
+    boundary = "----boundary"
+    fields = [
+        ("score", SCORE_B64),
+        ("iv", IV_B64),
+        ("pass", b"pass_hash"),
+        ("x", b"client_hash"),
+        ("osuver", b"20260412"),
+        ("ft", b"not-an-int"),
+    ]
+    body = make_multipart_body(boundary, fields)
+    content_type = f"multipart/form-data; boundary={boundary}"
+
+    result = parse(body, content_type)
+
+    assert result.fail_time_ms is None
+
+
+def test_parse_keeps_stable_x_as_client_hash_only():
+    """Stable x は client_hash として扱い, 未確認の分類値には使わない。"""
+    boundary = "----boundary"
+    fields = [
+        ("score", SCORE_B64),
+        ("iv", IV_B64),
+        ("pass", b"pass_hash"),
+        ("x", b"1"),
+        ("osuver", b"20260412"),
+    ]
+    body = make_multipart_body(boundary, fields)
+    content_type = f"multipart/form-data; boundary={boundary}"
+
+    result = parse(body, content_type)
+
+    assert result.client_hash == "1"
+    assert result.submit_exit_classification is None
+
+
 def test_parse_missing_required_field_score():
     """Missing score field should raise ParseError."""
     boundary = "----boundary"

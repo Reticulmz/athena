@@ -4,6 +4,9 @@ from osu_server.repositories.interfaces.commands.blobs import DuplicateBlobError
 from osu_server.repositories.sqlalchemy.commands.beatmap_leaderboards import (
     SQLAlchemyBeatmapLeaderboardCommandRepository,
 )
+from osu_server.repositories.sqlalchemy.commands.beatmap_performance_bests import (
+    SQLAlchemyBeatmapPerformanceBestCommandRepository,
+)
 from osu_server.repositories.sqlalchemy.commands.beatmaps import (
     BeatmapNotFoundError,
     DuplicateBeatmapChecksumError,
@@ -12,6 +15,9 @@ from osu_server.repositories.sqlalchemy.commands.beatmaps import (
 from osu_server.repositories.sqlalchemy.commands.blobs import SQLAlchemyBlobCommandRepository
 from osu_server.repositories.sqlalchemy.commands.channels import SQLAlchemyChannelCommandRepository
 from osu_server.repositories.sqlalchemy.commands.chat import SQLAlchemyChatCommandRepository
+from osu_server.repositories.sqlalchemy.commands.current_user_stats import (
+    SQLAlchemyCurrentUserStatsCommandRepository,
+)
 from osu_server.repositories.sqlalchemy.commands.friends import (
     SQLAlchemyFriendRelationshipCommandRepository,
 )
@@ -35,9 +41,11 @@ __all__ = [
     "DuplicateBlobError",
     "SQLAlchemyBeatmapCommandRepository",
     "SQLAlchemyBeatmapLeaderboardCommandRepository",
+    "SQLAlchemyBeatmapPerformanceBestCommandRepository",
     "SQLAlchemyBlobCommandRepository",
     "SQLAlchemyChannelCommandRepository",
     "SQLAlchemyChatCommandRepository",
+    "SQLAlchemyCurrentUserStatsCommandRepository",
     "SQLAlchemyFriendRelationshipCommandRepository",
     "SQLAlchemyPersonalBestCommandRepository",
     "SQLAlchemyReplayCommandRepository",

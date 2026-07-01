@@ -21,14 +21,21 @@ from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
+    StableUserStatusStore,
+)
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.infrastructure.state.memory.stable_user_status_store import (
+    InMemoryStableUserStatusStore,
+)
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
 from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
 from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
+from osu_server.repositories.interfaces.queries.user_stats import UserStatsQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
@@ -37,6 +44,7 @@ from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryReposi
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
 from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
+from osu_server.repositories.memory.queries.user_stats import InMemoryUserStatsQueryRepository
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -181,6 +189,10 @@ async def test_app_container_uses_explicit_in_memory_test_overrides(
         assert isinstance(await container.get(PacketQueue), InMemoryPacketQueue)
         assert isinstance(await container.get(ChannelStateStore), InMemoryChannelStateStore)
         assert isinstance(await container.get(RateLimiter), InMemoryRateLimiter)
+        assert isinstance(
+            await container.get(StableUserStatusStore),
+            InMemoryStableUserStatusStore,
+        )
         assert isinstance(await container.get(SessionStore), InMemorySessionStore)
         assert isinstance(await container.get(UnitOfWorkFactory), InMemoryUnitOfWorkFactory)
         assert isinstance(await container.get(UserQueryRepository), InMemoryUserQueryRepository)
@@ -197,6 +209,10 @@ async def test_app_container_uses_explicit_in_memory_test_overrides(
         assert isinstance(
             await container.get(ChatHistoryQueryRepository),
             InMemoryChatHistoryQueryRepository,
+        )
+        assert isinstance(
+            await container.get(UserStatsQueryRepository),
+            InMemoryUserStatsQueryRepository,
         )
     finally:
         await container.close()

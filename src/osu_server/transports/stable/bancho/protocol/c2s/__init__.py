@@ -19,6 +19,10 @@ from osu_server.transports.stable.bancho.protocol.c2s.presence import (
     parse_presence_request_payload,
     presence_request_payload,
 )
+from osu_server.transports.stable.bancho.protocol.c2s.stats import (
+    parse_stats_request_payload,
+    stats_request_payload,
+)
 from osu_server.transports.stable.bancho.protocol.c2s.status import (
     parse_status_change_payload,
     status_change_payload,
@@ -37,7 +41,9 @@ __all__ = (
     "parse_message_payload",
     "parse_presence_request_all_payload",
     "parse_presence_request_payload",
+    "parse_stats_request_payload",
     "parse_status_change_payload",
     "presence_request_payload",
+    "stats_request_payload",
     "status_change_payload",
 )

@@ -21,6 +21,7 @@ from osu_server.repositories.memory.queries.score_performance import (
     InMemoryScorePerformanceQueryRepository,
 )
 from osu_server.repositories.memory.queries.scores import InMemoryScoreQueryRepository
+from osu_server.repositories.memory.queries.user_stats import InMemoryUserStatsQueryRepository
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "InMemoryScorePerformanceQueryRepository",
     "InMemoryScoreQueryRepository",
     "InMemoryUserQueryRepository",
+    "InMemoryUserStatsQueryRepository",
 ]

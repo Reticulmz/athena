@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, override
 
@@ -21,12 +22,18 @@ from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
     UpsertBeatmapLeaderboardUserBest,
 )
+from osu_server.repositories.interfaces.commands.beatmap_performance_bests import (
+    BeatmapPerformanceBestScope,
+    UpsertBeatmapPerformanceBest,
+)
 from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyBeatmapCommandRepository,
     SQLAlchemyBeatmapLeaderboardCommandRepository,
+    SQLAlchemyBeatmapPerformanceBestCommandRepository,
     SQLAlchemyBlobCommandRepository,
     SQLAlchemyChannelCommandRepository,
     SQLAlchemyChatCommandRepository,
+    SQLAlchemyCurrentUserStatsCommandRepository,
     SQLAlchemyFriendRelationshipCommandRepository,
     SQLAlchemyPersonalBestCommandRepository,
     SQLAlchemyReplayCommandRepository,
@@ -43,6 +50,7 @@ from osu_server.repositories.sqlalchemy.models.channel import ChannelModel
 from osu_server.repositories.sqlalchemy.models.personal_best import PersonalBestModel
 from osu_server.repositories.sqlalchemy.models.role import UserRoleModel
 from osu_server.repositories.sqlalchemy.models.user import UserModel
+from osu_server.repositories.sqlalchemy.models.user_stats import BeatmapPerformanceBestModel
 from osu_server.repositories.sqlalchemy.unit_of_work import (
     SQLAlchemyCommandSessionFactory,
     SQLAlchemyUnitOfWorkFactory,
@@ -254,6 +262,11 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
             uow.beatmap_leaderboards,
             SQLAlchemyBeatmapLeaderboardCommandRepository,
         )
+        assert isinstance(
+            uow.beatmap_performance_bests,
+            SQLAlchemyBeatmapPerformanceBestCommandRepository,
+        )
+        assert isinstance(uow.current_user_stats, SQLAlchemyCurrentUserStatsCommandRepository)
         assert isinstance(uow.score_performance, SQLAlchemyScorePerformanceCommandRepository)
 
 
@@ -298,6 +311,32 @@ async def test_beatmap_leaderboard_repository_rolls_back_with_sqlalchemy_unit_of
 
     assert session.commits == 0
     assert session.rollbacks == 1
+    assert session.closed is True
+
+
+async def test_beatmap_performance_best_repository_commits_through_uow() -> None:
+    scope = _performance_best_scope()
+    session = FakeSession(
+        execute_results=[
+            FakeResult(),
+            FakeResult(value=_performance_best_model(scope=scope, score_id=92, pp=Decimal("100"))),
+        ]
+    )
+    factory = _factory(session)
+
+    async with factory() as uow:
+        created = await uow.beatmap_performance_bests.upsert_if_better(
+            _performance_best_upsert(scope=scope, score_id=92, pp=Decimal("100"))
+        )
+
+        assert created.score_id == 92
+        assert session.commits == 0
+        assert session.rollbacks == 0
+
+        await uow.commit()
+
+    assert session.commits == 1
+    assert session.rollbacks == 0
     assert session.closed is True
 
 
@@ -455,6 +494,55 @@ def _leaderboard_model(
         mod_filter_key=scope.mod_filter_key,
         score_id=score_id,
         score=score,
+        submitted_at=_NOW,
+        created_at=_NOW,
+        updated_at=_NOW,
+    )
+
+
+def _performance_best_scope() -> BeatmapPerformanceBestScope:
+    return BeatmapPerformanceBestScope(
+        user_id=2,
+        beatmap_id=1,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+    )
+
+
+def _performance_best_upsert(
+    *,
+    scope: BeatmapPerformanceBestScope,
+    score_id: int,
+    pp: Decimal,
+) -> UpsertBeatmapPerformanceBest:
+    return UpsertBeatmapPerformanceBest(
+        scope=scope,
+        score_id=score_id,
+        performance_calculation_id=score_id + 10_000,
+        pp=pp,
+        accuracy=0.98,
+        score=1_000_000,
+        submitted_at=_NOW,
+    )
+
+
+def _performance_best_model(
+    *,
+    scope: BeatmapPerformanceBestScope,
+    score_id: int,
+    pp: Decimal,
+) -> BeatmapPerformanceBestModel:
+    return BeatmapPerformanceBestModel(
+        id=41,
+        user_id=scope.user_id,
+        beatmap_id=scope.beatmap_id,
+        ruleset=scope.ruleset.value,
+        playstyle=scope.playstyle.value,
+        score_id=score_id,
+        performance_calculation_id=score_id + 10_000,
+        pp=pp,
+        accuracy=0.98,
+        score=1_000_000,
         submitted_at=_NOW,
         created_at=_NOW,
         updated_at=_NOW,

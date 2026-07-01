@@ -35,8 +35,17 @@ from osu_server.domain.scores.personal_best import (
     score_beats_personal_best,
 )
 from osu_server.domain.scores.replay import Replay
-from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.user_stats import (
+    UserCurrentStats,
+    UserPerformanceBest,
+    UserStatsHitTotals,
+    UserStatsPerformanceTotals,
+    UserStatsPolicy,
+    UserStatsProjection,
+    UserStatsScope,
+)
 from osu_server.domain.scores.validator import (
     ValidationError,
     ValidationResult,
@@ -68,12 +77,20 @@ __all__ = [
     "PersonalBest",
     "PersonalBestDelta",
     "PersonalBestScope",
+    "PlayTimeSource",
     "Playstyle",
     "Replay",
     "Ruleset",
     "Score",
     "ScoreRankKey",
     "ScoreSubmission",
+    "UserCurrentStats",
+    "UserPerformanceBest",
+    "UserStatsHitTotals",
+    "UserStatsPerformanceTotals",
+    "UserStatsPolicy",
+    "UserStatsProjection",
+    "UserStatsScope",
     "ValidationError",
     "ValidationResult",
     "country_leaderboard_is_available",

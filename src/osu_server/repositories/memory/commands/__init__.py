@@ -3,6 +3,9 @@
 from osu_server.repositories.memory.commands.beatmap_leaderboards import (
     InMemoryBeatmapLeaderboardCommandRepository,
 )
+from osu_server.repositories.memory.commands.beatmap_performance_bests import (
+    InMemoryBeatmapPerformanceBestCommandRepository,
+)
 from osu_server.repositories.memory.commands.beatmaps import (
     BeatmapNotFoundError,
     DuplicateBeatmapChecksumError,
@@ -11,6 +14,9 @@ from osu_server.repositories.memory.commands.beatmaps import (
 from osu_server.repositories.memory.commands.blobs import InMemoryBlobCommandRepository
 from osu_server.repositories.memory.commands.channels import InMemoryChannelCommandRepository
 from osu_server.repositories.memory.commands.chat import InMemoryChatCommandRepository
+from osu_server.repositories.memory.commands.current_user_stats import (
+    InMemoryCurrentUserStatsCommandRepository,
+)
 from osu_server.repositories.memory.commands.friends import (
     InMemoryFriendRelationshipCommandRepository,
 )
@@ -34,10 +40,12 @@ __all__ = [
     "DuplicateBeatmapChecksumError",
     "InMemoryBeatmapCommandRepository",
     "InMemoryBeatmapLeaderboardCommandRepository",
+    "InMemoryBeatmapPerformanceBestCommandRepository",
     "InMemoryBlobCommandRepository",
     "InMemoryChannelCommandRepository",
     "InMemoryChatCommandRepository",
     "InMemoryCommandRepositoryState",
+    "InMemoryCurrentUserStatsCommandRepository",
     "InMemoryFriendRelationshipCommandRepository",
     "InMemoryPersonalBestCommandRepository",
     "InMemoryReplayCommandRepository",

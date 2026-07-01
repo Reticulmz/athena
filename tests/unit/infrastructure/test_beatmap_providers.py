@@ -23,6 +23,10 @@ from osu_server.domain.beatmaps import (
     LocalBeatmapStatus,
     map_external_status,
 )
+from osu_server.repositories.beatmaps.mappers import (
+    beatmap_json_to_snapshot,
+    beatmap_v1_json_to_snapshot,
+)
 from osu_server.repositories.beatmaps.metadata_providers import (
     CompositeBeatmapMetadataProvider,
 )
@@ -144,6 +148,7 @@ class TestBeatmapSnapshot:
         assert snap.difficulty_rating is None
         assert snap.last_fetched_at is None
         assert snap.next_refresh_at is None
+        assert snap.official_last_updated_at is None
 
     def test_frozen_immutable(self) -> None:
         snap = BeatmapSnapshot(
@@ -231,6 +236,71 @@ class TestBeatmapSnapshot:
             official_status_verified=BeatmapSourceVerification.VERIFIED,
         )
         assert a == b
+
+
+class TestBeatmapMetadataMapper:
+    """External beatmap metadata date fields."""
+
+    def test_v1_last_update_maps_to_official_last_updated_at(self) -> None:
+        snapshot = beatmap_v1_json_to_snapshot(
+            [
+                {
+                    "beatmap_id": "2000",
+                    "beatmapset_id": "1000",
+                    "file_md5": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+                    "mode": "0",
+                    "version": "Insane",
+                    "approved": "1",
+                    "artist": "Camellia",
+                    "title": "Exit This Earth's Atomosphere",
+                    "creator": "Realazy",
+                    "last_update": "2026-06-29 12:34:56",
+                }
+            ],
+            now=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+
+        assert snapshot is not None
+        assert snapshot.beatmaps[0].official_last_updated_at == datetime(
+            2026, 6, 29, 12, 34, 56, tzinfo=UTC
+        )
+
+    def test_v2_last_updated_maps_to_official_last_updated_at(self) -> None:
+        snapshot = beatmap_json_to_snapshot(
+            {
+                "id": 1000,
+                "artist": "Camellia",
+                "title": "Exit This Earth's Atomosphere",
+                "creator": "Realazy",
+                "status": "ranked",
+                "last_updated": "2026-06-28T00:00:00Z",
+                "beatmaps": [
+                    {
+                        "id": 2000,
+                        "beatmapset_id": 1000,
+                        "checksum": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+                        "mode": "osu",
+                        "version": "Insane",
+                        "status": "ranked",
+                        "last_updated": "2026-06-29T12:34:56Z",
+                    },
+                    {
+                        "id": 2001,
+                        "beatmapset_id": 1000,
+                        "checksum": "ffffffffffffffffffffffffffffffff",
+                        "mode": "osu",
+                        "version": "Another",
+                        "status": "ranked",
+                    },
+                ],
+            },
+            now=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+
+        assert snapshot.beatmaps[0].official_last_updated_at == datetime(
+            2026, 6, 29, 12, 34, 56, tzinfo=UTC
+        )
+        assert snapshot.beatmaps[1].official_last_updated_at == datetime(2026, 6, 28, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast, final
 
 from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY
+from osu_server.infrastructure.state.memory.stable_user_status_store import (
+    InMemoryStableUserStatusStore,
+)
 from osu_server.services.queries.identity import (
     GetActiveSessionsByUserIdsQuery,
     GetActiveSessionsByUserIdsQueryInput,
@@ -16,6 +19,7 @@ from osu_server.transports.stable.bancho.handlers.presence import PresenceHandle
 from osu_server.transports.stable.bancho.mappers.presence import (
     bot_presence_packet,
     online_session_presence_packet,
+    online_session_presence_packet_for_mode,
 )
 from osu_server.transports.stable.bancho.protocol.c2s import presence_request_payload
 from osu_server.transports.stable.bancho.protocol.s2c.login import user_presence_bundle
@@ -147,6 +151,128 @@ async def test_presence_request_all_accepts_bancho_py_reserved_int32_payload() -
     assert active_sessions_by_user_ids_query.inputs == []
 
 
+async def test_presence_request_uses_target_user_current_mode() -> None:
+    online = (_snapshot(20), _snapshot(30))
+    packet_queue = FakePacketQueue()
+    active_sessions_query = FakeListActiveSessionsQuery(online)
+    active_sessions_by_user_ids_query = FakeGetActiveSessionsByUserIdsQuery(online)
+    status_store = InMemoryStableUserStatusStore()
+    await status_store.set_play_mode(20, 3)
+    handlers = _handlers(
+        active_sessions_query,
+        active_sessions_by_user_ids_query,
+        packet_queue,
+        stable_user_status_store=status_store,
+    )
+
+    await handlers.handle_presence_request(
+        presence_request_payload([20, 30]),
+        user_id=3,
+    )
+
+    assert packet_queue.enqueued == [
+        (
+            3,
+            (
+                online_session_presence_packet_for_mode(online[0], play_mode=3),
+                online_session_presence_packet(online[1]),
+            ),
+        )
+    ]
+    assert active_sessions_query.calls == 0
+    assert active_sessions_by_user_ids_query.inputs == [(20, 30)]
+
+
+async def test_presence_request_uses_requester_current_mode_for_bot() -> None:
+    online = (_snapshot(20),)
+    packet_queue = FakePacketQueue()
+    active_sessions_query = FakeListActiveSessionsQuery(online)
+    active_sessions_by_user_ids_query = FakeGetActiveSessionsByUserIdsQuery(online)
+    status_store = InMemoryStableUserStatusStore()
+    await status_store.set_play_mode(3, 3)
+    handlers = _handlers(
+        active_sessions_query,
+        active_sessions_by_user_ids_query,
+        packet_queue,
+        stable_user_status_store=status_store,
+    )
+
+    await handlers.handle_presence_request(
+        presence_request_payload([BANCHO_BOT_IDENTITY.user_id]),
+        user_id=3,
+    )
+
+    assert packet_queue.enqueued == [
+        (
+            3,
+            (bot_presence_packet(play_mode=3),),
+        )
+    ]
+    assert active_sessions_query.calls == 0
+    assert active_sessions_by_user_ids_query.inputs == [()]
+
+
+async def test_presence_request_all_uses_target_user_current_modes_for_roster() -> None:
+    online = (_snapshot(20), _snapshot(30))
+    packet_queue = FakePacketQueue()
+    active_sessions_query = FakeListActiveSessionsQuery(online)
+    active_sessions_by_user_ids_query = FakeGetActiveSessionsByUserIdsQuery(online)
+    status_store = InMemoryStableUserStatusStore()
+    await status_store.set_play_mode(20, 3)
+    handlers = _handlers(
+        active_sessions_query,
+        active_sessions_by_user_ids_query,
+        packet_queue,
+        stable_user_status_store=status_store,
+    )
+
+    await handlers.handle_presence_request_all(b"\x00\x00\x00\x00", user_id=3)
+
+    assert packet_queue.enqueued == [
+        (
+            3,
+            (
+                bot_presence_packet(),
+                online_session_presence_packet_for_mode(online[0], play_mode=3),
+                online_session_presence_packet(online[1]),
+                user_presence_bundle([BANCHO_BOT_IDENTITY.user_id, 20, 30]),
+            ),
+        )
+    ]
+    assert active_sessions_query.calls == 1
+    assert active_sessions_by_user_ids_query.inputs == []
+
+
+async def test_presence_request_all_uses_requester_current_mode_for_bot() -> None:
+    online = (_snapshot(20),)
+    packet_queue = FakePacketQueue()
+    active_sessions_query = FakeListActiveSessionsQuery(online)
+    active_sessions_by_user_ids_query = FakeGetActiveSessionsByUserIdsQuery(online)
+    status_store = InMemoryStableUserStatusStore()
+    await status_store.set_play_mode(3, 3)
+    handlers = _handlers(
+        active_sessions_query,
+        active_sessions_by_user_ids_query,
+        packet_queue,
+        stable_user_status_store=status_store,
+    )
+
+    await handlers.handle_presence_request_all(b"\x00\x00\x00\x00", user_id=3)
+
+    assert packet_queue.enqueued == [
+        (
+            3,
+            (
+                bot_presence_packet(play_mode=3),
+                online_session_presence_packet(online[0]),
+                user_presence_bundle([BANCHO_BOT_IDENTITY.user_id, 20]),
+            ),
+        )
+    ]
+    assert active_sessions_query.calls == 1
+    assert active_sessions_by_user_ids_query.inputs == []
+
+
 async def test_presence_request_all_drops_unknown_payload_size() -> None:
     packet_queue = FakePacketQueue()
     handlers = _handlers(
@@ -164,6 +290,8 @@ def _handlers(
     active_sessions_query: FakeListActiveSessionsQuery,
     active_sessions_by_user_ids_query: FakeGetActiveSessionsByUserIdsQuery,
     packet_queue: FakePacketQueue,
+    *,
+    stable_user_status_store: InMemoryStableUserStatusStore | None = None,
 ) -> PresenceHandlers:
     return PresenceHandlers(
         active_sessions_query=cast(
@@ -175,6 +303,7 @@ def _handlers(
             active_sessions_by_user_ids_query,
         ),
         packet_queue=cast("PacketQueue", packet_queue),
+        stable_user_status_store=stable_user_status_store,
     )
 
 

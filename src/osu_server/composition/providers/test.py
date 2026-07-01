@@ -19,12 +19,18 @@ from osu_server.infrastructure.state.interfaces.performance_completion_signal im
     PerformanceCompletionSignal,
 )
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
+    StableUserStatusStore,
+)
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.performance_completion_signal import (
     InMemoryPerformanceCompletionSignal,
 )
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.infrastructure.state.memory.stable_user_status_store import (
+    InMemoryStableUserStatusStore,
+)
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.infrastructure.storage.local import LocalBlobStorageBackend
 from osu_server.jobs import register_all_jobs
@@ -122,6 +128,7 @@ def make_in_memory_runtime_provider_set(
         ),
         replace_value(ChannelStateStore, InMemoryChannelStateStore(), scope=Scope.APP),
         replace_value(RateLimiter, InMemoryRateLimiter(), scope=Scope.APP),
+        replace_value(StableUserStatusStore, InMemoryStableUserStatusStore(), scope=Scope.APP),
         replace_value(
             PerformanceCompletionSignal,
             InMemoryPerformanceCompletionSignal(),

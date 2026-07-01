@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING, final
 
 import structlog.testing
@@ -12,6 +13,14 @@ from osu_server.domain.beatmaps import (
     BeatmapResolveOptions,
     BeatmapResolveResult,
 )
+from osu_server.domain.compatibility.stable import StableUserStatus
+from osu_server.domain.scores import Playstyle, Ruleset
+from osu_server.domain.scores.user_stats import UserPerformanceBest
+from osu_server.repositories.interfaces.queries.user_stats import (
+    UserStatsRankInput,
+    UserStatsSourceRead,
+    UserStatsSourceRow,
+)
 from osu_server.services.commands.beatmaps import (
     BeatmapFileWarmupEntrance,
     BeatmapFileWarmupOutcome,
@@ -19,10 +28,20 @@ from osu_server.services.commands.beatmaps import (
     BeatmapFileWarmupResult,
     RequestBeatmapFileWarmupUseCase,
 )
+from osu_server.services.queries.identity import (
+    ListActiveSessionsQueryInput,
+    ListActiveSessionsQueryResult,
+    OnlineSessionSnapshot,
+)
+from osu_server.services.queries.scores import (
+    CurrentUserStatsQuery,
+    CurrentUserStatsQueryInput,
+)
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.handlers.status import StatusChangeHandlers
 from osu_server.transports.stable.bancho.protocol.c2s import status_change_payload
 from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.s2c.login import user_stats
 from osu_server.transports.stable.bancho.protocol.types import StatusUpdate
 
 if TYPE_CHECKING:
@@ -56,6 +75,112 @@ class RecordingWarmupUseCase:
 
 
 @final
+class RecordingStableUserStatusStore:
+    def __init__(self) -> None:
+        self.statuses: list[tuple[int, StableUserStatus]] = []
+        self.play_modes: list[tuple[int, int]] = []
+
+    async def set_status(self, user_id: int, status: StableUserStatus) -> None:
+        self.statuses.append((user_id, status))
+        self.play_modes.append((user_id, status.play_mode))
+
+    async def get_statuses(
+        self,
+        user_ids: tuple[int, ...],
+    ) -> dict[int, StableUserStatus]:
+        return {
+            user_id: status
+            for stored_user_id, status in self.statuses
+            if stored_user_id in user_ids
+            for user_id in (stored_user_id,)
+        }
+
+    async def set_play_mode(self, user_id: int, play_mode: int) -> None:
+        self.play_modes.append((user_id, play_mode))
+
+    async def get_play_mode(self, user_id: int) -> int | None:
+        _ = user_id
+        return None
+
+    async def get_play_modes(self, user_ids: tuple[int, ...]) -> dict[int, int]:
+        _ = user_ids
+        return {}
+
+    async def refresh_ttl(self, user_id: int, ttl: int) -> None:
+        _ = (user_id, ttl)
+
+
+@final
+class RecordingUserStatsQueryRepository:
+    def __init__(self) -> None:
+        self.inputs: list[CurrentUserStatsQueryInput] = []
+
+    async def read_current_stats_sources(
+        self,
+        user_ids: tuple[int, ...],
+        *,
+        ruleset: Ruleset = Ruleset.OSU,
+        playstyle: Playstyle = Playstyle.VANILLA,
+    ) -> UserStatsSourceRead:
+        self.inputs.append(
+            CurrentUserStatsQueryInput(
+                user_ids=user_ids,
+                ruleset=ruleset,
+                playstyle=playstyle,
+            )
+        )
+        return UserStatsSourceRead(
+            users=(
+                UserStatsSourceRow(
+                    user_id=_USER_ID,
+                    play_count=5,
+                    ranked_score=900_000,
+                    total_score=900_000,
+                    play_time_seconds=None,
+                    best_performances=(UserPerformanceBest(pp=Decimal("250"), accuracy=0.99),),
+                    accuracy=0.99,
+                ),
+            ),
+            rank_inputs=(
+                UserStatsRankInput(
+                    user_id=_USER_ID,
+                    best_performances=(UserPerformanceBest(pp=Decimal("250"), accuracy=0.99),),
+                ),
+            ),
+        )
+
+
+@final
+class RecordingPacketQueue:
+    def __init__(self) -> None:
+        self.enqueued: list[tuple[int, tuple[bytes, ...]]] = []
+
+    async def enqueue(self, user_id: int, *data: bytes) -> None:
+        self.enqueued.append((user_id, data))
+
+    async def dequeue_all(self, user_id: int) -> bytes:
+        _ = user_id
+        return b""
+
+    async def refresh_ttl(self, user_id: int, ttl: int) -> None:
+        _ = (user_id, ttl)
+
+
+@final
+class RecordingActiveSessionsQuery:
+    def __init__(self, sessions: tuple[OnlineSessionSnapshot, ...]) -> None:
+        self.sessions = sessions
+        self.inputs: list[ListActiveSessionsQueryInput] = []
+
+    async def execute(
+        self,
+        input_data: ListActiveSessionsQueryInput,
+    ) -> ListActiveSessionsQueryResult:
+        self.inputs.append(input_data)
+        return ListActiveSessionsQueryResult(sessions=self.sessions)
+
+
+@final
 class RecordingWarmupResolver:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int | str, BeatmapResolveOptions | None]] = []
@@ -82,6 +207,7 @@ def _status_payload(
     beatmap_id: int,
     beatmap_md5: str = _CHECKSUM,
     status_text: str = "playing",
+    play_mode: int = 0,
 ) -> bytes:
     return status_change_payload(
         StatusUpdate(
@@ -89,7 +215,7 @@ def _status_payload(
             status_text=status_text,
             beatmap_md5=beatmap_md5,
             mods=0,
-            play_mode=0,
+            play_mode=play_mode,
             beatmap_id=beatmap_id,
         )
     )
@@ -129,6 +255,171 @@ async def test_status_change_positive_beatmap_id_takes_priority_over_checksum() 
             user_id=_USER_ID,
             beatmap_id=1234,
             checksum_md5=None,
+        )
+    ]
+
+
+async def test_status_change_stores_current_play_mode() -> None:
+    warmup = RecordingWarmupUseCase()
+    status_store = RecordingStableUserStatusStore()
+    handlers = StatusChangeHandlers(
+        beatmap_file_warmup=warmup,
+        stable_user_status_store=status_store,
+    )
+
+    await handlers.handle_status_change(
+        _status_payload(beatmap_id=1234, beatmap_md5=_CHECKSUM, play_mode=3),
+        user_id=_USER_ID,
+    )
+
+    assert status_store.play_modes == [(_USER_ID, 3)]
+
+
+async def test_status_change_returns_own_user_stats_for_current_play_mode() -> None:
+    warmup = RecordingWarmupUseCase()
+    status_store = RecordingStableUserStatusStore()
+    stats_repository = RecordingUserStatsQueryRepository()
+    stats_query = CurrentUserStatsQuery(repository=stats_repository)
+    packet_queue = RecordingPacketQueue()
+    handlers = StatusChangeHandlers(
+        beatmap_file_warmup=warmup,
+        stable_user_status_store=status_store,
+        current_user_stats_query=stats_query,
+        packet_queue=packet_queue,
+    )
+
+    await handlers.handle_status_change(
+        _status_payload(beatmap_id=1234, beatmap_md5=_CHECKSUM, play_mode=3),
+        user_id=_USER_ID,
+    )
+
+    assert status_store.play_modes == [(_USER_ID, 3)]
+    assert stats_repository.inputs == [
+        CurrentUserStatsQueryInput(
+            user_ids=(_USER_ID,),
+            ruleset=Ruleset.MANIA,
+            playstyle=Playstyle.VANILLA,
+        )
+    ]
+    expected_packet = user_stats(
+        user_id=_USER_ID,
+        status=2,
+        status_text="playing",
+        beatmap_md5=_CHECKSUM,
+        mods=0,
+        play_mode=3,
+        beatmap_id=1234,
+        ranked_score=900_000,
+        accuracy=0.99,
+        play_count=5,
+        total_score=900_000,
+        rank=1,
+        pp=250,
+    )
+    assert packet_queue.enqueued == [
+        (
+            _USER_ID,
+            (expected_packet,),
+        ),
+    ]
+
+
+async def test_status_change_fans_out_user_stats_to_online_sessions() -> None:
+    warmup = RecordingWarmupUseCase()
+    status_store = RecordingStableUserStatusStore()
+    stats_repository = RecordingUserStatsQueryRepository()
+    stats_query = CurrentUserStatsQuery(repository=stats_repository)
+    packet_queue = RecordingPacketQueue()
+    active_sessions_query = RecordingActiveSessionsQuery(
+        (
+            OnlineSessionSnapshot(
+                user_id=100,
+                username="Other",
+                privileges=0,
+                country="JP",
+                utc_offset=9,
+            ),
+            OnlineSessionSnapshot(
+                user_id=_USER_ID,
+                username="Self",
+                privileges=0,
+                country="JP",
+                utc_offset=9,
+            ),
+        )
+    )
+    handlers = StatusChangeHandlers(
+        beatmap_file_warmup=warmup,
+        stable_user_status_store=status_store,
+        current_user_stats_query=stats_query,
+        packet_queue=packet_queue,
+        active_sessions_query=active_sessions_query,
+    )
+
+    await handlers.handle_status_change(
+        _status_payload(beatmap_id=1234, beatmap_md5=_CHECKSUM, play_mode=3),
+        user_id=_USER_ID,
+    )
+
+    assert active_sessions_query.inputs == [ListActiveSessionsQueryInput()]
+    assert [recipient_id for recipient_id, _ in packet_queue.enqueued] == [_USER_ID, 100]
+    assert packet_queue.enqueued[0][1] == packet_queue.enqueued[1][1]
+
+
+async def test_request_status_returns_own_user_stats_for_stored_play_mode() -> None:
+    warmup = RecordingWarmupUseCase()
+    status_store = RecordingStableUserStatusStore()
+    await status_store.set_status(
+        _USER_ID,
+        StableUserStatus(
+            status=2,
+            status_text="playing",
+            beatmap_md5=_CHECKSUM,
+            mods=0,
+            play_mode=Ruleset.MANIA.value,
+            beatmap_id=1234,
+        ),
+    )
+    stats_repository = RecordingUserStatsQueryRepository()
+    stats_query = CurrentUserStatsQuery(repository=stats_repository)
+    packet_queue = RecordingPacketQueue()
+    handlers = StatusChangeHandlers(
+        beatmap_file_warmup=warmup,
+        stable_user_status_store=status_store,
+        current_user_stats_query=stats_query,
+        packet_queue=packet_queue,
+    )
+
+    await handlers.handle_request_status(b"", user_id=_USER_ID)
+
+    assert stats_repository.inputs == [
+        CurrentUserStatsQueryInput(
+            user_ids=(_USER_ID,),
+            ruleset=Ruleset.MANIA,
+            playstyle=Playstyle.VANILLA,
+        )
+    ]
+    assert warmup.requests == []
+    assert packet_queue.enqueued == [
+        (
+            _USER_ID,
+            (
+                user_stats(
+                    user_id=_USER_ID,
+                    status=2,
+                    status_text="playing",
+                    beatmap_md5=_CHECKSUM,
+                    mods=0,
+                    play_mode=3,
+                    beatmap_id=1234,
+                    ranked_score=900_000,
+                    accuracy=0.99,
+                    play_count=5,
+                    total_score=900_000,
+                    rank=1,
+                    pp=250,
+                ),
+            ),
         )
     ]
 
@@ -237,3 +528,4 @@ def test_status_change_handler_registers_status_change_packet() -> None:
     handlers.register_all(dispatcher)
 
     assert ClientPacketID.STATUS_CHANGE in dispatcher.get_handlers()
+    assert ClientPacketID.REQUEST_STATUS in dispatcher.get_handlers()

@@ -14,6 +14,9 @@ from osu_server.transports.stable.bancho.workflows.c2s_actions import C2SActionE
 
 if TYPE_CHECKING:
     from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
+    from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
+        StableUserStatusStore,
+    )
     from osu_server.repositories.interfaces.session_store import PollingSessionRuntime
     from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 
@@ -40,6 +43,7 @@ class PollingWorkflow:
 
     _session_store: PollingSessionRuntime
     _packet_queue: PacketQueue
+    _stable_user_status_store: StableUserStatusStore | None
     _c2s_actions: C2SActionExecutor
     _session_ttl: int
     _max_request_body_size: int
@@ -50,11 +54,13 @@ class PollingWorkflow:
         session_store: PollingSessionRuntime,
         packet_queue: PacketQueue,
         packet_dispatcher: PacketDispatcher,
+        stable_user_status_store: StableUserStatusStore | None = None,
         session_ttl: int = 300,
         max_request_body_size: int = 1_048_576,
     ) -> None:
         self._session_store = session_store
         self._packet_queue = packet_queue
+        self._stable_user_status_store = stable_user_status_store
         self._c2s_actions = C2SActionExecutor(packet_dispatcher)
         self._session_ttl = session_ttl
         self._max_request_body_size = max_request_body_size
@@ -79,11 +85,15 @@ class PollingWorkflow:
         user_id = session.user_id
         _ = await self._session_store.refresh(workflow_input.token)
         await self._packet_queue.refresh_ttl(user_id, self._session_ttl)
+        if self._stable_user_status_store is not None:
+            await self._stable_user_status_store.refresh_ttl(user_id, self._session_ttl)
 
         c2s_result = await self._c2s_actions.execute(body=body, user_id=user_id)
 
         response_data = await self._packet_queue.dequeue_all(user_id)
         await self._packet_queue.refresh_ttl(user_id, self._session_ttl)
+        if self._stable_user_status_store is not None:
+            await self._stable_user_status_store.refresh_ttl(user_id, self._session_ttl)
 
         elapsed_ms = (time.monotonic() - start) * 1000
         logger.info(

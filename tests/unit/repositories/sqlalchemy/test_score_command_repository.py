@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy.dialects import postgresql
 
 from osu_server.domain.scores.mods import ModCombination
-from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.repositories.sqlalchemy.commands.scores import SQLAlchemyScoreCommandRepository
 from osu_server.repositories.sqlalchemy.models.score import ScoreModel
 
@@ -20,11 +21,19 @@ if TYPE_CHECKING:
 class FakeExecuteResult:
     """Minimal SQLAlchemy result substitute for scalar iteration tests."""
 
-    def __init__(self, models: tuple[ScoreModel, ...] = ()) -> None:
+    def __init__(
+        self,
+        models: tuple[ScoreModel, ...] = (),
+        row: tuple[int, int] = (0, 0),
+    ) -> None:
         self._models: tuple[ScoreModel, ...] = models
+        self._row: tuple[int, int] = row
 
     def scalars(self) -> tuple[ScoreModel, ...]:
         return self._models
+
+    def one(self) -> tuple[int, int]:
+        return self._row
 
 
 class FakeSession:
@@ -33,6 +42,7 @@ class FakeSession:
     def __init__(self) -> None:
         self.added_model: ScoreModel | None = None
         self.statements: list[object] = []
+        self.execute_row: tuple[int, int] = (0, 0)
 
     def add(self, instance: object) -> None:
         assert isinstance(instance, ScoreModel)
@@ -40,7 +50,7 @@ class FakeSession:
 
     async def execute(self, statement: object) -> FakeExecuteResult:
         self.statements.append(statement)
-        return FakeExecuteResult()
+        return FakeExecuteResult(row=self.execute_row)
 
     async def flush(self) -> None:
         assert self.added_model is not None
@@ -59,6 +69,31 @@ async def test_create_persists_leaderboard_eligibility_snapshot() -> None:
     assert session.added_model is not None
     assert session.added_model.leaderboard_eligible_at_submission is False
     assert created.leaderboard_eligible_at_submission is False
+
+
+async def test_create_persists_timing_fields() -> None:
+    session = FakeSession()
+    repository = SQLAlchemyScoreCommandRepository(cast("AsyncSession", cast("object", session)))
+
+    created = await repository.create(
+        replace(
+            _score(leaderboard_eligible_at_submission=False),
+            fail_time_ms=7_112,
+            play_time_seconds=7,
+            play_time_source=PlayTimeSource.FAIL_TIME,
+            submit_exit_classification="1",
+        )
+    )
+
+    assert session.added_model is not None
+    assert session.added_model.fail_time_ms == 7_112
+    assert session.added_model.play_time_seconds == 7
+    assert session.added_model.play_time_source == "fail_time"
+    assert session.added_model.submit_exit_classification == "1"
+    assert created.fail_time_ms == 7_112
+    assert created.play_time_seconds == 7
+    assert created.play_time_source is PlayTimeSource.FAIL_TIME
+    assert created.submit_exit_classification == "1"
 
 
 async def test_user_rebuild_candidates_select_only_passed_submission_eligible_scores() -> None:
@@ -91,6 +126,25 @@ async def test_beatmap_rebuild_candidates_select_target_beatmap_ids() -> None:
     assert "scores.leaderboard_eligible_at_submission IS true" in sql
 
 
+async def test_current_stats_scores_select_user_mode_and_exclude_relax_autopilot() -> None:
+    session = FakeSession()
+    repository = SQLAlchemyScoreCommandRepository(cast("AsyncSession", cast("object", session)))
+
+    result = await repository.list_current_stats_scores_for_user(
+        1000,
+        ruleset=Ruleset.MANIA,
+        playstyle=Playstyle.VANILLA,
+    )
+
+    assert result == ()
+    sql = _compiled_select(session.statements[0])
+    assert "scores.user_id = %(user_id_1)s" in sql
+    assert "scores.ruleset = %(ruleset_1)s" in sql
+    assert "scores.playstyle = %(playstyle_1)s" in sql
+    assert "& %(mods_1)s" in sql
+    assert "ORDER BY scores.submitted_at ASC" in sql
+
+
 async def test_empty_beatmap_candidate_selection_does_not_query() -> None:
     session = FakeSession()
     repository = SQLAlchemyScoreCommandRepository(cast("AsyncSession", cast("object", session)))
@@ -99,6 +153,21 @@ async def test_empty_beatmap_candidate_selection_does_not_query() -> None:
 
     assert result == ()
     assert session.statements == []
+
+
+async def test_count_submissions_for_beatmap_selects_play_and_pass_counts() -> None:
+    session = FakeSession()
+    session.execute_row = (3, 2)
+    repository = SQLAlchemyScoreCommandRepository(cast("AsyncSession", cast("object", session)))
+
+    result = await repository.count_submissions_for_beatmap(100)
+
+    assert result.play_count == 3
+    assert result.pass_count == 2
+    sql = _compiled_select(session.statements[0])
+    assert "count(scores.id)" in sql
+    assert "CASE WHEN (scores.passed IS true)" in sql
+    assert "scores.beatmap_id = %(beatmap_id_1)s" in sql
 
 
 def _score(*, leaderboard_eligible_at_submission: bool) -> Score:

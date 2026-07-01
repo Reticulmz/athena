@@ -13,13 +13,12 @@ _BOUNDARY_FILES = (
 )
 _PROJECTION_SCOPE_TERMS = (
     "leaderboard",
-    "user_stats",
     "user_rank",
     "rank_projection",
 )
 
 
-def test_wave_2_performance_paths_do_not_update_future_projection_scopes() -> None:
+def test_performance_paths_do_not_update_unowned_projection_scopes() -> None:
     matches: list[str] = []
     for relative_path in _BOUNDARY_FILES:
         source = (_PROJECT_ROOT / relative_path).read_text()

@@ -14,7 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from osu_server.domain.scores.mods import ModCombination
-from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
@@ -215,3 +215,27 @@ async def test_sqlalchemy_score_repository_preserves_all_fields(
     assert retrieved.katu == score.katu
     assert retrieved.miss == score.miss
     assert retrieved.beatmap_status_at_submission == "ranked"
+
+
+async def test_sqlalchemy_score_repository_preserves_timing_fields(
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
+) -> None:
+    score = _make_score(online_checksum="test_checksum_timing")
+    score.fail_time_ms = 7_112
+    score.play_time_seconds = 7
+    score.play_time_source = PlayTimeSource.FAIL_TIME
+    score.submit_exit_classification = "1"
+
+    async with uow_factory() as uow:
+        created = await uow.scores.create(score)
+        await uow.commit()
+
+    assert created.id is not None
+    async with uow_factory() as uow:
+        retrieved = await uow.scores.get_by_id(created.id)
+
+    assert retrieved is not None
+    assert retrieved.fail_time_ms == 7_112
+    assert retrieved.play_time_seconds == 7
+    assert retrieved.play_time_source is PlayTimeSource.FAIL_TIME
+    assert retrieved.submit_exit_classification == "1"

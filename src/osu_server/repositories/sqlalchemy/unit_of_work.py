@@ -7,9 +7,11 @@ from typing import TYPE_CHECKING, Protocol, cast
 from osu_server.repositories.sqlalchemy.commands import (
     SQLAlchemyBeatmapCommandRepository,
     SQLAlchemyBeatmapLeaderboardCommandRepository,
+    SQLAlchemyBeatmapPerformanceBestCommandRepository,
     SQLAlchemyBlobCommandRepository,
     SQLAlchemyChannelCommandRepository,
     SQLAlchemyChatCommandRepository,
+    SQLAlchemyCurrentUserStatsCommandRepository,
     SQLAlchemyFriendRelationshipCommandRepository,
     SQLAlchemyPersonalBestCommandRepository,
     SQLAlchemyReplayCommandRepository,
@@ -61,6 +63,8 @@ class SQLAlchemyUnitOfWork:
     blobs: SQLAlchemyBlobCommandRepository
     beatmaps: SQLAlchemyBeatmapCommandRepository
     beatmap_leaderboards: SQLAlchemyBeatmapLeaderboardCommandRepository
+    beatmap_performance_bests: SQLAlchemyBeatmapPerformanceBestCommandRepository
+    current_user_stats: SQLAlchemyCurrentUserStatsCommandRepository
 
     def __init__(self, session_factory: SQLAlchemyCommandSessionFactory) -> None:
         self._session_factory: SQLAlchemyCommandSessionFactory = session_factory
@@ -89,6 +93,14 @@ class SQLAlchemyUnitOfWork:
         self.beatmaps = cast("SQLAlchemyBeatmapCommandRepository", cast("object", None))
         self.beatmap_leaderboards = cast(
             "SQLAlchemyBeatmapLeaderboardCommandRepository",
+            cast("object", None),
+        )
+        self.beatmap_performance_bests = cast(
+            "SQLAlchemyBeatmapPerformanceBestCommandRepository",
+            cast("object", None),
+        )
+        self.current_user_stats = cast(
+            "SQLAlchemyCurrentUserStatsCommandRepository",
             cast("object", None),
         )
 
@@ -134,6 +146,8 @@ class SQLAlchemyUnitOfWork:
         self.blobs = SQLAlchemyBlobCommandRepository(session)
         self.beatmaps = SQLAlchemyBeatmapCommandRepository(session)
         self.beatmap_leaderboards = SQLAlchemyBeatmapLeaderboardCommandRepository(session)
+        self.beatmap_performance_bests = SQLAlchemyBeatmapPerformanceBestCommandRepository(session)
+        self.current_user_stats = SQLAlchemyCurrentUserStatsCommandRepository(session)
 
     def _require_session(self) -> AsyncSession:
         if self._session is None:

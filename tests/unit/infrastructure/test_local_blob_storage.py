@@ -44,6 +44,24 @@ async def test_validate_configuration_creates_missing_writable_root(tmp_path: Pa
     await staged.discard()
 
 
+async def test_validate_configuration_uses_collision_safe_final_probe_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_write_bytes = type(tmp_path).write_bytes
+
+    def delete_fixed_probe_after_write(self: Path, data: bytes) -> int:
+        written = original_write_bytes(self, data)
+        if self.name == ".probe":
+            self.unlink()
+        return written
+
+    monkeypatch.setattr(type(tmp_path), "write_bytes", delete_fixed_probe_after_write)
+    backend = LocalBlobStorageBackend(tmp_path)
+
+    await backend.validate_configuration()
+
+
 async def test_validate_configuration_rejects_file_root(tmp_path: Path) -> None:
     root = tmp_path / "not-a-directory"
     _ = root.write_text("not a directory", encoding="utf-8")

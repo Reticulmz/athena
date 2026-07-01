@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -15,6 +16,26 @@ if TYPE_CHECKING:
         BeatmapSet,
         LocalBeatmapStatus,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class BeatmapSubmissionCounts:
+    """beatmap 単位の submitted play/pass count。"""
+
+    play_count: int
+    pass_count: int
+
+    def __post_init__(self) -> None:
+        """count として不正な負数を拒否する。"""
+        if self.play_count < 0:
+            msg = "play_count must be non-negative"
+            raise ValueError(msg)
+        if self.pass_count < 0:
+            msg = "pass_count must be non-negative"
+            raise ValueError(msg)
+        if self.pass_count > self.play_count:
+            msg = "pass_count must not exceed play_count"
+            raise ValueError(msg)
 
 
 @runtime_checkable
@@ -47,6 +68,15 @@ class BeatmapCommandRepository(Protocol):
         self, beatmap_id: int, status: LocalBeatmapStatus | None
     ) -> Beatmap:
         """Persist a local beatmap status override."""
+        ...
+
+    async def increment_submission_counts(
+        self,
+        beatmap_id: int,
+        *,
+        passed: bool,
+    ) -> BeatmapSubmissionCounts:
+        """Increment submitted play/pass count and return the post-increment values."""
         ...
 
     async def get_current_file_attachment(self, beatmap_id: int) -> BeatmapFileAttachment | None:

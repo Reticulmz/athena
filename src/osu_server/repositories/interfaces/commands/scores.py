@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from osu_server.domain.scores.score import Score
+    from osu_server.domain.scores.score import Playstyle, Ruleset, Score
+    from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
 
 
 @runtime_checkable
@@ -26,6 +27,20 @@ class ScoreCommandRepository(Protocol):
 
     async def get_by_id(self, score_id: int) -> Score | None:
         """Return a score by identifier for command-side consistency checks."""
+        ...
+
+    async def count_submissions_for_beatmap(self, beatmap_id: int) -> BeatmapSubmissionCounts:
+        """Return cumulative submitted play/pass count for one beatmap."""
+        ...
+
+    async def list_current_stats_scores_for_user(
+        self,
+        user_id: int,
+        *,
+        ruleset: Ruleset,
+        playstyle: Playstyle,
+    ) -> tuple[Score, ...]:
+        """Return source scores used to rebuild one user's current UserStats projection."""
         ...
 
     async def list_leaderboard_rebuild_candidates_for_user(

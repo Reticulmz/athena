@@ -53,7 +53,8 @@ from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.services.commands.beatmaps import FetchBeatmapFileUseCase
 from osu_server.services.commands.identity.auth_service import AuthService
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
-from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID
+from osu_server.transports.stable.bancho.protocol.enums import ClientPacketID, ServerPacketID
+from osu_server.transports.stable.bancho.protocol.s2c.login import user_stats
 from osu_server.transports.stable.bancho.protocol.types import StatusUpdate
 from tests.support.app import resolve_dependency
 from tests.support.persistence import (
@@ -81,6 +82,13 @@ _STATUS_BEATMAP_ID = 75
 _STATUS_BEATMAPSET_ID = 1
 _STATUS_CHECKSUM = "0123456789abcdef0123456789abcdef"
 _STATUS_FILENAME = "Camellia - Exit This Earth's Atomosphere (Realazy) [Insane].osu"
+_MODE_SWITCH_PACKET_BODY = bytes.fromhex(
+    "0000000e000000000b000b0000000000016bb92000",
+)
+_MODE_SWITCH_BEATMAP_ID = 2_144_619
+_STATUS_CHANGE_RESPONSE_PACKET_IDS = [
+    ServerPacketID.USER_STATS,
+]
 
 # Module-level env defaults for test DI container
 _ = os.environ.setdefault("DATABASE_URL", "postgresql://localhost:5432/athena")
@@ -97,6 +105,21 @@ def _build_login_body() -> bytes:
 
 def _build_c2s_packet(packet_id: ClientPacketID, payload: bytes = b"") -> bytes:
     return struct.pack("<HBI", packet_id.value, 0, len(payload)) + payload
+
+
+def _server_packet_ids(packet_stream: bytes) -> list[ServerPacketID]:
+    packet_ids: list[ServerPacketID] = []
+    offset = 0
+    while offset < len(packet_stream):
+        unpacked = struct.unpack(
+            "<HBI",
+            packet_stream[offset : offset + _HEADER_SIZE],
+        )
+        packet_id = cast("int", unpacked[0])
+        payload_size = cast("int", unpacked[2])
+        packet_ids.append(ServerPacketID(packet_id))
+        offset += _HEADER_SIZE + payload_size
+    return packet_ids
 
 
 def _status_payload(
@@ -336,7 +359,25 @@ class TestStatusChangeWarmupE2E:
             with structlog.testing.capture_logs() as logs:
                 resp = client.post(_BANCHO_URL, headers={"osu-token": token}, content=body)
 
-        assert resp.content == b"\xca\xfe"
+        assert resp.content.startswith(b"\xca\xfe")
+        assert _server_packet_ids(resp.content[2:]) == _STATUS_CHANGE_RESPONSE_PACKET_IDS
+        assert resp.content[2:].startswith(
+            user_stats(
+                user_id=session.user_id,
+                status=2,
+                status_text="playing",
+                beatmap_md5=_STATUS_CHECKSUM,
+                mods=0,
+                play_mode=0,
+                beatmap_id=_STATUS_BEATMAP_ID,
+                ranked_score=0,
+                accuracy=0.0,
+                play_count=0,
+                total_score=0,
+                rank=0,
+                pp=0,
+            )
+        )
         file_target = BeatmapFetchTarget.file_by_beatmap_id(_STATUS_BEATMAP_ID)
         assert fetch_queue.enqueued_targets == [file_target]
 
@@ -350,6 +391,51 @@ class TestStatusChangeWarmupE2E:
         assert warmup.get("reason") == "osu_file_required_but_unavailable"
         assert any(
             entry.get("event") == "c2s_packet" and entry.get("packet") == "PONG" for entry in logs
+        )
+
+    async def test_status_change_accepts_stable_present_empty_strings_and_returns_stats(
+        self,
+    ) -> None:
+        fetch_queue = RecordingBeatmapFetchQueue()
+        app = _make_test_app(broker=fetch_queue.broker)
+
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _, _, session_store, auth_service = await _resolve_services(app)
+            token = await _login_and_get_token(auth_service, client)
+            _ = client.post(_BANCHO_URL, headers={"osu-token": token})
+
+            session = await session_store.get(token)
+            assert session is not None
+
+            with structlog.testing.capture_logs() as logs:
+                resp = client.post(
+                    _BANCHO_URL,
+                    headers={"osu-token": token},
+                    content=_MODE_SWITCH_PACKET_BODY,
+                )
+
+        assert _server_packet_ids(resp.content) == _STATUS_CHANGE_RESPONSE_PACKET_IDS
+        assert resp.content.startswith(
+            user_stats(
+                user_id=session.user_id,
+                status=0,
+                status_text="",
+                beatmap_md5="",
+                mods=0,
+                play_mode=1,
+                beatmap_id=_MODE_SWITCH_BEATMAP_ID,
+                ranked_score=0,
+                accuracy=0.0,
+                play_count=0,
+                total_score=0,
+                rank=0,
+                pp=0,
+            )
+        )
+        assert not _events_with(logs, "status_change_warmup_decode_failed")
+        assert any(
+            entry.get("event") == "c2s_packet" and entry.get("packet") == "STATUS_CHANGE"
+            for entry in logs
         )
 
     async def test_status_change_checksum_fallback_requests_known_file_fetch(self) -> None:
@@ -369,7 +455,7 @@ class TestStatusChangeWarmupE2E:
             with structlog.testing.capture_logs() as logs:
                 resp = client.post(_BANCHO_URL, headers={"osu-token": token}, content=body)
 
-        assert resp.content == b""
+        assert _server_packet_ids(resp.content) == _STATUS_CHANGE_RESPONSE_PACKET_IDS
         file_target = BeatmapFetchTarget.file_by_beatmap_id(_STATUS_BEATMAP_ID)
         assert fetch_queue.enqueued_targets == [file_target]
 
@@ -416,7 +502,7 @@ class TestStatusChangeWarmupE2E:
 
             fetch_record = await query_repository.get_fetch_state(file_target)
 
-        assert resp.content == b""
+        assert _server_packet_ids(resp.content) == _STATUS_CHANGE_RESPONSE_PACKET_IDS * 2
         assert fetch_queue.enqueued_targets == [file_target, file_target]
         assert fetch_record is not None
         assert fetch_record.status is BeatmapFetchState.PENDING_FETCH
@@ -453,7 +539,7 @@ class TestStatusChangeWarmupE2E:
 
             attachment = await query_repository.get_current_file_attachment(_STATUS_BEATMAP_ID)
 
-        assert resp.content == b""
+        assert _server_packet_ids(resp.content) == _STATUS_CHANGE_RESPONSE_PACKET_IDS
         assert attachment is not None
         assert fetch_queue.enqueued_targets == []
 

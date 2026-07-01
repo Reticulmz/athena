@@ -6,7 +6,10 @@ import pytest
 
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
-from osu_server.repositories.interfaces.commands.scores import ScoreCommandRepository
+from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
+from osu_server.repositories.interfaces.commands.scores import (
+    ScoreCommandRepository,
+)
 
 
 class ConcreteScoreRepository:
@@ -23,6 +26,21 @@ class ConcreteScoreRepository:
 
     async def get_by_id(self, _score_id: int) -> Score | None:
         return None
+
+    async def count_submissions_for_beatmap(self, _beatmap_id: int) -> BeatmapSubmissionCounts:
+        return BeatmapSubmissionCounts(play_count=0, pass_count=0)
+
+    async def list_current_stats_scores_for_user(
+        self,
+        user_id: int,
+        *,
+        ruleset: Ruleset,
+        playstyle: Playstyle,
+    ) -> tuple[Score, ...]:
+        _ = user_id
+        _ = ruleset
+        _ = playstyle
+        return ()
 
     async def list_leaderboard_rebuild_candidates_for_user(
         self,

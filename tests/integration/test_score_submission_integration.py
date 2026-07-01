@@ -27,12 +27,13 @@ from osu_server.domain.beatmaps import (
     BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapResolveResult,
+    BeatmapSet,
     BeatmapSourceVerification,
 )
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import Mod
-from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
+from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset
 from osu_server.domain.storage.blobs import BlobStored, NewBlob
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
@@ -78,14 +79,14 @@ def _eligible_beatmap() -> BeatmapEligibility:
     )
 
 
-def _resolved_beatmap() -> Beatmap:
+def _resolved_beatmap(*, total_length: int | None = None) -> Beatmap:
     return Beatmap(
         id=1,
         beatmapset_id=10,
         checksum_md5="0123456789abcdef0123456789abcdef",
         mode="osu",
         version="Integration",
-        total_length=None,
+        total_length=total_length,
         hit_length=None,
         max_combo=None,
         bpm=None,
@@ -101,6 +102,23 @@ def _resolved_beatmap() -> Beatmap:
         metadata_fetch_state=BeatmapFetchState.FRESH,
         file_state=BeatmapFileState.MISSING,
         file_attachment=None,
+        last_fetched_at=None,
+        next_refresh_at=None,
+    )
+
+
+def _resolved_beatmapset(*, total_length: int | None = None) -> BeatmapSet:
+    return BeatmapSet(
+        id=10,
+        artist="Integration Artist",
+        title="Integration Title",
+        creator="Athena",
+        artist_unicode=None,
+        title_unicode=None,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        beatmaps=(_resolved_beatmap(total_length=total_length),),
         last_fetched_at=None,
         next_refresh_at=None,
     )
@@ -172,6 +190,7 @@ async def _replace_user_projection_with_score(
 @dataclass(slots=True)
 class FakeBeatmapResolver:
     eligibility: BeatmapEligibility | None
+    beatmap_total_length: int | None = None
 
     async def resolve_by_beatmap_id(
         self,
@@ -199,7 +218,7 @@ class FakeBeatmapResolver:
     ) -> BeatmapResolveResult:
         _ = (checksum_md5, options)
         return BeatmapResolveResult(
-            beatmap=_resolved_beatmap(),
+            beatmap=_resolved_beatmap(total_length=self.beatmap_total_length),
             beatmapset=None,
             eligibility=self.eligibility,
             metadata_status=BeatmapFetchState.FRESH,
@@ -287,6 +306,21 @@ async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
     )
 
 
+async def _seed_score_submission_beatmap(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    uow_factory = SQLAlchemyUnitOfWorkFactory(session_factory)
+    async with uow_factory() as uow:
+        await uow.beatmaps.save_beatmapset_snapshot(_resolved_beatmapset())
+        await uow.commit()
+
+    async with session_factory() as session:
+        _ = await session.execute(
+            text("UPDATE beatmaps SET play_count = 0, pass_count = 0 WHERE id = 1")
+        )
+        await session.commit()
+
+
 def _get_database_url() -> str:
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -317,6 +351,7 @@ async def session_factory(
         async with factory() as session:
             await _cleanup_score_submission_rows(session)
             await session.commit()
+        await _seed_score_submission_beatmap(factory)
     except (OSError, SQLAlchemyError):
         pass
 
@@ -732,11 +767,12 @@ async def test_e2e_failed_play_persists_to_database(
         iv=b"0" * 32,
         replay_data=b"replay_data_failed",
         password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        client_hash="failed_test_hash",
+        client_hash="1",
         fail_time_ms=30000,
         osu_version="20240101",
         beatmap_id=1,
         submitted_at=datetime.now(UTC),
+        submit_exit_classification="1",
     )
 
     result = await service.execute(input_data)
@@ -749,6 +785,64 @@ async def test_e2e_failed_play_persists_to_database(
     assert score.passed is False
     assert score.score == 200000
     assert score.grade == Grade.B
+    assert score.fail_time_ms == 30000
+    assert score.play_time_seconds == 30
+    assert score.play_time_source is PlayTimeSource.FAIL_TIME
+    assert score.submit_exit_classification == "1"
+
+
+@pytest.mark.asyncio
+async def test_e2e_passed_score_submission_uses_beatmap_length_for_play_time(
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
+    score_decryptor: StubScorePayloadDecryptor,
+) -> None:
+    """E2E: accepted passed score stores beatmap-length play time."""
+    auth_service = make_score_authorization_service()
+    beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap(), beatmap_total_length=123)
+    submit_score_use_case = SubmitScoreUseCase(unit_of_work_factory=uow_factory)
+    service = ProcessScoreSubmissionUseCase(
+        submit_score_use_case,
+        SQLAlchemyBlobStorageStub(uow_factory),
+        score_decryptor,
+        StableScorePayloadParser(),
+        auth_service,
+        beatmap_resolver,
+    )
+
+    def mock_decrypt(
+        _encrypted: bytes,
+        _iv: bytes,
+        _osu_version: str | None,
+    ) -> DecryptedPayload:
+        payload = "1000:test_user:abc123:int_test_passed_timing:0:0:100:10:5:0:0:2:500000:99:1:1"
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+    input_data = ParsedSubmissionInput(
+        encrypted_payload=b"encrypted_data",
+        iv=b"0" * 32,
+        replay_data=b"replay_data_passed_timing",
+        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        client_hash="1",
+        fail_time_ms=0,
+        osu_version="20240101",
+        beatmap_id=1,
+        submitted_at=datetime.now(UTC),
+        submit_exit_classification="1",
+    )
+
+    result = await service.execute(input_data)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.score_id is not None
+    async with uow_factory() as uow:
+        score = await uow.scores.get_by_id(result.score_id)
+    assert score is not None
+    assert score.passed is True
+    assert score.fail_time_ms == 0
+    assert score.play_time_seconds == 123
+    assert score.play_time_source is PlayTimeSource.BEATMAP_TOTAL_LENGTH
+    assert score.submit_exit_classification == "1"
 
 
 @pytest.mark.asyncio

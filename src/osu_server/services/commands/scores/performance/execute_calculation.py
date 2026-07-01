@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, final
 
-from osu_server.domain.scores.performance import PerformanceCalculationState
+from osu_server.domain.scores.performance import (
+    PerformanceCalculationState,
+    PerformanceEligibilityPolicy,
+)
+from osu_server.domain.scores.user_stats import UserStatsPolicy
 from osu_server.infrastructure.performance import (
     PerformanceCalculatorCompleted,
     PerformanceCalculatorInput,
@@ -28,8 +32,14 @@ from osu_server.services.commands.scores.performance.beatmap_file_provider impor
     PerformanceBeatmapFileReady,
     PerformanceBeatmapFileUnavailable,
 )
+from osu_server.services.commands.scores.performance.projection_refresh import (
+    refresh_performance_best_for_current_score,
+)
 from osu_server.services.commands.scores.performance.runtime import (
     PerformanceRuntimeSettings,
+)
+from osu_server.services.commands.scores.user_stats_projection import (
+    replace_current_user_stats_projection,
 )
 
 if TYPE_CHECKING:
@@ -108,12 +118,19 @@ class ExecutePerformanceCalculationUseCase:
         calculator: PerformanceCalculator,
         completion_signal: PerformanceCompletionSignal,
         settings: PerformanceRuntimeSettings | None = None,
+        eligibility_policy: PerformanceEligibilityPolicy | None = None,
+        user_stats_policy: UserStatsPolicy | None = None,
     ) -> None:
+        """PP 計算実行に必要な依存を受け取る。"""
         self._unit_of_work_factory: UnitOfWorkFactory = unit_of_work_factory
         self._beatmap_file_provider: PerformanceBeatmapFileProvider = beatmap_file_provider
         self._calculator: PerformanceCalculator = calculator
         self._completion_signal: PerformanceCompletionSignal = completion_signal
         self._settings: PerformanceRuntimeSettings = settings or PerformanceRuntimeSettings()
+        self._eligibility_policy: PerformanceEligibilityPolicy = (
+            eligibility_policy or PerformanceEligibilityPolicy()
+        )
+        self._user_stats_policy: UserStatsPolicy = user_stats_policy or UserStatsPolicy()
 
     async def execute(
         self,
@@ -253,6 +270,7 @@ class ExecutePerformanceCalculationUseCase:
             return await self._finalize_unavailable(
                 command=command,
                 score_id=claimed.calculation.score_id,
+                score=claimed.score,
                 calculation=claimed.calculation,
                 file_result=file_result,
                 reason=file_result.reason.value,
@@ -286,6 +304,7 @@ class ExecutePerformanceCalculationUseCase:
             return await self._finalize_unavailable(
                 command=command,
                 score_id=claimed.calculation.score_id,
+                score=claimed.score,
                 calculation=calculating,
                 file_result=file_result,
                 reason=calculator_result.reason.value,
@@ -294,6 +313,7 @@ class ExecutePerformanceCalculationUseCase:
         return await self._finalize_completed(
             command=command,
             score_id=claimed.calculation.score_id,
+            score=claimed.score,
             calculation=calculating,
             file_result=file_result,
             calculator_result=calculator_result,
@@ -304,6 +324,7 @@ class ExecutePerformanceCalculationUseCase:
         *,
         command: ExecutePerformanceCalculationCommand,
         score_id: int,
+        score: Score,
         calculation: PerformanceCalculation,
         file_result: PerformanceBeatmapFileReady,
         calculator_result: PerformanceCalculatorCompleted,
@@ -328,6 +349,19 @@ class ExecutePerformanceCalculationUseCase:
                     calculation_id=command.calculation_id,
                     score_id=score_id,
                 )
+            _ = await refresh_performance_best_for_current_score(
+                uow,
+                score=score,
+                calculation=finalized,
+                eligibility_policy=self._eligibility_policy,
+            )
+            _ = await replace_current_user_stats_projection(
+                uow,
+                user_id=score.user_id,
+                ruleset=score.ruleset,
+                playstyle=score.playstyle,
+                policy=self._user_stats_policy,
+            )
             await uow.commit()
 
         result = await self._result_after_terminal_commit(finalized)
@@ -346,6 +380,7 @@ class ExecutePerformanceCalculationUseCase:
         *,
         command: ExecutePerformanceCalculationCommand,
         score_id: int,
+        score: Score,
         calculation: PerformanceCalculation,
         file_result: PerformanceBeatmapFileReady | PerformanceBeatmapFileUnavailable,
         reason: str,
@@ -375,6 +410,19 @@ class ExecutePerformanceCalculationUseCase:
                     score_id=score_id,
                     unavailable_reason=reason,
                 )
+            _ = await refresh_performance_best_for_current_score(
+                uow,
+                score=score,
+                calculation=finalized,
+                eligibility_policy=self._eligibility_policy,
+            )
+            _ = await replace_current_user_stats_projection(
+                uow,
+                user_id=score.user_id,
+                ruleset=score.ruleset,
+                playstyle=score.playstyle,
+                policy=self._user_stats_policy,
+            )
             await uow.commit()
 
         result = await self._result_after_terminal_commit(finalized)

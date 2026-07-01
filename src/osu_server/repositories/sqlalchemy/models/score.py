@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -21,10 +22,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
 
+_PLAY_TIME_SOURCE_VALUES = ("'fail_time'", "'beatmap_total_length'")
+_PLAY_TIME_SOURCE_CHECK = "play_time_source IS NULL OR play_time_source IN ({})".format(
+    ", ".join(_PLAY_TIME_SOURCE_VALUES)
+)
+
 
 class ScoreModel(Base):
     __tablename__: str = "scores"
-    __table_args__: tuple[Index, ...] = (
+    __table_args__: tuple[CheckConstraint | Index, ...] = (
         Index("idx_scores_user_id", "user_id"),
         Index("idx_scores_beatmap_id", "beatmap_id"),
         Index("idx_scores_submitted_at", "submitted_at"),
@@ -39,6 +45,18 @@ class ScoreModel(Base):
             "score",
             "submitted_at",
             "id",
+        ),
+        CheckConstraint(
+            "fail_time_ms IS NULL OR fail_time_ms >= 0",
+            name="ck_scores_fail_time_ms_non_negative",
+        ),
+        CheckConstraint(
+            "play_time_seconds IS NULL OR play_time_seconds >= 0",
+            name="ck_scores_play_time_seconds_non_negative",
+        ),
+        CheckConstraint(
+            _PLAY_TIME_SOURCE_CHECK,
+            name="ck_scores_play_time_source_known",
         ),
     )
 
@@ -72,6 +90,10 @@ class ScoreModel(Base):
         nullable=False,
         server_default=text("false"),
     )
+    fail_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    play_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    play_time_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    submit_exit_classification: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class ScoreSubmissionModel(Base):

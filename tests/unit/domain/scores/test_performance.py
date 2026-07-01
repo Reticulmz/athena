@@ -21,6 +21,7 @@ def _make_score(
     *,
     passed: bool = True,
     status: BeatmapRankStatus | str | None = BeatmapRankStatus.RANKED,
+    leaderboard_eligible_at_submission: bool = True,
     mods: ModCombination | None = None,
 ) -> Score:
     status_value = status.value if isinstance(status, BeatmapRankStatus) else status
@@ -49,6 +50,7 @@ def _make_score(
         client_version="b20250101",
         submitted_at=datetime(2026, 6, 16, 0, 0, 0, tzinfo=UTC),
         beatmap_status_at_submission=status_value,
+        leaderboard_eligible_at_submission=leaderboard_eligible_at_submission,
     )
 
 
@@ -198,6 +200,15 @@ def test_failed_score_is_out_of_scope() -> None:
 
     assert not decision.is_eligible
     assert decision.reason == "score_failed"
+
+
+def test_submission_ineligible_score_is_out_of_scope() -> None:
+    decision = PerformanceEligibilityPolicy().evaluate_best_candidate(
+        _make_score(leaderboard_eligible_at_submission=False)
+    )
+
+    assert not decision.is_eligible
+    assert decision.reason == "score_not_eligible"
 
 
 @pytest.mark.parametrize(

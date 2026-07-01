@@ -11,6 +11,8 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchTarget,
     BeatmapFileState,
 )
+from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
+from osu_server.repositories.memory.commands.state import now_utc
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -91,10 +93,36 @@ class InMemoryBeatmapCommandRepository:
         self, beatmap_id: int, status: LocalBeatmapStatus | None
     ) -> Beatmap:
         existing = self._require_beatmap(beatmap_id)
-        updated = replace(existing, local_status_override=status)
+        if existing.local_status_override != status:
+            changed_at = now_utc() if status is not None else None
+        elif status is not None and existing.local_status_override_changed_at is None:
+            changed_at = now_utc()
+        else:
+            changed_at = existing.local_status_override_changed_at
+        updated = replace(
+            existing,
+            local_status_override=status,
+            local_status_override_changed_at=changed_at,
+        )
         self._store_beatmap(updated)
         self._refresh_beatmapset_child(updated)
         return updated
+
+    async def increment_submission_counts(
+        self,
+        beatmap_id: int,
+        *,
+        passed: bool,
+    ) -> BeatmapSubmissionCounts:
+        existing = self._state.beatmap_submission_counts_by_id.get(beatmap_id)
+        play_count = 0 if existing is None else existing.play_count
+        pass_count = 0 if existing is None else existing.pass_count
+        counts = BeatmapSubmissionCounts(
+            play_count=play_count + 1,
+            pass_count=pass_count + (1 if passed else 0),
+        )
+        self._state.beatmap_submission_counts_by_id[beatmap_id] = counts
+        return counts
 
     async def get_current_file_attachment(self, beatmap_id: int) -> BeatmapFileAttachment | None:
         keys = self._state.attachment_keys_by_beatmap_id.get(beatmap_id)
@@ -186,7 +214,12 @@ class InMemoryBeatmapCommandRepository:
         if existing is None:
             return beatmap
 
-        local_status_override = existing.local_status_override or beatmap.local_status_override
+        if existing.local_status_override is not None:
+            local_status_override = existing.local_status_override
+            local_status_override_changed_at = existing.local_status_override_changed_at
+        else:
+            local_status_override = beatmap.local_status_override
+            local_status_override_changed_at = beatmap.local_status_override_changed_at
         file_attachment = existing.file_attachment or beatmap.file_attachment
         file_state = (
             BeatmapFileState.AVAILABLE if file_attachment is not None else beatmap.file_state
@@ -194,6 +227,9 @@ class InMemoryBeatmapCommandRepository:
         return replace(
             beatmap,
             local_status_override=local_status_override,
+            local_status_override_changed_at=local_status_override_changed_at,
+            official_last_updated_at=beatmap.official_last_updated_at
+            or existing.official_last_updated_at,
             file_state=file_state,
             file_attachment=file_attachment,
         )

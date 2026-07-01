@@ -3,6 +3,7 @@
 import hashlib
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import cast, final, override
 
 import pytest
@@ -22,6 +23,7 @@ from osu_server.domain.beatmaps import (
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.user_stats import UserCurrentStats
 from osu_server.domain.storage.blobs import BlobStored
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.beatmaps.file_warmup import (
@@ -32,6 +34,7 @@ from osu_server.services.commands.beatmaps.file_warmup import (
     RequestBeatmapFileWarmupUseCase,
 )
 from osu_server.services.commands.scores import (
+    BeatmapRankDelta,
     ParsedSubmissionInput,
     ProcessScoreSubmissionUseCase,
     SubmissionOutcome,
@@ -44,6 +47,10 @@ from osu_server.services.commands.scores.performance import (
     RequestPerformanceCalculationResult,
 )
 from osu_server.services.queries.scores import (
+    BeatmapPersonalBestRankQueryInput,
+    BeatmapPersonalBestRankQueryResult,
+    CurrentUserStatsQueryInput,
+    CurrentUserStatsQueryResult,
     PerformanceSubmitResponse,
     PerformanceSubmitResponseQuery,
     PerformanceSubmitResponseState,
@@ -235,6 +242,39 @@ class RecordingPerformanceResponseQuery:
 
 
 @final
+class RecordingCurrentUserStatsQuery:
+    def __init__(self, responses: tuple[UserCurrentStats | None, ...]) -> None:
+        self._responses = responses
+        self.queries: list[CurrentUserStatsQueryInput] = []
+
+    async def execute(
+        self,
+        input_data: CurrentUserStatsQueryInput,
+    ) -> CurrentUserStatsQueryResult:
+        self.queries.append(input_data)
+        response_index = len(self.queries) - 1
+        response = self._responses[response_index]
+        if response is None:
+            return CurrentUserStatsQueryResult(stats=())
+        return CurrentUserStatsQueryResult(stats=(response,))
+
+
+@final
+class RecordingBeatmapPersonalBestRankQuery:
+    def __init__(self, responses: tuple[int | None, ...]) -> None:
+        self._responses = responses
+        self.queries: list[BeatmapPersonalBestRankQueryInput] = []
+
+    async def execute(
+        self,
+        input_data: BeatmapPersonalBestRankQueryInput,
+    ) -> BeatmapPersonalBestRankQueryResult:
+        self.queries.append(input_data)
+        response_index = len(self.queries) - 1
+        return BeatmapPersonalBestRankQueryResult(rank=self._responses[response_index])
+
+
+@final
 class StubPerformanceCalculatorIdentity:
     def calculator_name(self) -> str:
         return "test-calculator"
@@ -393,6 +433,9 @@ async def test_happy_path_valid_submission_creates_score(
     result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.user_id == 1000
+    assert result.ruleset is Ruleset.OSU
+    assert result.playstyle is Playstyle.VANILLA
     assert result.score_id is not None
     assert result.error_reason is None
 
@@ -506,6 +549,200 @@ async def test_completed_submission_waits_for_performance_response_after_request
         PerformanceSubmitResponseQuery(score_id=result.score_id)
     ]
     assert result.stable_pp == 248
+
+
+@pytest.mark.asyncio
+async def test_performance_wait_response_preserves_cumulative_beatmap_counts(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """PP wait 経由の completed response でも beatmap play/pass count を保持する。"""
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=RecordingPerformanceCalculationRequest(),
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+        performance_response_query=RecordingPerformanceResponseQuery(
+            PerformanceSubmitResponse(
+                state=PerformanceSubmitResponseState.COMPLETED,
+                stable_pp=248,
+            )
+        ),
+    )
+    payloads = [
+        "1000:test_user:abc123:online_checksum_counts_1:0:0:100:10:5:0:0:2:500000:99:1:1",
+        "1000:test_user:abc123:online_checksum_counts_2:0:0:100:10:5:0:0:2:600000:99:1:1",
+    ]
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        return DecryptedPayload(plaintext=payloads.pop(0), checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    first = await service.execute(valid_input)
+    second = await service.execute(
+        replace(
+            valid_input,
+            client_hash="different_hash",
+            replay_data=b"second_replay_data",
+            submitted_at=datetime.now(UTC),
+        )
+    )
+
+    assert first.outcome == SubmissionOutcome.COMPLETED
+    assert first.beatmap_playcount == 1
+    assert first.beatmap_passcount == 1
+    assert second.outcome == SubmissionOutcome.COMPLETED
+    assert second.beatmap_playcount == 2
+    assert second.beatmap_passcount == 2
+
+
+@pytest.mark.asyncio
+async def test_completed_submission_returns_overall_stats_delta(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Submit response 用に current stats の before/after を返す。"""
+    current_stats_query = RecordingCurrentUserStatsQuery(
+        (
+            UserCurrentStats(
+                user_id=1000,
+                pp=Decimal("122.4"),
+                accuracy=0.9567,
+                global_rank=2,
+                play_count=7,
+                ranked_score=400_000,
+                total_score=900_000,
+            ),
+            UserCurrentStats(
+                user_id=1000,
+                pp=Decimal("248.5"),
+                accuracy=0.9876,
+                global_rank=1,
+                play_count=8,
+                ranked_score=500_000,
+                total_score=1_400_000,
+            ),
+        )
+    )
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=RecordingPerformanceCalculationRequest(),
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+        performance_response_query=RecordingPerformanceResponseQuery(
+            PerformanceSubmitResponse(
+                state=PerformanceSubmitResponseState.COMPLETED,
+                stable_pp=248,
+            )
+        ),
+        current_user_stats_query=current_stats_query,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_overall_delta:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.overall_stats_before is not None
+    assert result.overall_stats_before.global_rank == 2
+    assert result.overall_stats_before.ranked_score == 400_000
+    assert result.overall_stats_before.total_score == 900_000
+    assert result.overall_stats_before.accuracy == 0.9567
+    assert result.overall_stats_before.pp == Decimal("122.4")
+    assert result.overall_stats_after is not None
+    assert result.overall_stats_after.global_rank == 1
+    assert result.overall_stats_after.ranked_score == 500_000
+    assert result.overall_stats_after.total_score == 1_400_000
+    assert result.overall_stats_after.accuracy == 0.9876
+    assert result.overall_stats_after.pp == Decimal("248.5")
+    assert current_stats_query.queries == [
+        CurrentUserStatsQueryInput(
+            user_ids=(1000,),
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+        ),
+        CurrentUserStatsQueryInput(
+            user_ids=(1000,),
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_completed_submission_returns_beatmap_rank_delta(
+    uow_factory: InMemoryUnitOfWorkFactory,
+    valid_input: ParsedSubmissionInput,
+    score_decryptor: StubScorePayloadDecryptor,
+    beatmap_resolver: FakeBeatmapResolver,
+) -> None:
+    """Submit response 用に beatmap rank の before/after を返す。"""
+    beatmap_rank_query = RecordingBeatmapPersonalBestRankQuery((4, 2))
+    service = ProcessScoreSubmissionUseCase(
+        make_submit_score_use_case(uow_factory),
+        StubBlobStorageService(),
+        score_decryptor,
+        StubScorePayloadParser(),
+        make_score_authorization_service(),
+        beatmap_resolver,
+        performance_calculation_request=RecordingPerformanceCalculationRequest(),
+        performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+        performance_response_query=RecordingPerformanceResponseQuery(
+            PerformanceSubmitResponse(
+                state=PerformanceSubmitResponseState.COMPLETED,
+                stable_pp=248,
+            )
+        ),
+        beatmap_personal_best_rank_query=beatmap_rank_query,
+    )
+
+    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
+        payload = (
+            "1000:test_user:abc123:online_checksum_rank_delta:0:0:100:10:5:0:0:2:500000:99:1:1"
+        )
+        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+
+    score_decryptor.set_factory(mock_decrypt)
+
+    result = await service.execute(valid_input)
+
+    assert result.outcome == SubmissionOutcome.COMPLETED
+    assert result.beatmap_rank_delta == BeatmapRankDelta(before=4, after=2)
+    assert beatmap_rank_query.queries == [
+        BeatmapPersonalBestRankQueryInput(
+            user_id=1000,
+            beatmap_id=1,
+            beatmap_checksum="abc123",
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+        ),
+        BeatmapPersonalBestRankQueryInput(
+            user_id=1000,
+            beatmap_id=1,
+            beatmap_checksum="abc123",
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+        ),
+    ]
 
 
 @pytest.mark.asyncio

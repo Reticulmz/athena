@@ -10,12 +10,13 @@ from typing import Protocol
 
 import structlog
 
-from osu_server.domain.beatmaps import BeatmapResolveOptions, BeatmapResolveResult
+from osu_server.domain.beatmaps import Beatmap, BeatmapResolveOptions, BeatmapResolveResult
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.domain.scores.personal_best import PersonalBestDelta
-from osu_server.domain.scores.score import Playstyle, Ruleset, Score
+from osu_server.domain.scores.score import Playstyle, PlayTimeSource, Ruleset, Score
+from osu_server.domain.scores.user_stats import UserCurrentStats
 from osu_server.domain.scores.validator import ValidationError, validate_hit_counts
 from osu_server.domain.storage.blobs import BlobStoreResult
 from osu_server.services.commands.beatmaps import (
@@ -37,6 +38,10 @@ from osu_server.services.commands.scores.submit_score import (
     SubmitScoreUseCase,
 )
 from osu_server.services.queries.scores import (
+    BeatmapPersonalBestRankQueryInput,
+    BeatmapPersonalBestRankQueryResult,
+    CurrentUserStatsQueryInput,
+    CurrentUserStatsQueryResult,
     PerformanceSubmitResponse,
     PerformanceSubmitResponseQuery,
     PerformanceSubmitResponseState,
@@ -147,6 +152,20 @@ class PerformanceSubmitResponseUseCase(Protocol):
     ) -> PerformanceSubmitResponse: ...
 
 
+class CurrentUserStatsQueryUseCase(Protocol):
+    async def execute(
+        self,
+        input_data: CurrentUserStatsQueryInput,
+    ) -> CurrentUserStatsQueryResult: ...
+
+
+class BeatmapPersonalBestRankQueryUseCase(Protocol):
+    async def execute(
+        self,
+        input_data: BeatmapPersonalBestRankQueryInput,
+    ) -> BeatmapPersonalBestRankQueryResult: ...
+
+
 class SubmissionOutcome(Enum):
     """score submission workflow の最終 outcome。"""
 
@@ -157,10 +176,21 @@ class SubmissionOutcome(Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class BeatmapRankDelta:
+    """Stable submit response に載せる beatmap leaderboard 順位差分。"""
+
+    before: int | None
+    after: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class SubmissionResult:
     """transport に返す score submission 結果。"""
 
     outcome: SubmissionOutcome
+    user_id: int | None = None
+    ruleset: Ruleset | None = None
+    playstyle: Playstyle | None = None
     score_id: int | None = None
     beatmap_id: int | None = None
     beatmapset_id: int | None = None
@@ -168,11 +198,17 @@ class SubmissionResult:
     max_combo: int | None = None
     accuracy: float | None = None
     passed: bool | None = None
+    beatmap_playcount: int | None = None
+    beatmap_passcount: int | None = None
+    beatmap_approved_at: datetime | None = None
     error_reason: str | None = None
     stable_pp: int | None = None
     stable_pp_before: int | None = None
     stable_pp_after: int | None = None
     personal_best_delta: PersonalBestDelta | None = None
+    beatmap_rank_delta: BeatmapRankDelta | None = None
+    overall_stats_before: UserCurrentStats | None = None
+    overall_stats_after: UserCurrentStats | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +224,7 @@ class ParsedSubmissionInput:
     osu_version: str | None
     submitted_at: datetime
     beatmap_id: int | None = None
+    submit_exit_classification: str | None = None
     submission_metadata: Mapping[str, str] = field(default_factory=_empty_submission_metadata)
 
 
@@ -229,6 +266,11 @@ def generate_submission_request_hash(input_data: ParsedSubmissionInput) -> str:
     _update_fingerprint_text(hasher, "replay_present", str(input_data.replay_data is not None))
     _update_fingerprint_text(hasher, "client_hash", input_data.client_hash)
     _update_fingerprint_text(hasher, "fail_time_ms", str(input_data.fail_time_ms))
+    _update_fingerprint_text(
+        hasher,
+        "submit_exit_classification",
+        str(input_data.submit_exit_classification),
+    )
     _update_fingerprint_text(hasher, "osu_version", str(input_data.osu_version))
     _update_fingerprint_text(hasher, "beatmap_id", str(input_data.beatmap_id or ""))
     for key, digest in hash_submission_metadata(input_data.submission_metadata).items():
@@ -252,9 +294,50 @@ def generate_submission_fingerprint(
     return hasher.hexdigest()
 
 
-def _submission_result_from_command(result: SubmitScoreCommandResult) -> SubmissionResult:
+def _valid_non_negative(value: int | None) -> int | None:
+    if value is None or value < 0:
+        return None
+    return value
+
+
+def _derive_score_timing(
+    *,
+    passed: bool,
+    fail_time_ms: int | None,
+    beatmap_total_length: int | None,
+) -> tuple[int | None, int | None, PlayTimeSource | None]:
+    normalized_fail_time_ms = _valid_non_negative(fail_time_ms)
+    if not passed:
+        if normalized_fail_time_ms is None:
+            return None, None, None
+        return (
+            normalized_fail_time_ms,
+            normalized_fail_time_ms // 1000,
+            PlayTimeSource.FAIL_TIME,
+        )
+
+    normalized_total_length = _valid_non_negative(beatmap_total_length)
+    if normalized_total_length is None:
+        return normalized_fail_time_ms, None, None
+    return (
+        normalized_fail_time_ms,
+        normalized_total_length,
+        PlayTimeSource.BEATMAP_TOTAL_LENGTH,
+    )
+
+
+def _submission_result_from_command(
+    result: SubmitScoreCommandResult,
+    *,
+    beatmap_rank_delta: BeatmapRankDelta | None = None,
+    overall_stats_before: UserCurrentStats | None = None,
+    overall_stats_after: UserCurrentStats | None = None,
+) -> SubmissionResult:
     return SubmissionResult(
         outcome=SubmissionOutcome(result.outcome.value),
+        user_id=result.user_id,
+        ruleset=result.ruleset,
+        playstyle=result.playstyle,
         score_id=result.score_id,
         beatmap_id=result.beatmap_id,
         beatmapset_id=result.beatmapset_id,
@@ -262,9 +345,24 @@ def _submission_result_from_command(result: SubmitScoreCommandResult) -> Submiss
         max_combo=result.max_combo,
         accuracy=result.accuracy,
         passed=result.passed,
+        beatmap_playcount=result.beatmap_playcount,
+        beatmap_passcount=result.beatmap_passcount,
+        beatmap_approved_at=result.beatmap_approved_at,
         error_reason=result.error_reason,
         personal_best_delta=result.personal_best_delta,
+        beatmap_rank_delta=beatmap_rank_delta,
+        overall_stats_before=overall_stats_before,
+        overall_stats_after=overall_stats_after,
     )
+
+
+def _score_submit_approved_at(beatmap: Beatmap) -> datetime | None:
+    if (
+        beatmap.local_status_override is not None
+        and beatmap.local_status_override_changed_at is not None
+    ):
+        return beatmap.local_status_override_changed_at
+    return beatmap.official_last_updated_at
 
 
 class ProcessScoreSubmissionUseCase:
@@ -287,6 +385,8 @@ class ProcessScoreSubmissionUseCase:
         performance_calculation_request: PerformanceCalculationRequestUseCase | None = None,
         performance_calculator_identity: PerformanceCalculatorIdentity | None = None,
         performance_response_query: PerformanceSubmitResponseUseCase | None = None,
+        current_user_stats_query: CurrentUserStatsQueryUseCase | None = None,
+        beatmap_personal_best_rank_query: BeatmapPersonalBestRankQueryUseCase | None = None,
     ) -> None:
         self._submit_score_use_case: SubmitScoreUseCase = submit_score_use_case
         self._replay_blob_storage: ReplayBlobStorage = replay_blob_storage
@@ -305,6 +405,12 @@ class ProcessScoreSubmissionUseCase:
         )
         self._performance_response_query: PerformanceSubmitResponseUseCase | None = (
             performance_response_query
+        )
+        self._current_user_stats_query: CurrentUserStatsQueryUseCase | None = (
+            current_user_stats_query
+        )
+        self._beatmap_personal_best_rank_query: BeatmapPersonalBestRankQueryUseCase | None = (
+            beatmap_personal_best_rank_query
         )
 
     async def execute(  # noqa: PLR0911, PLR0912, PLR0915
@@ -538,9 +644,17 @@ class ProcessScoreSubmissionUseCase:
         resolved_beatmapset_id = (
             beatmap_result.beatmapset.id if beatmap_result.beatmapset is not None else 0
         )
+        score_ruleset = Ruleset(parsed.ruleset)
+        score_playstyle = Playstyle.VANILLA
         beatmap_status_at_submission = beatmap_result.beatmap.effective_status.value
+        beatmap_approved_at = _score_submit_approved_at(beatmap_result.beatmap)
         leaderboard_eligible_at_submission = (
             parsed.passed and eligibility is not None and eligibility.has_leaderboard
+        )
+        fail_time_ms, play_time_seconds, play_time_source = _derive_score_timing(
+            passed=parsed.passed,
+            fail_time_ms=input_data.fail_time_ms,
+            beatmap_total_length=beatmap_result.beatmap.total_length,
         )
 
         await self._request_score_submit_fallback_warmup(
@@ -585,8 +699,8 @@ class ProcessScoreSubmissionUseCase:
             beatmap_id=resolved_beatmap_id,
             beatmap_checksum=parsed.beatmap_checksum,
             online_checksum=parsed.online_checksum,
-            ruleset=Ruleset(parsed.ruleset),
-            playstyle=Playstyle.VANILLA,
+            ruleset=score_ruleset,
+            playstyle=score_playstyle,
             mods=parsed.mods,
             n300=parsed.n300,
             n100=parsed.n100,
@@ -604,11 +718,34 @@ class ProcessScoreSubmissionUseCase:
             submitted_at=input_data.submitted_at,
             beatmap_status_at_submission=beatmap_status_at_submission,
             leaderboard_eligible_at_submission=leaderboard_eligible_at_submission,
+            fail_time_ms=fail_time_ms,
+            play_time_seconds=play_time_seconds,
+            play_time_source=play_time_source,
+            submit_exit_classification=input_data.submit_exit_classification,
         )
 
         replay_blob_id: int | None = None
         if replay_blob_result is not None:
             replay_blob_id = replay_blob_result.blob.id
+
+        overall_stats_before = await self._current_user_stats_for_submit_response(
+            user_id=auth_ctx.user_id,
+            ruleset=score_ruleset,
+            playstyle=score_playstyle,
+            phase="before",
+        )
+        beatmap_rank_before = (
+            await self._beatmap_rank_for_submit_response(
+                user_id=auth_ctx.user_id,
+                beatmap_id=resolved_beatmap_id,
+                beatmap_checksum=parsed.beatmap_checksum,
+                ruleset=score_ruleset,
+                playstyle=score_playstyle,
+                phase="before",
+            )
+            if leaderboard_eligible_at_submission
+            else None
+        )
 
         db_start = time.perf_counter()
         command_result = await self._submit_score_use_case.execute(
@@ -621,6 +758,7 @@ class ProcessScoreSubmissionUseCase:
                 score=score,
                 beatmap_id=resolved_beatmap_id,
                 beatmapset_id=resolved_beatmapset_id,
+                beatmap_approved_at=beatmap_approved_at,
                 replay_blob_id=replay_blob_id,
                 replay_checksum_sha256=replay_checksum,
                 replay_byte_size=replay_byte_size,
@@ -640,7 +778,15 @@ class ProcessScoreSubmissionUseCase:
                 user_id=auth_ctx.user_id,
                 beatmap_checksum=parsed.beatmap_checksum,
             )
-            return _submission_result_from_command(command_result)
+            return _submission_result_from_command(
+                command_result,
+                beatmap_rank_delta=(
+                    BeatmapRankDelta(before=beatmap_rank_before, after=None)
+                    if leaderboard_eligible_at_submission
+                    else None
+                ),
+                overall_stats_before=overall_stats_before,
+            )
 
         if not command_result.existing_submission:
             await self._request_performance_calculation(
@@ -668,7 +814,13 @@ class ProcessScoreSubmissionUseCase:
             opaque_fields=opaque_field_hashes or None,
         )
 
-        return await self._build_accepted_submission_result(command_result)
+        return await self._build_accepted_submission_result(
+            command_result,
+            beatmap_checksum=parsed.beatmap_checksum,
+            beatmap_rank_before=beatmap_rank_before,
+            include_beatmap_rank_delta=leaderboard_eligible_at_submission,
+            overall_stats_before=overall_stats_before,
+        )
 
     async def _request_performance_calculation(
         self,
@@ -712,15 +864,47 @@ class ProcessScoreSubmissionUseCase:
     async def _build_accepted_submission_result(
         self,
         command_result: SubmitScoreCommandResult,
+        *,
+        beatmap_checksum: str,
+        beatmap_rank_before: int | None,
+        include_beatmap_rank_delta: bool,
+        overall_stats_before: UserCurrentStats | None,
     ) -> SubmissionResult:
         if command_result.score_id is None or self._performance_response_query is None:
-            return _submission_result_from_command(command_result)
+            overall_stats_after = await self._current_user_stats_for_submit_response(
+                user_id=command_result.user_id,
+                ruleset=command_result.ruleset,
+                playstyle=command_result.playstyle,
+                phase="after",
+            )
+            beatmap_rank_after = await self._beatmap_rank_after_for_submit_response(
+                command_result,
+                beatmap_checksum=beatmap_checksum,
+                include_beatmap_rank_delta=include_beatmap_rank_delta,
+            )
+            return _submission_result_from_command(
+                command_result,
+                beatmap_rank_delta=(
+                    BeatmapRankDelta(
+                        before=beatmap_rank_before,
+                        after=beatmap_rank_after,
+                    )
+                    if include_beatmap_rank_delta
+                    else None
+                ),
+                overall_stats_before=overall_stats_before,
+                overall_stats_after=overall_stats_after,
+            )
 
         personal_best_delta = command_result.personal_best_delta
         if personal_best_delta is not None:
             return await self._build_personal_best_submission_result(
                 command_result,
                 personal_best_delta,
+                beatmap_checksum=beatmap_checksum,
+                beatmap_rank_before=beatmap_rank_before,
+                include_beatmap_rank_delta=include_beatmap_rank_delta,
+                overall_stats_before=overall_stats_before,
             )
 
         response = await self._performance_response_query.wait_for_submit_response(
@@ -729,6 +913,9 @@ class ProcessScoreSubmissionUseCase:
         if response.state is PerformanceSubmitResponseState.RETRYABLE:
             return SubmissionResult(
                 outcome=SubmissionOutcome.RETRYABLE,
+                user_id=command_result.user_id,
+                ruleset=command_result.ruleset,
+                playstyle=command_result.playstyle,
                 score_id=command_result.score_id,
                 beatmap_id=command_result.beatmap_id,
                 beatmapset_id=command_result.beatmapset_id,
@@ -736,10 +923,28 @@ class ProcessScoreSubmissionUseCase:
                 max_combo=command_result.max_combo,
                 accuracy=command_result.accuracy,
                 passed=command_result.passed,
+                beatmap_playcount=command_result.beatmap_playcount,
+                beatmap_passcount=command_result.beatmap_passcount,
+                beatmap_approved_at=command_result.beatmap_approved_at,
                 error_reason="performance_calculation_pending",
+                overall_stats_before=overall_stats_before,
             )
+        overall_stats_after = await self._current_user_stats_for_submit_response(
+            user_id=command_result.user_id,
+            ruleset=command_result.ruleset,
+            playstyle=command_result.playstyle,
+            phase="after",
+        )
+        beatmap_rank_after = await self._beatmap_rank_after_for_submit_response(
+            command_result,
+            beatmap_checksum=beatmap_checksum,
+            include_beatmap_rank_delta=include_beatmap_rank_delta,
+        )
         return SubmissionResult(
             outcome=SubmissionOutcome.COMPLETED,
+            user_id=command_result.user_id,
+            ruleset=command_result.ruleset,
+            playstyle=command_result.playstyle,
             score_id=command_result.score_id,
             beatmap_id=command_result.beatmap_id,
             beatmapset_id=command_result.beatmapset_id,
@@ -747,14 +952,29 @@ class ProcessScoreSubmissionUseCase:
             max_combo=command_result.max_combo,
             accuracy=command_result.accuracy,
             passed=command_result.passed,
+            beatmap_playcount=command_result.beatmap_playcount,
+            beatmap_passcount=command_result.beatmap_passcount,
+            beatmap_approved_at=command_result.beatmap_approved_at,
             stable_pp=response.stable_pp,
             stable_pp_after=response.stable_pp,
+            beatmap_rank_delta=(
+                BeatmapRankDelta(before=beatmap_rank_before, after=beatmap_rank_after)
+                if include_beatmap_rank_delta
+                else None
+            ),
+            overall_stats_before=overall_stats_before,
+            overall_stats_after=overall_stats_after,
         )
 
     async def _build_personal_best_submission_result(
         self,
         command_result: SubmitScoreCommandResult,
         personal_best_delta: PersonalBestDelta,
+        *,
+        beatmap_checksum: str,
+        beatmap_rank_before: int | None,
+        include_beatmap_rank_delta: bool,
+        overall_stats_before: UserCurrentStats | None,
     ) -> SubmissionResult:
         assert command_result.score_id is not None
 
@@ -769,6 +989,9 @@ class ProcessScoreSubmissionUseCase:
             if response.state is PerformanceSubmitResponseState.RETRYABLE:
                 return SubmissionResult(
                     outcome=SubmissionOutcome.RETRYABLE,
+                    user_id=command_result.user_id,
+                    ruleset=command_result.ruleset,
+                    playstyle=command_result.playstyle,
                     score_id=command_result.score_id,
                     beatmap_id=command_result.beatmap_id,
                     beatmapset_id=command_result.beatmapset_id,
@@ -776,9 +999,13 @@ class ProcessScoreSubmissionUseCase:
                     max_combo=command_result.max_combo,
                     accuracy=command_result.accuracy,
                     passed=command_result.passed,
+                    beatmap_playcount=command_result.beatmap_playcount,
+                    beatmap_passcount=command_result.beatmap_passcount,
+                    beatmap_approved_at=command_result.beatmap_approved_at,
                     error_reason="performance_calculation_pending",
                     stable_pp_before=pp_before,
                     personal_best_delta=personal_best_delta,
+                    overall_stats_before=overall_stats_before,
                 )
             pp_after = response.stable_pp or 0
         elif personal_best_delta.after_score_id == personal_best_delta.before_score_id:
@@ -786,8 +1013,22 @@ class ProcessScoreSubmissionUseCase:
         else:
             pp_after = await self._stable_pp_without_wait(personal_best_delta.after_score_id)
 
+        overall_stats_after = await self._current_user_stats_for_submit_response(
+            user_id=command_result.user_id,
+            ruleset=command_result.ruleset,
+            playstyle=command_result.playstyle,
+            phase="after",
+        )
+        beatmap_rank_after = await self._beatmap_rank_after_for_submit_response(
+            command_result,
+            beatmap_checksum=beatmap_checksum,
+            include_beatmap_rank_delta=include_beatmap_rank_delta,
+        )
         return SubmissionResult(
             outcome=SubmissionOutcome.COMPLETED,
+            user_id=command_result.user_id,
+            ruleset=command_result.ruleset,
+            playstyle=command_result.playstyle,
             score_id=command_result.score_id,
             beatmap_id=command_result.beatmap_id,
             beatmapset_id=command_result.beatmapset_id,
@@ -795,11 +1036,108 @@ class ProcessScoreSubmissionUseCase:
             max_combo=command_result.max_combo,
             accuracy=command_result.accuracy,
             passed=command_result.passed,
+            beatmap_playcount=command_result.beatmap_playcount,
+            beatmap_passcount=command_result.beatmap_passcount,
+            beatmap_approved_at=command_result.beatmap_approved_at,
             stable_pp=pp_after,
             stable_pp_before=pp_before,
             stable_pp_after=pp_after,
             personal_best_delta=personal_best_delta,
+            beatmap_rank_delta=(
+                BeatmapRankDelta(before=beatmap_rank_before, after=beatmap_rank_after)
+                if include_beatmap_rank_delta
+                else None
+            ),
+            overall_stats_before=overall_stats_before,
+            overall_stats_after=overall_stats_after,
         )
+
+    async def _beatmap_rank_after_for_submit_response(
+        self,
+        command_result: SubmitScoreCommandResult,
+        *,
+        beatmap_checksum: str,
+        include_beatmap_rank_delta: bool,
+    ) -> int | None:
+        if not include_beatmap_rank_delta:
+            return None
+        return await self._beatmap_rank_for_submit_response(
+            user_id=command_result.user_id,
+            beatmap_id=command_result.beatmap_id,
+            beatmap_checksum=beatmap_checksum,
+            ruleset=command_result.ruleset,
+            playstyle=command_result.playstyle,
+            phase="after",
+        )
+
+    async def _beatmap_rank_for_submit_response(
+        self,
+        *,
+        user_id: int | None,
+        beatmap_id: int | None,
+        beatmap_checksum: str,
+        ruleset: Ruleset | None,
+        playstyle: Playstyle | None,
+        phase: str,
+    ) -> int | None:
+        if user_id is None or beatmap_id is None or self._beatmap_personal_best_rank_query is None:
+            return None
+
+        query_ruleset = ruleset or Ruleset.OSU
+        query_playstyle = playstyle or Playstyle.VANILLA
+        try:
+            result = await self._beatmap_personal_best_rank_query.execute(
+                BeatmapPersonalBestRankQueryInput(
+                    user_id=user_id,
+                    beatmap_id=beatmap_id,
+                    beatmap_checksum=beatmap_checksum,
+                    ruleset=query_ruleset,
+                    playstyle=query_playstyle,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "score_submission_beatmap_rank_query_failed",
+                user_id=user_id,
+                beatmap_id=beatmap_id,
+                ruleset=query_ruleset.value,
+                playstyle=query_playstyle.value,
+                phase=phase,
+            )
+            return None
+        return result.rank
+
+    async def _current_user_stats_for_submit_response(
+        self,
+        *,
+        user_id: int | None,
+        ruleset: Ruleset | None,
+        playstyle: Playstyle | None,
+        phase: str,
+    ) -> UserCurrentStats | None:
+        if user_id is None or self._current_user_stats_query is None:
+            return None
+
+        query_ruleset = ruleset or Ruleset.OSU
+        query_playstyle = playstyle or Playstyle.VANILLA
+        try:
+            result = await self._current_user_stats_query.execute(
+                CurrentUserStatsQueryInput(
+                    user_ids=(user_id,),
+                    ruleset=query_ruleset,
+                    playstyle=query_playstyle,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "score_submission_overall_stats_query_failed",
+                user_id=user_id,
+                ruleset=query_ruleset.value,
+                playstyle=query_playstyle.value,
+                phase=phase,
+            )
+            return None
+        return result.get(user_id)
 
     async def _stable_pp_without_wait(self, score_id: int | None) -> int:
         if score_id is None:

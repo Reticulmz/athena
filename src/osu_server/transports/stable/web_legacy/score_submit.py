@@ -3,20 +3,30 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP
 from typing import TYPE_CHECKING, Protocol, cast
 
 import structlog
 from starlette.responses import Response
 
+from osu_server.domain.events.scores import CurrentUserStatsUpdated
+from osu_server.domain.scores import Playstyle, Ruleset
 from osu_server.services.commands.scores import SubmissionOutcome
+from osu_server.services.queries.scores import (
+    CurrentUserStatsQueryInput,
+    CurrentUserStatsQueryResult,
+)
 from osu_server.transports.stable.web_legacy.mappers import (
     MultipartParseError,
     StableScoreSubmitMapper,
+    StableScoreSubmitOverallStats,
 )
 
 if TYPE_CHECKING:
     from starlette.requests import Request
 
+    from osu_server.domain.scores.user_stats import UserCurrentStats
+    from osu_server.infrastructure.messaging.local import LocalEventBus
     from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
     from osu_server.services.commands.scores import ParsedSubmissionInput, SubmissionResult
 
@@ -30,6 +40,13 @@ class ScoreSubmissionCommand(Protocol):
     async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult: ...
 
 
+class CurrentUserStatsQueryPort(Protocol):
+    async def execute(
+        self,
+        input_data: CurrentUserStatsQueryInput,
+    ) -> CurrentUserStatsQueryResult: ...
+
+
 class ScoreSubmitHandler:
     """Handler for POST /web/osu-submit-modular-selector.php.
 
@@ -41,9 +58,13 @@ class ScoreSubmitHandler:
         submit_score_command: ScoreSubmissionCommand,
         limits: MultipartLimits | None = None,
         mapper: StableScoreSubmitMapper | None = None,
+        current_user_stats_query: CurrentUserStatsQueryPort | None = None,
+        event_bus: LocalEventBus | None = None,
     ) -> None:
         self._submit_score_command: ScoreSubmissionCommand = submit_score_command
         self._mapper: StableScoreSubmitMapper = mapper or StableScoreSubmitMapper(limits)
+        self._current_user_stats_query: CurrentUserStatsQueryPort | None = current_user_stats_query
+        self._event_bus: LocalEventBus | None = event_bus
 
     async def __call__(self, request: Request) -> Response:
         """Adapt a stable score submission request into the command workflow."""
@@ -69,6 +90,7 @@ class ScoreSubmitHandler:
             replay_present=command_mapping.replay_present,
             replay_byte_size=command_mapping.replay_byte_size,
             fail_time_ms=command_mapping.fail_time_ms,
+            submit_exit_classification=command_mapping.submit_exit_classification,
             osu_version=command_mapping.osu_version,
         )
 
@@ -76,7 +98,16 @@ class ScoreSubmitHandler:
         result = await self._submit_score_command.execute(input_data)
 
         if result.outcome == SubmissionOutcome.COMPLETED:
-            return self._mapper.to_response(result)
+            current_stats = await self._current_user_stats_after_submit(result)
+            overall_stats = (
+                _score_submit_overall_stats(current_stats)
+                if result.overall_stats_after is None
+                else None
+            )
+            return self._mapper.to_response(
+                result,
+                overall_stats=overall_stats,
+            )
         if result.outcome == SubmissionOutcome.RETRYABLE:
             logger.info(
                 "score_submission_retryable_response",
@@ -94,3 +125,68 @@ class ScoreSubmitHandler:
             error_reason=result.error_reason,
         )
         return self._mapper.to_response(result)
+
+    async def _current_user_stats_after_submit(
+        self,
+        result: SubmissionResult,
+    ) -> UserCurrentStats | None:
+        if result.user_id is None:
+            return None
+
+        try:
+            ruleset = result.ruleset or Ruleset.OSU
+            playstyle = result.playstyle or Playstyle.VANILLA
+            current_stats = result.overall_stats_after
+            if current_stats is None:
+                if self._current_user_stats_query is None:
+                    return None
+                stats_result = await self._current_user_stats_query.execute(
+                    CurrentUserStatsQueryInput(
+                        user_ids=(result.user_id,),
+                        ruleset=ruleset,
+                        playstyle=playstyle,
+                    )
+                )
+                current_stats = stats_result.get(result.user_id)
+                if current_stats is None:
+                    return None
+        except Exception:
+            logger.exception(
+                "score_submission_current_stats_query_failed",
+                user_id=result.user_id,
+                score_id=result.score_id,
+            )
+            return None
+
+        if self._event_bus is not None:
+            try:
+                await self._event_bus.fire(
+                    CurrentUserStatsUpdated(
+                        user_id=result.user_id,
+                        ruleset=ruleset,
+                        playstyle=playstyle,
+                        current_stats=current_stats,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "score_submission_current_stats_event_failed",
+                    user_id=result.user_id,
+                    score_id=result.score_id,
+                )
+        return current_stats
+
+
+def _score_submit_overall_stats(
+    current_stats: UserCurrentStats | None,
+) -> StableScoreSubmitOverallStats | None:
+    if current_stats is None:
+        return None
+    return StableScoreSubmitOverallStats(
+        rank=current_stats.global_rank,
+        ranked_score=current_stats.ranked_score,
+        total_score=current_stats.total_score,
+        max_combo=current_stats.max_combo,
+        accuracy=current_stats.accuracy,
+        stable_pp=int(current_stats.pp.to_integral_value(rounding=ROUND_HALF_UP)),
+    )

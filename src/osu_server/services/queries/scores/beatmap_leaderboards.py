@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from osu_server.domain.beatmaps import BeatmapFetchState, BeatmapFetchTarget, BeatmapRankStatus
 from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import LeaderboardReadScope
@@ -98,9 +99,60 @@ class BeatmapLeaderboardResult:
 
 
 @dataclass(slots=True, frozen=True)
+class BeatmapPersonalBestRankQueryInput:
+    """Beatmap personal best rank を読むための入力。"""
+
+    user_id: int
+    beatmap_id: int
+    beatmap_checksum: str
+    ruleset: Ruleset
+    playstyle: Playstyle
+    category: LeaderboardCategory = LeaderboardCategory.GLOBAL
+    mod_filter_key: int | None = ALL_MODS_FILTER_KEY
+
+
+@dataclass(slots=True, frozen=True)
+class BeatmapPersonalBestRankQueryResult:
+    """Beatmap personal best rank の読み取り結果。"""
+
+    rank: int | None
+
+
+@dataclass(slots=True, frozen=True)
 class _ViewerLeaderboardContext:
     country: str
     leaderboard_visible: bool
+
+
+class BeatmapPersonalBestRankQuery:
+    """Beatmap leaderboard projection から user の現在順位を読む。"""
+
+    _leaderboards: BeatmapLeaderboardQueryRepository
+
+    def __init__(self, leaderboards: BeatmapLeaderboardQueryRepository) -> None:
+        """読み取り専用 repository を保持する。"""
+        self._leaderboards = leaderboards
+
+    async def execute(
+        self,
+        input_data: BeatmapPersonalBestRankQueryInput,
+    ) -> BeatmapPersonalBestRankQueryResult:
+        """入力 scope に一致する personal best の順位を返す。"""
+        if input_data.user_id <= 0:
+            return BeatmapPersonalBestRankQueryResult(rank=None)
+
+        row = await self._leaderboards.get_personal_best(
+            LeaderboardReadScope(
+                beatmap_id=input_data.beatmap_id,
+                beatmap_checksum=input_data.beatmap_checksum,
+                ruleset=input_data.ruleset,
+                playstyle=input_data.playstyle,
+                category=input_data.category,
+                mod_filter_key=input_data.mod_filter_key,
+            ),
+            viewer_user_id=input_data.user_id,
+        )
+        return BeatmapPersonalBestRankQueryResult(rank=row.rank if row is not None else None)
 
 
 class BeatmapLeaderboardQuery:
@@ -419,4 +471,7 @@ __all__ = [
     "BeatmapLeaderboardRequest",
     "BeatmapLeaderboardResolveReason",
     "BeatmapLeaderboardResult",
+    "BeatmapPersonalBestRankQuery",
+    "BeatmapPersonalBestRankQueryInput",
+    "BeatmapPersonalBestRankQueryResult",
 ]

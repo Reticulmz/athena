@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, case, func, literal, select
 from sqlalchemy.exc import IntegrityError
 
-from osu_server.domain.scores.mods import ModCombination
-from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.mods import Mod, ModCombination
+from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
+from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
 from osu_server.repositories.sqlalchemy.models.score import ScoreModel
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.sql.elements import ColumnElement
+
+_EXCLUDED_INITIAL_STATS_MODS = int(Mod.RELAX | Mod.AUTOPILOT)
 
 
 class SQLAlchemyScoreCommandRepository:
@@ -46,6 +50,10 @@ class SQLAlchemyScoreCommandRepository:
             submitted_at=score.submitted_at,
             beatmap_status_at_submission=score.beatmap_status_at_submission,
             leaderboard_eligible_at_submission=score.leaderboard_eligible_at_submission,
+            fail_time_ms=score.fail_time_ms,
+            play_time_seconds=score.play_time_seconds,
+            play_time_source=score.play_time_source.value if score.play_time_source else None,
+            submit_exit_classification=score.submit_exit_classification,
         )
         self._session.add(model)
         try:
@@ -77,6 +85,39 @@ class SQLAlchemyScoreCommandRepository:
     async def get_by_id(self, score_id: int) -> Score | None:
         model = await self._session.get(ScoreModel, score_id)
         return _score_to_domain(model) if isinstance(model, ScoreModel) else None
+
+    async def count_submissions_for_beatmap(self, beatmap_id: int) -> BeatmapSubmissionCounts:
+        raw_row = cast(
+            "object",
+            (await self._session.execute(_beatmap_submission_counts_statement(beatmap_id))).one(),
+        )
+        row = cast(
+            "tuple[object, object]",
+            raw_row,
+        )
+        play_count, pass_count = row
+        return BeatmapSubmissionCounts(
+            play_count=_count_value(play_count),
+            pass_count=_count_value(pass_count),
+        )
+
+    async def list_current_stats_scores_for_user(
+        self,
+        user_id: int,
+        *,
+        ruleset: Ruleset,
+        playstyle: Playstyle,
+    ) -> tuple[Score, ...]:
+        models = (
+            await self._session.execute(
+                _current_stats_scores_statement(
+                    user_id,
+                    ruleset=ruleset,
+                    playstyle=playstyle,
+                )
+            )
+        ).scalars()
+        return tuple(_score_to_domain(model) for model in models)
 
     async def list_leaderboard_rebuild_candidates_for_user(
         self,
@@ -131,7 +172,55 @@ def _score_to_domain(model: ScoreModel) -> Score:
         submitted_at=model.submitted_at,
         beatmap_status_at_submission=model.beatmap_status_at_submission,
         leaderboard_eligible_at_submission=model.leaderboard_eligible_at_submission,
+        fail_time_ms=model.fail_time_ms,
+        play_time_seconds=model.play_time_seconds,
+        play_time_source=(
+            PlayTimeSource(model.play_time_source) if model.play_time_source is not None else None
+        ),
+        submit_exit_classification=model.submit_exit_classification,
     )
+
+
+def _beatmap_submission_counts_statement(beatmap_id: int) -> Select[tuple[int, int]]:
+    return select(
+        func.count(ScoreModel.id),
+        func.coalesce(
+            func.sum(case((ScoreModel.passed.is_(True), 1), else_=0)),
+            0,
+        ),
+    ).where(ScoreModel.beatmap_id == beatmap_id)
+
+
+def _count_value(value: object) -> int:
+    if isinstance(value, bool):
+        msg = "count value must be an integer"
+        raise TypeError(msg)
+    if isinstance(value, int):
+        return value
+    msg = f"count value must be an integer: {value!r}"
+    raise TypeError(msg)
+
+
+def _current_stats_scores_statement(
+    user_id: int,
+    *,
+    ruleset: Ruleset,
+    playstyle: Playstyle,
+) -> Select[tuple[ScoreModel]]:
+    return (
+        select(ScoreModel)
+        .where(
+            ScoreModel.user_id == user_id,
+            ScoreModel.ruleset == ruleset.value,
+            ScoreModel.playstyle == playstyle.value,
+            _initial_stats_mod_condition(),
+        )
+        .order_by(ScoreModel.submitted_at.asc(), ScoreModel.id.asc())
+    )
+
+
+def _initial_stats_mod_condition() -> ColumnElement[bool]:
+    return ScoreModel.mods.bitwise_and(_EXCLUDED_INITIAL_STATS_MODS) == literal(0)
 
 
 def _leaderboard_rebuild_candidate_statement() -> Select[tuple[ScoreModel]]:

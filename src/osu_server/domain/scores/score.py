@@ -40,9 +40,16 @@ class Grade(Enum):
     D = "D"
 
 
+class PlayTimeSource(Enum):
+    """play time の submit-time 推定元。"""
+
+    FAIL_TIME = "fail_time"
+    BEATMAP_TOTAL_LENGTH = "beatmap_total_length"
+
+
 @dataclass(slots=True)
 class Score:
-    """Score domain model."""
+    """受理済み play attempt と submit-time timing 情報。"""
 
     id: int | None
     user_id: int
@@ -68,3 +75,17 @@ class Score:
     submitted_at: datetime
     beatmap_status_at_submission: str | None = None
     leaderboard_eligible_at_submission: bool = False
+    fail_time_ms: int | None = None
+    play_time_seconds: int | None = None
+    play_time_source: PlayTimeSource | None = None
+    submit_exit_classification: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_non_negative_timing("fail_time_ms", self.fail_time_ms)
+        _validate_non_negative_timing("play_time_seconds", self.play_time_seconds)
+
+
+def _validate_non_negative_timing(field_name: str, value: int | None) -> None:
+    if value is not None and value < 0:
+        msg = f"{field_name} must be non-negative"
+        raise ValueError(msg)

@@ -25,7 +25,7 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.users import User
 from osu_server.domain.scores.mods import ModCombination
-from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.domain.storage.blobs import Blob
 
 if TYPE_CHECKING:
@@ -120,6 +120,12 @@ def score_to_domain(model: ScoreModel) -> Score:
         submitted_at=model.submitted_at,
         beatmap_status_at_submission=model.beatmap_status_at_submission,
         leaderboard_eligible_at_submission=model.leaderboard_eligible_at_submission,
+        fail_time_ms=model.fail_time_ms,
+        play_time_seconds=model.play_time_seconds,
+        play_time_source=(
+            PlayTimeSource(model.play_time_source) if model.play_time_source is not None else None
+        ),
+        submit_exit_classification=model.submit_exit_classification,
     )
 
 
@@ -188,6 +194,8 @@ def beatmap_to_domain(
         file_attachment=attachment,
         last_fetched_at=model.last_fetched_at,
         next_refresh_at=model.next_refresh_at,
+        official_last_updated_at=model.official_last_updated_at,
+        local_status_override_changed_at=model.local_status_override_changed_at,
     )
 
 

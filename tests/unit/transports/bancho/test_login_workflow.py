@@ -18,6 +18,10 @@ from osu_server.services.queries.identity import (
     ListActiveSessionsQueryResult,
     ListFriendIdsQueryResult,
 )
+from osu_server.services.queries.scores import (
+    CurrentUserStatsQueryInput,
+    CurrentUserStatsQueryResult,
+)
 from osu_server.transports.stable.bancho.protocol.s2c.login import login_reply
 from osu_server.transports.stable.bancho.workflows import (
     LoginResponseBuilder,
@@ -30,10 +34,15 @@ from tests.factories.domain import make_user
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping
 
+    from osu_server.services.queries.chat import (
+        ListAutojoinChannelsQuery,
+        ListVisibleChannelsQuery,
+    )
     from osu_server.services.queries.identity import (
         ListActiveSessionsQueryUseCase,
         ListFriendIdsQueryUseCase,
     )
+    from osu_server.services.queries.scores import CurrentUserStatsQuery
 
 _PASSWORD = "SecurePass1234"
 _PASSWORD_MD5 = hashlib.md5(_PASSWORD.encode()).hexdigest()
@@ -126,6 +135,16 @@ class _EmptyActiveSessionsQuery:
 
 
 @final
+class _EmptyCurrentUserStatsQuery:
+    async def execute(
+        self,
+        input_data: CurrentUserStatsQueryInput,
+    ) -> CurrentUserStatsQueryResult:
+        _ = input_data
+        return CurrentUserStatsQueryResult(stats=())
+
+
+@final
 class _RecordingLoginResponseBuilder(LoginResponseBuilder):
     """Login response builder fake that records successful responses."""
 
@@ -140,9 +159,16 @@ class _RecordingLoginResponseBuilder(LoginResponseBuilder):
         empty_query = _EmptyChannelCatalogQuery()
         friend_ids_query = _EmptyFriendIdsQuery()
         active_sessions_query = _EmptyActiveSessionsQuery()
+        current_stats_query = _EmptyCurrentUserStatsQuery()
         super().__init__(
-            visible_channels_query=cast("object", empty_query),  # pyright: ignore[reportArgumentType]
-            autojoin_channels_query=cast("object", empty_query),  # pyright: ignore[reportArgumentType]
+            visible_channels_query=cast(
+                "ListVisibleChannelsQuery",
+                cast("object", empty_query),
+            ),
+            autojoin_channels_query=cast(
+                "ListAutojoinChannelsQuery",
+                cast("object", empty_query),
+            ),
             friend_ids_query=cast(
                 "ListFriendIdsQueryUseCase",
                 cast("object", friend_ids_query),
@@ -150,6 +176,10 @@ class _RecordingLoginResponseBuilder(LoginResponseBuilder):
             active_sessions_query=cast(
                 "ListActiveSessionsQueryUseCase",
                 cast("object", active_sessions_query),
+            ),
+            current_user_stats_query=cast(
+                "CurrentUserStatsQuery",
+                cast("object", current_stats_query),
             ),
         )
         self._content = content

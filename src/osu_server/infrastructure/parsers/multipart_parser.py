@@ -42,6 +42,7 @@ class ParsedSubmission:
     password_md5: str
     client_hash: str
     fail_time_ms: int | None
+    submit_exit_classification: str | None
     osu_version: str
     submission_metadata: dict[str, str]
 
@@ -125,7 +126,7 @@ def _extract_optional_metadata(fields: dict[str, list[bytes]]) -> dict[str, str]
 
 def _extract_required_fields(
     fields: dict[str, list[bytes]],
-) -> tuple[bytes, bytes | None, int, bytes, str, str, int | None, str]:
+) -> tuple[bytes, bytes | None, int, bytes, str, str, int | None, str | None, str]:
     score_fields = fields.get("score", [])
     if len(score_fields) < 1:
         raise ParseError("Missing required field: score")
@@ -143,14 +144,9 @@ def _extract_required_fields(
 
     password_md5 = fields["pass"][0].decode("utf-8")
     client_hash = fields["x"][0].decode("utf-8")
+    submit_exit_classification = None
     osu_version = fields["osuver"][0].decode("utf-8")
-
-    fail_time_ms: int | None = None
-    ft_values = fields.get("ft")
-    if ft_values:
-        ft_str = ft_values[0].decode("utf-8")
-        if ft_str:
-            fail_time_ms = int(ft_str)
+    fail_time_ms = _parse_fail_time_ms(fields.get("ft"))
 
     return (
         encrypted_payload,
@@ -160,8 +156,23 @@ def _extract_required_fields(
         password_md5,
         client_hash,
         fail_time_ms,
+        submit_exit_classification,
         osu_version,
     )
+
+
+def _parse_fail_time_ms(ft_values: list[bytes] | None) -> int | None:
+    if not ft_values:
+        return None
+
+    try:
+        ft_str = ft_values[0].decode("utf-8")
+        if not ft_str:
+            return None
+        fail_time_ms = int(ft_str)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return fail_time_ms if fail_time_ms >= 0 else None
 
 
 def parse(
@@ -215,6 +226,7 @@ def parse(
             password_md5,
             client_hash,
             fail_time_ms,
+            submit_exit_classification,
             osu_version,
         ) = _extract_required_fields(fields)
 
@@ -231,6 +243,7 @@ def parse(
         password_md5=password_md5,
         client_hash=client_hash,
         fail_time_ms=fail_time_ms,
+        submit_exit_classification=submit_exit_classification,
         osu_version=osu_version,
         submission_metadata=_extract_optional_metadata(fields),
     )

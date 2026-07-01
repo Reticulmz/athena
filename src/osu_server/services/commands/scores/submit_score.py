@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, cast
 
@@ -17,16 +18,19 @@ from osu_server.domain.scores.personal_best import (
     PersonalBestDelta,
 )
 from osu_server.domain.scores.replay import Replay
+from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.user_stats import UserStatsPolicy
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
     BeatmapLeaderboardUserBestScope,
     UpsertBeatmapLeaderboardUserBest,
 )
+from osu_server.services.commands.scores.user_stats_projection import (
+    replace_current_user_stats_projection,
+)
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from osu_server.domain.scores.score import Score
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWork, UnitOfWorkFactory
 
@@ -57,6 +61,7 @@ class SubmitScoreCommand:
     score: Score | None = None
     beatmap_id: int | None = None
     beatmapset_id: int | None = None
+    beatmap_approved_at: datetime | None = None
     error_reason: str | None = None
     replay_blob_id: int | None = None
     replay_checksum_sha256: str | None = None
@@ -73,6 +78,9 @@ class SubmitScoreCommandResult:
     """Result of the score submission command use-case."""
 
     outcome: SubmitScoreCommandOutcome
+    user_id: int | None = None
+    ruleset: Ruleset | None = None
+    playstyle: Playstyle | None = None
     score_id: int | None = None
     beatmap_id: int | None = None
     beatmapset_id: int | None = None
@@ -80,6 +88,9 @@ class SubmitScoreCommandResult:
     max_combo: int | None = None
     accuracy: float | None = None
     passed: bool | None = None
+    beatmap_playcount: int | None = None
+    beatmap_passcount: int | None = None
+    beatmap_approved_at: datetime | None = None
     replay_attachment_id: int | None = None
     error_reason: str | None = None
     existing_submission: bool = False
@@ -89,8 +100,15 @@ class SubmitScoreCommandResult:
 class SubmitScoreUseCase:
     """Persist one score submission outcome through the command UoW boundary."""
 
-    def __init__(self, *, unit_of_work_factory: UnitOfWorkFactory) -> None:
+    def __init__(
+        self,
+        *,
+        unit_of_work_factory: UnitOfWorkFactory,
+        user_stats_policy: UserStatsPolicy | None = None,
+    ) -> None:
+        """UoW factory と UserStats projection policy を受け取る。"""
         self._unit_of_work_factory: UnitOfWorkFactory = unit_of_work_factory
+        self._user_stats_policy: UserStatsPolicy = user_stats_policy or UserStatsPolicy()
 
     async def execute(self, command: SubmitScoreCommand) -> SubmitScoreCommandResult:
         """Execute the command inside one durable consistency boundary."""
@@ -131,7 +149,12 @@ class SubmitScoreUseCase:
                 msg = f"unsupported new submission outcome: {command.outcome.value}"
                 raise ValueError(msg)
 
-            result = await _record_completed(uow, active_submission, command)
+            result = await _record_completed(
+                uow,
+                active_submission,
+                command,
+                user_stats_policy=self._user_stats_policy,
+            )
             await uow.commit()
             return result
 
@@ -140,6 +163,8 @@ async def _record_completed(
     uow: UnitOfWork,
     submission: ScoreSubmission,
     command: SubmitScoreCommand,
+    *,
+    user_stats_policy: UserStatsPolicy,
 ) -> SubmitScoreCommandResult:
     score = _require_completed_score(command)
 
@@ -191,8 +216,25 @@ async def _record_completed(
         command=command,
         created_score=created_score,
     )
+    beatmap_submission_counts = await uow.beatmaps.increment_submission_counts(
+        created_score.beatmap_id,
+        passed=created_score.passed,
+    )
+    _ = await replace_current_user_stats_projection(
+        uow,
+        user_id=created_score.user_id,
+        ruleset=created_score.ruleset,
+        playstyle=created_score.playstyle,
+        policy=user_stats_policy,
+    )
 
-    completion_snapshot = _completion_snapshot(command, created_score, personal_best_delta)
+    completion_snapshot = _completion_snapshot(
+        command,
+        created_score,
+        personal_best_delta,
+        beatmap_playcount=beatmap_submission_counts.play_count,
+        beatmap_passcount=beatmap_submission_counts.pass_count,
+    )
     if created_replay is not None:
         assert created_replay.id is not None, "Replay ID must be set after creation"
         completion_snapshot["replay_attachment_id"] = created_replay.id
@@ -206,6 +248,9 @@ async def _record_completed(
     )
     return SubmitScoreCommandResult(
         outcome=SubmitScoreCommandOutcome.COMPLETED,
+        user_id=command.user_id,
+        ruleset=created_score.ruleset,
+        playstyle=created_score.playstyle,
         score_id=created_score.id,
         beatmap_id=completion_snapshot["beatmap_id"]
         if isinstance(completion_snapshot["beatmap_id"], int)
@@ -217,6 +262,9 @@ async def _record_completed(
         max_combo=created_score.max_combo,
         accuracy=created_score.accuracy,
         passed=created_score.passed,
+        beatmap_playcount=beatmap_submission_counts.play_count,
+        beatmap_passcount=beatmap_submission_counts.pass_count,
+        beatmap_approved_at=command.beatmap_approved_at,
         replay_attachment_id=created_replay.id if created_replay is not None else None,
         personal_best_delta=personal_best_delta,
     )
@@ -236,6 +284,7 @@ async def _record_terminal_reject(
     )
     return SubmitScoreCommandResult(
         outcome=SubmitScoreCommandOutcome.TERMINAL_REJECTED,
+        user_id=command.user_id,
         error_reason=error_reason,
     )
 
@@ -254,6 +303,7 @@ async def _record_retryable(
     )
     return SubmitScoreCommandResult(
         outcome=SubmitScoreCommandOutcome.RETRYABLE,
+        user_id=command.user_id,
         error_reason=error_reason,
     )
 
@@ -263,22 +313,31 @@ def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScore
     if submission.state in {_STATE_PROCESSING, "received"}:
         return SubmitScoreCommandResult(
             outcome=SubmitScoreCommandOutcome.ACCEPTED_PENDING,
+            user_id=submission.user_id,
             error_reason="accepted_pending",
         )
 
     snapshot = submission.result_snapshot or {}
     if submission.state == _STATE_COMPLETED:
         score_id = _snapshot_int(snapshot.get("score_id"))
+        ruleset = _snapshot_ruleset(snapshot.get("ruleset"))
+        playstyle = _snapshot_playstyle(snapshot.get("playstyle"))
         beatmap_id = _snapshot_int(snapshot.get("beatmap_id"))
         beatmapset_id = _snapshot_int(snapshot.get("beatmapset_id"))
         score = _snapshot_int(snapshot.get("score"))
         max_combo = _snapshot_int(snapshot.get("max_combo"))
         accuracy = _snapshot_float(snapshot.get("accuracy"))
         passed = snapshot.get("passed")
+        beatmap_playcount = _snapshot_int(snapshot.get("beatmap_playcount"))
+        beatmap_passcount = _snapshot_int(snapshot.get("beatmap_passcount"))
+        beatmap_approved_at = _snapshot_datetime(snapshot.get("beatmap_approved_at"))
         personal_best_delta = _snapshot_personal_best_delta(snapshot.get("personal_best_delta"))
         if score_id is not None:
             return SubmitScoreCommandResult(
                 outcome=SubmitScoreCommandOutcome.COMPLETED,
+                user_id=submission.user_id,
+                ruleset=ruleset,
+                playstyle=playstyle,
                 score_id=score_id,
                 beatmap_id=beatmap_id,
                 beatmapset_id=beatmapset_id,
@@ -286,6 +345,9 @@ def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScore
                 max_combo=max_combo,
                 accuracy=accuracy,
                 passed=passed if isinstance(passed, bool) else None,
+                beatmap_playcount=beatmap_playcount,
+                beatmap_passcount=beatmap_passcount,
+                beatmap_approved_at=beatmap_approved_at,
                 personal_best_delta=personal_best_delta,
                 existing_submission=True,
             )
@@ -294,12 +356,14 @@ def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScore
     if submission.state == _STATE_RETRYABLE:
         return SubmitScoreCommandResult(
             outcome=SubmitScoreCommandOutcome.RETRYABLE,
+            user_id=submission.user_id,
             error_reason=error_reason if isinstance(error_reason, str) else "retryable",
             existing_submission=True,
         )
 
     return SubmitScoreCommandResult(
         outcome=SubmitScoreCommandOutcome.TERMINAL_REJECTED,
+        user_id=submission.user_id,
         error_reason=error_reason if isinstance(error_reason, str) else "terminal_rejected",
         existing_submission=True,
     )
@@ -319,10 +383,44 @@ def _snapshot_float(value: object) -> float | None:
     return None
 
 
+def _snapshot_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _snapshot_ruleset(value: object) -> Ruleset | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        try:
+            return Ruleset(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _snapshot_playstyle(value: object) -> Playstyle | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        try:
+            return Playstyle(value)
+        except ValueError:
+            return None
+    return None
+
+
 def _completion_snapshot(
     command: SubmitScoreCommand,
     created_score: Score,
     personal_best_delta: PersonalBestDelta | None,
+    *,
+    beatmap_playcount: int,
+    beatmap_passcount: int,
 ) -> dict[str, object]:
     beatmap_id = command.beatmap_id if command.beatmap_id is not None else created_score.beatmap_id
     beatmapset_id = command.beatmapset_id if command.beatmapset_id is not None else 0
@@ -331,11 +429,17 @@ def _completion_snapshot(
         "beatmap_id": beatmap_id,
         "beatmapset_id": beatmapset_id,
         "score": created_score.score,
+        "ruleset": created_score.ruleset.value,
+        "playstyle": created_score.playstyle.value,
         "max_combo": created_score.max_combo,
         "accuracy": created_score.accuracy,
         "passed": created_score.passed,
+        "beatmap_playcount": beatmap_playcount,
+        "beatmap_passcount": beatmap_passcount,
         "beatmap_status_at_submission": created_score.beatmap_status_at_submission,
     }
+    if command.beatmap_approved_at is not None:
+        completion_snapshot["beatmap_approved_at"] = command.beatmap_approved_at.isoformat()
     if command.grade_discrepancy is not None:
         completion_snapshot["grade_discrepancy"] = dict(command.grade_discrepancy)
     if command.opaque_field_hashes:

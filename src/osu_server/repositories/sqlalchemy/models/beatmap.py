@@ -6,6 +6,7 @@ from decimal import Decimal  # noqa: TC003 -- SQLAlchemy Mapped requires runtime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -52,8 +53,11 @@ class BeatmapSetModel(Base):
 
 class BeatmapModel(Base):
     __tablename__: str = "beatmaps"
-    __table_args__: tuple[UniqueConstraint | Index, ...] = (
+    __table_args__: tuple[UniqueConstraint | Index | CheckConstraint, ...] = (
         UniqueConstraint("checksum_md5", name="uq_beatmaps_checksum_md5"),
+        CheckConstraint("play_count >= 0", name="ck_beatmaps_play_count_non_negative"),
+        CheckConstraint("pass_count >= 0", name="ck_beatmaps_pass_count_non_negative"),
+        CheckConstraint("pass_count <= play_count", name="ck_beatmaps_pass_count_lte_play_count"),
         Index("idx_beatmaps_beatmapset_id", "beatmapset_id"),
         Index("idx_beatmaps_checksum_md5", "checksum_md5"),
     )
@@ -78,6 +82,14 @@ class BeatmapModel(Base):
     official_status_source: Mapped[str] = mapped_column(String(64), nullable=False)
     official_status_verified: Mapped[bool] = mapped_column(Boolean, nullable=False)
     local_status_override: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    local_status_override_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    play_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    pass_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    official_last_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     last_fetched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

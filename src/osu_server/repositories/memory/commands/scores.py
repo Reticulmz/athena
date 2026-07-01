@@ -5,10 +5,13 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from osu_server.domain.scores.mods import Mod
+from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
+
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from osu_server.domain.scores.score import Score
+    from osu_server.domain.scores.score import Playstyle, Ruleset, Score
     from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 
@@ -44,6 +47,38 @@ class InMemoryScoreCommandRepository:
 
     async def get_by_id(self, score_id: int) -> Score | None:
         return self._state.scores_by_id.get(score_id)
+
+    async def count_submissions_for_beatmap(self, beatmap_id: int) -> BeatmapSubmissionCounts:
+        scores = tuple(
+            score for score in self._state.scores_by_id.values() if score.beatmap_id == beatmap_id
+        )
+        return BeatmapSubmissionCounts(
+            play_count=len(scores),
+            pass_count=sum(1 for score in scores if score.passed),
+        )
+
+    async def list_current_stats_scores_for_user(
+        self,
+        user_id: int,
+        *,
+        ruleset: Ruleset,
+        playstyle: Playstyle,
+    ) -> tuple[Score, ...]:
+        return tuple(
+            sorted(
+                (
+                    score
+                    for score in self._state.scores_by_id.values()
+                    if score.user_id == user_id
+                    and _is_current_stats_score(
+                        score,
+                        ruleset=ruleset,
+                        playstyle=playstyle,
+                    )
+                ),
+                key=lambda score: (score.submitted_at, score.id or 0),
+            )
+        )
 
     async def list_leaderboard_rebuild_candidates_for_user(
         self,
@@ -82,6 +117,20 @@ class InMemoryScoreCommandRepository:
 
 def _is_leaderboard_rebuild_candidate(score: Score) -> bool:
     return score.passed and score.leaderboard_eligible_at_submission and score.id is not None
+
+
+def _is_current_stats_score(
+    score: Score,
+    *,
+    ruleset: Ruleset,
+    playstyle: Playstyle,
+) -> bool:
+    return (
+        score.ruleset is ruleset
+        and score.playstyle is playstyle
+        and not score.mods.has(Mod.RELAX)
+        and not score.mods.has(Mod.AUTOPILOT)
+    )
 
 
 def _rebuild_candidate_sort_key(score: Score) -> tuple[int, int, int, int, int, datetime, int]:

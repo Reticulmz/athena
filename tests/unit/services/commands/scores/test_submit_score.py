@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, final
 
 import pytest
@@ -22,6 +23,7 @@ from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.domain.scores.user_stats import UserStatsScope
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
     BeatmapLeaderboardUserBestScope,
@@ -161,6 +163,7 @@ async def test_replay_create_failure_rolls_back_submission_score_and_replay() ->
 async def test_completed_submission_commits_one_snapshot() -> None:
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
+    beatmap_approved_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
 
     result = await use_case.execute(
         SubmitScoreCommand(
@@ -172,6 +175,7 @@ async def test_completed_submission_commits_one_snapshot() -> None:
             score=_score(online_checksum="online-2"),
             beatmap_id=1,
             beatmapset_id=10,
+            beatmap_approved_at=beatmap_approved_at,
             replay_blob_id=2,
             replay_checksum_sha256="b" * 64,
             replay_byte_size=256,
@@ -183,11 +187,23 @@ async def test_completed_submission_commits_one_snapshot() -> None:
     assert result.outcome == SubmitScoreCommandOutcome.COMPLETED
     assert result.score_id == 1
     assert result.score == 500000
+    assert result.ruleset is Ruleset.OSU
+    assert result.playstyle is Playstyle.VANILLA
     assert result.max_combo == 99
     assert result.accuracy == 0.95
     assert result.passed is True
+    assert result.beatmap_playcount == 1
+    assert result.beatmap_passcount == 1
+    assert result.beatmap_approved_at == beatmap_approved_at
     async with factory() as uow:
         submission = await uow.submissions.get_by_fingerprint("fingerprint-2")
+        projection = await uow.current_user_stats.get(
+            UserStatsScope(
+                user_id=1000,
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+            )
+        )
         assert submission is not None
         assert submission.state == "completed"
         assert submission.result_snapshot == {
@@ -195,15 +211,31 @@ async def test_completed_submission_commits_one_snapshot() -> None:
             "beatmap_id": 1,
             "beatmapset_id": 10,
             "score": 500000,
+            "ruleset": Ruleset.OSU.value,
+            "playstyle": Playstyle.VANILLA.value,
             "max_combo": 99,
             "accuracy": 0.95,
             "passed": True,
+            "beatmap_playcount": 1,
+            "beatmap_passcount": 1,
+            "beatmap_approved_at": "2026-06-29T12:34:56+00:00",
             "beatmap_status_at_submission": "ranked",
             "grade_discrepancy": {"client_grade": "D", "server_grade": "A"},
             "opaque_fields": {"fs_sha256": "c" * 64},
             "replay_attachment_id": 1,
             "replay_blob_id": 2,
         }
+        assert projection is not None
+        assert projection.pp == Decimal("0")
+        assert projection.play_count == 1
+        assert projection.ranked_score == 500000
+        assert projection.total_score == 500000
+        assert projection.max_combo == 99
+        assert projection.accuracy == 0.0
+        assert projection.hit_totals.count_300 == 100
+        assert projection.hit_totals.count_100 == 10
+        assert projection.hit_totals.count_50 == 5
+        assert projection.hit_totals.count_miss == 2
 
     retry = await use_case.execute(
         SubmitScoreCommand(
@@ -220,10 +252,51 @@ async def test_completed_submission_commits_one_snapshot() -> None:
 
     assert retry.outcome == SubmitScoreCommandOutcome.COMPLETED
     assert retry.existing_submission is True
+    assert retry.ruleset is Ruleset.OSU
+    assert retry.playstyle is Playstyle.VANILLA
     assert retry.score == 500000
     assert retry.max_combo == 99
     assert retry.accuracy == 0.95
     assert retry.passed is True
+    assert retry.beatmap_playcount == 1
+    assert retry.beatmap_passcount == 1
+    assert retry.beatmap_approved_at == beatmap_approved_at
+
+
+@pytest.mark.asyncio
+async def test_completed_submission_returns_cumulative_beatmap_play_and_pass_counts() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
+
+    failed_result = await use_case.execute(
+        SubmitScoreCommand(
+            fingerprint="fingerprint-count-1",
+            user_id=1000,
+            beatmap_checksum="abc123",
+            submitted_at=datetime.now(UTC),
+            outcome=SubmitScoreCommandOutcome.COMPLETED,
+            score=_score(online_checksum="online-count-1", passed=False),
+            beatmap_id=1,
+            beatmapset_id=10,
+        )
+    )
+    passed_result = await use_case.execute(
+        SubmitScoreCommand(
+            fingerprint="fingerprint-count-2",
+            user_id=1000,
+            beatmap_checksum="abc123",
+            submitted_at=datetime.now(UTC),
+            outcome=SubmitScoreCommandOutcome.COMPLETED,
+            score=_score(online_checksum="online-count-2", passed=True),
+            beatmap_id=1,
+            beatmapset_id=10,
+        )
+    )
+
+    assert failed_result.beatmap_playcount == 1
+    assert failed_result.beatmap_passcount == 0
+    assert passed_result.beatmap_playcount == 2
+    assert passed_result.beatmap_passcount == 1
 
 
 @pytest.mark.asyncio

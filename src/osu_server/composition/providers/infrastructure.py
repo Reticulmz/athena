@@ -25,9 +25,15 @@ from osu_server.infrastructure.security.hibp import HIBPClient, HTTPHIBPClient
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
+    StableUserStatusStore,
+)
 from osu_server.infrastructure.state.valkey.channel_state_store import ValkeyChannelStateStore
 from osu_server.infrastructure.state.valkey.packet_queue import ValkeyPacketQueue
 from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimiter
+from osu_server.infrastructure.state.valkey.stable_user_status_store import (
+    ValkeyStableUserStatusStore,
+)
 from osu_server.infrastructure.storage import create_blob_storage_backend
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.jobs import register_all_jobs
@@ -49,6 +55,7 @@ _DISHKA_RUNTIME_HINTS = (
     PacketQueue,
     RateLimiter,
     SessionStore,
+    StableUserStatusStore,
     async_sessionmaker,
     httpx.AsyncClient,
 )
@@ -120,6 +127,14 @@ class InfrastructureProviderSet(Provider):
     @provide
     def channel_state_store(self, valkey: GlideClient) -> ChannelStateStore:
         return ValkeyChannelStateStore(valkey)
+
+    @provide
+    def stable_user_status_store(
+        self,
+        valkey: GlideClient,
+        config: AppConfig,
+    ) -> StableUserStatusStore:
+        return ValkeyStableUserStatusStore(valkey, ttl=config.session_ttl)
 
     @provide
     def rate_limiter(self, valkey: GlideClient) -> RateLimiter:

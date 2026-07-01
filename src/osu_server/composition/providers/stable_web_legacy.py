@@ -8,6 +8,7 @@ from dishka import Provider, Scope
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
+from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     BeatmapLeaderboardQueryRepository,
@@ -28,6 +29,7 @@ from osu_server.services.queries.identity import (
 from osu_server.services.queries.scores import (
     BeatmapLeaderboardQuery,
     BeatmapScoreListingQuery,
+    CurrentUserStatsQuery,
 )
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.mappers import (
@@ -48,6 +50,8 @@ _DISHKA_RUNTIME_HINTS = (
     GetFriendEligibleUserIdsQuery,
     PermissionService,
     ProcessScoreSubmissionUseCase,
+    CurrentUserStatsQuery,
+    LocalEventBus,
     RegisterUserCommandUseCase,
     RequestBeatmapFileWarmupUseCase,
     SessionCredentialsQueryUseCase,
@@ -116,7 +120,8 @@ class StableWebLegacyProviderSet(Provider):
                 total_body_size=config.max_request_body_size,
                 replay_size=config.score_submit_max_replay_size,
                 text_field_size=config.score_submit_max_text_field_size,
-            )
+            ),
+            stable_web_base_url=_stable_web_base_url(config.domain),
         )
 
     @provide
@@ -124,8 +129,16 @@ class StableWebLegacyProviderSet(Provider):
         self,
         submit_score_command: ProcessScoreSubmissionUseCase,
         mapper: StableScoreSubmitMapper,
+        current_user_stats_query: CurrentUserStatsQuery,
+        event_bus: LocalEventBus,
     ) -> ScoreSubmitHandler:
         return ScoreSubmitHandler(
             submit_score_command=submit_score_command,
             mapper=mapper,
+            current_user_stats_query=current_user_stats_query,
+            event_bus=event_bus,
         )
+
+
+def _stable_web_base_url(domain: str) -> str:
+    return f"https://osu.{domain.strip('.')}"

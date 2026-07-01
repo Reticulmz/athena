@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import base64
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from athena_cli.stable_verification.parsers import parse_score_submit_response
 from osu_server.domain.scores.personal_best import PersonalBestDelta
-from osu_server.services.commands.scores import SubmissionOutcome, SubmissionResult
+from osu_server.domain.scores.user_stats import UserCurrentStats
+from osu_server.services.commands.scores import (
+    BeatmapRankDelta,
+    SubmissionOutcome,
+    SubmissionResult,
+)
 from osu_server.transports.stable.web_legacy.mappers import (
     StableScoreSubmitMapper,
+    StableScoreSubmitOverallStats,
 )
 
 _BEATMAP_CHART_REQUIRED_FIELDS = (
@@ -94,11 +101,12 @@ def test_score_submit_mapper_converts_multipart_to_command_input() -> None:
 
 
 def test_score_submit_mapper_formats_completed_response() -> None:
-    mapper = StableScoreSubmitMapper()
+    mapper = StableScoreSubmitMapper(stable_web_base_url="https://osu.athena.localhost")
 
     response = mapper.to_response(
         SubmissionResult(
             outcome=SubmissionOutcome.COMPLETED,
+            user_id=1001,
             score_id=12345,
             beatmap_id=654,
             beatmapset_id=321,
@@ -106,8 +114,18 @@ def test_score_submit_mapper_formats_completed_response() -> None:
             max_combo=987,
             accuracy=0.956789,
             passed=True,
+            beatmap_playcount=4,
+            beatmap_passcount=3,
+            beatmap_approved_at=datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC),
             stable_pp=248,
-        )
+        ),
+        overall_stats=StableScoreSubmitOverallStats(
+            rank=12,
+            ranked_score=123_456_789,
+            total_score=9_876_543_210,
+            accuracy=0.987654,
+            stable_pp=321,
+        ),
     )
 
     assert response.status_code == 200
@@ -115,25 +133,90 @@ def test_score_submit_mapper_formats_completed_response() -> None:
     parsed = parse_score_submit_response(body)
     lines = body.splitlines()
     assert lines[0] == (
-        b"beatmapId:654|beatmapSetId:321|beatmapPlaycount:1|beatmapPasscount:1|approvedDate:"
+        b"beatmapId:654|beatmapSetId:321|beatmapPlaycount:4|beatmapPasscount:3|"
+        b"approvedDate:2026-06-29 12:34:56"
     )
-    assert lines[1].startswith(b"chartId:beatmap|chartUrl:|chartName:Beatmap Ranking|")
+    assert lines[1].startswith(
+        b"chartId:beatmap|chartUrl:https://osu.athena.localhost/b/654|chartName:Beatmap Ranking|"
+    )
     assert b"rankedScoreAfter:7654321" in lines[1]
     assert b"maxComboAfter:987" in lines[1]
     assert b"accuracyAfter:95.6789" in lines[1]
     assert b"ppAfter:248" in lines[1]
     assert b"onlineScoreId:12345" in lines[1]
-    assert lines[2].startswith(b"chartId:overall|chartUrl:|chartName:Overall Ranking|")
+    assert lines[2].startswith(
+        b"chartId:overall|chartUrl:https://osu.athena.localhost/u/1001|chartName:Overall Ranking|"
+    )
     assert b"achievements-new:" in lines[2]
     assert b"password_md5_hash" not in body
     assert b"session_token" not in body
     assert b"replay_binary_data" not in body
     assert parsed.response is not None
     assert parsed.response.beatmap_chart.fields["achieved"] == "true"
+    assert parsed.response.overall_chart.fields["rankAfter"] == "12"
+    assert parsed.response.overall_chart.fields["rankedScoreAfter"] == "123456789"
+    assert parsed.response.overall_chart.fields["totalScoreAfter"] == "9876543210"
+    assert parsed.response.overall_chart.fields["accuracyAfter"] == "98.7654"
+    assert parsed.response.overall_chart.fields["ppAfter"] == "321"
     for field in _BEATMAP_CHART_REQUIRED_FIELDS:
         assert field in parsed.response.beatmap_chart.fields
     for field in _OVERALL_CHART_REQUIRED_FIELDS:
         assert field in parsed.response.overall_chart.fields
+
+
+def test_score_submit_mapper_formats_overall_stats_delta() -> None:
+    mapper = StableScoreSubmitMapper()
+
+    response = mapper.to_response(
+        SubmissionResult(
+            outcome=SubmissionOutcome.COMPLETED,
+            user_id=1000,
+            score_id=12345,
+            beatmap_id=654,
+            beatmapset_id=321,
+            score=500000,
+            max_combo=987,
+            accuracy=0.9876,
+            passed=True,
+            overall_stats_before=UserCurrentStats(
+                user_id=1000,
+                pp=Decimal("122.4"),
+                accuracy=0.9567,
+                global_rank=2,
+                play_count=7,
+                ranked_score=400_000,
+                total_score=900_000,
+                max_combo=876,
+            ),
+            overall_stats_after=UserCurrentStats(
+                user_id=1000,
+                pp=Decimal("248.5"),
+                accuracy=0.9876,
+                global_rank=1,
+                play_count=8,
+                ranked_score=500_000,
+                total_score=1_400_000,
+                max_combo=987,
+            ),
+        )
+    )
+
+    parsed = parse_score_submit_response(bytes(response.body))
+
+    assert parsed.response is not None
+    overall_chart = parsed.response.overall_chart.fields
+    assert overall_chart["rankBefore"] == "2"
+    assert overall_chart["rankAfter"] == "1"
+    assert overall_chart["rankedScoreBefore"] == "400000"
+    assert overall_chart["rankedScoreAfter"] == "500000"
+    assert overall_chart["totalScoreBefore"] == "900000"
+    assert overall_chart["totalScoreAfter"] == "1400000"
+    assert overall_chart["maxComboBefore"] == "876"
+    assert overall_chart["maxComboAfter"] == "987"
+    assert overall_chart["accuracyBefore"] == "95.67"
+    assert overall_chart["accuracyAfter"] == "98.76"
+    assert overall_chart["ppBefore"] == "122"
+    assert overall_chart["ppAfter"] == "249"
 
 
 def test_score_submit_mapper_formats_personal_best_delta_values() -> None:
@@ -179,6 +262,32 @@ def test_score_submit_mapper_formats_personal_best_delta_values() -> None:
     assert beatmap_chart["ppBefore"] == "222"
     assert beatmap_chart["ppAfter"] == "222"
     assert beatmap_chart["onlineScoreId"] == "12346"
+
+
+def test_score_submit_mapper_formats_beatmap_rank_delta() -> None:
+    mapper = StableScoreSubmitMapper()
+
+    response = mapper.to_response(
+        SubmissionResult(
+            outcome=SubmissionOutcome.COMPLETED,
+            score_id=12347,
+            beatmap_id=654,
+            beatmapset_id=321,
+            score=3000000,
+            max_combo=800,
+            accuracy=0.99,
+            passed=True,
+            stable_pp=333,
+            beatmap_rank_delta=BeatmapRankDelta(before=4, after=2),
+        )
+    )
+
+    parsed = parse_score_submit_response(bytes(response.body))
+
+    assert parsed.response is not None
+    beatmap_chart = parsed.response.beatmap_chart.fields
+    assert beatmap_chart["rankBefore"] == "4"
+    assert beatmap_chart["rankAfter"] == "2"
 
 
 def test_score_submit_mapper_formats_failed_score_passcount_as_zero() -> None:

@@ -3,10 +3,19 @@
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardCommandRepository,
 )
-from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
+from osu_server.repositories.interfaces.commands.beatmap_performance_bests import (
+    BeatmapPerformanceBestCommandRepository,
+)
+from osu_server.repositories.interfaces.commands.beatmaps import (
+    BeatmapCommandRepository,
+    BeatmapSubmissionCounts,
+)
 from osu_server.repositories.interfaces.commands.blobs import BlobCommandRepository
 from osu_server.repositories.interfaces.commands.channels import ChannelCommandRepository
 from osu_server.repositories.interfaces.commands.chat import ChatCommandRepository
+from osu_server.repositories.interfaces.commands.current_user_stats import (
+    CurrentUserStatsCommandRepository,
+)
 from osu_server.repositories.interfaces.commands.friends import (
     FriendRelationshipCommandRepository,
 )
@@ -29,9 +38,12 @@ from osu_server.repositories.interfaces.commands.users import UserCommandReposit
 __all__ = [
     "BeatmapCommandRepository",
     "BeatmapLeaderboardCommandRepository",
+    "BeatmapPerformanceBestCommandRepository",
+    "BeatmapSubmissionCounts",
     "BlobCommandRepository",
     "ChannelCommandRepository",
     "ChatCommandRepository",
+    "CurrentUserStatsCommandRepository",
     "FriendRelationshipCommandRepository",
     "PersonalBestCommandRepository",
     "ReplayCommandRepository",

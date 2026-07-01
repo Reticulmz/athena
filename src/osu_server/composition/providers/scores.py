@@ -16,12 +16,18 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
 from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
+from osu_server.repositories.interfaces.queries.user_stats import UserStatsQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.scores.leaderboards import (
     RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
     RebuildBeatmapLeaderboardsForUserUseCase,
 )
-from osu_server.services.queries.scores import BeatmapLeaderboardQuery, BeatmapScoreListingQuery
+from osu_server.services.queries.scores import (
+    BeatmapLeaderboardQuery,
+    BeatmapPersonalBestRankQuery,
+    BeatmapScoreListingQuery,
+    CurrentUserStatsQuery,
+)
 from osu_server.shared.ports import (
     BeatmapLeaderboardRebuildWorkerWake,
 )
@@ -31,11 +37,14 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapLeaderboardQuery,
     BeatmapLeaderboardQueryRepository,
     BeatmapLeaderboardRebuildWorkerWake,
+    BeatmapPersonalBestRankQuery,
     BeatmapScoreListingQueryRepository,
+    CurrentUserStatsQuery,
     RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
     RebuildBeatmapLeaderboardsForUserUseCase,
     TaskiqBeatmapLeaderboardRebuildWorkerWake,
     UnitOfWorkFactory,
+    UserStatsQueryRepository,
 )
 
 
@@ -66,6 +75,20 @@ class ScoreProviderSet(Provider):
             repository,
             leaderboards,
         )
+
+    @provide
+    def beatmap_personal_best_rank_query(
+        self,
+        leaderboards: BeatmapLeaderboardQueryRepository,
+    ) -> BeatmapPersonalBestRankQuery:
+        return BeatmapPersonalBestRankQuery(leaderboards)
+
+    @provide
+    def current_user_stats_query(
+        self,
+        repository: UserStatsQueryRepository,
+    ) -> CurrentUserStatsQuery:
+        return CurrentUserStatsQuery(repository=repository)
 
     @provide
     def beatmap_leaderboard_rebuild_worker_wake(

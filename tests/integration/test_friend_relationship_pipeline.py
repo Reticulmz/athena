@@ -19,6 +19,7 @@ from osu_server.repositories.memory.queries.channels import InMemoryChannelQuery
 from osu_server.repositories.memory.queries.friends import (
     InMemoryFriendRelationshipQueryRepository,
 )
+from osu_server.repositories.memory.queries.user_stats import InMemoryUserStatsQueryRepository
 from osu_server.repositories.memory.session_store import InMemorySessionStore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.identity import (
@@ -32,6 +33,7 @@ from osu_server.services.queries.chat import (
 )
 from osu_server.services.queries.identity.friend_relationships import ListFriendIdsQuery
 from osu_server.services.queries.identity.online_sessions import ListActiveSessionsQueryUseCase
+from osu_server.services.queries.scores import CurrentUserStatsQuery
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.handlers.friends import FriendHandlers
 from osu_server.transports.stable.bancho.protocol.c2s import friend_user_id_payload
@@ -87,6 +89,7 @@ async def _setup_pipeline() -> FriendPipeline:
     channel_state = InMemoryChannelStateStore()
     channel_repository = InMemoryChannelQueryRepository(uow_factory)
     friend_query_repository = InMemoryFriendRelationshipQueryRepository(uow_factory)
+    stats_query_repository = InMemoryUserStatsQueryRepository(uow_factory)
     login_response_builder = LoginResponseBuilder(
         visible_channels_query=ListVisibleChannelsQuery(
             channel_repository=channel_repository,
@@ -98,6 +101,7 @@ async def _setup_pipeline() -> FriendPipeline:
         ),
         friend_ids_query=ListFriendIdsQuery(repository=friend_query_repository),
         active_sessions_query=ListActiveSessionsQueryUseCase(session_store=session_store),
+        current_user_stats_query=CurrentUserStatsQuery(repository=stats_query_repository),
     )
     return FriendPipeline(
         dispatcher=dispatcher,

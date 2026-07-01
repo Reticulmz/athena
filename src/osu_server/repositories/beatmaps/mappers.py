@@ -35,6 +35,8 @@ class _BeatmapJSON(TypedDict, total=False):
     ar: float | None
     drain: float | None
     difficulty_rating: float | None
+    last_update: str | None
+    last_updated: str | None
     beatmapset: _BeatmapsetJSON
 
 
@@ -48,6 +50,7 @@ class _BeatmapsetJSON(TypedDict, total=False):
     artist_unicode: str | None
     title_unicode: str | None
     status: str
+    last_updated: str | None
     beatmaps: list[_BeatmapJSON]
 
 
@@ -110,6 +113,7 @@ def beatmap_v1_json_to_snapshot(
             difficulty_rating=_maybe_float(item.get("difficultyrating")),
             last_fetched_at=_now,
             next_refresh_at=_now,
+            official_last_updated_at=_maybe_datetime(item.get("last_update")),
         )
         for item in items
     )
@@ -166,6 +170,7 @@ def _from_beatmapset_json(
 ) -> BeatmapsetSnapshot:
     beatmapset_id = data.get("id", 0)
     beatmapset_status = data.get("status", "")
+    beatmapset_last_updated_at = _maybe_datetime(data.get("last_updated"))
 
     beatmaps_raw: list[_BeatmapJSON] = data.get("beatmaps") or []
     child_snapshots = tuple(
@@ -189,6 +194,11 @@ def _from_beatmapset_json(
             difficulty_rating=_maybe_float(bm.get("difficulty_rating")),
             last_fetched_at=now,
             next_refresh_at=now,
+            official_last_updated_at=(
+                _maybe_datetime(bm.get("last_updated"))
+                or _maybe_datetime(bm.get("last_update"))
+                or beatmapset_last_updated_at
+            ),
         )
         for bm in beatmaps_raw
     )
@@ -235,6 +245,24 @@ def _maybe_str(value: object) -> str | None:
     if isinstance(value, int | float):
         return str(value)
     return None
+
+
+def _maybe_datetime(value: object) -> datetime | None:
+    text = _maybe_str(value)
+    if text is None:
+        return None
+    normalized = text.strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _mode_text(value: object) -> str:

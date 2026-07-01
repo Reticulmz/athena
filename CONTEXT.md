@@ -368,6 +368,16 @@ _Avoid_: Stable serving route priority, permanent mirror trust, client-visible r
 Beatmap thumbnail や preview audio が公式 source と mirror source のどちらからも取得できなかった状態を短時間保持し、stable serving route が同じ missing asset を繰り返し upstream に問い合わせないようにする cache。
 _Avoid_: Permanent missing state, beatmap metadata failure, client-visible redirect
 
+### Official Beatmap Last Updated At
+
+公式または mirror metadata provider が返す beatmap の最終更新日時。Stable score submit response の `approvedDate` へ Local Beatmap Status Override Changed At がない場合に使う互換表示用 metadata であり、Athena が譜面を取得した日時ではない。
+_Avoid_: Fetch time, local approval date, beatmapset ranked date
+
+### Local Beatmap Status Override Changed At
+
+Athena operator が Beatmap の local status override を最後に変更した日時。Official status とは独立した local decision の audit/display metadata であり、LocalOverride が stable score submit response の status を実質的に昇格させる場合は `approvedDate` の優先 source になる。
+_Avoid_: Official ranked date, beatmap row updated_at, metadata refresh time
+
 ### Fixture Extraction Row
 
 Stable Compatibility Evidence として fixture 化する最小の client-observable contract 単位。Route family 単位ではなく、request method、path pattern、host alias、response shape、redirect などが異なる observable behavior ごとに分ける。

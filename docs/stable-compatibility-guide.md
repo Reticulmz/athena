@@ -942,10 +942,15 @@ Current Athena responses:
 Completed chart response structure:
 
 ```text
-beatmapId:<beatmap_id>|beatmapSetId:<beatmapset_id>|beatmapPlaycount:<count>|beatmapPasscount:<count>|approvedDate:
+beatmapId:<beatmap_id>|beatmapSetId:<beatmapset_id>|beatmapPlaycount:<count>|beatmapPasscount:<count>|approvedDate:<date>
 chartId:beatmap|chartUrl:|chartName:Beatmap Ranking|achieved:<true_or_false>|rankBefore:|rankAfter:<rank>|maxComboBefore:<combo>|maxComboAfter:<combo>|accuracyBefore:<accuracy>|accuracyAfter:<accuracy>|rankedScoreBefore:<score>|rankedScoreAfter:<score>|ppBefore:<pp>|ppAfter:<pp>|onlineScoreId:<score_id>
 chartId:overall|chartUrl:|chartName:Overall Ranking|rankBefore:<rank>|rankAfter:<rank>|rankedScoreBefore:<score>|rankedScoreAfter:<score>|totalScoreBefore:<score>|totalScoreAfter:<score>|maxComboBefore:<combo>|maxComboAfter:<combo>|accuracyBefore:<accuracy>|accuracyAfter:<accuracy>|ppBefore:<pp>|ppAfter:<pp>|achievements-new:<ids>|onlineScoreId:<score_id>
 ```
+
+`approvedDate` uses `YYYY-MM-DD HH:MM:SS`. Local status override change time is
+preferred when a local override exists; otherwise Athena uses provider beatmap
+`last_update` / `last_updated` metadata when available. If neither value is
+known, the field is empty.
 
 Required processing:
 

@@ -24,6 +24,7 @@ from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
+from osu_server.repositories.interfaces.queries.user_stats import UserStatsQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
@@ -48,6 +49,7 @@ from osu_server.repositories.memory.queries.score_performance import (
     InMemoryScorePerformanceQueryRepository,
 )
 from osu_server.repositories.memory.queries.scores import InMemoryScoreQueryRepository
+from osu_server.repositories.memory.queries.user_stats import InMemoryUserStatsQueryRepository
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.repositories.sqlalchemy.queries.beatmap_leaderboards import (
@@ -73,6 +75,9 @@ from osu_server.repositories.sqlalchemy.queries.score_performance import (
     SQLAlchemyScorePerformanceQueryRepository,
 )
 from osu_server.repositories.sqlalchemy.queries.scores import SQLAlchemyScoreQueryRepository
+from osu_server.repositories.sqlalchemy.queries.user_stats import (
+    SQLAlchemyUserStatsQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
 
@@ -169,6 +174,12 @@ class SQLAlchemyRepositoryAdapterFamily:
     ) -> ScorePerformanceQueryRepository:
         return SQLAlchemyScorePerformanceQueryRepository(session_factory)
 
+    def user_stats_query_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> UserStatsQueryRepository:
+        return SQLAlchemyUserStatsQueryRepository(session_factory)
+
 
 class InMemoryRepositoryAdapterFamily:
     """Build one coherent in-memory repository adapter set."""
@@ -233,6 +244,10 @@ class InMemoryRepositoryAdapterFamily:
             RepositoryAdapterReplacement(
                 ScorePerformanceQueryRepository,
                 InMemoryScorePerformanceQueryRepository(self.unit_of_work_factory),
+            ),
+            RepositoryAdapterReplacement(
+                UserStatsQueryRepository,
+                InMemoryUserStatsQueryRepository(self.unit_of_work_factory),
             ),
         )
 

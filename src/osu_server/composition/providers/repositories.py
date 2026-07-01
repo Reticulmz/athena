@@ -30,6 +30,7 @@ from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
+from osu_server.repositories.interfaces.queries.user_stats import UserStatsQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
@@ -48,6 +49,7 @@ _DISHKA_RUNTIME_HINTS = (
     ScoreQueryRepository,
     UnitOfWorkFactory,
     UserQueryRepository,
+    UserStatsQueryRepository,
     async_sessionmaker,
 )
 
@@ -149,3 +151,10 @@ class RepositoryProviderSet(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> ScorePerformanceQueryRepository:
         return self._adapters.score_performance_query_repository(session_factory)
+
+    @provide
+    def user_stats_query_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> UserStatsQueryRepository:
+        return self._adapters.user_stats_query_repository(session_factory)

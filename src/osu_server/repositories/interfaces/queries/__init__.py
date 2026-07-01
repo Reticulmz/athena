@@ -31,6 +31,12 @@ from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceRecalculationCandidateResult,
 )
 from osu_server.repositories.interfaces.queries.scores import ScoreQueryRepository
+from osu_server.repositories.interfaces.queries.user_stats import (
+    UserStatsQueryRepository,
+    UserStatsRankInput,
+    UserStatsSourceRead,
+    UserStatsSourceRow,
+)
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 
 __all__ = [
@@ -54,4 +60,8 @@ __all__ = [
     "ScorePerformanceRecalculationCandidateResult",
     "ScoreQueryRepository",
     "UserQueryRepository",
+    "UserStatsQueryRepository",
+    "UserStatsRankInput",
+    "UserStatsSourceRead",
+    "UserStatsSourceRow",
 ]

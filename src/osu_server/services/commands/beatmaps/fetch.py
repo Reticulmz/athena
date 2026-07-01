@@ -434,6 +434,7 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
             file_attachment=None,
             last_fetched_at=bm.last_fetched_at,
             next_refresh_at=bm.next_refresh_at,
+            official_last_updated_at=bm.official_last_updated_at,
         )
         for bm in snapshot.beatmaps
     )

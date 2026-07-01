@@ -10,6 +10,7 @@ from osu_server.transports.stable.web_legacy.mappers.score_submit import (
     StableScorePayloadParser,
     StableScoreSubmitCommandMapping,
     StableScoreSubmitMapper,
+    StableScoreSubmitOverallStats,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "StableScorePayloadParser",
     "StableScoreSubmitCommandMapping",
     "StableScoreSubmitMapper",
+    "StableScoreSubmitOverallStats",
 ]

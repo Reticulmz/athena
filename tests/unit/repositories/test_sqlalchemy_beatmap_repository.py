@@ -48,13 +48,23 @@ _CHECKSUM = "0123456789abcdef0123456789abcdef"
 class FakeResult:
     _value: object | None
     _values: list[object]
+    _row: tuple[object, object] | None
 
-    def __init__(self, value: object | None = None, values: list[object] | None = None) -> None:
+    def __init__(
+        self,
+        value: object | None = None,
+        values: list[object] | None = None,
+        row: tuple[object, object] | None = None,
+    ) -> None:
         self._value = value
         self._values = values or []
+        self._row = row
 
     def scalar_one_or_none(self) -> object | None:
         return self._value
+
+    def one_or_none(self) -> tuple[object, object] | None:
+        return self._row
 
     def scalars(self) -> FakeResult:
         return self
@@ -144,6 +154,10 @@ def _beatmap_model(
     checksum_md5: str = _CHECKSUM,
     official_status: str = "ranked",
     local_status_override: str | None = None,
+    local_status_override_changed_at: datetime | None = None,
+    official_last_updated_at: datetime | None = None,
+    play_count: int = 0,
+    pass_count: int = 0,
 ) -> BeatmapModel:
     return BeatmapModel(
         id=id,
@@ -164,6 +178,10 @@ def _beatmap_model(
         official_status_source="official",
         official_status_verified=True,
         local_status_override=local_status_override,
+        local_status_override_changed_at=local_status_override_changed_at,
+        play_count=play_count,
+        pass_count=pass_count,
+        official_last_updated_at=official_last_updated_at,
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
     )
@@ -218,6 +236,8 @@ def _beatmap_domain(
     *,
     official_status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
     local_status_override: LocalBeatmapStatus | None = None,
+    local_status_override_changed_at: datetime | None = None,
+    official_last_updated_at: datetime | None = None,
 ) -> Beatmap:
     return Beatmap(
         id=2_000,
@@ -243,6 +263,8 @@ def _beatmap_domain(
         file_attachment=None,
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
+        official_last_updated_at=official_last_updated_at,
+        local_status_override_changed_at=local_status_override_changed_at,
     )
 
 
@@ -309,7 +331,11 @@ async def test_get_beatmapset_loads_child_beatmaps() -> None:
 
 
 async def test_save_snapshot_preserves_existing_local_override() -> None:
-    existing = _beatmap_model(local_status_override="ranked")
+    override_changed_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
+    existing = _beatmap_model(
+        local_status_override="ranked",
+        local_status_override_changed_at=override_changed_at,
+    )
     session = FakeSession(get_results={(BeatmapModel, 2_000): existing})
 
     await _repo(session).save_beatmapset_snapshot(
@@ -321,6 +347,31 @@ async def test_save_snapshot_preserves_existing_local_override() -> None:
     assert len(beatmap_models) == 1
     assert beatmap_models[0].official_status == "loved"
     assert beatmap_models[0].local_status_override == "ranked"
+    assert beatmap_models[0].local_status_override_changed_at == override_changed_at
+
+
+async def test_save_snapshot_preserves_existing_last_updated_when_source_omits_it() -> None:
+    official_last_updated_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
+    existing = _beatmap_model(official_last_updated_at=official_last_updated_at)
+    session = FakeSession(get_results={(BeatmapModel, 2_000): existing})
+
+    await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    beatmap_models = [model for model in session.merged if isinstance(model, BeatmapModel)]
+    assert len(beatmap_models) == 1
+    assert beatmap_models[0].official_last_updated_at == official_last_updated_at
+
+
+async def test_save_snapshot_preserves_existing_submission_counts() -> None:
+    existing = _beatmap_model(play_count=9, pass_count=7)
+    session = FakeSession(get_results={(BeatmapModel, 2_000): existing})
+
+    await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    beatmap_models = [model for model in session.merged if isinstance(model, BeatmapModel)]
+    assert len(beatmap_models) == 1
+    assert beatmap_models[0].play_count == 9
+    assert beatmap_models[0].pass_count == 7
 
 
 async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -> None:
@@ -428,7 +479,9 @@ async def test_set_local_status_override_updates_model_and_returns_domain() -> N
     result = await _repo(session).set_local_status_override(2_000, LocalBeatmapStatus.RANKED)
 
     assert model.local_status_override == "ranked"
+    assert model.local_status_override_changed_at is not None
     assert result.local_status_override is LocalBeatmapStatus.RANKED
+    assert result.local_status_override_changed_at == model.local_status_override_changed_at
     assert result.official_status is BeatmapRankStatus.PENDING
     assert session.flushes == 1
 
@@ -443,7 +496,9 @@ async def test_set_local_status_override_clears_override_with_none() -> None:
     result = await _repo(session).set_local_status_override(2_000, None)
 
     assert model.local_status_override is None
+    assert model.local_status_override_changed_at is None
     assert result.local_status_override is None
+    assert result.local_status_override_changed_at is None
     assert session.flushes == 1
 
 
@@ -452,6 +507,31 @@ async def test_set_local_status_override_raises_not_found() -> None:
 
     with pytest.raises(BeatmapNotFoundError):
         _ = await _repo(session).set_local_status_override(9_999, LocalBeatmapStatus.RANKED)
+
+
+async def test_increment_submission_counts_uses_atomic_update_returning() -> None:
+    session = FakeSession(execute_results=[FakeResult(row=(3, 2))])
+
+    result = await _repo(session).increment_submission_counts(2_000, passed=True)
+
+    assert result.play_count == 3
+    assert result.pass_count == 2
+    assert len(session.executed) == 1
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    statement_text = str(statement.compile(dialect=postgresql.dialect()))
+    assert "UPDATE beatmaps SET" in statement_text
+    assert "play_count=(beatmaps.play_count + " in statement_text
+    assert "pass_count=(beatmaps.pass_count + " in statement_text
+    assert "WHERE beatmaps.id = " in statement_text
+    assert "RETURNING beatmaps.play_count, beatmaps.pass_count" in statement_text
+
+
+async def test_increment_submission_counts_raises_when_beatmap_missing() -> None:
+    session = FakeSession(execute_results=[FakeResult(row=None)])
+
+    with pytest.raises(BeatmapNotFoundError):
+        _ = await _repo(session).increment_submission_counts(9_999, passed=False)
 
 
 async def test_mark_fetch_succeeded_transitions_state_to_fresh() -> None:

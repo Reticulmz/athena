@@ -181,6 +181,12 @@ class PerformanceEligibilityPolicy:
             return PerformanceEligibilityDecision(False, "beatmap_status_out_of_scope")
         return PerformanceEligibilityDecision(True, None)
 
+    def evaluate_best_candidate(self, score: Score) -> PerformanceEligibilityDecision:
+        """PP best 集計に採用できる score か判定する。"""
+        if not score.leaderboard_eligible_at_submission:
+            return PerformanceEligibilityDecision(False, "score_not_eligible")
+        return self.evaluate(score)
+
 
 class FormulaProfilePolicy:
     """Resolve exactly one active Formula Profile per playstyle."""

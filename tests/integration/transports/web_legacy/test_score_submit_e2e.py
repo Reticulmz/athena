@@ -38,7 +38,10 @@ from osu_server.services.commands.scores import (
     ScoreSubmissionAuthorizer,
 )
 from osu_server.services.commands.scores.authorization import AuthorizationContext
-from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
+from osu_server.transports.stable.web_legacy.mappers import (
+    StableScorePayloadParser,
+    StableScoreSubmitMapper,
+)
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
@@ -270,7 +273,10 @@ async def test_e2e_score_submit_completed_response() -> None:
     auth_service = MockAuthService()
 
     service = _make_process_score_submission_use_case(auth_service=auth_service)
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(
+        service,
+        mapper=StableScoreSubmitMapper(stable_web_base_url="https://osu.athena.localhost"),
+    )
 
     body, content_type = _create_valid_multipart_body()
     request = _request(body, content_type)
@@ -284,8 +290,12 @@ async def test_e2e_score_submit_completed_response() -> None:
     assert response_body.startswith(
         b"beatmapId:1|beatmapSetId:0|beatmapPlaycount:1|beatmapPasscount:1|approvedDate:\n"
     )
-    assert b"chartId:beatmap|chartUrl:|chartName:Beatmap Ranking|" in response_body
-    assert b"chartId:overall|chartUrl:|chartName:Overall Ranking|" in response_body
+    assert (
+        b"chartId:beatmap|chartUrl:https://osu.athena.localhost/b/1|chartName:Beatmap Ranking|"
+    ) in response_body
+    assert (
+        b"chartId:overall|chartUrl:https://osu.athena.localhost/u/1000|chartName:Overall Ranking|"
+    ) in response_body
 
 
 @pytest.mark.asyncio

@@ -10,9 +10,11 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.commands import (
         BeatmapCommandRepository,
         BeatmapLeaderboardCommandRepository,
+        BeatmapPerformanceBestCommandRepository,
         BlobCommandRepository,
         ChannelCommandRepository,
         ChatCommandRepository,
+        CurrentUserStatsCommandRepository,
         FriendRelationshipCommandRepository,
         PersonalBestCommandRepository,
         ReplayCommandRepository,
@@ -45,6 +47,8 @@ class UnitOfWork(Protocol):
     blobs: BlobCommandRepository
     beatmaps: BeatmapCommandRepository
     beatmap_leaderboards: BeatmapLeaderboardCommandRepository
+    beatmap_performance_bests: BeatmapPerformanceBestCommandRepository
+    current_user_stats: CurrentUserStatsCommandRepository
 
     async def commit(self) -> None:
         """Commit all command repository changes as one durable outcome."""

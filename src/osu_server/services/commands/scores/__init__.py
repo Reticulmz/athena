@@ -12,6 +12,7 @@ from osu_server.services.commands.scores.leaderboards import (
     RebuildBeatmapLeaderboardsResult,
 )
 from osu_server.services.commands.scores.process_submission import (
+    BeatmapRankDelta,
     ParsedSubmissionInput,
     ProcessScoreSubmissionUseCase,
     ScorePayloadParser,
@@ -28,9 +29,14 @@ from osu_server.services.commands.scores.submit_score import (
     SubmitScoreCommandResult,
     SubmitScoreUseCase,
 )
+from osu_server.services.commands.scores.user_stats_projection import (
+    build_current_user_stats_projection,
+    replace_current_user_stats_projection,
+)
 
 __all__ = [
     "AuthorizationContext",
+    "BeatmapRankDelta",
     "ParsedSubmissionInput",
     "ProcessScoreSubmissionUseCase",
     "RebuildBeatmapLeaderboardsForBeatmapsetCommand",
@@ -47,7 +53,9 @@ __all__ = [
     "SubmitScoreCommandOutcome",
     "SubmitScoreCommandResult",
     "SubmitScoreUseCase",
+    "build_current_user_stats_projection",
     "generate_submission_fingerprint",
     "generate_submission_request_hash",
     "hash_submission_metadata",
+    "replace_current_user_stats_projection",
 ]
