@@ -321,6 +321,7 @@ When work may run in parallel, touch overlapping files, generate artifacts, or i
 - Commit completed work in the task branch, or clearly report uncommitted changes and do not integrate them automatically.
 - For non-trivial code, test, spec, or multi-file changes, use a pull request as the integration boundary even for solo development.
 - Open a draft PR from the task branch, watch GitHub CI and review comments, and fix failures with focused follow-up commits on the same branch.
+- Do not merge PRs from the agent environment. PR merges are performed by the user on GitHub Web UI. Reporting that a PR is mergeable, CI is green, or reviews are resolved is not merge authorization.
 - Merge only after CI passes, actionable comments are resolved, the final diff is reviewed, and relevant local checks have run.
 - Do not merge PRs with failing checks, unresolved actionable comments, or uncommitted local changes.
 - Integrate back into the main worktree only after reviewing the diff and running relevant checks. Do not merge uncommitted changes from separate agents together.
