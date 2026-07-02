@@ -27,7 +27,7 @@
   - ステータスチェック失敗時に PR のマージボタンが無効化されていることを確認する
   - _Depends: 1.1, 1.2_
   - _Requirements: 5.1, 5.2_
-  - _Blocked: プライベートリポジトリでは GitHub Pro が必要。public 化またはアップグレード後に設定可能_
+  - _Ready: public repository では branch protection を設定可能。GitHub repository settings で適用状態を確認する_
 
 - [ ] 3. CI パイプラインの統合検証
   - PR 作成、PR 更新（追加コミット）、main 直接プッシュの3パターンでワークフロートリガーを検証する
