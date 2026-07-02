@@ -253,6 +253,58 @@ validation, or real-client traffic capture work.
 | Parent #16 sibling inventory | Context only for the broader stable compatibility inventory. | `/web`, static/media, release/update, persistence, and other non-Bancho rows are not required audit rows for #33. |
 | Downstream #17 fixture extraction | Consumer only for fixture blockers identified by #33. | Golden fixture file creation, fixture extraction completion, fixture validation, and real-client traffic capture remain outside this audit-only task. |
 
+## Bancho Payload Struct Inventory Snapshot
+
+Current payload definition source:
+`src/osu_server/transports/stable/bancho/protocol/`.
+
+This snapshot records the packet-specific Caterpillar payload structs that are
+currently present after the C2S/S2C payload migration. It is inventory evidence
+only; runtime behavior, fixture extraction, and missing packet support remain
+tracked by the packet coverage rows below.
+
+### C2S Packet-Specific Payload Structs
+
+| Packet rows | Payload struct evidence | Notes |
+| --- | --- | --- |
+| `STATUS_CHANGE` | `c2s/status.py::StatusChangePayload` | Wraps the shared `StatusUpdate` wire type. Compatibility byte variants for empty stable strings are still generated with primitive `pack()` helpers. |
+| `SEND_MESSAGE`, `SEND_PRIVATE_MESSAGE` | `c2s/chat.py::ChatMessagePayload` | Wraps the shared `Message` wire type and keeps stable empty-string compatibility validation. |
+| `JOIN_CHANNEL`, `LEAVE_CHANNEL` | `c2s/chat.py::ChannelNamePayload` | Defines the single `BanchoString` channel-name payload. |
+| `ADD_FRIEND`, `REMOVE_FRIEND` | `c2s/friends.py::FriendUserIdPayload` | Defines the signed 32-bit target user id payload. |
+| `CHANGE_FRIENDONLY_DMS` | `c2s/friends.py::FriendOnlyDmsPayload` | Defines Athena's currently implemented one-byte flag; the exact stable width remains tracked as a fixture blocker in row 99. |
+| `STATS_REQUEST` | `c2s/stats.py::StatsRequestPayload` | Defines the `uint16 count + int32[count] user_ids` payload used by the parser and fixture helper. |
+| `PRESENCE_REQUEST` | `c2s/presence.py::PresenceRequestPayload` | Defines the `uint16 count + int32[count] user_ids` payload used by the parser and fixture helper. |
+| `PRESENCE_REQUEST_ALL` | `c2s/presence.py::PresenceRequestAllReservedPayload` | Covers the compatible reserved `int32` shape; empty payload remains accepted and intentionally has no struct. |
+
+### S2C Packet-Specific Payload Structs
+
+| Packet rows | Payload struct evidence | Notes |
+| --- | --- | --- |
+| `LOGIN_REPLY` | `s2c/login.py::LoginReplyPayload` | Defines the signed 32-bit user id or login error code payload. |
+| `PROTOCOL_VERSION` | `s2c/login.py::ProtocolVersionPayload` | Defines the signed 32-bit protocol version payload. |
+| `LOGIN_PERMISSIONS` | `s2c/login.py::LoginPermissionsPayload` | Defines the signed 32-bit stable permission bitmask payload. |
+| `ANNOUNCE` | `s2c/login.py::NotificationPayload` | Defines the notification `BanchoString` payload. |
+| `SILENCE_INFO` | `s2c/login.py::SilenceInfoPayload` | Defines the signed 32-bit remaining silence seconds payload. |
+| `FRIENDS_LIST` | `s2c/login.py::FriendsListPayload` | Defines an `IntList`-compatible friend id list with packet-specific naming. |
+| `USER_PRESENCE_BUNDLE` | `s2c/login.py::UserPresenceBundlePayload` | Defines an `IntList`-compatible online user id bundle with packet-specific naming. |
+| `USER_PRESENCE` | `s2c/login.py::_UserPresenceData` | Private payload struct for the implemented builder; fixture-backed struct status remains tracked by `UserPresence`. |
+| `USER_STATS` | `s2c/login.py::_UserStatsData` | Private payload struct for the implemented builder; stat projection/runtime gaps remain packet-row work. |
+| `CHANNEL_AVAILABLE` | `s2c/login.py::ChannelAvailablePayload` | Wraps the shared `Channel` wire type with packet-specific naming. |
+| `CHANNEL_AVAILABLE_AUTOJOIN` | `s2c/login.py::ChannelAvailableAutojoinPayload` | Wraps the shared `Channel` wire type with packet-specific naming. |
+| `SEND_MESSAGE` | `s2c/chat.py::SendMessagePayload` | Wraps the shared `Message` wire type with packet-specific naming. |
+| `USER_DM_BLOCKED` | `s2c/chat.py::UserDmBlockedPayload` | Wraps the shared `Message` wire type for friend-only DM rejection. |
+| `CHANNEL_JOIN_SUCCESS` | `s2c/chat.py::ChannelJoinSuccessPayload` | Defines the single `BanchoString` channel-name payload. |
+| `CHANNEL_REVOKED` | `s2c/chat.py::ChannelRevokedPayload` | Defines the single `BanchoString` channel-name payload. |
+| `CHANNEL_INFO_COMPLETE` | Empty payload | No payload struct is needed because this packet has no content bytes. |
+
+### Remaining Non-Packet-Specific Protocol Structs
+
+| Area | Evidence | Reason |
+| --- | --- | --- |
+| Packet header read/write | `header.py::PacketHeader`, `reader.py::RawPacket`, `writer.py` header format | Header framing is shared protocol infrastructure, not a packet payload. |
+| Shared wire types | `types.py::BanchoString`, `Message`, `IntList`, `Channel`, `StatusUpdate` | These remain nested/common wire structs used by packet-specific payload wrappers. |
+| Compatibility payload variants | `c2s/chat.py`, `c2s/status.py` primitive `pack()` helpers | These helpers generate accepted historical empty-string byte variants for validation; they are not primary packet payload definitions. |
+
 ## C2S Packet Coverage
 
 Current enum source: `ClientPacketID` in
