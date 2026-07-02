@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import osu_server.transports.stable.bancho.protocol.c2s.presence as c2s_presence
 from osu_server.transports.stable.bancho.protocol.c2s import (
     parse_presence_request_all_payload,
     parse_presence_request_payload,
@@ -36,6 +37,18 @@ def test_presence_request_all_accepts_empty_payload() -> None:
 
 def test_presence_request_all_accepts_bancho_py_reserved_int32_payload() -> None:
     parse_presence_request_all_payload(b"\x00\x00\x00\x00")
+
+
+def test_presence_request_all_wraps_reserved_payload_unpack_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_runtime_error(_struct_type: object, _payload: bytes) -> object:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(c2s_presence, "unpack", raise_runtime_error)
+
+    with pytest.raises(PacketReadError, match="boom"):
+        parse_presence_request_all_payload(b"\x00\x00\x00\x00")
 
 
 def test_presence_request_all_rejects_unknown_payload_size() -> None:
