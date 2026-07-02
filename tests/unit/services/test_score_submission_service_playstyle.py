@@ -165,7 +165,7 @@ def valid_input() -> ParsedSubmissionInput:
         encrypted_payload=b"encrypted_data",
         iv=b"0" * 32,
         replay_data=b"replay_binary_data",
-        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",  # "password"
+        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",  # fixed test password MD5
         client_hash="test_hash",
         fail_time_ms=None,
         osu_version="20240101",

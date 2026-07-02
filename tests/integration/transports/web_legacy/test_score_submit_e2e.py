@@ -180,7 +180,7 @@ def _create_valid_multipart_body(
 
     body += f"--{boundary}\r\n".encode()
     body += b'Content-Disposition: form-data; name="pass"\r\n\r\n'
-    body += b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n"  # md5("password")
+    body += b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n"  # fixed test password MD5
     body += f"--{boundary}\r\n".encode()
     body += b'Content-Disposition: form-data; name="x"\r\n\r\n'
     body += client_hash + b"\r\n"

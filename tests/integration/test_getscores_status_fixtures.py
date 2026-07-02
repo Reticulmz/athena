@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from starlette.applications import Starlette
 
 
-_TEST_USERNAME = "TargetUsr"
+_TEST_USERNAME = "StableUser"
 _TEST_PASSWORD_PLAIN = "ExamplePass1234"  # gitleaks:allow
 _TEST_PASSWORD_MD5 = hashlib.md5(_TEST_PASSWORD_PLAIN.encode()).hexdigest()
 _NOW = datetime(2026, 6, 7, tzinfo=UTC)

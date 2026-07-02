@@ -71,16 +71,16 @@ def test_private_message_payload_accepts_stable_client_empty_sender_encoding() -
     payload = _hex_payload(
         "0b00",  # sender: stable client empty string compatibility encoding
         "0b0474657374",  # content: test
-        "0b09546172676574557372",  # target: TargetUsr
+        "0b0a537461626c6555736572",  # target: StableUser
         "00000000",  # sender_id
     )
 
     result = parse_message_payload(payload, packet_name="SEND_PRIVATE_MESSAGE")
 
-    assert len(payload) == 23
+    assert len(payload) == 24
     assert result.sender == ""
     assert result.content == "test"
-    assert result.target == "TargetUsr"
+    assert result.target == "StableUser"
     assert result.sender_id == 0
 
 
@@ -88,11 +88,11 @@ def test_message_payload_builds_stable_client_empty_sender_encoding() -> None:
     payload = message_payload(
         sender=_STABLE_CLIENT_EMPTY_SENDER,
         content="test",
-        target="TargetUsr",
+        target="StableUser",
         sender_id=_STABLE_CLIENT_EMPTY_SENDER_ID,
     )
 
-    assert payload == bytes.fromhex("0b000b04746573740b0954617267657455737200000000")
+    assert payload == bytes.fromhex("0b000b04746573740b0a537461626c655573657200000000")
 
 
 def test_message_payload_rejects_too_small_payload() -> None:

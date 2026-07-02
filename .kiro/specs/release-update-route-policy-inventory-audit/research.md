@@ -6,7 +6,7 @@
 - **Discovery Scope**: Stable release/update compatibility inventory audit; light discovery for an existing documentation extension
 - **Key Findings**:
   - `/web/check-updates.php` は Athena の初期実装では no-update response を返す方針にする。
-  - 現行 osu!stable の `--devserver` 利用時は update check が `osu.ppy.sh` へ問い合わせに行く挙動がユーザーから確認されたため、Athena 側で hosted updater を既定実装にしなくても stable client 運用上は問題にならない可能性がある（source: TargetUsr, issue #34 spec discussion, 2026-06-20 JST）。
+  - 現行 osu!stable の `--devserver` 利用時は update check が `osu.ppy.sh` へ問い合わせに行く挙動が手元の fixture 観測で確認されたため、Athena 側で hosted updater を既定実装にしなくても stable client 運用上は問題にならない可能性がある（issue #34 spec discussion, 2026-06-20 JST）。
   - 外部 proxying と hosted artifact storage は route 互換分類とは分け、運用判断が必要な依存として扱う。
   - Existing inventory audit specs use a matrix-first documentation design with explicit boundary, file structure, traceability, and documentation-component contracts; this release/update audit follows the same pattern.
 
@@ -39,7 +39,7 @@
   - User-confirmed current osu!stable `--devserver` behavior
 - **Findings**:
   - `docs/stable-compatibility-guide.md` records `deck` returning `[]` and `bancho.py` returning an empty body for `/web/check-updates.php`.
-  - User-confirmed current osu!stable behavior indicates that `--devserver` may still send update checks to `osu.ppy.sh`, so Athena may not need to own this endpoint for normal private server operation. Evidence attribution: TargetUsr, issue #34 spec discussion, 2026-06-20 JST.
+  - A local fixture observation of current osu!stable behavior indicates that `--devserver` may still send update checks to `osu.ppy.sh`, so Athena may not need to own this endpoint for normal private server operation. Evidence attribution: issue #34 spec discussion, 2026-06-20 JST.
   - Even if the client often bypasses Athena, returning `[]` is still the clearer no-update response when Athena receives the route because it is distinguishable from an accidental empty body.
 - **Implications**:
   - Classify `/web/check-updates.php` as `required-no-update` with response shape `[]`.

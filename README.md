@@ -213,8 +213,9 @@ ignored by the target worktree, keeping development files such as
 `.env.development` and `.env.test` available without exposing them to `git add`.
 
 For non-trivial changes, use a pull request as the integration boundary. Run local
-checks in the task worktree, push the branch, let GitHub CI validate it, then merge
-only after checks pass and the final diff has been reviewed.
+checks in the task worktree, push the branch, let GitHub CI validate it, and report
+readiness after checks pass and the final diff has been reviewed. PR merges are
+performed by the user on GitHub Web UI.
 
 ## Documentation
 
