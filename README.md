@@ -224,5 +224,4 @@ performed by the user on GitHub Web UI.
   packet and endpoint compatibility inventory.
 - [docs/stable-compatibility-guide.md](docs/stable-compatibility-guide.md): stable
   request, response, processing, and persistence guide.
-- [bancho_server_design.md](bancho_server_design.md): stable protocol and design notes.
 - [AGENTS.md](AGENTS.md): coding-agent instructions, conventions, and workflow rules.
