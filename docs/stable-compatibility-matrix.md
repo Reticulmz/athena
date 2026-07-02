@@ -30,7 +30,7 @@ Reference sources, in order of preference:
 2. Observed stable client traffic.
 3. Athena's own compatibility tests and fixtures.
 4. Reference implementations listed below, split by stable surface ownership.
-5. Athena design notes in `bancho_server_design.md` and `CONTEXT.md`.
+5. Athena design notes in `CONTEXT.md`.
 
 Reference implementations are comparison targets, not architecture targets.
 Athena should preserve compatible behavior without copying their process-global

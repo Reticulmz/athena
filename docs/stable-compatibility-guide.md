@@ -38,7 +38,7 @@ Use references in this order:
    - `osuTitanic/titanic` for deployment routing and Bancho/static split.
    - `sutekina/osu-gulag` and `SunriseCommunity/Sunrise` as additional
      external evidence for avatar, static media, direct, and update behavior.
-5. Athena design notes in `bancho_server_design.md` and `CONTEXT.md`.
+5. Athena design notes in `CONTEXT.md`.
 
 Reference implementation paths used while writing this guide:
 

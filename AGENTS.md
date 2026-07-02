@@ -341,7 +341,7 @@ Use the [Lekuruu/bancho-documentation Wiki](https://github.com/Lekuruu/bancho-do
 - C2S and S2C packet IDs must be modeled with separate enums: `ClientPacketID` and `ServerPacketID`.
 - Adding a packet handler requires packet definition, handler function, and decorator registration.
 
-`bancho_server_design.md` contains detailed Athena design notes including Valkey state, SignalR compatibility, and the score pipeline.
+`CONTEXT.md` contains additional Athena design notes and compatibility context.
 
 ## Code Quality Rules
 
