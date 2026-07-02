@@ -7,17 +7,30 @@ Lekuruu bancho-documentation:
 - LeaveChannel (78): String channel name
 """
 
-from typing import cast
-
 from caterpillar.byteorder import LittleEndian
 from caterpillar.fields import int32
 from caterpillar.model import pack, unpack
+from caterpillar.model import struct as cpstruct
 
 from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
-from osu_server.transports.stable.bancho.protocol.types import BanchoString, Message
+from osu_server.transports.stable.bancho.protocol.types import BanchoString, BanchoStringT, Message
 
 _COMPAT_EMPTY_STRING_PAYLOAD = b"\x0b\x00"
 _MIN_MESSAGE_SIZE = 7
+
+
+@cpstruct(order=LittleEndian)
+class ChatMessagePayload:
+    """SEND_MESSAGE / SEND_PRIVATE_MESSAGE の Message payload。"""
+
+    message: Message
+
+
+@cpstruct(order=LittleEndian)
+class ChannelNamePayload:
+    """JOIN_CHANNEL / LEAVE_CHANNEL の channel name payload。"""
+
+    channel_name: BanchoStringT
 
 
 def message_payload(
@@ -38,7 +51,7 @@ def message_payload(
 
 def channel_name_payload(channel_name: str) -> bytes:
     """C2S fixture用のchannel name payloadを組み立てる。"""
-    payload: bytes = pack(channel_name, LittleEndian + BanchoString)
+    payload: bytes = pack(ChannelNamePayload(channel_name=channel_name))
     return payload
 
 
@@ -48,29 +61,29 @@ def parse_message_payload(payload: bytes, *, packet_name: str) -> Message:
         msg = f"{packet_name} payload must be at least {_MIN_MESSAGE_SIZE} bytes"
         raise PacketReadError(msg)
     try:
-        parsed = unpack(Message, payload)
+        parsed = unpack(ChatMessagePayload, payload)
     except Exception as exc:
         raise PacketReadError(str(exc)) from exc
     _reject_unknown_payload_variant(
-        _message_payload_variants(parsed),
+        _message_payload_variants(parsed.message),
         payload,
         packet_name=packet_name,
     )
-    return parsed
+    return parsed.message
 
 
 def parse_channel_name_payload(payload: bytes, *, packet_name: str) -> str:
     """JOIN_CHANNEL / LEAVE_CHANNEL channel-name payloadをパースする。"""
     try:
-        parsed = cast("str", unpack(BanchoString, payload))
+        parsed = unpack(ChannelNamePayload, payload)
     except Exception as exc:
         raise PacketReadError(str(exc)) from exc
     _reject_unknown_payload_variant(
-        (pack(parsed, LittleEndian + BanchoString),),
+        (pack(parsed),),
         payload,
         packet_name=packet_name,
     )
-    return parsed
+    return parsed.channel_name
 
 
 def _message_payload_variants(message: Message) -> tuple[bytes, ...]:

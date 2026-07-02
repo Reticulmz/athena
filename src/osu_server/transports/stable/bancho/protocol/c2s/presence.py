@@ -1,25 +1,44 @@
 """Stable presence request C2S payload parsing."""
 
-from __future__ import annotations
+from typing import Annotated
 
+from caterpillar.byteorder import LittleEndian
+from caterpillar.context import this
+from caterpillar.fields import int32, uint16
 from caterpillar.model import pack, unpack
+from caterpillar.model import struct as cpstruct
 
 from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
-from osu_server.transports.stable.bancho.protocol.types import IntList
 
 _MAX_PRESENCE_REQUEST_IDS = 256
+_PRESENCE_REQUEST_ALL_RESERVED_PAYLOAD_SIZE = 4
+
+
+@cpstruct(order=LittleEndian)
+class PresenceRequestPayload:
+    """PRESENCE_REQUEST の user id list payload。"""
+
+    count: Annotated[int, uint16]
+    user_ids: Annotated[list[int], int32[this.count]]
+
+
+@cpstruct(order=LittleEndian)
+class PresenceRequestAllReservedPayload:
+    """PRESENCE_REQUEST_ALL の互換 reserved int32 payload。"""
+
+    reserved: Annotated[int, int32]
 
 
 def presence_request_payload(user_ids: list[int]) -> bytes:
-    """Build a PresenceRequest IntList payload for C2S fixtures."""
-    payload: bytes = pack(IntList(count=len(user_ids), values=user_ids))
+    """C2S fixture 用の PRESENCE_REQUEST payload を構築する。"""
+    payload: bytes = pack(PresenceRequestPayload(count=len(user_ids), user_ids=user_ids))
     return payload
 
 
 def parse_presence_request_payload(payload: bytes) -> tuple[int, ...]:
-    """Parse PRESENCE_REQUEST IntList payload."""
+    """PRESENCE_REQUEST payload を検証して user id 順で返す。"""
     try:
-        parsed = unpack(IntList, payload)
+        parsed = unpack(PresenceRequestPayload, payload)
     except Exception as exc:
         raise PacketReadError(str(exc)) from exc
 
@@ -32,16 +51,19 @@ def parse_presence_request_payload(payload: bytes) -> tuple[int, ...]:
         msg = f"PRESENCE_REQUEST payload may contain at most {_MAX_PRESENCE_REQUEST_IDS} ids"
         raise PacketReadError(msg)
 
-    return tuple(parsed.values)
+    return tuple(parsed.user_ids)
 
 
 def parse_presence_request_all_payload(payload: bytes) -> None:
-    """Parse PRESENCE_REQUEST_ALL payload.
+    """PRESENCE_REQUEST_ALL payload を検証する。
 
     bancho.py reads a reserved i32, while other references document this
     packet as empty. Accept both wire shapes.
     """
-    if len(payload) in (0, 4):
+    if len(payload) == 0:
+        return
+    if len(payload) == _PRESENCE_REQUEST_ALL_RESERVED_PAYLOAD_SIZE:
+        _ = unpack(PresenceRequestAllReservedPayload, payload)
         return
 
     msg = "PRESENCE_REQUEST_ALL payload must be empty or a reserved int32"
@@ -49,6 +71,8 @@ def parse_presence_request_all_payload(payload: bytes) -> None:
 
 
 __all__ = [
+    "PresenceRequestAllReservedPayload",
+    "PresenceRequestPayload",
     "parse_presence_request_all_payload",
     "parse_presence_request_payload",
     "presence_request_payload",

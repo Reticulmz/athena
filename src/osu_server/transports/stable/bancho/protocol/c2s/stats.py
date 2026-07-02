@@ -1,25 +1,36 @@
 """C2S stats request packet payloads."""
 
-from __future__ import annotations
+from typing import Annotated
 
+from caterpillar.byteorder import LittleEndian
+from caterpillar.context import this
+from caterpillar.fields import int32, uint16
 from caterpillar.model import pack, unpack
+from caterpillar.model import struct as cpstruct
 
 from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
-from osu_server.transports.stable.bancho.protocol.types import IntList
 
 _MAX_STATS_REQUEST_IDS = 256
 
 
+@cpstruct(order=LittleEndian)
+class StatsRequestPayload:
+    """STATS_REQUEST の user id list payload。"""
+
+    count: Annotated[int, uint16]
+    user_ids: Annotated[list[int], int32[this.count]]
+
+
 def stats_request_payload(user_ids: list[int]) -> bytes:
     """STATS_REQUEST fixture 用の IntList payload を構築する."""
-    payload: bytes = pack(IntList(count=len(user_ids), values=user_ids))
+    payload: bytes = pack(StatsRequestPayload(count=len(user_ids), user_ids=user_ids))
     return payload
 
 
 def parse_stats_request_payload(payload: bytes) -> tuple[int, ...]:
     """STATS_REQUEST の IntList payload を検証して user id 順で返す."""
     try:
-        parsed = unpack(IntList, payload)
+        parsed = unpack(StatsRequestPayload, payload)
     except Exception as exc:
         raise PacketReadError(str(exc)) from exc
 
@@ -32,10 +43,11 @@ def parse_stats_request_payload(payload: bytes) -> tuple[int, ...]:
         msg = f"STATS_REQUEST payload may contain at most {_MAX_STATS_REQUEST_IDS} ids"
         raise PacketReadError(msg)
 
-    return tuple(parsed.values)
+    return tuple(parsed.user_ids)
 
 
 __all__ = [
+    "StatsRequestPayload",
     "parse_stats_request_payload",
     "stats_request_payload",
 ]

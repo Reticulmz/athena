@@ -7,6 +7,7 @@ Lekuruu bancho-documentation:
 from caterpillar.byteorder import LittleEndian
 from caterpillar.fields import int32, uint8
 from caterpillar.model import pack, unpack
+from caterpillar.model import struct as cpstruct
 
 from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
 from osu_server.transports.stable.bancho.protocol.types import BanchoString, StatusUpdate
@@ -14,22 +15,29 @@ from osu_server.transports.stable.bancho.protocol.types import BanchoString, Sta
 _COMPAT_EMPTY_STRING_PAYLOAD = b"\x0b\x00"
 
 
+@cpstruct(order=LittleEndian)
+class StatusChangePayload:
+    """STATUS_CHANGE の StatusUpdate payload。"""
+
+    status_update: StatusUpdate
+
+
 def status_change_payload(status_update: StatusUpdate) -> bytes:
     """C2S fixture 用の STATUS_CHANGE payload を構築する。"""
-    payload: bytes = pack(status_update)
+    payload: bytes = pack(StatusChangePayload(status_update=status_update))
     return payload
 
 
 def parse_status_change_payload(payload: bytes) -> StatusUpdate:
     """STATUS_CHANGE payload を stable 互換の空文字表現込みで解析する。"""
     try:
-        parsed = unpack(StatusUpdate, payload)
+        parsed = unpack(StatusChangePayload, payload)
     except Exception as exc:
         raise PacketReadError(str(exc)) from exc
-    if payload not in _status_update_payload_variants(parsed):
+    if payload not in _status_update_payload_variants(parsed.status_update):
         msg = "STATUS_CHANGE payload contains trailing or non-canonical bytes"
         raise PacketReadError(msg)
-    return parsed
+    return parsed.status_update
 
 
 def _status_update_payload_variants(status_update: StatusUpdate) -> tuple[bytes, ...]:
