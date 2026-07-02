@@ -33,11 +33,11 @@
 ### stable modular request decoding
 - **Context**: user が提示した request shape には duplicate `score`、`s`、`fs`、`iv`、`token`、`pass`、`osuver` など長い opaque/binary-like field が含まれる。
 - **Sources Consulted**:
-  - `/tmp/athena-research-bancho-py/app/api/domains/osu.py`
-  - `/tmp/athena-research-bancho-py/app/objects/score.py`
-  - `/tmp/athena-research-lets/handlers/submitModularHandler.pyx`
-  - `/tmp/athena-research-deck/app/routes/web/scoring.py`
-  - `/tmp/athena-research-deck/app/helpers/score.py`
+  - `Akatsuki/bancho.py`: `app/api/domains/osu.py`
+  - `Akatsuki/bancho.py`: `app/objects/score.py`
+  - `osuRipple/lets`: `handlers/submitModularHandler.pyx`
+  - `osuTitanic/deck`: `app/routes/web/scoring.py`
+  - `osuTitanic/deck`: `app/helpers/score.py`
 - **Findings**:
   - Akatsuki、Ripple、Titanic は `/web/osu-submit-modular-selector.php` を primary endpoint として扱う。
   - duplicate `score` part は互換上重要で、score payload と replay payload を part order で区別する。
@@ -87,15 +87,15 @@ Score payload after AES decrypt is still treated as colon-separated data. Deck/T
 ### score schema、failed play、Loved/Qualified behavior
 - **Context**: scores に何を保存し、どの projection へ反映するかを決める必要がある。
 - **Sources Consulted**:
-  - `/tmp/athena-research-bancho-py/app/repositories/scores.py`
-  - `/tmp/athena-research-bancho-py/migrations/base.sql`
-  - `/tmp/athena-research-ripple/migrations/0.php`
-  - `/tmp/athena-research-ripple/osu.ppy.sh/web/osu-submit-modular.php`
-  - `/tmp/athena-research-lets/objects/score.pyx`
-  - `/tmp/athena-research-peace/core/db/src/peace/migration/versions/init_tables.rs`
-  - `/tmp/athena-research-peace/core/db/src/peace/entity/scores_standard.rs`
-  - `/tmp/athena-research-peace/core/db/src/peace/entity/leaderboard_standard.rs`
-  - `/tmp/athena-research-peace/core/db/src/peace/entity/user_stats_standard.rs`
+  - `Akatsuki/bancho.py`: `app/repositories/scores.py`
+  - `Akatsuki/bancho.py`: `migrations/base.sql`
+  - `osuripple/ripple`: `migrations/0.php`
+  - `osuripple/ripple`: `osu.ppy.sh/web/osu-submit-modular.php`
+  - `osuRipple/lets`: `objects/score.pyx`
+  - `Pure-Peace/peace`: `core/db/src/peace/migration/versions/init_tables.rs`
+  - `Pure-Peace/peace`: `core/db/src/peace/entity/scores_standard.rs`
+  - `Pure-Peace/peace`: `core/db/src/peace/entity/leaderboard_standard.rs`
+  - `Pure-Peace/peace`: `core/db/src/peace/entity/user_stats_standard.rs`
 - **Findings**:
   - Akatsuki は score status として failed/submitted/best を持ち、failed play も score record として保存する。
   - Akatsuki/bancho.py は単一 `scores` table に `mode` column を持ち、`stats` は `(id, mode)` primary key で vanilla/RX/AP を含む mode axis を表現している。
@@ -132,9 +132,9 @@ Score payload after AES decrypt is still treated as colon-separated data. Deck/T
 ### PP calculation dependency
 - **Context**: PP と star rating は既存実装では未導入で、外部 calculator の選定が必要。
 - **Sources Consulted**:
-  - `/tmp/athena-research-rosu-pp-py/README.md`
-  - `/tmp/athena-research-rosu-pp-py/pyproject.toml`
-  - `/tmp/athena-research-rosu-pp-py/rosu_pp_py.pyi`
+  - `rosu-pp-py`: `README.md`
+  - `rosu-pp-py`: `pyproject.toml`
+  - `rosu-pp-py`: `rosu_pp_py.pyi`
   - Titanic `requirements.txt`
 - **Findings**:
   - `rosu-pp-py` は Python `>=3.11` 対応で、Athena の Python 3.14 target と合う。
@@ -234,10 +234,10 @@ Score payload after AES decrypt is still treated as colon-separated data. Deck/T
 - beatmap status change 後の current projection inconsistency — submission-time status は score に保存し、current projections は effective status から rebuild 可能にする。
 
 ## References
-- `Akatsuki/bancho.py` local clone: `/tmp/athena-research-bancho-py`
-- `osuripple/ripple` local clone: `/tmp/athena-research-ripple`
-- `osuRipple/lets` local clone: `/tmp/athena-research-lets`
-- `osuTitanic/deck` local clone: `/tmp/athena-research-deck`
-- `Pure-Peace/peace` local clone: `/tmp/athena-research-peace`
-- `rosu-pp-py` local clone: `/tmp/athena-research-rosu-pp-py`
+- `Akatsuki/bancho.py`
+- `osuripple/ripple`
+- `osuRipple/lets`
+- `osuTitanic/deck`
+- `Pure-Peace/peace`
+- `rosu-pp-py`
 - Athena steering: `.kiro/steering/tech.md`, `.kiro/steering/roadmap.md`
