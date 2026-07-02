@@ -23,6 +23,7 @@ from osu_server.services.commands.scores import (
     ProcessScoreSubmissionUseCase,
     SubmissionOutcome,
 )
+from tests.support.credentials import fixed_test_password_md5
 from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,
@@ -165,7 +166,7 @@ def valid_input() -> ParsedSubmissionInput:
         encrypted_payload=b"encrypted_data",
         iv=b"0" * 32,
         replay_data=b"replay_binary_data",
-        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",  # fixed test password MD5
+        password_md5=fixed_test_password_md5(),
         client_hash="test_hash",
         fail_time_ms=None,
         osu_version="20240101",

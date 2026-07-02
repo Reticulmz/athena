@@ -55,6 +55,7 @@ from osu_server.services.queries.scores import (
     PerformanceSubmitResponseQuery,
     PerformanceSubmitResponseState,
 )
+from tests.support.credentials import fixed_test_password_md5
 from tests.support.fakes import (
     ScoreRepositoryViews,
     StubBlobStorageService,
@@ -389,7 +390,7 @@ def valid_input(valid_payload: bytes) -> ParsedSubmissionInput:
         encrypted_payload=valid_payload,
         iv=b"0" * 32,
         replay_data=b"replay_binary_data",
-        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",  # fixed test password MD5
+        password_md5=fixed_test_password_md5(),
         client_hash="test_hash",
         fail_time_ms=None,
         osu_version="20240101",
@@ -1507,7 +1508,7 @@ async def test_replay_checksum_duplicate_rejection(
         encrypted_payload=b"first",
         iv=b"0" * 32,
         replay_data=b"same_replay_data",
-        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        password_md5=fixed_test_password_md5(),
         client_hash="hash1",
         fail_time_ms=None,
         osu_version="20240101",
@@ -1522,7 +1523,7 @@ async def test_replay_checksum_duplicate_rejection(
         encrypted_payload=b"second",
         iv=b"0" * 32,
         replay_data=b"same_replay_data",
-        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        password_md5=fixed_test_password_md5(),
         client_hash="hash2",
         fail_time_ms=None,
         osu_version="20240101",
@@ -1572,7 +1573,7 @@ async def test_replay_checksum_duplicate_rejection_ignores_fallback_warmup_failu
         encrypted_payload=b"first",
         iv=b"0" * 32,
         replay_data=b"same_warmup_replay_data",
-        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        password_md5=fixed_test_password_md5(),
         client_hash="hash1",
         fail_time_ms=None,
         osu_version="20240101",
@@ -1583,7 +1584,7 @@ async def test_replay_checksum_duplicate_rejection_ignores_fallback_warmup_failu
         encrypted_payload=b"second",
         iv=b"0" * 32,
         replay_data=b"same_warmup_replay_data",
-        password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        password_md5=fixed_test_password_md5(),
         client_hash="hash2",
         fail_time_ms=None,
         osu_version="20240101",

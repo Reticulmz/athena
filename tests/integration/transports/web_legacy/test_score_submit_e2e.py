@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 from starlette.datastructures import Headers
+from tests.support.credentials import fixed_test_password_md5
 from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,
@@ -180,7 +181,7 @@ def _create_valid_multipart_body(
 
     body += f"--{boundary}\r\n".encode()
     body += b'Content-Disposition: form-data; name="pass"\r\n\r\n'
-    body += b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n"  # fixed test password MD5
+    body += fixed_test_password_md5().encode("ascii") + b"\r\n"
     body += f"--{boundary}\r\n".encode()
     body += b'Content-Disposition: form-data; name="x"\r\n\r\n'
     body += client_hash + b"\r\n"

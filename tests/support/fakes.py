@@ -16,6 +16,7 @@ from osu_server.domain.storage.blobs import Blob, BlobStored
 from osu_server.services.commands.scores import SubmitScoreUseCase
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from osu_server.services.queries.identity.password_service import PasswordService
+from tests.support.credentials import FIXED_TEST_PASSWORD_MD5
 
 if TYPE_CHECKING:
     from osu_server.domain.identity.sessions import SessionAuthorization
@@ -191,7 +192,7 @@ def make_score_authorization_service(
     *,
     user_id: int = 1000,
     username: str = "test_user",
-    password_md5: str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    password_md5: str = FIXED_TEST_PASSWORD_MD5,
     create_session: bool = True,
 ) -> ScoreAuthorizationService:
     """明示的な fake で repository-backed score auth を作る。"""
