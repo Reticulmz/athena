@@ -69,7 +69,7 @@
   - 完了時には replay download fixture と diagnostic が raw secret / raw replay を出さないことを test output で確認できる
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 4.5, 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2, 6.3, 6.4, 6.5, 7.1, 7.2, 7.3, 7.4, 8.1, 8.2, 8.3, 8.4, 8.5_
 
-- [ ] 5.2 Focused quality checks と diff review を行う
+- [x] 5.2 Focused quality checks と diff review を行う
   - Relevant pytest、ruff、basedpyright、import-linter checks を実行する
   - Markdown tables と fixture JSON が parse できることを確認する
   - `git diff` で raw capture、raw replay bytes、complete `.osr` bytes、credential-like values が含まれていないことを確認する
