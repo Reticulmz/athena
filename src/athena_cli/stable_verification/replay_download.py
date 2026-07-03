@@ -11,6 +11,7 @@ from athena_cli.stable_verification.models import (
     EvidenceType,
     ReplayDownloadAuthField,
     ReplayDownloadSanitizedFixture,
+    ReplayDownloadTargetRouteContract,
     StableSurface,
     SurfaceResult,
     VerificationStatus,
@@ -22,6 +23,17 @@ if TYPE_CHECKING:
 _REQUEST_METADATA_FIXTURE = "target_client_request_metadata.json"
 _RESPONSE_METADATA_FIXTURE = "target_client_response_metadata.json"
 _BODY_ASSEMBLY_DECISION_FIXTURE = "body_assembly_decision.json"
+_REQUIRED_TARGET_ROUTE_CONTRACT_FIELDS = frozenset(
+    (
+        "primary_route",
+        "primary_route_observed_in_target_client_traffic",
+        "primary_route_classification",
+        "alias_route",
+        "alias_route_observed_in_target_client_traffic",
+        "alias_policy",
+        "route_evidence_source",
+    )
+)
 _REQUIRED_REQUEST_CAPTURE_FIELDS = frozenset(
     (
         "target_client_family",
@@ -34,6 +46,9 @@ _REQUIRED_REQUEST_CAPTURE_FIELDS = frozenset(
         "user_agent",
         "captured_at",
         "workflow_entrance",
+        "route_classification",
+        "target_route_observed",
+        "alias_routes_observed",
         "method",
         "path",
         "query_keys",
@@ -145,6 +160,7 @@ class ReplayDownloadEvidenceBundle:
     request_metadata: Mapping[str, object]
     response_metadata: Mapping[str, object]
     body_assembly_decision: Mapping[str, object]
+    target_route_contract: ReplayDownloadTargetRouteContract
     fixtures: Mapping[str, ReplayDownloadSanitizedFixture]
 
 
@@ -174,6 +190,7 @@ def load_replay_download_fixtures(root: Path) -> ReplayDownloadEvidenceBundle:
         request_metadata=request_metadata,
         response_metadata=response_metadata,
         body_assembly_decision=body_assembly_decision,
+        target_route_contract=_target_route_contract_from_document(request_metadata),
         fixtures=_load_sanitized_fixtures(request_metadata, response_metadata),
     )
 
@@ -221,12 +238,38 @@ def validate_replay_download_fixtures(
 
 def _validate_request_metadata(document: Mapping[str, object]) -> tuple[str, ...]:
     errors = list(_validate_metadata_document(document))
+    errors.extend(_validate_target_route_contract(document))
     captures = _capture_mappings(document)
     if not captures:
         errors.append("missing_capture_list")
 
     for capture in captures:
         errors.extend(_missing_required_fields(capture, _REQUIRED_REQUEST_CAPTURE_FIELDS))
+        errors.extend(_validate_string_field(capture, "target_client_family"))
+        errors.extend(
+            _validate_observed_metadata(
+                capture,
+                observed_key="target_build_observed",
+                value_key="target_build",
+                note_key="target_build_note",
+            )
+        )
+        errors.extend(
+            _validate_observed_metadata(
+                capture,
+                observed_key="osuver_observed",
+                value_key="osuver",
+                note_key="osuver_note",
+            )
+        )
+        errors.extend(_validate_string_field(capture, "captured_at", safe_token=False))
+        errors.extend(_validate_string_field(capture, "workflow_entrance"))
+        errors.extend(_validate_string_field(capture, "route_classification"))
+        errors.extend(_validate_bool_field(capture, "target_route_observed"))
+        errors.extend(_validate_string_list_field(capture, "alias_routes_observed"))
+        errors.extend(_validate_string_field(capture, "method"))
+        errors.extend(_validate_string_field(capture, "path"))
+        errors.extend(_validate_string_field(capture, "user_agent"))
         errors.extend(_validate_string_list_field(capture, "query_keys"))
         errors.extend(
             _validate_string_list_field(
@@ -258,6 +301,43 @@ def _validate_request_metadata(document: Mapping[str, object]) -> tuple[str, ...
                 errors.append("raw_auth_value_field")
             if _bool_value(auth_field.get("value_committed")):
                 errors.append("committed_auth_value")
+
+    return _sorted_unique(errors)
+
+
+def _validate_target_route_contract(document: Mapping[str, object]) -> tuple[str, ...]:
+    errors: list[str] = []
+    route_contract = document.get("target_route_contract")
+    if not isinstance(route_contract, Mapping):
+        return ("missing_target_route_contract",)
+
+    typed_route_contract = cast("Mapping[str, object]", route_contract)
+    errors.extend(
+        _missing_required_fields_with_prefix(
+            typed_route_contract,
+            _REQUIRED_TARGET_ROUTE_CONTRACT_FIELDS,
+            "route_contract",
+        )
+    )
+    errors.extend(_validate_string_field(typed_route_contract, "primary_route"))
+    errors.extend(
+        _validate_bool_field(
+            typed_route_contract,
+            "primary_route_observed_in_target_client_traffic",
+        )
+    )
+    errors.extend(_validate_string_field(typed_route_contract, "primary_route_classification"))
+    errors.extend(_validate_string_field(typed_route_contract, "alias_route"))
+    errors.extend(
+        _validate_bool_field(
+            typed_route_contract,
+            "alias_route_observed_in_target_client_traffic",
+        )
+    )
+    errors.extend(_validate_string_field(typed_route_contract, "alias_policy"))
+    errors.extend(_validate_string_field(typed_route_contract, "route_evidence_source"))
+    if not _is_safe_string_list(typed_route_contract.get("route_evidence_fixture_names")):
+        errors.append("route_contract_evidence_fixture_names_must_be_string_list")
 
     return _sorted_unique(errors)
 
@@ -373,6 +453,35 @@ def _load_sanitized_fixtures(
     return fixtures
 
 
+def _target_route_contract_from_document(
+    request_metadata: Mapping[str, object],
+) -> ReplayDownloadTargetRouteContract:
+    route_contract = request_metadata.get("target_route_contract")
+    if not isinstance(route_contract, Mapping):
+        route_contract = {}
+
+    typed_route_contract = cast("Mapping[str, object]", route_contract)
+    return ReplayDownloadTargetRouteContract(
+        primary_route=_string_value(typed_route_contract, "primary_route"),
+        primary_route_observed_in_target_client_traffic=_bool_value(
+            typed_route_contract.get("primary_route_observed_in_target_client_traffic")
+        ),
+        primary_route_classification=_string_value(
+            typed_route_contract,
+            "primary_route_classification",
+        ),
+        alias_route=_string_value(typed_route_contract, "alias_route"),
+        alias_route_observed_in_target_client_traffic=_bool_value(
+            typed_route_contract.get("alias_route_observed_in_target_client_traffic")
+        ),
+        alias_policy=_string_value(typed_route_contract, "alias_policy"),
+        route_evidence_source=_string_value(typed_route_contract, "route_evidence_source"),
+        route_evidence_fixture_names=_string_tuple(
+            typed_route_contract.get("route_evidence_fixture_names")
+        ),
+    )
+
+
 def _sanitized_fixture_from_capture(
     request_capture: Mapping[str, object],
     response_capture: Mapping[str, object],
@@ -388,6 +497,9 @@ def _sanitized_fixture_from_capture(
         user_agent=_string_value(request_capture, "user_agent"),
         captured_at=_string_value(request_capture, "captured_at"),
         workflow_entrance=_string_value(request_capture, "workflow_entrance"),
+        route_classification=_string_value(request_capture, "route_classification"),
+        target_route_observed=_bool_value(request_capture.get("target_route_observed")),
+        alias_routes_observed=_string_tuple(request_capture.get("alias_routes_observed")),
         method=_string_value(request_capture, "method"),
         path=_string_value(request_capture, "path"),
         query_keys=_string_tuple(request_capture.get("query_keys")),
@@ -490,6 +602,18 @@ def _missing_required_fields(
     return (f"missing_required_fields:{missing_count}",)
 
 
+def _missing_required_fields_with_prefix(
+    entry: Mapping[str, object],
+    required_fields: frozenset[str],
+    prefix: str,
+) -> tuple[str, ...]:
+    missing_count = sum(1 for field_name in required_fields if field_name not in entry)
+    if missing_count == 0:
+        return ()
+
+    return (f"{prefix}_missing_required_fields:{missing_count}",)
+
+
 def _validate_string_list_field(
     entry: Mapping[str, object],
     key: str,
@@ -499,12 +623,65 @@ def _validate_string_list_field(
     value = entry.get(key)
     if value is None and not required:
         return ()
-    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
+    if not _is_safe_string_list(value):
         return (f"{key}_must_be_string_list",)
-    if not all(isinstance(item, str) and _is_safe_metadata_token(item) for item in value):
-        return (f"{key}_must_contain_safe_strings",)
 
     return ()
+
+
+def _validate_string_field(
+    entry: Mapping[str, object],
+    key: str,
+    *,
+    safe_token: bool = True,
+) -> tuple[str, ...]:
+    value = entry.get(key)
+    if isinstance(value, str) and value and (not safe_token or _is_safe_metadata_token(value)):
+        return ()
+
+    return (f"{key}_must_be_safe_string",)
+
+
+def _validate_observed_metadata(
+    entry: Mapping[str, object],
+    *,
+    observed_key: str,
+    value_key: str,
+    note_key: str,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    observed_value = entry.get(observed_key)
+    if not isinstance(observed_value, bool):
+        errors.append(f"{observed_key}_must_be_bool")
+        return tuple(errors)
+
+    metadata_value = entry.get(value_key)
+    if observed_value:
+        if (
+            not isinstance(metadata_value, str)
+            or not metadata_value
+            or not _is_safe_metadata_token(metadata_value)
+        ):
+            errors.append(f"{value_key}_must_be_safe_string_when_observed")
+    elif metadata_value is not None:
+        errors.append(f"{value_key}_must_be_null_when_not_observed")
+
+    note_value = entry.get(note_key)
+    if (
+        not isinstance(note_value, str)
+        or not note_value
+        or not _is_safe_metadata_token(note_value)
+    ):
+        errors.append(f"{note_key}_must_be_safe_string")
+
+    return tuple(errors)
+
+
+def _is_safe_string_list(value: object) -> bool:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
+        return False
+
+    return all(isinstance(item, str) and _is_safe_metadata_token(item) for item in value)
 
 
 def _validate_int_field(entry: Mapping[str, object], key: str) -> tuple[str, ...]:

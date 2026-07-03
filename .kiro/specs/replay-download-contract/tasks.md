@@ -14,7 +14,7 @@
   - _Requirements: 1.1, 5.1, 5.2, 5.3, 5.4, 5.5_
 
 - [ ] 2. Target traffic と reference evidence を収集する
-- [ ] 2.1 Target Stable Client の replay download traffic を sanitized fixture 化する
+- [x] 2.1 Target Stable Client の replay download traffic を sanitized fixture 化する
   - Target client family、build / `osuver` observation status、capture time、workflow entrance を記録する
   - Replay download request の method、path、query key set、auth field presence を raw values なしで記録する
   - `/web/osu-getreplay.php` と `/web/replays/<id>` のどちらが target client から観測されたかを fixture と docs から読めるようにする

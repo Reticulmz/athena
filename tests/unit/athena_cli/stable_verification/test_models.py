@@ -122,6 +122,19 @@ def test_secret_probe_input_is_kept_out_of_reportable_diagnostic_summary() -> No
 
 
 def test_replay_download_evidence_models_share_verification_vocabulary() -> None:
+    route_contract = models.ReplayDownloadTargetRouteContract(
+        primary_route="/web/osu-getreplay.php",
+        primary_route_observed_in_target_client_traffic=True,
+        primary_route_classification="primary_target_client_route",
+        alias_route="/web/replays/<id>",
+        alias_route_observed_in_target_client_traffic=False,
+        alias_policy="candidate_only_pending_reference_audit",
+        route_evidence_source="target_client_traffic",
+        route_evidence_fixture_names=(
+            "local_athena_stable_replay_download_404",
+            "official_bancho_stable_replay_download_200",
+        ),
+    )
     fixture = models.ReplayDownloadSanitizedFixture(
         target_client_family="osu_stable",
         target_build_observed=False,
@@ -133,6 +146,9 @@ def test_replay_download_evidence_models_share_verification_vocabulary() -> None
         user_agent="osu!",
         captured_at="2026-07-03T06:26:38Z",
         workflow_entrance="replay_download",
+        route_classification="primary_target_client_route",
+        target_route_observed=True,
+        alias_routes_observed=(),
         method="GET",
         path="/web/osu-getreplay.php",
         query_keys=("c", "h", "m", "u"),
@@ -202,6 +218,8 @@ def test_replay_download_evidence_models_share_verification_vocabulary() -> None
     assert fixture.evidence_type is EvidenceType.GOLDEN_FIXTURE
     assert fixture.scope is EvidenceScope.MANDATORY
     assert fixture.raw_values_committed is False
+    assert route_contract.primary_route == fixture.path
+    assert route_contract.alias_route_observed_in_target_client_traffic is False
     assert branch.surface is StableSurface.REPLAY_DOWNLOAD
     assert branch.branch is models.ReplayDownloadResponseBranch.SUCCESS
     assert body_decision.surface is StableSurface.REPLAY_DOWNLOAD
@@ -224,6 +242,7 @@ def test_replay_download_reportable_models_exclude_secret_like_fields() -> None:
     }
     reportable_model_types = (
         models.ReplayDownloadAuthField,
+        models.ReplayDownloadTargetRouteContract,
         models.ReplayDownloadSanitizedFixture,
         models.ReplayDownloadResponseBranchEvidence,
         models.ReplayDownloadBodyDecision,

@@ -56,6 +56,13 @@
   - The replay request User-Agent is `osu!`; exact client build and `osuver` are not visible in the replay download request.
   - Sanitized fixture metadata was recorded under `tests/fixtures/stable_compatibility/replay_download/`. The fixture uses only method, path, query key names, auth-like field names, observed header names, response status, body kind, byte size, and observation notes. Raw query values, raw body bytes, and safe-body hashes are not committed.
   - Header names were extracted by safe key-name scan rather than full raw-flow publication, so the fixture marks header completeness explicitly instead of implying that raw capture bytes are present in the repository.
+- **Target Route Fixture Status**:
+
+| Route | Target client traffic observed | Classification | Evidence fixture | Notes |
+| --- | --- | --- | --- | --- |
+| `/web/osu-getreplay.php` | yes | `primary_target_client_route` | `target_client_request_metadata.json` captures `local_athena_stable_replay_download_404` and `official_bancho_stable_replay_download_200` | Method `GET`, query keys `c`, `h`, `m`, `u`, and auth-like fields `h`, `u` are recorded without raw values. |
+| `/web/replays/<id>` | no | `candidate_only_pending_reference_audit` | `target_client_request_metadata.json` `target_route_contract.alias_route` | Not observed in the supplied Target Stable Client captures. Keep as candidate-only until `lets` reference audit in task 2.2. |
+
 - **Implications**:
   - The earlier `.osr`-as-success-body assumption is rejected.
   - #36 likely needs to return target-client-compatible LZMA replay payload bytes, not a complete `.osr` file, unless additional evidence contradicts this capture.

@@ -178,6 +178,25 @@ class ReplayDownloadAuthField:
 
 
 @dataclass(frozen=True, slots=True)
+class ReplayDownloadTargetRouteContract:
+    """Target stable client から観測した replay download route contract を表す.
+
+    Primary route と alias route の target traffic 観測状態を分けて保持する.
+    Reference-only alias を current target-client required route と混同しないための
+    report-safe metadata であり、raw query values や credential values は保持しない.
+    """
+
+    primary_route: str
+    primary_route_observed_in_target_client_traffic: bool
+    primary_route_classification: str
+    alias_route: str
+    alias_route_observed_in_target_client_traffic: bool
+    alias_policy: str
+    route_evidence_source: str
+    route_evidence_fixture_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ReplayDownloadSanitizedFixture:
     """Replay download sanitized fixture metadata を verification 語彙で表す.
 
@@ -195,6 +214,9 @@ class ReplayDownloadSanitizedFixture:
     user_agent: str
     captured_at: str
     workflow_entrance: str
+    route_classification: str
+    target_route_observed: bool
+    alias_routes_observed: tuple[str, ...]
     method: str
     path: str
     query_keys: tuple[str, ...]
@@ -335,6 +357,7 @@ __all__ = [
     "ReplayDownloadResponseBranch",
     "ReplayDownloadResponseBranchEvidence",
     "ReplayDownloadSanitizedFixture",
+    "ReplayDownloadTargetRouteContract",
     "SecretProbeInput",
     "StableSurface",
     "StableTarget",
