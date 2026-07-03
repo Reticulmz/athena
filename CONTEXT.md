@@ -454,6 +454,46 @@ _Avoid_: Beatmap metadata lookup, synchronous file fetch, PP calculation
 Stable client または stable client emulator から観測できる request / response contract。Athena の stable transport 互換性を判断する根拠であり、内部実装の都合より優先する。
 _Avoid_: Implementation preference, guessed compatibility, test-only assumption
 
+### Replay Download Contract Evidence Gate
+Replay download contract を実装可能と判断するための evidence threshold。Route path と auth behavior は Target Stable Client traffic で確認し、response bytes、status、headers、missing / hidden / storage-missing branch は target traffic または reference implementation fixture で確認する。
+_Avoid_: route path from reference only, guessed auth behavior, success-only fixture
+
+### Replay Download Response Body
+Stable replay download endpoint の成功 response body。Storage backend にある Replay blob object と同義ではなく、Target Stable Client が replay download response として受け取れる client-observable bytes を指す。本家 Bancho capture では `/web/osu-getreplay.php` の 200 body は complete `.osr` file ではなく LZMA-compressed replay payload として観測されたため、`.osr` rename failure だけで blob corruption と判断しない。Replay blob bytes をそのまま返すか、Score metadata と Replay payload から download body を組み立てるかは Stable Compatibility Evidence で確認してから決める。
+_Avoid_: raw blob bytes, storage object, renamed digest file
+
+### Replay Blob Integrity Check
+保存済み Replay blob object が metadata と一致しているかを確認する診断。`blobs.sha256`、`blobs.byte_size`、storage backend 上の実 bytes の hash / size を比較し、storage corruption と download body format mismatch を切り分ける。
+_Avoid_: client readability check, `.osr` validation, replay compatibility decision
+
+### Replay Download Body Assembly Decision
+Replay Download Response Body を保存済み Replay blob bytes だけで返せるか、Score metadata と Replay payload から target-client-compatible download body を組み立てる必要があるかの判断。Replay Blob Integrity Check と Stable Compatibility Evidence の両方を根拠にし、#36 の実装 boundary を決める。
+_Avoid_: storage key naming, route registration decision, replay validation policy
+
+### Replay Download Reference Set
+Replay download contract の reference-backed evidence として確認する既存実装集合。`bancho.py` を stable baseline comparison、`deck` を missing / hidden / storage-missing branch comparison、`lets` を `/web/replays/<id>` alias comparison の主要 reference として扱う。
+_Avoid_: single implementation source, unrelated private-server extension, undocumented assumption
+
+### Replay Download Traffic Capture
+Target Stable Client が replay download workflow で実際に送信する request metadata。Path、method、query parameter 名、auth field の有無、response branch を確認するための evidence であり、password、password hash、session token、raw credential、raw replay bytes は保存しない。
+_Avoid_: raw credential capture, raw replay artifact, reference-only route decision
+
+### Replay Download Sanitized Fixture
+Replay Download Traffic Capture や reference response から repo に保存できるよう秘匿情報を除去した fixture。Method、path、query key set、auth field の有無、response status、response header key、body kind、safe hash、byte size を残し、raw query value、password hash、session token、raw replay bytes は含めない。
+_Avoid_: HAR archive, raw `.osr` bytes, credential-like value
+
+### Replay Blob Diagnostic Procedure
+保存済み Replay の取得不能や download body format mismatch を調べるための安全な診断手順。Score id から Replay attachment、Blob metadata、storage backend bytes の存在、hash、size を照合し、raw replay bytes や credential-like value を出力しない。Target-client-compatible body 判定とは別の Replay Blob Integrity Check として扱う。
+_Avoid_: download endpoint implementation, raw blob dump, client compatibility proof
+
+### Replay Download Target Build Metadata
+Replay Download Traffic Capture が対象にした stable client を識別する metadata。Target client family、client build の観測可否、`osuver` の観測可否、capture 実行日時、workflow entrance を sanitized fixture に残す。Replay download request に exact build や `osuver` が現れない場合は推測せず、`not observed in replay download request` として明示すれば Stable Compatibility Evidence として採用できる。
+_Avoid_: guessed build, reference-only build assumption, anonymous capture without observation status
+
+### Replay Download Auth Blocker
+Replay download implementation を開始できない auth contract gap。Target Stable Client traffic で auth field presence が確認できない場合、または target traffic / reference evidence で auth success condition と failure response が確認できない場合は、download endpoint 実装を implementation-ready と扱わない。
+_Avoid_: guessed public replay access, guessed credential requirement, auth TODO in implementation
+
 ---
 
 ### Legacy Web Endpoint Inventory Classification

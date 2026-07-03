@@ -1,0 +1,19 @@
+{
+  "schema": "athena.stable_compatibility.replay_download.body_assembly_decision.v1",
+  "secret_policy": "metadata-only",
+  "raw_artifact_committed": false,
+  "decision": {
+    "status": "blocked_pending_blob_diagnostic",
+    "download_body_strategy": "blocked",
+    "observed_success_body_kind": "lzma_compressed_replay_payload",
+    "observed_success_body_source": "user_provided_official_bancho_capture",
+    "observed_success_body_is_complete_osr": false,
+    "observed_success_body_is_zip_archive": false,
+    "stored_blob_integrity": "not_checked",
+    "stored_blob_target_body_compatible": "not_checked",
+    "notes": [
+      "Manual rename of stored blob bytes to .osr is not a valid corruption proof.",
+      "Issue #36 must decide direct blob bytes vs assembled download body after blob diagnostic and target-client-compatible body validation."
+    ]
+  }
+}
