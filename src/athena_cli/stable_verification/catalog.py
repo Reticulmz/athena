@@ -144,6 +144,13 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         surface=StableSurface.REPLAY_DOWNLOAD,
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
+        reference=("tests/fixtures/stable_compatibility/replay_download/reference_responses.json"),
+        purpose="replay download reference implementation response audit",
+    ),
+    EvidenceEntry(
+        surface=StableSurface.REPLAY_DOWNLOAD,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
         reference=(
             "tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json"
         ),
@@ -168,7 +175,7 @@ _GAPS: tuple[EvidenceGap, ...] = (
         surface=StableSurface.REPLAY_DOWNLOAD,
         status=VerificationStatus.KNOWN_GAP,
         summary=(
-            "endpoint implementation, reference branch audit, blob diagnostic, "
+            "endpoint implementation, response branch selection, blob diagnostic, "
             "and body assembly decision remain pending"
         ),
         owner="replay-download-contract",

@@ -1,0 +1,302 @@
+{
+  "schema": "athena.stable_compatibility.replay_download.reference_responses.v1",
+  "secret_policy": "metadata-only",
+  "raw_artifact_committed": false,
+  "references": [
+    {
+      "name": "bancho_py_success",
+      "source": "bancho.py",
+      "source_role": "stable_baseline_comparison",
+      "repository": "osuAkatsuki/bancho.py",
+      "commit": "358d23a0d906ee08de96bafd9ca207071b061b43",
+      "source_paths": ["app/api/domains/osu.py", "app/services/replays.py"],
+      "branch": "success",
+      "route": "/web/osu-getreplay.php",
+      "method": "GET",
+      "request_keys": ["c", "h", "m", "u"],
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "response_status": 200,
+      "response_header_keys_observed": [],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "file_response_osr_path",
+      "contract_status": "reference_only_unresolved",
+      "unresolved_reason": "FileResponse runtime headers and full .osr body compatibility were not captured."
+    },
+    {
+      "name": "bancho_py_auth_failure",
+      "source": "bancho.py",
+      "source_role": "stable_baseline_comparison",
+      "repository": "osuAkatsuki/bancho.py",
+      "commit": "358d23a0d906ee08de96bafd9ca207071b061b43",
+      "source_paths": ["app/api/domains/osu.py"],
+      "branch": "auth_failure",
+      "route": "/web/osu-getreplay.php",
+      "method": "GET",
+      "request_keys": ["c", "h", "m", "u"],
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "response_status": 401,
+      "response_header_keys_observed": [],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "empty_body",
+      "contract_status": "confirmed_reference",
+      "unresolved_reason": null
+    },
+    {
+      "name": "bancho_py_missing_replay",
+      "source": "bancho.py",
+      "source_role": "stable_baseline_comparison",
+      "repository": "osuAkatsuki/bancho.py",
+      "commit": "358d23a0d906ee08de96bafd9ca207071b061b43",
+      "source_paths": ["app/api/domains/osu.py", "app/services/replays.py"],
+      "branch": "missing_replay",
+      "route": "/web/osu-getreplay.php",
+      "method": "GET",
+      "request_keys": ["c", "h", "m", "u"],
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "response_status": 404,
+      "response_header_keys_observed": [],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "empty_body",
+      "contract_status": "confirmed_reference",
+      "unresolved_reason": null
+    },
+    {
+      "name": "deck_success",
+      "source": "deck",
+      "source_role": "missing_hidden_storage_branch_comparison",
+      "repository": "osuTitanic/deck",
+      "commit": "1534cd1e4068f0ed6a2d2245ef271131319e654c",
+      "source_paths": ["app/routes/web/replays.py"],
+      "branch": "success",
+      "route": "/web/osu-getreplay.php",
+      "method": "GET",
+      "request_keys": ["c", "h", "m", "u"],
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "optional_redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "optional_redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "response_status": 200,
+      "response_header_keys_observed": [],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "raw_replay_payload",
+      "contract_status": "reference_only_unresolved",
+      "unresolved_reason": "deck notes legacy clients may omit auth; target body compatibility still needs body decision."
+    },
+    {
+      "name": "deck_missing_replay",
+      "source": "deck",
+      "source_role": "missing_hidden_storage_branch_comparison",
+      "repository": "osuTitanic/deck",
+      "commit": "1534cd1e4068f0ed6a2d2245ef271131319e654c",
+      "source_paths": ["app/routes/web/replays.py"],
+      "branch": "missing_replay",
+      "route": "/web/osu-getreplay.php",
+      "method": "GET",
+      "request_keys": ["c", "h", "m", "u"],
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "optional_redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "optional_redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "response_status": 404,
+      "response_header_keys_observed": [],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "empty_http_exception",
+      "contract_status": "confirmed_reference",
+      "unresolved_reason": null
+    },
+    {
+      "name": "deck_hidden_score",
+      "source": "deck",
+      "source_role": "missing_hidden_storage_branch_comparison",
+      "repository": "osuTitanic/deck",
+      "commit": "1534cd1e4068f0ed6a2d2245ef271131319e654c",
+      "source_paths": ["app/routes/web/replays.py"],
+      "branch": "hidden_score",
+      "route": "/web/osu-getreplay.php",
+      "method": "GET",
+      "request_keys": ["c", "h", "m", "u"],
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "optional_redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "optional_redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "response_status": 404,
+      "response_header_keys_observed": [],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "empty_http_exception",
+      "contract_status": "confirmed_reference",
+      "unresolved_reason": null
+    },
+    {
+      "name": "deck_storage_missing",
+      "source": "deck",
+      "source_role": "missing_hidden_storage_branch_comparison",
+      "repository": "osuTitanic/deck",
+      "commit": "1534cd1e4068f0ed6a2d2245ef271131319e654c",
+      "source_paths": ["app/routes/web/replays.py"],
+      "branch": "storage_missing",
+      "route": "/web/osu-getreplay.php",
+      "method": "GET",
+      "request_keys": ["c", "h", "m", "u"],
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "optional_redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "optional_redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "response_status": 404,
+      "response_header_keys_observed": [],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "empty_http_exception",
+      "contract_status": "confirmed_reference",
+      "unresolved_reason": null
+    },
+    {
+      "name": "lets_primary_missing_replay",
+      "source": "lets",
+      "source_role": "alias_comparison",
+      "repository": "osuripple/lets",
+      "commit": "98e9e07faa48398fbccf17251650011e36bdf6e4",
+      "source_paths": ["lets.py", "handlers/getReplayHandler.py"],
+      "branch": "missing_replay",
+      "route": "/web/osu-getreplay.php",
+      "method": "GET",
+      "request_keys": ["c", "h", "u"],
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "response_status": 200,
+      "response_header_keys_observed": [],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "empty_body",
+      "contract_status": "conflicting_reference_unresolved",
+      "unresolved_reason": "lets returns empty 200 on missing raw replay while bancho.py and deck use 404."
+    },
+    {
+      "name": "lets_replay_alias_success",
+      "source": "lets",
+      "source_role": "alias_comparison",
+      "repository": "osuripple/lets",
+      "commit": "98e9e07faa48398fbccf17251650011e36bdf6e4",
+      "source_paths": ["lets.py", "handlers/getFullReplayHandler.py", "helpers/replayHelper.py"],
+      "branch": "alias",
+      "route": "/web/replays/<id>",
+      "method": "GET",
+      "request_keys": ["id_path"],
+      "auth_fields": [
+        {
+          "name": "none",
+          "category": "no_auth_observed",
+          "value_committed": false
+        }
+      ],
+      "response_status": 200,
+      "response_header_keys_observed": [
+        "content-description",
+        "content-disposition",
+        "content-length",
+        "content-type"
+      ],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "complete_osr_file",
+      "contract_status": "alias_candidate_reference",
+      "unresolved_reason": null
+    },
+    {
+      "name": "lets_replay_alias_missing",
+      "source": "lets",
+      "source_role": "alias_comparison",
+      "repository": "osuripple/lets",
+      "commit": "98e9e07faa48398fbccf17251650011e36bdf6e4",
+      "source_paths": ["lets.py", "handlers/getFullReplayHandler.py"],
+      "branch": "missing_replay",
+      "route": "/web/replays/<id>",
+      "method": "GET",
+      "request_keys": ["id_path"],
+      "auth_fields": [
+        {
+          "name": "none",
+          "category": "no_auth_observed",
+          "value_committed": false
+        }
+      ],
+      "response_status": 404,
+      "response_header_keys_observed": [],
+      "complete_response_header_key_set_observed": false,
+      "body_kind": "plain_text_replay_not_found",
+      "contract_status": "alias_candidate_reference",
+      "unresolved_reason": null
+    }
+  ]
+}

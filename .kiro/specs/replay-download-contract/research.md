@@ -61,9 +61,36 @@
 | Route | Target client traffic observed | Classification | Evidence fixture | Notes |
 | --- | --- | --- | --- | --- |
 | `/web/osu-getreplay.php` | yes | `primary_target_client_route` | `target_client_request_metadata.json` captures `local_athena_stable_replay_download_404` and `official_bancho_stable_replay_download_200` | Method `GET`, query keys `c`, `h`, `m`, `u`, and auth-like fields `h`, `u` are recorded without raw values. |
-| `/web/replays/<id>` | no | `candidate_only_pending_reference_audit` | `target_client_request_metadata.json` `target_route_contract.alias_route` | Not observed in the supplied Target Stable Client captures. Keep as candidate-only until `lets` reference audit in task 2.2. |
+| `/web/replays/<id>` | no | `candidate_only_reference_backed` | `target_client_request_metadata.json` `target_route_contract.alias_route`; `reference_responses.json` `lets_replay_alias_success` and `lets_replay_alias_missing` | `lets` confirms the alias shape, but supplied Target Stable Client captures did not observe it. Keep candidate-only, not current target-client required. |
+
+### Reference implementation replay download audit
+
+- **Context**: Response branches can use target traffic or `bancho.py` / `deck` / `lets` reference evidence, while current target-client required route still needs target traffic.
+- **Sources Consulted**:
+  - `osuAkatsuki/bancho.py` commit `358d23a0d906ee08de96bafd9ca207071b061b43`, files `app/api/domains/osu.py`, `app/services/replays.py`
+  - `osuTitanic/deck` commit `1534cd1e4068f0ed6a2d2245ef271131319e654c`, files `app/routes/__init__.py`, `app/routes/web/replays.py`
+  - `osuripple/lets` commit `98e9e07faa48398fbccf17251650011e36bdf6e4`, files `lets.py`, `handlers/getReplayHandler.py`, `handlers/getFullReplayHandler.py`, `helpers/replayHelper.py`
+- **Audit Summary**:
+
+| Source | Route | Branch | Status | Header keys | Body kind | Contract status | Unresolved reason |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `bancho.py` | `/web/osu-getreplay.php` | success | 200 | not captured | `file_response_osr_path` | `reference_only_unresolved` | FileResponse runtime headers and full `.osr` body compatibility were not captured. |
+| `bancho.py` | `/web/osu-getreplay.php` | auth_failure | 401 | not captured | `empty_body` | `confirmed_reference` | none |
+| `bancho.py` | `/web/osu-getreplay.php` | missing_replay | 404 | not captured | `empty_body` | `confirmed_reference` | none |
+| `deck` | `/web/osu-getreplay.php` | success | 200 | not captured | `raw_replay_payload` | `reference_only_unresolved` | Auth is optional in the reference and target body compatibility still needs body decision. |
+| `deck` | `/web/osu-getreplay.php` | missing_replay | 404 | not captured | `empty_http_exception` | `confirmed_reference` | none |
+| `deck` | `/web/osu-getreplay.php` | hidden_score | 404 | not captured | `empty_http_exception` | `confirmed_reference` | none |
+| `deck` | `/web/osu-getreplay.php` | storage_missing | 404 | not captured | `empty_http_exception` | `confirmed_reference` | none |
+| `lets` | `/web/osu-getreplay.php` | missing_replay | 200 | not captured | `empty_body` | `conflicting_reference_unresolved` | Differs from `bancho.py` and `deck` 404 behavior. |
+| `lets` | `/web/replays/<id>` | alias success | 200 | `content-description`, `content-disposition`, `content-length`, `content-type` | `complete_osr_file` | `alias_candidate_reference` | none |
+| `lets` | `/web/replays/<id>` | alias missing | 404 | not captured | `plain_text_replay_not_found` | `alias_candidate_reference` | none |
 
 - **Implications**:
+  - `/web/osu-getreplay.php` remains the target-client-confirmed primary route.
+  - `/web/replays/<id>` is a reference-backed alias candidate only; it is not current target-client required because target traffic did not observe it.
+  - Missing / hidden / storage-missing 404 is supported by `deck`; `lets` primary-route missing behavior disagrees and remains unresolved until task 2.3 chooses branch policy.
+
+- **Capture Implications**:
   - The earlier `.osr`-as-success-body assumption is rejected.
   - #36 likely needs to return target-client-compatible LZMA replay payload bytes, not a complete `.osr` file, unless additional evidence contradicts this capture.
   - Target build metadata must account for the fact that exact build may be `not observed in replay download request`; such captures remain usable when the observation status is explicit.

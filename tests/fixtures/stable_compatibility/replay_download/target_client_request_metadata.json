@@ -8,7 +8,7 @@
     "primary_route_classification": "primary_target_client_route",
     "alias_route": "/web/replays/<id>",
     "alias_route_observed_in_target_client_traffic": false,
-    "alias_policy": "candidate_only_pending_reference_audit",
+    "alias_policy": "candidate_only_reference_backed",
     "route_evidence_source": "target_client_traffic",
     "route_evidence_fixture_names": [
       "local_athena_stable_replay_download_404",

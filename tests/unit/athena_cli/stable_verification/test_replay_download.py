@@ -25,13 +25,14 @@ def test_load_replay_download_fixtures_preserves_sanitized_contract_fields() -> 
     bundle = load_replay_download_fixtures(FIXTURE_DIR)
     route_contract = bundle.target_route_contract
     fixture = bundle.fixtures["official_bancho_stable_replay_download_200"]
+    reference_by_name = {reference.name: reference for reference in bundle.reference_responses}
 
     assert route_contract.primary_route == "/web/osu-getreplay.php"
     assert route_contract.primary_route_observed_in_target_client_traffic is True
     assert route_contract.primary_route_classification == "primary_target_client_route"
     assert route_contract.alias_route == "/web/replays/<id>"
     assert route_contract.alias_route_observed_in_target_client_traffic is False
-    assert route_contract.alias_policy == "candidate_only_pending_reference_audit"
+    assert route_contract.alias_policy == "candidate_only_reference_backed"
     assert route_contract.route_evidence_fixture_names == (
         "local_athena_stable_replay_download_404",
         "official_bancho_stable_replay_download_200",
@@ -63,12 +64,21 @@ def test_load_replay_download_fixtures_preserves_sanitized_contract_fields() -> 
     assert fixture.body_kind == "lzma_compressed_replay_payload"
     assert fixture.safe_body_sha256 is None
     assert fixture.body_byte_size == 90584
+    assert reference_by_name["deck_missing_replay"].source == "deck"
+    assert reference_by_name["deck_missing_replay"].branch == "missing_replay"
+    assert reference_by_name["deck_missing_replay"].response_status == 404
+    assert reference_by_name["deck_hidden_score"].branch == "hidden_score"
+    assert reference_by_name["deck_storage_missing"].body_kind == "empty_http_exception"
+    assert reference_by_name["lets_replay_alias_success"].route == "/web/replays/<id>"
+    assert reference_by_name["lets_replay_alias_success"].body_kind == "complete_osr_file"
+    assert reference_by_name["lets_replay_alias_success"].unresolved_reason is None
+    assert reference_by_name["bancho_py_success"].unresolved_reason is not None
 
 
 def test_validate_replay_download_fixtures_accepts_metadata_only_fixtures() -> None:
     results = validate_replay_download_fixtures(load_replay_download_fixtures(FIXTURE_DIR))
 
-    assert len(results) == 3
+    assert len(results) == 4
     assert {result.surface for result in results} == {StableSurface.REPLAY_DOWNLOAD}
     assert {result.status for result in results} == {VerificationStatus.PASS}
     assert all(result.fails_run is False for result in results)
@@ -146,6 +156,7 @@ def test_validate_replay_download_fixtures_rejects_secret_containing_fixtures(
             ],
         },
     )
+    _write_valid_reference_responses(fixture_dir)
     _write_json(
         fixture_dir / "body_assembly_decision.json",
         {
@@ -246,6 +257,7 @@ def test_validate_replay_download_fixtures_rejects_raw_values_in_expected_fields
             ],
         },
     )
+    _write_valid_reference_responses(fixture_dir)
     _write_json(
         fixture_dir / "body_assembly_decision.json",
         {
@@ -359,6 +371,7 @@ def test_validate_replay_download_fixtures_rejects_incomplete_route_contract(
             ],
         },
     )
+    _write_valid_reference_responses(fixture_dir)
     _write_json(
         fixture_dir / "body_assembly_decision.json",
         {
@@ -387,6 +400,44 @@ def test_validate_replay_download_fixtures_rejects_incomplete_route_contract(
 
     assert "route_contract_missing_required_fields:3" in failure_messages
     assert "route_contract_evidence_fixture_names_must_be_string_list" in failure_messages
+
+
+def _write_valid_reference_responses(fixture_dir: Path) -> None:
+    _write_json(
+        fixture_dir / "reference_responses.json",
+        {
+            "schema": "athena.stable_compatibility.replay_download.reference_responses.v1",
+            "secret_policy": "metadata-only",
+            "raw_artifact_committed": False,
+            "references": [
+                {
+                    "name": "unit_reference_success",
+                    "source": "bancho.py",
+                    "source_role": "stable_baseline_comparison",
+                    "repository": "osuAkatsuki/bancho.py",
+                    "commit": "358d23a0d906ee08de96bafd9ca207071b061b43",
+                    "source_paths": ["app/api/domains/osu.py"],
+                    "branch": "success",
+                    "route": "/web/osu-getreplay.php",
+                    "method": "GET",
+                    "request_keys": ["c", "h", "m", "u"],
+                    "auth_fields": [
+                        {
+                            "name": "h",
+                            "category": "redacted_auth_proof",
+                            "value_committed": False,
+                        }
+                    ],
+                    "response_status": 200,
+                    "response_header_keys_observed": [],
+                    "complete_response_header_key_set_observed": False,
+                    "body_kind": "file_response_osr_path",
+                    "contract_status": "reference_only_unresolved",
+                    "unresolved_reason": "runtime headers were not captured",
+                }
+            ],
+        },
+    )
 
 
 def _write_json(path: Path, document: object) -> None:

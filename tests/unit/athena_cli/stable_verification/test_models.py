@@ -128,12 +128,36 @@ def test_replay_download_evidence_models_share_verification_vocabulary() -> None
         primary_route_classification="primary_target_client_route",
         alias_route="/web/replays/<id>",
         alias_route_observed_in_target_client_traffic=False,
-        alias_policy="candidate_only_pending_reference_audit",
+        alias_policy="candidate_only_reference_backed",
         route_evidence_source="target_client_traffic",
         route_evidence_fixture_names=(
             "local_athena_stable_replay_download_404",
             "official_bancho_stable_replay_download_200",
         ),
+    )
+    reference_response = models.ReplayDownloadReferenceResponseEvidence(
+        name="lets_replay_alias_success",
+        source="lets",
+        source_role="alias_comparison",
+        repository="osuripple/lets",
+        commit="98e9e07faa48398fbccf17251650011e36bdf6e4",
+        source_paths=("lets.py", "handlers/getFullReplayHandler.py"),
+        branch=models.ReplayDownloadResponseBranch.ALIAS.value,
+        route="/web/replays/<id>",
+        method="GET",
+        request_keys=("id_path",),
+        auth_fields=(
+            models.ReplayDownloadAuthField(
+                name="none",
+                category="no_auth_observed",
+            ),
+        ),
+        response_status=200,
+        response_header_keys_observed=("content-type", "content-length"),
+        complete_response_header_key_set_observed=False,
+        body_kind="complete_osr_file",
+        contract_status="alias_candidate_reference",
+        unresolved_reason=None,
     )
     fixture = models.ReplayDownloadSanitizedFixture(
         target_client_family="osu_stable",
@@ -220,6 +244,8 @@ def test_replay_download_evidence_models_share_verification_vocabulary() -> None
     assert fixture.raw_values_committed is False
     assert route_contract.primary_route == fixture.path
     assert route_contract.alias_route_observed_in_target_client_traffic is False
+    assert reference_response.branch == models.ReplayDownloadResponseBranch.ALIAS.value
+    assert reference_response.body_kind == "complete_osr_file"
     assert branch.surface is StableSurface.REPLAY_DOWNLOAD
     assert branch.branch is models.ReplayDownloadResponseBranch.SUCCESS
     assert body_decision.surface is StableSurface.REPLAY_DOWNLOAD
@@ -243,6 +269,7 @@ def test_replay_download_reportable_models_exclude_secret_like_fields() -> None:
     reportable_model_types = (
         models.ReplayDownloadAuthField,
         models.ReplayDownloadTargetRouteContract,
+        models.ReplayDownloadReferenceResponseEvidence,
         models.ReplayDownloadSanitizedFixture,
         models.ReplayDownloadResponseBranchEvidence,
         models.ReplayDownloadBodyDecision,

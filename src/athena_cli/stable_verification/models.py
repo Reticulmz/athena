@@ -59,6 +59,7 @@ class ReplayDownloadResponseBranch(StrEnum):
     MISSING_MODE = "missing_mode"
     MALFORMED_MODE = "malformed_mode"
     UNKNOWN_FIELD = "unknown_field"
+    ALIAS = "alias"
 
 
 class ReplayDownloadBlobIntegrity(StrEnum):
@@ -263,6 +264,34 @@ class ReplayDownloadResponseBranchEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class ReplayDownloadReferenceResponseEvidence:
+    """Replay download reference implementation audit の 1 branch を表す.
+
+    Reference source, branch, route, status, header key metadata, body kind,
+    unresolved reason を保持する. Raw response body, raw credential value,
+    raw replay bytes は保持しない.
+    """
+
+    name: str
+    source: str
+    source_role: str
+    repository: str
+    commit: str
+    source_paths: tuple[str, ...]
+    branch: str
+    route: str
+    method: str
+    request_keys: tuple[str, ...]
+    auth_fields: tuple[ReplayDownloadAuthField, ...]
+    response_status: int | None
+    response_header_keys_observed: tuple[str, ...]
+    complete_response_header_key_set_observed: bool
+    body_kind: str
+    contract_status: str
+    unresolved_reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ReplayDownloadBodyDecision:
     """Replay download body assembly decision を verification 語彙で表す.
 
@@ -354,6 +383,7 @@ __all__ = [
     "ReplayDownloadBodyCompatibility",
     "ReplayDownloadBodyDecision",
     "ReplayDownloadBodyStrategy",
+    "ReplayDownloadReferenceResponseEvidence",
     "ReplayDownloadResponseBranch",
     "ReplayDownloadResponseBranchEvidence",
     "ReplayDownloadSanitizedFixture",

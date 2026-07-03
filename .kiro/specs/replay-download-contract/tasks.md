@@ -21,7 +21,7 @@
   - 完了時には target route / auth presence の fixture が validator を通り、build / `osuver` が request に出ない capture は `not_observed` として採用される
   - _Requirements: 1.1, 1.2, 1.3, 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 2.2 `bancho.py`、`deck`、`lets` の replay download reference audit を行う
+- [x] 2.2 `bancho.py`、`deck`、`lets` の replay download reference audit を行う
   - `bancho.py` は stable baseline comparison として route、auth、success/missing branch を確認する
   - `deck` は missing、hidden、storage-missing branch の status / body summary を確認する
   - `lets` は `/web/replays/<id>` alias の route / response variant を確認する
