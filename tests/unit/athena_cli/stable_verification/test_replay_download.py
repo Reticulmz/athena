@@ -26,13 +26,8 @@ from athena_cli.stable_verification.replay_download import (
     validate_replay_download_fixtures,
 )
 
-FIXTURE_DIR = (
-    Path(__file__).resolve().parents[4]
-    / "tests"
-    / "fixtures"
-    / "stable_compatibility"
-    / "replay_download"
-)
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+FIXTURE_DIR = PROJECT_ROOT / "tests" / "fixtures" / "stable_compatibility" / "replay_download"
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -122,6 +117,20 @@ def test_load_replay_download_fixtures_preserves_body_decision_contract() -> Non
         "target_client_response_metadata:official_bancho_stable_replay_download_200",
         "research:Replay Blob Diagnostic Procedure",
     )
+
+
+def test_replay_download_docs_and_matrix_share_current_evidence_terms() -> None:
+    guide = (PROJECT_ROOT / "docs" / "stable-compatibility-guide.md").read_text(encoding="utf-8")
+    matrix = (PROJECT_ROOT / "docs" / "stable-compatibility-matrix.md").read_text(encoding="utf-8")
+    required_terms = (
+        "primary_target_client_route",
+        "candidate_only_reference_backed",
+        "target_body_validation_requires_local_raw_blob_artifact",
+        "download_body_strategy=blocked",
+    )
+
+    assert all(term in guide for term in required_terms)
+    assert all(term in matrix for term in required_terms)
 
 
 def test_validate_replay_download_fixtures_accepts_metadata_only_fixtures() -> None:

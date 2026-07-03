@@ -49,7 +49,7 @@
   - _Requirements: 2.5, 3.1, 3.2, 3.3, 3.4, 6.3, 6.5_
 
 - [ ] 4. Docs と #36 handoff を更新する
-- [ ] 4.1 Stable compatibility guide と matrix の replay download evidence を更新する
+- [x] 4.1 Stable compatibility guide と matrix の replay download evidence を更新する
   - Replay Download evidence note に route/auth/request/response/body decision の confirmed / unresolved 状態を反映する
   - Matrix の replay download rows に current classification、evidence source、remaining gaps、alias policy を反映する
   - 完了時には guide と matrix が同じ primary route、auth blocker、response blocker、body assembly decision を示している
