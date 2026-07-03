@@ -17,9 +17,10 @@
         "reference_responses:bancho_py_success",
         "reference_responses:deck_success"
       ],
-      "blocker": "body_assembly_decision_pending",
+      "blocker": "target_body_validation_requires_local_raw_blob_artifact",
       "notes": [
-        "Target traffic confirms a 200 LZMA-compressed replay payload response, but #36 must wait for body assembly decision.",
+        "Target traffic confirms a 200 LZMA-compressed replay payload response, but direct blob bytes are not implementation-ready.",
+        "Body decision remains blocked until local raw blob bytes are validated against the target body parser.",
         "Reference implementations disagree on full .osr path versus raw replay payload shape."
       ]
     },

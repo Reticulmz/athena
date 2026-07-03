@@ -42,7 +42,7 @@
   - 完了時には diagnostic tests または documented dry-run result で integrity pass、missing replay、missing blob metadata、missing storage object、hash/size mismatch を区別できる
   - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 3.2 Target-client-compatible body 判定と body assembly decision を記録する
+- [x] 3.2 Target-client-compatible body 判定と body assembly decision を記録する
   - Stored Replay blob bytes が target client または approved parser で replay download response body として消費できるかを local-only artifact で確認する
   - Blob integrity が pass しても target body compatibility が fail する場合は download body format mismatch として扱う
   - 完了時には body decision fixture から `direct_blob_bytes`、`assemble_download_body`、または `blocked` の選択と根拠が読める

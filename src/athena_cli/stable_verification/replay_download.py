@@ -16,6 +16,10 @@ from athena_cli.stable_verification.models import (
     ReplayBlobDiagnosticResult,
     ReplayBlobMetadataRecord,
     ReplayDownloadAuthField,
+    ReplayDownloadBlobIntegrity,
+    ReplayDownloadBodyCompatibility,
+    ReplayDownloadBodyDecision,
+    ReplayDownloadBodyStrategy,
     ReplayDownloadReferenceResponseEvidence,
     ReplayDownloadResponseContractBranch,
     ReplayDownloadSanitizedFixture,
@@ -117,12 +121,17 @@ _REQUIRED_BODY_DECISION_FIELDS = frozenset(
     (
         "status",
         "download_body_strategy",
+        "blocker",
         "observed_success_body_kind",
         "observed_success_body_source",
         "observed_success_body_is_complete_osr",
         "observed_success_body_is_zip_archive",
         "stored_blob_integrity",
         "stored_blob_target_body_compatible",
+        "body_format_classification",
+        "local_artifact_policy",
+        "diagnostic_outcome",
+        "evidence_references",
     )
 )
 _RAW_QUERY_VALUE_KEYS = frozenset(
@@ -212,6 +221,7 @@ class ReplayDownloadEvidenceBundle:
     response_contract_branches: tuple[ReplayDownloadResponseContractBranch, ...]
     response_contract_metadata: Mapping[str, object]
     body_assembly_decision: Mapping[str, object]
+    body_decision: ReplayDownloadBodyDecision
     target_route_contract: ReplayDownloadTargetRouteContract
     fixtures: Mapping[str, ReplayDownloadSanitizedFixture]
 
@@ -410,6 +420,92 @@ def _replay_blob_diagnostic_status(
     return VerificationStatus.UNAVAILABLE
 
 
+def build_replay_download_body_decision(
+    *,
+    blob_integrity: ReplayDownloadBlobIntegrity,
+    target_body_compatible: ReplayDownloadBodyCompatibility,
+    evidence_references: tuple[str, ...] = (),
+) -> ReplayDownloadBodyDecision:
+    """Blob integrity と target body compatibility から download body 方針を決める.
+
+    Args:
+        blob_integrity: Replay blob storage integrity の診断結果.
+        target_body_compatible: Stored blob bytes の target-client-compatible body 判定.
+        evidence_references: 判定に使った sanitized evidence の参照.
+
+    Returns:
+        #36 が direct blob bytes, body assembly, blocked のどれを採るべきかの
+        report-safe decision.
+
+    Raises:
+        なし.
+
+    Constraints:
+        Raw replay bytes, complete .osr bytes, credential-like value は保持しない.
+        Format mismatch は storage corruption ではなく assembly required として扱う.
+    """
+
+    if blob_integrity is ReplayDownloadBlobIntegrity.PASS:
+        if target_body_compatible is ReplayDownloadBodyCompatibility.PASS:
+            return _body_decision_result(
+                blob_integrity=blob_integrity,
+                target_body_compatible=target_body_compatible,
+                download_body_strategy=ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES,
+                status=VerificationStatus.PASS,
+                message="direct_blob_bytes_allowed",
+                evidence_references=evidence_references,
+            )
+        if target_body_compatible is ReplayDownloadBodyCompatibility.FAIL:
+            return _body_decision_result(
+                blob_integrity=blob_integrity,
+                target_body_compatible=target_body_compatible,
+                download_body_strategy=ReplayDownloadBodyStrategy.ASSEMBLE_DOWNLOAD_BODY,
+                status=VerificationStatus.PASS,
+                message="download_body_format_mismatch assemble_download_body_required",
+                evidence_references=evidence_references,
+            )
+
+    if blob_integrity is ReplayDownloadBlobIntegrity.FAIL:
+        return _body_decision_result(
+            blob_integrity=blob_integrity,
+            target_body_compatible=target_body_compatible,
+            download_body_strategy=ReplayDownloadBodyStrategy.BLOCKED,
+            status=VerificationStatus.FAIL,
+            message="storage_integrity_failure body_decision_blocked",
+            evidence_references=evidence_references,
+        )
+
+    return _body_decision_result(
+        blob_integrity=blob_integrity,
+        target_body_compatible=target_body_compatible,
+        download_body_strategy=ReplayDownloadBodyStrategy.BLOCKED,
+        status=VerificationStatus.KNOWN_GAP,
+        message="body_decision_blocked target_body_compatibility_unverified",
+        evidence_references=evidence_references,
+    )
+
+
+def _body_decision_result(
+    *,
+    blob_integrity: ReplayDownloadBlobIntegrity,
+    target_body_compatible: ReplayDownloadBodyCompatibility,
+    download_body_strategy: ReplayDownloadBodyStrategy,
+    status: VerificationStatus,
+    message: str,
+    evidence_references: tuple[str, ...],
+) -> ReplayDownloadBodyDecision:
+    return ReplayDownloadBodyDecision(
+        blob_integrity=blob_integrity,
+        target_body_compatible=target_body_compatible,
+        download_body_strategy=download_body_strategy,
+        status=status,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        diagnostic_summary=DiagnosticSummary(message=message),
+        evidence_references=evidence_references,
+    )
+
+
 def load_replay_download_fixtures(root: Path) -> ReplayDownloadEvidenceBundle:
     """Replay download sanitized fixtures を読み込む.
 
@@ -444,6 +540,7 @@ def load_replay_download_fixtures(root: Path) -> ReplayDownloadEvidenceBundle:
         ),
         response_contract_metadata=response_contract_metadata,
         body_assembly_decision=body_assembly_decision,
+        body_decision=_body_decision_from_document(body_assembly_decision),
         target_route_contract=_target_route_contract_from_document(request_metadata),
         fixtures=_load_sanitized_fixtures(request_metadata, response_metadata),
     )
@@ -727,6 +824,30 @@ def _validate_body_assembly_decision(document: Mapping[str, object]) -> tuple[st
             "observed_success_body_is_zip_archive",
         )
     )
+    typed_decision = cast("Mapping[str, object]", decision)
+    errors.extend(_validate_string_field(typed_decision, "status"))
+    errors.extend(_validate_string_field(typed_decision, "download_body_strategy"))
+    errors.extend(_validate_string_field(typed_decision, "blocker"))
+    errors.extend(_validate_string_field(typed_decision, "observed_success_body_kind"))
+    errors.extend(
+        _validate_string_field(
+            typed_decision,
+            "observed_success_body_source",
+            safe_token=False,
+        )
+    )
+    errors.extend(_validate_string_field(typed_decision, "stored_blob_integrity"))
+    errors.extend(_validate_string_field(typed_decision, "stored_blob_target_body_compatible"))
+    errors.extend(_validate_string_field(typed_decision, "body_format_classification"))
+    errors.extend(_validate_string_field(typed_decision, "local_artifact_policy"))
+    errors.extend(_validate_string_field(typed_decision, "diagnostic_outcome"))
+    errors.extend(
+        _validate_string_list_field(
+            typed_decision,
+            "evidence_references",
+            safe_token=False,
+        )
+    )
     return _sorted_unique(errors)
 
 
@@ -859,6 +980,51 @@ def _response_contract_branch_from_entry(
         blocker=_optional_string_value(branch, "blocker"),
         notes=_string_tuple(branch.get("notes")),
     )
+
+
+def _body_decision_from_document(
+    document: Mapping[str, object],
+) -> ReplayDownloadBodyDecision:
+    decision = document.get("decision")
+    if not isinstance(decision, Mapping):
+        return build_replay_download_body_decision(
+            blob_integrity=ReplayDownloadBlobIntegrity.UNAVAILABLE,
+            target_body_compatible=ReplayDownloadBodyCompatibility.LOCAL_ONLY_UNVERIFIED,
+        )
+
+    typed_decision = cast("Mapping[str, object]", decision)
+    return ReplayDownloadBodyDecision(
+        blob_integrity=_blob_integrity_value(typed_decision, "stored_blob_integrity"),
+        target_body_compatible=_body_compatibility_value(
+            typed_decision,
+            "stored_blob_target_body_compatible",
+        ),
+        download_body_strategy=_body_strategy_value(typed_decision, "download_body_strategy"),
+        status=_verification_status_value(typed_decision, "status"),
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        diagnostic_summary=DiagnosticSummary(
+            message=_body_decision_message(typed_decision),
+        ),
+        evidence_references=_string_tuple(typed_decision.get("evidence_references")),
+    )
+
+
+def _body_decision_message(decision: Mapping[str, object]) -> str:
+    status = _string_value(decision, "status")
+    strategy = _string_value(decision, "download_body_strategy")
+    blocker = _optional_string_value(decision, "blocker")
+    classification = _optional_string_value(decision, "body_format_classification")
+    parts = [
+        f"body_decision_status={status}",
+        f"download_body_strategy={strategy}",
+    ]
+    if blocker is not None:
+        parts.append(f"blocker={blocker}")
+    if classification is not None:
+        parts.append(f"body_format_classification={classification}")
+
+    return " ".join(parts)
 
 
 def _target_route_contract_from_document(
@@ -1215,6 +1381,62 @@ def _optional_int_value(entry: Mapping[str, object], key: str) -> int | None:
         return value
 
     return None
+
+
+def _verification_status_value(
+    entry: Mapping[str, object],
+    key: str,
+) -> VerificationStatus:
+    value = entry.get(key)
+    if isinstance(value, str):
+        try:
+            return VerificationStatus(value)
+        except ValueError:
+            return VerificationStatus.KNOWN_GAP
+
+    return VerificationStatus.KNOWN_GAP
+
+
+def _blob_integrity_value(
+    entry: Mapping[str, object],
+    key: str,
+) -> ReplayDownloadBlobIntegrity:
+    value = entry.get(key)
+    if isinstance(value, str):
+        try:
+            return ReplayDownloadBlobIntegrity(value)
+        except ValueError:
+            return ReplayDownloadBlobIntegrity.UNAVAILABLE
+
+    return ReplayDownloadBlobIntegrity.UNAVAILABLE
+
+
+def _body_compatibility_value(
+    entry: Mapping[str, object],
+    key: str,
+) -> ReplayDownloadBodyCompatibility:
+    value = entry.get(key)
+    if isinstance(value, str):
+        try:
+            return ReplayDownloadBodyCompatibility(value)
+        except ValueError:
+            return ReplayDownloadBodyCompatibility.LOCAL_ONLY_UNVERIFIED
+
+    return ReplayDownloadBodyCompatibility.LOCAL_ONLY_UNVERIFIED
+
+
+def _body_strategy_value(
+    entry: Mapping[str, object],
+    key: str,
+) -> ReplayDownloadBodyStrategy:
+    value = entry.get(key)
+    if isinstance(value, str):
+        try:
+            return ReplayDownloadBodyStrategy(value)
+        except ValueError:
+            return ReplayDownloadBodyStrategy.BLOCKED
+
+    return ReplayDownloadBodyStrategy.BLOCKED
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:

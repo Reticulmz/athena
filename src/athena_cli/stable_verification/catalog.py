@@ -189,8 +189,8 @@ _GAPS: tuple[EvidenceGap, ...] = (
         surface=StableSurface.REPLAY_DOWNLOAD,
         status=VerificationStatus.KNOWN_GAP,
         summary=(
-            "endpoint implementation, unresolved malformed branches, local blob diagnostic run, "
-            "and body assembly decision remain pending"
+            "endpoint implementation, unresolved malformed branches, local target-body "
+            "validation artifact, and success body implementation remain pending"
         ),
         owner="replay-download-contract",
     ),

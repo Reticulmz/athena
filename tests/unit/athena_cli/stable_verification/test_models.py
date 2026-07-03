@@ -231,7 +231,7 @@ def test_replay_download_evidence_models_share_verification_vocabulary() -> None
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
         diagnostic_summary=DiagnosticSummary(
-            message="body assembly decision blocked pending blob diagnostic"
+            message="body decision blocked pending local target-body validation"
         ),
         evidence_references=(
             "tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json",

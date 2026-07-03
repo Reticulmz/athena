@@ -59,6 +59,21 @@
 - **Remaining Work**:
   - Local target score に対する dry-run result と target-client-compatible body validation は 3.2 の body decision で扱う。
 
+### Replay Download Body Assembly Decision
+
+- **Context**: Target success body は storage blob object と同一とは限らず、manual `.osr` rename failure だけでは storage corruption と判断できないため。
+- **Implementation Evidence**:
+  - `tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json`
+  - `athena_cli.stable_verification.replay_download.build_replay_download_body_decision`
+  - `tests/unit/athena_cli/stable_verification/test_replay_download.py`
+- **Findings**:
+  - Official target success response body kind は `lzma_compressed_replay_payload` で、complete `.osr` bytes でも ZIP archive でもない。
+  - Stored blob bytes の target-body compatibility は raw blob artifact を repository に保存せず local-only で検証する必要があるため、current decision は `download_body_strategy=blocked` とする。
+  - Blob integrity が pass し、target body compatibility が fail した場合は `download_body_format_mismatch` として扱い、#36 は `assemble_download_body` を実装する。
+- **Handoff Impact**:
+  - #36 は success 200 body を direct blob bytes として実装開始してはいけない。
+  - #36 の success branch blocker は `target_body_validation_requires_local_raw_blob_artifact` である。
+
 ### User-provided replay download captures
 
 - **Context**: Target route/auth と本家 Bancho success response body の shape を確認するため。
@@ -119,7 +134,7 @@
 
 | Branch | Status label | Readiness for #36 | Selected status | Body kind | Byte size | Safe hash | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| success | `未確認` | blocked | 200 | `lzma_compressed_replay_payload` | 90584 | not committed | target official Bancho capture; `bancho.py`; `deck` | `body_assembly_decision_pending` |
+| success | `未確認` | blocked | 200 | `lzma_compressed_replay_payload` | 90584 | not committed | target official Bancho capture; `bancho.py`; `deck` | `target_body_validation_requires_local_raw_blob_artifact` |
 | auth_failure | confirmed | implementation-ready | 401 | `empty_body` | 0 | not committed | `bancho.py` | none |
 | missing_replay | confirmed | implementation-ready | 404 | `empty_body` | unknown | not committed | `bancho.py`; `deck` | none |
 | hidden_score | confirmed | implementation-ready | 404 | `empty_http_exception` | unknown | not committed | `deck` | none |
@@ -132,7 +147,7 @@
 
 - **Implications**:
   - #36 may implement auth failure and reference-backed missing/hidden/storage-missing branches from this contract.
-  - #36 must not treat success as ready until body assembly decision is resolved.
+  - #36 must not treat success as ready while blocker `target_body_validation_requires_local_raw_blob_artifact` remains.
   - #36 must not invent malformed request behavior; missing/malformed score id, missing/malformed mode, and unknown field remain `未確認`.
 
 ### Fixture と秘匿情報

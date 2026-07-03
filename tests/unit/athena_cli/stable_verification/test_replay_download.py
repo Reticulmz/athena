@@ -13,10 +13,14 @@ from athena_cli.stable_verification.models import (
     ReplayBlobDiagnosticClassification,
     ReplayBlobDiagnosticInput,
     ReplayBlobMetadataRecord,
+    ReplayDownloadBlobIntegrity,
+    ReplayDownloadBodyCompatibility,
+    ReplayDownloadBodyStrategy,
     StableSurface,
     VerificationStatus,
 )
 from athena_cli.stable_verification.replay_download import (
+    build_replay_download_body_decision,
     diagnose_replay_blob,
     load_replay_download_fixtures,
     validate_replay_download_fixtures,
@@ -88,7 +92,10 @@ def test_load_replay_download_fixtures_preserves_sanitized_contract_fields() -> 
     assert reference_by_name["lets_replay_alias_success"].unresolved_reason is None
     assert reference_by_name["bancho_py_success"].unresolved_reason is not None
     assert branch_by_name["success"].readiness == "blocked"
-    assert branch_by_name["success"].blocker == "body_assembly_decision_pending"
+    assert (
+        branch_by_name["success"].blocker
+        == "target_body_validation_requires_local_raw_blob_artifact"
+    )
     assert branch_by_name["success"].selected_body_byte_size == 90584
     assert branch_by_name["success"].selected_safe_body_sha256 is None
     assert branch_by_name["auth_failure"].readiness == "implementation_ready"
@@ -98,6 +105,23 @@ def test_load_replay_download_fixtures_preserves_sanitized_contract_fields() -> 
     assert branch_by_name["malformed_score_id"].readiness == "unresolved"
     assert branch_by_name["malformed_mode"].status_label == "未確認"
     assert branch_by_name["unknown_field"].blocker == "no_target_or_reference_evidence"
+
+
+def test_load_replay_download_fixtures_preserves_body_decision_contract() -> None:
+    bundle = load_replay_download_fixtures(FIXTURE_DIR)
+    body_decision = bundle.body_decision
+
+    assert body_decision.blob_integrity is ReplayDownloadBlobIntegrity.UNAVAILABLE
+    assert (
+        body_decision.target_body_compatible
+        is ReplayDownloadBodyCompatibility.LOCAL_ONLY_UNVERIFIED
+    )
+    assert body_decision.download_body_strategy is ReplayDownloadBodyStrategy.BLOCKED
+    assert body_decision.status is VerificationStatus.KNOWN_GAP
+    assert body_decision.evidence_references == (
+        "target_client_response_metadata:official_bancho_stable_replay_download_200",
+        "research:Replay Blob Diagnostic Procedure",
+    )
 
 
 def test_validate_replay_download_fixtures_accepts_metadata_only_fixtures() -> None:
@@ -190,14 +214,19 @@ def test_validate_replay_download_fixtures_rejects_secret_containing_fixtures(
             "secret_policy": "metadata-only",
             "raw_artifact_committed": False,
             "decision": {
-                "status": "blocked_pending_blob_diagnostic",
+                "status": "known_gap",
                 "download_body_strategy": "blocked",
+                "blocker": "target_body_validation_requires_local_raw_blob_artifact",
                 "observed_success_body_kind": "lzma_compressed_replay_payload",
                 "observed_success_body_source": "secret_capture",
                 "observed_success_body_is_complete_osr": False,
                 "observed_success_body_is_zip_archive": False,
-                "stored_blob_integrity": "not_checked",
-                "stored_blob_target_body_compatible": "not_checked",
+                "stored_blob_integrity": "unavailable",
+                "stored_blob_target_body_compatible": "local_only_unverified",
+                "body_format_classification": "unverified",
+                "local_artifact_policy": "raw_blob_and_parser_result_not_committed",
+                "diagnostic_outcome": "procedure_available_no_target_score_dry_run_committed",
+                "evidence_references": ["unit:secret_capture"],
                 "raw_body_bytes": "raw-replay-bytes",
             },
         },
@@ -292,14 +321,19 @@ def test_validate_replay_download_fixtures_rejects_raw_values_in_expected_fields
             "secret_policy": "metadata-only",
             "raw_artifact_committed": False,
             "decision": {
-                "status": "blocked_pending_blob_diagnostic",
+                "status": "known_gap",
                 "download_body_strategy": "blocked",
+                "blocker": "target_body_validation_requires_local_raw_blob_artifact",
                 "observed_success_body_kind": "lzma_compressed_replay_payload",
                 "observed_success_body_source": "bad_capture",
                 "observed_success_body_is_complete_osr": False,
                 "observed_success_body_is_zip_archive": False,
-                "stored_blob_integrity": "not_checked",
-                "stored_blob_target_body_compatible": "not_checked",
+                "stored_blob_integrity": "unavailable",
+                "stored_blob_target_body_compatible": "local_only_unverified",
+                "body_format_classification": "unverified",
+                "local_artifact_policy": "raw_blob_and_parser_result_not_committed",
+                "diagnostic_outcome": "procedure_available_no_target_score_dry_run_committed",
+                "evidence_references": ["unit:bad_capture"],
             },
         },
     )
@@ -407,14 +441,19 @@ def test_validate_replay_download_fixtures_rejects_incomplete_route_contract(
             "secret_policy": "metadata-only",
             "raw_artifact_committed": False,
             "decision": {
-                "status": "blocked_pending_blob_diagnostic",
+                "status": "known_gap",
                 "download_body_strategy": "blocked",
+                "blocker": "target_body_validation_requires_local_raw_blob_artifact",
                 "observed_success_body_kind": "lzma_compressed_replay_payload",
                 "observed_success_body_source": "incomplete_route_capture",
                 "observed_success_body_is_complete_osr": False,
                 "observed_success_body_is_zip_archive": False,
-                "stored_blob_integrity": "not_checked",
-                "stored_blob_target_body_compatible": "not_checked",
+                "stored_blob_integrity": "unavailable",
+                "stored_blob_target_body_compatible": "local_only_unverified",
+                "body_format_classification": "unverified",
+                "local_artifact_policy": "raw_blob_and_parser_result_not_committed",
+                "diagnostic_outcome": "procedure_available_no_target_score_dry_run_committed",
+                "evidence_references": ["unit:incomplete_route_capture"],
             },
         },
     )
@@ -428,6 +467,33 @@ def test_validate_replay_download_fixtures_rejects_incomplete_route_contract(
 
     assert "route_contract_missing_required_fields:3" in failure_messages
     assert "route_contract_evidence_fixture_names_must_be_string_list" in failure_messages
+
+
+def test_build_replay_download_body_decision_requires_assembly_on_format_mismatch() -> None:
+    decision = build_replay_download_body_decision(
+        blob_integrity=ReplayDownloadBlobIntegrity.PASS,
+        target_body_compatible=ReplayDownloadBodyCompatibility.FAIL,
+        evidence_references=("unit:target_body_parser_failure",),
+    )
+
+    assert decision.blob_integrity is ReplayDownloadBlobIntegrity.PASS
+    assert decision.target_body_compatible is ReplayDownloadBodyCompatibility.FAIL
+    assert decision.download_body_strategy is ReplayDownloadBodyStrategy.ASSEMBLE_DOWNLOAD_BODY
+    assert decision.status is VerificationStatus.PASS
+    assert decision.evidence_references == ("unit:target_body_parser_failure",)
+    assert "download_body_format_mismatch" in decision.diagnostic_summary.message
+
+
+def test_build_replay_download_body_decision_blocks_when_local_only_unverified() -> None:
+    decision = build_replay_download_body_decision(
+        blob_integrity=ReplayDownloadBlobIntegrity.UNAVAILABLE,
+        target_body_compatible=ReplayDownloadBodyCompatibility.LOCAL_ONLY_UNVERIFIED,
+        evidence_references=("unit:local_artifact_not_committed",),
+    )
+
+    assert decision.download_body_strategy is ReplayDownloadBodyStrategy.BLOCKED
+    assert decision.status is VerificationStatus.KNOWN_GAP
+    assert "body_decision_blocked" in decision.diagnostic_summary.message
 
 
 @pytest.mark.asyncio
@@ -645,7 +711,7 @@ def _write_valid_response_contract(fixture_dir: Path) -> None:
                     "selected_body_byte_size": 90584,
                     "selected_safe_body_sha256": None,
                     "evidence_sources": ["unit_reference_success"],
-                    "blocker": "body_assembly_decision_pending",
+                    "blocker": "target_body_validation_requires_local_raw_blob_artifact",
                     "notes": ["unit fixture"],
                 }
             ],

@@ -3,17 +3,27 @@
   "secret_policy": "metadata-only",
   "raw_artifact_committed": false,
   "decision": {
-    "status": "blocked_pending_blob_diagnostic",
+    "status": "known_gap",
     "download_body_strategy": "blocked",
+    "blocker": "target_body_validation_requires_local_raw_blob_artifact",
     "observed_success_body_kind": "lzma_compressed_replay_payload",
-    "observed_success_body_source": "user_provided_official_bancho_capture",
+    "observed_success_body_source": "target_client_response_metadata:official_bancho_stable_replay_download_200",
     "observed_success_body_is_complete_osr": false,
     "observed_success_body_is_zip_archive": false,
-    "stored_blob_integrity": "not_checked",
-    "stored_blob_target_body_compatible": "not_checked",
+    "stored_blob_integrity": "unavailable",
+    "stored_blob_target_body_compatible": "local_only_unverified",
+    "body_format_classification": "unverified",
+    "local_artifact_policy": "raw_blob_and_parser_result_not_committed",
+    "diagnostic_outcome": "procedure_available_no_target_score_dry_run_committed",
+    "evidence_references": [
+      "target_client_response_metadata:official_bancho_stable_replay_download_200",
+      "research:Replay Blob Diagnostic Procedure"
+    ],
     "notes": [
+      "Official target success response is LZMA-compressed replay payload, not complete .osr bytes or a ZIP archive.",
       "Manual rename of stored blob bytes to .osr is not a valid corruption proof.",
-      "Issue #36 must decide direct blob bytes vs assembled download body after blob diagnostic and target-client-compatible body validation."
+      "Direct blob bytes are not implementation-ready until a local raw blob artifact is validated against the target body parser.",
+      "If local validation shows blob integrity pass but target body compatibility fail, #36 must assemble replay download response bytes instead of returning blob bytes directly."
     ]
   }
 }
