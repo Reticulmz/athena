@@ -5,7 +5,7 @@
   "branches": [
     {
       "branch": "success",
-      "status_label": "未確認",
+      "status_label": "unconfirmed",
       "readiness": "blocked",
       "selected_response_status": 200,
       "selected_header_keys": ["content-disposition", "content-type"],
@@ -42,21 +42,22 @@
     },
     {
       "branch": "missing_replay",
-      "status_label": "confirmed",
-      "readiness": "implementation_ready",
-      "selected_response_status": 404,
+      "status_label": "unconfirmed",
+      "readiness": "unresolved",
+      "selected_response_status": null,
       "selected_header_keys": [],
-      "selected_body_kind": "empty_body",
+      "selected_body_kind": null,
       "selected_body_byte_size": null,
       "selected_safe_body_sha256": null,
       "evidence_sources": [
         "reference_responses:bancho_py_missing_replay",
-        "reference_responses:deck_missing_replay"
+        "reference_responses:deck_missing_replay",
+        "reference_responses:lets_primary_missing_replay"
       ],
-      "blocker": null,
+      "blocker": "conflicting_reference_evidence",
       "notes": [
-        "bancho.py and deck agree on 404 for missing replay.",
-        "lets primary route returns empty 200 for missing raw replay and remains conflicting reference evidence."
+        "bancho.py and deck use 404 for missing replay.",
+        "lets primary route returns empty 200 for missing raw replay, so no response contract is selected yet."
       ]
     },
     {
@@ -87,7 +88,7 @@
     },
     {
       "branch": "missing_score_id",
-      "status_label": "未確認",
+      "status_label": "unconfirmed",
       "readiness": "unresolved",
       "selected_response_status": null,
       "selected_header_keys": [],
@@ -100,7 +101,7 @@
     },
     {
       "branch": "malformed_score_id",
-      "status_label": "未確認",
+      "status_label": "unconfirmed",
       "readiness": "unresolved",
       "selected_response_status": null,
       "selected_header_keys": [],
@@ -113,7 +114,7 @@
     },
     {
       "branch": "missing_mode",
-      "status_label": "未確認",
+      "status_label": "unconfirmed",
       "readiness": "unresolved",
       "selected_response_status": null,
       "selected_header_keys": [],
@@ -126,7 +127,7 @@
     },
     {
       "branch": "malformed_mode",
-      "status_label": "未確認",
+      "status_label": "unconfirmed",
       "readiness": "unresolved",
       "selected_response_status": null,
       "selected_header_keys": [],
@@ -139,7 +140,7 @@
     },
     {
       "branch": "unknown_field",
-      "status_label": "未確認",
+      "status_label": "unconfirmed",
       "readiness": "unresolved",
       "selected_response_status": null,
       "selected_header_keys": [],

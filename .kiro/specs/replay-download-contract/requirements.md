@@ -35,7 +35,7 @@ Replay Download Contract は、GitHub Issue #35「[stable-compat] Replay downloa
 1. When success response evidence is recorded, the Replay Download Contract shall identify status, response header key set, body kind, safe body hash when allowed, and byte size.
 2. When missing replay, hidden score, and storage-missing branches are evaluated, the Replay Download Contract shall record the selected reference-compatible status and response summary.
 3. When malformed request branches are evaluated, the Replay Download Contract shall record missing score id, malformed score id, missing mode, malformed mode, and unknown field behavior or mark each branch as unresolved.
-4. If a response branch is unresolved after target traffic and reference audit, then the Replay Download Contract shall mark that branch as `未確認` and prevent #36 from treating it as implementation-ready.
+4. If a response branch is unresolved after target traffic and reference audit, then the Replay Download Contract shall mark that branch as `unconfirmed` and prevent #36 from treating it as implementation-ready.
 5. The Replay Download Contract shall distinguish Replay Download Response Body from the storage backend Replay blob object.
 
 ### 要件 3: Target-client-compatible 成功 body の確認

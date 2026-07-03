@@ -66,8 +66,14 @@ def test_reporter_redacts_secret_values_from_text_and_json() -> None:
             "session_token" + "=session-token",
             "raw_credential" + "=raw-credential",
             "raw_replay" + "=raw-bytes",
+            "raw_replay_bytes" + "=raw-replay-bytes",
             "complete_osr_bytes" + "=complete-osr-bytes",
+            "complete_osr" + "=complete-osr",
             "credential" + "=secret",
+            "credential_value" + "=credential-secret",
+            "password_md5" + "=md5-secret",
+            "authorization" + "=bearer-secret",
+            "cookie" + "=cookie-secret",
         )
     )
     diagnostic = DiagnosticSummary(message=secret_message)
@@ -82,18 +88,35 @@ def test_reporter_redacts_secret_values_from_text_and_json() -> None:
     assert "session-token" not in text_output
     assert "raw-credential" not in text_output
     assert "raw-bytes" not in text_output
+    assert "raw-replay-bytes" not in text_output
     assert "complete-osr-bytes" not in text_output
+    assert "complete-osr" not in text_output
     assert "secret" not in text_output
+    assert "credential-secret" not in text_output
+    assert "md5-secret" not in text_output
+    assert "bearer-secret" not in text_output
+    assert "cookie-secret" not in text_output
     assert "plain" not in json_output
     assert "password_hash=hash" not in json_output
     assert "session-token" not in json_output
     assert "raw-credential" not in json_output
     assert "raw-bytes" not in json_output
+    assert "raw-replay-bytes" not in json_output
     assert "complete-osr-bytes" not in json_output
+    assert "complete-osr" not in json_output
     assert "secret" not in json_output
+    assert "credential-secret" not in json_output
+    assert "md5-secret" not in json_output
+    assert "bearer-secret" not in json_output
+    assert "cookie-secret" not in json_output
     assert redact_text("password" + "=plain") == "password" + "=<redacted>"
     assert redact_text("raw_credential" + "=raw") == "raw_credential" + "=<redacted>"
     assert redact_text("complete_osr_bytes" + "=raw") == "complete_osr_bytes" + "=<redacted>"
+    assert redact_text("credential_value" + "=raw") == "credential_value" + "=<redacted>"
+    assert redact_text("raw_replay_bytes" + "=raw") == "raw_replay_bytes" + "=<redacted>"
+    assert redact_text("password_md5" + "=raw") == "password_md5" + "=<redacted>"
+    assert redact_text("authorization" + "=raw") == "authorization" + "=<redacted>"
+    assert redact_text("cookie" + "=raw") == "cookie" + "=<redacted>"
 
 
 def _run_result(diagnostic: DiagnosticSummary) -> VerificationRunResult:

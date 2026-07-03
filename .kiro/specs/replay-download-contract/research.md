@@ -134,21 +134,22 @@
 
 | Branch | Status label | Readiness for #36 | Selected status | Body kind | Byte size | Safe hash | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| success | `未確認` | blocked | 200 | `lzma_compressed_replay_payload` | 90584 | not committed | target official Bancho capture; `bancho.py`; `deck` | `target_body_validation_requires_local_raw_blob_artifact` |
+| success | unconfirmed | blocked | 200 | `lzma_compressed_replay_payload` | 90584 | not committed | target official Bancho capture; `bancho.py`; `deck` | `target_body_validation_requires_local_raw_blob_artifact` |
 | auth_failure | confirmed | implementation-ready | 401 | `empty_body` | 0 | not committed | `bancho.py` | none |
-| missing_replay | confirmed | implementation-ready | 404 | `empty_body` | unknown | not committed | `bancho.py`; `deck` | none |
+| missing_replay | unconfirmed | unresolved | none | none | none | not committed | `bancho.py`; `deck`; `lets` | `conflicting_reference_evidence` |
 | hidden_score | confirmed | implementation-ready | 404 | `empty_http_exception` | unknown | not committed | `deck` | none |
 | storage_missing | confirmed | implementation-ready | 404 | `empty_http_exception` | unknown | not committed | `deck` | none |
-| missing_score_id | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
-| malformed_score_id | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
-| missing_mode | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
-| malformed_mode | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
-| unknown_field | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+| missing_score_id | unconfirmed | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+| malformed_score_id | unconfirmed | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+| missing_mode | unconfirmed | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+| malformed_mode | unconfirmed | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+| unknown_field | unconfirmed | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
 
 - **Implications**:
-  - #36 may implement auth failure and reference-backed missing/hidden/storage-missing branches from this contract.
+  - #36 may implement auth failure and reference-backed hidden/storage-missing branches from this contract.
+  - Missing replay remains unresolved because `bancho.py`/`deck` 404 evidence conflicts with `lets` empty 200 evidence.
   - #36 must not treat success as ready while blocker `target_body_validation_requires_local_raw_blob_artifact` remains.
-  - #36 must not invent malformed request behavior; missing/malformed score id, missing/malformed mode, and unknown field remain `未確認`.
+  - #36 must not invent malformed request behavior; missing/malformed score id, missing/malformed mode, and unknown field remain unconfirmed.
 
 ### Fixture と秘匿情報
 
@@ -210,7 +211,7 @@
 
 ## Risks & Mitigations
 
-- Target client capture が取得できない — #36 を blocked のままにし、docs に `未確認` と blocker を残す。
+- Target client capture が取得できない — #36 を blocked のままにし、docs に `unconfirmed` と blocker を残す。
 - Reference implementations disagree — `bancho.py`、`deck`、`lets` の差分を matrix に記録し、target traffic または明示 rationale なしに contract を固定しない。
 - Sanitized fixture に credential-like value が混入する — fixture validator と tests で forbidden keys / raw value patterns を検出する。
 - Blob integrity 診断が raw replay bytes を出す — diagnostic output schema を hash / size / existence のみに制限する。

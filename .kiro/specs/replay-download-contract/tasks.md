@@ -31,7 +31,7 @@
 
 - [x] 2.3 Replay download response contract を branch ごとに固定する
   - Success、auth failure、missing replay、hidden score、storage-missing、missing score id、malformed score id、missing mode、malformed mode、unknown field を branch として整理する
-  - Confirmed branch は target traffic または reference source を示し、unresolved branch は `未確認` と blocker reason を示す
+  - Confirmed branch は target traffic または reference source を示し、unresolved branch は `unconfirmed` と blocker reason を示す
   - 完了時には #36 が扱える branch と blocked のまま残す branch が response contract table から判断できる
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 8.3, 8.4_
 

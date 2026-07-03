@@ -363,7 +363,7 @@ async def _observe_storage_object(
         async for chunk in chunks:
             digest_builder.update(chunk)
             byte_size += len(chunk)
-    except FileNotFoundError:
+    except OSError:
         return None
 
     return _StorageObservation(
@@ -719,6 +719,8 @@ def _validate_response_metadata(document: Mapping[str, object]) -> tuple[str, ..
         errors.extend(_validate_int_field(capture, "response_status"))
         errors.extend(_validate_bool_field(capture, "complete_response_header_key_set_observed"))
         errors.extend(_validate_int_field(capture, "body_byte_size"))
+        if capture.get("safe_body_sha256") is not None:
+            errors.append("committed_safe_body_sha256")
 
     return _sorted_unique(errors)
 
@@ -791,7 +793,8 @@ def _validate_response_contract_metadata(document: Mapping[str, object]) -> tupl
         errors.extend(_validate_string_list_field(branch, "selected_header_keys"))
         errors.extend(_validate_optional_string_field(branch, "selected_body_kind"))
         errors.extend(_validate_optional_int_field(branch, "selected_body_byte_size"))
-        errors.extend(_validate_optional_string_field(branch, "selected_safe_body_sha256"))
+        if branch.get("selected_safe_body_sha256") is not None:
+            errors.append("committed_selected_safe_body_sha256")
         errors.extend(_validate_string_list_field(branch, "evidence_sources", safe_token=False))
         errors.extend(_validate_optional_string_field(branch, "blocker"))
         errors.extend(_validate_string_list_field(branch, "notes"))
@@ -1209,11 +1212,13 @@ def _missing_required_fields(
     entry: Mapping[str, object],
     required_fields: frozenset[str],
 ) -> tuple[str, ...]:
-    missing_count = sum(1 for field_name in required_fields if field_name not in entry)
-    if missing_count == 0:
+    missing_fields = sorted(
+        field_name for field_name in required_fields if field_name not in entry
+    )
+    if not missing_fields:
         return ()
 
-    return (f"missing_required_fields:{missing_count}",)
+    return (f"missing_required_fields:{','.join(missing_fields)}",)
 
 
 def _missing_required_fields_with_prefix(
@@ -1221,11 +1226,13 @@ def _missing_required_fields_with_prefix(
     required_fields: frozenset[str],
     prefix: str,
 ) -> tuple[str, ...]:
-    missing_count = sum(1 for field_name in required_fields if field_name not in entry)
-    if missing_count == 0:
+    missing_fields = sorted(
+        field_name for field_name in required_fields if field_name not in entry
+    )
+    if not missing_fields:
         return ()
 
-    return (f"{prefix}_missing_required_fields:{missing_count}",)
+    return (f"{prefix}_missing_required_fields:{','.join(missing_fields)}",)
 
 
 def _validate_string_list_field(
@@ -1494,6 +1501,8 @@ def _sorted_unique(values: Sequence[str]) -> tuple[str, ...]:
 
 __all__ = [
     "ReplayDownloadEvidenceBundle",
+    "build_replay_download_body_decision",
+    "diagnose_replay_blob",
     "load_replay_download_fixtures",
     "validate_replay_download_fixtures",
 ]

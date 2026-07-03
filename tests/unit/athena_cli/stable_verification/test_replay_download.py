@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from athena_cli.stable_verification import replay_download
 from athena_cli.stable_verification.models import (
     ReplayBlobAttachmentRecord,
     ReplayBlobDiagnosticClassification,
@@ -94,12 +96,28 @@ def test_load_replay_download_fixtures_preserves_sanitized_contract_fields() -> 
     assert branch_by_name["success"].selected_body_byte_size == 90584
     assert branch_by_name["success"].selected_safe_body_sha256 is None
     assert branch_by_name["auth_failure"].readiness == "implementation_ready"
-    assert branch_by_name["missing_replay"].selected_response_status == 404
     assert branch_by_name["hidden_score"].selected_body_kind == "empty_http_exception"
     assert branch_by_name["storage_missing"].readiness == "implementation_ready"
     assert branch_by_name["malformed_score_id"].readiness == "unresolved"
-    assert branch_by_name["malformed_mode"].status_label == "未確認"
+    assert branch_by_name["malformed_mode"].status_label == "unconfirmed"
     assert branch_by_name["unknown_field"].blocker == "no_target_or_reference_evidence"
+
+
+def test_replay_download_public_exports_include_diagnostic_helpers() -> None:
+    assert "build_replay_download_body_decision" in replay_download.__all__
+    assert "diagnose_replay_blob" in replay_download.__all__
+
+
+def test_load_replay_download_fixtures_keeps_missing_replay_unresolved() -> None:
+    bundle = load_replay_download_fixtures(FIXTURE_DIR)
+    branch_by_name = {branch.branch: branch for branch in bundle.response_contract_branches}
+    missing_replay = branch_by_name["missing_replay"]
+
+    assert missing_replay.readiness == "unresolved"
+    assert missing_replay.selected_response_status is None
+    assert missing_replay.selected_body_kind is None
+    assert missing_replay.blocker == "conflicting_reference_evidence"
+    assert "reference_responses:lets_primary_missing_replay" in missing_replay.evidence_sources
 
 
 def test_load_replay_download_fixtures_preserves_body_decision_contract() -> None:
@@ -385,6 +403,35 @@ def test_validate_replay_download_fixtures_rejects_raw_values_in_expected_fields
     assert "content-type: zip" not in failure_messages
 
 
+def test_validate_replay_download_fixtures_rejects_committed_body_digests(
+    tmp_path: Path,
+) -> None:
+    fixture_dir = tmp_path / "replay_download"
+    _ = shutil.copytree(FIXTURE_DIR, fixture_dir)
+
+    response_metadata = _read_json_object(fixture_dir / "target_client_response_metadata.json")
+    first_capture = _first_json_mapping(response_metadata["captures"])
+    first_capture["safe_body_sha256"] = "f" * 64
+    _write_json(fixture_dir / "target_client_response_metadata.json", response_metadata)
+
+    response_contract = _read_json_object(fixture_dir / "response_contract.json")
+    first_branch = _first_json_mapping(response_contract["branches"])
+    first_branch["selected_safe_body_sha256"] = "e" * 64
+    _write_json(fixture_dir / "response_contract.json", response_contract)
+
+    results = validate_replay_download_fixtures(load_replay_download_fixtures(fixture_dir))
+    failure_messages = "\n".join(
+        result.diagnostic_summary.message
+        for result in results
+        if result.status is VerificationStatus.FAIL
+    )
+
+    assert "committed_safe_body_sha256" in failure_messages
+    assert "committed_selected_safe_body_sha256" in failure_messages
+    assert "f" * 64 not in failure_messages
+    assert "e" * 64 not in failure_messages
+
+
 def test_validate_replay_download_fixtures_rejects_incomplete_route_contract(
     tmp_path: Path,
 ) -> None:
@@ -494,7 +541,10 @@ def test_validate_replay_download_fixtures_rejects_incomplete_route_contract(
         if result.status is VerificationStatus.FAIL
     )
 
-    assert "route_contract_missing_required_fields:3" in failure_messages
+    assert (
+        "route_contract_missing_required_fields:"
+        "alias_policy,primary_route_classification,route_evidence_source"
+    ) in failure_messages
     assert "route_contract_evidence_fixture_names_must_be_string_list" in failure_messages
 
 
@@ -653,6 +703,39 @@ async def test_diagnose_replay_blob_distinguishes_missing_storage_object() -> No
 
 
 @pytest.mark.asyncio
+async def test_diagnose_replay_blob_treats_storage_read_error_as_missing_object() -> None:
+    result = await diagnose_replay_blob(
+        ReplayBlobDiagnosticInput(score_id=42),
+        score_lookup=_ScoreLookup(score_ids=frozenset((42,))),
+        replay_attachment_lookup=_ReplayAttachmentLookup(
+            attachments={
+                42: ReplayBlobAttachmentRecord(score_id=42, blob_id=7),
+            }
+        ),
+        blob_metadata_lookup=_BlobMetadataLookup(
+            blobs={
+                7: ReplayBlobMetadataRecord(
+                    blob_id=7,
+                    sha256="a" * 64,
+                    byte_size=12,
+                    storage_key="sha256/read-error",
+                ),
+            }
+        ),
+        blob_object_reader=_BlobObjectReader(
+            objects={"sha256/read-error": b"stored replay payload"},
+            read_failures=frozenset(("sha256/read-error",)),
+        ),
+    )
+
+    assert result.storage_object_found is False
+    assert result.observed_sha256 is None
+    assert result.observed_byte_size is None
+    assert result.classification is ReplayBlobDiagnosticClassification.MISSING_STORAGE_OBJECT
+    assert "sha256/read-error" not in result.diagnostic_summary.message
+
+
+@pytest.mark.asyncio
 async def test_diagnose_replay_blob_distinguishes_hash_or_size_mismatch() -> None:
     stored_body = b"stored replay payload"
 
@@ -732,7 +815,7 @@ def _write_valid_response_contract(fixture_dir: Path) -> None:
             "branches": [
                 {
                     "branch": "success",
-                    "status_label": "未確認",
+                    "status_label": "unconfirmed",
                     "readiness": "blocked",
                     "selected_response_status": 200,
                     "selected_header_keys": ["content-type"],
@@ -750,6 +833,22 @@ def _write_valid_response_contract(fixture_dir: Path) -> None:
 
 def _write_json(path: Path, document: object) -> None:
     _ = path.write_text(json.dumps(document), encoding="utf-8")
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    value = cast("object", json.loads(path.read_text(encoding="utf-8")))
+    assert isinstance(value, dict)
+
+    return cast("dict[str, object]", value)
+
+
+def _first_json_mapping(value: object) -> dict[str, object]:
+    assert isinstance(value, list)
+    items = cast("list[object]", value)
+    first_item = items[0]
+    assert isinstance(first_item, dict)
+
+    return cast("dict[str, object]", first_item)
 
 
 @dataclass(slots=True)
@@ -782,11 +881,15 @@ class _BlobMetadataLookup:
 @dataclass(slots=True)
 class _BlobObjectReader:
     objects: dict[str, bytes] = field(default_factory=dict)
+    read_failures: frozenset[str] = frozenset()
 
     async def exists(self, storage_key: str) -> bool:
         return storage_key in self.objects
 
     async def open_read(self, storage_key: str) -> AsyncIterator[bytes]:
+        if storage_key in self.read_failures:
+            raise OSError(f"backend read failed for {storage_key}")
+
         payload = self.objects[storage_key]
         midpoint = len(payload) // 2
 

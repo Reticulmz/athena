@@ -237,7 +237,7 @@ graph TB
 
 - Route path、method、query key set、auth field presence は target traffic evidence 必須。
 - Response branches は target traffic または reference evidence を許可する。
-- Unresolved branch は `未確認` として docs に残し、実装 ready と扱わない。
+- Unresolved branch は `unconfirmed` として docs に残し、実装 ready と扱わない。
 - Reference-only alias は current target-client required route に昇格しない。
 
 **Contracts**: Service [ ] / API [ ] / Event [ ] / Batch [ ] / State [x]
@@ -475,7 +475,7 @@ Forbidden content:
 ### Error Strategy
 
 - Missing target traffic route/auth evidence blocks #36.
-- Unresolved response branches remain `未確認` and are not silently converted into defaults.
+- Unresolved response branches remain `unconfirmed` and are not silently converted into defaults.
 - Fixture redaction failure is a test failure.
 - Blob diagnostic storage mismatch is not treated as download body format mismatch.
 
