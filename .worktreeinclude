@@ -5,3 +5,4 @@
 .env.test
 nginx.dev.conf
 certs/
+cloudflared/config.yml
