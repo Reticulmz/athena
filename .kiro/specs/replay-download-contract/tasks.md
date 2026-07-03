@@ -7,7 +7,7 @@
   - 完了時には unit tests で replay download evidence model が secret-like values を repr / report に出さないことを確認できる
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 1.2 Sanitized fixture schema と validator を追加する
+- [x] 1.2 Sanitized fixture schema と validator を追加する
   - Target client family、build / `osuver` observation status、method、path、query key set、auth field category、response status、header key set、body kind、safe hash、byte size を fixture で表現する
   - Raw query values、credential-like values、raw replay bytes、complete `.osr` bytes、HAR archive が fixture に含まれる場合は validation failure にする
   - 完了時には fixture validator tests が valid fixture を pass、secret-containing fixture を fail として確認できる
