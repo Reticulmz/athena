@@ -63,7 +63,7 @@
   - _Requirements: 8.3, 8.4, 8.5_
 
 - [ ] 5. Validation と品質確認を行う
-- [ ] 5.1 Fixture / diagnostic / docs の regression tests を通す
+- [x] 5.1 Fixture / diagnostic / docs の regression tests を通す
   - Fixture validator tests、redaction tests、reference branch tests、body decision tests、diagnostic output tests を実行する
   - Existing stable verification catalog が replay download surface を known gap / evidence surface として扱うことを確認する
   - 完了時には replay download fixture と diagnostic が raw secret / raw replay を出さないことを test output で確認できる
