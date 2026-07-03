@@ -1,7 +1,7 @@
 # 実装計画
 
 - [ ] 1. Replay download evidence の基盤を用意する
-- [ ] 1.1 Replay download を stable verification surface として扱えるようにする
+- [x] 1.1 Replay download を stable verification surface として扱えるようにする
   - Replay download surface、sanitized fixture、response branch、body decision、blob diagnostic result を同じ verification 語彙で表現する
   - Password、password hash、session token、raw credential、raw replay、complete `.osr` bytes を reportable model から除外する
   - 完了時には unit tests で replay download evidence model が secret-like values を repr / report に出さないことを確認できる

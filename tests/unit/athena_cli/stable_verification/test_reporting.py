@@ -64,7 +64,9 @@ def test_reporter_redacts_secret_values_from_text_and_json() -> None:
             "password" + "=plain",
             "password_hash" + "=hash",
             "session_token" + "=session-token",
+            "raw_credential" + "=raw-credential",
             "raw_replay" + "=raw-bytes",
+            "complete_osr_bytes" + "=complete-osr-bytes",
             "credential" + "=secret",
         )
     )
@@ -78,14 +80,20 @@ def test_reporter_redacts_secret_values_from_text_and_json() -> None:
     assert "plain" not in text_output
     assert "password_hash=hash" not in text_output
     assert "session-token" not in text_output
+    assert "raw-credential" not in text_output
     assert "raw-bytes" not in text_output
+    assert "complete-osr-bytes" not in text_output
     assert "secret" not in text_output
     assert "plain" not in json_output
     assert "password_hash=hash" not in json_output
     assert "session-token" not in json_output
+    assert "raw-credential" not in json_output
     assert "raw-bytes" not in json_output
+    assert "complete-osr-bytes" not in json_output
     assert "secret" not in json_output
     assert redact_text("password" + "=plain") == "password" + "=<redacted>"
+    assert redact_text("raw_credential" + "=raw") == "raw_credential" + "=<redacted>"
+    assert redact_text("complete_osr_bytes" + "=raw") == "complete_osr_bytes" + "=<redacted>"
 
 
 def _run_result(diagnostic: DiagnosticSummary) -> VerificationRunResult:

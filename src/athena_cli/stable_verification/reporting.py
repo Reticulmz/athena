@@ -13,7 +13,17 @@ if TYPE_CHECKING:
 
 
 _SECRET_ASSIGNMENT = re.compile(
-    r"\b(password(?:_hash)?|session_token|raw_replay|credential|token)=([^,\s]+)",
+    (
+        r"\b("
+        r"password(?:_hash)?"
+        r"|session_token"
+        r"|raw_credential"
+        r"|raw_replay"
+        r"|complete_osr_bytes"
+        r"|credential"
+        r"|token"
+        r")=([^,\s]+)"
+    ),
     flags=re.IGNORECASE,
 )
 

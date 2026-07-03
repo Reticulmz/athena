@@ -62,6 +62,7 @@ def create_stable_verification_runner(target: StableTarget) -> StableVerificatio
             StableSurface.CHAT: _catalog_only_executor(StableSurface.CHAT),
             StableSurface.GETSCORES: _execute_getscores_verification,
             StableSurface.SCORE_SUBMIT: _execute_score_submit_verification,
+            StableSurface.REPLAY_DOWNLOAD: _catalog_only_executor(StableSurface.REPLAY_DOWNLOAD),
         }
     )
 

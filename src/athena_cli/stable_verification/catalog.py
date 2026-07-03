@@ -48,6 +48,12 @@ _SURFACE_INVENTORY: tuple[SurfaceInventoryEntry, ...] = (
         scope=SurfaceScope.IN_SCOPE,
         description="Stable modular score submission endpoint and chart response.",
     ),
+    SurfaceInventoryEntry(
+        surface=StableSurface.REPLAY_DOWNLOAD,
+        implemented=False,
+        scope=SurfaceScope.IN_SCOPE,
+        description="Stable replay download endpoint contract and evidence fixtures.",
+    ),
 )
 
 _EVIDENCE: tuple[EvidenceEntry, ...] = (
@@ -114,6 +120,35 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         reference="tests/integration/transports/web_legacy/test_score_submit_e2e.py",
         purpose="score submit endpoint workflow and response compatibility",
     ),
+    EvidenceEntry(
+        surface=StableSurface.REPLAY_DOWNLOAD,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        reference=(
+            "tests/fixtures/stable_compatibility/replay_download/"
+            "target_client_request_metadata.json"
+        ),
+        purpose="target stable client replay download route and auth metadata",
+    ),
+    EvidenceEntry(
+        surface=StableSurface.REPLAY_DOWNLOAD,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        reference=(
+            "tests/fixtures/stable_compatibility/replay_download/"
+            "target_client_response_metadata.json"
+        ),
+        purpose="target stable client replay download response metadata",
+    ),
+    EvidenceEntry(
+        surface=StableSurface.REPLAY_DOWNLOAD,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        reference=(
+            "tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json"
+        ),
+        purpose="replay download body assembly decision metadata",
+    ),
 )
 
 _GAPS: tuple[EvidenceGap, ...] = (
@@ -128,6 +163,15 @@ _GAPS: tuple[EvidenceGap, ...] = (
         status=VerificationStatus.KNOWN_GAP,
         summary="rank and user stat fields depend on user-stats and leaderboard projections",
         owner="user-stats, beatmap-leaderboards",
+    ),
+    EvidenceGap(
+        surface=StableSurface.REPLAY_DOWNLOAD,
+        status=VerificationStatus.KNOWN_GAP,
+        summary=(
+            "endpoint implementation, reference branch audit, blob diagnostic, "
+            "and body assembly decision remain pending"
+        ),
+        owner="replay-download-contract",
     ),
 )
 
