@@ -1,0 +1,92 @@
+{
+  "schema": "athena.stable_compatibility.replay_download.target_client_request_metadata.v1",
+  "secret_policy": "metadata-only",
+  "raw_artifact_committed": false,
+  "target_route_contract": {
+    "primary_route": "/web/osu-getreplay.php",
+    "primary_route_observed_in_target_client_traffic": true,
+    "primary_route_classification": "primary_target_client_route",
+    "alias_route": "/web/replays/<id>",
+    "alias_route_observed_in_target_client_traffic": false,
+    "alias_policy": "candidate_only_reference_backed",
+    "route_evidence_source": "target_client_traffic",
+    "route_evidence_fixture_names": [
+      "local_athena_stable_replay_download_404",
+      "official_bancho_stable_replay_download_200"
+    ]
+  },
+  "captures": [
+    {
+      "name": "local_athena_stable_replay_download_404",
+      "source": "user_provided_local_capture",
+      "raw_artifact": "local-only",
+      "target_client_family": "osu_stable",
+      "target_build_observed": false,
+      "target_build": null,
+      "target_build_note": "not observed in replay download request",
+      "osuver_observed": false,
+      "osuver": null,
+      "osuver_note": "not observed in replay download request",
+      "captured_at": "2026-07-03T06:18:07Z",
+      "captured_at_source": "raw artifact file mtime",
+      "workflow_entrance": "replay_download",
+      "route_classification": "primary_target_client_route",
+      "target_route_observed": true,
+      "alias_routes_observed": [],
+      "method": "GET",
+      "path": "/web/osu-getreplay.php",
+      "query_keys": ["c", "h", "m", "u"],
+      "query_values_committed": false,
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "request_header_keys_observed": ["host", "user-agent"],
+      "user_agent": "osu!"
+    },
+    {
+      "name": "official_bancho_stable_replay_download_200",
+      "source": "user_provided_official_bancho_capture",
+      "raw_artifact": "local-only",
+      "target_client_family": "osu_stable",
+      "target_build_observed": false,
+      "target_build": null,
+      "target_build_note": "not observed in replay download request",
+      "osuver_observed": false,
+      "osuver": null,
+      "osuver_note": "not observed in replay download request",
+      "captured_at": "2026-07-03T06:26:38Z",
+      "captured_at_source": "raw artifact file mtime",
+      "workflow_entrance": "replay_download",
+      "route_classification": "primary_target_client_route",
+      "target_route_observed": true,
+      "alias_routes_observed": [],
+      "method": "GET",
+      "path": "/web/osu-getreplay.php",
+      "query_keys": ["c", "h", "m", "u"],
+      "query_values_committed": false,
+      "auth_fields": [
+        {
+          "name": "h",
+          "category": "redacted_auth_proof",
+          "value_committed": false
+        },
+        {
+          "name": "u",
+          "category": "redacted_user_identity",
+          "value_committed": false
+        }
+      ],
+      "request_header_keys_observed": ["host", "user-agent"],
+      "user_agent": "osu!"
+    }
+  ]
+}

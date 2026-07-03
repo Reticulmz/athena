@@ -590,7 +590,7 @@ not merge their body policy into the legacy web audit.
 | Modern score submit selector | `/web/osu-submit-modular-selector.php` | Replay storage, stat projection, and worker durability remain score submission behavior inputs. |
 | Legacy score submit aliases | `/web/osu-submit-modular.php`, `/web/osu-submit.php`, `/web/osu-submit-new.php` | Modern selector parsing and response mapping must not be reused for aliases without per-path evidence. |
 | Session candidate | `/web/osu-session.php` | `bancho.py` lists the route as unhandled; keep it as a grouped-row candidate until a Reference Route Inventory exact row or traffic evidence is found. |
-| Replay download PHP route | `/web/osu-getreplay.php` | `/web/replays/{id}` is a non-PHP replay download alias from `lets`. |
+| Replay download PHP route | `/web/osu-getreplay.php` | Target captures classify this as `primary_target_client_route`; `/web/replays/{id}` is a non-PHP replay download alias from `lets` with policy `candidate_only_reference_backed`. |
 | Update check PHP route | `/web/check-updates.php` | `/release/update*`, root `/update*`, `/patches.php`, release file, filter, and localisation routes remain release-update context. |
 | osu!direct search and set lookup | `/web/osu-search.php`, `/web/osu-search-set.php` | `/web/maps/{query}`, `/d/*`, `/s/*`, `/bss/*`, `/osu/*`, and download host aliases remain file/download context. |
 | Legacy beatmap info | `/web/osu-getbeatmapinfo.php` | Bancho packet 68/69 and file delivery behavior remain separate compatibility surfaces. |
@@ -1026,8 +1026,10 @@ Task 2.3 evidence note:
 
 Endpoint candidates:
 
-- `/web/osu-getreplay.php`
-- `/web/replays/<id>` in `lets`
+- `/web/osu-getreplay.php`: target traffic observed;
+  `primary_target_client_route`.
+- `/web/replays/<id>` in `lets`: reference-backed alias only;
+  `candidate_only_reference_backed`.
 
 Current Athena behavior:
 
@@ -1035,25 +1037,57 @@ Current Athena behavior:
 
 Required processing:
 
-1. Authenticate if required by client route.
-2. Parse score id from `c` and mode from `m`.
-3. Resolve score id to a visible score and replay attachment.
-4. Return raw replay bytes with a 200 response when present.
-5. Return the reference-compatible missing replay status. `deck` returns 404
-   for missing, hidden, or storage-missing replays.
-6. When authenticated, update latest activity and replay-view counters with a
-   cooldown so repeated self or duplicate views are not counted.
+1. Accept `GET /web/osu-getreplay.php` with query keys `c`, `h`, `m`, and
+   `u`.
+2. Authenticate using the `h` auth proof and `u` user identity fields.
+3. Parse score id from `c` and mode from `m`.
+4. Resolve score id to a visible score, replay attachment, blob metadata, and
+   storage object.
+5. Return target-client-compatible replay download bytes with a 200 response.
+   Direct stored blob bytes are not implementation-ready while blocker
+   `target_body_validation_requires_local_raw_blob_artifact` remains.
+6. If blob integrity passes but target body compatibility fails, assemble the
+   replay download response body instead of returning blob bytes directly.
+7. Return the reference-compatible missing replay status. `bancho.py` and
+   `deck` use 404 for missing replay; `deck` uses 404 for hidden or
+   storage-missing replay.
 
-Task 2.2 `/web/osu-getreplay.php` evidence note:
+Replay view counts and latest activity belong to the adjacent #37 workflow and
+do not make the #36 response contract implementation-ready.
+
+Replay download evidence note:
 
 | Evidence field | Evidence state | Evidence note |
 | --- | --- | --- |
-| Auth method | `unconfirmed` | The audit has not confirmed whether current target builds require credentials for `/web/osu-getreplay.php`. |
-| Required request params | `unconfirmed` | Expected replay lookup params such as score id `c` and mode `m` are documented as required processing, but exact current-client request shape remains unconfirmed. |
-| Success response | `unconfirmed` | Replay bytes are the expected behavior, but Athena has no route and no golden success fixture for `/web/osu-getreplay.php`. |
-| Auth failure response | `unconfirmed` | No reference-backed auth failure sentinel has been selected for Athena. |
-| Domain/data-not-found response | `unconfirmed` | `deck` returns 404 for missing, hidden, or storage-missing replays, but Athena needs target-path evidence before locking this contract. |
-| Malformed request response | `unconfirmed` | Malformed score id, mode, and missing parameter behavior has no fixture coverage. |
+| Primary route | `confirmed` | Target captures confirm `GET /web/osu-getreplay.php`; fixture: `tests/fixtures/stable_compatibility/replay_download/target_client_request_metadata.json`; classification: `primary_target_client_route`. |
+| Alias route | `candidate` | `/web/replays/<id>` is `candidate_only_reference_backed` from `lets`; target captures did not observe it. |
+| Auth and request fields | `confirmed` | Target captures carry query keys `c`, `h`, `m`, `u`; auth-like fields are `h` (`redacted_auth_proof`) and `u` (`redacted_user_identity`). Raw values are not committed. |
+| Auth failure response | `implementation_ready` | `bancho.py` supplies reference-backed 401 with `empty_body`; fixture: `response_contract.json` branch `auth_failure`. |
+| Success response | `blocked` | Target official capture confirms status 200, `content-disposition`/`content-type`, body kind `lzma_compressed_replay_payload`, byte size 90584; direct blob bytes are blocked by `target_body_validation_requires_local_raw_blob_artifact`. |
+| Body assembly decision | `blocked` | Fixture: `body_assembly_decision.json`; `download_body_strategy=blocked`; local raw blob and parser result are not committed. If blob integrity passes but target body compatibility fails, #36 must use `assemble_download_body`. |
+| Domain/data-not-found response | `unresolved` | Missing replay remains blocked by conflicting reference evidence: `bancho.py` and `deck` use 404, while `lets` returns empty 200. Hidden and storage-missing select 404 with `empty_http_exception` from `deck`; fixture: `response_contract.json`. |
+| Malformed request response | `unresolved` | Missing/malformed `c`, missing/malformed `m`, and unknown field behavior remain `unconfirmed` with blocker `no_target_or_reference_evidence`. |
+
+Issue #36 handoff:
+
+| Field | Handoff |
+| --- | --- |
+| Readiness | Blocked until `target_body_validation_requires_local_raw_blob_artifact` is resolved. |
+| Confirmed route | `GET /web/osu-getreplay.php`, `primary_target_client_route`. |
+| Alias boundary | `/web/replays/<id>` is `candidate_only_reference_backed` and not required for #36. |
+| Confirmed request/auth | Query keys `c`, `h`, `m`, `u`; auth fields `h` and `u`; raw values are not committed. |
+| Implementation-ready branches | Auth failure 401 `empty_body`; hidden score 404 `empty_http_exception`; storage-missing 404 `empty_http_exception`. |
+| Blocked / unresolved branches | Success 200 body is blocked by `target_body_validation_requires_local_raw_blob_artifact`; missing replay is unresolved because `bancho.py`/`deck` 404 conflicts with `lets` empty 200; missing/malformed `c`, missing/malformed `m`, and unknown field remain `unconfirmed` with blocker `no_target_or_reference_evidence`. |
+| Body decision | `body_assembly_decision.json`: `download_body_strategy=blocked`. If local validation finds blob integrity pass but target body incompatible, implement `assemble_download_body`. |
+| Sanitized fixtures | `tests/fixtures/stable_compatibility/replay_download/target_client_request_metadata.json`, `tests/fixtures/stable_compatibility/replay_download/target_client_response_metadata.json`, `tests/fixtures/stable_compatibility/replay_download/reference_responses.json`, `tests/fixtures/stable_compatibility/replay_download/response_contract.json`, `tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json`. |
+
+Issue #37 boundary:
+
+- Replay view count and latest activity are not #36 readiness criteria.
+- #37 may start only after #36 defines the response path it observes.
+- #37 must not change replay download response bytes, status, or headers except
+  where later evidence proves the state update changes client-visible download
+  behavior.
 
 ### `/web/osu-session.php`
 
@@ -1581,7 +1615,7 @@ separate issue.
 | Bancho reachability | No new route work for the current empty-body route unless traffic proves pre-login validation is required. | Empty-body compatibility, country-code/IP response, and malformed-query fixtures. | Pre-login validation, country-code, and client retry behavior probes. |
 | Modern getscores | Complete leaderboard row projections and remaining branch behavior. | Auth failure, unavailable, update-required, row/header, malformed identity, friends, and country fixtures. | Real-client probes for target leaderboard modes and selection branches. |
 | Modern score submit selector | Complete rank/stat/achievement projection and post-submit durability gaps. | Auth sentinel, multipart variant, malformed encrypted payload, duplicate, and storage failure fixtures. | Real-client probes for submit success, failure, and retry interpretation. |
-| Replay download PHP route | Add `/web/osu-getreplay.php` only after target path and auth contract are confirmed. | Replay bytes, auth failure, missing replay, malformed score id, and mode fixtures. | Confirm current client path choice between `/web/osu-getreplay.php` and adjacent replay aliases. |
+| Replay download PHP route | Add `/web/osu-getreplay.php` using confirmed target path `/web/osu-getreplay.php`, query keys `c`/`h`/`m`/`u`, and auth fields `h`/`u`; do not return direct blob bytes for success while `target_body_validation_requires_local_raw_blob_artifact` remains. | Local target-body validation artifact for success body, assembly fixture if direct bytes fail, missing-replay conflict resolution, and malformed `c`/`m`/unknown-field branch fixtures. Existing fixture-backed branches: auth failure 401, hidden 404, storage-missing 404. | Primary path choice is confirmed; optional probes may capture target build/`osuver` and verify that `/web/replays/<id>` remains `candidate_only_reference_backed`. |
 | Session candidate | Add a route only if exact reference row or traffic proves the surface is still called; preserve the `bancho.py` unhandled-route trace as a reference lead. | Auth, params, success body, failure sentinel, and malformed request evidence. | Current target-client call confirmation for `/web/osu-session.php`. |
 | Legacy getscores aliases | Add alias routes only after per-path response variants are confirmed. | Per-version row shape, auth failure, unavailable/update sentinels, not-found, and malformed request fixtures. | Older-client or target-client probes proving which aliases Athena should support. |
 | Legacy score submit aliases | Add alias routes only after per-path payload and response contracts are confirmed. | Payload shape, success body, retryable/terminal failure sentinel, auth failure, and malformed payload fixtures. | Older-client or target-client probes proving which submit aliases remain needed. |

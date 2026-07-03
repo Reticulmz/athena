@@ -210,6 +210,28 @@ def test_stable_verify_reports_unavailable_local_target(
     assert "GET /web/osu-osz2-getscores.php unavailable" in result.output
 
 
+def test_stable_verify_replay_download_surface_is_known_gap() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "dev",
+            "stable-verify",
+            "--env",
+            "test",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--host",
+            "athena.localhost",
+            "--surface",
+            "replay_download",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "replay_download skip headless_probe optional" in result.output
+    assert "stable-verify live probe is not configured" in result.output
+
+
 def test_stable_verify_json_output_contains_surface_result_schema(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

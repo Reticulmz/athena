@@ -1,0 +1,155 @@
+{
+  "schema": "athena.stable_compatibility.replay_download.response_contract.v1",
+  "secret_policy": "metadata-only",
+  "raw_artifact_committed": false,
+  "branches": [
+    {
+      "branch": "success",
+      "status_label": "unconfirmed",
+      "readiness": "blocked",
+      "selected_response_status": 200,
+      "selected_header_keys": ["content-disposition", "content-type"],
+      "selected_body_kind": "lzma_compressed_replay_payload",
+      "selected_body_byte_size": 90584,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": [
+        "target_client_response_metadata:official_bancho_stable_replay_download_200",
+        "reference_responses:bancho_py_success",
+        "reference_responses:deck_success"
+      ],
+      "blocker": "target_body_validation_requires_local_raw_blob_artifact",
+      "notes": [
+        "Target traffic confirms a 200 LZMA-compressed replay payload response, but direct blob bytes are not implementation-ready.",
+        "Body decision remains blocked until local raw blob bytes are validated against the target body parser.",
+        "Reference implementations disagree on full .osr path versus raw replay payload shape."
+      ]
+    },
+    {
+      "branch": "auth_failure",
+      "status_label": "confirmed",
+      "readiness": "implementation_ready",
+      "selected_response_status": 401,
+      "selected_header_keys": [],
+      "selected_body_kind": "empty_body",
+      "selected_body_byte_size": 0,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": ["reference_responses:bancho_py_auth_failure"],
+      "blocker": null,
+      "notes": [
+        "Target request confirms auth fields h and u are present.",
+        "bancho.py supplies reference-backed 401 empty response evidence."
+      ]
+    },
+    {
+      "branch": "missing_replay",
+      "status_label": "unconfirmed",
+      "readiness": "unresolved",
+      "selected_response_status": null,
+      "selected_header_keys": [],
+      "selected_body_kind": null,
+      "selected_body_byte_size": null,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": [
+        "reference_responses:bancho_py_missing_replay",
+        "reference_responses:deck_missing_replay",
+        "reference_responses:lets_primary_missing_replay"
+      ],
+      "blocker": "conflicting_reference_evidence",
+      "notes": [
+        "bancho.py and deck use 404 for missing replay.",
+        "lets primary route returns empty 200 for missing raw replay, so no response contract is selected yet."
+      ]
+    },
+    {
+      "branch": "hidden_score",
+      "status_label": "confirmed",
+      "readiness": "implementation_ready",
+      "selected_response_status": 404,
+      "selected_header_keys": [],
+      "selected_body_kind": "empty_http_exception",
+      "selected_body_byte_size": null,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": ["reference_responses:deck_hidden_score"],
+      "blocker": null,
+      "notes": ["deck supplies reference-backed 404 for hidden score."]
+    },
+    {
+      "branch": "storage_missing",
+      "status_label": "confirmed",
+      "readiness": "implementation_ready",
+      "selected_response_status": 404,
+      "selected_header_keys": [],
+      "selected_body_kind": "empty_http_exception",
+      "selected_body_byte_size": null,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": ["reference_responses:deck_storage_missing"],
+      "blocker": null,
+      "notes": ["deck supplies reference-backed 404 for storage-missing replay."]
+    },
+    {
+      "branch": "missing_score_id",
+      "status_label": "unconfirmed",
+      "readiness": "unresolved",
+      "selected_response_status": null,
+      "selected_header_keys": [],
+      "selected_body_kind": null,
+      "selected_body_byte_size": null,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": [],
+      "blocker": "no_target_or_reference_evidence",
+      "notes": ["No target traffic or audited reference response for missing c parameter."]
+    },
+    {
+      "branch": "malformed_score_id",
+      "status_label": "unconfirmed",
+      "readiness": "unresolved",
+      "selected_response_status": null,
+      "selected_header_keys": [],
+      "selected_body_kind": null,
+      "selected_body_byte_size": null,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": [],
+      "blocker": "no_target_or_reference_evidence",
+      "notes": ["No target traffic or audited reference response for malformed c parameter."]
+    },
+    {
+      "branch": "missing_mode",
+      "status_label": "unconfirmed",
+      "readiness": "unresolved",
+      "selected_response_status": null,
+      "selected_header_keys": [],
+      "selected_body_kind": null,
+      "selected_body_byte_size": null,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": [],
+      "blocker": "no_target_or_reference_evidence",
+      "notes": ["No target traffic or audited reference response for missing m parameter."]
+    },
+    {
+      "branch": "malformed_mode",
+      "status_label": "unconfirmed",
+      "readiness": "unresolved",
+      "selected_response_status": null,
+      "selected_header_keys": [],
+      "selected_body_kind": null,
+      "selected_body_byte_size": null,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": [],
+      "blocker": "no_target_or_reference_evidence",
+      "notes": ["No target traffic or audited reference response for malformed m parameter."]
+    },
+    {
+      "branch": "unknown_field",
+      "status_label": "unconfirmed",
+      "readiness": "unresolved",
+      "selected_response_status": null,
+      "selected_header_keys": [],
+      "selected_body_kind": null,
+      "selected_body_byte_size": null,
+      "selected_safe_body_sha256": null,
+      "evidence_sources": [],
+      "blocker": "no_target_or_reference_evidence",
+      "notes": ["No target traffic or audited reference response for unknown extra query fields."]
+    }
+  ]
+}

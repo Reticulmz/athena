@@ -27,6 +27,7 @@ def test_catalog_lists_all_required_stable_surfaces() -> None:
         StableSurface.CHAT,
         StableSurface.GETSCORES,
         StableSurface.SCORE_SUBMIT,
+        StableSurface.REPLAY_DOWNLOAD,
     }
 
 
@@ -34,7 +35,12 @@ def test_inventory_distinguishes_implemented_surface_scope() -> None:
     inventory = {entry.surface: entry for entry in list_surface_inventory()}
 
     assert set(inventory) == set(list_surfaces())
-    assert all(entry.implemented for entry in inventory.values())
+    assert all(
+        entry.implemented
+        for surface, entry in inventory.items()
+        if surface is not StableSurface.REPLAY_DOWNLOAD
+    )
+    assert inventory[StableSurface.REPLAY_DOWNLOAD].implemented is False
     assert all(entry.scope is SurfaceScope.IN_SCOPE for entry in inventory.values())
 
 
@@ -70,4 +76,20 @@ def test_catalog_reports_known_compatibility_gaps() -> None:
     assert {gap.surface for gap in gaps} >= {
         StableSurface.GETSCORES,
         StableSurface.SCORE_SUBMIT,
+        StableSurface.REPLAY_DOWNLOAD,
     }
+
+
+def test_replay_download_catalog_entries_are_known_gap_evidence_surface() -> None:
+    evidence = list_evidence(StableSurface.REPLAY_DOWNLOAD)
+    gaps = list_gaps(StableSurface.REPLAY_DOWNLOAD)
+
+    assert evidence
+    assert gaps
+    assert {entry.evidence_type for entry in evidence} == {
+        EvidenceType.AUTOMATED_TEST,
+        EvidenceType.GOLDEN_FIXTURE,
+    }
+    assert all(entry.scope is EvidenceScope.MANDATORY for entry in evidence)
+    assert all((PROJECT_ROOT / entry.reference).exists() for entry in evidence)
+    assert all(gap.status is VerificationStatus.KNOWN_GAP for gap in gaps)
