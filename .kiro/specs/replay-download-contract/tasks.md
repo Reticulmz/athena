@@ -36,7 +36,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 8.3, 8.4_
 
 - [ ] 3. Replay blob integrity と body assembly decision を確定する
-- [ ] 3.1 Replay Blob Diagnostic Procedure を実装または手順化する
+- [x] 3.1 Replay Blob Diagnostic Procedure を実装または手順化する
   - Score id から replay attachment、blob metadata、storage object existence、metadata size/hash、observed size/hash を照合できるようにする
   - Diagnostic output は raw replay bytes や credential-like values を含まない
   - 完了時には diagnostic tests または documented dry-run result で integrity pass、missing replay、missing blob metadata、missing storage object、hash/size mismatch を区別できる

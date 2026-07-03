@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import pytest
 
 from athena_cli.stable_verification.models import (
+    ReplayBlobAttachmentRecord,
+    ReplayBlobDiagnosticClassification,
+    ReplayBlobDiagnosticInput,
+    ReplayBlobMetadataRecord,
     StableSurface,
     VerificationStatus,
 )
 from athena_cli.stable_verification.replay_download import (
+    diagnose_replay_blob,
     load_replay_download_fixtures,
     validate_replay_download_fixtures,
 )
@@ -19,6 +29,9 @@ FIXTURE_DIR = (
     / "stable_compatibility"
     / "replay_download"
 )
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 def test_load_replay_download_fixtures_preserves_sanitized_contract_fields() -> None:
@@ -417,6 +430,165 @@ def test_validate_replay_download_fixtures_rejects_incomplete_route_contract(
     assert "route_contract_evidence_fixture_names_must_be_string_list" in failure_messages
 
 
+@pytest.mark.asyncio
+async def test_diagnose_replay_blob_reports_integrity_pass_without_raw_bytes() -> None:
+    replay_body = b"synthetic replay payload password=secret-value"
+    digest = hashlib.sha256(replay_body).hexdigest()
+
+    result = await diagnose_replay_blob(
+        ReplayBlobDiagnosticInput(score_id=42),
+        score_lookup=_ScoreLookup(score_ids=frozenset((42,))),
+        replay_attachment_lookup=_ReplayAttachmentLookup(
+            attachments={
+                42: ReplayBlobAttachmentRecord(score_id=42, blob_id=7),
+            }
+        ),
+        blob_metadata_lookup=_BlobMetadataLookup(
+            blobs={
+                7: ReplayBlobMetadataRecord(
+                    blob_id=7,
+                    sha256=digest,
+                    byte_size=len(replay_body),
+                    storage_key="sha256/example",
+                ),
+            }
+        ),
+        blob_object_reader=_BlobObjectReader(objects={"sha256/example": replay_body}),
+    )
+
+    assert result.score_found is True
+    assert result.replay_attachment_found is True
+    assert result.blob_found is True
+    assert result.storage_object_found is True
+    assert result.metadata_sha256 == digest
+    assert result.observed_sha256 == digest
+    assert result.metadata_byte_size == len(replay_body)
+    assert result.observed_byte_size == len(replay_body)
+    assert result.classification is ReplayBlobDiagnosticClassification.INTEGRITY_PASS
+    assert result.status is VerificationStatus.PASS
+    assert "synthetic replay payload" not in repr(result)
+    assert "secret-value" not in result.diagnostic_summary.message
+
+
+@pytest.mark.asyncio
+async def test_diagnose_replay_blob_distinguishes_missing_score() -> None:
+    result = await diagnose_replay_blob(
+        ReplayBlobDiagnosticInput(score_id=404),
+        score_lookup=_ScoreLookup(score_ids=frozenset()),
+        replay_attachment_lookup=_ReplayAttachmentLookup(),
+        blob_metadata_lookup=_BlobMetadataLookup(),
+        blob_object_reader=_BlobObjectReader(),
+    )
+
+    assert result.score_found is False
+    assert result.replay_attachment_found is False
+    assert result.blob_found is False
+    assert result.storage_object_found is False
+    assert result.classification is ReplayBlobDiagnosticClassification.MISSING_SCORE
+    assert result.status is VerificationStatus.UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_diagnose_replay_blob_distinguishes_missing_replay_attachment() -> None:
+    result = await diagnose_replay_blob(
+        ReplayBlobDiagnosticInput(score_id=42),
+        score_lookup=_ScoreLookup(score_ids=frozenset((42,))),
+        replay_attachment_lookup=_ReplayAttachmentLookup(),
+        blob_metadata_lookup=_BlobMetadataLookup(),
+        blob_object_reader=_BlobObjectReader(),
+    )
+
+    assert result.score_found is True
+    assert result.replay_attachment_found is False
+    assert result.classification is ReplayBlobDiagnosticClassification.MISSING_REPLAY
+    assert result.status is VerificationStatus.UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_diagnose_replay_blob_distinguishes_missing_blob_metadata() -> None:
+    result = await diagnose_replay_blob(
+        ReplayBlobDiagnosticInput(score_id=42),
+        score_lookup=_ScoreLookup(score_ids=frozenset((42,))),
+        replay_attachment_lookup=_ReplayAttachmentLookup(
+            attachments={
+                42: ReplayBlobAttachmentRecord(score_id=42, blob_id=7),
+            }
+        ),
+        blob_metadata_lookup=_BlobMetadataLookup(),
+        blob_object_reader=_BlobObjectReader(),
+    )
+
+    assert result.replay_attachment_found is True
+    assert result.blob_found is False
+    assert result.classification is ReplayBlobDiagnosticClassification.MISSING_BLOB_METADATA
+    assert result.status is VerificationStatus.UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_diagnose_replay_blob_distinguishes_missing_storage_object() -> None:
+    result = await diagnose_replay_blob(
+        ReplayBlobDiagnosticInput(score_id=42),
+        score_lookup=_ScoreLookup(score_ids=frozenset((42,))),
+        replay_attachment_lookup=_ReplayAttachmentLookup(
+            attachments={
+                42: ReplayBlobAttachmentRecord(score_id=42, blob_id=7),
+            }
+        ),
+        blob_metadata_lookup=_BlobMetadataLookup(
+            blobs={
+                7: ReplayBlobMetadataRecord(
+                    blob_id=7,
+                    sha256="a" * 64,
+                    byte_size=12,
+                    storage_key="sha256/missing",
+                ),
+            }
+        ),
+        blob_object_reader=_BlobObjectReader(),
+    )
+
+    assert result.blob_found is True
+    assert result.storage_object_found is False
+    assert result.metadata_sha256 == "a" * 64
+    assert result.observed_sha256 is None
+    assert result.metadata_byte_size == 12
+    assert result.observed_byte_size is None
+    assert result.classification is ReplayBlobDiagnosticClassification.MISSING_STORAGE_OBJECT
+    assert result.status is VerificationStatus.UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_diagnose_replay_blob_distinguishes_hash_or_size_mismatch() -> None:
+    stored_body = b"stored replay payload"
+
+    result = await diagnose_replay_blob(
+        ReplayBlobDiagnosticInput(score_id=42),
+        score_lookup=_ScoreLookup(score_ids=frozenset((42,))),
+        replay_attachment_lookup=_ReplayAttachmentLookup(
+            attachments={
+                42: ReplayBlobAttachmentRecord(score_id=42, blob_id=7),
+            }
+        ),
+        blob_metadata_lookup=_BlobMetadataLookup(
+            blobs={
+                7: ReplayBlobMetadataRecord(
+                    blob_id=7,
+                    sha256="b" * 64,
+                    byte_size=len(stored_body) + 1,
+                    storage_key="sha256/mismatch",
+                ),
+            }
+        ),
+        blob_object_reader=_BlobObjectReader(objects={"sha256/mismatch": stored_body}),
+    )
+
+    assert result.storage_object_found is True
+    assert result.observed_sha256 == hashlib.sha256(stored_body).hexdigest()
+    assert result.observed_byte_size == len(stored_body)
+    assert result.classification is ReplayBlobDiagnosticClassification.STORAGE_INTEGRITY_FAILURE
+    assert result.status is VerificationStatus.FAIL
+
+
 def _write_valid_reference_responses(fixture_dir: Path) -> None:
     _write_json(
         fixture_dir / "reference_responses.json",
@@ -483,3 +655,48 @@ def _write_valid_response_contract(fixture_dir: Path) -> None:
 
 def _write_json(path: Path, document: object) -> None:
     _ = path.write_text(json.dumps(document), encoding="utf-8")
+
+
+@dataclass(slots=True)
+class _ScoreLookup:
+    score_ids: frozenset[int]
+
+    async def get_by_id(self, score_id: int) -> object | None:
+        if score_id not in self.score_ids:
+            return None
+
+        return object()
+
+
+@dataclass(slots=True)
+class _ReplayAttachmentLookup:
+    attachments: dict[int, ReplayBlobAttachmentRecord] = field(default_factory=dict)
+
+    async def get_by_score_id(self, score_id: int) -> ReplayBlobAttachmentRecord | None:
+        return self.attachments.get(score_id)
+
+
+@dataclass(slots=True)
+class _BlobMetadataLookup:
+    blobs: dict[int, ReplayBlobMetadataRecord] = field(default_factory=dict)
+
+    async def get_by_id(self, blob_id: int) -> ReplayBlobMetadataRecord | None:
+        return self.blobs.get(blob_id)
+
+
+@dataclass(slots=True)
+class _BlobObjectReader:
+    objects: dict[str, bytes] = field(default_factory=dict)
+
+    async def exists(self, storage_key: str) -> bool:
+        return storage_key in self.objects
+
+    async def open_read(self, storage_key: str) -> AsyncIterator[bytes]:
+        payload = self.objects[storage_key]
+        midpoint = len(payload) // 2
+
+        async def chunks() -> AsyncIterator[bytes]:
+            yield payload[:midpoint]
+            yield payload[midpoint:]
+
+        return chunks()

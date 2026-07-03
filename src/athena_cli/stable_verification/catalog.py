@@ -163,6 +163,13 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         ),
         purpose="replay download body assembly decision metadata",
     ),
+    EvidenceEntry(
+        surface=StableSurface.REPLAY_DOWNLOAD,
+        evidence_type=EvidenceType.AUTOMATED_TEST,
+        scope=EvidenceScope.MANDATORY,
+        reference="tests/unit/athena_cli/stable_verification/test_replay_download.py",
+        purpose="replay blob diagnostic classification and redaction contract",
+    ),
 )
 
 _GAPS: tuple[EvidenceGap, ...] = (
@@ -182,7 +189,7 @@ _GAPS: tuple[EvidenceGap, ...] = (
         surface=StableSurface.REPLAY_DOWNLOAD,
         status=VerificationStatus.KNOWN_GAP,
         summary=(
-            "endpoint implementation, unresolved malformed branches, blob diagnostic, "
+            "endpoint implementation, unresolved malformed branches, local blob diagnostic run, "
             "and body assembly decision remain pending"
         ),
         owner="replay-download-contract",

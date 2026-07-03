@@ -43,6 +43,22 @@
   - Replay Blob Integrity Check と target-client-compatible body check は別物として扱う。
   - #35 は Replay Download Body Assembly Decision を成果物に含め、#36 が raw blob bytes を返すべきか body assembly を実装すべきかを明示する。
 
+### Replay Blob Diagnostic Procedure
+
+- **Context**: Replay blob の保存状態と download body format mismatch を混同しないため。
+- **Implementation Evidence**:
+  - `athena_cli.stable_verification.replay_download.diagnose_replay_blob`
+  - `tests/unit/athena_cli/stable_verification/test_replay_download.py`
+- **Findings**:
+  - Score existence、replay attachment existence、blob metadata existence、storage object existence、metadata size/hash と observed size/hash の照合を read-only protocol として固定した。
+  - Diagnostic result は `integrity_pass`、`missing_score`、`missing_replay`、`missing_blob_metadata`、`missing_storage_object`、`storage_integrity_failure` を区別する。
+  - Unit tests は integrity pass、missing replay、missing blob metadata、missing storage object、hash/size mismatch を確認している。
+- **Redaction**:
+  - Diagnostic summary は raw replay bytes、credential-like values、storage key、digest を出力しない。
+  - `ReplayBlobMetadataRecord` と `ReplayBlobDiagnosticResult` は digest と storage key を `repr` から除外する。
+- **Remaining Work**:
+  - Local target score に対する dry-run result と target-client-compatible body validation は 3.2 の body decision で扱う。
+
 ### User-provided replay download captures
 
 - **Context**: Target route/auth と本家 Bancho success response body の shape を確認するため。

@@ -282,6 +282,9 @@ def test_replay_download_reportable_models_exclude_secret_like_fields() -> None:
         "complete_osr_bytes",
     }
     reportable_model_types = (
+        models.ReplayBlobAttachmentRecord,
+        models.ReplayBlobDiagnosticInput,
+        models.ReplayBlobMetadataRecord,
         models.ReplayDownloadAuthField,
         models.ReplayDownloadTargetRouteContract,
         models.ReplayDownloadReferenceResponseEvidence,
@@ -296,3 +299,13 @@ def test_replay_download_reportable_models_exclude_secret_like_fields() -> None:
         field_names = {field.name for field in fields(model_type)}
 
         assert field_names.isdisjoint(forbidden_field_names)
+
+    metadata = models.ReplayBlobMetadataRecord(
+        blob_id=7,
+        sha256="a" * 64,
+        byte_size=42,
+        storage_key="sha256/password=secret-value",
+    )
+
+    assert "a" * 64 not in repr(metadata)
+    assert "secret-value" not in repr(metadata)

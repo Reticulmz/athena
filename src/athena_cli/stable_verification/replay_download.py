@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from athena_cli.stable_verification.models import (
     DiagnosticSummary,
     EvidenceScope,
     EvidenceType,
+    ReplayBlobAttachmentRecord,
+    ReplayBlobDiagnosticClassification,
+    ReplayBlobDiagnosticInput,
+    ReplayBlobDiagnosticResult,
+    ReplayBlobMetadataRecord,
     ReplayDownloadAuthField,
     ReplayDownloadReferenceResponseEvidence,
     ReplayDownloadResponseContractBranch,
@@ -208,6 +214,200 @@ class ReplayDownloadEvidenceBundle:
     body_assembly_decision: Mapping[str, object]
     target_route_contract: ReplayDownloadTargetRouteContract
     fixtures: Mapping[str, ReplayDownloadSanitizedFixture]
+
+
+class _ScoreLookup(Protocol):
+    async def get_by_id(self, score_id: int) -> object | None: ...
+
+
+class _ReplayAttachmentLookup(Protocol):
+    async def get_by_score_id(
+        self,
+        score_id: int,
+    ) -> ReplayBlobAttachmentRecord | None: ...
+
+
+class _BlobMetadataLookup(Protocol):
+    async def get_by_id(self, blob_id: int) -> ReplayBlobMetadataRecord | None: ...
+
+
+class _BlobObjectReader(Protocol):
+    async def exists(self, storage_key: str) -> bool: ...
+
+    async def open_read(self, storage_key: str) -> AsyncIterator[bytes]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _StorageObservation:
+    sha256: str
+    byte_size: int
+
+
+async def diagnose_replay_blob(
+    diagnostic_input: ReplayBlobDiagnosticInput,
+    *,
+    score_lookup: _ScoreLookup,
+    replay_attachment_lookup: _ReplayAttachmentLookup,
+    blob_metadata_lookup: _BlobMetadataLookup,
+    blob_object_reader: _BlobObjectReader,
+) -> ReplayBlobDiagnosticResult:
+    """Score id から replay blob integrity を report-safe に診断する.
+
+    Args:
+        diagnostic_input: 診断対象の score id.
+        score_lookup: Score existence を確認する read-only lookup.
+        replay_attachment_lookup: Score id から replay attachment を取得する lookup.
+        blob_metadata_lookup: Blob metadata id から metadata を取得する lookup.
+        blob_object_reader: Storage object existence と byte stream を読む backend.
+
+    Returns:
+        Replay attachment, blob metadata, storage object, size, SHA-256 の照合結果.
+
+    Raises:
+        なし.
+
+    Constraints:
+        Raw replay bytes, credential-like value, complete .osr bytes は出力しない.
+        Diagnostic summary には storage key や digest を含めない.
+    """
+
+    score = await score_lookup.get_by_id(diagnostic_input.score_id)
+    if score is None:
+        return _replay_blob_diagnostic_result(
+            classification=ReplayBlobDiagnosticClassification.MISSING_SCORE,
+            score_found=False,
+            replay_attachment_found=False,
+            blob_found=False,
+            storage_object_found=False,
+        )
+
+    attachment = await replay_attachment_lookup.get_by_score_id(diagnostic_input.score_id)
+    if attachment is None:
+        return _replay_blob_diagnostic_result(
+            classification=ReplayBlobDiagnosticClassification.MISSING_REPLAY,
+            score_found=True,
+            replay_attachment_found=False,
+            blob_found=False,
+            storage_object_found=False,
+        )
+
+    blob = await blob_metadata_lookup.get_by_id(attachment.blob_id)
+    if blob is None:
+        return _replay_blob_diagnostic_result(
+            classification=ReplayBlobDiagnosticClassification.MISSING_BLOB_METADATA,
+            score_found=True,
+            replay_attachment_found=True,
+            blob_found=False,
+            storage_object_found=False,
+        )
+
+    if not await blob_object_reader.exists(blob.storage_key):
+        return _replay_blob_diagnostic_result(
+            classification=ReplayBlobDiagnosticClassification.MISSING_STORAGE_OBJECT,
+            score_found=True,
+            replay_attachment_found=True,
+            blob_found=True,
+            storage_object_found=False,
+            metadata_sha256=blob.sha256,
+            metadata_byte_size=blob.byte_size,
+        )
+
+    observed = await _observe_storage_object(blob_object_reader, blob.storage_key)
+    if observed is None:
+        return _replay_blob_diagnostic_result(
+            classification=ReplayBlobDiagnosticClassification.MISSING_STORAGE_OBJECT,
+            score_found=True,
+            replay_attachment_found=True,
+            blob_found=True,
+            storage_object_found=False,
+            metadata_sha256=blob.sha256,
+            metadata_byte_size=blob.byte_size,
+        )
+
+    classification = (
+        ReplayBlobDiagnosticClassification.INTEGRITY_PASS
+        if blob.sha256 == observed.sha256 and blob.byte_size == observed.byte_size
+        else ReplayBlobDiagnosticClassification.STORAGE_INTEGRITY_FAILURE
+    )
+    return _replay_blob_diagnostic_result(
+        classification=classification,
+        score_found=True,
+        replay_attachment_found=True,
+        blob_found=True,
+        storage_object_found=True,
+        metadata_sha256=blob.sha256,
+        observed_sha256=observed.sha256,
+        metadata_byte_size=blob.byte_size,
+        observed_byte_size=observed.byte_size,
+    )
+
+
+async def _observe_storage_object(
+    blob_object_reader: _BlobObjectReader,
+    storage_key: str,
+) -> _StorageObservation | None:
+    digest_builder = hashlib.sha256()
+    byte_size = 0
+    try:
+        chunks = await blob_object_reader.open_read(storage_key)
+        async for chunk in chunks:
+            digest_builder.update(chunk)
+            byte_size += len(chunk)
+    except FileNotFoundError:
+        return None
+
+    return _StorageObservation(
+        sha256=digest_builder.hexdigest(),
+        byte_size=byte_size,
+    )
+
+
+def _replay_blob_diagnostic_result(
+    *,
+    classification: ReplayBlobDiagnosticClassification,
+    score_found: bool,
+    replay_attachment_found: bool,
+    blob_found: bool,
+    storage_object_found: bool,
+    metadata_sha256: str | None = None,
+    observed_sha256: str | None = None,
+    metadata_byte_size: int | None = None,
+    observed_byte_size: int | None = None,
+) -> ReplayBlobDiagnosticResult:
+    return ReplayBlobDiagnosticResult(
+        score_found=score_found,
+        replay_attachment_found=replay_attachment_found,
+        blob_found=blob_found,
+        storage_object_found=storage_object_found,
+        metadata_sha256=metadata_sha256,
+        observed_sha256=observed_sha256,
+        metadata_byte_size=metadata_byte_size,
+        observed_byte_size=observed_byte_size,
+        classification=classification,
+        status=_replay_blob_diagnostic_status(classification),
+        diagnostic_summary=DiagnosticSummary(
+            message=(
+                f"replay blob diagnostic {classification.value} "
+                f"score_found={str(score_found).lower()} "
+                f"replay_attachment_found={str(replay_attachment_found).lower()} "
+                f"blob_found={str(blob_found).lower()} "
+                f"storage_object_found={str(storage_object_found).lower()} "
+                f"metadata_byte_size={metadata_byte_size} "
+                f"observed_byte_size={observed_byte_size}"
+            )
+        ),
+    )
+
+
+def _replay_blob_diagnostic_status(
+    classification: ReplayBlobDiagnosticClassification,
+) -> VerificationStatus:
+    if classification is ReplayBlobDiagnosticClassification.INTEGRITY_PASS:
+        return VerificationStatus.PASS
+    if classification is ReplayBlobDiagnosticClassification.STORAGE_INTEGRITY_FAILURE:
+        return VerificationStatus.FAIL
+
+    return VerificationStatus.UNAVAILABLE
 
 
 def load_replay_download_fixtures(root: Path) -> ReplayDownloadEvidenceBundle:

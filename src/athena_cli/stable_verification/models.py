@@ -100,6 +100,75 @@ class ReplayBlobDiagnosticClassification(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class ReplayBlobDiagnosticInput:
+    """Replay blob diagnostic procedure の入力を表す.
+
+    Args:
+        score_id: 診断対象の score id.
+
+    Returns:
+        Dataclass のため戻り値はない.
+
+    Raises:
+        なし.
+
+    Constraints:
+        Raw replay bytes, credential-like value, complete .osr bytes は保持しない.
+    """
+
+    score_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayBlobAttachmentRecord:
+    """Score に紐づく replay attachment の report-safe view を表す.
+
+    Args:
+        score_id: Replay attachment が属する score id.
+        blob_id: Replay bytes を参照する blob metadata id.
+
+    Returns:
+        Dataclass のため戻り値はない.
+
+    Raises:
+        なし.
+
+    Constraints:
+        Attachment lookup 結果のうち diagnostic に必要な id だけを保持する.
+    """
+
+    score_id: int
+    blob_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayBlobMetadataRecord:
+    """Replay blob metadata の diagnostic 用 report-safe view を表す.
+
+    Args:
+        blob_id: Blob metadata id.
+        sha256: Blob metadata が保持する SHA-256 digest.
+        byte_size: Blob metadata が保持する byte size.
+        storage_key: Backend object を読むための storage key.
+
+    Returns:
+        Dataclass のため戻り値はない.
+
+    Raises:
+        なし.
+
+    Constraints:
+        Raw replay bytes, credential-like value, complete .osr bytes は保持しない.
+        storage_key は diagnostic summary や reporter output に出さない.
+    """
+
+    blob_id: int
+    sha256: str = field(repr=False)
+    byte_size: int
+    storage_key: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class StableTarget:
     base_url: str
     host_identity: str
@@ -397,8 +466,11 @@ __all__ = [
     "EvidenceScope",
     "EvidenceType",
     "GetscoresProbeCase",
+    "ReplayBlobAttachmentRecord",
     "ReplayBlobDiagnosticClassification",
+    "ReplayBlobDiagnosticInput",
     "ReplayBlobDiagnosticResult",
+    "ReplayBlobMetadataRecord",
     "ReplayDownloadAuthField",
     "ReplayDownloadBlobIntegrity",
     "ReplayDownloadBodyCompatibility",

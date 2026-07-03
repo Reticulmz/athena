@@ -86,7 +86,10 @@ def test_replay_download_catalog_entries_are_known_gap_evidence_surface() -> Non
 
     assert evidence
     assert gaps
-    assert {entry.evidence_type for entry in evidence} == {EvidenceType.GOLDEN_FIXTURE}
+    assert {entry.evidence_type for entry in evidence} == {
+        EvidenceType.AUTOMATED_TEST,
+        EvidenceType.GOLDEN_FIXTURE,
+    }
     assert all(entry.scope is EvidenceScope.MANDATORY for entry in evidence)
     assert all((PROJECT_ROOT / entry.reference).exists() for entry in evidence)
     assert all(gap.status is VerificationStatus.KNOWN_GAP for gap in gaps)
