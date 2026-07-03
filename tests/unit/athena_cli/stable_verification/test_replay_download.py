@@ -26,6 +26,7 @@ def test_load_replay_download_fixtures_preserves_sanitized_contract_fields() -> 
     route_contract = bundle.target_route_contract
     fixture = bundle.fixtures["official_bancho_stable_replay_download_200"]
     reference_by_name = {reference.name: reference for reference in bundle.reference_responses}
+    branch_by_name = {branch.branch: branch for branch in bundle.response_contract_branches}
 
     assert route_contract.primary_route == "/web/osu-getreplay.php"
     assert route_contract.primary_route_observed_in_target_client_traffic is True
@@ -73,12 +74,23 @@ def test_load_replay_download_fixtures_preserves_sanitized_contract_fields() -> 
     assert reference_by_name["lets_replay_alias_success"].body_kind == "complete_osr_file"
     assert reference_by_name["lets_replay_alias_success"].unresolved_reason is None
     assert reference_by_name["bancho_py_success"].unresolved_reason is not None
+    assert branch_by_name["success"].readiness == "blocked"
+    assert branch_by_name["success"].blocker == "body_assembly_decision_pending"
+    assert branch_by_name["success"].selected_body_byte_size == 90584
+    assert branch_by_name["success"].selected_safe_body_sha256 is None
+    assert branch_by_name["auth_failure"].readiness == "implementation_ready"
+    assert branch_by_name["missing_replay"].selected_response_status == 404
+    assert branch_by_name["hidden_score"].selected_body_kind == "empty_http_exception"
+    assert branch_by_name["storage_missing"].readiness == "implementation_ready"
+    assert branch_by_name["malformed_score_id"].readiness == "unresolved"
+    assert branch_by_name["malformed_mode"].status_label == "未確認"
+    assert branch_by_name["unknown_field"].blocker == "no_target_or_reference_evidence"
 
 
 def test_validate_replay_download_fixtures_accepts_metadata_only_fixtures() -> None:
     results = validate_replay_download_fixtures(load_replay_download_fixtures(FIXTURE_DIR))
 
-    assert len(results) == 4
+    assert len(results) == 5
     assert {result.surface for result in results} == {StableSurface.REPLAY_DOWNLOAD}
     assert {result.status for result in results} == {VerificationStatus.PASS}
     assert all(result.fails_run is False for result in results)
@@ -157,6 +169,7 @@ def test_validate_replay_download_fixtures_rejects_secret_containing_fixtures(
         },
     )
     _write_valid_reference_responses(fixture_dir)
+    _write_valid_response_contract(fixture_dir)
     _write_json(
         fixture_dir / "body_assembly_decision.json",
         {
@@ -258,6 +271,7 @@ def test_validate_replay_download_fixtures_rejects_raw_values_in_expected_fields
         },
     )
     _write_valid_reference_responses(fixture_dir)
+    _write_valid_response_contract(fixture_dir)
     _write_json(
         fixture_dir / "body_assembly_decision.json",
         {
@@ -372,6 +386,7 @@ def test_validate_replay_download_fixtures_rejects_incomplete_route_contract(
         },
     )
     _write_valid_reference_responses(fixture_dir)
+    _write_valid_response_contract(fixture_dir)
     _write_json(
         fixture_dir / "body_assembly_decision.json",
         {
@@ -434,6 +449,32 @@ def _write_valid_reference_responses(fixture_dir: Path) -> None:
                     "body_kind": "file_response_osr_path",
                     "contract_status": "reference_only_unresolved",
                     "unresolved_reason": "runtime headers were not captured",
+                }
+            ],
+        },
+    )
+
+
+def _write_valid_response_contract(fixture_dir: Path) -> None:
+    _write_json(
+        fixture_dir / "response_contract.json",
+        {
+            "schema": "athena.stable_compatibility.replay_download.response_contract.v1",
+            "secret_policy": "metadata-only",
+            "raw_artifact_committed": False,
+            "branches": [
+                {
+                    "branch": "success",
+                    "status_label": "未確認",
+                    "readiness": "blocked",
+                    "selected_response_status": 200,
+                    "selected_header_keys": ["content-type"],
+                    "selected_body_kind": "lzma_compressed_replay_payload",
+                    "selected_body_byte_size": 90584,
+                    "selected_safe_body_sha256": None,
+                    "evidence_sources": ["unit_reference_success"],
+                    "blocker": "body_assembly_decision_pending",
+                    "notes": ["unit fixture"],
                 }
             ],
         },

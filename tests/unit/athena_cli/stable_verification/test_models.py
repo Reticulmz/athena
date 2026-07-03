@@ -159,6 +159,19 @@ def test_replay_download_evidence_models_share_verification_vocabulary() -> None
         contract_status="alias_candidate_reference",
         unresolved_reason=None,
     )
+    response_contract_branch = models.ReplayDownloadResponseContractBranch(
+        branch=models.ReplayDownloadResponseBranch.AUTH_FAILURE.value,
+        status_label="confirmed",
+        readiness="implementation_ready",
+        selected_response_status=401,
+        selected_header_keys=(),
+        selected_body_kind="empty_body",
+        selected_body_byte_size=0,
+        selected_safe_body_sha256=None,
+        evidence_sources=("reference_responses:bancho_py_auth_failure",),
+        blocker=None,
+        notes=("bancho.py supplies reference-backed auth failure evidence.",),
+    )
     fixture = models.ReplayDownloadSanitizedFixture(
         target_client_family="osu_stable",
         target_build_observed=False,
@@ -246,6 +259,8 @@ def test_replay_download_evidence_models_share_verification_vocabulary() -> None
     assert route_contract.alias_route_observed_in_target_client_traffic is False
     assert reference_response.branch == models.ReplayDownloadResponseBranch.ALIAS.value
     assert reference_response.body_kind == "complete_osr_file"
+    assert response_contract_branch.readiness == "implementation_ready"
+    assert response_contract_branch.blocker is None
     assert branch.surface is StableSurface.REPLAY_DOWNLOAD
     assert branch.branch is models.ReplayDownloadResponseBranch.SUCCESS
     assert body_decision.surface is StableSurface.REPLAY_DOWNLOAD
@@ -270,6 +285,7 @@ def test_replay_download_reportable_models_exclude_secret_like_fields() -> None:
         models.ReplayDownloadAuthField,
         models.ReplayDownloadTargetRouteContract,
         models.ReplayDownloadReferenceResponseEvidence,
+        models.ReplayDownloadResponseContractBranch,
         models.ReplayDownloadSanitizedFixture,
         models.ReplayDownloadResponseBranchEvidence,
         models.ReplayDownloadBodyDecision,

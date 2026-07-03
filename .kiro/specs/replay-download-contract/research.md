@@ -95,6 +95,30 @@
   - #36 likely needs to return target-client-compatible LZMA replay payload bytes, not a complete `.osr` file, unless additional evidence contradicts this capture.
   - Target build metadata must account for the fact that exact build may be `not observed in replay download request`; such captures remain usable when the observation status is explicit.
 
+### Replay download response contract table
+
+- **Context**: #36 must distinguish implementation-ready response branches from unresolved branches after target traffic and reference audit.
+- **Fixture**: `tests/fixtures/stable_compatibility/replay_download/response_contract.json`
+- **Contract Summary**:
+
+| Branch | Status label | Readiness for #36 | Selected status | Body kind | Byte size | Safe hash | Evidence | Blocker |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| success | `未確認` | blocked | 200 | `lzma_compressed_replay_payload` | 90584 | not committed | target official Bancho capture; `bancho.py`; `deck` | `body_assembly_decision_pending` |
+| auth_failure | confirmed | implementation-ready | 401 | `empty_body` | 0 | not committed | `bancho.py` | none |
+| missing_replay | confirmed | implementation-ready | 404 | `empty_body` | unknown | not committed | `bancho.py`; `deck` | none |
+| hidden_score | confirmed | implementation-ready | 404 | `empty_http_exception` | unknown | not committed | `deck` | none |
+| storage_missing | confirmed | implementation-ready | 404 | `empty_http_exception` | unknown | not committed | `deck` | none |
+| missing_score_id | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+| malformed_score_id | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+| missing_mode | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+| malformed_mode | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+| unknown_field | `未確認` | unresolved | none | none | none | none | none | `no_target_or_reference_evidence` |
+
+- **Implications**:
+  - #36 may implement auth failure and reference-backed missing/hidden/storage-missing branches from this contract.
+  - #36 must not treat success as ready until body assembly decision is resolved.
+  - #36 must not invent malformed request behavior; missing/malformed score id, missing/malformed mode, and unknown field remain `未確認`.
+
 ### Fixture と秘匿情報
 
 - **Context**: OSS repository に replay download evidence を安全に残す形式を決めるため。

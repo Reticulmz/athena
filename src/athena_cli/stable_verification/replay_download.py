@@ -11,6 +11,7 @@ from athena_cli.stable_verification.models import (
     EvidenceType,
     ReplayDownloadAuthField,
     ReplayDownloadReferenceResponseEvidence,
+    ReplayDownloadResponseContractBranch,
     ReplayDownloadSanitizedFixture,
     ReplayDownloadTargetRouteContract,
     StableSurface,
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 _REQUEST_METADATA_FIXTURE = "target_client_request_metadata.json"
 _RESPONSE_METADATA_FIXTURE = "target_client_response_metadata.json"
 _REFERENCE_RESPONSES_FIXTURE = "reference_responses.json"
+_RESPONSE_CONTRACT_FIXTURE = "response_contract.json"
 _BODY_ASSEMBLY_DECISION_FIXTURE = "body_assembly_decision.json"
 _REQUIRED_TARGET_ROUTE_CONTRACT_FIELDS = frozenset(
     (
@@ -88,6 +90,21 @@ _REQUIRED_REFERENCE_RESPONSE_FIELDS = frozenset(
         "body_kind",
         "contract_status",
         "unresolved_reason",
+    )
+)
+_REQUIRED_RESPONSE_CONTRACT_BRANCH_FIELDS = frozenset(
+    (
+        "branch",
+        "status_label",
+        "readiness",
+        "selected_response_status",
+        "selected_header_keys",
+        "selected_body_kind",
+        "selected_body_byte_size",
+        "selected_safe_body_sha256",
+        "evidence_sources",
+        "blocker",
+        "notes",
     )
 )
 _REQUIRED_BODY_DECISION_FIELDS = frozenset(
@@ -186,6 +203,8 @@ class ReplayDownloadEvidenceBundle:
     response_metadata: Mapping[str, object]
     reference_responses: tuple[ReplayDownloadReferenceResponseEvidence, ...]
     reference_responses_metadata: Mapping[str, object]
+    response_contract_branches: tuple[ReplayDownloadResponseContractBranch, ...]
+    response_contract_metadata: Mapping[str, object]
     body_assembly_decision: Mapping[str, object]
     target_route_contract: ReplayDownloadTargetRouteContract
     fixtures: Mapping[str, ReplayDownloadSanitizedFixture]
@@ -212,6 +231,7 @@ def load_replay_download_fixtures(root: Path) -> ReplayDownloadEvidenceBundle:
     request_metadata = _read_json_object(root / _REQUEST_METADATA_FIXTURE)
     response_metadata = _read_json_object(root / _RESPONSE_METADATA_FIXTURE)
     reference_responses_metadata = _read_json_object(root / _REFERENCE_RESPONSES_FIXTURE)
+    response_contract_metadata = _read_json_object(root / _RESPONSE_CONTRACT_FIXTURE)
     body_assembly_decision = _read_json_object(root / _BODY_ASSEMBLY_DECISION_FIXTURE)
 
     return ReplayDownloadEvidenceBundle(
@@ -219,6 +239,10 @@ def load_replay_download_fixtures(root: Path) -> ReplayDownloadEvidenceBundle:
         response_metadata=response_metadata,
         reference_responses=_reference_responses_from_document(reference_responses_metadata),
         reference_responses_metadata=reference_responses_metadata,
+        response_contract_branches=_response_contract_branches_from_document(
+            response_contract_metadata
+        ),
+        response_contract_metadata=response_contract_metadata,
         body_assembly_decision=body_assembly_decision,
         target_route_contract=_target_route_contract_from_document(request_metadata),
         fixtures=_load_sanitized_fixtures(request_metadata, response_metadata),
@@ -246,6 +270,9 @@ def validate_replay_download_fixtures(
     request_errors = _validate_request_metadata(bundle.request_metadata)
     response_errors = _validate_response_metadata(bundle.response_metadata)
     reference_errors = _validate_reference_responses_metadata(bundle.reference_responses_metadata)
+    response_contract_errors = _validate_response_contract_metadata(
+        bundle.response_contract_metadata
+    )
     decision_errors = _validate_body_assembly_decision(bundle.body_assembly_decision)
 
     return (
@@ -263,6 +290,11 @@ def validate_replay_download_fixtures(
             "replay download reference response metadata",
             _REFERENCE_RESPONSES_FIXTURE,
             reference_errors,
+        ),
+        _validation_result_from_errors(
+            "replay download response contract metadata",
+            _RESPONSE_CONTRACT_FIXTURE,
+            response_contract_errors,
         ),
         _validation_result_from_errors(
             "replay download body assembly decision metadata",
@@ -447,6 +479,29 @@ def _validate_reference_auth_fields(entry: Mapping[str, object]) -> tuple[str, .
     return tuple(errors)
 
 
+def _validate_response_contract_metadata(document: Mapping[str, object]) -> tuple[str, ...]:
+    errors = list(_validate_metadata_document(document))
+    branches = _response_contract_branch_mappings(document)
+    if not branches:
+        errors.append("missing_response_contract_branch_list")
+
+    for branch in branches:
+        errors.extend(_missing_required_fields(branch, _REQUIRED_RESPONSE_CONTRACT_BRANCH_FIELDS))
+        errors.extend(_validate_string_field(branch, "branch"))
+        errors.extend(_validate_string_field(branch, "status_label", safe_token=False))
+        errors.extend(_validate_string_field(branch, "readiness"))
+        errors.extend(_validate_optional_int_field(branch, "selected_response_status"))
+        errors.extend(_validate_string_list_field(branch, "selected_header_keys"))
+        errors.extend(_validate_optional_string_field(branch, "selected_body_kind"))
+        errors.extend(_validate_optional_int_field(branch, "selected_body_byte_size"))
+        errors.extend(_validate_optional_string_field(branch, "selected_safe_body_sha256"))
+        errors.extend(_validate_string_list_field(branch, "evidence_sources", safe_token=False))
+        errors.extend(_validate_optional_string_field(branch, "blocker"))
+        errors.extend(_validate_string_list_field(branch, "notes"))
+
+    return _sorted_unique(errors)
+
+
 def _validate_body_assembly_decision(document: Mapping[str, object]) -> tuple[str, ...]:
     errors = list(_validate_metadata_document(document))
     decision = document.get("decision")
@@ -579,6 +634,33 @@ def _reference_response_from_entry(
     )
 
 
+def _response_contract_branches_from_document(
+    document: Mapping[str, object],
+) -> tuple[ReplayDownloadResponseContractBranch, ...]:
+    return tuple(
+        _response_contract_branch_from_entry(branch)
+        for branch in _response_contract_branch_mappings(document)
+    )
+
+
+def _response_contract_branch_from_entry(
+    branch: Mapping[str, object],
+) -> ReplayDownloadResponseContractBranch:
+    return ReplayDownloadResponseContractBranch(
+        branch=_string_value(branch, "branch"),
+        status_label=_string_value(branch, "status_label"),
+        readiness=_string_value(branch, "readiness"),
+        selected_response_status=_optional_int_value(branch, "selected_response_status"),
+        selected_header_keys=_string_tuple(branch.get("selected_header_keys")),
+        selected_body_kind=_optional_string_value(branch, "selected_body_kind"),
+        selected_body_byte_size=_optional_int_value(branch, "selected_body_byte_size"),
+        selected_safe_body_sha256=_optional_string_value(branch, "selected_safe_body_sha256"),
+        evidence_sources=_string_tuple(branch.get("evidence_sources")),
+        blocker=_optional_string_value(branch, "blocker"),
+        notes=_string_tuple(branch.get("notes")),
+    )
+
+
 def _target_route_contract_from_document(
     request_metadata: Mapping[str, object],
 ) -> ReplayDownloadTargetRouteContract:
@@ -702,6 +784,26 @@ def _reference_response_mappings(
     return tuple(references)
 
 
+def _response_contract_branch_mappings(
+    document: Mapping[str, object],
+) -> tuple[Mapping[str, object], ...]:
+    branches_value = document.get("branches")
+    if not isinstance(branches_value, Sequence) or isinstance(
+        branches_value,
+        str | bytes | bytearray,
+    ):
+        return ()
+
+    branches: list[Mapping[str, object]] = []
+    for branch in branches_value:
+        if not isinstance(branch, Mapping):
+            continue
+
+        branches.append(cast("Mapping[str, object]", branch))
+
+    return tuple(branches)
+
+
 def _auth_fields(value: object) -> tuple[ReplayDownloadAuthField, ...]:
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return ()
@@ -765,11 +867,12 @@ def _validate_string_list_field(
     key: str,
     *,
     required: bool = True,
+    safe_token: bool = True,
 ) -> tuple[str, ...]:
     value = entry.get(key)
     if value is None and not required:
         return ()
-    if not _is_safe_string_list(value):
+    if not _is_string_list(value, safe_token=safe_token):
         return (f"{key}_must_be_string_list",)
 
     return ()
@@ -837,10 +940,17 @@ def _validate_observed_metadata(
 
 
 def _is_safe_string_list(value: object) -> bool:
+    return _is_string_list(value, safe_token=True)
+
+
+def _is_string_list(value: object, *, safe_token: bool) -> bool:
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return False
 
-    return all(isinstance(item, str) and _is_safe_metadata_token(item) for item in value)
+    return all(
+        isinstance(item, str) and (not safe_token or _is_safe_metadata_token(item))
+        for item in value
+    )
 
 
 def _validate_int_field(entry: Mapping[str, object], key: str) -> tuple[str, ...]:

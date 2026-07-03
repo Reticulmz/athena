@@ -292,6 +292,27 @@ class ReplayDownloadReferenceResponseEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class ReplayDownloadResponseContractBranch:
+    """Replay download response contract の branch readiness を表す.
+
+    Branch ごとの selected response metadata と unresolved blocker を保持する.
+    Raw body bytes, raw credential value, raw replay bytes は保持しない.
+    """
+
+    branch: str
+    status_label: str
+    readiness: str
+    selected_response_status: int | None
+    selected_header_keys: tuple[str, ...]
+    selected_body_kind: str | None
+    selected_body_byte_size: int | None
+    selected_safe_body_sha256: str | None = field(repr=False)
+    evidence_sources: tuple[str, ...]
+    blocker: str | None
+    notes: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ReplayDownloadBodyDecision:
     """Replay download body assembly decision を verification 語彙で表す.
 
@@ -386,6 +407,7 @@ __all__ = [
     "ReplayDownloadReferenceResponseEvidence",
     "ReplayDownloadResponseBranch",
     "ReplayDownloadResponseBranchEvidence",
+    "ReplayDownloadResponseContractBranch",
     "ReplayDownloadSanitizedFixture",
     "ReplayDownloadTargetRouteContract",
     "SecretProbeInput",

@@ -29,7 +29,7 @@
   - 完了時には reference response fixture と audit summary から source、branch、status、header keys、body kind、unresolved reason が読める
   - _Requirements: 1.4, 1.5, 2.2, 2.3, 2.4, 4.1, 4.2, 4.3, 4.4, 4.5, 7.2, 7.3, 7.4_
 
-- [ ] 2.3 Replay download response contract を branch ごとに固定する
+- [x] 2.3 Replay download response contract を branch ごとに固定する
   - Success、auth failure、missing replay、hidden score、storage-missing、missing score id、malformed score id、missing mode、malformed mode、unknown field を branch として整理する
   - Confirmed branch は target traffic または reference source を示し、unresolved branch は `未確認` と blocker reason を示す
   - 完了時には #36 が扱える branch と blocked のまま残す branch が response contract table から判断できる
