@@ -133,6 +133,26 @@ def test_replay_download_docs_and_matrix_share_current_evidence_terms() -> None:
     assert all(term in matrix for term in required_terms)
 
 
+def test_replay_download_docs_define_issue_36_and_37_handoff_boundary() -> None:
+    guide = (PROJECT_ROOT / "docs" / "stable-compatibility-guide.md").read_text(encoding="utf-8")
+    required_terms = (
+        "Issue #36 handoff",
+        "Issue #37 boundary",
+        "GET /web/osu-getreplay.php",
+        "Query keys `c`, `h`, `m`, `u`",
+        "target_body_validation_requires_local_raw_blob_artifact",
+        "no_target_or_reference_evidence",
+        "tests/fixtures/stable_compatibility/replay_download/response_contract.json",
+        "tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json",
+        "download_body_strategy=blocked",
+        "assemble_download_body",
+        "view count and latest activity are not #36 readiness criteria",
+        "response bytes, status, or headers",
+    )
+
+    assert all(term in guide for term in required_terms)
+
+
 def test_validate_replay_download_fixtures_accepts_metadata_only_fixtures() -> None:
     results = validate_replay_download_fixtures(load_replay_download_fixtures(FIXTURE_DIR))
 

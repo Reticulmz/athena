@@ -55,7 +55,7 @@
   - 完了時には guide と matrix が同じ primary route、auth blocker、response blocker、body assembly decision を示している
   - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-- [ ] 4.2 #36 と #37 の境界を handoff として明示する
+- [x] 4.2 #36 と #37 の境界を handoff として明示する
   - #36 が implementation-ready か blocked かを exact blocker と sanitized fixture path で示す
   - #36 が実装すべき route、auth、request fields、response branches、download body strategy を confirmed contract としてまとめる
   - #37 の replay view count と latest activity は #36 readiness から外し、download response behavior に影響する場合だけ再確認対象にする

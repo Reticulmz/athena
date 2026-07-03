@@ -1068,6 +1068,27 @@ Replay download evidence note:
 | Domain/data-not-found response | `implementation_ready` | Missing replay selects 404 with `empty_body` from `bancho.py` and `deck`; hidden and storage-missing select 404 with `empty_http_exception` from `deck`; fixture: `response_contract.json`. |
 | Malformed request response | `unresolved` | Missing/malformed `c`, missing/malformed `m`, and unknown field behavior remain `未確認` with blocker `no_target_or_reference_evidence`. |
 
+Issue #36 handoff:
+
+| Field | Handoff |
+| --- | --- |
+| Readiness | Blocked until `target_body_validation_requires_local_raw_blob_artifact` is resolved. |
+| Confirmed route | `GET /web/osu-getreplay.php`, `primary_target_client_route`. |
+| Alias boundary | `/web/replays/<id>` is `candidate_only_reference_backed` and not required for #36. |
+| Confirmed request/auth | Query keys `c`, `h`, `m`, `u`; auth fields `h` and `u`; raw values are not committed. |
+| Implementation-ready branches | Auth failure 401 `empty_body`; missing replay 404 `empty_body`; hidden score 404 `empty_http_exception`; storage-missing 404 `empty_http_exception`. |
+| Blocked / unresolved branches | Success 200 body is blocked by `target_body_validation_requires_local_raw_blob_artifact`; missing/malformed `c`, missing/malformed `m`, and unknown field remain `未確認` with blocker `no_target_or_reference_evidence`. |
+| Body decision | `body_assembly_decision.json`: `download_body_strategy=blocked`. If local validation finds blob integrity pass but target body incompatible, implement `assemble_download_body`. |
+| Sanitized fixtures | `tests/fixtures/stable_compatibility/replay_download/target_client_request_metadata.json`, `tests/fixtures/stable_compatibility/replay_download/target_client_response_metadata.json`, `tests/fixtures/stable_compatibility/replay_download/reference_responses.json`, `tests/fixtures/stable_compatibility/replay_download/response_contract.json`, `tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json`. |
+
+Issue #37 boundary:
+
+- Replay view count and latest activity are not #36 readiness criteria.
+- #37 may start only after #36 defines the response path it observes.
+- #37 must not change replay download response bytes, status, or headers except
+  where later evidence proves the state update changes client-visible download
+  behavior.
+
 ### `/web/osu-session.php`
 
 Method: `POST`
