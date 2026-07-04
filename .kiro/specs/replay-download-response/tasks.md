@@ -92,7 +92,7 @@
   - _Requirements: 1.4, 2.4, 3.1, 3.2, 3.3, 3.4, 4.2, 4.3, 4.4, 4.5, 5.4, 6.2, 6.3, 6.4_
 
 - [ ] 5. Integration: route、DI、startup validation を接続する
-- [ ] 5.1 Stable web legacy route と endpoint delegate を追加する
+- [x] 5.1 Stable web legacy route と endpoint delegate を追加する
   - Primary route `GET /web/osu-getreplay.php` が stable web legacy app で handler に到達する
   - `/web/replays/<id>` はこの spec の route として登録されない
   - Route smoke test が primary route を観測でき、alias が required behavior ではないことを確認できる

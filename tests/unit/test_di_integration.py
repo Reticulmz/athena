@@ -8,7 +8,7 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
-from starlette.routing import Host, Mount, Route
+from starlette.routing import Host, Mount, Route, Router
 from taskiq import AsyncBroker
 
 from osu_server.app import app, create_app
@@ -119,6 +119,28 @@ def test_create_app_registers_host_and_fallback_routes() -> None:
     assert any(route.path == "/web" for route in mounts)
     assert any(route.path == "/api/v2" for route in mounts)
     assert any(route.path == "/signalr" for route in mounts)
+
+
+def test_create_app_registers_replay_download_primary_route_only() -> None:
+    created = create_app()
+    domain = load_routing_config().domain
+    host_routes = [route for route in created.routes if isinstance(route, Host)]
+    web_host = next(route for route in host_routes if route.host == f"osu.{domain}")
+
+    assert isinstance(web_host.app, Router)
+    web_paths = {
+        route.path
+        for route in web_host.app.routes
+        if isinstance(route, Route) and "GET" in (route.methods or set())
+    }
+    root_paths = {
+        route.path
+        for route in created.routes
+        if isinstance(route, Route) and "GET" in (route.methods or set())
+    }
+
+    assert "/web/osu-getreplay.php" in web_paths
+    assert not any(path.startswith("/web/replays") for path in web_paths | root_paths)
 
 
 def test_create_app_reads_route_domain_from_environment_file(

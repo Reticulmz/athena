@@ -12,6 +12,7 @@ from osu_server.composition.endpoints import (
     bancho_endpoint,
     getscores_endpoint,
     registration_endpoint,
+    replay_download_endpoint,
     score_submit_endpoint,
 )
 from osu_server.composition.health import health_check_endpoint, health_endpoint
@@ -67,6 +68,11 @@ def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
             Route(
                 "/web/osu-osz2-getscores.php",
                 endpoint=getscores_endpoint,
+                methods=["GET"],
+            ),
+            Route(
+                "/web/osu-getreplay.php",
+                endpoint=replay_download_endpoint,
                 methods=["GET"],
             ),
             Route(

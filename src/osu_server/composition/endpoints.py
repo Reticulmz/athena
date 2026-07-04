@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
     from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
     from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
+    from osu_server.transports.stable.web_legacy.replay_download import ReplayDownloadHandler
     from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 
@@ -35,4 +36,10 @@ async def getscores_endpoint(request: Request) -> Response:
 async def score_submit_endpoint(request: Request) -> Response:
     """Delegate to ScoreSubmitHandler resolved from DI."""
     handler: ScoreSubmitHandler = request.app.state.score_submit_handler  # pyright: ignore[reportAny]
+    return await handler(request)
+
+
+async def replay_download_endpoint(request: Request) -> Response:
+    """DI で解決した ReplayDownloadHandler に委譲する."""
+    handler: ReplayDownloadHandler = request.app.state.replay_download_handler  # pyright: ignore[reportAny]
     return await handler(request)
