@@ -297,6 +297,34 @@ class TestDuplicateChecks:
         assert result.success is False
         assert "email" in result.errors
 
+    async def test_duplicate_final_submit_same_credentials_is_idempotent(self) -> None:
+        """同一登録内容の再送は成功扱いにして client retry を吸収する。"""
+        svc, *_ = _make_service()
+        form = _valid_form(username="RetryUser", email="retry@example.com")
+
+        first_result = await svc.register(form)
+        second_result = await svc.register(form)
+
+        assert first_result.success is True
+        assert second_result.success is True
+        assert second_result.errors == {}
+
+    async def test_duplicate_final_submit_wrong_password_still_fails(self) -> None:
+        """既存ユーザーと password が一致しない再送は登録成功扱いにしない。"""
+        svc, *_ = _make_service()
+        _ = await svc.register(_valid_form(username="RetryUser", email="retry@example.com"))
+
+        result = await svc.register(
+            _valid_form(
+                username="RetryUser",
+                email="retry@example.com",
+                password="Different1234",
+            )
+        )
+
+        assert result.success is False
+        assert set(result.errors) == {"username", "email"}
+
 
 # ── Disallowed username (Req 1.7) ────────────────────────────────────
 
@@ -808,7 +836,37 @@ class TestRegistrationLogging:
         events = [e for e in cap_logs if e["event"] == "registration_failed"]
         assert len(events) == 1
         assert events[0]["username"] == "!"
-        assert "reason" in events[0]
+        assert events[0]["reason"] == "validation_errors"
+        assert events[0]["failed_fields"] == ["email", "password", "username"]
+        assert events[0]["check_only"] is False
+        assert "email" not in events[0]
+        assert "password" not in events[0]
+        assert events[0]["log_level"] == "warning"
+
+    async def test_duplicate_failure_log_identifies_failed_fields(self) -> None:
+        """重複登録失敗ログは secret を出さず failed_fields で原因を示す。"""
+        svc, *_ = _make_service()
+        form = _valid_form(username="LogUser", email="log@example.com")
+        _ = await svc.register(form)
+
+        with capture_logs() as cap_logs:
+            result = await svc.register(
+                _valid_form(
+                    username="LogUser",
+                    email="log@example.com",
+                    password="Different1234",
+                )
+            )
+
+        assert result.success is False
+        events = [e for e in cap_logs if e["event"] == "registration_failed"]
+        assert len(events) == 1
+        assert events[0]["username"] == "LogUser"
+        assert events[0]["reason"] == "validation_errors"
+        assert events[0]["failed_fields"] == ["email", "username"]
+        assert events[0]["check_only"] is False
+        assert "email" not in events[0]
+        assert "password" not in events[0]
         assert events[0]["log_level"] == "warning"
 
     async def test_registration_check_only_no_success_log(self) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import secrets
 from datetime import UTC, datetime
@@ -110,11 +111,20 @@ class AuthService:
 
         # Return early if any errors
         if errors:
-            failed_fields = ", ".join(sorted(errors))
+            if not check_only and await self._is_idempotent_registration_retry(
+                form_data,
+                safe_username=safe_username,
+                errors=errors,
+            ):
+                return RegistrationResult(success=True)
+
+            failed_fields = sorted(errors)
             logger.warning(
                 "registration_failed",
                 username=form_data.username,
-                reason=f"validation errors: {failed_fields}",
+                reason="validation_errors",
+                failed_fields=failed_fields,
+                check_only=check_only,
             )
             return RegistrationResult(success=False, errors=errors)
 
@@ -162,13 +172,52 @@ class AuthService:
         except ValueError as exc:
             # DB unique constraint caught a concurrent duplicate registration
             msg = str(exc)
+            reason = "persistence_error"
             if "safe_username" in msg:
                 errors.setdefault("username", []).append("Username is already taken.")
+                reason = "persistence_conflict"
             elif "email" in msg:
                 errors.setdefault("email", []).append("Email address is already in use.")
+                reason = "persistence_conflict"
             else:
                 errors.setdefault("username", []).append("Registration failed. Please try again.")
+            logger.warning(
+                "registration_failed",
+                username=form_data.username,
+                reason=reason,
+                failed_fields=sorted(errors),
+                check_only=check_only,
+            )
             return RegistrationResult(success=False, errors=errors)
+
+    async def _is_idempotent_registration_retry(
+        self,
+        form_data: RegistrationForm,
+        *,
+        safe_username: str,
+        errors: dict[str, list[str]],
+    ) -> bool:
+        """同一内容の登録再送なら成功済み retry として扱う。"""
+        if set(errors) != {"email", "username"}:
+            return False
+
+        existing_user = await self._user_query_repo.get_by_safe_username(safe_username)
+        if existing_user is None:
+            return False
+
+        if existing_user.email != form_data.email.lower():
+            return False
+
+        password_md5 = hashlib.md5(form_data.password.encode()).hexdigest()
+        if not await self._password_service.verify(existing_user.password_hash, password_md5):
+            return False
+
+        logger.info(
+            "registration_retry_confirmed",
+            username=form_data.username,
+            user_id=existing_user.id,
+        )
+        return True
 
     async def login(
         self,
