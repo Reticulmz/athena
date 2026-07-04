@@ -402,6 +402,43 @@ class ReplayDownloadBodyDecision:
         init=False,
     )
 
+    @property
+    def success_response_allowed(self) -> bool:
+        """Success HTTP 200 response を返してよい decision かを返す.
+
+        Args:
+            なし.
+
+        Returns:
+            Local validation 済みの direct_blob_bytes または assemble_download_body
+            decision の場合だけ True.
+
+        Raises:
+            なし.
+
+        Constraints:
+            blocked, known_gap, unavailable, storage integrity failure は success
+            response を許可しない. Raw replay bytes, complete .osr bytes,
+            credential-like value は参照しない.
+        """
+
+        if self.status is not VerificationStatus.PASS:
+            return False
+
+        if self.download_body_strategy is ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES:
+            return (
+                self.blob_integrity is ReplayDownloadBlobIntegrity.PASS
+                and self.target_body_compatible is ReplayDownloadBodyCompatibility.PASS
+            )
+
+        if self.download_body_strategy is ReplayDownloadBodyStrategy.ASSEMBLE_DOWNLOAD_BODY:
+            return (
+                self.blob_integrity is ReplayDownloadBlobIntegrity.PASS
+                and self.target_body_compatible is ReplayDownloadBodyCompatibility.FAIL
+            )
+
+        return False
+
 
 @dataclass(frozen=True, slots=True)
 class ReplayBlobDiagnosticResult:

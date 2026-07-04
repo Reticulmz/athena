@@ -1,7 +1,7 @@
 # 実装計画
 
 - [ ] 1. Foundation: body strategy gate と Stable compatibility vocabulary を固める
-- [ ] 1.1 Replay download success body strategy を安全に確定できる gate を作る
+- [x] 1.1 Replay download success body strategy を安全に確定できる gate を作る
   - Local-only raw blob validation の入力と出力が repository-managed files に残らないようにする
   - `blocked`、`direct_blob_bytes`、`assemble_download_body` のいずれかを実装が参照できる sanitized decision state として扱う
   - `blocked` の場合は success 200 を返せないことがテストで観測できる

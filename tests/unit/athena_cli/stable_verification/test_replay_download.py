@@ -135,6 +135,35 @@ def test_load_replay_download_fixtures_preserves_body_decision_contract() -> Non
         "target_client_response_metadata:official_bancho_stable_replay_download_200",
         "research:Replay Blob Diagnostic Procedure",
     )
+    assert body_decision.success_response_allowed is False
+
+
+def test_replay_download_body_decision_allows_success_only_after_safe_strategy() -> None:
+    direct_decision = build_replay_download_body_decision(
+        blob_integrity=ReplayDownloadBlobIntegrity.PASS,
+        target_body_compatible=ReplayDownloadBodyCompatibility.PASS,
+        evidence_references=("unit:target_body_parser_pass",),
+    )
+    assembly_decision = build_replay_download_body_decision(
+        blob_integrity=ReplayDownloadBlobIntegrity.PASS,
+        target_body_compatible=ReplayDownloadBodyCompatibility.FAIL,
+        evidence_references=("unit:target_body_parser_failure",),
+    )
+    blocked_decision = build_replay_download_body_decision(
+        blob_integrity=ReplayDownloadBlobIntegrity.UNAVAILABLE,
+        target_body_compatible=ReplayDownloadBodyCompatibility.LOCAL_ONLY_UNVERIFIED,
+        evidence_references=("unit:local_artifact_not_committed",),
+    )
+
+    assert direct_decision.download_body_strategy is ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES
+    assert direct_decision.success_response_allowed is True
+    assert (
+        assembly_decision.download_body_strategy
+        is ReplayDownloadBodyStrategy.ASSEMBLE_DOWNLOAD_BODY
+    )
+    assert assembly_decision.success_response_allowed is True
+    assert blocked_decision.download_body_strategy is ReplayDownloadBodyStrategy.BLOCKED
+    assert blocked_decision.success_response_allowed is False
 
 
 def test_replay_download_docs_and_matrix_share_current_evidence_terms() -> None:
