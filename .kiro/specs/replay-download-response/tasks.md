@@ -106,7 +106,7 @@
   - _Depends: 2.2, 2.3, 2.4, 4.2, 5.1_
   - _Requirements: 1.1, 3.1, 4.1, 6.2_
 
-- [ ] 5.3 End-to-end branch smoke tests を追加する
+- [x] 5.3 End-to-end branch smoke tests を追加する
   - Sanitized request values で auth failure 401 empty body が app route 経由で観測できる
   - Missing replay provisional または storage-missing 404 empty body が app route 経由で観測できる
   - Non-blocked body strategy fixture がある場合だけ success 200 smoke test を有効化し、blocked の場合は 200 が返らないことを確認する
