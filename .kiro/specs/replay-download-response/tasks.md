@@ -8,7 +8,7 @@
   - Raw replay bytes、complete `.osr`、password、password hash、raw query values が成果物に含まれないことが確認できる
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 5.1, 5.2, 5.3, 6.1, 6.3_
 
-- [ ] 1.2 Stable replay download の branch と body strategy 語彙を定義する
+- [x] 1.2 Stable replay download の branch と body strategy 語彙を定義する
   - Success、auth failure、hidden score、storage missing、missing replay provisional、malformed request provisional、body strategy blocked を区別できる
   - Replay Download Response Body と stored Replay blob object を別概念として表現する
   - Compatibility vocabulary が transport、SQLAlchemy、storage backend を import しないことが確認できる
