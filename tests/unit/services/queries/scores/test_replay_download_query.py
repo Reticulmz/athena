@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import final
+from typing import Final, final
 
 from osu_server.domain.compatibility.stable import (
     ReplayDownloadBodyStrategy,
@@ -24,50 +24,68 @@ from osu_server.services.queries.scores import (
     ReplayDownloadBodyBuildResult,
     ReplayDownloadQuery,
     ReplayDownloadQueryInput,
+    ReplayDownloadQueryResult,
 )
 from osu_server.services.queries.storage import BlobBytesUnavailableError
+
+_PRIVATE_SENTINELS: Final[tuple[str, ...]] = (
+    "synthetic-private-storage-detail",
+    "synthetic-private-credential-value",
+    "synthetic-private-query-value",
+    "synthetic-private-artifact-reference",
+)
 
 
 async def test_score_not_found_candidate_returns_hidden_score_without_blob_read() -> None:
     harness = _make_harness(candidate=ReplayDownloadScoreNotFoundCandidate())
+    input_data = _input(score_id=910, ruleset=Ruleset.TAIKO)
 
-    result = await harness.query.execute(_input(score_id=910, ruleset=Ruleset.TAIKO))
+    result = await harness.query.execute(input_data)
 
     assert harness.repository.requests == [
         ReplayDownloadCandidateQuery(score_id=910, ruleset=Ruleset.TAIKO)
     ]
     assert result.branch is ReplayDownloadBranch.HIDDEN_SCORE
-    assert result.response_body is None
-    assert result.is_success is False
+    _assert_failure_result_has_no_client_visible_details(
+        result,
+        input_data.score_id,
+        input_data.authenticated_user_id,
+    )
     _assert_available_replay_collaborators_not_called(harness)
 
 
 async def test_hidden_score_candidate_returns_hidden_score_without_blob_read() -> None:
     harness = _make_harness(candidate=ReplayDownloadHiddenScoreCandidate())
+    input_data = _input(score_id=303)
 
-    result = await harness.query.execute(_input())
+    result = await harness.query.execute(input_data)
 
     assert result.branch is ReplayDownloadBranch.HIDDEN_SCORE
-    assert result.response_body is None
-    assert result.is_success is False
+    _assert_failure_result_has_no_client_visible_details(
+        result,
+        input_data.score_id,
+        input_data.authenticated_user_id,
+    )
     _assert_available_replay_collaborators_not_called(harness)
 
 
 async def test_missing_replay_candidate_returns_provisional_branch_without_blob_read() -> None:
     harness = _make_harness(candidate=ReplayDownloadMissingReplayCandidate())
+    input_data = _input(score_id=404)
 
-    result = await harness.query.execute(_input())
+    result = await harness.query.execute(input_data)
 
     assert result.branch is ReplayDownloadBranch.MISSING_REPLAY_PROVISIONAL
-    assert result.response_body is None
-    assert result.is_success is False
+    _assert_failure_result_has_no_client_visible_details(
+        result,
+        input_data.score_id,
+        input_data.authenticated_user_id,
+    )
     _assert_available_replay_collaborators_not_called(harness)
 
 
 async def test_available_replay_with_blob_unavailable_returns_storage_missing() -> None:
-    storage_detail = BackendStorageDetailError(
-        "storage_key=SYNTHETIC_INTERNAL_STORAGE_KEY",
-    )
+    storage_detail = BackendStorageDetailError(" ".join(_PRIVATE_SENTINELS))
     harness = _make_harness(
         candidate=_available_replay(blob_id=707),
         blob_error=storage_detail,
@@ -76,37 +94,33 @@ async def test_available_replay_with_blob_unavailable_returns_storage_missing() 
     result = await harness.query.execute(_input())
 
     assert result.branch is ReplayDownloadBranch.STORAGE_MISSING
-    assert result.response_body is None
-    assert result.is_success is False
+    _assert_failure_result_has_no_client_visible_details(result, storage_detail)
     assert harness.blob_reader.read_blob_ids == [707]
     assert harness.body_assembler.inputs == []
-    result_repr = repr(result)
-    assert "SYNTHETIC_INTERNAL_STORAGE_KEY" not in result_repr
-    assert "storage_key" not in result_repr
 
 
 async def test_available_replay_with_default_strategy_returns_body_strategy_blocked() -> None:
+    stored_blob_payload = b"bk"
     harness = _make_harness(
         candidate=_available_replay(blob_id=808),
-        blob_payload=b"synthetic-default-blocked",
+        blob_payload=stored_blob_payload,
     )
 
     result = await harness.query.execute(_input())
 
     assert result.branch is ReplayDownloadBranch.BODY_STRATEGY_BLOCKED
-    assert result.response_body is None
-    assert result.is_success is False
+    _assert_failure_result_has_no_client_visible_details(result, stored_blob_payload)
     assert harness.blob_reader.read_blob_ids == [808]
     assert [entry.strategy for entry in harness.body_assembler.inputs] == [
         ReplayDownloadBodyStrategy.BLOCKED
     ]
-    assert harness.body_assembler.inputs[0].stored_blob.payload == (b"synthetic-default-blocked")
+    assert harness.body_assembler.inputs[0].stored_blob.byte_size == len(stored_blob_payload)
     assert harness.repository.replay_view_update_count == 0
     assert harness.repository.latest_activity_update_count == 0
 
 
 async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() -> None:
-    replay_payload = b"synthetic-direct-response-body"
+    replay_payload = b"rd"
     harness = _make_harness(
         candidate=_available_replay(blob_id=909),
         blob_payload=replay_payload,
@@ -126,20 +140,21 @@ async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() 
     ]
     assert harness.repository.replay_view_update_count == 0
     assert harness.repository.latest_activity_update_count == 0
+    assert repr(replay_payload) not in repr(result)
 
 
 async def test_available_replay_with_assemble_strategy_remains_blocked() -> None:
+    stored_blob_payload = b"as"
     harness = _make_harness(
         candidate=_available_replay(blob_id=1001),
-        blob_payload=b"synthetic-assemble-blocked",
+        blob_payload=stored_blob_payload,
         body_strategy=ReplayDownloadBodyStrategy.ASSEMBLE_DOWNLOAD_BODY,
     )
 
     result = await harness.query.execute(_input())
 
     assert result.branch is ReplayDownloadBranch.BODY_STRATEGY_BLOCKED
-    assert result.response_body is None
-    assert result.is_success is False
+    _assert_failure_result_has_no_client_visible_details(result, stored_blob_payload)
     assert harness.blob_reader.read_blob_ids == [1001]
     assert [entry.strategy for entry in harness.body_assembler.inputs] == [
         ReplayDownloadBodyStrategy.ASSEMBLE_DOWNLOAD_BODY
@@ -281,3 +296,17 @@ def _assert_available_replay_collaborators_not_called(
     assert harness.body_assembler.inputs == []
     assert harness.repository.replay_view_update_count == 0
     assert harness.repository.latest_activity_update_count == 0
+
+
+def _assert_failure_result_has_no_client_visible_details(
+    result: ReplayDownloadQueryResult,
+    *private_values: object,
+) -> None:
+    assert result.is_success is False
+    assert result.response_body is None
+    result_repr = repr(result)
+    assert "ReplayDownloadResponseBody" not in result_repr
+    assert "payload" not in result_repr
+    for private_value in (*_PRIVATE_SENTINELS, *private_values):
+        assert str(private_value) not in result_repr
+        assert repr(private_value) not in result_repr

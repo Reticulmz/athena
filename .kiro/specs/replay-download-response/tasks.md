@@ -68,7 +68,7 @@
   - _Depends: 2.1, 2.4, 3.1_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.3, 3.4, 4.2, 4.3, 4.4, 4.5, 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 3.3 Replay download query workflow の focused tests を揃える
+- [x] 3.3 Replay download query workflow の focused tests を揃える
   - Missing score、hidden score、missing replay provisional、storage missing、blocked strategy、direct bytes、assemble body を網羅する
   - Failure branches は client-visible cause を持たない result として検証される
   - Test fixtures と assertion output に raw replay payload、credential values、local artifact paths が含まれない
