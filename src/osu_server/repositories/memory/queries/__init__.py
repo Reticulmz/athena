@@ -16,6 +16,9 @@ from osu_server.repositories.memory.queries.friends import (
 from osu_server.repositories.memory.queries.personal_bests import (
     InMemoryPersonalBestQueryRepository,
 )
+from osu_server.repositories.memory.queries.replay_download import (
+    InMemoryReplayDownloadQueryRepository,
+)
 from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
 from osu_server.repositories.memory.queries.score_performance import (
     InMemoryScorePerformanceQueryRepository,
@@ -33,6 +36,7 @@ __all__ = [
     "InMemoryChatHistoryQueryRepository",
     "InMemoryFriendRelationshipQueryRepository",
     "InMemoryPersonalBestQueryRepository",
+    "InMemoryReplayDownloadQueryRepository",
     "InMemoryRoleQueryRepository",
     "InMemoryScorePerformanceQueryRepository",
     "InMemoryScoreQueryRepository",

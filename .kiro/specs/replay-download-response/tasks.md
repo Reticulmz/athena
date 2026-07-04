@@ -30,7 +30,7 @@
   - _Requirements: 3.1, 4.2, 4.3, 4.4, 4.5, 6.2_
   - _Boundary: SQLAlchemy Replay Download Query Repository_
 
-- [ ] 2.3 (P) In-memory replay download candidate projection を実装する
+- [x] 2.3 (P) In-memory replay download candidate projection を実装する
   - In-memory repository state から SQLAlchemy adapter と同じ candidate branches を返す
   - Query service tests が DB なしで missing、hidden、missing replay、available replay を作れる
   - Contract tests が SQLAlchemy adapter と同じ observable branch set を確認できる
