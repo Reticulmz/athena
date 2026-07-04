@@ -60,7 +60,7 @@
   - Synthetic bytes を使う tests で direct、assemble、blocked の observable result を確認できる
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.3, 5.1, 5.2, 5.3, 6.1, 6.3_
 
-- [ ] 3.2 Replay download query use-case の branch classification を実装する
+- [x] 3.2 Replay download query use-case の branch classification を実装する
   - Authenticated user id、score id、ruleset から replay candidate を読み、response branch を決定する
   - Available replay だけが blob reader と body assembler に進む
   - Blob read unavailable は storage-missing branch になり、storage internals は result に含まれない

@@ -22,6 +22,9 @@ from osu_server.services.queries.scores.replay_download import (
     ReplayDownloadBodyAssembler,
     ReplayDownloadBodyBuildInput,
     ReplayDownloadBodyBuildResult,
+    ReplayDownloadQuery,
+    ReplayDownloadQueryInput,
+    ReplayDownloadQueryResult,
 )
 from osu_server.services.queries.scores.user_stats import (
     CurrentUserStatsQuery,
@@ -50,4 +53,7 @@ __all__ = [
     "ReplayDownloadBodyAssembler",
     "ReplayDownloadBodyBuildInput",
     "ReplayDownloadBodyBuildResult",
+    "ReplayDownloadQuery",
+    "ReplayDownloadQueryInput",
+    "ReplayDownloadQueryResult",
 ]

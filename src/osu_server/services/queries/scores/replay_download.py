@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import final
+from typing import TYPE_CHECKING, Protocol, final
 
 from osu_server.domain.compatibility.stable import (
     ReplayDownloadBodyStrategy,
@@ -11,6 +11,101 @@ from osu_server.domain.compatibility.stable import (
     ReplayDownloadResponseBody,
     ReplayDownloadStoredBlobObject,
 )
+from osu_server.repositories.interfaces.queries.replay_download import (
+    ReplayDownloadAvailableReplayCandidate,
+    ReplayDownloadCandidate,
+    ReplayDownloadCandidateQuery,
+    ReplayDownloadHiddenScoreCandidate,
+    ReplayDownloadMissingReplayCandidate,
+    ReplayDownloadQueryRepository,
+    ReplayDownloadScoreNotFoundCandidate,
+)
+from osu_server.services.queries.storage import BlobByteReader, BlobBytesUnavailableError
+
+if TYPE_CHECKING:
+    from osu_server.domain.scores.score import Ruleset
+
+
+@dataclass(slots=True, frozen=True)
+class ReplayDownloadQueryInput:
+    """Replay download query use-case の入力を表す.
+
+    Args:
+        authenticated_user_id: Authentication 済み user id.
+        score_id: Parse 済み score id.
+        ruleset: Parse 済み Stable ruleset scope.
+
+    Returns:
+        Dataclass のため戻り値はない.
+
+    Raises:
+        なし.
+
+    Constraints:
+        Transport query string, credential value, SQLAlchemy object, storage backend
+        detail は含めない. Auth と parse は呼び出し元で完了している前提とする.
+    """
+
+    authenticated_user_id: int
+    score_id: int
+    ruleset: Ruleset
+
+
+@dataclass(slots=True, frozen=True)
+class ReplayDownloadQueryResult:
+    """Replay download query use-case の branch result を表す.
+
+    Args:
+        branch: Client-visible response branch.
+        response_body: Success branch で返す response body.
+
+    Returns:
+        Dataclass のため戻り値はない.
+
+    Raises:
+        ValueError: Success branch と response body の有無が矛盾する場合.
+
+    Constraints:
+        Success 以外の branch は body を保持しない. Storage backend detail,
+        credential value, raw query value, local artifact path は保持しない.
+    """
+
+    branch: ReplayDownloadBranch
+    response_body: ReplayDownloadResponseBody | None = None
+
+    def __post_init__(self) -> None:
+        if self.branch is ReplayDownloadBranch.SUCCESS and self.response_body is None:
+            msg = "success replay download query result requires response body"
+            raise ValueError(msg)
+        if self.branch is not ReplayDownloadBranch.SUCCESS and self.response_body is not None:
+            msg = "non-success replay download query result must not include response body"
+            raise ValueError(msg)
+
+    @property
+    def is_success(self) -> bool:
+        """Success branch かつ response body があるかを返す.
+
+        Args:
+            なし.
+
+        Returns:
+            Success branch で response body がある場合は True.
+
+        Raises:
+            なし.
+
+        Constraints:
+            HTTP status や transport response には依存しない.
+        """
+
+        return self.branch is ReplayDownloadBranch.SUCCESS and self.response_body is not None
+
+
+class _ReplayDownloadBodyBuilder(Protocol):
+    def build(
+        self,
+        input_data: ReplayDownloadBodyBuildInput,
+    ) -> ReplayDownloadBodyBuildResult: ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -141,6 +236,126 @@ class ReplayDownloadBodyAssembler:
                 return _blocked_result()
 
 
+@final
+class ReplayDownloadQuery:
+    """Replay download candidate から response branch を分類する.
+
+    Args:
+        なし.
+
+    Returns:
+        Class のため戻り値はない.
+
+    Raises:
+        なし.
+
+    Constraints:
+        Read-only query workflow として動作し, replay view count, latest activity,
+        self-view, duplicate-view などの mutation dependency を持たない.
+        Transport, SQLAlchemy, storage backend implementation, Valkey, taskiq,
+        composition には依存しない.
+    """
+
+    def __init__(
+        self,
+        *,
+        repository: ReplayDownloadQueryRepository,
+        blob_reader: BlobByteReader,
+        body_assembler: _ReplayDownloadBodyBuilder,
+        body_strategy: ReplayDownloadBodyStrategy = ReplayDownloadBodyStrategy.BLOCKED,
+    ) -> None:
+        """Query workflow collaborator と body strategy を受け取る.
+
+        Args:
+            repository: Replay download candidate を読む read-only repository.
+            blob_reader: Available replay branch だけで使う blob bytes reader.
+            body_assembler: Stored blob object から response body result を作る builder.
+            body_strategy: Local validation で選ばれた body strategy.
+
+        Returns:
+            なし.
+
+        Raises:
+            なし.
+
+        Constraints:
+            Default strategy は blocked とし, local validation decision がない状態で
+            success body を推測しない. Mutation collaborator は受け取らない.
+        """
+
+        self._repository: ReplayDownloadQueryRepository = repository
+        self._blob_reader: BlobByteReader = blob_reader
+        self._body_assembler: _ReplayDownloadBodyBuilder = body_assembler
+        self._body_strategy: ReplayDownloadBodyStrategy = body_strategy
+
+    async def execute(
+        self,
+        input_data: ReplayDownloadQueryInput,
+    ) -> ReplayDownloadQueryResult:
+        """Replay download query input から branch result を返す.
+
+        Args:
+            input_data: Authentication と parse が完了した query input.
+
+        Returns:
+            Success の場合は response body を含む result. それ以外は branch のみの
+            result.
+
+        Raises:
+            Repository の想定外永続化例外や body assembler の想定外例外は伝播する.
+
+        Constraints:
+            Blob bytes は available replay candidate の場合だけ読む.
+            BlobBytesUnavailableError は storage_missing branch に変換し, storage
+            backend detail は result に含めない.
+        """
+
+        candidate = await self._repository.get_candidate(
+            ReplayDownloadCandidateQuery(
+                score_id=input_data.score_id,
+                ruleset=input_data.ruleset,
+            )
+        )
+        return await self._result_from_candidate(candidate)
+
+    async def _result_from_candidate(
+        self,
+        candidate: ReplayDownloadCandidate,
+    ) -> ReplayDownloadQueryResult:
+        if isinstance(
+            candidate,
+            ReplayDownloadScoreNotFoundCandidate | ReplayDownloadHiddenScoreCandidate,
+        ):
+            return ReplayDownloadQueryResult(branch=ReplayDownloadBranch.HIDDEN_SCORE)
+
+        if isinstance(candidate, ReplayDownloadMissingReplayCandidate):
+            return ReplayDownloadQueryResult(
+                branch=ReplayDownloadBranch.MISSING_REPLAY_PROVISIONAL,
+            )
+
+        return await self._result_from_available_replay(candidate)
+
+    async def _result_from_available_replay(
+        self,
+        candidate: ReplayDownloadAvailableReplayCandidate,
+    ) -> ReplayDownloadQueryResult:
+        try:
+            blob_bytes = await self._blob_reader.read_bytes(candidate.blob_id)
+        except BlobBytesUnavailableError:
+            return ReplayDownloadQueryResult(branch=ReplayDownloadBranch.STORAGE_MISSING)
+
+        build_result = self._body_assembler.build(
+            ReplayDownloadBodyBuildInput(
+                strategy=self._body_strategy,
+                stored_blob=ReplayDownloadStoredBlobObject(payload=blob_bytes),
+            )
+        )
+        return ReplayDownloadQueryResult(
+            branch=build_result.branch,
+            response_body=build_result.response_body,
+        )
+
+
 def _blocked_result() -> ReplayDownloadBodyBuildResult:
     return ReplayDownloadBodyBuildResult(
         branch=ReplayDownloadBranch.BODY_STRATEGY_BLOCKED,
@@ -152,4 +367,7 @@ __all__ = [
     "ReplayDownloadBodyAssembler",
     "ReplayDownloadBodyBuildInput",
     "ReplayDownloadBodyBuildResult",
+    "ReplayDownloadQuery",
+    "ReplayDownloadQueryInput",
+    "ReplayDownloadQueryResult",
 ]
