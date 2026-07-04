@@ -45,7 +45,7 @@
   - _Requirements: 2.2, 2.3, 4.3, 4.5, 5.4_
   - _Boundary: Blob Byte Reader_
 
-- [ ] 2.5 (P) Confirmed query keys の parser と malformed fallback を実装する
+- [x] 2.5 (P) Confirmed query keys の parser と malformed fallback を実装する
   - `c` と `m` が typed request に parse され、`u` と `h` は auth mapping だけに渡される
   - Missing/malformed `c` / `m` と unknown field は target-confirmed behavior ではなく provisional fallback として分類される
   - Parser result と test failure output に raw `u`、raw `h`、raw query values が残らない
