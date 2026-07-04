@@ -2,11 +2,11 @@
 
 ## Problem
 
-Stable client users need `/web/osu-getreplay.php` to return replay download responses that the client can actually consume. Issue #36 cannot safely implement the route until the saved Replay blob is proven to be the correct response body, or until Athena has an explicit body assembly path.
+Stable client users need `/web/osu-getreplay.php` to return replay download responses that the client can actually consume. Issue #36 must only return success after the saved Replay blob is proven to be the correct response body, or after Athena has an explicit body assembly path.
 
 ## Current State
 
-`replay-download-contract` fixed the route, request keys, auth fields, response evidence, alias boundary, and privacy constraints for Issue #35. It intentionally did not implement the runtime endpoint. The remaining blocker for #36 is `target_body_validation_requires_local_raw_blob_artifact`: Athena must decide whether saved Replay blob bytes can be returned directly or whether the replay download body must be assembled.
+`replay-download-contract` fixed the route, request keys, auth fields, response evidence, alias boundary, and privacy constraints for Issue #35. The original blocker for #36 was `target_body_validation_requires_local_raw_blob_artifact`: Athena had to decide whether saved Replay blob bytes could be returned directly or whether the replay download body had to be assembled. A local metadata-only diagnostic for score 6 selected `download_body_strategy=direct_blob_bytes` without committing raw replay bytes, complete `.osr` bytes, credential values, or complete captured query values.
 
 Confirmed inputs from the existing contract:
 
@@ -33,7 +33,7 @@ Issue #36 has a runtime implementation of `/web/osu-getreplay.php` that:
 
 Use **Body Strategy First**.
 
-The first implementation slice resolves `target_body_validation_requires_local_raw_blob_artifact` by running a local-only raw replay diagnostic against an actual stored Replay blob and target-body parser/client check. The result updates the implementation plan to either return stored blob bytes directly or assemble the response body explicitly. After that, implement the primary stable web legacy endpoint through thin transport parsing, query/use-case boundaries, blob read access, and focused tests.
+The first implementation slice resolves `target_body_validation_requires_local_raw_blob_artifact` by running a local-only raw replay diagnostic against an actual stored Replay blob and target-body parser/client check. The selected plan returns stored blob bytes directly through thin transport parsing, query/use-case boundaries, blob read access, and focused tests.
 
 This approach is preferred because it removes the highest-risk compatibility blocker before endpoint code can accidentally ship a response that downloads but cannot be replayed by the Stable client.
 

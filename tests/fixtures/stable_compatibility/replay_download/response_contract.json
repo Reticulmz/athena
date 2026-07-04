@@ -5,8 +5,8 @@
   "branches": [
     {
       "branch": "success",
-      "status_label": "unconfirmed",
-      "readiness": "blocked",
+      "status_label": "local_validated",
+      "readiness": "implementation_ready",
       "selected_response_status": 200,
       "selected_header_keys": ["content-disposition", "content-type"],
       "selected_body_kind": "lzma_compressed_replay_payload",
@@ -14,13 +14,14 @@
       "selected_safe_body_sha256": null,
       "evidence_sources": [
         "target_client_response_metadata:official_bancho_stable_replay_download_200",
+        "body_assembly_decision:direct_blob_bytes",
         "reference_responses:bancho_py_success",
         "reference_responses:deck_success"
       ],
-      "blocker": "target_body_validation_requires_local_raw_blob_artifact",
+      "blocker": null,
       "notes": [
-        "Target traffic confirms a 200 LZMA-compressed replay payload response, but direct blob bytes are not implementation-ready.",
-        "Body decision remains blocked until local raw blob bytes are validated against the target body parser.",
+        "Target traffic confirms a 200 LZMA-compressed replay payload response.",
+        "Local metadata-only diagnostic selected direct_blob_bytes without committing raw replay bytes.",
         "Reference implementations disagree on full .osr path versus raw replay payload shape."
       ]
     },

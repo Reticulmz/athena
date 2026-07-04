@@ -89,7 +89,9 @@ def test_replay_download_route_returns_empty_404_for_missing_replay(tmp_path: Pa
     assert response.content == b""
 
 
-def test_replay_download_route_keeps_available_replay_blocked(tmp_path: Path) -> None:
+def test_replay_download_route_returns_direct_blob_bytes_for_available_replay(
+    tmp_path: Path,
+) -> None:
     with _test_env():
         app = create_app(blob_root=tmp_path / "blobs")
         with TestClient(app, raise_server_exceptions=False) as client:
@@ -101,8 +103,10 @@ def test_replay_download_route_keeps_available_replay_blocked(tmp_path: Path) ->
                 params=_query(score_id),
             )
 
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.content == b""
+    assert response.status_code == HTTPStatus.OK
+    assert response.content == b"synthetic-replay-download-body"
+    assert response.headers["content-type"] == "zip"
+    assert response.headers["content-disposition"] == 'attachment; filename="replay.osr"'
 
 
 async def _seed_authenticated_visible_score(app: Starlette) -> int:

@@ -8,6 +8,7 @@ from dishka import Provider, Scope
 from taskiq import AsyncBroker
 
 from osu_server.composition.providers._dishka import provide
+from osu_server.domain.compatibility.stable import ReplayDownloadBodyStrategy
 from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.jobs.beatmap_leaderboards import TaskiqBeatmapLeaderboardRebuildWorkerWake
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
@@ -115,6 +116,7 @@ class ScoreProviderSet(Provider):
             repository=repository,
             blob_reader=blob_reader,
             body_assembler=body_assembler,
+            body_strategy=ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES,
         )
 
     @provide

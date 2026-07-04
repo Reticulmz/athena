@@ -1044,8 +1044,8 @@ Required processing:
 4. Resolve score id to a visible score, replay attachment, blob metadata, and
    storage object.
 5. Return target-client-compatible replay download bytes with a 200 response.
-   Direct stored blob bytes are not implementation-ready while blocker
-   `target_body_validation_requires_local_raw_blob_artifact` remains.
+   Local metadata-only validation selected direct stored blob bytes as
+   `download_body_strategy=direct_blob_bytes`.
 6. If blob integrity passes but target body compatibility fails, assemble the
    replay download response body instead of returning blob bytes directly.
 7. Return the reference-compatible missing replay status. `bancho.py` and
@@ -1063,8 +1063,8 @@ Replay download evidence note:
 | Alias route | `candidate` | `/web/replays/<id>` is `candidate_only_reference_backed` from `lets`; target captures did not observe it. |
 | Auth and request fields | `confirmed` | Target captures carry query keys `c`, `h`, `m`, `u`; auth-like fields are `h` (`redacted_auth_proof`) and `u` (`redacted_user_identity`). Raw values are not committed. |
 | Auth failure response | `implementation_ready` | `bancho.py` supplies reference-backed 401 with `empty_body`; fixture: `response_contract.json` branch `auth_failure`. |
-| Success response | `blocked` | Target official capture confirms status 200, `content-disposition`/`content-type`, body kind `lzma_compressed_replay_payload`, byte size 90584; direct blob bytes are blocked by `target_body_validation_requires_local_raw_blob_artifact`. |
-| Body assembly decision | `blocked` | Fixture: `body_assembly_decision.json`; `download_body_strategy=blocked`; local raw blob and parser result are not committed. If blob integrity passes but target body compatibility fails, #36 must use `assemble_download_body`. |
+| Success response | `implementation_ready` | Target official capture confirms status 200, `content-disposition`/`content-type`, body kind `lzma_compressed_replay_payload`, byte size 90584; local metadata-only diagnostic `local_diagnostic:score_6_replay_blob_lzma_alone_pass` selected direct blob bytes. |
+| Body assembly decision | `pass` | Fixture: `body_assembly_decision.json`; `download_body_strategy=direct_blob_bytes`; raw replay bytes, complete `.osr` bytes, credential values, and complete captured query values are not committed. If future validation finds blob integrity pass but target body incompatible, #36 must use `assemble_download_body`. |
 | Domain/data-not-found response | `unresolved` | Missing replay remains blocked by conflicting reference evidence: `bancho.py` and `deck` use 404, while `lets` returns empty 200. Hidden and storage-missing select 404 with `empty_http_exception` from `deck`; fixture: `response_contract.json`. |
 | Malformed request response | `unresolved` | Missing/malformed `c`, missing/malformed `m`, and unknown field behavior remain `unconfirmed` with blocker `no_target_or_reference_evidence`. |
 
@@ -1072,13 +1072,13 @@ Issue #36 handoff:
 
 | Field | Handoff |
 | --- | --- |
-| Readiness | Blocked until `target_body_validation_requires_local_raw_blob_artifact` is resolved. |
+| Readiness | Implementation-ready for success responses using `download_body_strategy=direct_blob_bytes`. |
 | Confirmed route | `GET /web/osu-getreplay.php`, `primary_target_client_route`. |
 | Alias boundary | `/web/replays/<id>` is `candidate_only_reference_backed` and not required for #36. |
 | Confirmed request/auth | Query keys `c`, `h`, `m`, `u`; auth fields `h` and `u`; raw values are not committed. |
-| Implementation-ready branches | Auth failure 401 `empty_body`; hidden score 404 `empty_http_exception`; storage-missing 404 `empty_http_exception`. |
-| Blocked / unresolved branches | Success 200 body is blocked by `target_body_validation_requires_local_raw_blob_artifact`; missing replay is unresolved because `bancho.py`/`deck` 404 conflicts with `lets` empty 200; missing/malformed `c`, missing/malformed `m`, and unknown field remain `unconfirmed` with blocker `no_target_or_reference_evidence`. |
-| Body decision | `body_assembly_decision.json`: `download_body_strategy=blocked`. If local validation finds blob integrity pass but target body incompatible, implement `assemble_download_body`. |
+| Implementation-ready branches | Success 200 `lzma_compressed_replay_payload` via `direct_blob_bytes`; auth failure 401 `empty_body`; hidden score 404 `empty_http_exception`; storage-missing 404 `empty_http_exception`. |
+| Blocked / unresolved branches | Missing replay is unresolved because `bancho.py`/`deck` 404 conflicts with `lets` empty 200; missing/malformed `c`, missing/malformed `m`, and unknown field remain `unconfirmed` with blocker `no_target_or_reference_evidence`. |
+| Body decision | `body_assembly_decision.json`: `download_body_strategy=direct_blob_bytes`. If future validation finds blob integrity pass but target body incompatible, implement `assemble_download_body`. |
 | Sanitized fixtures | `tests/fixtures/stable_compatibility/replay_download/target_client_request_metadata.json`, `tests/fixtures/stable_compatibility/replay_download/target_client_response_metadata.json`, `tests/fixtures/stable_compatibility/replay_download/reference_responses.json`, `tests/fixtures/stable_compatibility/replay_download/response_contract.json`, `tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json`. |
 
 Issue #37 boundary:
@@ -1615,7 +1615,7 @@ separate issue.
 | Bancho reachability | No new route work for the current empty-body route unless traffic proves pre-login validation is required. | Empty-body compatibility, country-code/IP response, and malformed-query fixtures. | Pre-login validation, country-code, and client retry behavior probes. |
 | Modern getscores | Complete leaderboard row projections and remaining branch behavior. | Auth failure, unavailable, update-required, row/header, malformed identity, friends, and country fixtures. | Real-client probes for target leaderboard modes and selection branches. |
 | Modern score submit selector | Complete rank/stat/achievement projection and post-submit durability gaps. | Auth sentinel, multipart variant, malformed encrypted payload, duplicate, and storage failure fixtures. | Real-client probes for submit success, failure, and retry interpretation. |
-| Replay download PHP route | Add `/web/osu-getreplay.php` using confirmed target path `/web/osu-getreplay.php`, query keys `c`/`h`/`m`/`u`, and auth fields `h`/`u`; do not return direct blob bytes for success while `target_body_validation_requires_local_raw_blob_artifact` remains. | Local target-body validation artifact for success body, assembly fixture if direct bytes fail, missing-replay conflict resolution, and malformed `c`/`m`/unknown-field branch fixtures. Existing fixture-backed branches: auth failure 401, hidden 404, storage-missing 404. | Primary path choice is confirmed; optional probes may capture target build/`osuver` and verify that `/web/replays/<id>` remains `candidate_only_reference_backed`. |
+| Replay download PHP route | `/web/osu-getreplay.php` exists for the confirmed target path, query keys `c`/`h`/`m`/`u`, and auth fields `h`/`u`; success uses `download_body_strategy=direct_blob_bytes`. | Missing-replay conflict resolution and malformed `c`/`m`/unknown-field branch fixtures. Existing fixture-backed branches: success 200, auth failure 401, hidden 404, storage-missing 404. | Primary path choice is confirmed; optional probes may capture target build/`osuver` and verify that `/web/replays/<id>` remains `candidate_only_reference_backed`. |
 | Session candidate | Add a route only if exact reference row or traffic proves the surface is still called; preserve the `bancho.py` unhandled-route trace as a reference lead. | Auth, params, success body, failure sentinel, and malformed request evidence. | Current target-client call confirmation for `/web/osu-session.php`. |
 | Legacy getscores aliases | Add alias routes only after per-path response variants are confirmed. | Per-version row shape, auth failure, unavailable/update sentinels, not-found, and malformed request fixtures. | Older-client or target-client probes proving which aliases Athena should support. |
 | Legacy score submit aliases | Add alias routes only after per-path payload and response contracts are confirmed. | Payload shape, success body, retryable/terminal failure sentinel, auth failure, and malformed payload fixtures. | Older-client or target-client probes proving which submit aliases remain needed. |

@@ -4,7 +4,7 @@
 
 `replay-download-response` は Issue #36 の runtime implementation design である。Stable client が `GET /web/osu-getreplay.php` から replay download response を取得できるようにし、保存済み Replay blob と client-visible download body の違いを明示的に扱う。
 
-この spec は `replay-download-contract` の evidence を入力にして、primary route、auth mapping、score/replay/blob lookup、success body strategy gate、failure response mapping を実装可能な境界へ落とす。Success body は `target_body_validation_requires_local_raw_blob_artifact` が解消されるまで HTTP 200 を返さない。
+この spec は `replay-download-contract` の evidence を入力にして、primary route、auth mapping、score/replay/blob lookup、success body strategy gate、failure response mapping を実装可能な境界へ落とす。Success body は local metadata-only diagnostic で選択した `direct_blob_bytes` strategy のときだけ HTTP 200 を返す。
 
 ### Goals
 
@@ -224,7 +224,7 @@ graph TB
     AssembleBody --> Success
 ```
 
-`StrategyBlocked` must not return HTTP 200 and must keep Issue #36 incomplete until local validation selects a non-blocked strategy.
+`StrategyBlocked` must not return HTTP 200. Production wiring uses `direct_blob_bytes` only after local validation selects that non-blocked strategy.
 
 ## Requirements Traceability
 
@@ -634,7 +634,7 @@ No schema changes are planned. SQLAlchemy query repository may rely on existing 
 - Storage metadata or backend object unavailable: 404 with empty body.
 - Missing replay: 404 empty provisional fallback, logged with provisional label.
 - Missing/malformed `c` or `m`: 404 empty provisional fallback after successful auth.
-- Body strategy blocked: 404 empty guard response, logged as implementation blocker, and not considered Issue #36 complete.
+- Body strategy blocked: 404 empty guard response if future wiring or validation reverts to blocked.
 - Unexpected exceptions: existing request logging and app error handling apply; do not add branch-specific raw details.
 
 ## Security and Privacy

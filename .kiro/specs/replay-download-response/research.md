@@ -5,9 +5,9 @@
 - **Feature**: `replay-download-response`
 - **Discovery Scope**: Extension
 - **Key Findings**:
-  - 既存の `replay-download-contract` は primary route、query keys、auth fields、failure branches、success body blocker を固定しているが、runtime endpoint は未実装である。
+  - 既存の `replay-download-contract` は primary route、query keys、auth fields、failure branches、success body blocker を固定し、この spec で runtime endpoint を実装する。
   - Stable web legacy は route delegate、Dishka-resolved handler、thin transport exchange の形で既存実装があり、`/web/osu-getreplay.php` も同じ境界で追加できる。
-  - Replay download success は `target_body_validation_requires_local_raw_blob_artifact` が残っているため、body strategy を明示的な implementation gate として扱う必要がある。
+  - Replay download success body は local metadata-only diagnostic により保存済み Replay blob を LZMA-Alone replay payload として検証し、`download_body_strategy=direct_blob_bytes` を選択した。
 
 ## Research Log
 
@@ -27,7 +27,8 @@
   - Target captures confirm `GET /web/osu-getreplay.php` with query keys `c`, `h`, `m`, and `u`.
   - Auth-like fields are `h` and `u`; raw values are not committed.
   - Official target success response is HTTP 200 with `content-type: zip`, `content-disposition` present, and body kind `lzma_compressed_replay_payload`.
-  - Success remains blocked by `target_body_validation_requires_local_raw_blob_artifact`.
+  - Success was originally blocked by `target_body_validation_requires_local_raw_blob_artifact`.
+  - Follow-up local diagnostic for score id 6 confirmed replay attachment metadata, blob byte size, checksum metadata, and LZMA-Alone decompression without committing raw replay bytes or credential values.
   - Auth failure is implementation-ready as 401 `empty_body`.
   - Hidden score and storage-missing replay are implementation-ready as 404 `empty_http_exception`.
   - Missing replay has conflicting reference evidence and is only acceptable as a provisional 404 empty fallback for this spec.
@@ -87,7 +88,8 @@
   - `src/athena_cli/stable_verification/replay_download.py`
   - `tests/unit/athena_cli/stable_verification/test_replay_download.py`
 - **Findings**:
-  - Current committed decision is `download_body_strategy=blocked`.
+  - Current committed decision is `download_body_strategy=direct_blob_bytes`.
+  - Evidence references include `local_capture:athena_replay_download_score_6_404_after_route` and `local_diagnostic:score_6_replay_blob_lzma_alone_pass`.
   - If local validation proves stored bytes are target-client-compatible, the runtime can use `direct_blob_bytes`.
   - If blob integrity passes but target body compatibility fails, the runtime must use `assemble_download_body`.
   - If safe validation cannot be done, success must remain blocked rather than returning guessed bytes.
@@ -171,7 +173,7 @@
 
 ## Risks & Mitigations
 
-- Body strategy remains blocked - Keep success 200 disabled and mark Issue #36 incomplete until local validation selects `direct_blob_bytes` or `assemble_download_body`.
+- Direct blob strategy regression - Keep the body strategy fixture, integration success smoke test, and raw-artifact non-commit policy aligned so Athena does not return guessed bytes if future replay storage changes.
 - Content-Disposition exact value is not fixture-fixed - Use only non-secret deterministic filename values and treat exact filename as implementation detail unless later evidence fixes it.
 - Missing replay target behavior is hard to capture - Return provisional 404 empty fallback and keep revalidation trigger documented.
 - Transport may accidentally leak credentials or storage internals - Parser, logs, and responses must never include raw query values, password hashes, blob storage keys, raw replay bytes, or local artifact paths.
