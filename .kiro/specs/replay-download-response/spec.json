@@ -1,0 +1,22 @@
+{
+  "feature_name": "replay-download-response",
+  "created_at": "2026-07-04T07:11:49Z",
+  "updated_at": "2026-07-04T07:54:54Z",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}
