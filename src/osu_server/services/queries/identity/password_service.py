@@ -49,9 +49,41 @@ class PasswordService:
             return False
 
     async def prepare_password(self, plain_password: str) -> str:
-        """平文 → MD5 → argon2id。登録時に使用。"""
-        md5_hex = hashlib.md5(plain_password.encode()).hexdigest()
+        """平文 password を legacy MD5 hex に変換してから argon2id で hash する.
+
+        引数:
+            plain_password: 登録フォームから受け取った平文 password.
+
+        戻り値:
+            Legacy stable auth 互換の MD5 hex を argon2id で hash した文字列.
+
+        例外:
+            argon2-cffi の hash 処理が失敗した場合は実装依存の例外を送出する.
+
+        制約:
+            MD5 は password 保存用途ではなく Stable client 互換入力への変換だけに使う.
+            永続化される値は argon2id hash であり, 平文 password と MD5 hex は返さない.
+        """
+        md5_hex = self.legacy_plaintext_md5(plain_password)
         return await self.hash(md5_hex)
+
+    def legacy_plaintext_md5(self, plain_password: str) -> str:
+        """Stable legacy auth 互換の平文 password MD5 hex を返す.
+
+        引数:
+            plain_password: ユーザーが入力した平文 password.
+
+        戻り値:
+            Stable legacy auth で使う lowercase MD5 hex 文字列.
+
+        例外:
+            なし.
+
+        制約:
+            MD5 は互換プロトコル値の再現だけに使う. 新しい password 保存や
+            authorization policy の hash 方式として扱わない.
+        """
+        return hashlib.md5(plain_password.encode(), usedforsecurity=False).hexdigest()
 
     async def check_hibp(self, password: str) -> bool:
         """HIBP で漏洩パスワードか判定する。

@@ -47,6 +47,13 @@ class TestVerify:
 
 
 class TestPreparePassword:
+    def test_legacy_plaintext_md5_matches_stable_client_hash(self) -> None:
+        """legacy_plaintext_md5 は stable client 互換の lowercase MD5 hex を返す。"""
+        svc = PasswordService()
+        plain = "my_secure_password"
+
+        assert svc.legacy_plaintext_md5(plain) == hashlib.md5(plain.encode()).hexdigest()
+
     async def test_prepare_password_roundtrip(self) -> None:
         """prepare_password(plain) produces a hash verifiable with md5(plain)."""
         svc = PasswordService()
