@@ -16,7 +16,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 4.4, 6.1, 6.3_
 
 - [ ] 2. Core: replay lookup と storage read の read-only boundaries を作る
-- [ ] 2.1 Replay download candidate の query repository contract を定義する
+- [x] 2.1 Replay download candidate の query repository contract を定義する
   - Score not found、hidden score、missing replay、available replay を repository result として区別する
   - Available replay は blob id、checksum、byte size だけを返し、raw bytes や storage key を返さない
   - Contract tests が typed fake data で各 candidate branch を検証できる
