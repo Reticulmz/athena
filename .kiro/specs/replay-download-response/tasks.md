@@ -114,7 +114,7 @@
   - _Requirements: 1.1, 1.2, 2.1, 2.4, 3.1, 3.2, 3.3, 4.1, 4.3, 4.4, 4.5, 5.4, 6.2, 6.3_
 
 - [ ] 6. Validation: focused checks と quality gate を通す
-- [ ] 6.1 Replay download focused test suite を実行し、不足を修正する
+- [x] 6.1 Replay download focused test suite を実行し、不足を修正する
   - Parser、handler、query use-case、repository、composition integration の tests が pass する
   - All in-scope response branches と body strategy gate が tests から追跡できる
   - Failing test がある場合は implementation 側を先に疑い、confirmed contract 変更が必要な場合だけ spec gap として止める
