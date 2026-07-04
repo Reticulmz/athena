@@ -19,6 +19,9 @@ from osu_server.repositories.interfaces.queries.friends import (
     FriendRelationshipQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
+from osu_server.repositories.interfaces.queries.replay_download import (
+    ReplayDownloadQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
@@ -43,6 +46,9 @@ from osu_server.repositories.memory.queries.friends import (
 )
 from osu_server.repositories.memory.queries.personal_bests import (
     InMemoryPersonalBestQueryRepository,
+)
+from osu_server.repositories.memory.queries.replay_download import (
+    InMemoryReplayDownloadQueryRepository,
 )
 from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
 from osu_server.repositories.memory.queries.score_performance import (
@@ -69,6 +75,9 @@ from osu_server.repositories.sqlalchemy.queries.friends import (
 )
 from osu_server.repositories.sqlalchemy.queries.personal_bests import (
     SQLAlchemyPersonalBestQueryRepository,
+)
+from osu_server.repositories.sqlalchemy.queries.replay_download import (
+    SQLAlchemyReplayDownloadQueryRepository,
 )
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
 from osu_server.repositories.sqlalchemy.queries.score_performance import (
@@ -180,6 +189,12 @@ class SQLAlchemyRepositoryAdapterFamily:
     ) -> UserStatsQueryRepository:
         return SQLAlchemyUserStatsQueryRepository(session_factory)
 
+    def replay_download_query_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> ReplayDownloadQueryRepository:
+        return SQLAlchemyReplayDownloadQueryRepository(session_factory)
+
 
 class InMemoryRepositoryAdapterFamily:
     """Build one coherent in-memory repository adapter set."""
@@ -248,6 +263,10 @@ class InMemoryRepositoryAdapterFamily:
             RepositoryAdapterReplacement(
                 UserStatsQueryRepository,
                 InMemoryUserStatsQueryRepository(self.unit_of_work_factory),
+            ),
+            RepositoryAdapterReplacement(
+                ReplayDownloadQueryRepository,
+                InMemoryReplayDownloadQueryRepository(self.unit_of_work_factory),
             ),
         )
 

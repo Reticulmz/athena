@@ -30,14 +30,17 @@ from osu_server.services.queries.scores import (
     BeatmapLeaderboardQuery,
     BeatmapScoreListingQuery,
     CurrentUserStatsQuery,
+    ReplayDownloadQuery,
 )
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
+    ReplayDownloadQueryParser,
     StableScoreSubmitMapper,
 )
 from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
+from osu_server.transports.stable.web_legacy.replay_download import ReplayDownloadHandler
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 _DISHKA_RUNTIME_HINTS = (
@@ -54,6 +57,9 @@ _DISHKA_RUNTIME_HINTS = (
     LocalEventBus,
     RegisterUserCommandUseCase,
     RequestBeatmapFileWarmupUseCase,
+    ReplayDownloadQuery,
+    ReplayDownloadQueryParser,
+    ReplayDownloadHandler,
     SessionCredentialsQueryUseCase,
     UserQueryRepository,
 )
@@ -79,6 +85,10 @@ class StableWebLegacyProviderSet(Provider):
     @provide
     def getscores_status_mapper(self) -> GetscoresStatusMapper:
         return GetscoresStatusMapper()
+
+    @provide
+    def replay_download_parser(self) -> ReplayDownloadQueryParser:
+        return ReplayDownloadQueryParser()
 
     @provide
     def getscores_handler(
@@ -137,6 +147,19 @@ class StableWebLegacyProviderSet(Provider):
             mapper=mapper,
             current_user_stats_query=current_user_stats_query,
             event_bus=event_bus,
+        )
+
+    @provide
+    def replay_download_handler(
+        self,
+        auth_query: SessionCredentialsQueryUseCase,
+        replay_download_parser: ReplayDownloadQueryParser,
+        replay_download_query: ReplayDownloadQuery,
+    ) -> ReplayDownloadHandler:
+        return ReplayDownloadHandler(
+            auth_query=auth_query,
+            replay_download_parser=replay_download_parser,
+            replay_download_query=replay_download_query,
         )
 
 

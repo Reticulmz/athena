@@ -99,7 +99,7 @@
   - _Depends: 4.2_
   - _Requirements: 1.1, 1.3, 6.2, 6.3_
 
-- [ ] 5.2 Provider graph と startup eager resolution を接続する
+- [x] 5.2 Provider graph と startup eager resolution を接続する
   - Replay download handler、parser、query use-case、repository、blob reader が runtime provider graph から解決される
   - App startup が handler dependency error を first request 前に検出できる
   - In-memory runtime provider graph でも replay download route smoke test が実行できる

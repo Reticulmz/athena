@@ -19,6 +19,7 @@ from osu_server.composition.lifespan import create_lifespan, lifespan
 from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
 from osu_server.composition.starlette_integration import dishka_middleware
 from osu_server.config import AppConfig
+from osu_server.transports.stable.web_legacy.replay_download import ReplayDownloadHandler
 
 # starlette-dishka evaluates endpoint annotations at runtime.
 _DISHKA_RUNTIME_HINTS = (Path, Request)
@@ -82,6 +83,10 @@ def test_starlette_lifespan_attaches_dishka_container(
         assert response.text == "test"
         assert hasattr(app.state, "dishka_container")
         assert isinstance(cast("object", app.state.config), AppConfig)
+        assert isinstance(
+            cast("object", app.state.replay_download_handler),
+            ReplayDownloadHandler,
+        )
         assert not hasattr(app.state, "container")
 
 

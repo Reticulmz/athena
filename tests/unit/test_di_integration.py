@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 import httpx
@@ -9,6 +10,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
 from starlette.routing import Host, Mount, Route, Router
+from starlette.testclient import TestClient
 from taskiq import AsyncBroker
 
 from osu_server.app import app, create_app
@@ -34,6 +36,9 @@ from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepo
 from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
 from osu_server.repositories.interfaces.queries.channels import ChannelQueryRepository
 from osu_server.repositories.interfaces.queries.chat import ChatHistoryQueryRepository
+from osu_server.repositories.interfaces.queries.replay_download import (
+    ReplayDownloadQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.user_stats import UserStatsQueryRepository
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
@@ -43,6 +48,9 @@ from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQuery
 from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryRepository
 from osu_server.repositories.memory.queries.channels import InMemoryChannelQueryRepository
 from osu_server.repositories.memory.queries.chat import InMemoryChatHistoryQueryRepository
+from osu_server.repositories.memory.queries.replay_download import (
+    InMemoryReplayDownloadQueryRepository,
+)
 from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
 from osu_server.repositories.memory.queries.user_stats import InMemoryUserStatsQueryRepository
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
@@ -71,6 +79,8 @@ from osu_server.services.queries.chat import (
 from osu_server.services.queries.chat.private_message_service import PrivateMessageService
 from osu_server.services.queries.identity.password_service import PasswordService
 from osu_server.services.queries.identity.permission_service import PermissionService
+from osu_server.services.queries.scores import ReplayDownloadBodyAssembler, ReplayDownloadQuery
+from osu_server.services.queries.storage import BlobByteReader, BlobByteReaderAdapter
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.bancho.workflows.login import LoginWorkflow
@@ -80,6 +90,7 @@ from osu_server.transports.stable.bancho.workflows.login_response_builder import
 from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflow
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
+from osu_server.transports.stable.web_legacy.replay_download import ReplayDownloadHandler
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 from tests.factories.config import make_app_config
 
@@ -236,6 +247,11 @@ async def test_app_container_uses_explicit_in_memory_test_overrides(
             await container.get(UserStatsQueryRepository),
             InMemoryUserStatsQueryRepository,
         )
+        replay_download_repository = await container.get(ReplayDownloadQueryRepository)
+        assert isinstance(
+            replay_download_repository,
+            InMemoryReplayDownloadQueryRepository,
+        )
     finally:
         await container.close()
 
@@ -302,11 +318,29 @@ async def test_app_container_resolves_transport_handler_graph(tmp_path: Path) ->
         RegistrationHandler,
         GetscoresHandler,
         ScoreSubmitHandler,
+        ReplayDownloadBodyAssembler,
+        ReplayDownloadQuery,
+        ReplayDownloadHandler,
     )
 
     try:
         for dependency_type in expected_types:
             resolved = await container.get(dependency_type)
             assert isinstance(resolved, dependency_type)
+        blob_reader = await container.get(BlobByteReader)
+        assert isinstance(blob_reader, BlobByteReaderAdapter)
     finally:
         await container.close()
+
+
+def test_in_memory_app_replay_download_route_reaches_handler(tmp_path: Path) -> None:
+    created = create_app(
+        provider_overrides=(make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),)
+    )
+
+    with TestClient(created, raise_server_exceptions=False) as client:
+        domain = load_routing_config().domain
+        response = client.get(f"http://osu.{domain}/web/osu-getreplay.php")
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.content == b""

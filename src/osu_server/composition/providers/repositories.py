@@ -25,6 +25,9 @@ from osu_server.repositories.interfaces.queries.friends import (
     FriendRelationshipQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
+from osu_server.repositories.interfaces.queries.replay_download import (
+    ReplayDownloadQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
@@ -44,6 +47,7 @@ _DISHKA_RUNTIME_HINTS = (
     ChatHistoryQueryRepository,
     FriendRelationshipQueryRepository,
     PersonalBestQueryRepository,
+    ReplayDownloadQueryRepository,
     RoleQueryRepository,
     ScorePerformanceQueryRepository,
     ScoreQueryRepository,
@@ -158,3 +162,10 @@ class RepositoryProviderSet(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> UserStatsQueryRepository:
         return self._adapters.user_stats_query_repository(session_factory)
+
+    @provide
+    def replay_download_query_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> ReplayDownloadQueryRepository:
+        return self._adapters.replay_download_query_repository(session_factory)
