@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import TYPE_CHECKING, Protocol, final
 
 from osu_server.domain.compatibility.stable import (
@@ -30,18 +31,18 @@ if TYPE_CHECKING:
 class ReplayDownloadQueryInput:
     """Replay download query use-case の入力を表す.
 
-    Args:
+    引数:
         authenticated_user_id: Authentication 済み user id.
         score_id: Parse 済み score id.
         ruleset: Parse 済み Stable ruleset scope.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Transport query string, credential value, SQLAlchemy object, storage backend
         detail は含めない. Auth と parse は呼び出し元で完了している前提とする.
     """
@@ -55,17 +56,17 @@ class ReplayDownloadQueryInput:
 class ReplayDownloadQueryResult:
     """Replay download query use-case の branch result を表す.
 
-    Args:
+    引数:
         branch: Client-visible response branch.
         response_body: Success branch で返す response body.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         ValueError: Success branch と response body の有無が矛盾する場合.
 
-    Constraints:
+    制約:
         Success 以外の branch は body を保持しない. Storage backend detail,
         credential value, raw query value, local artifact path は保持しない.
     """
@@ -85,16 +86,16 @@ class ReplayDownloadQueryResult:
     def is_success(self) -> bool:
         """Success branch かつ response body があるかを返す.
 
-        Args:
+        引数:
             なし.
 
-        Returns:
+        戻り値:
             Success branch で response body がある場合は True.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
+        制約:
             HTTP status や transport response には依存しない.
         """
 
@@ -112,17 +113,17 @@ class _ReplayDownloadBodyBuilder(Protocol):
 class ReplayDownloadBodyBuildInput:
     """Replay download response body build の入力を表す.
 
-    Args:
+    引数:
         strategy: Local validation で選ばれた response body strategy.
         stored_blob: Replay attachment から読んだ stored blob object.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Stored blob bytes は validation 済みの値だけを渡す. Transport,
         SQLAlchemy, storage backend detail, credential value は含めない.
     """
@@ -135,17 +136,17 @@ class ReplayDownloadBodyBuildInput:
 class ReplayDownloadBodyBuildResult:
     """Replay download response body build の結果を表す.
 
-    Args:
+    引数:
         branch: Response body build の observable branch.
         response_body: Success branch で client-visible に返す body.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         ValueError: Success branch と response body の有無が矛盾する場合.
 
-    Constraints:
+    制約:
         Success 以外の branch は response body を保持しない. Payload の内容は
         repr に出さない.
     """
@@ -165,16 +166,16 @@ class ReplayDownloadBodyBuildResult:
     def is_success(self) -> bool:
         """Success branch かつ response body があるかを返す.
 
-        Args:
+        引数:
             なし.
 
-        Returns:
+        戻り値:
             Success branch で response body がある場合は True.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
+        制約:
             HTTP status は扱わず, query service result の branch だけを判定する.
         """
 
@@ -185,16 +186,16 @@ class ReplayDownloadBodyBuildResult:
 class ReplayDownloadBodyAssembler:
     """Stored replay bytes から client-visible response body を作る.
 
-    Args:
+    引数:
         なし.
 
-    Returns:
+    戻り値:
         Class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Blocked strategy と未確定 assemble strategy は bytes を生成しない.
         Transport, SQLAlchemy, storage backend implementation, Valkey, taskiq,
         composition には依存しない.
@@ -206,16 +207,16 @@ class ReplayDownloadBodyAssembler:
     ) -> ReplayDownloadBodyBuildResult:
         """Replay download response body build result を返す.
 
-        Args:
+        引数:
             input_data: Strategy と stored blob object.
 
-        Returns:
+        戻り値:
             Success または body strategy blocked の build result.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
+        制約:
             `direct_blob_bytes` では stored blob bytes をそのまま response body
             として返す. `assemble_download_body` は local validation decision が
             まだ存在しないため blocked として扱う.
@@ -240,16 +241,16 @@ class ReplayDownloadBodyAssembler:
 class ReplayDownloadQuery:
     """Replay download candidate から response branch を分類する.
 
-    Args:
+    引数:
         なし.
 
-    Returns:
+    戻り値:
         Class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Read-only query workflow として動作し, replay view count, latest activity,
         self-view, duplicate-view などの mutation dependency を持たない.
         Transport, SQLAlchemy, storage backend implementation, Valkey, taskiq,
@@ -266,19 +267,19 @@ class ReplayDownloadQuery:
     ) -> None:
         """Query workflow collaborator と body strategy を受け取る.
 
-        Args:
+        引数:
             repository: Replay download candidate を読む read-only repository.
             blob_reader: Available replay branch だけで使う blob bytes reader.
             body_assembler: Stored blob object から response body result を作る builder.
             body_strategy: Local validation で選ばれた body strategy.
 
-        Returns:
+        戻り値:
             なし.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
+        制約:
             Default strategy は blocked とし, local validation decision がない状態で
             success body を推測しない. Mutation collaborator は受け取らない.
         """
@@ -294,17 +295,17 @@ class ReplayDownloadQuery:
     ) -> ReplayDownloadQueryResult:
         """Replay download query input から branch result を返す.
 
-        Args:
+        引数:
             input_data: Authentication と parse が完了した query input.
 
-        Returns:
+        戻り値:
             Success の場合は response body を含む result. それ以外は branch のみの
             result.
 
-        Raises:
+        例外:
             Repository の想定外永続化例外や body assembler の想定外例外は伝播する.
 
-        Constraints:
+        制約:
             Blob bytes は available replay candidate の場合だけ読む.
             BlobBytesUnavailableError は storage_missing branch に変換し, storage
             backend detail は result に含めない.
@@ -342,6 +343,11 @@ class ReplayDownloadQuery:
         try:
             blob_bytes = await self._blob_reader.read_bytes(candidate.blob_id)
         except BlobBytesUnavailableError:
+            return ReplayDownloadQueryResult(branch=ReplayDownloadBranch.STORAGE_MISSING)
+
+        if len(blob_bytes) != candidate.byte_size or sha256(blob_bytes).hexdigest() != (
+            candidate.checksum
+        ):
             return ReplayDownloadQueryResult(branch=ReplayDownloadBranch.STORAGE_MISSING)
 
         build_result = self._body_assembler.build(

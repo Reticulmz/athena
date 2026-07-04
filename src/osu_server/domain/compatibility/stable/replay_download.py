@@ -14,16 +14,16 @@ if TYPE_CHECKING:
 class ReplayDownloadBranch(StrEnum):
     """Stable replay download の response branch を表す.
 
-    Args:
+    引数:
         なし.
 
-    Returns:
+    戻り値:
         Enum class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Client-visible branch label だけを保持し, transport, SQLAlchemy,
         storage backend, athena_cli には依存しない.
     """
@@ -40,16 +40,16 @@ class ReplayDownloadBranch(StrEnum):
 class ReplayDownloadBodyStrategy(StrEnum):
     """Stable replay download response body の生成方針を表す.
 
-    Args:
+    引数:
         なし.
 
-    Returns:
+    戻り値:
         Enum class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         `blocked` は success response body を生成してはいけない strategy として扱う.
         Stored Replay blob object と client-visible response body は別概念として扱う.
     """
@@ -63,16 +63,16 @@ class ReplayDownloadBodyStrategy(StrEnum):
 class ReplayDownloadResponseBody:
     """Stable client に返す Replay Download Response Body を表す.
 
-    Args:
+    引数:
         payload: Client-visible response body bytes.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Stored Replay blob object とは別概念として扱う. repr には payload を出さない.
     """
 
@@ -82,16 +82,16 @@ class ReplayDownloadResponseBody:
     def byte_size(self) -> int:
         """Response body payload の byte size を返す.
 
-        Args:
+        引数:
             なし.
 
-        Returns:
+        戻り値:
             Payload の byte size.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
+        制約:
             Payload 内容は公開しない.
         """
 
@@ -102,16 +102,16 @@ class ReplayDownloadResponseBody:
 class ReplayDownloadStoredBlobObject:
     """保存済み Replay blob object を response body から分離して表す.
 
-    Args:
+    引数:
         payload: Stored Replay blob object bytes.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Replay Download Response Body と同一視しない. repr には payload を出さない.
     """
 
@@ -121,16 +121,16 @@ class ReplayDownloadStoredBlobObject:
     def byte_size(self) -> int:
         """Stored blob payload の byte size を返す.
 
-        Args:
+        引数:
             なし.
 
-        Returns:
+        戻り値:
             Payload の byte size.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
+        制約:
             Payload 内容は公開しない.
         """
 
@@ -146,6 +146,7 @@ REPLAY_DOWNLOAD_CONTRACT_BRANCH_LABELS_BY_BRANCH: Final[
         ReplayDownloadBranch.HIDDEN_SCORE: ("hidden_score",),
         ReplayDownloadBranch.STORAGE_MISSING: ("storage_missing",),
         ReplayDownloadBranch.MISSING_REPLAY_PROVISIONAL: ("missing_replay",),
+        ReplayDownloadBranch.BODY_STRATEGY_BLOCKED: ("body_strategy_blocked",),
         ReplayDownloadBranch.MALFORMED_REQUEST_PROVISIONAL: (
             "missing_score_id",
             "malformed_score_id",

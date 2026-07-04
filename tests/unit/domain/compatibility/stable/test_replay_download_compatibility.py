@@ -97,6 +97,9 @@ def test_replay_download_branch_contract_labels_match_response_fixture() -> None
         ReplayDownloadBranch.MISSING_REPLAY_PROVISIONAL
     ] == ("missing_replay",)
     assert REPLAY_DOWNLOAD_CONTRACT_BRANCH_LABELS_BY_BRANCH[
+        ReplayDownloadBranch.BODY_STRATEGY_BLOCKED
+    ] == ("body_strategy_blocked",)
+    assert REPLAY_DOWNLOAD_CONTRACT_BRANCH_LABELS_BY_BRANCH[
         ReplayDownloadBranch.MALFORMED_REQUEST_PROVISIONAL
     ] == (
         "missing_score_id",

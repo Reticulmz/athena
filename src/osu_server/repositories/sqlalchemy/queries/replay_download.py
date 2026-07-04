@@ -33,16 +33,16 @@ if TYPE_CHECKING:
 class SQLAlchemyReplayDownloadQueryRepository:
     """Replay download candidate を SQLAlchemy metadata から投影する.
 
-    Args:
+    引数:
         session_factory: Short read session を生成する factory.
 
-    Returns:
+    戻り値:
         Class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Raw replay bytes, blob storage key, filesystem path は読まない.
         Score, owner visibility, replay attachment metadata だけを参照する.
     """
@@ -52,16 +52,16 @@ class SQLAlchemyReplayDownloadQueryRepository:
     def __init__(self, session_factory: SQLAlchemyQuerySessionFactory) -> None:
         """Repository を short read session factory で初期化する.
 
-        Args:
+        引数:
             session_factory: Query ごとに閉じる SQLAlchemy read session factory.
 
-        Returns:
+        戻り値:
             None.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
+        制約:
             Factory は保持するだけで session を先行生成しない.
         """
         self._session_factory = session_factory
@@ -72,16 +72,16 @@ class SQLAlchemyReplayDownloadQueryRepository:
     ) -> ReplayDownloadCandidate:
         """Score id と ruleset から replay download candidate branch を返す.
 
-        Args:
+        引数:
             query: Parsed score id と Stable ruleset scope.
 
-        Returns:
+        戻り値:
             Score not found, hidden score, missing replay, available replay のいずれか.
 
-        Raises:
+        例外:
             SQLAlchemy session または database の read 例外を送出する可能性がある.
 
-        Constraints:
+        制約:
             1 回の short read session で metadata だけを投影する. Blob object の
             storage key や raw bytes は読まない.
         """

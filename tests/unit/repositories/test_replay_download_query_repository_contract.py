@@ -121,6 +121,7 @@ async def test_candidate_contract_distinguishes_missing_replay() -> None:
 
 
 async def test_available_replay_candidate_exposes_only_attachment_metadata() -> None:
+    checksum = "synthetic-available-checksum"
     repository = _repository(
         (
             _FakeReplayDownloadCandidateRow(
@@ -129,7 +130,7 @@ async def test_available_replay_candidate_exposes_only_attachment_metadata() -> 
                 hidden=False,
                 replay=_FakeReplayAttachment(
                     blob_id=102,
-                    checksum="synthetic-available-checksum",
+                    checksum=checksum,
                     byte_size=4096,
                 ),
             ),
@@ -142,7 +143,7 @@ async def test_available_replay_candidate_exposes_only_attachment_metadata() -> 
 
     assert result == ReplayDownloadAvailableReplayCandidate(
         blob_id=102,
-        checksum="synthetic-available-checksum",
+        checksum=checksum,
         byte_size=4096,
     )
     assert result.kind is ReplayDownloadCandidateKind.AVAILABLE_REPLAY
@@ -155,6 +156,7 @@ async def test_available_replay_candidate_exposes_only_attachment_metadata() -> 
     assert not hasattr(result, "raw_bytes")
     assert not hasattr(result, "storage_key")
     assert not hasattr(result, "filesystem_path")
+    assert checksum not in repr(result)
 
 
 async def test_candidate_query_includes_ruleset_scope() -> None:

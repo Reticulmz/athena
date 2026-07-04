@@ -103,16 +103,16 @@ class ReplayBlobDiagnosticClassification(StrEnum):
 class ReplayBlobDiagnosticInput:
     """Replay blob diagnostic procedure の入力を表す.
 
-    Args:
+    引数:
         score_id: 診断対象の score id.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Raw replay bytes, credential-like value, complete .osr bytes は保持しない.
     """
 
@@ -123,17 +123,17 @@ class ReplayBlobDiagnosticInput:
 class ReplayBlobAttachmentRecord:
     """Score に紐づく replay attachment の report-safe view を表す.
 
-    Args:
+    引数:
         score_id: Replay attachment が属する score id.
         blob_id: Replay bytes を参照する blob metadata id.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Attachment lookup 結果のうち diagnostic に必要な id だけを保持する.
     """
 
@@ -145,19 +145,19 @@ class ReplayBlobAttachmentRecord:
 class ReplayBlobMetadataRecord:
     """Replay blob metadata の diagnostic 用 report-safe view を表す.
 
-    Args:
+    引数:
         blob_id: Blob metadata id.
         sha256: Blob metadata が保持する SHA-256 digest.
         byte_size: Blob metadata が保持する byte size.
         storage_key: Backend object を読むための storage key.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Raw replay bytes, credential-like value, complete .osr bytes は保持しない.
         storage_key は diagnostic summary や reporter output に出さない.
     """
@@ -406,17 +406,17 @@ class ReplayDownloadBodyDecision:
     def success_response_allowed(self) -> bool:
         """Success HTTP 200 response を返してよい decision かを返す.
 
-        Args:
+        引数:
             なし.
 
-        Returns:
+        戻り値:
             Local validation 済みの direct_blob_bytes または assemble_download_body
             decision の場合だけ True.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
+        制約:
             blocked, known_gap, unavailable, storage integrity failure は success
             response を許可しない. Raw replay bytes, complete .osr bytes,
             credential-like value は参照しない.

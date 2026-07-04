@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -13,6 +13,14 @@ if TYPE_CHECKING:
     from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
     from osu_server.transports.stable.web_legacy.replay_download import ReplayDownloadHandler
     from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
+
+
+class _ReplayDownloadAppState(Protocol):
+    replay_download_handler: ReplayDownloadHandler
+
+
+class _ReplayDownloadApp(Protocol):
+    state: _ReplayDownloadAppState
 
 
 async def bancho_endpoint(request: Request) -> Response:
@@ -40,6 +48,20 @@ async def score_submit_endpoint(request: Request) -> Response:
 
 
 async def replay_download_endpoint(request: Request) -> Response:
-    """DI で解決した ReplayDownloadHandler に委譲する."""
-    handler: ReplayDownloadHandler = request.app.state.replay_download_handler  # pyright: ignore[reportAny]
+    """DI で解決した ReplayDownloadHandler に委譲する.
+
+    引数:
+        request: Starlette request.
+
+    戻り値:
+        Replay download の HTTP response.
+
+    例外:
+        Handler の想定外例外をそのまま送出する.
+
+    制約:
+        Handler は `request.app.state.replay_download_handler` から解決する.
+    """
+    app = cast("_ReplayDownloadApp", request.app)
+    handler = app.state.replay_download_handler
     return await handler(request)

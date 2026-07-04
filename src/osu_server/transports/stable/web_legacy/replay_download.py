@@ -36,18 +36,18 @@ _EMPTY_NOT_FOUND_BRANCHES = frozenset(
 class StableReplayDownloadExchange:
     """Stable replay download の auth, parse, query orchestration を行う.
 
-    Args:
+    引数:
         auth_query: Stable legacy credential を検証する query boundary.
         replay_download_parser: Confirmed replay download query keys を parse する mapper.
         replay_download_query: Replay download branch を解決する query use-case.
 
-    Returns:
+    戻り値:
         Class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         `u` と `h` は auth mapping だけに渡す. Auth failure では parser と
         replay query を呼ばない. Unavailable branch の内部原因は response に
         含めない.
@@ -67,18 +67,18 @@ class StableReplayDownloadExchange:
     async def respond(self, query: Mapping[str, str]) -> Response:
         """Stable replay download query を HTTP response に変換する.
 
-        Args:
+        引数:
             query: Starlette QueryParams 互換または plain mapping.
 
-        Returns:
+        戻り値:
             Auth failure は empty 401. Malformed parse と unavailable branch は
             empty 404. Success branch は target-compatible body と download
             header を返す.
 
-        Raises:
+        例外:
             Query use-case の想定外例外はそのまま送出する.
 
-        Constraints:
+        制約:
             Raw query values, credential values, storage detail は response に含めない.
         """
 
@@ -89,11 +89,10 @@ class StableReplayDownloadExchange:
             ),
         )
         auth_result = auth_query_result.outcome
-        if auth_result.failure is not None:
+        if auth_result.failure is not None or auth_result.user_id is None:
             return _empty_response(HTTPStatus.UNAUTHORIZED)
 
         user_id = auth_result.user_id
-        assert user_id is not None
 
         parse_result = self._replay_download_parser.parse(query)
         if parse_result.request is None:
@@ -113,18 +112,18 @@ class StableReplayDownloadExchange:
 class ReplayDownloadHandler:
     """Starlette adapter for `GET /web/osu-getreplay.php`.
 
-    Args:
+    引数:
         auth_query: Stable legacy credential を検証する query boundary.
         replay_download_parser: Replay download query parser.
         replay_download_query: Replay download query use-case.
 
-    Returns:
+    戻り値:
         Class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Route registration と DI wiring は後続 task が所有する.
     """
 
@@ -144,16 +143,16 @@ class ReplayDownloadHandler:
     async def __call__(self, request: Request) -> Response:
         """Stable replay download request を exchange に委譲する.
 
-        Args:
+        引数:
             request: Starlette request.
 
-        Returns:
+        戻り値:
             Stable replay download の HTTP response.
 
-        Raises:
+        例外:
             Exchange の想定外例外をそのまま送出する.
 
-        Constraints:
+        制約:
             Request body は読まず, query params だけを使う.
         """
 
@@ -179,7 +178,8 @@ def _response_from_query_result(result: ReplayDownloadQueryResult) -> Response:
     if result.branch in _EMPTY_NOT_FOUND_BRANCHES:
         return _empty_response(HTTPStatus.NOT_FOUND)
 
-    return _empty_response(HTTPStatus.NOT_FOUND)
+    msg = f"unhandled replay download branch: {result.branch!r}"
+    raise AssertionError(msg)
 
 
 def _empty_response(status_code: HTTPStatus) -> Response:

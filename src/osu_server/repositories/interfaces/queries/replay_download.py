@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
@@ -13,16 +13,16 @@ if TYPE_CHECKING:
 class ReplayDownloadCandidateKind(StrEnum):
     """Replay download candidate の repository branch を表す.
 
-    Args:
+    引数:
         なし.
 
-    Returns:
+    戻り値:
         Enum class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Repository 内部の read model branch だけを表す. HTTP status, raw replay
         bytes, storage key, filesystem path, credential value は保持しない.
     """
@@ -37,17 +37,17 @@ class ReplayDownloadCandidateKind(StrEnum):
 class ReplayDownloadCandidateQuery:
     """Replay download candidate lookup の入力を表す.
 
-    Args:
+    引数:
         score_id: Parsed score identifier.
         ruleset: Parsed Stable ruleset scope.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Transport query string, auth credential, SQLAlchemy object, storage backend
         detail は含めない. 入力値の parse validation は transport mapper が行う.
     """
@@ -60,16 +60,16 @@ class ReplayDownloadCandidateQuery:
 class ReplayDownloadScoreNotFoundCandidate:
     """Score が存在しない candidate branch を表す.
 
-    Args:
+    引数:
         なし.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Score の不存在だけを表し, storage や visibility の詳細を保持しない.
     """
 
@@ -80,16 +80,16 @@ class ReplayDownloadScoreNotFoundCandidate:
 class ReplayDownloadHiddenScoreCandidate:
     """Replay download から隠す score の candidate branch を表す.
 
-    Args:
+    引数:
         なし.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Client-visible response へ visibility reason を漏らさないため,
         visibility detail や owner policy detail は保持しない.
     """
@@ -101,16 +101,16 @@ class ReplayDownloadHiddenScoreCandidate:
 class ReplayDownloadMissingReplayCandidate:
     """Replay attachment が存在しない candidate branch を表す.
 
-    Args:
+    引数:
         なし.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Missing replay の内部原因や storage backend detail は保持しない.
         Provisional response label への変換は query use-case 以降が担当する.
     """
@@ -122,25 +122,25 @@ class ReplayDownloadMissingReplayCandidate:
 class ReplayDownloadAvailableReplayCandidate:
     """利用可能な Replay attachment metadata の candidate branch を表す.
 
-    Args:
+    引数:
         blob_id: Stored Replay blob を参照する identifier.
         checksum: Replay attachment metadata の checksum.
         byte_size: Replay attachment metadata の byte size.
 
-    Returns:
+    戻り値:
         Dataclass のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Raw replay bytes, storage key, filesystem path, local artifact path,
         credential value は保持しない. Blob の存在確認と byte read は別 boundary
         が担当する.
     """
 
     blob_id: int
-    checksum: str
+    checksum: str = field(repr=False)
     byte_size: int
 
     kind: ClassVar[ReplayDownloadCandidateKind] = ReplayDownloadCandidateKind.AVAILABLE_REPLAY
@@ -157,16 +157,16 @@ type ReplayDownloadCandidate = (
 class ReplayDownloadQueryRepository(Protocol):
     """Replay download candidate を読む query repository port.
 
-    Args:
+    引数:
         なし.
 
-    Returns:
+    戻り値:
         Protocol class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Read-only boundary として score visibility, replay attachment metadata,
         blob id だけを投影する. SQLAlchemy, Starlette/FastAPI, Valkey, taskiq,
         services, transports, jobs, infrastructure, storage backend は import しない.
@@ -178,17 +178,17 @@ class ReplayDownloadQueryRepository(Protocol):
     ) -> ReplayDownloadCandidate:
         """Replay download candidate branch を返す.
 
-        Args:
+        引数:
             query: Parsed score id と ruleset scope.
 
-        Returns:
+        戻り値:
             Score not found, hidden score, missing replay, available replay の
             いずれかの candidate branch.
 
-        Raises:
+        例外:
             実装依存の永続化例外をそのまま送出する可能性がある.
 
-        Constraints:
+        制約:
             Available replay branch でも raw replay bytes, storage key,
             filesystem path, local artifact path は返さない.
         """

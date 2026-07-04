@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 import pytest
 
@@ -20,25 +19,22 @@ from osu_server.repositories.interfaces.queries.replay_download import (
     ReplayDownloadMissingReplayCandidate,
     ReplayDownloadScoreNotFoundCandidate,
 )
+from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 from osu_server.repositories.memory.queries.replay_download import (
     InMemoryReplayDownloadQueryRepository,
 )
+from osu_server.repositories.memory.queries.state import InMemoryQueryStateSnapshotProvider
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
-
-if TYPE_CHECKING:
-    from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 _NOW = datetime(2026, 6, 18, tzinfo=UTC)
 _VISIBLE_ROLE_ID = 1
 
 
 async def test_get_candidate_returns_score_not_found_for_missing_id_and_ruleset_mismatch() -> None:
-    factory = InMemoryUnitOfWorkFactory()
-    state = factory.snapshot()
+    factory, state, repository = _make_repository_context()
     _seed_visible_role(state, user_id=100)
     _seed_score(state, score_id=10, user_id=100, ruleset=Ruleset.TAIKO)
     factory.commit_state(state)
-    repository = InMemoryReplayDownloadQueryRepository(factory)
 
     missing = await repository.get_candidate(
         ReplayDownloadCandidateQuery(score_id=999, ruleset=Ruleset.OSU)
@@ -67,8 +63,7 @@ async def test_get_candidate_returns_hidden_when_visibility_inputs_are_false(
     leaderboard_eligible: bool,
     assign_visible_role: bool,
 ) -> None:
-    factory = InMemoryUnitOfWorkFactory()
-    state = factory.snapshot()
+    factory, state, repository = _make_repository_context()
     if assign_visible_role:
         _seed_visible_role(state, user_id=100)
     _seed_score(
@@ -80,7 +75,6 @@ async def test_get_candidate_returns_hidden_when_visibility_inputs_are_false(
     )
     _seed_replay(state, score_id=20)
     factory.commit_state(state)
-    repository = InMemoryReplayDownloadQueryRepository(factory)
 
     result = await repository.get_candidate(
         ReplayDownloadCandidateQuery(score_id=20, ruleset=Ruleset.OSU)
@@ -91,12 +85,10 @@ async def test_get_candidate_returns_hidden_when_visibility_inputs_are_false(
 
 
 async def test_get_candidate_returns_missing_replay_for_visible_score_without_attachment() -> None:
-    factory = InMemoryUnitOfWorkFactory()
-    state = factory.snapshot()
+    factory, state, repository = _make_repository_context()
     _seed_visible_role(state, user_id=100)
     _seed_score(state, score_id=30, user_id=100)
     factory.commit_state(state)
-    repository = InMemoryReplayDownloadQueryRepository(factory)
 
     result = await repository.get_candidate(
         ReplayDownloadCandidateQuery(score_id=30, ruleset=Ruleset.OSU)
@@ -107,8 +99,7 @@ async def test_get_candidate_returns_missing_replay_for_visible_score_without_at
 
 
 async def test_get_candidate_maps_available_replay_metadata_without_blob_state() -> None:
-    factory = InMemoryUnitOfWorkFactory()
-    state = factory.snapshot()
+    factory, state, repository = _make_repository_context()
     _seed_visible_role(state, user_id=100)
     _seed_score(state, score_id=40, user_id=100)
     _seed_replay(
@@ -119,7 +110,6 @@ async def test_get_candidate_maps_available_replay_metadata_without_blob_state()
         byte_size=8192,
     )
     factory.commit_state(state)
-    repository = InMemoryReplayDownloadQueryRepository(factory)
 
     result = await repository.get_candidate(
         ReplayDownloadCandidateQuery(score_id=40, ruleset=Ruleset.OSU)
@@ -134,12 +124,10 @@ async def test_get_candidate_maps_available_replay_metadata_without_blob_state()
 
 
 async def test_get_candidate_reads_only_committed_memory_state() -> None:
-    factory = InMemoryUnitOfWorkFactory()
-    pending_state = factory.snapshot()
+    _, pending_state, repository = _make_repository_context()
     _seed_visible_role(pending_state, user_id=100)
     _seed_score(pending_state, score_id=50, user_id=100)
     _seed_replay(pending_state, score_id=50)
-    repository = InMemoryReplayDownloadQueryRepository(factory)
 
     result = await repository.get_candidate(
         ReplayDownloadCandidateQuery(score_id=50, ruleset=Ruleset.OSU)
@@ -147,6 +135,19 @@ async def test_get_candidate_reads_only_committed_memory_state() -> None:
 
     assert isinstance(result, ReplayDownloadScoreNotFoundCandidate)
     assert result.kind is ReplayDownloadCandidateKind.SCORE_NOT_FOUND
+
+
+def _make_repository_context() -> tuple[
+    InMemoryUnitOfWorkFactory,
+    InMemoryCommandRepositoryState,
+    InMemoryReplayDownloadQueryRepository,
+]:
+    committed_state = InMemoryCommandRepositoryState()
+    factory = InMemoryUnitOfWorkFactory(committed_state)
+    repository = InMemoryReplayDownloadQueryRepository(
+        InMemoryQueryStateSnapshotProvider(committed_state)
+    )
+    return factory, factory.snapshot(), repository
 
 
 def _seed_visible_role(state: InMemoryCommandRepositoryState, *, user_id: int) -> None:

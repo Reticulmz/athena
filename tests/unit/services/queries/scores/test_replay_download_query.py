@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Final, final
 
 from osu_server.domain.compatibility.stable import (
@@ -102,7 +103,7 @@ async def test_available_replay_with_blob_unavailable_returns_storage_missing() 
 async def test_available_replay_with_default_strategy_returns_body_strategy_blocked() -> None:
     stored_blob_payload = b"bk"
     harness = _make_harness(
-        candidate=_available_replay(blob_id=808),
+        candidate=_available_replay(blob_id=808, payload=stored_blob_payload),
         blob_payload=stored_blob_payload,
     )
 
@@ -122,7 +123,7 @@ async def test_available_replay_with_default_strategy_returns_body_strategy_bloc
 async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() -> None:
     replay_payload = b"rd"
     harness = _make_harness(
-        candidate=_available_replay(blob_id=909),
+        candidate=_available_replay(blob_id=909, payload=replay_payload),
         blob_payload=replay_payload,
         body_strategy=ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES,
     )
@@ -146,7 +147,7 @@ async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() 
 async def test_available_replay_with_assemble_strategy_remains_blocked() -> None:
     stored_blob_payload = b"as"
     harness = _make_harness(
-        candidate=_available_replay(blob_id=1001),
+        candidate=_available_replay(blob_id=1001, payload=stored_blob_payload),
         blob_payload=stored_blob_payload,
         body_strategy=ReplayDownloadBodyStrategy.ASSEMBLE_DOWNLOAD_BODY,
     )
@@ -159,6 +160,46 @@ async def test_available_replay_with_assemble_strategy_remains_blocked() -> None
     assert [entry.strategy for entry in harness.body_assembler.inputs] == [
         ReplayDownloadBodyStrategy.ASSEMBLE_DOWNLOAD_BODY
     ]
+
+
+async def test_available_replay_with_byte_size_mismatch_returns_storage_missing() -> None:
+    replay_payload = b"size-mismatch"
+    harness = _make_harness(
+        candidate=_available_replay(
+            blob_id=1101,
+            payload=replay_payload,
+            byte_size=len(replay_payload) + 1,
+        ),
+        blob_payload=replay_payload,
+        body_strategy=ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES,
+    )
+
+    result = await harness.query.execute(_input())
+
+    assert result.branch is ReplayDownloadBranch.STORAGE_MISSING
+    _assert_failure_result_has_no_client_visible_details(result, replay_payload)
+    assert harness.blob_reader.read_blob_ids == [1101]
+    assert harness.body_assembler.inputs == []
+
+
+async def test_available_replay_with_checksum_mismatch_returns_storage_missing() -> None:
+    replay_payload = b"checksum-mismatch"
+    harness = _make_harness(
+        candidate=_available_replay(
+            blob_id=1102,
+            payload=replay_payload,
+            checksum="0" * 64,
+        ),
+        blob_payload=replay_payload,
+        body_strategy=ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES,
+    )
+
+    result = await harness.query.execute(_input())
+
+    assert result.branch is ReplayDownloadBranch.STORAGE_MISSING
+    _assert_failure_result_has_no_client_visible_details(result, replay_payload)
+    assert harness.blob_reader.read_blob_ids == [1102]
+    assert harness.body_assembler.inputs == []
 
 
 @final
@@ -281,11 +322,17 @@ def _input(
     )
 
 
-def _available_replay(blob_id: int) -> ReplayDownloadAvailableReplayCandidate:
+def _available_replay(
+    blob_id: int,
+    *,
+    payload: bytes = b"synthetic-stored-replay",
+    checksum: str | None = None,
+    byte_size: int | None = None,
+) -> ReplayDownloadAvailableReplayCandidate:
     return ReplayDownloadAvailableReplayCandidate(
         blob_id=blob_id,
-        checksum="synthetic-checksum",
-        byte_size=24,
+        checksum=checksum or sha256(payload).hexdigest(),
+        byte_size=len(payload) if byte_size is None else byte_size,
     )
 
 

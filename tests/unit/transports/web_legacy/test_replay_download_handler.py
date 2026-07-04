@@ -118,6 +118,28 @@ async def test_auth_failure_returns_empty_401_without_parse_or_query() -> None:
     _assert_response_excludes_raw_inputs(response, query)
 
 
+async def test_auth_success_shape_without_user_id_returns_empty_401_without_parse_or_query() -> (
+    None
+):
+    auth_query = _AuthQuery(LegacyWebAuthResult(username="PlayerOne"))
+    parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
+    replay_query = _ReplayDownloadQuery(_hidden_score_result())
+    handler = _make_handler(
+        auth_query=auth_query,
+        parser=parser,
+        replay_query=replay_query,
+    )
+    query = _query()
+
+    response = await handler(_request(query))
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.body == b""
+    assert parser.call_count == 0
+    assert replay_query.inputs == []
+    _assert_response_excludes_raw_inputs(response, query)
+
+
 async def test_auth_success_calls_parser_and_malformed_request_returns_empty_404() -> None:
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_malformed_parse_result())
@@ -236,6 +258,27 @@ async def test_success_query_result_returns_response_body() -> None:
     assert response.headers["content-type"] == "zip"
     assert response.headers["content-disposition"] == 'attachment; filename="replay.osr"'
     _assert_response_excludes_raw_inputs(response, query)
+
+
+async def test_unhandled_query_result_branch_fails_loudly() -> None:
+    auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
+    parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
+    replay_query = _ReplayDownloadQuery(
+        ReplayDownloadQueryResult(
+            branch=cast(
+                "ReplayDownloadBranch",
+                cast("object", "synthetic-unhandled-branch"),
+            ),
+        )
+    )
+    handler = _make_handler(
+        auth_query=auth_query,
+        parser=parser,
+        replay_query=replay_query,
+    )
+
+    with pytest.raises(AssertionError, match="unhandled replay download branch"):
+        _ = await handler(_request(_query()))
 
 
 def _make_handler(

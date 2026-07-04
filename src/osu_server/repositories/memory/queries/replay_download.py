@@ -19,42 +19,43 @@ if TYPE_CHECKING:
     from osu_server.domain.scores.replay import Replay
     from osu_server.domain.scores.score import Score
     from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
-    from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
+    from osu_server.repositories.memory.queries.state import InMemoryQueryStateSnapshotProvider
 
 
 class InMemoryReplayDownloadQueryRepository:
     """Replay download candidate を committed memory state から投影する.
 
-    Args:
-        uow_factory: Committed in-memory state snapshot を返す Unit of Work factory.
+    引数:
+        snapshot_provider: Committed in-memory state snapshot を返す query-side provider.
 
-    Returns:
+    戻り値:
         Class のため戻り値はない.
 
-    Raises:
+    例外:
         なし.
 
-    Constraints:
+    制約:
         Raw replay bytes, blob storage key, filesystem path は読まない.
         Score, owner visibility, replay attachment metadata だけを参照する.
     """
 
-    def __init__(self, uow_factory: InMemoryUnitOfWorkFactory) -> None:
-        """Repository を committed state snapshot factory で初期化する.
+    def __init__(self, snapshot_provider: InMemoryQueryStateSnapshotProvider) -> None:
+        """Repository を query-side snapshot provider で初期化する.
 
-        Args:
-            uow_factory: Query ごとに committed state snapshot を生成する factory.
+        引数:
+            snapshot_provider: Query ごとに committed state snapshot を生成する provider.
 
-        Returns:
+        戻り値:
             None.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
-            Factory は保持するだけで snapshot は query 実行時に取得する.
+        制約:
+            Command Unit of Work factory ではなく query-side provider だけに依存する.
+            Snapshot は query 実行時に取得する.
         """
-        self._factory: InMemoryUnitOfWorkFactory = uow_factory
+        self._snapshot_provider: InMemoryQueryStateSnapshotProvider = snapshot_provider
 
     async def get_candidate(
         self,
@@ -62,20 +63,20 @@ class InMemoryReplayDownloadQueryRepository:
     ) -> ReplayDownloadCandidate:
         """Score id と ruleset から replay download candidate branch を返す.
 
-        Args:
+        引数:
             query: Parsed score id と Stable ruleset scope.
 
-        Returns:
+        戻り値:
             Score not found, hidden score, missing replay, available replay のいずれか.
 
-        Raises:
+        例外:
             なし.
 
-        Constraints:
+        制約:
             Committed memory state の metadata だけを投影する. Blob object の
             storage key や raw bytes は読まない.
         """
-        state = self._factory.snapshot()
+        state = self._snapshot_provider.snapshot()
         score = state.scores_by_id.get(query.score_id)
         if score is None or score.id != query.score_id or score.ruleset is not query.ruleset:
             return ReplayDownloadScoreNotFoundCandidate()

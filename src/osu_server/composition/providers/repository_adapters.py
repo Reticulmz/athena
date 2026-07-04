@@ -55,6 +55,7 @@ from osu_server.repositories.memory.queries.score_performance import (
     InMemoryScorePerformanceQueryRepository,
 )
 from osu_server.repositories.memory.queries.scores import InMemoryScoreQueryRepository
+from osu_server.repositories.memory.queries.state import InMemoryQueryStateSnapshotProvider
 from osu_server.repositories.memory.queries.user_stats import InMemoryUserStatsQueryRepository
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -201,11 +202,13 @@ class InMemoryRepositoryAdapterFamily:
 
     state: InMemoryCommandRepositoryState
     unit_of_work_factory: InMemoryUnitOfWorkFactory
+    query_state_snapshot_provider: InMemoryQueryStateSnapshotProvider
     beatmap_query_repository: InMemoryBeatmapQueryRepository
 
     def __init__(self, state: InMemoryCommandRepositoryState | None = None) -> None:
         self.state = state if state is not None else InMemoryCommandRepositoryState()
         self.unit_of_work_factory = InMemoryUnitOfWorkFactory(self.state)
+        self.query_state_snapshot_provider = InMemoryQueryStateSnapshotProvider(self.state)
         self.beatmap_query_repository = InMemoryBeatmapQueryRepository(self.unit_of_work_factory)
 
     def replacements(self) -> tuple[RepositoryAdapterReplacement, ...]:
@@ -266,7 +269,7 @@ class InMemoryRepositoryAdapterFamily:
             ),
             RepositoryAdapterReplacement(
                 ReplayDownloadQueryRepository,
-                InMemoryReplayDownloadQueryRepository(self.unit_of_work_factory),
+                InMemoryReplayDownloadQueryRepository(self.query_state_snapshot_provider),
             ),
         )
 
