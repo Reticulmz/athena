@@ -53,7 +53,7 @@
   - _Boundary: Replay Download Query Parser_
 
 - [ ] 3. Core: replay download query workflow と body production を作る
-- [ ] 3.1 Replay download body assembler を実装する
+- [x] 3.1 Replay download body assembler を実装する
   - `blocked` strategy では bytes を生成せず、success branch を不可にする
   - `direct_blob_bytes` strategy では validation 済み stored bytes だけを response body として返す
   - `assemble_download_body` strategy では local validation で確定した変換だけを使い、未確定なら blocked として扱う

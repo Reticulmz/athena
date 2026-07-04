@@ -18,6 +18,11 @@ from osu_server.services.queries.scores.performance import (
     PerformanceSubmitResponseQuery,
     PerformanceSubmitResponseState,
 )
+from osu_server.services.queries.scores.replay_download import (
+    ReplayDownloadBodyAssembler,
+    ReplayDownloadBodyBuildInput,
+    ReplayDownloadBodyBuildResult,
+)
 from osu_server.services.queries.scores.user_stats import (
     CurrentUserStatsQuery,
     CurrentUserStatsQueryInput,
@@ -42,4 +47,7 @@ __all__ = [
     "PerformanceSubmitResponse",
     "PerformanceSubmitResponseQuery",
     "PerformanceSubmitResponseState",
+    "ReplayDownloadBodyAssembler",
+    "ReplayDownloadBodyBuildInput",
+    "ReplayDownloadBodyBuildResult",
 ]
