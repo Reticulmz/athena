@@ -121,7 +121,7 @@
   - _Depends: 5.3_
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 4.5, 5.1, 5.2, 5.3, 5.4, 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 6.2 Quality and boundary checks を通し、secret/raw artifact 混入を review する
+- [x] 6.2 Quality and boundary checks を通し、secret/raw artifact 混入を review する
   - Relevant lint、type、import boundary checks が pass する
   - Diff review で raw capture、raw replay bytes、complete `.osr`、password values、password hashes、raw query values、local artifact paths が含まれないことを確認できる
   - Runtime adapters が SQLAlchemy models、DB sessions、raw SQL、storage backend implementation を import していないことを確認できる
