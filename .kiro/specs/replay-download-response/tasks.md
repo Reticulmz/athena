@@ -76,7 +76,7 @@
   - _Requirements: 3.1, 3.3, 3.4, 4.2, 4.3, 4.4, 4.5, 5.1, 5.2, 5.3, 5.4, 6.2, 6.3, 6.4_
 
 - [ ] 4. Transport: Stable web legacy response mapping を実装する
-- [ ] 4.1 Replay download handler の auth mapping と request orchestration を実装する
+- [x] 4.1 Replay download handler の auth mapping と request orchestration を実装する
   - `u` と `h` が existing legacy session credential boundary に渡される
   - Auth failure は parser/query lookup に進まず、401 empty body を返す
   - Auth success 後だけ parser と replay download query use-case が呼ばれることを handler tests で確認できる
