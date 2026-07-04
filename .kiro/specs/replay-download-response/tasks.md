@@ -22,7 +22,7 @@
   - Contract tests が typed fake data で各 candidate branch を検証できる
   - _Requirements: 3.1, 4.2, 4.3, 4.4, 4.5, 6.2, 6.3_
 
-- [ ] 2.2 (P) SQLAlchemy replay download candidate projection を実装する
+- [x] 2.2 (P) SQLAlchemy replay download candidate projection を実装する
   - Existing score、replay attachment、user visibility inputs から replay download candidate を read-only に投影する
   - Hidden score と missing replay が同じ 404 response に写像される前段で、内部 branch としては区別される
   - SQLAlchemy query は raw blob bytes を読まず、short query session だけで完了することが tests から確認できる
