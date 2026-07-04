@@ -83,7 +83,7 @@
   - _Depends: 2.5, 3.2_
   - _Requirements: 1.1, 1.2, 3.3, 4.1, 5.4, 6.2_
 
-- [ ] 4.2 Stable response formatter を全 branch に対して実装する
+- [x] 4.2 Stable response formatter を全 branch に対して実装する
   - Success は non-blocked strategy のときだけ HTTP 200、target-compatible bytes、`Content-Type`、`Content-Disposition` を返す
   - Hidden score、storage missing、missing replay provisional、malformed request provisional、body strategy blocked は empty 404 response に写像される
   - Unavailable replay response は authorization、visibility、metadata、storage の内部原因を client-visible body に出さない

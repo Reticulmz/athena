@@ -20,6 +20,18 @@ if TYPE_CHECKING:
     from osu_server.services.queries.scores import ReplayDownloadQuery, ReplayDownloadQueryResult
     from osu_server.transports.stable.web_legacy.mappers import ReplayDownloadQueryParser
 
+_SUCCESS_CONTENT_DISPOSITION = 'attachment; filename="replay.osr"'
+_SUCCESS_CONTENT_TYPE = "zip"
+_EMPTY_NOT_FOUND_BRANCHES = frozenset(
+    {
+        ReplayDownloadBranch.HIDDEN_SCORE,
+        ReplayDownloadBranch.STORAGE_MISSING,
+        ReplayDownloadBranch.MISSING_REPLAY_PROVISIONAL,
+        ReplayDownloadBranch.MALFORMED_REQUEST_PROVISIONAL,
+        ReplayDownloadBranch.BODY_STRATEGY_BLOCKED,
+    }
+)
+
 
 class StableReplayDownloadExchange:
     """Stable replay download の auth, parse, query orchestration を行う.
@@ -37,8 +49,8 @@ class StableReplayDownloadExchange:
 
     Constraints:
         `u` と `h` は auth mapping だけに渡す. Auth failure では parser と
-        replay query を呼ばない. Response formatting の完全な branch mapping は
-        後続 task が所有する.
+        replay query を呼ばない. Unavailable branch の内部原因は response に
+        含めない.
     """
 
     def __init__(
@@ -53,21 +65,21 @@ class StableReplayDownloadExchange:
         self._replay_download_query: ReplayDownloadQuery = replay_download_query
 
     async def respond(self, query: Mapping[str, str]) -> Response:
-        """Stable replay download query を最小 HTTP response に変換する.
+        """Stable replay download query を HTTP response に変換する.
 
         Args:
             query: Starlette QueryParams 互換または plain mapping.
 
         Returns:
             Auth failure は empty 401. Malformed parse と unavailable branch は
-            empty 404. Success branch は query result の response body.
+            empty 404. Success branch は target-compatible body と download
+            header を返す.
 
         Raises:
             Query use-case の想定外例外はそのまま送出する.
 
         Constraints:
-            Raw query values, credential values, storage detail は response body に
-            含めない.
+            Raw query values, credential values, storage detail は response に含めない.
         """
 
         auth_query_result = await self._auth_query.execute(
@@ -95,7 +107,7 @@ class StableReplayDownloadExchange:
                 ruleset=request_obj.ruleset,
             )
         )
-        return _minimal_response_from_query_result(result)
+        return _response_from_query_result(result)
 
 
 class ReplayDownloadHandler:
@@ -136,7 +148,7 @@ class ReplayDownloadHandler:
             request: Starlette request.
 
         Returns:
-            Stable replay download の最小 HTTP response.
+            Stable replay download の HTTP response.
 
         Raises:
             Exchange の想定外例外をそのまま送出する.
@@ -148,9 +160,24 @@ class ReplayDownloadHandler:
         return await self._exchange.respond(request.query_params)
 
 
-def _minimal_response_from_query_result(result: ReplayDownloadQueryResult) -> Response:
-    if result.branch is ReplayDownloadBranch.SUCCESS and result.response_body is not None:
-        return Response(content=result.response_body.payload, status_code=HTTPStatus.OK)
+def _response_from_query_result(result: ReplayDownloadQueryResult) -> Response:
+    if result.branch is ReplayDownloadBranch.SUCCESS:
+        if result.response_body is None:
+            return _empty_response(HTTPStatus.NOT_FOUND)
+        return Response(
+            content=result.response_body.payload,
+            headers={
+                "Content-Disposition": _SUCCESS_CONTENT_DISPOSITION,
+                "Content-Type": _SUCCESS_CONTENT_TYPE,
+            },
+            status_code=HTTPStatus.OK,
+        )
+
+    if result.branch is ReplayDownloadBranch.AUTH_FAILURE:
+        return _empty_response(HTTPStatus.UNAUTHORIZED)
+
+    if result.branch in _EMPTY_NOT_FOUND_BRANCHES:
+        return _empty_response(HTTPStatus.NOT_FOUND)
 
     return _empty_response(HTTPStatus.NOT_FOUND)
 

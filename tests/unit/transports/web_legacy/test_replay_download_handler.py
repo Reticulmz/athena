@@ -5,6 +5,8 @@ from __future__ import annotations
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast, final
 
+import pytest
+
 from osu_server.domain.compatibility.stable import (
     ReplayDownloadBranch,
     ReplayDownloadResponseBody,
@@ -40,8 +42,8 @@ if TYPE_CHECKING:
 
 _RAW_USERNAME = "SYNTHETIC_RAW_REPLAY_DOWNLOAD_USERNAME"
 _RAW_PASSWORD_HASH = "SYNTHETIC_RAW_REPLAY_DOWNLOAD_HASH"
-_RAW_SCORE_ID = "8675309"
-_RAW_MODE = "3"
+_RAW_SCORE_ID = "SYNTHETIC_RAW_REPLAY_DOWNLOAD_SCORE_ID"
+_RAW_MODE = "SYNTHETIC_RAW_REPLAY_DOWNLOAD_MODE"
 _SUCCESS_BODY = b"SYNTHETIC_SUCCESS_REPLAY_DOWNLOAD_BODY"
 
 
@@ -102,6 +104,9 @@ async def test_auth_failure_returns_empty_401_without_parse_or_query() -> None:
 
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.body == b""
+    assert len(response.body) == 0
+    assert "content-type" not in response.headers
+    assert "content-disposition" not in response.headers
     assert auth_query.inputs == [
         SessionCredentialsQueryInput(
             username=_RAW_USERNAME,
@@ -128,9 +133,19 @@ async def test_auth_success_calls_parser_and_malformed_request_returns_empty_404
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert response.body == b""
+    assert len(response.body) == 0
+    assert "content-type" not in response.headers
+    assert "content-disposition" not in response.headers
     assert parser.call_count == 1
     assert replay_query.inputs == []
-    _assert_response_excludes_raw_inputs(response, query)
+    _assert_response_excludes_raw_inputs(
+        response,
+        query,
+        extra_values=(
+            ReplayDownloadBranch.MALFORMED_REQUEST_PROVISIONAL.value,
+            ReplayDownloadMalformedReason.MISSING_SCORE_ID.value,
+        ),
+    )
 
 
 async def test_valid_request_calls_query_with_authenticated_user_and_parsed_values() -> None:
@@ -148,6 +163,9 @@ async def test_valid_request_calls_query_with_authenticated_user_and_parsed_valu
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert response.body == b""
+    assert len(response.body) == 0
+    assert "content-type" not in response.headers
+    assert "content-disposition" not in response.headers
     assert replay_query.inputs == [
         ReplayDownloadQueryInput(
             authenticated_user_id=42,
@@ -155,7 +173,43 @@ async def test_valid_request_calls_query_with_authenticated_user_and_parsed_valu
             ruleset=Ruleset.MANIA,
         )
     ]
-    _assert_response_excludes_raw_inputs(response, query)
+    _assert_response_excludes_raw_inputs(
+        response,
+        query,
+        extra_values=(ReplayDownloadBranch.HIDDEN_SCORE.value,),
+    )
+
+
+@pytest.mark.parametrize(
+    "branch",
+    [
+        ReplayDownloadBranch.HIDDEN_SCORE,
+        ReplayDownloadBranch.STORAGE_MISSING,
+        ReplayDownloadBranch.MISSING_REPLAY_PROVISIONAL,
+        ReplayDownloadBranch.BODY_STRATEGY_BLOCKED,
+    ],
+)
+async def test_unavailable_query_result_returns_empty_404_without_branch_leak(
+    branch: ReplayDownloadBranch,
+) -> None:
+    auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
+    parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
+    replay_query = _ReplayDownloadQuery(ReplayDownloadQueryResult(branch=branch))
+    handler = _make_handler(
+        auth_query=auth_query,
+        parser=parser,
+        replay_query=replay_query,
+    )
+    query = _query()
+
+    response = await handler(_request(query))
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.body == b""
+    assert len(response.body) == 0
+    assert "content-type" not in response.headers
+    assert "content-disposition" not in response.headers
+    _assert_response_excludes_raw_inputs(response, query, extra_values=(branch.value,))
 
 
 async def test_success_query_result_returns_response_body() -> None:
@@ -178,6 +232,9 @@ async def test_success_query_result_returns_response_body() -> None:
 
     assert response.status_code == HTTPStatus.OK
     assert response.body == _SUCCESS_BODY
+    assert len(response.body) == len(_SUCCESS_BODY)
+    assert response.headers["content-type"] == "zip"
+    assert response.headers["content-disposition"] == 'attachment; filename="replay.osr"'
     _assert_response_excludes_raw_inputs(response, query)
 
 
@@ -231,8 +288,16 @@ def _hidden_score_result() -> ReplayDownloadQueryResult:
 def _assert_response_excludes_raw_inputs(
     response: Response,
     query: Mapping[str, str],
+    *,
+    extra_values: tuple[str, ...] = (),
 ) -> None:
     body = bytes(response.body)
-    for raw_value in query.values():
-        if raw_value.encode() in body:
+    header_block = "\n".join(
+        f"{header_name}: {header_value}" for header_name, header_value in response.headers.items()
+    ).encode()
+    for raw_value in (*query.values(), *extra_values):
+        raw_value_bytes = raw_value.encode()
+        if raw_value_bytes in body:
             raise AssertionError("response body rendered a raw replay download query value")
+        if raw_value_bytes in header_block:
+            raise AssertionError("response header rendered a raw replay download query value")
