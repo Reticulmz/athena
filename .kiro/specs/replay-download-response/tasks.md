@@ -38,7 +38,7 @@
   - _Requirements: 3.1, 4.2, 4.3, 4.4, 4.5, 6.2_
   - _Boundary: In-memory Replay Download Query Repository_
 
-- [ ] 2.4 (P) Blob byte reader の read-only protocol と unavailable error handling を作る
+- [x] 2.4 (P) Blob byte reader の read-only protocol と unavailable error handling を作る
   - Query workflow は blob id から bytes を読む protocol だけに依存する
   - Storage backend key、filesystem path、blob implementation detail が query result や response に出ない
   - Missing blob metadata または backend content unavailable が storage-missing branch に変換できる typed error として観測できる
