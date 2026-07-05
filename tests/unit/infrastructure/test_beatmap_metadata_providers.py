@@ -21,8 +21,8 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceErrorCategory,
     BeatmapSourceVerification,
 )
+from osu_server.infrastructure.beatmaps import OsuApiMetadataProviderService
 from osu_server.infrastructure.http.beatmap_http_client import BeatmapHttpClient
-from osu_server.services.queries.beatmaps.mirror import OsuApiMetadataProviderService
 
 
 class _RequestHeaders(Protocol):

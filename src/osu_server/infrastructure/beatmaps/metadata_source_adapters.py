@@ -16,7 +16,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceErrorCategory,
     BeatmapSourceVerification,
 )
-from osu_server.repositories.beatmaps.mappers import (
+from osu_server.infrastructure.beatmaps.mappers import (
     beatmap_json_to_snapshot,
     beatmap_v1_json_to_snapshot,
 )

@@ -7,6 +7,7 @@ Bancho transports per requirements 15.1-15.5 and 9.1/9.3.
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from dataclasses import FrozenInstanceError, fields
 from datetime import UTC, datetime, timedelta
@@ -45,15 +46,26 @@ _CHECKSUM = "0123456789abcdef0123456789abcdef"
 # All modules that belong to the beatmap-mirror feature boundary.
 _BEATMAP_MODULES: tuple[str, ...] = (
     "osu_server.domain.beatmaps",
-    "osu_server.services.queries.beatmaps.mirror.file_provider_service",
-    "osu_server.services.queries.beatmaps.mirror.metadata_provider_service",
-    "osu_server.repositories.beatmaps.mappers",
-    "osu_server.repositories.beatmaps.metadata_providers",
+    "osu_server.infrastructure.beatmaps.file_sources",
+    "osu_server.infrastructure.beatmaps.metadata_source_adapters",
+    "osu_server.infrastructure.beatmaps.mappers",
+    "osu_server.infrastructure.beatmaps.metadata_sources",
     "osu_server.repositories.interfaces.commands.beatmaps",
     "osu_server.repositories.interfaces.queries.beatmaps",
     "osu_server.repositories.memory.commands.beatmaps",
     "osu_server.repositories.memory.queries.beatmaps",
+    "osu_server.services.queries.beatmaps.mirror.eligibility_service",
+    "osu_server.services.queries.beatmaps.mirror.resolution_service",
     "osu_server.jobs.beatmap_fetch",
+)
+
+# Deprecated package/module paths that must not become compatibility facades.
+_REMOVED_BEATMAP_PROVIDER_MODULES: tuple[str, ...] = (
+    "osu_server.repositories.beatmaps",
+    "osu_server.repositories.beatmaps.mappers",
+    "osu_server.repositories.beatmaps.metadata_providers",
+    "osu_server.services.queries.beatmaps.mirror.file_provider_service",
+    "osu_server.services.queries.beatmaps.mirror.metadata_provider_service",
 )
 
 # Package prefixes that beatmap-mirror modules must NOT import from.
@@ -237,6 +249,25 @@ class TestBeatmapMirrorImportBoundaries:
                 __import__(module_name)
             except Exception as exc:
                 pytest.fail(f"Failed to import {module_name}: {exc}")
+
+    def test_removed_provider_modules_not_importable(self) -> None:
+        """削除済み provider module path を互換 facade として復活させない。"""
+        for module_name in _REMOVED_BEATMAP_PROVIDER_MODULES:
+            missing_error = False
+            missing_module_name: str | None = None
+            spec = None
+            try:
+                spec = importlib.util.find_spec(module_name)
+            except ModuleNotFoundError as exc:
+                missing_error = True
+                missing_module_name = exc.name
+
+            if missing_error:
+                assert missing_module_name is not None
+                assert module_name == missing_module_name or module_name.startswith(
+                    f"{missing_module_name}."
+                )
+            assert spec is None
 
 
 # ---------------------------------------------------------------------------

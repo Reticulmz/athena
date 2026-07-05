@@ -26,14 +26,16 @@ from osu_server.domain.beatmaps import (
     BeatmapSnapshot,
     BeatmapSourceVerification,
 )
-from osu_server.repositories.beatmaps.metadata_providers import (
+from osu_server.infrastructure.beatmaps.metadata_source_adapters import (
+    InMemoryBeatmapMetadataProvider,
+)
+from osu_server.infrastructure.beatmaps.metadata_sources import (
     CompositeBeatmapMetadataProvider,
 )
 from osu_server.services.commands.beatmaps import FetchBeatmapMetadataUseCase
 from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
-    InMemoryBeatmapMetadataProvider,
 )
 from tests.support.beatmaps import InMemoryBeatmapStore
 

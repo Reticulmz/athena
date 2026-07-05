@@ -35,7 +35,7 @@ from osu_server.domain.beatmaps import (
     OsuFileFetchResult,
 )
 from osu_server.domain.storage.blobs import Blob, BlobStored
-from osu_server.repositories.beatmaps.metadata_providers import (
+from osu_server.infrastructure.beatmaps.metadata_sources import (
     CompositeBeatmapMetadataProvider,
 )
 from osu_server.services.commands.beatmaps import (

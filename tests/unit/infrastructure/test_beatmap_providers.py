@@ -23,11 +23,11 @@ from osu_server.domain.beatmaps import (
     LocalBeatmapStatus,
     map_external_status,
 )
-from osu_server.repositories.beatmaps.mappers import (
+from osu_server.infrastructure.beatmaps.mappers import (
     beatmap_json_to_snapshot,
     beatmap_v1_json_to_snapshot,
 )
-from osu_server.repositories.beatmaps.metadata_providers import (
+from osu_server.infrastructure.beatmaps.metadata_sources import (
     CompositeBeatmapMetadataProvider,
 )
 from tests.factories.beatmap import (

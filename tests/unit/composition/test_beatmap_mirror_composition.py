@@ -16,11 +16,11 @@ from osu_server.domain.beatmaps import (
     BeatmapFreshnessPolicy,
     BeatmapMetadataProvider,
 )
+from osu_server.infrastructure.beatmaps import BeatmapFileProviderService
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 from osu_server.repositories.memory.queries.beatmaps import InMemoryBeatmapQueryRepository
 from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
-    BeatmapFileProviderService,
     BeatmapMirrorService,
 )
 
