@@ -16,6 +16,9 @@ from osu_server.repositories.sqlalchemy.queries.friends import (
 from osu_server.repositories.sqlalchemy.queries.personal_bests import (
     SQLAlchemyPersonalBestQueryRepository,
 )
+from osu_server.repositories.sqlalchemy.queries.replay_download import (
+    SQLAlchemyReplayDownloadQueryRepository,
+)
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
 from osu_server.repositories.sqlalchemy.queries.score_performance import (
     SQLAlchemyScorePerformanceQueryRepository,
@@ -35,6 +38,7 @@ __all__ = [
     "SQLAlchemyChatHistoryQueryRepository",
     "SQLAlchemyFriendRelationshipQueryRepository",
     "SQLAlchemyPersonalBestQueryRepository",
+    "SQLAlchemyReplayDownloadQueryRepository",
     "SQLAlchemyRoleQueryRepository",
     "SQLAlchemyScorePerformanceQueryRepository",
     "SQLAlchemyScoreQueryRepository",

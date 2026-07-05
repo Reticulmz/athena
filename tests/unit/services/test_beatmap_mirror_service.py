@@ -29,7 +29,7 @@ from osu_server.services.queries.beatmaps.mirror import (
     BeatmapMirrorService,
 )
 
-_NOW = datetime(2026, 6, 4, tzinfo=UTC)
+_NOW = datetime.now(UTC).replace(microsecond=0)
 _ONE_HOUR = timedelta(hours=1)
 _THIRTY_DAYS = timedelta(days=30)
 

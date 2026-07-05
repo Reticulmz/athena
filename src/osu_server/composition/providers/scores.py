@@ -8,6 +8,7 @@ from dishka import Provider, Scope
 from taskiq import AsyncBroker
 
 from osu_server.composition.providers._dishka import provide
+from osu_server.domain.compatibility.stable import ReplayDownloadBodyStrategy
 from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.jobs.beatmap_leaderboards import TaskiqBeatmapLeaderboardRebuildWorkerWake
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
@@ -15,6 +16,9 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
 )
 from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
+)
+from osu_server.repositories.interfaces.queries.replay_download import (
+    ReplayDownloadQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.user_stats import UserStatsQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
@@ -27,7 +31,10 @@ from osu_server.services.queries.scores import (
     BeatmapPersonalBestRankQuery,
     BeatmapScoreListingQuery,
     CurrentUserStatsQuery,
+    ReplayDownloadBodyAssembler,
+    ReplayDownloadQuery,
 )
+from osu_server.services.queries.storage import BlobByteReader
 from osu_server.shared.ports import (
     BeatmapLeaderboardRebuildWorkerWake,
 )
@@ -39,7 +46,11 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapLeaderboardRebuildWorkerWake,
     BeatmapPersonalBestRankQuery,
     BeatmapScoreListingQueryRepository,
+    BlobByteReader,
     CurrentUserStatsQuery,
+    ReplayDownloadBodyAssembler,
+    ReplayDownloadQuery,
+    ReplayDownloadQueryRepository,
     RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
     RebuildBeatmapLeaderboardsForUserUseCase,
     TaskiqBeatmapLeaderboardRebuildWorkerWake,
@@ -89,6 +100,24 @@ class ScoreProviderSet(Provider):
         repository: UserStatsQueryRepository,
     ) -> CurrentUserStatsQuery:
         return CurrentUserStatsQuery(repository=repository)
+
+    @provide
+    def replay_download_body_assembler(self) -> ReplayDownloadBodyAssembler:
+        return ReplayDownloadBodyAssembler()
+
+    @provide
+    def replay_download_query(
+        self,
+        repository: ReplayDownloadQueryRepository,
+        blob_reader: BlobByteReader,
+        body_assembler: ReplayDownloadBodyAssembler,
+    ) -> ReplayDownloadQuery:
+        return ReplayDownloadQuery(
+            repository=repository,
+            blob_reader=blob_reader,
+            body_assembler=body_assembler,
+            body_strategy=ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES,
+        )
 
     @provide
     def beatmap_leaderboard_rebuild_worker_wake(

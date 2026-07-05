@@ -470,6 +470,10 @@ _Avoid_: client readability check, `.osr` validation, replay compatibility decis
 Replay Download Response Body を保存済み Replay blob bytes だけで返せるか、Score metadata と Replay payload から target-client-compatible download body を組み立てる必要があるかの判断。Replay Blob Integrity Check と Stable Compatibility Evidence の両方を根拠にし、#36 の実装 boundary を決める。
 _Avoid_: storage key naming, route registration decision, replay validation policy
 
+### Replay Download Provisional Missing Replay Fallback
+`missing replay` branch の target-confirmed response が未解決な状態で、#36 が暫定的に返す compatibility fallback。Reference evidence は 404 と empty 200 で衝突しているため target-confirmed contract とは呼ばず、hidden score / storage-missing と同じ取得不能 family に寄せた 404 empty response として明示的に `provisional` 扱いにする。
+_Avoid_: target-confirmed missing replay contract, hidden score policy, storage integrity failure
+
 ### Replay Download Reference Set
 Replay download contract の reference-backed evidence として確認する既存実装集合。`bancho.py` を stable baseline comparison、`deck` を missing / hidden / storage-missing branch comparison、`lets` を `/web/replays/<id>` alias comparison の主要 reference として扱う。
 _Avoid_: single implementation source, unrelated private-server extension, undocumented assumption

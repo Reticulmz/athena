@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from tests.factories.domain import make_channel, make_user
 
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
@@ -31,6 +30,7 @@ from osu_server.repositories.memory.commands import (
     InMemoryUserCommandRepository,
 )
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
+from tests.factories.domain import make_channel, make_user
 
 _NOW = datetime(2026, 6, 18, tzinfo=UTC)
 

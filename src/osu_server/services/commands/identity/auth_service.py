@@ -90,8 +90,27 @@ class AuthService:
     ) -> RegistrationResult:
         """アカウント登録を実行する。
 
-        全バリデーションエラーを蓄積して返却する(最初のエラーで中断しない)。
-        check_only=True の場合はバリデーションのみ実行し、アカウントは作成しない。
+        動作: 入力形式、重複、禁止 password を検証し、check_only でなければ
+        User 作成と Default role 付与を 1 つの Unit of Work で実行する。
+        同一 username/email/password の最終送信が再送された場合は、read 側の
+        duplicate check または DB unique conflict のどちらで検出されても成功済み
+        retry として扱う。
+
+        引数:
+            form_data: 登録フォームの username, email, password.
+            check_only: True の場合は検証だけを実行し、User を作成しない。
+
+        戻り値:
+            登録成功時は success=True の RegistrationResult。失敗時は field ごとの
+            validation error を含む RegistrationResult。
+
+        例外:
+            既知の validation error と persistence conflict は RegistrationResult に
+            変換する。想定外の repository 例外は呼び出し元へ送出される可能性がある。
+
+        制約:
+            Password、password hash、credential value はログへ出力しない。
+            check_only=True では idempotent retry 成功扱いを行わない。
         """
         errors: dict[str, list[str]] = {}
 
@@ -110,11 +129,20 @@ class AuthService:
 
         # Return early if any errors
         if errors:
-            failed_fields = ", ".join(sorted(errors))
+            if not check_only and await self._is_idempotent_registration_retry(
+                form_data,
+                safe_username=safe_username,
+                errors=errors,
+            ):
+                return RegistrationResult(success=True)
+
+            failed_fields = sorted(errors)
             logger.warning(
                 "registration_failed",
                 username=form_data.username,
-                reason=f"validation errors: {failed_fields}",
+                reason="validation_errors",
+                failed_fields=failed_fields,
+                check_only=check_only,
             )
             return RegistrationResult(success=False, errors=errors)
 
@@ -162,13 +190,59 @@ class AuthService:
         except ValueError as exc:
             # DB unique constraint caught a concurrent duplicate registration
             msg = str(exc)
+            reason = "persistence_error"
             if "safe_username" in msg:
                 errors.setdefault("username", []).append("Username is already taken.")
+                reason = "persistence_conflict"
             elif "email" in msg:
                 errors.setdefault("email", []).append("Email address is already in use.")
+                reason = "persistence_conflict"
             else:
                 errors.setdefault("username", []).append("Registration failed. Please try again.")
+            if reason == "persistence_conflict" and await self._is_idempotent_registration_retry(
+                form_data,
+                safe_username=safe_username,
+                errors=errors,
+            ):
+                return RegistrationResult(success=True)
+            logger.warning(
+                "registration_failed",
+                username=form_data.username,
+                reason=reason,
+                failed_fields=sorted(errors),
+                check_only=check_only,
+            )
             return RegistrationResult(success=False, errors=errors)
+
+    async def _is_idempotent_registration_retry(
+        self,
+        form_data: RegistrationForm,
+        *,
+        safe_username: str,
+        errors: dict[str, list[str]],
+    ) -> bool:
+        """同一内容の登録再送なら成功済み retry として扱う。"""
+        failed_fields = set(errors)
+        if not failed_fields or failed_fields - {"email", "username"}:
+            return False
+
+        existing_user = await self._user_query_repo.get_by_safe_username(safe_username)
+        if existing_user is None:
+            return False
+
+        if existing_user.email != form_data.email.lower():
+            return False
+
+        password_md5 = self._password_service.legacy_plaintext_md5(form_data.password)
+        if not await self._password_service.verify(existing_user.password_hash, password_md5):
+            return False
+
+        logger.info(
+            "registration_retry_confirmed",
+            username=form_data.username,
+            user_id=existing_user.id,
+        )
+        return True
 
     async def login(
         self,

@@ -88,11 +88,8 @@ def test_load_replay_download_fixtures_preserves_sanitized_contract_fields() -> 
     assert reference_by_name["lets_replay_alias_success"].body_kind == "complete_osr_file"
     assert reference_by_name["lets_replay_alias_success"].unresolved_reason is None
     assert reference_by_name["bancho_py_success"].unresolved_reason is not None
-    assert branch_by_name["success"].readiness == "blocked"
-    assert (
-        branch_by_name["success"].blocker
-        == "target_body_validation_requires_local_raw_blob_artifact"
-    )
+    assert branch_by_name["success"].readiness == "implementation_ready"
+    assert branch_by_name["success"].blocker is None
     assert branch_by_name["success"].selected_body_byte_size == 90584
     assert branch_by_name["success"].selected_safe_body_sha256 is None
     assert branch_by_name["auth_failure"].readiness == "implementation_ready"
@@ -124,17 +121,45 @@ def test_load_replay_download_fixtures_preserves_body_decision_contract() -> Non
     bundle = load_replay_download_fixtures(FIXTURE_DIR)
     body_decision = bundle.body_decision
 
-    assert body_decision.blob_integrity is ReplayDownloadBlobIntegrity.UNAVAILABLE
-    assert (
-        body_decision.target_body_compatible
-        is ReplayDownloadBodyCompatibility.LOCAL_ONLY_UNVERIFIED
-    )
-    assert body_decision.download_body_strategy is ReplayDownloadBodyStrategy.BLOCKED
-    assert body_decision.status is VerificationStatus.KNOWN_GAP
+    assert body_decision.blob_integrity is ReplayDownloadBlobIntegrity.PASS
+    assert body_decision.target_body_compatible is ReplayDownloadBodyCompatibility.PASS
+    assert body_decision.download_body_strategy is ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES
+    assert body_decision.status is VerificationStatus.PASS
     assert body_decision.evidence_references == (
         "target_client_response_metadata:official_bancho_stable_replay_download_200",
+        "local_capture:athena_replay_download_score_6_404_after_route",
+        "local_diagnostic:score_6_replay_blob_lzma_alone_pass",
         "research:Replay Blob Diagnostic Procedure",
     )
+    assert body_decision.success_response_allowed is True
+
+
+def test_replay_download_body_decision_allows_success_only_after_safe_strategy() -> None:
+    direct_decision = build_replay_download_body_decision(
+        blob_integrity=ReplayDownloadBlobIntegrity.PASS,
+        target_body_compatible=ReplayDownloadBodyCompatibility.PASS,
+        evidence_references=("unit:target_body_parser_pass",),
+    )
+    assembly_decision = build_replay_download_body_decision(
+        blob_integrity=ReplayDownloadBlobIntegrity.PASS,
+        target_body_compatible=ReplayDownloadBodyCompatibility.FAIL,
+        evidence_references=("unit:target_body_parser_failure",),
+    )
+    blocked_decision = build_replay_download_body_decision(
+        blob_integrity=ReplayDownloadBlobIntegrity.UNAVAILABLE,
+        target_body_compatible=ReplayDownloadBodyCompatibility.LOCAL_ONLY_UNVERIFIED,
+        evidence_references=("unit:local_artifact_not_committed",),
+    )
+
+    assert direct_decision.download_body_strategy is ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES
+    assert direct_decision.success_response_allowed is True
+    assert (
+        assembly_decision.download_body_strategy
+        is ReplayDownloadBodyStrategy.ASSEMBLE_DOWNLOAD_BODY
+    )
+    assert assembly_decision.success_response_allowed is True
+    assert blocked_decision.download_body_strategy is ReplayDownloadBodyStrategy.BLOCKED
+    assert blocked_decision.success_response_allowed is False
 
 
 def test_replay_download_docs_and_matrix_share_current_evidence_terms() -> None:
@@ -143,8 +168,8 @@ def test_replay_download_docs_and_matrix_share_current_evidence_terms() -> None:
     required_terms = (
         "primary_target_client_route",
         "candidate_only_reference_backed",
-        "target_body_validation_requires_local_raw_blob_artifact",
-        "download_body_strategy=blocked",
+        "local_diagnostic:score_6_replay_blob_lzma_alone_pass",
+        "download_body_strategy=direct_blob_bytes",
     )
 
     assert all(term in guide for term in required_terms)
@@ -158,11 +183,11 @@ def test_replay_download_docs_define_issue_36_and_37_handoff_boundary() -> None:
         "Issue #37 boundary",
         "GET /web/osu-getreplay.php",
         "Query keys `c`, `h`, `m`, `u`",
-        "target_body_validation_requires_local_raw_blob_artifact",
+        "local_diagnostic:score_6_replay_blob_lzma_alone_pass",
         "no_target_or_reference_evidence",
         "tests/fixtures/stable_compatibility/replay_download/response_contract.json",
         "tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json",
-        "download_body_strategy=blocked",
+        "download_body_strategy=direct_blob_bytes",
         "assemble_download_body",
         "view count and latest activity are not #36 readiness criteria",
         "response bytes, status, or headers",

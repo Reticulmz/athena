@@ -16,6 +16,7 @@ from osu_server.infrastructure.logging import setup_logging
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
+from osu_server.transports.stable.web_legacy.replay_download import ReplayDownloadHandler
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
@@ -35,6 +36,7 @@ async def _initialize_dishka_app_container(container: AsyncContainer) -> None:
     _ = await container.get(RegistrationHandler)
     _ = await container.get(GetscoresHandler)
     _ = await container.get(ScoreSubmitHandler)
+    _ = await container.get(ReplayDownloadHandler)
 
 
 def create_lifespan(
@@ -88,6 +90,7 @@ async def _run_lifespan(
         registration_handler = await dishka_container.get(RegistrationHandler)
         getscores_handler = await dishka_container.get(GetscoresHandler)
         score_submit_handler = await dishka_container.get(ScoreSubmitHandler)
+        replay_download_handler = await dishka_container.get(ReplayDownloadHandler)
 
         # Store on app.state for route endpoint access
         app.state.config = config
@@ -95,6 +98,7 @@ async def _run_lifespan(
         app.state.registration_handler = registration_handler
         app.state.getscores_handler = getscores_handler
         app.state.score_submit_handler = score_submit_handler
+        app.state.replay_download_handler = replay_download_handler
         app.state.version_info = get_version_info()
         yield
     finally:

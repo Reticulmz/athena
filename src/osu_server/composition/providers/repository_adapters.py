@@ -19,6 +19,9 @@ from osu_server.repositories.interfaces.queries.friends import (
     FriendRelationshipQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.personal_bests import PersonalBestQueryRepository
+from osu_server.repositories.interfaces.queries.replay_download import (
+    ReplayDownloadQueryRepository,
+)
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.score_performance import (
     ScorePerformanceQueryRepository,
@@ -44,11 +47,15 @@ from osu_server.repositories.memory.queries.friends import (
 from osu_server.repositories.memory.queries.personal_bests import (
     InMemoryPersonalBestQueryRepository,
 )
+from osu_server.repositories.memory.queries.replay_download import (
+    InMemoryReplayDownloadQueryRepository,
+)
 from osu_server.repositories.memory.queries.roles import InMemoryRoleQueryRepository
 from osu_server.repositories.memory.queries.score_performance import (
     InMemoryScorePerformanceQueryRepository,
 )
 from osu_server.repositories.memory.queries.scores import InMemoryScoreQueryRepository
+from osu_server.repositories.memory.queries.state import InMemoryQueryStateSnapshotProvider
 from osu_server.repositories.memory.queries.user_stats import InMemoryUserStatsQueryRepository
 from osu_server.repositories.memory.queries.users import InMemoryUserQueryRepository
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -69,6 +76,9 @@ from osu_server.repositories.sqlalchemy.queries.friends import (
 )
 from osu_server.repositories.sqlalchemy.queries.personal_bests import (
     SQLAlchemyPersonalBestQueryRepository,
+)
+from osu_server.repositories.sqlalchemy.queries.replay_download import (
+    SQLAlchemyReplayDownloadQueryRepository,
 )
 from osu_server.repositories.sqlalchemy.queries.roles import SQLAlchemyRoleQueryRepository
 from osu_server.repositories.sqlalchemy.queries.score_performance import (
@@ -180,17 +190,25 @@ class SQLAlchemyRepositoryAdapterFamily:
     ) -> UserStatsQueryRepository:
         return SQLAlchemyUserStatsQueryRepository(session_factory)
 
+    def replay_download_query_repository(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> ReplayDownloadQueryRepository:
+        return SQLAlchemyReplayDownloadQueryRepository(session_factory)
+
 
 class InMemoryRepositoryAdapterFamily:
     """Build one coherent in-memory repository adapter set."""
 
     state: InMemoryCommandRepositoryState
     unit_of_work_factory: InMemoryUnitOfWorkFactory
+    query_state_snapshot_provider: InMemoryQueryStateSnapshotProvider
     beatmap_query_repository: InMemoryBeatmapQueryRepository
 
     def __init__(self, state: InMemoryCommandRepositoryState | None = None) -> None:
         self.state = state if state is not None else InMemoryCommandRepositoryState()
         self.unit_of_work_factory = InMemoryUnitOfWorkFactory(self.state)
+        self.query_state_snapshot_provider = InMemoryQueryStateSnapshotProvider(self.state)
         self.beatmap_query_repository = InMemoryBeatmapQueryRepository(self.unit_of_work_factory)
 
     def replacements(self) -> tuple[RepositoryAdapterReplacement, ...]:
@@ -248,6 +266,10 @@ class InMemoryRepositoryAdapterFamily:
             RepositoryAdapterReplacement(
                 UserStatsQueryRepository,
                 InMemoryUserStatsQueryRepository(self.unit_of_work_factory),
+            ),
+            RepositoryAdapterReplacement(
+                ReplayDownloadQueryRepository,
+                InMemoryReplayDownloadQueryRepository(self.query_state_snapshot_provider),
             ),
         )
 

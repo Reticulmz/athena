@@ -43,7 +43,7 @@ from osu_server.services.commands.beatmaps import (
     FetchBeatmapMetadataUseCase,
 )
 
-_NOW = datetime(2026, 6, 5, tzinfo=UTC)
+_NOW = datetime.now(UTC) + timedelta(days=365)
 _ONE_HOUR = timedelta(hours=1)
 _THIRTY_DAYS = timedelta(days=30)
 _DEFAULT_CHECKSUM = "0123456789abcdef0123456789abcdef"

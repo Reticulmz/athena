@@ -1,25 +1,22 @@
-"""SQLAlchemy async engine factory.
-
-Creates an AsyncEngine with connection pooling for PostgreSQL via asyncpg.
-"""
+"""SQLAlchemy async engine factory."""
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 
 def create_engine(database_url: str) -> AsyncEngine:
-    """Create an async SQLAlchemy engine from a database URL.
+    """Database URL から async SQLAlchemy engine を作成する。
 
-    Converts ``postgresql://`` scheme to ``postgresql+asyncpg://`` if needed,
-    so callers can pass the standard DATABASE_URL without worrying about the
-    driver suffix.
+    ``postgresql://`` と ``postgres://`` は asyncpg driver 付き URL に変換する。
+    ``pool_pre_ping`` を有効化し、DB restart などで pool に残った stale connection
+    を checkout 前に破棄できるようにする。
 
     Args:
         database_url: PostgreSQL connection URL.
 
     Returns:
-        An AsyncEngine configured with asyncpg driver.
+        asyncpg driver と stale connection check を設定した AsyncEngine.
     """
     url = database_url.replace("postgres://", "postgresql+asyncpg://", 1).replace(
         "postgresql://", "postgresql+asyncpg://", 1
     )
-    return create_async_engine(url)
+    return create_async_engine(url, pool_pre_ping=True)

@@ -47,13 +47,23 @@ class TestVerify:
 
 
 class TestPreparePassword:
+    def test_legacy_plaintext_md5_matches_stable_client_hash(self) -> None:
+        """legacy_plaintext_md5 は stable client 互換の lowercase MD5 hex を返す。"""
+        svc = PasswordService()
+        plain = "my_secure_password"
+
+        assert (
+            svc.legacy_plaintext_md5(plain)
+            == hashlib.md5(plain.encode(), usedforsecurity=False).hexdigest()
+        )
+
     async def test_prepare_password_roundtrip(self) -> None:
         """prepare_password(plain) produces a hash verifiable with md5(plain)."""
         svc = PasswordService()
         plain = "my_secure_password"
         stored_hash = await svc.prepare_password(plain)
 
-        md5_of_plain = hashlib.md5(plain.encode()).hexdigest()
+        md5_of_plain = hashlib.md5(plain.encode(), usedforsecurity=False).hexdigest()
         assert await svc.verify(stored_hash, md5_of_plain) is True
 
     async def test_prepare_password_returns_argon2id(self) -> None:
@@ -66,7 +76,7 @@ class TestPreparePassword:
         svc = PasswordService()
         stored_hash = await svc.prepare_password("original_password")
 
-        wrong_md5 = hashlib.md5(b"different_password").hexdigest()
+        wrong_md5 = hashlib.md5(b"different_password", usedforsecurity=False).hexdigest()
         assert await svc.verify(stored_hash, wrong_md5) is False
 
     async def test_prepare_password_simulates_login_flow(self) -> None:
@@ -80,7 +90,7 @@ class TestPreparePassword:
         stored_hash = await svc.prepare_password(plain)
 
         # Login — client computes MD5 client-side
-        client_md5 = hashlib.md5(plain.encode()).hexdigest()
+        client_md5 = hashlib.md5(plain.encode(), usedforsecurity=False).hexdigest()
         assert await svc.verify(stored_hash, client_md5) is True
 
 
