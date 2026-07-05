@@ -602,3 +602,68 @@ class TestBeatmapMirrorConfig:
                     "beatmap_max_bounded_wait_seconds": 1.0,
                 }
             )
+
+
+class TestAppConfigQueryDiagnostics:
+    """SQL query diagnostics config の default と validation."""
+
+    def test_query_diagnostics_enabled_by_default_in_development(self) -> None:
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "development",
+            }
+        )
+
+        assert config.query_diagnostics_effective_enabled is True
+
+    def test_query_diagnostics_disabled_by_default_outside_development(self) -> None:
+        production = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "production",
+            }
+        )
+        test = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "test",
+            }
+        )
+
+        assert production.query_diagnostics_effective_enabled is False
+        assert test.query_diagnostics_effective_enabled is False
+
+    def test_query_diagnostics_enabled_override_is_respected(self) -> None:
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "production",
+                "query_diagnostics_enabled": True,
+            }
+        )
+
+        assert config.query_diagnostics_effective_enabled is True
+
+    def test_query_diagnostics_thresholds_must_be_positive(self) -> None:
+        with pytest.raises(ValidationError, match="query diagnostics thresholds"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "query_diagnostics_max_queries": 0,
+                }
+            )
+
+        with pytest.raises(ValidationError, match="query diagnostics thresholds"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "query_diagnostics_duplicate_threshold": 0,
+                }
+            )

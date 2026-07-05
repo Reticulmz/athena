@@ -53,7 +53,11 @@ def _collect_values(generation_input: EnvGenerationInput) -> dict[str, str]:
         if field.env_var == "ENVIRONMENT":
             value = generation_input.environment
         if value is None:
+            if field.empty_value_is_unset:
+                continue
             value = field.default
+        if field.empty_value_is_unset and value == "":
+            continue
         if field.required and not value:
             missing_values.append(field.env_var)
             continue
@@ -69,6 +73,8 @@ def _validate_app_config(values: Mapping[str, str]) -> None:
         if field.env_var not in values:
             continue
         value = values[field.env_var]
+        if field.empty_value_is_unset and value == "":
+            continue
         field_values[field.field_name] = _parse_list_value(value) if field.list_like else value
     _ = AppConfig.model_validate(field_values)
 

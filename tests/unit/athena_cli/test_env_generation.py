@@ -25,6 +25,7 @@ def test_generate_env_content_includes_required_values_defaults_and_environment(
     assert "VALKEY_URL=redis://localhost:6379/0" in result.content
     assert "ENVIRONMENT=test" in result.content
     assert "SERVER_PORT=8000" in result.content
+    assert "QUERY_DIAGNOSTICS_ENABLED=" not in result.content
     assert result.content.endswith("\n")
 
 

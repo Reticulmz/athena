@@ -23,6 +23,7 @@ def test_schema_metadata_classifies_required_defaults_secrets_and_lists() -> Non
     assert metadata["server_port"].default == "8000"
     assert metadata["beatmap_official_api_client_secret"].secret is True
     assert metadata["beatmap_metadata_mirror_base_urls"].list_like is True
+    assert metadata["query_diagnostics_enabled"].empty_value_is_unset is True
 
 
 def test_example_output_is_derived_from_schema() -> None:

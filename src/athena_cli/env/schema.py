@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import NoneType
 from typing import TYPE_CHECKING, Annotated, cast, get_args, get_origin
 
 from osu_server.config import AppConfig
@@ -22,6 +23,7 @@ class EnvFieldMetadata:
     default: str | None
     secret: bool
     list_like: bool
+    empty_value_is_unset: bool
 
 
 def get_config_env_metadata() -> tuple[EnvFieldMetadata, ...]:
@@ -46,6 +48,7 @@ def _metadata_for_field(field_name: str, field: FieldInfo) -> EnvFieldMetadata:
         default=None if required else _stringify_default(field),
         secret=_is_secret_field(field_name),
         list_like=_is_list_like(field.annotation),
+        empty_value_is_unset=_is_optional_bool(field.annotation),
     )
 
 
@@ -68,6 +71,12 @@ def _is_secret_field(field_name: str) -> bool:
 def _is_list_like(annotation: object) -> bool:
     unwrapped = _unwrap_annotated(annotation)
     return get_origin(unwrapped) is list or unwrapped is list
+
+
+def _is_optional_bool(annotation: object) -> bool:
+    unwrapped = _unwrap_annotated(annotation)
+    args = set(get_args(unwrapped))
+    return bool in args and NoneType in args
 
 
 def _unwrap_annotated(annotation: object) -> object:

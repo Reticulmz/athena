@@ -2,6 +2,8 @@
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from osu_server.infrastructure.database.query_diagnostics import install_query_diagnostics
+
 
 def create_engine(database_url: str) -> AsyncEngine:
     """Database URL から async SQLAlchemy engine を作成する。
@@ -19,4 +21,6 @@ def create_engine(database_url: str) -> AsyncEngine:
     url = database_url.replace("postgres://", "postgresql+asyncpg://", 1).replace(
         "postgresql://", "postgresql+asyncpg://", 1
     )
-    return create_async_engine(url, pool_pre_ping=True)
+    engine = create_async_engine(url, pool_pre_ping=True)
+    install_query_diagnostics(engine)
+    return engine

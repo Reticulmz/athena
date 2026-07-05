@@ -36,6 +36,8 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+    from tests.conftest import QueryBudget
+
 
 _TEST_PREFIX: Final = "trdq_"
 _BLOB_STORAGE_PREFIX: Final = "test/replay-download-query/"
@@ -86,18 +88,29 @@ async def session_factory(
 
 async def test_get_candidate_uses_real_role_visibility_and_replay_metadata(
     session_factory: async_sessionmaker[AsyncSession],
+    query_budget: QueryBudget,
 ) -> None:
     visible_score_id, hidden_score_id, blob_id, checksum = await _seed_visibility_rows(
         session_factory
     )
     repository = SQLAlchemyReplayDownloadQueryRepository(session_factory)
 
-    visible = await repository.get_candidate(
-        ReplayDownloadCandidateQuery(score_id=visible_score_id, ruleset=Ruleset.OSU)
-    )
-    hidden = await repository.get_candidate(
-        ReplayDownloadCandidateQuery(score_id=hidden_score_id, ruleset=Ruleset.OSU)
-    )
+    with query_budget(
+        max_queries=2,
+        name="replay-download-candidate-visible",
+        duplicate_threshold=1,
+    ):
+        visible = await repository.get_candidate(
+            ReplayDownloadCandidateQuery(score_id=visible_score_id, ruleset=Ruleset.OSU)
+        )
+    with query_budget(
+        max_queries=2,
+        name="replay-download-candidate-hidden",
+        duplicate_threshold=1,
+    ):
+        hidden = await repository.get_candidate(
+            ReplayDownloadCandidateQuery(score_id=hidden_score_id, ruleset=Ruleset.OSU)
+        )
 
     assert visible == ReplayDownloadAvailableReplayCandidate(
         blob_id=blob_id,

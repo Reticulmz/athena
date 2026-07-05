@@ -1,0 +1,23 @@
+{
+  "feature_name": "sql-query-diagnostics",
+  "created_at": "2026-07-05T14:31:45Z",
+  "updated_at": "2026-07-05T14:31:45Z",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true,
+  "issue": "https://github.com/Reticulmz/athena/issues/43"
+}

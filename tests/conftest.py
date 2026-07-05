@@ -6,8 +6,8 @@ import asyncio
 import logging
 import os
 import weakref
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from contextlib import suppress
+from collections.abc import AsyncIterator, Awaitable, Callable, Generator, Iterator
+from contextlib import AbstractContextManager, contextmanager, suppress
 from pathlib import Path
 from typing import Protocol, cast, final
 
@@ -17,6 +17,10 @@ from glide import GlideClient
 from taskiq_redis import ListQueueBroker
 
 import osu_server.infrastructure.cache.valkey_client as valkey_module
+from osu_server.infrastructure.database.query_diagnostics import (
+    QueryDiagnosticSummary,
+    query_diagnostic_scope,
+)
 
 # ---------------------------------------------------------------------------
 # Runtime resource tracking -- ensures sockets are closed after tests
@@ -35,6 +39,18 @@ class _AsyncCloseable(Protocol):
 
 class _AsyncShutdownBroker(Protocol):
     async def shutdown(self) -> None: ...
+
+
+class QueryBudget(Protocol):
+    """SQL query budget fixture の callable contract."""
+
+    def __call__(
+        self,
+        *,
+        max_queries: int,
+        name: str,
+        duplicate_threshold: int = 2,
+    ) -> AbstractContextManager[None]: ...
 
 
 @final
@@ -203,3 +219,57 @@ def reset_structlog() -> Iterator[None]:
     for logger_name in ("uvicorn.error", "uvicorn.access"):
         logging.getLogger(logger_name).handlers.clear()
     root.setLevel(logging.WARNING)
+
+
+@pytest.fixture
+def query_budget() -> QueryBudget:
+    """SQL query count を opt-in で hard fail する fixture."""
+
+    @contextmanager
+    def budget(
+        *,
+        max_queries: int,
+        name: str,
+        duplicate_threshold: int = 2,
+    ) -> Generator[None]:
+        if max_queries < 0:
+            msg = "max_queries must be greater than or equal to 0"
+            raise ValueError(msg)
+        with query_diagnostic_scope(
+            scope_kind="test",
+            scope_name=name,
+            duplicate_threshold=duplicate_threshold,
+        ) as collector:
+            yield
+        summary = collector.summary()
+        if summary.total_queries > max_queries:
+            raise AssertionError(_format_query_budget_failure(summary, max_queries))
+
+    return budget
+
+
+def _format_query_budget_failure(
+    summary: QueryDiagnosticSummary,
+    max_queries: int,
+) -> str:
+    duplicate_lines = [
+        " ".join(
+            (
+                f"  - count={duplicate.count}",
+                f"fingerprint={duplicate.fingerprint}",
+                f"sql_prefix={duplicate.sql_prefix!r}",
+            )
+        )
+        for duplicate in summary.duplicate_queries
+    ]
+    duplicates = "\n".join(duplicate_lines) if duplicate_lines else "  - none"
+    return "\n".join(
+        (
+            "SQL query budget exceeded",
+            f"scope={summary.scope_kind}:{summary.scope_name}",
+            f"actual={summary.total_queries}",
+            f"allowed={max_queries}",
+            "duplicates:",
+            duplicates,
+        )
+    )
