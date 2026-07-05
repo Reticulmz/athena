@@ -12,6 +12,7 @@ from osu_server.composition.providers.repository_adapters import (
     InMemoryRepositoryAdapterFamily,
 )
 from osu_server.domain.beatmaps import BeatmapMetadataProvider
+from osu_server.infrastructure.beatmaps import InMemoryBeatmapMetadataProvider
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
@@ -36,7 +37,6 @@ from osu_server.infrastructure.storage.local import LocalBlobStorageBackend
 from osu_server.jobs import register_all_jobs
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.memory.session_store import InMemorySessionStore
-from osu_server.services.queries.beatmaps.mirror import InMemoryBeatmapMetadataProvider
 
 if TYPE_CHECKING:
     from collections.abc import Callable

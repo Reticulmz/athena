@@ -14,11 +14,14 @@ from osu_server.domain.beatmaps import (
     BeatmapFreshnessPolicy,
     BeatmapMetadataProvider,
 )
+from osu_server.infrastructure.beatmaps import (
+    BeatmapFileProviderService,
+    CompositeBeatmapMetadataProvider,
+    MirrorMetadataProviderService,
+    OsuApiMetadataProviderService,
+)
 from osu_server.infrastructure.http.beatmap_http_client import (
     BeatmapHttpClient as ConcreteBeatmapHttpClient,
-)
-from osu_server.repositories.beatmaps.metadata_providers import (
-    CompositeBeatmapMetadataProvider,
 )
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
@@ -33,9 +36,6 @@ from osu_server.services.queries.beatmaps import (
 )
 from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
-    BeatmapFileProviderService,
-    MirrorMetadataProviderService,
-    OsuApiMetadataProviderService,
 )
 from osu_server.shared.ports import (
     BeatmapLeaderboardRebuildWorkerWake,
