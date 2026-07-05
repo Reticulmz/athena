@@ -23,6 +23,7 @@ _BANCHO_BOT_USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_ -]+$")
 _BEATMAP_URL_TEMPLATE_TOKEN = "{beatmap_id}"
 _SOURCE_CREDENTIAL_ENVIRONMENTS = frozenset({"development", "production"})
 _TEST_ENVIRONMENT = "test"
+_DEVELOPMENT_ENVIRONMENT = "development"
 _BEATMAP_URL_TEMPLATE_FIELD = "beatmap_id"
 _DEFAULT_ENVIRONMENT = "development"
 _ENVIRONMENT_VARIABLE = "ENVIRONMENT"
@@ -54,6 +55,9 @@ class AppConfig(BaseSettings):
     log_level: str = "INFO"
     log_dir: str = "logs"
     log_max_files: int = 30
+    query_diagnostics_enabled: bool | None = None
+    query_diagnostics_max_queries: int = 20
+    query_diagnostics_duplicate_threshold: int = 2
 
     blob_storage_backend: str = "local"
     blob_storage_local_root: str = ".data/blobs"
@@ -80,6 +84,17 @@ class AppConfig(BaseSettings):
     beatmap_default_bounded_wait_seconds: float = 3.0
     beatmap_max_bounded_wait_seconds: float = 3.0
 
+    @property
+    def query_diagnostics_effective_enabled(self) -> bool:
+        """Runtime SQL query diagnostics の有効状態を返す.
+
+        Returns:
+            明示設定がある場合はその値. 未設定の場合は development 環境のみ true.
+        """
+        if self.query_diagnostics_enabled is not None:
+            return self.query_diagnostics_enabled
+        return self.environment.lower() == _DEVELOPMENT_ENVIRONMENT
+
     @field_validator("blob_storage_backend")
     @classmethod
     def _validate_blob_storage_backend(cls, v: str) -> str:
@@ -105,6 +120,14 @@ class AppConfig(BaseSettings):
     def _validate_log_max_files(cls, v: int) -> int:
         if v < 0:
             msg = f"log_max_files must be greater than or equal to 0, got {v}"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("query_diagnostics_max_queries", "query_diagnostics_duplicate_threshold")
+    @classmethod
+    def _validate_query_diagnostics_thresholds(cls, v: int) -> int:
+        if v < 1:
+            msg = "query diagnostics thresholds must be greater than 0"
             raise ValueError(msg)
         return v
 

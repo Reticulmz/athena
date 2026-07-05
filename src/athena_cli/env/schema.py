@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import NoneType
 from typing import TYPE_CHECKING, Annotated, cast, get_args, get_origin
 
 from osu_server.config import AppConfig
@@ -16,12 +17,25 @@ _SECRET_NAME_PARTS = ("password", "secret", "access_key")
 
 @dataclass(frozen=True, slots=True)
 class EnvFieldMetadata:
+    """AppConfig field から導出した env generation metadata.
+
+    Attributes:
+        field_name: AppConfig 上の field 名.
+        env_var: 対応する環境変数名.
+        required: AppConfig validation 上で必須の場合は true.
+        default: 必須でない field の文字列化済み default. 必須 field は None.
+        secret: 表示時に mask する secret 系 field の場合は true.
+        list_like: comma separated value として扱う list field の場合は true.
+        empty_value_is_unset: 空文字を未指定として扱う field の場合は true.
+    """
+
     field_name: str
     env_var: str
     required: bool
     default: str | None
     secret: bool
     list_like: bool
+    empty_value_is_unset: bool
 
 
 def get_config_env_metadata() -> tuple[EnvFieldMetadata, ...]:
@@ -46,6 +60,7 @@ def _metadata_for_field(field_name: str, field: FieldInfo) -> EnvFieldMetadata:
         default=None if required else _stringify_default(field),
         secret=_is_secret_field(field_name),
         list_like=_is_list_like(field.annotation),
+        empty_value_is_unset=_is_optional_bool(field.annotation),
     )
 
 
@@ -68,6 +83,12 @@ def _is_secret_field(field_name: str) -> bool:
 def _is_list_like(annotation: object) -> bool:
     unwrapped = _unwrap_annotated(annotation)
     return get_origin(unwrapped) is list or unwrapped is list
+
+
+def _is_optional_bool(annotation: object) -> bool:
+    unwrapped = _unwrap_annotated(annotation)
+    args = set(get_args(unwrapped))
+    return bool in args and NoneType in args
 
 
 def _unwrap_annotated(annotation: object) -> object:

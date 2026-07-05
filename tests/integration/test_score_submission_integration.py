@@ -61,6 +61,8 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+    from tests.conftest import QueryBudget
+
 
 def _eligible_beatmap() -> BeatmapEligibility:
     return BeatmapEligibility(
@@ -420,6 +422,7 @@ async def test_e2e_valid_submission_persists_to_database(
     valid_input: ParsedSubmissionInput,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
     score_decryptor: StubScorePayloadDecryptor,
+    query_budget: QueryBudget,
 ) -> None:
     """E2E: Valid submission creates score, replay, and submission records in DB."""
 
@@ -435,7 +438,12 @@ async def test_e2e_valid_submission_persists_to_database(
 
     score_decryptor.set_factory(mock_decrypt)
 
-    result = await service.execute(valid_input)
+    with query_budget(
+        max_queries=30,
+        name="score-submission-valid-execute",
+        duplicate_threshold=1,
+    ):
+        result = await service.execute(valid_input)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -851,6 +859,7 @@ async def test_e2e_idempotent_retry_returns_cached_result(
     service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
     score_decryptor: StubScorePayloadDecryptor,
+    query_budget: QueryBudget,
 ) -> None:
     """E2E: Idempotent retry returns cached result from database."""
 
@@ -877,14 +886,24 @@ async def test_e2e_idempotent_retry_returns_cached_result(
     )
 
     # First submission
-    result1 = await service.execute(input_data)
+    with query_budget(
+        max_queries=30,
+        name="score-submission-idempotent-first-execute",
+        duplicate_threshold=1,
+    ):
+        result1 = await service.execute(input_data)
     assert result1.outcome == SubmissionOutcome.COMPLETED
     score_id1 = result1.score_id
 
     resent_input = replace(input_data, submitted_at=datetime.now(UTC))
 
     # Second submission has the same request content and a different receive time.
-    result2 = await service.execute(resent_input)
+    with query_budget(
+        max_queries=5,
+        name="score-submission-idempotent-retry-execute",
+        duplicate_threshold=1,
+    ):
+        result2 = await service.execute(resent_input)
     assert result2.outcome == SubmissionOutcome.COMPLETED
     assert result2.score_id == score_id1
 

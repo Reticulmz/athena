@@ -4,17 +4,68 @@ from __future__ import annotations
 
 import time
 from http import HTTPStatus
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast, override
 
 import structlog
 import structlog.contextvars
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+
+from osu_server.config import AppConfig
+from osu_server.shared.query_diagnostics import (
+    emit_sql_query_diagnostics_warning,
+    query_diagnostic_scope,
+)
 
 if TYPE_CHECKING:
     from starlette.requests import Request
     from starlette.responses import Response
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()  # pyright: ignore[reportAny]
+
+
+class _ConfigState(Protocol):
+    config: object
+
+
+class _ConfigApp(Protocol):
+    state: _ConfigState
+
+
+class SQLQueryDiagnosticsMiddleware(BaseHTTPMiddleware):
+    """HTTP request ごとに SQL query diagnostics scope を開く middleware."""
+
+    @override
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        """Development runtime で SQL query diagnostics warning を出す.
+
+        Args:
+            request: Starlette request.
+            call_next: 次の middleware または endpoint を呼び出す callable.
+
+        Returns:
+            後続処理が返した response.
+        """
+        config = _get_request_config(request)
+        if config is None or not config.query_diagnostics_effective_enabled:
+            return await call_next(request)
+
+        with query_diagnostic_scope(
+            scope_kind="http_request",
+            scope_name=f"{request.method} {request.url.path}",
+            duplicate_threshold=config.query_diagnostics_duplicate_threshold,
+        ) as collector:
+            try:
+                return await call_next(request)
+            finally:
+                await emit_sql_query_diagnostics_warning(
+                    logger,
+                    collector.summary(),
+                    max_queries=config.query_diagnostics_max_queries,
+                )
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -57,3 +108,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     duration_ms=round(duration_ms, 2),
                 )
         return response
+
+
+def _get_request_config(request: Request) -> AppConfig | None:
+    try:
+        config = cast("_ConfigApp", request.app).state.config
+    except AttributeError:
+        return None
+    if isinstance(config, AppConfig):
+        return config
+    return None

@@ -16,7 +16,10 @@ from taskiq import TaskiqEvents
 from taskiq_redis import ListQueueBroker
 
 from osu_server.composition.providers.container import make_worker_container
-from osu_server.composition.taskiq_integration import setup_taskiq_dishka
+from osu_server.composition.taskiq_integration import (
+    setup_taskiq_dishka,
+    setup_taskiq_query_diagnostics,
+)
 from osu_server.config import load_config
 from osu_server.infrastructure.logging import setup_logging
 from osu_server.jobs import register_all_jobs
@@ -75,6 +78,7 @@ async def startup(state: TaskiqState) -> None:
     try:
         worker_container = make_worker_container(_config)
         setup_taskiq_dishka(worker_container, broker)
+        setup_taskiq_query_diagnostics(_config, broker)
 
         state.dishka_container = worker_container
         state.persist_channel_message_use_case = await worker_container.get(
