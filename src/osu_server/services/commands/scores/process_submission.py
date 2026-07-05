@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Protocol
+from typing import Never, Protocol
 
 import structlog
 
@@ -17,7 +17,11 @@ from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.domain.scores.personal_best import PersonalBestDelta
 from osu_server.domain.scores.score import Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.domain.scores.user_stats import UserCurrentStats
-from osu_server.domain.scores.validator import ValidationError, validate_hit_counts
+from osu_server.domain.scores.validator import (
+    ValidationError,
+    ValidationResult,
+    validate_hit_counts,
+)
 from osu_server.domain.storage.blobs import BlobStoreResult
 from osu_server.services.commands.beatmaps import (
     BeatmapFileWarmupEntrance,
@@ -365,6 +369,294 @@ def _score_submit_approved_at(beatmap: Beatmap) -> datetime | None:
     return beatmap.official_last_updated_at
 
 
+class _SubmissionStoppedError(Exception):
+    def __init__(self, result: SubmissionResult) -> None:
+        super().__init__(result.error_reason)
+        self.result: SubmissionResult = result
+
+
+def _stop_submission(result: SubmissionResult) -> Never:
+    raise _SubmissionStoppedError(result)
+
+
+@dataclass(frozen=True, slots=True)
+class _SubmissionAttempt:
+    input_data: ParsedSubmissionInput
+    start_time: float
+    request_hash: str
+    opaque_field_hashes: Mapping[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class _DecryptedSubmission:
+    payload: DecryptedPayload
+    latency_ms: float
+
+
+@dataclass(frozen=True, slots=True)
+class _AuthorizedSubmission:
+    parsed: ParsedScore
+    auth_ctx: AuthorizationContext
+    fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedBeatmapSubmission:
+    result: BeatmapResolveResult
+    beatmap: Beatmap
+    latency_ms: float
+
+
+@dataclass(frozen=True, slots=True)
+class _AcceptedBeatmapSubmission:
+    result: BeatmapResolveResult
+    resolved_beatmap_id: int
+    resolved_beatmapset_id: int
+    score_ruleset: Ruleset
+    score_playstyle: Playstyle
+    beatmap_status_at_submission: str
+    beatmap_approved_at: datetime | None
+    leaderboard_eligible_at_submission: bool
+    fail_time_ms: int | None
+    play_time_seconds: int | None
+    play_time_source: PlayTimeSource | None
+    latency_ms: float
+
+
+@dataclass(frozen=True, slots=True)
+class _ValidatedSubmission:
+    result: ValidationResult
+    grade_discrepancy: dict[str, str] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ReplayBlobReference:
+    replay_data: bytes | None
+    replay_checksum: str | None
+    replay_byte_size: int | None
+    replay_blob_id: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _SubmitScoreBaseline:
+    overall_stats_before: UserCurrentStats | None
+    beatmap_rank_before: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _SubmitResponseDeltas:
+    overall_stats_after: UserCurrentStats | None
+    beatmap_rank_after: int | None
+
+
+def _accepted_beatmap_submission(
+    attempt: _SubmissionAttempt,
+    authorized: _AuthorizedSubmission,
+    resolved: _ResolvedBeatmapSubmission,
+) -> _AcceptedBeatmapSubmission:
+    parsed = authorized.parsed
+    beatmap_result = resolved.result
+    beatmap = resolved.beatmap
+    eligibility = beatmap_result.eligibility
+    score_ruleset = Ruleset(parsed.ruleset)
+    fail_time_ms, play_time_seconds, play_time_source = _derive_score_timing(
+        passed=parsed.passed,
+        fail_time_ms=attempt.input_data.fail_time_ms,
+        beatmap_total_length=beatmap.total_length,
+    )
+    return _AcceptedBeatmapSubmission(
+        result=beatmap_result,
+        resolved_beatmap_id=attempt.input_data.beatmap_id or beatmap.id,
+        resolved_beatmapset_id=(
+            beatmap_result.beatmapset.id if beatmap_result.beatmapset is not None else 0
+        ),
+        score_ruleset=score_ruleset,
+        score_playstyle=Playstyle.VANILLA,
+        beatmap_status_at_submission=beatmap.effective_status.value,
+        beatmap_approved_at=_score_submit_approved_at(beatmap),
+        leaderboard_eligible_at_submission=(
+            parsed.passed and eligibility is not None and eligibility.has_leaderboard
+        ),
+        fail_time_ms=fail_time_ms,
+        play_time_seconds=play_time_seconds,
+        play_time_source=play_time_source,
+        latency_ms=resolved.latency_ms,
+    )
+
+
+def _build_score(
+    attempt: _SubmissionAttempt,
+    authorized: _AuthorizedSubmission,
+    accepted_beatmap: _AcceptedBeatmapSubmission,
+    validated: _ValidatedSubmission,
+) -> Score:
+    parsed = authorized.parsed
+    return Score(
+        id=None,
+        user_id=authorized.auth_ctx.user_id,
+        beatmap_id=accepted_beatmap.resolved_beatmap_id,
+        beatmap_checksum=parsed.beatmap_checksum,
+        online_checksum=parsed.online_checksum,
+        ruleset=accepted_beatmap.score_ruleset,
+        playstyle=accepted_beatmap.score_playstyle,
+        mods=parsed.mods,
+        n300=parsed.n300,
+        n100=parsed.n100,
+        n50=parsed.n50,
+        geki=parsed.geki,
+        katu=parsed.katu,
+        miss=parsed.miss,
+        score=parsed.score,
+        max_combo=parsed.max_combo,
+        accuracy=validated.result.accuracy,
+        grade=validated.result.grade,
+        passed=parsed.passed,
+        perfect=parsed.perfect,
+        client_version=attempt.input_data.osu_version or "unknown",
+        submitted_at=attempt.input_data.submitted_at,
+        beatmap_status_at_submission=accepted_beatmap.beatmap_status_at_submission,
+        leaderboard_eligible_at_submission=accepted_beatmap.leaderboard_eligible_at_submission,
+        fail_time_ms=accepted_beatmap.fail_time_ms,
+        play_time_seconds=accepted_beatmap.play_time_seconds,
+        play_time_source=accepted_beatmap.play_time_source,
+        submit_exit_classification=attempt.input_data.submit_exit_classification,
+    )
+
+
+def _completed_submit_command(
+    *,
+    attempt: _SubmissionAttempt,
+    authorized: _AuthorizedSubmission,
+    accepted_beatmap: _AcceptedBeatmapSubmission,
+    validated: _ValidatedSubmission,
+    replay: _ReplayBlobReference,
+    score: Score,
+) -> SubmitScoreCommand:
+    return SubmitScoreCommand(
+        fingerprint=authorized.fingerprint,
+        user_id=authorized.auth_ctx.user_id,
+        beatmap_checksum=authorized.parsed.beatmap_checksum,
+        submitted_at=attempt.input_data.submitted_at,
+        outcome=SubmitScoreCommandOutcome.COMPLETED,
+        score=score,
+        beatmap_id=accepted_beatmap.resolved_beatmap_id,
+        beatmapset_id=accepted_beatmap.resolved_beatmapset_id,
+        beatmap_approved_at=accepted_beatmap.beatmap_approved_at,
+        replay_blob_id=replay.replay_blob_id,
+        replay_checksum_sha256=replay.replay_checksum,
+        replay_byte_size=replay.replay_byte_size,
+        grade_discrepancy=validated.grade_discrepancy,
+        opaque_field_hashes=attempt.opaque_field_hashes,
+        include_personal_best_delta=accepted_beatmap.leaderboard_eligible_at_submission,
+        update_personal_best=accepted_beatmap.leaderboard_eligible_at_submission,
+    )
+
+
+def _log_submission_completed(
+    *,
+    attempt: _SubmissionAttempt,
+    authorized: _AuthorizedSubmission,
+    accepted_beatmap: _AcceptedBeatmapSubmission,
+    replay: _ReplayBlobReference,
+    command_result: SubmitScoreCommandResult,
+    decrypt_latency_ms: float,
+    db_latency_ms: float,
+) -> None:
+    logger.info(
+        "score_submission_completed",
+        duration_ms=(time.perf_counter() - attempt.start_time) * 1000,
+        decrypt_latency_ms=decrypt_latency_ms,
+        beatmap_latency_ms=accepted_beatmap.latency_ms,
+        db_latency_ms=db_latency_ms,
+        fingerprint=authorized.fingerprint,
+        user_id=authorized.auth_ctx.user_id,
+        beatmap_id=accepted_beatmap.resolved_beatmap_id,
+        score_id=command_result.score_id,
+        replay_attachment_id=command_result.replay_attachment_id,
+        replay_present=replay.replay_data is not None,
+        replay_byte_size=replay.replay_byte_size,
+        passed=authorized.parsed.passed,
+        fail_time_ms=attempt.input_data.fail_time_ms,
+        beatmap_status_at_submission=accepted_beatmap.beatmap_status_at_submission,
+        opaque_fields=attempt.opaque_field_hashes or None,
+    )
+
+
+def _beatmap_rank_delta_for_submit_response(
+    *,
+    before: int | None,
+    after: int | None,
+    include_beatmap_rank_delta: bool,
+) -> BeatmapRankDelta | None:
+    if not include_beatmap_rank_delta:
+        return None
+    return BeatmapRankDelta(before=before, after=after)
+
+
+def _performance_pending_submission_result(
+    command_result: SubmitScoreCommandResult,
+    *,
+    overall_stats_before: UserCurrentStats | None,
+    stable_pp_before: int | None = None,
+    personal_best_delta: PersonalBestDelta | None = None,
+) -> SubmissionResult:
+    return SubmissionResult(
+        outcome=SubmissionOutcome.RETRYABLE,
+        user_id=command_result.user_id,
+        ruleset=command_result.ruleset,
+        playstyle=command_result.playstyle,
+        score_id=command_result.score_id,
+        beatmap_id=command_result.beatmap_id,
+        beatmapset_id=command_result.beatmapset_id,
+        score=command_result.score,
+        max_combo=command_result.max_combo,
+        accuracy=command_result.accuracy,
+        passed=command_result.passed,
+        beatmap_playcount=command_result.beatmap_playcount,
+        beatmap_passcount=command_result.beatmap_passcount,
+        beatmap_approved_at=command_result.beatmap_approved_at,
+        error_reason="performance_calculation_pending",
+        stable_pp_before=stable_pp_before,
+        personal_best_delta=personal_best_delta,
+        overall_stats_before=overall_stats_before,
+    )
+
+
+def _completed_submit_response_result(
+    command_result: SubmitScoreCommandResult,
+    *,
+    stable_pp: int | None,
+    stable_pp_before: int | None = None,
+    personal_best_delta: PersonalBestDelta | None = None,
+    beatmap_rank_delta: BeatmapRankDelta | None,
+    overall_stats_before: UserCurrentStats | None,
+    overall_stats_after: UserCurrentStats | None,
+) -> SubmissionResult:
+    return SubmissionResult(
+        outcome=SubmissionOutcome.COMPLETED,
+        user_id=command_result.user_id,
+        ruleset=command_result.ruleset,
+        playstyle=command_result.playstyle,
+        score_id=command_result.score_id,
+        beatmap_id=command_result.beatmap_id,
+        beatmapset_id=command_result.beatmapset_id,
+        score=command_result.score,
+        max_combo=command_result.max_combo,
+        accuracy=command_result.accuracy,
+        passed=command_result.passed,
+        beatmap_playcount=command_result.beatmap_playcount,
+        beatmap_passcount=command_result.beatmap_passcount,
+        beatmap_approved_at=command_result.beatmap_approved_at,
+        stable_pp=stable_pp,
+        stable_pp_before=stable_pp_before,
+        stable_pp_after=stable_pp,
+        personal_best_delta=personal_best_delta,
+        beatmap_rank_delta=beatmap_rank_delta,
+        overall_stats_before=overall_stats_before,
+        overall_stats_after=overall_stats_after,
+    )
+
+
 class ProcessScoreSubmissionUseCase:
     """score submission command workflow を編成する module。
 
@@ -413,9 +705,7 @@ class ProcessScoreSubmissionUseCase:
             beatmap_personal_best_rank_query
         )
 
-    async def execute(  # noqa: PLR0911, PLR0912, PLR0915
-        self, input_data: ParsedSubmissionInput
-    ) -> SubmissionResult:
+    async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult:
         """score を検証し、durable state と replay blob に反映する。
 
         処理順序は request hash/fingerprint の生成、payload 復号、parse、
@@ -425,63 +715,106 @@ class ProcessScoreSubmissionUseCase:
         retry で再送されても同じ request と同じ score 送信を識別できるよう、
         request hash と submission fingerprint は durable mutation 前に生成する。
         """
-        start_time = time.perf_counter()
+        attempt = _SubmissionAttempt(
+            input_data=input_data,
+            start_time=time.perf_counter(),
+            request_hash=generate_submission_request_hash(input_data),
+            opaque_field_hashes=hash_submission_metadata(input_data.submission_metadata),
+        )
 
-        request_hash = generate_submission_request_hash(input_data)
-        opaque_field_hashes = hash_submission_metadata(input_data.submission_metadata)
+        try:
+            decrypted = self._decrypt_submission_payload(attempt)
+            parsed = self._parse_submission_payload(attempt, decrypted)
+            authorized = await self._authorize_submission(attempt, parsed)
+            await self._reject_unsupported_playstyle(attempt, authorized)
+            accepted_beatmap = await self._resolve_accepted_beatmap(attempt, authorized)
+            validated = await self._validate_submission(attempt, authorized)
 
-        # Decrypt before parsing because stable submit payloads are encrypted.
+            await self._request_score_submit_fallback_warmup(
+                user_id=authorized.auth_ctx.user_id,
+                beatmap_id=accepted_beatmap.resolved_beatmap_id,
+                checksum_md5=authorized.parsed.beatmap_checksum,
+            )
+            replay = await self._store_replay_blob(attempt, authorized)
+
+            return await self._persist_completed_submission(
+                attempt=attempt,
+                authorized=authorized,
+                accepted_beatmap=accepted_beatmap,
+                validated=validated,
+                replay=replay,
+                decrypt_latency_ms=decrypted.latency_ms,
+            )
+        except _SubmissionStoppedError as stopped:
+            return stopped.result
+
+    def _decrypt_submission_payload(self, attempt: _SubmissionAttempt) -> _DecryptedSubmission:
         decrypt_start = time.perf_counter()
         try:
             decrypted = self._payload_decryptor.decrypt_score_payload(
-                input_data.encrypted_payload,
-                input_data.iv,
-                input_data.osu_version,
+                attempt.input_data.encrypted_payload,
+                attempt.input_data.iv,
+                attempt.input_data.osu_version,
             )
             decrypt_latency_ms = (time.perf_counter() - decrypt_start) * 1000
         except DecryptionError as e:
             logger.warning(
                 "score_submission_failed",
                 reason="decryption_failed",
-                request_hash=request_hash,
-                opaque_fields=opaque_field_hashes or None,
+                request_hash=attempt.request_hash,
+                opaque_fields=attempt.opaque_field_hashes or None,
                 error=str(e),
             )
-            return SubmissionResult(
-                outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason=f"decryption_failed: {e}",
+            _stop_submission(
+                SubmissionResult(
+                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
+                    error_reason=f"decryption_failed: {e}",
+                )
             )
         if not decrypted.checksum_valid:
             logger.warning(
                 "score_submission_failed",
                 reason="crypto_checksum_invalid",
-                request_hash=request_hash,
-                opaque_fields=opaque_field_hashes or None,
+                request_hash=attempt.request_hash,
+                opaque_fields=attempt.opaque_field_hashes or None,
             )
-            return SubmissionResult(
-                outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason="crypto_checksum_invalid",
+            _stop_submission(
+                SubmissionResult(
+                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
+                    error_reason="crypto_checksum_invalid",
+                )
             )
+        return _DecryptedSubmission(payload=decrypted, latency_ms=decrypt_latency_ms)
 
-        # Parse the decrypted stable score fields into the command model.
+    def _parse_submission_payload(
+        self,
+        attempt: _SubmissionAttempt,
+        decrypted: _DecryptedSubmission,
+    ) -> ParsedScore:
         try:
-            parsed = self._payload_parser.parse(decrypted.plaintext)
+            return self._payload_parser.parse(decrypted.payload.plaintext)
         except ParseError as e:
             logger.warning(
                 "score_submission_failed",
                 reason="parse_failed",
-                request_hash=request_hash,
-                opaque_fields=opaque_field_hashes or None,
+                request_hash=attempt.request_hash,
+                opaque_fields=attempt.opaque_field_hashes or None,
                 error=str(e),
             )
-            return SubmissionResult(
-                outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                error_reason=f"parse_failed: {e}",
+            _stop_submission(
+                SubmissionResult(
+                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
+                    error_reason=f"parse_failed: {e}",
+                )
             )
 
-        # Authorize password, session, and payload identity together.
+    async def _authorize_submission(
+        self,
+        attempt: _SubmissionAttempt,
+        parsed: ParsedScore,
+    ) -> _AuthorizedSubmission:
         auth_ctx = await self._auth_service.authorize_submission(
-            input_data.password_md5,
+            attempt.input_data.password_md5,
             parsed.username,
             parsed.user_id,
         )
@@ -490,11 +823,11 @@ class ProcessScoreSubmissionUseCase:
             user_id=auth_ctx.user_id,
             beatmap_checksum=parsed.beatmap_checksum,
             submitted_timestamp=parsed.client_submitted_at,
-            request_hash=request_hash,
+            request_hash=attempt.request_hash,
         )
 
         if not auth_ctx.authorized:
-            password_hash = hashlib.sha256(input_data.password_md5.encode()).hexdigest()
+            password_hash = hashlib.sha256(attempt.input_data.password_md5.encode()).hexdigest()
             logger.warning(
                 "score_submission_failed",
                 reason="authorization_failed",
@@ -506,67 +839,100 @@ class ProcessScoreSubmissionUseCase:
                 session_valid=auth_ctx.session_valid,
                 identity_match=auth_ctx.payload_identity_match,
             )
-            return await self._record_terminal_reject(
+            result = await self._record_terminal_reject(
                 fingerprint=fingerprint,
                 user_id=auth_ctx.user_id,
                 beatmap_checksum=parsed.beatmap_checksum,
-                submitted_at=input_data.submitted_at,
+                submitted_at=attempt.input_data.submitted_at,
                 error_reason=self._format_auth_error(auth_ctx),
-                opaque_field_hashes=opaque_field_hashes,
+                opaque_field_hashes=attempt.opaque_field_hashes,
             )
+            _stop_submission(result)
+        return _AuthorizedSubmission(parsed=parsed, auth_ctx=auth_ctx, fingerprint=fingerprint)
 
-        # Relax and Autopilot submissions are not accepted yet.
-        if self._is_relax_or_autopilot(parsed.mods):
+    async def _reject_unsupported_playstyle(
+        self,
+        attempt: _SubmissionAttempt,
+        authorized: _AuthorizedSubmission,
+    ) -> None:
+        if self._is_relax_or_autopilot(authorized.parsed.mods):
             error_reason = "playstyle_not_supported: relax_or_autopilot"
             logger.warning(
                 "score_submission_failed",
                 reason="playstyle_not_supported",
-                fingerprint=fingerprint,
-                mods=parsed.mods.to_persistence_bitmask(),
-                user_id=auth_ctx.user_id,
+                fingerprint=authorized.fingerprint,
+                mods=authorized.parsed.mods.to_persistence_bitmask(),
+                user_id=authorized.auth_ctx.user_id,
             )
-            return await self._record_terminal_reject(
-                fingerprint=fingerprint,
-                user_id=auth_ctx.user_id,
-                beatmap_checksum=parsed.beatmap_checksum,
-                submitted_at=input_data.submitted_at,
+            result = await self._record_terminal_reject(
+                fingerprint=authorized.fingerprint,
+                user_id=authorized.auth_ctx.user_id,
+                beatmap_checksum=authorized.parsed.beatmap_checksum,
+                submitted_at=attempt.input_data.submitted_at,
                 error_reason=error_reason,
-                opaque_field_hashes=opaque_field_hashes,
+                opaque_field_hashes=attempt.opaque_field_hashes,
             )
+            _stop_submission(result)
 
-        # Beatmap eligibility determines score acceptance and leaderboard writes.
+    async def _resolve_accepted_beatmap(
+        self,
+        attempt: _SubmissionAttempt,
+        authorized: _AuthorizedSubmission,
+    ) -> _AcceptedBeatmapSubmission:
+        resolved = await self._resolve_beatmap_or_retry(attempt, authorized)
+        await self._reject_ineligible_beatmap(attempt, authorized, resolved)
+        return _accepted_beatmap_submission(attempt, authorized, resolved)
+
+    async def _resolve_beatmap_or_retry(
+        self,
+        attempt: _SubmissionAttempt,
+        authorized: _AuthorizedSubmission,
+    ) -> _ResolvedBeatmapSubmission:
         beatmap_start = time.perf_counter()
         beatmap_result = await self._beatmap_resolver.resolve_by_checksum(
-            parsed.beatmap_checksum,
+            authorized.parsed.beatmap_checksum,
             BeatmapResolveOptions(wait_timeout_seconds=5),
         )
         beatmap_latency_ms = (time.perf_counter() - beatmap_start) * 1000
 
-        # 6.1. Handle beatmap not found (fetch in progress)
-        if beatmap_result.beatmap is None:
+        beatmap = beatmap_result.beatmap
+        if beatmap is None:
             error_reason = "beatmap_fetch_in_progress"
             logger.info(
                 "score_submission_retryable",
                 reason=error_reason,
-                fingerprint=fingerprint,
-                beatmap_checksum=parsed.beatmap_checksum,
-                opaque_fields=opaque_field_hashes or None,
+                fingerprint=authorized.fingerprint,
+                beatmap_checksum=authorized.parsed.beatmap_checksum,
+                opaque_fields=attempt.opaque_field_hashes or None,
             )
-            return await self._record_retryable(
-                fingerprint=fingerprint,
-                user_id=auth_ctx.user_id,
-                beatmap_checksum=parsed.beatmap_checksum,
-                submitted_at=input_data.submitted_at,
+            result = await self._record_retryable(
+                fingerprint=authorized.fingerprint,
+                user_id=authorized.auth_ctx.user_id,
+                beatmap_checksum=authorized.parsed.beatmap_checksum,
+                submitted_at=attempt.input_data.submitted_at,
                 error_reason=error_reason,
-                opaque_field_hashes=opaque_field_hashes,
+                opaque_field_hashes=attempt.opaque_field_hashes,
             )
+            _stop_submission(result)
+        return _ResolvedBeatmapSubmission(
+            result=beatmap_result,
+            beatmap=beatmap,
+            latency_ms=beatmap_latency_ms,
+        )
 
-        # 6.2. Check eligibility
-        eligibility = beatmap_result.eligibility
+    async def _reject_ineligible_beatmap(
+        self,
+        attempt: _SubmissionAttempt,
+        authorized: _AuthorizedSubmission,
+        resolved: _ResolvedBeatmapSubmission,
+    ) -> None:
+        eligibility = resolved.result.eligibility
         accepts_submission = False
         if eligibility is not None:
             accepts_submission = (
-                eligibility.accepts_scores if parsed.passed else eligibility.accepts_failed_scores
+                eligibility.accepts_scores
+                if authorized.parsed.passed
+                else eligibility.accepts_failed_scores
             )
         if not accepts_submission:
             denial_reason = eligibility.denial_reason if eligibility is not None else None
@@ -574,42 +940,47 @@ class ProcessScoreSubmissionUseCase:
             logger.warning(
                 "score_submission_failed",
                 reason="beatmap_ineligible",
-                fingerprint=fingerprint,
-                beatmap_id=input_data.beatmap_id,
-                beatmap_checksum=parsed.beatmap_checksum,
+                fingerprint=authorized.fingerprint,
+                beatmap_id=attempt.input_data.beatmap_id,
+                beatmap_checksum=authorized.parsed.beatmap_checksum,
                 denial_reason=denial_reason,
-                passed=parsed.passed,
+                passed=authorized.parsed.passed,
             )
-            return await self._record_terminal_reject(
-                fingerprint=fingerprint,
-                user_id=auth_ctx.user_id,
-                beatmap_checksum=parsed.beatmap_checksum,
-                submitted_at=input_data.submitted_at,
+            result = await self._record_terminal_reject(
+                fingerprint=authorized.fingerprint,
+                user_id=authorized.auth_ctx.user_id,
+                beatmap_checksum=authorized.parsed.beatmap_checksum,
+                submitted_at=attempt.input_data.submitted_at,
                 error_reason=error_reason,
-                opaque_field_hashes=opaque_field_hashes,
+                opaque_field_hashes=attempt.opaque_field_hashes,
             )
+            _stop_submission(result)
 
-        replay_byte_size = (
-            len(input_data.replay_data) if input_data.replay_data is not None else None
-        )
-        if input_data.replay_data == b"":
+    async def _validate_submission(
+        self,
+        attempt: _SubmissionAttempt,
+        authorized: _AuthorizedSubmission,
+    ) -> _ValidatedSubmission:
+        parsed = authorized.parsed
+        if attempt.input_data.replay_data == b"":
             error_reason = "empty_replay_data"
             logger.warning(
                 "score_submission_failed",
                 reason="empty_replay_data",
-                fingerprint=fingerprint,
+                fingerprint=authorized.fingerprint,
                 passed=parsed.passed,
-                fail_time_ms=input_data.fail_time_ms,
+                fail_time_ms=attempt.input_data.fail_time_ms,
             )
-            return await self._record_terminal_reject(
-                fingerprint=fingerprint,
-                user_id=auth_ctx.user_id,
+            result = await self._record_terminal_reject(
+                fingerprint=authorized.fingerprint,
+                user_id=authorized.auth_ctx.user_id,
                 beatmap_checksum=parsed.beatmap_checksum,
-                submitted_at=input_data.submitted_at,
+                submitted_at=attempt.input_data.submitted_at,
                 error_reason=error_reason,
-                opaque_field_hashes=opaque_field_hashes,
+                opaque_field_hashes=attempt.opaque_field_hashes,
             )
-        # Validate hit counts after eligibility so fetch-in-progress remains retryable.
+            _stop_submission(result)
+
         try:
             validation = validate_hit_counts(parsed)
         except ValidationError as e:
@@ -617,209 +988,179 @@ class ProcessScoreSubmissionUseCase:
             logger.warning(
                 "score_submission_failed",
                 reason="validation_failed",
-                fingerprint=fingerprint,
+                fingerprint=authorized.fingerprint,
                 error=str(e),
             )
-            return await self._record_terminal_reject(
-                fingerprint=fingerprint,
-                user_id=auth_ctx.user_id,
+            result = await self._record_terminal_reject(
+                fingerprint=authorized.fingerprint,
+                user_id=authorized.auth_ctx.user_id,
                 beatmap_checksum=parsed.beatmap_checksum,
-                submitted_at=input_data.submitted_at,
+                submitted_at=attempt.input_data.submitted_at,
                 error_reason=error_reason,
-                opaque_field_hashes=opaque_field_hashes,
+                opaque_field_hashes=attempt.opaque_field_hashes,
             )
+            _stop_submission(result)
 
         grade_discrepancy = _grade_discrepancy(parsed.client_grade, validation.grade.value)
         if grade_discrepancy is not None:
             logger.info(
                 "score_grade_discrepancy",
-                fingerprint=fingerprint,
-                user_id=auth_ctx.user_id,
+                fingerprint=authorized.fingerprint,
+                user_id=authorized.auth_ctx.user_id,
                 beatmap_checksum=parsed.beatmap_checksum,
                 client_grade=grade_discrepancy["client_grade"],
                 server_grade=grade_discrepancy["server_grade"],
             )
+        return _ValidatedSubmission(result=validation, grade_discrepancy=grade_discrepancy)
 
-        resolved_beatmap_id = input_data.beatmap_id or beatmap_result.beatmap.id
-        resolved_beatmapset_id = (
-            beatmap_result.beatmapset.id if beatmap_result.beatmapset is not None else 0
-        )
-        score_ruleset = Ruleset(parsed.ruleset)
-        score_playstyle = Playstyle.VANILLA
-        beatmap_status_at_submission = beatmap_result.beatmap.effective_status.value
-        beatmap_approved_at = _score_submit_approved_at(beatmap_result.beatmap)
-        leaderboard_eligible_at_submission = (
-            parsed.passed and eligibility is not None and eligibility.has_leaderboard
-        )
-        fail_time_ms, play_time_seconds, play_time_source = _derive_score_timing(
-            passed=parsed.passed,
-            fail_time_ms=input_data.fail_time_ms,
-            beatmap_total_length=beatmap_result.beatmap.total_length,
-        )
-
-        await self._request_score_submit_fallback_warmup(
-            user_id=auth_ctx.user_id,
-            beatmap_id=resolved_beatmap_id,
-            checksum_md5=parsed.beatmap_checksum,
-        )
-
-        # 8. Derive replay identity before durable mutation.
-        replay_data = input_data.replay_data
-        replay_checksum: str | None = None
+    async def _store_replay_blob(
+        self,
+        attempt: _SubmissionAttempt,
+        authorized: _AuthorizedSubmission,
+    ) -> _ReplayBlobReference:
+        replay_data = attempt.input_data.replay_data
+        replay_byte_size = len(replay_data) if replay_data is not None else None
+        replay_checksum = None
         if replay_data is not None:
             replay_checksum = hashlib.sha256(replay_data).hexdigest()
 
-        replay_blob_result: BlobStoreResult | None = None
-        if replay_data is not None:
-            try:
-                replay_blob_result = await self._replay_blob_storage.put_bytes(
-                    replay_data,
-                    content_type=_REPLAY_CONTENT_TYPE,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "score_submission_retryable",
-                    reason="replay_blob_store_failed",
-                    fingerprint=fingerprint,
-                    error=type(exc).__name__,
-                )
-                return await self._record_retryable(
-                    fingerprint=fingerprint,
-                    user_id=auth_ctx.user_id,
-                    beatmap_checksum=parsed.beatmap_checksum,
-                    submitted_at=input_data.submitted_at,
-                    error_reason="replay_blob_store_failed",
-                    opaque_field_hashes=opaque_field_hashes,
-                )
+        if replay_data is None:
+            return _ReplayBlobReference(
+                replay_data=None,
+                replay_checksum=None,
+                replay_byte_size=None,
+                replay_blob_id=None,
+            )
 
-        # Persist score, replay reference, and submission outcome atomically.
-        score = Score(
-            id=None,
-            user_id=auth_ctx.user_id,
-            beatmap_id=resolved_beatmap_id,
-            beatmap_checksum=parsed.beatmap_checksum,
-            online_checksum=parsed.online_checksum,
-            ruleset=score_ruleset,
-            playstyle=score_playstyle,
-            mods=parsed.mods,
-            n300=parsed.n300,
-            n100=parsed.n100,
-            n50=parsed.n50,
-            geki=parsed.geki,
-            katu=parsed.katu,
-            miss=parsed.miss,
-            score=parsed.score,
-            max_combo=parsed.max_combo,
-            accuracy=validation.accuracy,
-            grade=validation.grade,
-            passed=parsed.passed,
-            perfect=parsed.perfect,
-            client_version=input_data.osu_version or "unknown",
-            submitted_at=input_data.submitted_at,
-            beatmap_status_at_submission=beatmap_status_at_submission,
-            leaderboard_eligible_at_submission=leaderboard_eligible_at_submission,
-            fail_time_ms=fail_time_ms,
-            play_time_seconds=play_time_seconds,
-            play_time_source=play_time_source,
-            submit_exit_classification=input_data.submit_exit_classification,
+        try:
+            replay_blob_result = await self._replay_blob_storage.put_bytes(
+                replay_data,
+                content_type=_REPLAY_CONTENT_TYPE,
+            )
+        except Exception as exc:
+            logger.warning(
+                "score_submission_retryable",
+                reason="replay_blob_store_failed",
+                fingerprint=authorized.fingerprint,
+                error=type(exc).__name__,
+            )
+            result = await self._record_retryable(
+                fingerprint=authorized.fingerprint,
+                user_id=authorized.auth_ctx.user_id,
+                beatmap_checksum=authorized.parsed.beatmap_checksum,
+                submitted_at=attempt.input_data.submitted_at,
+                error_reason="replay_blob_store_failed",
+                opaque_field_hashes=attempt.opaque_field_hashes,
+            )
+            _stop_submission(result)
+
+        return _ReplayBlobReference(
+            replay_data=replay_data,
+            replay_checksum=replay_checksum,
+            replay_byte_size=replay_byte_size,
+            replay_blob_id=replay_blob_result.blob.id,
         )
 
-        replay_blob_id: int | None = None
-        if replay_blob_result is not None:
-            replay_blob_id = replay_blob_result.blob.id
-
+    async def _submit_score_baseline(
+        self,
+        authorized: _AuthorizedSubmission,
+        accepted_beatmap: _AcceptedBeatmapSubmission,
+    ) -> _SubmitScoreBaseline:
         overall_stats_before = await self._current_user_stats_for_submit_response(
-            user_id=auth_ctx.user_id,
-            ruleset=score_ruleset,
-            playstyle=score_playstyle,
+            user_id=authorized.auth_ctx.user_id,
+            ruleset=accepted_beatmap.score_ruleset,
+            playstyle=accepted_beatmap.score_playstyle,
             phase="before",
         )
         beatmap_rank_before = (
             await self._beatmap_rank_for_submit_response(
-                user_id=auth_ctx.user_id,
-                beatmap_id=resolved_beatmap_id,
-                beatmap_checksum=parsed.beatmap_checksum,
-                ruleset=score_ruleset,
-                playstyle=score_playstyle,
+                user_id=authorized.auth_ctx.user_id,
+                beatmap_id=accepted_beatmap.resolved_beatmap_id,
+                beatmap_checksum=authorized.parsed.beatmap_checksum,
+                ruleset=accepted_beatmap.score_ruleset,
+                playstyle=accepted_beatmap.score_playstyle,
                 phase="before",
             )
-            if leaderboard_eligible_at_submission
+            if accepted_beatmap.leaderboard_eligible_at_submission
             else None
         )
+        return _SubmitScoreBaseline(
+            overall_stats_before=overall_stats_before,
+            beatmap_rank_before=beatmap_rank_before,
+        )
 
+    async def _submit_completed_score(
+        self,
+        command: SubmitScoreCommand,
+    ) -> tuple[SubmitScoreCommandResult, float]:
         db_start = time.perf_counter()
-        command_result = await self._submit_score_use_case.execute(
-            SubmitScoreCommand(
-                fingerprint=fingerprint,
-                user_id=auth_ctx.user_id,
-                beatmap_checksum=parsed.beatmap_checksum,
-                submitted_at=input_data.submitted_at,
-                outcome=SubmitScoreCommandOutcome.COMPLETED,
+        command_result = await self._submit_score_use_case.execute(command)
+        return command_result, (time.perf_counter() - db_start) * 1000
+
+    async def _persist_completed_submission(
+        self,
+        *,
+        attempt: _SubmissionAttempt,
+        authorized: _AuthorizedSubmission,
+        accepted_beatmap: _AcceptedBeatmapSubmission,
+        validated: _ValidatedSubmission,
+        replay: _ReplayBlobReference,
+        decrypt_latency_ms: float,
+    ) -> SubmissionResult:
+        score = _build_score(attempt, authorized, accepted_beatmap, validated)
+        baseline = await self._submit_score_baseline(authorized, accepted_beatmap)
+
+        command_result, db_latency_ms = await self._submit_completed_score(
+            _completed_submit_command(
+                attempt=attempt,
+                authorized=authorized,
+                accepted_beatmap=accepted_beatmap,
+                validated=validated,
+                replay=replay,
                 score=score,
-                beatmap_id=resolved_beatmap_id,
-                beatmapset_id=resolved_beatmapset_id,
-                beatmap_approved_at=beatmap_approved_at,
-                replay_blob_id=replay_blob_id,
-                replay_checksum_sha256=replay_checksum,
-                replay_byte_size=replay_byte_size,
-                grade_discrepancy=grade_discrepancy,
-                opaque_field_hashes=opaque_field_hashes,
-                include_personal_best_delta=leaderboard_eligible_at_submission,
-                update_personal_best=leaderboard_eligible_at_submission,
             )
         )
-        db_latency_ms = (time.perf_counter() - db_start) * 1000
 
         if command_result.outcome != SubmitScoreCommandOutcome.COMPLETED:
             logger.warning(
                 "score_submission_failed",
                 reason=command_result.error_reason,
-                fingerprint=fingerprint,
-                user_id=auth_ctx.user_id,
-                beatmap_checksum=parsed.beatmap_checksum,
+                fingerprint=authorized.fingerprint,
+                user_id=authorized.auth_ctx.user_id,
+                beatmap_checksum=authorized.parsed.beatmap_checksum,
             )
             return _submission_result_from_command(
                 command_result,
                 beatmap_rank_delta=(
-                    BeatmapRankDelta(before=beatmap_rank_before, after=None)
-                    if leaderboard_eligible_at_submission
+                    BeatmapRankDelta(before=baseline.beatmap_rank_before, after=None)
+                    if accepted_beatmap.leaderboard_eligible_at_submission
                     else None
                 ),
-                overall_stats_before=overall_stats_before,
+                overall_stats_before=baseline.overall_stats_before,
             )
 
         if not command_result.existing_submission:
             await self._request_performance_calculation(
                 score_id=command_result.score_id,
-                requested_at=input_data.submitted_at,
+                requested_at=attempt.input_data.submitted_at,
             )
 
-        total_duration_ms = (time.perf_counter() - start_time) * 1000
-        logger.info(
-            "score_submission_completed",
-            duration_ms=total_duration_ms,
+        _log_submission_completed(
+            attempt=attempt,
+            authorized=authorized,
+            accepted_beatmap=accepted_beatmap,
+            replay=replay,
+            command_result=command_result,
             decrypt_latency_ms=decrypt_latency_ms,
-            beatmap_latency_ms=beatmap_latency_ms,
             db_latency_ms=db_latency_ms,
-            fingerprint=fingerprint,
-            user_id=auth_ctx.user_id,
-            beatmap_id=resolved_beatmap_id,
-            score_id=command_result.score_id,
-            replay_attachment_id=command_result.replay_attachment_id,
-            replay_present=replay_data is not None,
-            replay_byte_size=replay_byte_size,
-            passed=parsed.passed,
-            fail_time_ms=input_data.fail_time_ms,
-            beatmap_status_at_submission=beatmap_status_at_submission,
-            opaque_fields=opaque_field_hashes or None,
         )
 
         return await self._build_accepted_submission_result(
             command_result,
-            beatmap_checksum=parsed.beatmap_checksum,
-            beatmap_rank_before=beatmap_rank_before,
-            include_beatmap_rank_delta=leaderboard_eligible_at_submission,
-            overall_stats_before=overall_stats_before,
+            beatmap_checksum=authorized.parsed.beatmap_checksum,
+            beatmap_rank_before=baseline.beatmap_rank_before,
+            include_beatmap_rank_delta=accepted_beatmap.leaderboard_eligible_at_submission,
+            overall_stats_before=baseline.overall_stats_before,
         )
 
     async def _request_performance_calculation(
@@ -861,6 +1202,36 @@ class ProcessScoreSubmissionUseCase:
             worker_wake_failed=result.worker_wake_failed,
         )
 
+    async def _submit_response_deltas(
+        self,
+        command_result: SubmitScoreCommandResult,
+        *,
+        beatmap_checksum: str,
+        include_beatmap_rank_delta: bool,
+    ) -> _SubmitResponseDeltas:
+        return _SubmitResponseDeltas(
+            overall_stats_after=await self._current_user_stats_for_submit_response(
+                user_id=command_result.user_id,
+                ruleset=command_result.ruleset,
+                playstyle=command_result.playstyle,
+                phase="after",
+            ),
+            beatmap_rank_after=await self._beatmap_rank_after_for_submit_response(
+                command_result,
+                beatmap_checksum=beatmap_checksum,
+                include_beatmap_rank_delta=include_beatmap_rank_delta,
+            ),
+        )
+
+    async def _wait_for_submit_performance_response(
+        self,
+        score_id: int,
+    ) -> PerformanceSubmitResponse:
+        assert self._performance_response_query is not None
+        return await self._performance_response_query.wait_for_submit_response(
+            PerformanceSubmitResponseQuery(score_id=score_id)
+        )
+
     async def _build_accepted_submission_result(
         self,
         command_result: SubmitScoreCommandResult,
@@ -871,29 +1242,20 @@ class ProcessScoreSubmissionUseCase:
         overall_stats_before: UserCurrentStats | None,
     ) -> SubmissionResult:
         if command_result.score_id is None or self._performance_response_query is None:
-            overall_stats_after = await self._current_user_stats_for_submit_response(
-                user_id=command_result.user_id,
-                ruleset=command_result.ruleset,
-                playstyle=command_result.playstyle,
-                phase="after",
-            )
-            beatmap_rank_after = await self._beatmap_rank_after_for_submit_response(
+            deltas = await self._submit_response_deltas(
                 command_result,
                 beatmap_checksum=beatmap_checksum,
                 include_beatmap_rank_delta=include_beatmap_rank_delta,
             )
             return _submission_result_from_command(
                 command_result,
-                beatmap_rank_delta=(
-                    BeatmapRankDelta(
-                        before=beatmap_rank_before,
-                        after=beatmap_rank_after,
-                    )
-                    if include_beatmap_rank_delta
-                    else None
+                beatmap_rank_delta=_beatmap_rank_delta_for_submit_response(
+                    before=beatmap_rank_before,
+                    after=deltas.beatmap_rank_after,
+                    include_beatmap_rank_delta=include_beatmap_rank_delta,
                 ),
                 overall_stats_before=overall_stats_before,
-                overall_stats_after=overall_stats_after,
+                overall_stats_after=deltas.overall_stats_after,
             )
 
         personal_best_delta = command_result.personal_best_delta
@@ -907,64 +1269,61 @@ class ProcessScoreSubmissionUseCase:
                 overall_stats_before=overall_stats_before,
             )
 
-        response = await self._performance_response_query.wait_for_submit_response(
-            PerformanceSubmitResponseQuery(score_id=command_result.score_id)
-        )
+        response = await self._wait_for_submit_performance_response(command_result.score_id)
         if response.state is PerformanceSubmitResponseState.RETRYABLE:
-            return SubmissionResult(
-                outcome=SubmissionOutcome.RETRYABLE,
-                user_id=command_result.user_id,
-                ruleset=command_result.ruleset,
-                playstyle=command_result.playstyle,
-                score_id=command_result.score_id,
-                beatmap_id=command_result.beatmap_id,
-                beatmapset_id=command_result.beatmapset_id,
-                score=command_result.score,
-                max_combo=command_result.max_combo,
-                accuracy=command_result.accuracy,
-                passed=command_result.passed,
-                beatmap_playcount=command_result.beatmap_playcount,
-                beatmap_passcount=command_result.beatmap_passcount,
-                beatmap_approved_at=command_result.beatmap_approved_at,
-                error_reason="performance_calculation_pending",
-                overall_stats_before=overall_stats_before,
+            _stop_submission(
+                _performance_pending_submission_result(
+                    command_result,
+                    overall_stats_before=overall_stats_before,
+                )
             )
-        overall_stats_after = await self._current_user_stats_for_submit_response(
-            user_id=command_result.user_id,
-            ruleset=command_result.ruleset,
-            playstyle=command_result.playstyle,
-            phase="after",
-        )
-        beatmap_rank_after = await self._beatmap_rank_after_for_submit_response(
+
+        deltas = await self._submit_response_deltas(
             command_result,
             beatmap_checksum=beatmap_checksum,
             include_beatmap_rank_delta=include_beatmap_rank_delta,
         )
-        return SubmissionResult(
-            outcome=SubmissionOutcome.COMPLETED,
-            user_id=command_result.user_id,
-            ruleset=command_result.ruleset,
-            playstyle=command_result.playstyle,
-            score_id=command_result.score_id,
-            beatmap_id=command_result.beatmap_id,
-            beatmapset_id=command_result.beatmapset_id,
-            score=command_result.score,
-            max_combo=command_result.max_combo,
-            accuracy=command_result.accuracy,
-            passed=command_result.passed,
-            beatmap_playcount=command_result.beatmap_playcount,
-            beatmap_passcount=command_result.beatmap_passcount,
-            beatmap_approved_at=command_result.beatmap_approved_at,
+        return _completed_submit_response_result(
+            command_result,
             stable_pp=response.stable_pp,
-            stable_pp_after=response.stable_pp,
-            beatmap_rank_delta=(
-                BeatmapRankDelta(before=beatmap_rank_before, after=beatmap_rank_after)
-                if include_beatmap_rank_delta
-                else None
+            beatmap_rank_delta=_beatmap_rank_delta_for_submit_response(
+                before=beatmap_rank_before,
+                after=deltas.beatmap_rank_after,
+                include_beatmap_rank_delta=include_beatmap_rank_delta,
             ),
             overall_stats_before=overall_stats_before,
-            overall_stats_after=overall_stats_after,
+            overall_stats_after=deltas.overall_stats_after,
         )
+
+    async def _personal_best_pp_delta(
+        self,
+        command_result: SubmitScoreCommandResult,
+        personal_best_delta: PersonalBestDelta,
+        *,
+        overall_stats_before: UserCurrentStats | None,
+    ) -> tuple[int, int]:
+        assert command_result.score_id is not None
+
+        pp_before = await self._stable_pp_without_wait(personal_best_delta.before_score_id)
+
+        if personal_best_delta.after_score_id == command_result.score_id:
+            response = await self._wait_for_submit_performance_response(command_result.score_id)
+            if response.state is PerformanceSubmitResponseState.RETRYABLE:
+                _stop_submission(
+                    _performance_pending_submission_result(
+                        command_result,
+                        overall_stats_before=overall_stats_before,
+                        stable_pp_before=pp_before,
+                        personal_best_delta=personal_best_delta,
+                    )
+                )
+            return pp_before, response.stable_pp or 0
+
+        if personal_best_delta.after_score_id == personal_best_delta.before_score_id:
+            return pp_before, pp_before
+
+        pp_after = await self._stable_pp_without_wait(personal_best_delta.after_score_id)
+        return pp_before, pp_after
 
     async def _build_personal_best_submission_result(
         self,
@@ -976,80 +1335,28 @@ class ProcessScoreSubmissionUseCase:
         include_beatmap_rank_delta: bool,
         overall_stats_before: UserCurrentStats | None,
     ) -> SubmissionResult:
-        assert command_result.score_id is not None
-
-        pp_before = await self._stable_pp_without_wait(personal_best_delta.before_score_id)
-        pp_after = 0
-
-        if personal_best_delta.after_score_id == command_result.score_id:
-            assert self._performance_response_query is not None
-            response = await self._performance_response_query.wait_for_submit_response(
-                PerformanceSubmitResponseQuery(score_id=command_result.score_id)
-            )
-            if response.state is PerformanceSubmitResponseState.RETRYABLE:
-                return SubmissionResult(
-                    outcome=SubmissionOutcome.RETRYABLE,
-                    user_id=command_result.user_id,
-                    ruleset=command_result.ruleset,
-                    playstyle=command_result.playstyle,
-                    score_id=command_result.score_id,
-                    beatmap_id=command_result.beatmap_id,
-                    beatmapset_id=command_result.beatmapset_id,
-                    score=command_result.score,
-                    max_combo=command_result.max_combo,
-                    accuracy=command_result.accuracy,
-                    passed=command_result.passed,
-                    beatmap_playcount=command_result.beatmap_playcount,
-                    beatmap_passcount=command_result.beatmap_passcount,
-                    beatmap_approved_at=command_result.beatmap_approved_at,
-                    error_reason="performance_calculation_pending",
-                    stable_pp_before=pp_before,
-                    personal_best_delta=personal_best_delta,
-                    overall_stats_before=overall_stats_before,
-                )
-            pp_after = response.stable_pp or 0
-        elif personal_best_delta.after_score_id == personal_best_delta.before_score_id:
-            pp_after = pp_before
-        else:
-            pp_after = await self._stable_pp_without_wait(personal_best_delta.after_score_id)
-
-        overall_stats_after = await self._current_user_stats_for_submit_response(
-            user_id=command_result.user_id,
-            ruleset=command_result.ruleset,
-            playstyle=command_result.playstyle,
-            phase="after",
+        pp_before, pp_after = await self._personal_best_pp_delta(
+            command_result,
+            personal_best_delta,
+            overall_stats_before=overall_stats_before,
         )
-        beatmap_rank_after = await self._beatmap_rank_after_for_submit_response(
+        deltas = await self._submit_response_deltas(
             command_result,
             beatmap_checksum=beatmap_checksum,
             include_beatmap_rank_delta=include_beatmap_rank_delta,
         )
-        return SubmissionResult(
-            outcome=SubmissionOutcome.COMPLETED,
-            user_id=command_result.user_id,
-            ruleset=command_result.ruleset,
-            playstyle=command_result.playstyle,
-            score_id=command_result.score_id,
-            beatmap_id=command_result.beatmap_id,
-            beatmapset_id=command_result.beatmapset_id,
-            score=command_result.score,
-            max_combo=command_result.max_combo,
-            accuracy=command_result.accuracy,
-            passed=command_result.passed,
-            beatmap_playcount=command_result.beatmap_playcount,
-            beatmap_passcount=command_result.beatmap_passcount,
-            beatmap_approved_at=command_result.beatmap_approved_at,
+        return _completed_submit_response_result(
+            command_result,
             stable_pp=pp_after,
             stable_pp_before=pp_before,
-            stable_pp_after=pp_after,
             personal_best_delta=personal_best_delta,
-            beatmap_rank_delta=(
-                BeatmapRankDelta(before=beatmap_rank_before, after=beatmap_rank_after)
-                if include_beatmap_rank_delta
-                else None
+            beatmap_rank_delta=_beatmap_rank_delta_for_submit_response(
+                before=beatmap_rank_before,
+                after=deltas.beatmap_rank_after,
+                include_beatmap_rank_delta=include_beatmap_rank_delta,
             ),
             overall_stats_before=overall_stats_before,
-            overall_stats_after=overall_stats_after,
+            overall_stats_after=deltas.overall_stats_after,
         )
 
     async def _beatmap_rank_after_for_submit_response(

@@ -83,6 +83,50 @@ class StableScoreSubmitOverallStats:
     stable_pp: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class _BeatmapMetadataFields:
+    beatmap_id: int
+    beatmapset_id: int
+    playcount: int
+    passcount: int
+    approved_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class _BeatmapChartFields:
+    chart_url: str
+    achieved: str
+    rank_before: int | str
+    rank_after: int
+    max_combo_before: int
+    max_combo_after: int
+    accuracy_before: str
+    accuracy_after: str
+    score_before: int
+    score_after: int
+    pp_before: int
+    pp_after: int
+    score_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class _OverallChartFields:
+    chart_url: str
+    rank_before: int
+    rank_after: int
+    ranked_score_before: int
+    ranked_score_after: int
+    total_score_before: int
+    total_score_after: int
+    max_combo_before: int
+    max_combo_after: int
+    accuracy_before: str
+    accuracy_after: str
+    pp_before: int
+    pp_after: int
+    score_id: int
+
+
 class StableScoreSubmitMapper:
     """Map stable legacy score submit wire data to command inputs and responses."""
 
@@ -146,23 +190,7 @@ class StableScoreSubmitMapper:
         """submission result を stable legacy response body へ変換する。"""
         if result.outcome == SubmissionOutcome.COMPLETED:
             return _format_completed_response(
-                score_id=result.score_id or 0,
-                user_id=result.user_id or 0,
-                beatmap_id=result.beatmap_id or 0,
-                beatmap_set_id=result.beatmapset_id or 0,
-                score=result.score,
-                max_combo=result.max_combo,
-                accuracy=result.accuracy,
-                passed=result.passed,
-                beatmap_playcount=result.beatmap_playcount,
-                beatmap_passcount=result.beatmap_passcount,
-                beatmap_approved_at=result.beatmap_approved_at,
-                stable_pp=result.stable_pp,
-                stable_pp_before=result.stable_pp_before,
-                stable_pp_after=result.stable_pp_after,
-                personal_best_delta=result.personal_best_delta,
-                beatmap_rank_delta=result.beatmap_rank_delta,
-                overall_stats_before=_score_submit_overall_stats(result.overall_stats_before),
+                result,
                 overall_stats_after=overall_stats
                 or _score_submit_overall_stats(result.overall_stats_after),
                 stable_web_base_url=self._stable_web_base_url,
@@ -249,155 +277,200 @@ def _parse_stable_payload(fields: list[str]) -> ParsedScore:
 
 
 def _format_completed_response(
+    result: SubmissionResult,
     *,
-    score_id: int,
-    user_id: int,
-    beatmap_id: int,
-    beatmap_set_id: int,
-    score: int | None,
-    max_combo: int | None,
-    accuracy: float | None,
-    passed: bool | None,
-    beatmap_playcount: int | None,
-    beatmap_passcount: int | None,
-    beatmap_approved_at: datetime | None,
-    stable_pp: int | None,
-    stable_pp_before: int | None,
-    stable_pp_after: int | None,
-    personal_best_delta: PersonalBestDelta | None,
-    beatmap_rank_delta: BeatmapRankDelta | None,
-    overall_stats_before: StableScoreSubmitOverallStats | None,
     overall_stats_after: StableScoreSubmitOverallStats | None,
     stable_web_base_url: str,
 ) -> Response:
-    displayed_beatmap_playcount = beatmap_playcount if beatmap_playcount is not None else 1
-    if beatmap_passcount is not None:
-        displayed_beatmap_passcount = beatmap_passcount
-    else:
-        displayed_beatmap_passcount = 0 if passed is False else 1
-    achieved = "false" if passed is False else "true"
+    overall_stats_before = _score_submit_overall_stats(result.overall_stats_before)
+    body = "\n".join(
+        (
+            _format_beatmap_metadata_line(_beatmap_metadata_fields(result)),
+            _format_beatmap_chart_line(
+                _beatmap_chart_fields(
+                    result,
+                    stable_web_base_url=stable_web_base_url,
+                )
+            ),
+            _format_overall_chart_line(
+                _overall_chart_fields(
+                    result,
+                    overall_stats_before=overall_stats_before,
+                    overall_stats_after=overall_stats_after,
+                    stable_web_base_url=stable_web_base_url,
+                )
+            ),
+        )
+    )
+
+    return Response(body.encode(), status_code=200)
+
+
+def _beatmap_metadata_fields(result: SubmissionResult) -> _BeatmapMetadataFields:
+    return _BeatmapMetadataFields(
+        beatmap_id=result.beatmap_id or 0,
+        beatmapset_id=result.beatmapset_id or 0,
+        playcount=result.beatmap_playcount if result.beatmap_playcount is not None else 1,
+        passcount=_displayed_passcount(result),
+        approved_at=result.beatmap_approved_at,
+    )
+
+
+def _displayed_passcount(result: SubmissionResult) -> int:
+    if result.beatmap_passcount is not None:
+        return result.beatmap_passcount
+    return 0 if result.passed is False else 1
+
+
+def _beatmap_chart_fields(
+    result: SubmissionResult,
+    *,
+    stable_web_base_url: str,
+) -> _BeatmapChartFields:
+    score_before, max_combo_before, accuracy_before = _score_submit_before_fields(
+        result.personal_best_delta,
+    )
+    score_after, max_combo_after, accuracy_after = _score_submit_after_fields(result)
+    rank_before, rank_after = _beatmap_rank_fields(result.beatmap_rank_delta)
+    pp_after = (
+        result.stable_pp_after if result.stable_pp_after is not None else result.stable_pp or 0
+    )
+
+    return _BeatmapChartFields(
+        chart_url=_stable_beatmap_url(stable_web_base_url, result.beatmap_id or 0),
+        achieved="false" if result.passed is False else "true",
+        rank_before=rank_before,
+        rank_after=rank_after,
+        max_combo_before=max_combo_before,
+        max_combo_after=max_combo_after,
+        accuracy_before=accuracy_before,
+        accuracy_after=accuracy_after,
+        score_before=score_before,
+        score_after=score_after,
+        pp_before=result.stable_pp_before or 0,
+        pp_after=pp_after,
+        score_id=result.score_id or 0,
+    )
+
+
+def _score_submit_before_fields(
+    personal_best_delta: PersonalBestDelta | None,
+) -> tuple[int, int, str]:
     if personal_best_delta is None:
-        score_before = 0
-        max_combo_before = 0
-        accuracy_before = "0"
-        score_after = score or 0
-        max_combo_after = max_combo or 0
-        accuracy_after = _format_accuracy_percent(accuracy)
-    else:
-        score_before = personal_best_delta.before_score or 0
-        max_combo_before = personal_best_delta.before_max_combo or 0
-        accuracy_before = _format_accuracy_percent(personal_best_delta.before_accuracy)
-        score_after = personal_best_delta.after_score or 0
-        max_combo_after = personal_best_delta.after_max_combo or 0
-        accuracy_after = _format_accuracy_percent(personal_best_delta.after_accuracy)
-    beatmap_rank_before: int | str = (
-        beatmap_rank_delta.before
-        if beatmap_rank_delta is not None and beatmap_rank_delta.before is not None
-        else ""
+        return 0, 0, "0"
+    return (
+        personal_best_delta.before_score or 0,
+        personal_best_delta.before_max_combo or 0,
+        _format_accuracy_percent(personal_best_delta.before_accuracy),
     )
-    beatmap_rank_after = (
-        beatmap_rank_delta.after
-        if beatmap_rank_delta is not None and beatmap_rank_delta.after is not None
-        else 0
-    )
-    pp_before = stable_pp_before or 0
-    pp_after = stable_pp_after if stable_pp_after is not None else stable_pp or 0
-    beatmap_chart_url = _stable_beatmap_url(stable_web_base_url, beatmap_id)
-    overall_chart_url = _stable_user_url(stable_web_base_url, user_id)
-    overall_rank_before = (
-        overall_stats_before.rank
-        if overall_stats_before is not None and overall_stats_before.rank is not None
-        else 0
-    )
-    overall_rank_after = (
-        overall_stats_after.rank
-        if overall_stats_after is not None and overall_stats_after.rank is not None
-        else 0
-    )
-    overall_ranked_score_before = (
-        overall_stats_before.ranked_score if overall_stats_before is not None else 0
-    )
-    overall_ranked_score_after = (
-        overall_stats_after.ranked_score if overall_stats_after is not None else 0
-    )
-    overall_total_score_before = (
-        overall_stats_before.total_score if overall_stats_before is not None else 0
-    )
-    overall_total_score_after = (
-        overall_stats_after.total_score if overall_stats_after is not None else 0
-    )
-    overall_max_combo_before = (
-        overall_stats_before.max_combo if overall_stats_before is not None else 0
-    )
-    overall_max_combo_after = (
-        overall_stats_after.max_combo if overall_stats_after is not None else 0
-    )
-    overall_accuracy_before = (
-        _format_accuracy_percent(overall_stats_before.accuracy)
-        if overall_stats_before is not None
-        else "0"
-    )
-    overall_accuracy_after = (
-        _format_accuracy_percent(overall_stats_after.accuracy)
-        if overall_stats_after is not None
-        else "0"
-    )
-    overall_pp_before = overall_stats_before.stable_pp if overall_stats_before is not None else 0
-    overall_pp_after = overall_stats_after.stable_pp if overall_stats_after is not None else 0
 
-    lines = [
-        _format_chart_line(
-            (
-                ("beatmapId", beatmap_id),
-                ("beatmapSetId", beatmap_set_id),
-                ("beatmapPlaycount", displayed_beatmap_playcount),
-                ("beatmapPasscount", displayed_beatmap_passcount),
-                ("approvedDate", _format_stable_datetime(beatmap_approved_at)),
-            )
-        ),
-        _format_chart_line(
-            (
-                ("chartId", "beatmap"),
-                ("chartUrl", beatmap_chart_url),
-                ("chartName", "Beatmap Ranking"),
-                ("achieved", achieved),
-                ("rankBefore", beatmap_rank_before),
-                ("rankAfter", beatmap_rank_after),
-                ("maxComboBefore", max_combo_before),
-                ("maxComboAfter", max_combo_after),
-                ("accuracyBefore", accuracy_before),
-                ("accuracyAfter", accuracy_after),
-                ("rankedScoreBefore", score_before),
-                ("rankedScoreAfter", score_after),
-                ("ppBefore", pp_before),
-                ("ppAfter", pp_after),
-                ("onlineScoreId", score_id),
-            )
-        ),
-        _format_chart_line(
-            (
-                ("chartId", "overall"),
-                ("chartUrl", overall_chart_url),
-                ("chartName", "Overall Ranking"),
-                ("rankBefore", overall_rank_before),
-                ("rankAfter", overall_rank_after),
-                ("rankedScoreBefore", overall_ranked_score_before),
-                ("rankedScoreAfter", overall_ranked_score_after),
-                ("totalScoreBefore", overall_total_score_before),
-                ("totalScoreAfter", overall_total_score_after),
-                ("maxComboBefore", overall_max_combo_before),
-                ("maxComboAfter", overall_max_combo_after),
-                ("accuracyBefore", overall_accuracy_before),
-                ("accuracyAfter", overall_accuracy_after),
-                ("ppBefore", overall_pp_before),
-                ("ppAfter", overall_pp_after),
-                ("achievements-new", ""),
-                ("onlineScoreId", score_id),
-            )
-        ),
-    ]
 
-    return Response("\n".join(lines).encode(), status_code=200)
+def _score_submit_after_fields(result: SubmissionResult) -> tuple[int, int, str]:
+    personal_best_delta = result.personal_best_delta
+    if personal_best_delta is None:
+        return result.score or 0, result.max_combo or 0, _format_accuracy_percent(result.accuracy)
+    return (
+        personal_best_delta.after_score or 0,
+        personal_best_delta.after_max_combo or 0,
+        _format_accuracy_percent(personal_best_delta.after_accuracy),
+    )
+
+
+def _beatmap_rank_fields(beatmap_rank_delta: BeatmapRankDelta | None) -> tuple[int | str, int]:
+    if beatmap_rank_delta is None:
+        return "", 0
+
+    rank_before: int | str = (
+        beatmap_rank_delta.before if beatmap_rank_delta.before is not None else ""
+    )
+    rank_after = beatmap_rank_delta.after if beatmap_rank_delta.after is not None else 0
+    return rank_before, rank_after
+
+
+def _overall_chart_fields(
+    result: SubmissionResult,
+    *,
+    overall_stats_before: StableScoreSubmitOverallStats | None,
+    overall_stats_after: StableScoreSubmitOverallStats | None,
+    stable_web_base_url: str,
+) -> _OverallChartFields:
+    before = overall_stats_before or StableScoreSubmitOverallStats()
+    after = overall_stats_after or StableScoreSubmitOverallStats()
+
+    return _OverallChartFields(
+        chart_url=_stable_user_url(stable_web_base_url, result.user_id or 0),
+        rank_before=before.rank or 0,
+        rank_after=after.rank or 0,
+        ranked_score_before=before.ranked_score,
+        ranked_score_after=after.ranked_score,
+        total_score_before=before.total_score,
+        total_score_after=after.total_score,
+        max_combo_before=before.max_combo,
+        max_combo_after=after.max_combo,
+        accuracy_before=_format_accuracy_percent(before.accuracy),
+        accuracy_after=_format_accuracy_percent(after.accuracy),
+        pp_before=before.stable_pp,
+        pp_after=after.stable_pp,
+        score_id=result.score_id or 0,
+    )
+
+
+def _format_beatmap_metadata_line(fields: _BeatmapMetadataFields) -> str:
+    return _format_chart_line(
+        (
+            ("beatmapId", fields.beatmap_id),
+            ("beatmapSetId", fields.beatmapset_id),
+            ("beatmapPlaycount", fields.playcount),
+            ("beatmapPasscount", fields.passcount),
+            ("approvedDate", _format_stable_datetime(fields.approved_at)),
+        )
+    )
+
+
+def _format_beatmap_chart_line(fields: _BeatmapChartFields) -> str:
+    return _format_chart_line(
+        (
+            ("chartId", "beatmap"),
+            ("chartUrl", fields.chart_url),
+            ("chartName", "Beatmap Ranking"),
+            ("achieved", fields.achieved),
+            ("rankBefore", fields.rank_before),
+            ("rankAfter", fields.rank_after),
+            ("maxComboBefore", fields.max_combo_before),
+            ("maxComboAfter", fields.max_combo_after),
+            ("accuracyBefore", fields.accuracy_before),
+            ("accuracyAfter", fields.accuracy_after),
+            ("rankedScoreBefore", fields.score_before),
+            ("rankedScoreAfter", fields.score_after),
+            ("ppBefore", fields.pp_before),
+            ("ppAfter", fields.pp_after),
+            ("onlineScoreId", fields.score_id),
+        )
+    )
+
+
+def _format_overall_chart_line(fields: _OverallChartFields) -> str:
+    return _format_chart_line(
+        (
+            ("chartId", "overall"),
+            ("chartUrl", fields.chart_url),
+            ("chartName", "Overall Ranking"),
+            ("rankBefore", fields.rank_before),
+            ("rankAfter", fields.rank_after),
+            ("rankedScoreBefore", fields.ranked_score_before),
+            ("rankedScoreAfter", fields.ranked_score_after),
+            ("totalScoreBefore", fields.total_score_before),
+            ("totalScoreAfter", fields.total_score_after),
+            ("maxComboBefore", fields.max_combo_before),
+            ("maxComboAfter", fields.max_combo_after),
+            ("accuracyBefore", fields.accuracy_before),
+            ("accuracyAfter", fields.accuracy_after),
+            ("ppBefore", fields.pp_before),
+            ("ppAfter", fields.pp_after),
+            ("achievements-new", ""),
+            ("onlineScoreId", fields.score_id),
+        )
+    )
 
 
 def _stable_beatmap_url(stable_web_base_url: str, beatmap_id: int) -> str:
