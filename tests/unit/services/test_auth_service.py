@@ -44,7 +44,7 @@ _DEFAULT_COUNTRY = "JP"
 
 
 def _md5_hex(s: str) -> str:
-    return hashlib.md5(s.encode()).hexdigest()
+    return hashlib.md5(s.encode(), usedforsecurity=False).hexdigest()
 
 
 ROLE_DEFAULT = Role(

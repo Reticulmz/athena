@@ -46,7 +46,7 @@ if TYPE_CHECKING:
         BeatmapLeaderboardRebuildWorkerWake,
     )
 
-_NOW = datetime(2026, 6, 5, tzinfo=UTC)
+_NOW = datetime(2099, 1, 1, tzinfo=UTC)
 _STALE_REFRESH_AT = datetime(2020, 1, 1, tzinfo=UTC)
 _ONE_HOUR = timedelta(hours=1)
 _THIRTY_DAYS = timedelta(days=30)
