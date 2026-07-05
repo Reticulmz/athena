@@ -7,6 +7,7 @@ Bancho transports per requirements 15.1-15.5 and 9.1/9.3.
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from dataclasses import FrozenInstanceError, fields
 from datetime import UTC, datetime, timedelta
@@ -252,8 +253,21 @@ class TestBeatmapMirrorImportBoundaries:
     def test_removed_provider_modules_not_importable(self) -> None:
         """削除済み provider module path を互換 facade として復活させない。"""
         for module_name in _REMOVED_BEATMAP_PROVIDER_MODULES:
-            with pytest.raises(ModuleNotFoundError):
-                __import__(module_name)
+            missing_error = False
+            missing_module_name: str | None = None
+            spec = None
+            try:
+                spec = importlib.util.find_spec(module_name)
+            except ModuleNotFoundError as exc:
+                missing_error = True
+                missing_module_name = exc.name
+
+            if missing_error:
+                assert missing_module_name is not None
+                assert module_name == missing_module_name or module_name.startswith(
+                    f"{missing_module_name}."
+                )
+            assert spec is None
 
 
 # ---------------------------------------------------------------------------
