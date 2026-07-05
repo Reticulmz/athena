@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 _SQL_BLOCK_COMMENT_PATTERN = re.compile(r"/\*.*?\*/", re.DOTALL)
 _SQL_DOLLAR_QUOTED_LITERAL_PATTERN = re.compile(
-    r"\$[A-Za-z_][A-Za-z0-9_]*\$.*?\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$.*?\$\$",
+    r"\$([A-Za-z_][A-Za-z0-9_]*)\$.*?\$\1\$|\$\$.*?\$\$",
     re.DOTALL,
 )
 _SQL_LINE_COMMENT_PATTERN = re.compile(r"--[^\r\n]*")
@@ -214,8 +214,7 @@ async def emit_sql_query_diagnostics_warning(
             "sql_query_diagnostics_warning",
             **query_diagnostics_warning_fields(summary, max_queries=max_queries),
         )
-    # Diagnostics logging must never mask request/job results.
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001, RUF100 - diagnostics logging must not mask request/job results.
         with suppress(Exception):
             _ = await logger.adebug(
                 "sql_query_diagnostics_warning_failed",

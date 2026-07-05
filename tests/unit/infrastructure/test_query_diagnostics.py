@@ -78,6 +78,25 @@ def test_scope_records_duplicate_templates_without_parameters() -> None:
     assert "other-secret" not in repr(summary)
 
 
+def test_scope_redacts_matching_dollar_quoted_literal_tag() -> None:
+    """Dollar-quoted literal は同一 tag の終端までまとめて redaction する."""
+    with query_diagnostic_scope(
+        scope_kind="test",
+        scope_name="dollar quoted",
+        duplicate_threshold=1,
+    ) as collector:
+        record_query(
+            "SELECT $tag$secret $other$inner$other$ still secret$tag$ AS value",
+        )
+
+    summary = collector.summary()
+
+    assert len(summary.duplicate_queries) == 1
+    assert summary.duplicate_queries[0].sql_prefix == "SELECT ? AS value"
+    assert "secret" not in repr(summary)
+    assert "inner" not in repr(summary)
+
+
 def test_record_query_without_scope_is_noop() -> None:
     """Active scope がない SQL event は記録されない."""
     record_query("SELECT $1", parameters={"token": "secret-token"})
