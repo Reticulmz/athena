@@ -4,18 +4,16 @@ from __future__ import annotations
 
 import time
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast, override
 
 import structlog
 import structlog.contextvars
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from osu_server.config import AppConfig
-from osu_server.infrastructure.database.query_diagnostics import (
-    QueryDiagnosticSummary,
+from osu_server.shared.query_diagnostics import (
+    emit_sql_query_diagnostics_warning,
     query_diagnostic_scope,
-    query_diagnostics_exceeded,
-    query_diagnostics_warning_fields,
 )
 
 if TYPE_CHECKING:
@@ -36,7 +34,8 @@ class _ConfigApp(Protocol):
 class SQLQueryDiagnosticsMiddleware(BaseHTTPMiddleware):
     """HTTP request ごとに SQL query diagnostics scope を開く middleware."""
 
-    async def dispatch(  # pyright: ignore[reportImplicitOverride]
+    @override
+    async def dispatch(
         self,
         request: Request,
         call_next: RequestResponseEndpoint,
@@ -62,7 +61,8 @@ class SQLQueryDiagnosticsMiddleware(BaseHTTPMiddleware):
             try:
                 return await call_next(request)
             finally:
-                await _emit_sql_query_diagnostics_warning(
+                await emit_sql_query_diagnostics_warning(
+                    logger,
                     collector.summary(),
                     max_queries=config.query_diagnostics_max_queries,
                 )
@@ -118,19 +118,3 @@ def _get_request_config(request: Request) -> AppConfig | None:
     if isinstance(config, AppConfig):
         return config
     return None
-
-
-async def _emit_sql_query_diagnostics_warning(
-    summary: QueryDiagnosticSummary,
-    *,
-    max_queries: int,
-) -> None:
-    if not query_diagnostics_exceeded(summary, max_queries=max_queries):
-        return
-    try:
-        await logger.awarning(
-            "sql_query_diagnostics_warning",
-            **query_diagnostics_warning_fields(summary, max_queries=max_queries),
-        )
-    except Exception:
-        return

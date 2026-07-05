@@ -13,7 +13,7 @@ from starlette.testclient import TestClient
 from tests.factories.config import make_app_config
 
 from osu_server.composition.middleware import SQLQueryDiagnosticsMiddleware
-from osu_server.infrastructure.database.query_diagnostics import record_query
+from osu_server.shared.query_diagnostics import record_query
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -22,11 +22,11 @@ if TYPE_CHECKING:
 async def _sql_endpoint(request: Request) -> PlainTextResponse:
     _ = request
     record_query(
-        "SELECT * FROM users WHERE email = $1",
+        "SELECT * FROM users WHERE email = 'secret@example.invalid' AND id = 123",
         parameters={"email": "secret@example.invalid", "token": "secret-token"},
     )
     record_query(
-        "SELECT * FROM users WHERE email = $1",
+        "SELECT * FROM users WHERE email = 'other@example.invalid' AND id = 456",
         parameters={"email": "secret@example.invalid", "token": "secret-token"},
     )
     return PlainTextResponse("ok")
@@ -59,9 +59,11 @@ def test_http_sql_query_diagnostics_warns_in_development() -> None:
     assert warning["scope_name"] == "GET /diagnostics"
     assert warning["total_queries"] == 2
     assert warning["max_queries"] == 1
+    assert warning["duplicate_templates_total"] == 1
+    assert warning["duplicates_truncated"] is False
     assert "secret-token" not in repr(warning)
     assert "secret@example.invalid" not in repr(warning)
-    assert "SELECT * FROM users WHERE email = $1" in repr(warning)
+    assert "SELECT * FROM users WHERE email = ? AND id = ?" in repr(warning)
 
 
 def test_http_sql_query_diagnostics_skips_non_development_default() -> None:

@@ -2,21 +2,22 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 import pytest
 from sqlalchemy import event as sqlalchemy_event
 
 from osu_server.infrastructure.database.query_diagnostics import (
     install_query_diagnostics,
+)
+from osu_server.shared.query_diagnostics import (
     query_diagnostic_scope,
+    query_diagnostics_warning_fields,
     record_query,
 )
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
-
-    from sqlalchemy.ext.asyncio import AsyncEngine
 
 
 class QueryBudget(Protocol):
@@ -43,18 +44,18 @@ class _AsyncEngine:
 
 
 def test_scope_records_duplicate_templates_without_parameters() -> None:
-    """SQL params を保存せず, 正規化 template で duplicate を集計する."""
+    """SQL params と literal を保存せず, redacted template で duplicate を集計する."""
     with query_diagnostic_scope(
         scope_kind="test",
         scope_name="score submission",
         duplicate_threshold=2,
     ) as collector:
         record_query(
-            " SELECT  *\nFROM users WHERE id = $1 ",
+            " SELECT  *\nFROM users WHERE email = 'secret@example.invalid' AND id = 123 ",
             parameters={"password": "secret-password", "email": "user@example.invalid"},
         )
         record_query(
-            "SELECT * FROM users WHERE id = $1",
+            "SELECT * FROM users WHERE email = 'other@example.invalid' AND id = 456",
             parameters={"password": "other-secret", "email": "other@example.invalid"},
         )
         record_query("UPDATE scores SET pp = $1 WHERE id = $2", parameters=(123, 1))
@@ -64,12 +65,15 @@ def test_scope_records_duplicate_templates_without_parameters() -> None:
     assert summary.scope_kind == "test"
     assert summary.scope_name == "score submission"
     assert summary.total_queries == 3
+    assert summary.duplicate_templates_total == 1
+    assert summary.duplicates_truncated is False
     assert len(summary.duplicate_queries) == 1
     duplicate = summary.duplicate_queries[0]
     assert duplicate.count == 2
-    assert duplicate.sql_prefix == "SELECT * FROM users WHERE id = $1"
+    assert duplicate.sql_prefix == "SELECT * FROM users WHERE email = ? AND id = ?"
     assert duplicate.fingerprint
     assert "secret-password" not in repr(summary)
+    assert "secret@example.invalid" not in repr(summary)
     assert "user@example.invalid" not in repr(summary)
     assert "other-secret" not in repr(summary)
 
@@ -119,15 +123,34 @@ def test_install_query_diagnostics_is_idempotent(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(sqlalchemy_event, "listen", listen)
     engine = _AsyncEngine()
 
-    typed_engine = cast("AsyncEngine", cast("object", engine))
-    install_query_diagnostics(typed_engine)
-    install_query_diagnostics(typed_engine)
+    install_query_diagnostics(engine)
+    install_query_diagnostics(engine)
 
     assert len(listened) == 1
     listened_engine, event_name, callback = listened[0]
     assert listened_engine is engine.sync_engine
     assert event_name == "before_cursor_execute"
     assert callable(callback)
+
+
+def test_duplicate_summary_is_bounded_and_reports_truncation() -> None:
+    """Duplicate summary は上位件数に制限し, truncation を明示する."""
+    with query_diagnostic_scope(
+        scope_kind="test",
+        scope_name="many duplicates",
+        duplicate_threshold=1,
+    ) as collector:
+        for index in range(12):
+            record_query(f"SELECT * FROM table_{index} WHERE id = {index}")
+
+    summary = collector.summary()
+    fields = query_diagnostics_warning_fields(summary, max_queries=1)
+
+    assert summary.duplicate_templates_total == 12
+    assert summary.duplicates_truncated is True
+    assert len(summary.duplicate_queries) == 10
+    assert fields["duplicate_templates_total"] == 12
+    assert fields["duplicates_truncated"] is True
 
 
 def test_query_budget_fixture_allows_within_limit(query_budget: QueryBudget) -> None:
@@ -145,7 +168,7 @@ def test_query_budget_fixture_fails_with_redacted_summary(
         query_budget(max_queries=0, name="secret-free", duplicate_threshold=1),
     ):
         record_query(
-            "SELECT * FROM users WHERE email = $1",
+            "SELECT * FROM users WHERE email = 'secret@example.invalid' AND id = 123",
             parameters={"email": "secret@example.invalid", "token": "secret-token"},
         )
 
@@ -154,6 +177,8 @@ def test_query_budget_fixture_fails_with_redacted_summary(
     assert "scope=test:secret-free" in message
     assert "actual=1" in message
     assert "allowed=0" in message
-    assert "SELECT * FROM users WHERE email = $1" in message
+    assert "duplicate_templates_total=1" in message
+    assert "duplicates_truncated=False" in message
+    assert "SELECT * FROM users WHERE email = ? AND id = ?" in message
     assert "secret@example.invalid" not in message
     assert "secret-token" not in message

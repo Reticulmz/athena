@@ -104,10 +104,12 @@ flowchart TD
 
 ```text
 src/osu_server/
+├── shared/
+│   └── query_diagnostics.py             # collector, scope, SQL normalization, redacted warning fields
 ├── infrastructure/
 │   └── database/
 │       ├── engine.py                     # install diagnostics on created async engines
-│       └── query_diagnostics.py          # collector, scope, SQL normalization, event listener
+│       └── query_diagnostics.py          # SQLAlchemy event listener
 └── composition/
     ├── application.py                    # add SQL diagnostics middleware with config
     ├── middleware.py                     # HTTP request diagnostics middleware or exports
@@ -228,8 +230,9 @@ sequenceDiagram
 
 - Contextvar に保持された active scope にだけ SQL event を記録する。
 - SQL params は受け取っても保存しない。
-- SQL text は whitespace collapse し、prefix と fingerprint だけを summary に出す。
+- SQL text は literal 値を redact して whitespace collapse し、prefix と fingerprint だけを summary に出す。
 - Duplicate は normalized SQL template を key にして集計する。
+- Duplicate summary は上位件数に制限し、truncation metadata を出す。
 - Event listener は idempotent に install する。
 
 **Service Interface**
@@ -241,6 +244,8 @@ class QueryDiagnosticSummary:
     scope_name: str
     total_queries: int
     duplicate_queries: tuple[DuplicateQuerySummary, ...]
+    duplicate_templates_total: int
+    duplicates_truncated: bool
 
 def install_query_diagnostics(engine: AsyncEngine) -> None: ...
 
@@ -274,7 +279,7 @@ Postconditions:
 
 - AppConfig の effective enabled state、max queries、duplicate threshold を使う。
 - Logger event name は `sql_query_diagnostics_warning`。
-- Warning fields は `scope_kind`, `scope_name`, `total_queries`, `max_queries`, `duplicates` を基本にする。
+- Warning fields は `scope_kind`, `scope_name`, `total_queries`, `max_queries`, `duplicate_templates_total`, `duplicates_truncated`, `duplicates` を基本にする。
 - Warning emission failure は suppress し、request/job の結果を変えない。
 
 ### Composition
@@ -348,6 +353,8 @@ class QueryDiagnosticSummary:
     scope_name: str
     total_queries: int
     duplicate_queries: tuple[DuplicateQuerySummary, ...]
+    duplicate_templates_total: int
+    duplicates_truncated: bool
 ```
 
 ## Error Handling

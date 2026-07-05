@@ -53,7 +53,7 @@ def _collect_values(generation_input: EnvGenerationInput) -> dict[str, str]:
         if field.env_var == "ENVIRONMENT":
             value = generation_input.environment
         if value is None:
-            if field.empty_value_is_unset:
+            if field.empty_value_is_unset and field.default in (None, ""):
                 continue
             value = field.default
         if field.empty_value_is_unset and value == "":

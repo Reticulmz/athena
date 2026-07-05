@@ -17,6 +17,18 @@ _SECRET_NAME_PARTS = ("password", "secret", "access_key")
 
 @dataclass(frozen=True, slots=True)
 class EnvFieldMetadata:
+    """AppConfig field から導出した env generation metadata.
+
+    Attributes:
+        field_name: AppConfig 上の field 名.
+        env_var: 対応する環境変数名.
+        required: AppConfig validation 上で必須の場合は true.
+        default: 必須でない field の文字列化済み default. 必須 field は None.
+        secret: 表示時に mask する secret 系 field の場合は true.
+        list_like: comma separated value として扱う list field の場合は true.
+        empty_value_is_unset: 空文字を未指定として扱う field の場合は true.
+    """
+
     field_name: str
     env_var: str
     required: bool

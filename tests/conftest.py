@@ -17,7 +17,7 @@ from glide import GlideClient
 from taskiq_redis import ListQueueBroker
 
 import osu_server.infrastructure.cache.valkey_client as valkey_module
-from osu_server.infrastructure.database.query_diagnostics import (
+from osu_server.shared.query_diagnostics import (
     QueryDiagnosticSummary,
     query_diagnostic_scope,
 )
@@ -42,7 +42,20 @@ class _AsyncShutdownBroker(Protocol):
 
 
 class QueryBudget(Protocol):
-    """SQL query budget fixture の callable contract."""
+    """SQL query budget fixture の callable contract.
+
+    __call__ Args:
+        max_queries: Scope 内で許可する最大 SQL query 数.
+        name: Failure message に出す redacted scope 名.
+        duplicate_threshold: Duplicate として扱う同一 SQL template の最小回数.
+
+    __call__ Returns:
+        SQL query count を検査する context manager.
+
+    __call__ Raises:
+        ValueError: max_queries が 0 未満の場合.
+        AssertionError: Scope 内の SQL query count が max_queries を超えた場合.
+    """
 
     def __call__(
         self,
@@ -223,7 +236,22 @@ def reset_structlog() -> Iterator[None]:
 
 @pytest.fixture
 def query_budget() -> QueryBudget:
-    """SQL query count を opt-in で hard fail する fixture."""
+    """SQL query count を opt-in で hard fail する fixture.
+
+    Args:
+        なし. fixture 自体は factory を返す.
+
+    Returns:
+        max_queries, name, duplicate_threshold を受け取り context manager を返す
+        callable.
+
+    Raises:
+        ValueError: max_queries が 0 未満の場合.
+        AssertionError: Scope 内の SQL query count が max_queries を超えた場合.
+
+    Constraints:
+        Scope 内で発生した例外は budget check より優先して伝播する.
+    """
 
     @contextmanager
     def budget(
@@ -269,6 +297,8 @@ def _format_query_budget_failure(
             f"scope={summary.scope_kind}:{summary.scope_name}",
             f"actual={summary.total_queries}",
             f"allowed={max_queries}",
+            f"duplicate_templates_total={summary.duplicate_templates_total}",
+            f"duplicates_truncated={summary.duplicates_truncated}",
             "duplicates:",
             duplicates,
         )

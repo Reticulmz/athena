@@ -9,7 +9,7 @@
   - _Boundary: Query Diagnostics Collector_
 
 - [x] 1.2 Query diagnostics collector と SQLAlchemy event install を実装する
-  - `query_diagnostics.py` に collector、summary dataclass、context manager、event installer を追加する
+  - `shared/query_diagnostics.py` に collector、summary dataclass、context manager を追加し、`infrastructure/database/query_diagnostics.py` に event installer を追加する
   - `create_engine` が作成した AsyncEngine に diagnostics event listener を idempotent に install する
   - Listener は active scope がない場合に no-op になり、scope exit で contextvars が reset されることが tests から確認できる
   - _Depends: 1.1_

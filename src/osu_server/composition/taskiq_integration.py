@@ -9,10 +9,9 @@ import structlog
 from dishka.integrations.taskiq import ContainerMiddleware, setup_dishka
 from taskiq import TaskiqMiddleware
 
-from osu_server.infrastructure.database.query_diagnostics import (
+from osu_server.shared.query_diagnostics import (
+    emit_sql_query_diagnostics_warning,
     query_diagnostic_scope,
-    query_diagnostics_exceeded,
-    query_diagnostics_warning_fields,
 )
 
 if TYPE_CHECKING:
@@ -22,9 +21,8 @@ if TYPE_CHECKING:
     from taskiq import AsyncBroker, TaskiqMessage, TaskiqResult
 
     from osu_server.config import AppConfig
-    from osu_server.infrastructure.database.query_diagnostics import (
+    from osu_server.shared.query_diagnostics import (
         QueryDiagnosticCollector,
-        QueryDiagnosticSummary,
     )
 
 logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
@@ -115,7 +113,8 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
         try:
             _ = active_scope.manager.__exit__(None, None, None)
         finally:
-            await _emit_sql_query_diagnostics_warning(
+            await emit_sql_query_diagnostics_warning(
+                logger,
                 summary,
                 max_queries=self._config.query_diagnostics_max_queries,
             )
@@ -145,20 +144,4 @@ def setup_taskiq_query_diagnostics(config: AppConfig, broker: AsyncBroker) -> No
     ]
     if not config.query_diagnostics_effective_enabled:
         return
-    _ = broker.with_middlewares(SQLQueryDiagnosticsTaskiqMiddleware(config))
-
-
-async def _emit_sql_query_diagnostics_warning(
-    summary: QueryDiagnosticSummary,
-    *,
-    max_queries: int,
-) -> None:
-    if not query_diagnostics_exceeded(summary, max_queries=max_queries):
-        return
-    try:
-        await logger.awarning(
-            "sql_query_diagnostics_warning",
-            **query_diagnostics_warning_fields(summary, max_queries=max_queries),
-        )
-    except Exception:
-        return
+    broker.middlewares.append(SQLQueryDiagnosticsTaskiqMiddleware(config))

@@ -11,7 +11,7 @@ from osu_server.composition.taskiq_integration import (
     SQLQueryDiagnosticsTaskiqMiddleware,
     setup_taskiq_query_diagnostics,
 )
-from osu_server.infrastructure.database.query_diagnostics import record_query
+from osu_server.shared.query_diagnostics import record_query
 
 
 def _make_message(
@@ -60,11 +60,11 @@ async def test_taskiq_sql_query_diagnostics_warns_in_development() -> None:
     with structlog.testing.capture_logs() as logs:
         returned = middleware.pre_execute(message)
         record_query(
-            "SELECT * FROM scores WHERE user_id = $1",
+            "SELECT * FROM scores WHERE user_id = 1 AND token = 'secret-token'",
             parameters={"user_id": 1, "token": "secret-token"},
         )
         record_query(
-            "SELECT * FROM scores WHERE user_id = $1",
+            "SELECT * FROM scores WHERE user_id = 2 AND token = 'other-secret'",
             parameters={"user_id": 1, "token": "secret-token"},
         )
         await middleware.post_execute(message, _make_result())
@@ -77,8 +77,10 @@ async def test_taskiq_sql_query_diagnostics_warns_in_development() -> None:
     assert warning["scope_name"] == "calculate_score_performance"
     assert warning["total_queries"] == 2
     assert warning["max_queries"] == 1
+    assert warning["duplicate_templates_total"] == 1
+    assert warning["duplicates_truncated"] is False
     assert "secret-token" not in repr(warning)
-    assert "SELECT * FROM scores WHERE user_id = $1" in repr(warning)
+    assert "SELECT * FROM scores WHERE user_id = ? AND token = ?" in repr(warning)
 
 
 @pytest.mark.asyncio
@@ -132,6 +134,24 @@ def test_setup_taskiq_query_diagnostics_installs_once_in_development() -> None:
 
     setup_taskiq_query_diagnostics(config, broker)
     setup_taskiq_query_diagnostics(config, broker)
+
+    assert len(_diagnostics_middlewares(broker)) == 1
+
+
+def test_setup_taskiq_query_diagnostics_mutates_existing_broker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Diagnostics setup は with_middlewares の戻り値 semantics に依存しない."""
+    broker = InMemoryBroker()
+
+    def fail_with_middlewares(*args: object, **kwargs: object) -> object:
+        _ = (args, kwargs)
+        msg = "with_middlewares must not be used for diagnostics setup"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(broker, "with_middlewares", fail_with_middlewares)
+
+    setup_taskiq_query_diagnostics(make_app_config(environment="development"), broker)
 
     assert len(_diagnostics_middlewares(broker)) == 1
 
