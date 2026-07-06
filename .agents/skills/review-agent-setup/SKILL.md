@@ -136,7 +136,7 @@ $ /approve-review "Approving LGTM on PR 42 after visual inspection"
 
 # 3. Agent retries the action; this time it succeeds
 $ agent: gh pr review 42 --approve --body "LGTM"
-  [receipt: rec_XXX, decision=allow, reason=human_approved]
+  [receipt: rec_example_001, decision=allow, reason=human_approved]
 
 # 4. Human closes the window
 $ rm ./.review-approved

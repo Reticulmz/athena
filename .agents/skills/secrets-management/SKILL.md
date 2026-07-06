@@ -123,7 +123,7 @@ deploy:
 ```bash
 aws secretsmanager create-secret \
   --name production/database/password \
-  --secret-string "super-secret-password"
+  --secret-string file://database-password-secret.json
 ```
 
 ### Retrieve in GitHub Actions
