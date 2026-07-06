@@ -1,4 +1,4 @@
-"""E2E integration tests for score submit endpoint."""
+"""スコア submit endpoint の E2E integration test。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from tests.support.credentials import fixed_test_password_md5
 from tests.support.fakes import (
     StubBlobStorageService,
     StubScorePayloadDecryptor,
+    make_stable_score_submit_decoder,
     make_submit_score_use_case,
 )
 
@@ -40,8 +41,6 @@ from osu_server.services.commands.scores import (
 )
 from osu_server.services.commands.scores.authorization import AuthorizationContext
 from osu_server.transports.stable.web_legacy.mappers import (
-    StableScorePayloadParser,
-    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
 )
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
@@ -110,7 +109,7 @@ def _eligible_result() -> BeatmapResolveResult:
 
 
 class MockAuthService:
-    """Mock authorization service that always succeeds."""
+    """常に認可成功を返す authorization fake。"""
 
     async def authorize_submission(
         self, password_md5: str, payload_username: str, payload_user_id: int
@@ -126,7 +125,7 @@ class MockAuthService:
 
 
 class MockBeatmapResolver:
-    """Mock beatmap resolver that always returns eligible."""
+    """常に eligible な beatmap 解決結果を返す resolver fake。"""
 
     async def resolve_by_beatmap_id(
         self, beatmap_id: int, options: BeatmapResolveOptions | None = None
@@ -142,7 +141,7 @@ class MockBeatmapResolver:
 
 
 class MockRequest:
-    """Mock Starlette request for E2E testing."""
+    """結合 test 用の Starlette request fake。"""
 
     headers: Headers
     _body: bytes
@@ -165,7 +164,23 @@ def _create_valid_multipart_body(
     replay_data: bytes = b"test_replay_data",
     client_hash: bytes = b"client_hash_example",
 ) -> tuple[bytes, str]:
-    """Create a valid multipart request body with encrypted payload."""
+    """有効な stable multipart request body を作る。
+
+    Args:
+        encrypted_payload: score field に入れる暗号化済み payload の dummy bytes。
+        replay_data: replay field に入れる bytes。
+        client_hash: stable client hash field に入れる bytes。
+
+    Returns:
+        multipart body と Content-Type header value。
+
+    Raises:
+        例外は送出しない。
+
+    Constraints:
+        encrypted_payload は base64 encode して body に入れる。復号内容は decoder fake が
+        payload_decryptor で決める。
+    """
     boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
     content_type = f"multipart/form-data; boundary={boundary}"
 
@@ -198,24 +213,6 @@ def _create_valid_multipart_body(
     body += f"--{boundary}--\r\n".encode()
 
     return body, content_type
-
-
-def _score_payload_decryptor() -> StubScorePayloadDecryptor:
-    return StubScorePayloadDecryptor(
-        DecryptedPayload(
-            plaintext="1000:test_user:abc123:e2e_score_submit:0:0:100:10:5:0:0:2:500000:99:1:1",
-            checksum_valid=True,
-        )
-    )
-
-
-def _score_submit_decoder(
-    payload_decryptor: StubScorePayloadDecryptor | None = None,
-) -> StableScoreSubmitDecoder:
-    return StableScoreSubmitDecoder(
-        payload_decryptor=payload_decryptor or _score_payload_decryptor(),
-        payload_parser=StableScorePayloadParser(),
-    )
 
 
 def _make_process_score_submission_use_case(
@@ -277,14 +274,29 @@ async def _replace_projection_with_score(
 
 @pytest.mark.asyncio
 async def test_e2e_score_submit_completed_response() -> None:
-    """E2E test: POST with real multipart data returns completed response."""
+    """実 multipart POST が completed response を返すことを検証する。
+
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: response status や stable chart body が期待と異なる場合。
+
+    Constraints:
+        request は handler に直接渡し、network I/O は使わない。
+    """
     # Arrange
     auth_service = MockAuthService()
 
     service = _make_process_score_submission_use_case(auth_service=auth_service)
     handler = ScoreSubmitHandler(
         service,
-        decoder=_score_submit_decoder(),
+        decoder=make_stable_score_submit_decoder(
+            payload="1000:test_user:abc123:e2e_score_submit:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
         mapper=StableScoreSubmitMapper(stable_web_base_url="https://osu.athena.localhost"),
     )
 
@@ -310,7 +322,20 @@ async def test_e2e_score_submit_completed_response() -> None:
 
 @pytest.mark.asyncio
 async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snapshot() -> None:
-    """Stable submit updates projection and same request retry does not recalculate."""
+    """安定版 submit が projection を更新し、同一 retry は保存済み snapshot を返す。
+
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: leaderboard projection や retry response が期待と異なる場合。
+
+    Constraints:
+        同一 request body の retry は再計算せず、初回 response body と同じ内容を返す。
+    """
     uow_factory = InMemoryUnitOfWorkFactory()
 
     def decrypt_payload(
@@ -335,7 +360,9 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
     )
     handler = ScoreSubmitHandler(
         service,
-        decoder=_score_submit_decoder(StubScorePayloadDecryptor(factory=decrypt_payload)),
+        decoder=make_stable_score_submit_decoder(
+            payload_decryptor=StubScorePayloadDecryptor(factory=decrypt_payload)
+        ),
     )
 
     previous_body, previous_content_type = _create_valid_multipart_body(
@@ -388,7 +415,20 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
 
 @pytest.mark.asyncio
 async def test_e2e_score_submit_terminal_reject_format() -> None:
-    """E2E test: authorization failure returns terminal reject format."""
+    """認可 failure が terminal reject format を返すことを検証する。
+
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: response status や body が期待と異なる場合。
+
+    Constraints:
+        認可失敗でも stable legacy response は HTTP 200 と ``error: no`` を返す。
+    """
 
     # Arrange
     # Mock auth service that always fails
@@ -406,7 +446,12 @@ async def test_e2e_score_submit_terminal_reject_format() -> None:
             )
 
     service = _make_process_score_submission_use_case(auth_service=FailingAuthService())
-    handler = ScoreSubmitHandler(service, decoder=_score_submit_decoder())
+    handler = ScoreSubmitHandler(
+        service,
+        decoder=make_stable_score_submit_decoder(
+            payload="1000:test_user:abc123:e2e_score_submit:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
 
     body, content_type = _create_valid_multipart_body()
     request = _request(body, content_type)

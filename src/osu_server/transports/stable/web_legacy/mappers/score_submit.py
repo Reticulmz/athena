@@ -1,4 +1,4 @@
-"""Stable legacy score submit request and response mappers."""
+"""安定版 legacy score submit の request/response mapper。"""
 
 from __future__ import annotations
 
@@ -69,7 +69,16 @@ def _hash_submission_metadata(metadata: dict[str, str]) -> dict[str, str]:
 
 
 class StableScorePayloadDecryptor(Protocol):
-    """Stable score payload の復号 port."""
+    """安定版 score payload を復号する transport 境界。
+
+    振る舞い:
+        Stable multipart から取り出した encrypted payload と IV を復号し、
+        plaintext と checksum 検証結果を返す。
+
+    Constraints:
+        実装は credential や encrypted payload を logging しない。復号失敗の詳細は
+        呼び出し側で stable response 用の固定理由へ正規化される。
+    """
 
     def decrypt_score_payload(
         self,
@@ -77,15 +86,35 @@ class StableScorePayloadDecryptor(Protocol):
         iv: bytes,
         osu_version: str | None,
     ) -> DecryptedPayload:
-        """encrypted payload と IV を復号し checksum 検証結果を返す."""
+        """暗号化 payload と IV を復号し checksum 検証結果を返す。
+
+        Args:
+            encrypted: multipart field から取り出した encrypted score payload。
+            iv: stable client が送る IV。
+            osu_version: stable client version。未送信の場合は None。
+
+        Returns:
+            plaintext と checksum_valid を含む DecryptedPayload。
+
+        Raises:
+            DecryptionError: payload を復号できない、または暗号入力が不正な場合。
+
+        Constraints:
+            plaintext は transport 境界内で parse し、command use-case へ encrypted
+            payload や IV を渡さない。
+        """
         ...
 
 
 class StableScorePayloadParser:
-    """Stable score payload text を canonical score domain 値へ変換する parser."""
+    """安定版 score payload text を canonical score domain 値へ変換する parser。
+
+    Legacy 16-field payload と stable 16-19-field payload を受け付け、
+    command 境界で扱う ParsedScore へ変換する。
+    """
 
     def parse(self, payload: str) -> ParsedScore:
-        """legacy/stable score payload を ParsedScore に変換する.
+        """レガシーまたは stable score payload を ParsedScore に変換する.
 
         Args:
             payload: stable client が送る colon-delimited payload.
@@ -114,7 +143,31 @@ class StableScorePayloadParser:
 
 @dataclass(frozen=True, slots=True)
 class StableScoreSubmitRequestMapping:
-    """Stable multipart request から取り出した wire material と診断情報."""
+    """安定版 multipart request から取り出した復号前 material。
+
+    振る舞い:
+        Handler が受け取った HTTP request body から、score payload、IV、replay、
+        credential、client metadata、診断用 metadata を保持する。
+
+    Args:
+        encrypted_payload: 復号前の score payload。
+        iv: payload 復号に使う IV。
+        replay_data: 添付 replay binary。未送信の場合は None。
+        password_md5: stable client が送る password-md5 credential。
+        client_hash: stable client の checksum/hash field。
+        submitted_at: server が request を受け取った時刻。
+        score_field_count: multipart 内の score field 数。
+        replay_present: replay field が存在したかどうか。
+        replay_byte_size: replay_data の byte 数。未送信の場合は None。
+        fail_time_ms: fail time field。未送信の場合は None。
+        submit_exit_classification: client 終了種別の診断値。
+        osu_version: stable client version。未送信の場合は None。
+        beatmap_id: form field 由来の beatmap id。未送信の場合は None。
+        submission_metadata: token など opaque field の生値。command へは hash 済みで渡す。
+
+    Constraints:
+        この型は transport 内だけで扱い、command use-case へは渡さない。
+    """
 
     encrypted_payload: bytes
     iv: bytes
@@ -134,7 +187,21 @@ class StableScoreSubmitRequestMapping:
 
 @dataclass(frozen=True, slots=True)
 class StableScoreSubmitCommandMapping:
-    """Command input と stable transport 診断情報をまとめた結果."""
+    """命令 input と stable transport 診断情報をまとめた decode 結果。
+
+    Args:
+        input_data: score submission command に渡す正規化済み入力。
+        score_field_count: multipart 内の score field 数。
+        replay_present: replay field が存在したかどうか。
+        replay_byte_size: replay_data の byte 数。未送信の場合は None。
+        fail_time_ms: fail time field。未送信の場合は None。
+        submit_exit_classification: client 終了種別の診断値。
+        osu_version: stable client version。未送信の場合は None。
+
+    Constraints:
+        logging 用の診断値と command input を同じ decode 結果として返すが、
+        transport wire 型は command input へ混入させない。
+    """
 
     input_data: ParsedSubmissionInput
     score_field_count: int
@@ -146,7 +213,12 @@ class StableScoreSubmitCommandMapping:
 
 
 class StableScoreSubmitDecodeError(Exception):
-    """Stable score submit payload を command input に変換できない場合の例外。"""
+    """安定版 score submit payload を command input に変換できない場合の例外。
+
+    振る舞い:
+        復号失敗、checksum 不一致、payload parse 失敗を stable response 用の
+        SubmissionResult と sanitized diagnostics に変換して保持する。
+    """
 
     def __init__(
         self,
@@ -157,6 +229,25 @@ class StableScoreSubmitDecodeError(Exception):
         opaque_field_hashes: dict[str, str],
         error: str | None = None,
     ) -> None:
+        """復号 decode 失敗の response 結果と診断情報を保持する。
+
+        Args:
+            result: client へ返す stable response の基になる SubmissionResult。
+            reason: logging と分類に使う固定理由。
+            request_hash: stable request を識別する hash。
+            opaque_field_hashes: opaque metadata の SHA-256 hash。
+            error: raw exception text を含まない sanitized error label。
+
+        Returns:
+            None。
+
+        Raises:
+            生成時に独自例外は送出しない。
+
+        Constraints:
+            error と result.error_reason に復号鍵、payload、credential、raw exception
+            message を含めない。
+        """
         super().__init__(result.error_reason)
         self.result: SubmissionResult = result
         self.reason: str = reason
@@ -167,7 +258,18 @@ class StableScoreSubmitDecodeError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class StableScoreSubmitOverallStats:
-    """Stable score submit overall chart に載せる current stats 値。"""
+    """安定版 score submit overall chart に載せる current stats 値。
+
+    Args:
+        rank: current global rank。未取得の場合は None。
+        ranked_score: current ranked score。未取得の場合は None。
+        total_score: current total score。未取得の場合は None。
+        accuracy: current accuracy。未取得の場合は None。
+        stable_pp: stable client response 用の rounded pp。未取得の場合は None。
+
+    Constraints:
+        response formatting 専用の値であり、command result の canonical state には戻さない。
+    """
 
     rank: int | None = None
     ranked_score: int = 0
@@ -222,13 +324,32 @@ class _OverallChartFields:
 
 
 class StableScoreSubmitMapper:
-    """Stable legacy score submit の wire request/response を変換する mapper."""
+    """安定版 legacy score submit の wire request/response を変換する mapper。
+
+    Stable multipart request を復号前 mapping に変換し、command の SubmissionResult を
+    stable client 互換の text response へ整形する。
+    """
 
     def __init__(
         self,
         limits: MultipartLimits | None = None,
         stable_web_base_url: str = "",
     ) -> None:
+        """変換 mapper の multipart 制限と stable URL base を設定する。
+
+        Args:
+            limits: multipart parser の制限値。None の場合は既定値を使う。
+            stable_web_base_url: response 内 chart URL の base URL。
+
+        Returns:
+            None。
+
+        Raises:
+            生成時に独自例外は送出しない。
+
+        Constraints:
+            stable_web_base_url 末尾の slash は response 組み立て前に除去する。
+        """
         self._limits: MultipartLimits = limits or MultipartLimits()
         self._stable_web_base_url: str = stable_web_base_url.rstrip("/")
 
@@ -239,7 +360,7 @@ class StableScoreSubmitMapper:
         content_type: str,
         submitted_at: datetime,
     ) -> StableScoreSubmitRequestMapping:
-        """multipart body を復号前の request mapping に変換する.
+        """マルチパート body を復号前の request mapping に変換する.
 
         Args:
             body: stable client が送信した multipart body.
@@ -276,7 +397,22 @@ class StableScoreSubmitMapper:
         *,
         overall_stats: StableScoreSubmitOverallStats | None = None,
     ) -> Response:
-        """submission result を stable legacy response body へ変換する。"""
+        """送信 result を stable legacy response body へ変換する。
+
+        Args:
+            result: command use-case が返した submission 結果。
+            overall_stats: handler が補完した現在 user stats。None の場合は result から作る。
+
+        Returns:
+            stable client 互換の Starlette Response。
+
+        Raises:
+            response 整形時に独自例外は送出しない。
+
+        Constraints:
+            COMPLETED は chart 行を返し、RETRYABLE と ACCEPTED_PENDING は
+            ``error: yes``、terminal reject は ``error: no`` を返す。
+        """
         if result.outcome == SubmissionOutcome.COMPLETED:
             return _format_completed_response(
                 result,
@@ -290,13 +426,33 @@ class StableScoreSubmitMapper:
 
 
 class StableScoreSubmitDecoder:
-    """Stable score submit wire payload を command input に変換する。"""
+    """安定版 score submit wire payload を command input に変換する decoder。
+
+    復号、checksum 検証、stable payload parse、request hash 生成、opaque metadata の
+    hash 化を transport 層で完結させる。
+    """
 
     def __init__(
         self,
         payload_decryptor: StableScorePayloadDecryptor,
         payload_parser: StableScorePayloadParser,
     ) -> None:
+        """復号 decoder の復号器と parser を受け取る。
+
+        Args:
+            payload_decryptor: encrypted payload を復号する port。
+            payload_parser: plaintext stable payload を ParsedScore へ変換する parser。
+
+        Returns:
+            None。
+
+        Raises:
+            生成時に独自例外は送出しない。
+
+        Constraints:
+            decoder は transport 境界でのみ使い、command use-case へ復号器や parser を
+            注入しない。
+        """
         self._payload_decryptor: StableScorePayloadDecryptor = payload_decryptor
         self._payload_parser: StableScorePayloadParser = payload_parser
 
@@ -304,7 +460,7 @@ class StableScoreSubmitDecoder:
         self,
         request_mapping: StableScoreSubmitRequestMapping,
     ) -> ParsedSubmissionInput:
-        """request mapping を復号して command input だけを返す.
+        """要求 mapping を復号して command input だけを返す.
 
         Args:
             request_mapping: Stable multipart から取り出した復号前 request material.
@@ -321,7 +477,7 @@ class StableScoreSubmitDecoder:
         self,
         request_mapping: StableScoreSubmitRequestMapping,
     ) -> StableScoreSubmitCommandMapping:
-        """request mapping を復号/parse し command mapping に変換する.
+        """要求 mapping を復号/parse し command mapping に変換する.
 
         Args:
             request_mapping: Stable multipart から取り出した復号前 request material.
@@ -346,12 +502,12 @@ class StableScoreSubmitDecoder:
             raise StableScoreSubmitDecodeError(
                 result=SubmissionResult(
                     outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                    error_reason=f"decryption_failed: {exc}",
+                    error_reason="decryption_failed",
                 ),
                 reason="decryption_failed",
                 request_hash=request_hash,
                 opaque_field_hashes=opaque_field_hashes,
-                error=str(exc),
+                error="decryption_failed",
             ) from exc
 
         if not decrypted.checksum_valid:
@@ -371,12 +527,12 @@ class StableScoreSubmitDecoder:
             raise StableScoreSubmitDecodeError(
                 result=SubmissionResult(
                     outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                    error_reason=f"parse_failed: {exc}",
+                    error_reason="parse_failed",
                 ),
                 reason="parse_failed",
                 request_hash=request_hash,
                 opaque_field_hashes=opaque_field_hashes,
-                error=str(exc),
+                error="parse_failed",
             ) from exc
 
         input_data = ParsedSubmissionInput(

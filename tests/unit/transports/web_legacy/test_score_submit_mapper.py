@@ -1,4 +1,4 @@
-"""Stable legacy score submit mapper tests."""
+"""安定版 legacy score submit mapper の unit test。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from decimal import Decimal
 import pytest
 
 from athena_cli.stable_verification.parsers import parse_score_submit_response
-from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.payload_parser import ParseError
 from osu_server.domain.scores.personal_best import PersonalBestDelta
 from osu_server.domain.scores.user_stats import UserCurrentStats
@@ -20,13 +19,11 @@ from osu_server.services.commands.scores import (
     SubmissionResult,
 )
 from osu_server.transports.stable.web_legacy.mappers import (
-    StableScorePayloadParser,
     StableScoreSubmitDecodeError,
-    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
     StableScoreSubmitOverallStats,
 )
-from tests.support.fakes import StubScorePayloadDecryptor
+from tests.support.fakes import make_stable_score_submit_decoder
 
 _BEATMAP_CHART_REQUIRED_FIELDS = (
     "achieved",
@@ -89,20 +86,21 @@ def _valid_multipart_body() -> bytes:
     )
 
 
-def _score_submit_decoder(
-    payload: str = "1000:test_user:abc123:online_checksum:0:0:100:10:5:0:0:2:500000:99:1:1",
-    *,
-    checksum_valid: bool = True,
-) -> StableScoreSubmitDecoder:
-    return StableScoreSubmitDecoder(
-        payload_decryptor=StubScorePayloadDecryptor(
-            DecryptedPayload(plaintext=payload, checksum_valid=checksum_valid)
-        ),
-        payload_parser=StableScorePayloadParser(),
-    )
-
-
 def test_score_submit_mapper_converts_multipart_to_request_mapping() -> None:
+    """安定版 multipart body を復号前 request mapping に変換する。
+
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: encrypted payload, IV, metadata の mapping が期待と異なる場合。
+
+    Constraints:
+        replay binary と opaque metadata の生値は transport mapping 内だけで検証する。
+    """
     mapper = StableScoreSubmitMapper()
     submitted_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
@@ -123,6 +121,20 @@ def test_score_submit_mapper_converts_multipart_to_request_mapping() -> None:
 
 
 def test_score_submit_decoder_converts_request_mapping_to_command_input() -> None:
+    """要求 mapping を command input へ変換する。
+
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: parsed score, request hash, opaque hash の変換結果が異なる場合。
+
+    Constraints:
+        token は SHA-256 hash として command input に入ることだけを検証する。
+    """
     mapper = StableScoreSubmitMapper()
     submitted_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
     request_mapping = mapper.to_request_mapping(
@@ -131,7 +143,7 @@ def test_score_submit_decoder_converts_request_mapping_to_command_input() -> Non
         submitted_at=submitted_at,
     )
 
-    command_input = _score_submit_decoder().to_command_input(request_mapping)
+    command_input = make_stable_score_submit_decoder().to_command_input(request_mapping)
 
     assert command_input.parsed_score.username == "test_user"
     assert command_input.parsed_score.online_checksum == "online_checksum"
@@ -147,6 +159,20 @@ def test_score_submit_decoder_converts_request_mapping_to_command_input() -> Non
 
 
 def test_score_submit_decoder_rejects_invalid_crypto_checksum() -> None:
+    """検査 checksum 不一致を stable decode error に変換する。
+
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: decode error の reason と response result が期待と異なる場合。
+
+    Constraints:
+        checksum 不一致では payload parse に進まない。
+    """
     mapper = StableScoreSubmitMapper()
     request_mapping = mapper.to_request_mapping(
         body=_valid_multipart_body(),
@@ -155,13 +181,29 @@ def test_score_submit_decoder_rejects_invalid_crypto_checksum() -> None:
     )
 
     with pytest.raises(StableScoreSubmitDecodeError) as exc_info:
-        _ = _score_submit_decoder(checksum_valid=False).to_command_input(request_mapping)
+        _ = make_stable_score_submit_decoder(checksum_valid=False).to_command_input(
+            request_mapping
+        )
 
     assert exc_info.value.reason == "crypto_checksum_invalid"
     assert exc_info.value.result.error_reason == "crypto_checksum_invalid"
 
 
 def test_score_submit_decoder_rejects_unparseable_payload() -> None:
+    """解析不能 payload を sanitized decode error に変換する。
+
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: raw ParseError details が error に含まれる場合。
+
+    Constraints:
+        client response と log 用 error は固定ラベルだけを保持する。
+    """
     mapper = StableScoreSubmitMapper()
     request_mapping = mapper.to_request_mapping(
         body=_valid_multipart_body(),
@@ -170,10 +212,13 @@ def test_score_submit_decoder_rejects_unparseable_payload() -> None:
     )
 
     with pytest.raises(StableScoreSubmitDecodeError) as exc_info:
-        _ = _score_submit_decoder(payload="not:enough:fields").to_command_input(request_mapping)
+        _ = make_stable_score_submit_decoder(payload="not:enough:fields").to_command_input(
+            request_mapping
+        )
 
     assert exc_info.value.reason == "parse_failed"
-    assert exc_info.value.error is not None
+    assert exc_info.value.result.error_reason == "parse_failed"
+    assert exc_info.value.error == "parse_failed"
     assert ParseError.__name__ not in exc_info.value.error
 
 

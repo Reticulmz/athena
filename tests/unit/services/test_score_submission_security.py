@@ -1,11 +1,7 @@
-"""Security verification tests for score submission (Requirement 11: Security and Privacy).
+"""スコア送信の security verification test。
 
-This module verifies that:
-- R11.1: No raw password-md5 is logged on authorization failure
-- R11.2: Failure categories are logged for diagnostics
-- R11.3: Opaque fields are stored as SHA-256 hashes only
-- R11.4: No raw password-md5, token, or encrypted payload is persisted or logged
-- R11.5: Submission fingerprint and result snapshot are recorded
+Requirement 11 の privacy/security 条件を、credential 非露出、failure category、
+opaque field hash 化、fingerprint、snapshot の観点で検証する。
 """
 
 import hashlib
@@ -178,10 +174,19 @@ def _make_process_score_submission_use_case(
 
 @pytest.mark.asyncio
 async def test_authorization_failure_does_not_log_raw_password_md5() -> None:
-    """R11.1: Authorization failures must not log raw password-md5.
+    """認可失敗時に raw password-md5 を log へ出さないことを検証する。
 
-    Verify that actual log output does not contain raw password-md5 when
-    authorization fails. Instead, a SHA-256 hash should be logged.
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: log に raw credential が含まれる、または hash が欠落する場合。
+
+    Constraints:
+        raw password-md5 は保存せず、診断には SHA-256 hash だけを使う。
     """
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
@@ -207,11 +212,11 @@ async def test_authorization_failure_does_not_log_raw_password_md5() -> None:
         auth_service=auth_service,
     )
 
-    invalid_password = "invalid_password_md5_hash_12345"
+    invalid_md5_value = "invalid_password_md5_hash_12345"
     input_data = make_test_submission_input(
         parsed_score=_valid_parsed_score(),
         replay_data=None,
-        password_md5=invalid_password,
+        password_md5=invalid_md5_value,
         osu_version="2024.101.0",
         beatmap_id=123,
     )
@@ -230,10 +235,10 @@ async def test_authorization_failure_does_not_log_raw_password_md5() -> None:
 
     # CRITICAL: Verify raw password-md5 is NOT in ANY log message
     all_logs = "".join(str(entry) for entry in cap_logs)
-    assert invalid_password not in all_logs
+    assert invalid_md5_value not in all_logs
 
     # Verify SHA-256 hash IS logged
-    expected_hash = hashlib.sha256(invalid_password.encode()).hexdigest()
+    expected_hash = hashlib.sha256(invalid_md5_value.encode()).hexdigest()
     assert expected_hash in all_logs
 
     # Verify failure category is logged
@@ -242,15 +247,20 @@ async def test_authorization_failure_does_not_log_raw_password_md5() -> None:
 
 @pytest.mark.asyncio
 async def test_failure_categories_are_logged() -> None:
-    """R11.2: Failure categories must be recorded for diagnostics.
+    """失敗 category を診断用 log に記録することを検証する。
 
-    Verify that terminal rejections include specific failure categories:
-    - transport_validation_failure
-    - crypto_validation_failure
-    - authorization_failure
-    - uniqueness_violation
-    - beatmap_ineligibility
-    - score_validation_failure
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: terminal reject の result や log category が期待と異なる場合。
+
+    Constraints:
+        raw credential を使わず、authorization と beatmap ineligibility の分類だけを
+        log で検証する。
     """
     auth_service = make_score_authorization_service()
 
@@ -341,9 +351,19 @@ async def test_failure_categories_are_logged() -> None:
 
 @pytest.mark.asyncio
 async def test_opaque_fields_stored_as_sha256_hashes_only() -> None:
-    """R11.3: Opaque fields must be stored as SHA-256 hashes only.
+    """不透明 field が SHA-256 hash だけで snapshot に保存されることを検証する。
 
-    Raw opaque field values must not be stored in result_snapshot.
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: raw opaque field が snapshot に残る、または hash が不一致の場合。
+
+    Constraints:
+        token などの opaque field 生値は result_snapshot に保存しない。
     """
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
@@ -412,10 +432,19 @@ async def test_opaque_fields_stored_as_sha256_hashes_only() -> None:
 
 @pytest.mark.asyncio
 async def test_no_raw_credentials_in_logs() -> None:
-    """R11.4: No raw password-md5, token, or encrypted payload in logs.
+    """通常 submission flow の log に raw credential や token を出さない。
 
-    Verify that actual log output does not contain sensitive fields during
-    normal submission flow.
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: log に credential、token、payload の生値が含まれる場合。
+
+    Constraints:
+        log 検証は actual structlog output を対象にし、mask 済み値だけを許可する。
     """
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
@@ -441,19 +470,19 @@ async def test_no_raw_credentials_in_logs() -> None:
         auth_service=auth_service,
     )
 
-    secret_password = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    secret_payload = b"this_is_encrypted_secret_payload"
-    secret_token = "raw_session_token"
+    credential_md5_value = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    encrypted_payload_marker = b"this_is_encrypted_secret_payload"
+    opaque_session_value = "raw_session_token"
 
     input_data = make_test_submission_input(
         parsed_score=_valid_parsed_score(),
         replay_data=b"replay_binary_data",
-        password_md5=secret_password,
+        password_md5=credential_md5_value,
         osu_version="2024.101.0",
         beatmap_id=123,
         submitted_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
         opaque_field_hashes={
-            "token_sha256": hashlib.sha256(secret_token.encode()).hexdigest(),
+            "token_sha256": hashlib.sha256(opaque_session_value.encode()).hexdigest(),
         },
     )
 
@@ -465,18 +494,27 @@ async def test_no_raw_credentials_in_logs() -> None:
 
     # Verify NO sensitive data in ANY log message
     all_logs = "".join(str(entry) for entry in cap_logs)
-    assert secret_password not in all_logs
-    assert secret_payload.decode() not in all_logs
-    assert secret_token not in all_logs
+    assert credential_md5_value not in all_logs
+    assert encrypted_payload_marker.decode() not in all_logs
+    assert opaque_session_value not in all_logs
 
 
 @pytest.mark.asyncio
 async def test_submission_fingerprint_and_result_snapshot_recorded() -> None:
-    """R11.5: Submission fingerprint and result snapshot must be recorded.
+    """送信 fingerprint と result snapshot を保存することを検証する。
 
-    Verify that successful submissions record:
-    - Submission fingerprint (for idempotency)
-    - Result snapshot (score_id for observability)
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: fingerprint、score_id、snapshot が保存されない場合。
+
+    Constraints:
+        成功 submission は idempotency 用 fingerprint と observability 用 snapshot を
+        両方保存する。
     """
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(

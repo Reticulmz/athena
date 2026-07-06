@@ -1,4 +1,4 @@
-"""test が外部 I/O を使わず seam を検証するための typed fake 群。"""
+"""テストが外部 I/O を使わず seam を検証するための typed fake 群。"""
 
 from __future__ import annotations
 
@@ -16,6 +16,11 @@ from osu_server.domain.storage.blobs import Blob, BlobStored
 from osu_server.services.commands.scores import ParsedSubmissionInput, SubmitScoreUseCase
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from osu_server.services.queries.identity.password_service import PasswordService
+from osu_server.transports.stable.web_legacy.mappers.score_submit import (
+    StableScorePayloadDecryptor,
+    StableScorePayloadParser,
+    StableScoreSubmitDecoder,
+)
 from tests.support.credentials import FIXED_TEST_PASSWORD_MD5
 
 if TYPE_CHECKING:
@@ -357,7 +362,20 @@ _DEFAULT_TEST_SCORE_PAYLOAD = (
 
 
 def make_test_parsed_score(payload: str = _DEFAULT_TEST_SCORE_PAYLOAD) -> ParsedScore:
-    """test 用 stable score payload を ParsedScore に変換する。"""
+    """テスト用 stable score payload を ParsedScore に変換する。
+
+    Args:
+        payload: legacy/stable score payload text。省略時は osu! ruleset の成功例を使う。
+
+    Returns:
+        command use-case に渡せる ParsedScore。
+
+    Raises:
+        ParseError: payload の field count や値が test parser の受理条件に合わない場合。
+
+    Constraints:
+        Production parser の依存を避け、unit test 用の deterministic な parser だけを使う。
+    """
     return _parse_test_score_payload(payload)
 
 
@@ -376,7 +394,31 @@ def make_test_submission_input(
     opaque_field_hashes: dict[str, str] | None = None,
     decrypt_latency_ms: float = 0.0,
 ) -> ParsedSubmissionInput:
-    """score submission command test 用 input を作る。"""
+    """スコア送信 command test 用 input を作る。
+
+    Args:
+        payload: parsed_score が None のときに parse する stable payload。
+        parsed_score: 直接使う ParsedScore。指定時は payload を parse しない。
+        request_hash: idempotency 検証用の request hash。
+        replay_data: replay binary。replay なしの経路では None を渡す。
+        password_md5: authorization fake に渡す password-md5 credential。
+        fail_time_ms: stable client の fail time。未送信を表す場合は None。
+        osu_version: stable client version。未送信を表す場合は None。
+        beatmap_id: request field 由来の beatmap id。未送信を表す場合は None。
+        submitted_at: server 受信時刻。None の場合は現在時刻を使う。
+        submit_exit_classification: client 終了種別の診断値。
+        opaque_field_hashes: token など opaque field の hash 値。
+        decrypt_latency_ms: 復号処理時間として記録する値。
+
+    Returns:
+        ProcessScoreSubmissionUseCase に渡せる ParsedSubmissionInput。
+
+    Raises:
+        ParseError: parsed_score が None で payload が test parser の受理条件に合わない場合。
+
+    Constraints:
+        encrypted payload や IV は含めず、command 境界の正規化済み入力だけを生成する。
+    """
     return ParsedSubmissionInput(
         parsed_score=parsed_score or make_test_parsed_score(payload),
         request_hash=request_hash,
@@ -389,6 +431,38 @@ def make_test_submission_input(
         submitted_at=submitted_at or datetime.now(UTC),
         beatmap_id=beatmap_id,
         submit_exit_classification=submit_exit_classification,
+    )
+
+
+def make_stable_score_submit_decoder(
+    payload: str = "1000:test_user:abc123:online_checksum:0:0:100:10:5:0:0:2:500000:99:1:1",
+    *,
+    checksum_valid: bool = True,
+    payload_decryptor: StableScorePayloadDecryptor | None = None,
+) -> StableScoreSubmitDecoder:
+    """安定版 score submit test 用 decoder を作る。
+
+    Args:
+        payload: 復号結果として返す plaintext score payload。
+        checksum_valid: 復号結果の checksum_valid。checksum 異常経路では False を渡す。
+        payload_decryptor: test 固有の復号 fake。None の場合は payload から生成する。
+
+    Returns:
+        StableScoreSubmitDecoder。
+
+    Raises:
+        生成時に独自例外は送出しない。payload の parse 失敗は decoder 実行時に発生する。
+
+    Constraints:
+        Transport test の decoder 構築を一箇所に集約し、payload と checksum の差分だけを
+        call site に残す。
+    """
+    decryptor = payload_decryptor or StubScorePayloadDecryptor(
+        DecryptedPayload(plaintext=payload, checksum_valid=checksum_valid)
+    )
+    return StableScoreSubmitDecoder(
+        payload_decryptor=decryptor,
+        payload_parser=StableScorePayloadParser(),
     )
 
 

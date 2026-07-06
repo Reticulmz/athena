@@ -1,8 +1,7 @@
-"""Real PostgreSQL integration tests for stable score submission.
+"""安定版 score submission の PostgreSQL integration test。
 
-These cases exercise the current command workflow from multipart payload
-adaptation through decrypt, validation, persistence, and stable response
-construction.
+Command workflow の validation、persistence、stable response construction を
+SQLAlchemy repository と実 database transaction 越しに検証する。
 """
 
 from __future__ import annotations
@@ -235,7 +234,7 @@ class FakeBeatmapResolver:
 
 
 class SQLAlchemyBlobStorageStub:
-    """Blob storage fake that persists blob metadata for FK-backed integration tests."""
+    """外部キー付き integration test 用に blob metadata を永続化する fake storage。"""
 
     _uow_factory: SQLAlchemyUnitOfWorkFactory
 
@@ -380,7 +379,20 @@ def uow_factory(
 def service(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> ProcessScoreSubmissionUseCase:
-    """Create ProcessScoreSubmissionUseCase with SQLAlchemy repositories."""
+    """永続化 repository で ProcessScoreSubmissionUseCase を作る。
+
+    Args:
+        uow_factory: integration test 用 Unit of Work factory。
+
+    Returns:
+        PostgreSQL-backed repository を使う score submission use-case。
+
+    Raises:
+        例外は送出しない。
+
+    Constraints:
+        Production composition graph は使わず、repository 境界だけを integration する。
+    """
     auth_service = make_score_authorization_service()
     beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap())
     submit_score_use_case = SubmitScoreUseCase(unit_of_work_factory=uow_factory)
@@ -394,7 +406,20 @@ def service(
 
 @pytest.fixture
 def valid_input() -> ParsedSubmissionInput:
-    """Valid submission input."""
+    """有効な score submission input を返す。
+
+    Args:
+        なし。
+
+    Returns:
+        PostgreSQL integration test 用の ParsedSubmissionInput。
+
+    Raises:
+        例外は送出しない。
+
+    Constraints:
+        Transport wire payload ではなく command 境界の入力を直接生成する。
+    """
     return make_test_submission_input(
         replay_data=b"replay_binary_data_integration",
         request_hash="integration_test_hash",
@@ -408,7 +433,23 @@ async def test_e2e_valid_submission_persists_to_database(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
     query_budget: QueryBudget,
 ) -> None:
-    """E2E: Valid submission creates score, replay, and submission records in DB."""
+    """有効な submission が score、replay、submission record を DB に作る。
+
+    Args:
+        service: test 対象の use-case。
+        valid_input: 有効な command input。
+        uow_factory: assertion 用 Unit of Work factory。
+        query_budget: SQL query 数を検証する helper。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: DB に保存された score、replay、submission が期待と異なる場合。
+
+    Constraints:
+        実 PostgreSQL transaction と repository 実装を通して検証する。
+    """
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
@@ -459,7 +500,7 @@ async def test_e2e_database_transaction_handling(
     service: ProcessScoreSubmissionUseCase,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """E2E: Database transactions are handled correctly."""
+    """データベース transaction が正しく commit されることを検証する。"""
     input_data = make_test_submission_input(
         payload=(
             "1000:test_user:abc123:integration_test_checksum_002:0:0:100:10:5:0:0:2:500000:99:1:1"
@@ -487,7 +528,7 @@ async def test_e2e_concurrent_submission_handling(
     service: ProcessScoreSubmissionUseCase,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """E2E: Concurrent submissions with different checksums are handled correctly."""
+    """異なる checksum の concurrent submission を正しく保存する。"""
     # Create 3 concurrent submissions with different fingerprints
     inputs = [
         make_test_submission_input(
@@ -520,7 +561,7 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
     service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """E2E: Duplicate online checksum rejects a different submission."""
+    """重複 online checksum が別 submission を terminal reject する。"""
     parsed_score = make_test_parsed_score(
         "1000:test_user:abc123:int_test_dup:0:0:100:10:5:0:0:2:500000:99:1:1"
     )
@@ -560,7 +601,7 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
     session_factory: async_sessionmaker[AsyncSession],
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """Eligible submit updates score-priority projection; retry returns saved PB delta."""
+    """適格 submit が projection を更新し retry で保存済み PB delta を返す。"""
 
     previous_input = make_test_submission_input(
         payload="1000:test_user:abc123:int_test_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1",
@@ -650,7 +691,7 @@ async def test_e2e_failed_play_persists_to_database(
     service: ProcessScoreSubmissionUseCase,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """E2E: Failed play (passed=0) is stored in database."""
+    """失敗 play (passed=0) を database に保存する。"""
     input_data = make_test_submission_input(
         payload="1000:test_user:abc123:int_test_failed:0:0:50:10:5:0:0:10:200000:40:0:0",
         request_hash="failed-play-hash",
@@ -679,7 +720,7 @@ async def test_e2e_failed_play_persists_to_database(
 async def test_e2e_passed_score_submission_uses_beatmap_length_for_play_time(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """E2E: accepted passed score stores beatmap-length play time."""
+    """受理済み passed score が beatmap-length play time を保存する。"""
     auth_service = make_score_authorization_service()
     beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap(), beatmap_total_length=123)
     submit_score_use_case = SubmitScoreUseCase(unit_of_work_factory=uow_factory)
@@ -718,7 +759,7 @@ async def test_e2e_idempotent_retry_returns_cached_result(
     session_factory: async_sessionmaker[AsyncSession],
     query_budget: QueryBudget,
 ) -> None:
-    """E2E: Idempotent retry returns cached result from database."""
+    """冪等 retry が database の cached result を返す。"""
     input_data = make_test_submission_input(
         payload="1000:test_user:abc123:int_test_idem:0:0:100:10:5:0:0:2:500000:99:1:1",
         request_hash="idempotent_test_hash",

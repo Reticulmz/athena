@@ -1,4 +1,4 @@
-"""Stable score submit PP response integration scenarios."""
+"""安定版 score submit PP response の integration scenario。"""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, final
 import pytest
 from tests.support.fakes import (
     StubBlobStorageService,
-    StubScorePayloadDecryptor,
     make_score_authorization_service,
+    make_stable_score_submit_decoder,
     make_submit_score_use_case,
 )
 from tests.support.starlette_requests import make_starlette_request
@@ -26,7 +26,6 @@ from osu_server.domain.beatmaps import (
     BeatmapResolveResult,
     BeatmapSourceVerification,
 )
-from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.scores import ProcessScoreSubmissionUseCase
 from osu_server.services.commands.scores.performance import (
@@ -38,10 +37,6 @@ from osu_server.services.queries.scores import (
     PerformanceSubmitResponse,
     PerformanceSubmitResponseQuery,
     PerformanceSubmitResponseState,
-)
-from osu_server.transports.stable.web_legacy.mappers import (
-    StableScorePayloadParser,
-    StableScoreSubmitDecoder,
 )
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
@@ -133,6 +128,20 @@ class _CalculatorIdentity:
 async def test_ranked_or_approved_submit_returns_pp_when_performance_completes(
     rank_status: BeatmapRankStatus,
 ) -> None:
+    """ランク対象 submit が性能計算完了後に pp を返すことを検証する。
+
+    Args:
+        rank_status: 検証対象の ranked 系 beatmap status。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: response body、score 保存、性能応答 query が期待と異なる場合。
+
+    Constraints:
+        性能計算 request が成功した場合だけ submit response の ppAfter を検証する。
+    """
     performance_request = _PerformanceCalculationRequest()
     performance_response = _PerformanceResponses(
         PerformanceSubmitResponse(
@@ -162,6 +171,20 @@ async def test_ranked_or_approved_submit_returns_pp_when_performance_completes(
 
 @pytest.mark.asyncio
 async def test_pending_submit_returns_retryable_then_same_fingerprint_retry_returns_pp() -> None:
+    """保留 submit 後の同一 fingerprint retry が pp を返すことを検証する。
+
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: retryable response と retry 後の completed response が期待と異なる場合。
+
+    Constraints:
+        同一 fingerprint retry は score を重複作成せず、既存 score の性能応答を読む。
+    """
     performance_request = _PerformanceCalculationRequest()
     performance_response = _PerformanceResponses(
         PerformanceSubmitResponse(
@@ -194,6 +217,20 @@ async def test_pending_submit_returns_retryable_then_same_fingerprint_retry_retu
 
 @pytest.mark.asyncio
 async def test_unavailable_performance_returns_accepted_response_with_zero_pp() -> None:
+    """性能値 unavailable の場合に ppAfter:0 の accepted response を返す。
+
+    Args:
+        なし。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: response body が stable legacy 互換の期待値と異なる場合。
+
+    Constraints:
+        calculator 内部状態や unavailable label は client response に露出しない。
+    """
     performance_response = _PerformanceResponses(
         PerformanceSubmitResponse(
             state=PerformanceSubmitResponseState.ACCEPTED_WITHOUT_PP,
@@ -222,12 +259,6 @@ def _make_handler(
     performance_response: _PerformanceResponses,
 ) -> tuple[ScoreSubmitHandler, bytes, str, InMemoryUnitOfWorkFactory]:
     uow_factory = InMemoryUnitOfWorkFactory()
-    payload_decryptor = StubScorePayloadDecryptor(
-        DecryptedPayload(
-            plaintext=_stable_payload(online_checksum),
-            checksum_valid=True,
-        )
-    )
     service = ProcessScoreSubmissionUseCase(
         submit_score_use_case=make_submit_score_use_case(uow_factory),
         replay_blob_storage=StubBlobStorageService(),
@@ -238,10 +269,7 @@ def _make_handler(
         performance_response_query=performance_response,
     )
     body, content_type = _multipart_body()
-    decoder = StableScoreSubmitDecoder(
-        payload_decryptor=payload_decryptor,
-        payload_parser=StableScorePayloadParser(),
-    )
+    decoder = make_stable_score_submit_decoder(payload=_stable_payload(online_checksum))
     return ScoreSubmitHandler(service, decoder=decoder), body, content_type, uow_factory
 
 

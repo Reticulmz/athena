@@ -1,4 +1,4 @@
-"""Unit tests for ProcessScoreSubmissionUseCase."""
+"""スコア送信 use-case の unit test。"""
 
 import hashlib
 from dataclasses import dataclass, replace
@@ -217,7 +217,7 @@ class RecordingPerformanceCalculationRequest:
             msg = "performance request failed"
             raise RuntimeError(msg)
         return RequestPerformanceCalculationResult(
-            outcome=RequestPerformanceCalculationOutcome.SCORE_NOT_FOUND,
+            outcome=RequestPerformanceCalculationOutcome.CREATED,
             score_id=command.score_id,
         )
 
@@ -340,7 +340,20 @@ def uow_factory() -> InMemoryUnitOfWorkFactory:
 
 @pytest.fixture
 def repos(uow_factory: InMemoryUnitOfWorkFactory) -> ScoreRepositoryViews:
-    """Create in-memory repositories."""
+    """スコア送信 test 用の in-memory repository view を作る。
+
+    Args:
+        uow_factory: test 用 Unit of Work factory。
+
+    Returns:
+        score、submission、replay repository view。
+
+    Raises:
+        例外は送出しない。
+
+    Constraints:
+        DB I/O を使わず、同じ in-memory state を command と assertion で共有する。
+    """
     return make_score_repository_views(uow_factory)
 
 
@@ -360,7 +373,22 @@ def service(
     beatmap_resolver: FakeBeatmapResolver,
     blob_storage: StubBlobStorageService,
 ) -> ProcessScoreSubmissionUseCase:
-    """Create service with in-memory repositories."""
+    """インメモリ依存で ProcessScoreSubmissionUseCase を作る。
+
+    Args:
+        uow_factory: test 用 Unit of Work factory。
+        beatmap_resolver: eligibility を返す fake resolver。
+        blob_storage: replay 保存を記録する fake storage。
+
+    Returns:
+        score submission command workflow の use-case。
+
+    Raises:
+        例外は送出しない。
+
+    Constraints:
+        Production repository や external storage は使わない。
+    """
     auth_service = make_score_authorization_service()
     return ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
@@ -372,7 +400,20 @@ def service(
 
 @pytest.fixture
 def valid_input() -> ParsedSubmissionInput:
-    """Valid submission input."""
+    """有効な score submission command input を返す。
+
+    Args:
+        なし。
+
+    Returns:
+        成功 score submit を表す ParsedSubmissionInput。
+
+    Raises:
+        例外は送出しない。
+
+    Constraints:
+        Transport wire payload ではなく正規化済み command input を返す。
+    """
     return make_test_submission_input()
 
 
@@ -397,7 +438,22 @@ async def test_happy_path_valid_submission_creates_score(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """Happy path: valid submission creates score record."""
+    """有効な submission が score record を作成することを検証する。
+
+    Args:
+        service: test 対象の ProcessScoreSubmissionUseCase。
+        valid_input: valid な command input。
+        repos: assertion 用 repository view。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: score や submission snapshot が期待と異なる場合。
+
+    Constraints:
+        replay storage と DB は in-memory fake だけを使う。
+    """
     score_repo, submission_repo, _replay_repo = repos
 
     result = await service.execute(valid_input)
@@ -434,7 +490,23 @@ async def test_completed_submission_requests_performance_calculation(
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Accepted score persistence is followed by a durable performance request."""
+    """受理済み score 永続化後に性能計算 request を作成することを検証する。
+
+    Args:
+        uow_factory: test 用 Unit of Work factory。
+        valid_input: valid な command input。
+        repos: assertion 用 repository view。
+        beatmap_resolver: eligible beatmap を返す fake resolver。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: score 保存や性能計算 command が期待と異なる場合。
+
+    Constraints:
+        性能計算 request は score 永続化後に一度だけ送る。
+    """
     score_repo, _submission_repo, _replay_repo = repos
     performance_request = RecordingPerformanceCalculationRequest()
     service = ProcessScoreSubmissionUseCase(
@@ -475,7 +547,23 @@ async def test_completed_submission_waits_for_performance_response_after_request
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Accepted scores request calculation before building performance response."""
+    """性能 response を組み立てる前に計算 request を送ることを検証する。
+
+    Args:
+        uow_factory: test 用 Unit of Work factory。
+        valid_input: valid な command input。
+        repos: assertion 用 repository view。
+        beatmap_resolver: eligible beatmap を返す fake resolver。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: 性能計算 request と response query の順序が期待と異なる場合。
+
+    Constraints:
+        request が成功した accepted score だけ performance response を待機する。
+    """
     score_repo, _submission_repo, _replay_repo = repos
     performance_request = RecordingPerformanceCalculationRequest()
     performance_response = RecordingPerformanceResponseQuery(
@@ -519,7 +607,7 @@ async def test_performance_wait_response_preserves_cumulative_beatmap_counts(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """PP wait 経由の completed response でも beatmap play/pass count を保持する。"""
+    """性能値待機経由の completed response でも beatmap play/pass count を保持する。"""
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
@@ -567,7 +655,7 @@ async def test_completed_submission_returns_overall_stats_delta(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Submit response 用に current stats の before/after を返す。"""
+    """送信 response 用に current stats の before/after を返す。"""
     current_stats_query = RecordingCurrentUserStatsQuery(
         (
             UserCurrentStats(
@@ -648,7 +736,7 @@ async def test_completed_submission_returns_beatmap_rank_delta(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Submit response 用に beatmap rank の before/after を返す。"""
+    """送信 response 用に beatmap rank の before/after を返す。"""
     beatmap_rank_query = RecordingBeatmapPersonalBestRankQuery((4, 2))
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
@@ -702,7 +790,23 @@ async def test_retryable_performance_response_keeps_score_accepted_without_rejec
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Pending performance returns retryable response while the score remains durable."""
+    """性能計算 pending が retryable response でも score を durable に残す。
+
+    Args:
+        uow_factory: test 用 Unit of Work factory。
+        valid_input: valid な command input。
+        repos: assertion 用 repository view。
+        beatmap_resolver: eligible beatmap を返す fake resolver。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: retryable result、score 保存、submission state が期待と異なる場合。
+
+    Constraints:
+        性能計算待ちの retryable は score 永続化を巻き戻さない。
+    """
     score_repo, submission_repo, _replay_repo = repos
     performance_response = RecordingPerformanceResponseQuery(
         PerformanceSubmitResponse(
@@ -745,7 +849,23 @@ async def test_completed_performance_pp_is_result_only_not_submission_snapshot(
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Stable PP is response data, not canonical submission snapshot data."""
+    """安定版 PP が response 専用値で submission snapshot に残らないことを検証する。
+
+    Args:
+        uow_factory: test 用 Unit of Work factory。
+        valid_input: valid な command input。
+        repos: assertion 用 repository view。
+        beatmap_resolver: eligible beatmap を返す fake resolver。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: response の pp や persisted snapshot が期待と異なる場合。
+
+    Constraints:
+        stable_pp は legacy response 用の派生値で、canonical snapshot には保存しない。
+    """
     _score_repo, submission_repo, _replay_repo = repos
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
@@ -786,8 +906,29 @@ async def test_performance_calculation_request_failure_keeps_completed_response(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Worker wake/request diagnostics do not reject an accepted stable submission."""
+    """性能計算 request 失敗でも accepted submission を completed として返す。
+
+    Args:
+        uow_factory: test 用 Unit of Work factory。
+        valid_input: valid な command input。
+        beatmap_resolver: eligible beatmap を返す fake resolver。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: request 失敗時の result、log、response query が期待と異なる場合。
+
+    Constraints:
+        性能計算 request が失敗した後は performance response query に入らない。
+    """
     performance_request = RecordingPerformanceCalculationRequest(fail=True)
+    performance_response = RecordingPerformanceResponseQuery(
+        PerformanceSubmitResponse(
+            state=PerformanceSubmitResponseState.COMPLETED,
+            stable_pp=248,
+        )
+    )
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
@@ -795,6 +936,7 @@ async def test_performance_calculation_request_failure_keeps_completed_response(
         beatmap_resolver,
         performance_calculation_request=performance_request,
         performance_calculator_identity=StubPerformanceCalculatorIdentity(),
+        performance_response_query=performance_response,
     )
 
     input_data = replace(
@@ -809,7 +951,9 @@ async def test_performance_calculation_request_failure_keeps_completed_response(
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
+    assert result.stable_pp is None
     assert len(performance_request.commands) == 1
+    assert performance_response.queries == []
     entries = [
         entry for entry in logs if entry["event"] == "score_performance_calculation_request_failed"
     ]
@@ -824,7 +968,7 @@ async def test_client_server_grade_discrepancy_is_preserved(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """Client/server grade mismatches are logged and stored for diagnostics."""
+    """クライアントと server の grade mismatch を診断用に log と snapshot へ残す。"""
     _score_repo, submission_repo, _replay_repo = repos
 
     input_data = replace(
@@ -865,7 +1009,7 @@ async def test_failed_play_handling(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """Failed play (passed=0) is stored."""
+    """失敗 play (passed=0) を score として保存する。"""
     score_repo, _, _ = repos
     input_data = replace(
         valid_input,
@@ -890,7 +1034,7 @@ async def test_failed_play_without_replay_is_accepted_without_blob_write(
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
 ) -> None:
-    """Failed play can be stored without replay data."""
+    """失敗 play は replay data なしでも保存できる。"""
     score_repo, _, _ = repos
     input_without_replay = replace(
         valid_input,
@@ -921,7 +1065,7 @@ async def test_passed_play_without_replay_is_accepted_without_blob_write(
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
 ) -> None:
-    """Passed play without replay data creates a score without an attachment."""
+    """成功 play でも replay data がなければ attachment なし score を作る。"""
     score_repo, _, _ = repos
     input_without_replay = replace(
         valid_input,
@@ -949,7 +1093,7 @@ async def test_replay_attachment(
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
 ) -> None:
-    """Replay data is attached to score."""
+    """リプレイ data を score attachment として保存する。"""
     _, _, replay_repo = repos
 
     input_data = replace(
@@ -977,7 +1121,7 @@ async def test_score_submit_fallback_warmup_runs_before_replay_blob_storage(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Accepted submissions ignore warmup result and warm before replay storage."""
+    """受理済み submission は warmup 結果を診断扱いにして replay 保存前に warm する。"""
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
     blob_storage = RecordingBlobStorageService(events)
@@ -1017,7 +1161,7 @@ async def test_score_submit_accepts_file_pending_and_logs_fallback_warmup(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Beatmap File pending is diagnostics-only and keeps accepted response shape."""
+    """譜面 file pending は診断扱いにして accepted response shape を保つ。"""
     warmup = RequestBeatmapFileWarmupUseCase(
         FakeWarmupResolver(
             file_status=BeatmapFileState.PENDING_FETCH,
@@ -1063,7 +1207,7 @@ async def test_score_submit_fallback_warmup_precedes_retryable_replay_storage_fa
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Replay storage retryable failures happen after fallback warmup is requested."""
+    """リプレイ storage の retryable failure は fallback warmup request 後に発生する。"""
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events)
     blob_storage = RecordingBlobStorageService(events, fail_writes=True)
@@ -1103,7 +1247,7 @@ async def test_score_submit_terminal_reject_does_not_request_fallback_warmup(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Terminal rejects before hit validation do not trigger score submit fallback warmup."""
+    """ヒット validation 前の terminal reject は fallback warmup を起動しない。"""
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events)
     service = ProcessScoreSubmissionUseCase(
@@ -1136,7 +1280,7 @@ async def test_online_checksum_duplicate_rejection(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """Duplicate online checksum rejects a different submission."""
+    """重複 online checksum は別 submission として terminal reject する。"""
     _score_repo, submission_repo, _ = repos
 
     parsed_score = make_test_parsed_score(
@@ -1178,7 +1322,7 @@ async def test_performance_integration_preserves_duplicate_terminal_rejects(
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Duplicate checksum terminal rejects do not wait for performance response."""
+    """重複 checksum の terminal reject は performance response を待機しない。"""
     _score_repo, submission_repo, _replay_repo = repos
     performance_request = RecordingPerformanceCalculationRequest()
     performance_response = RecordingPerformanceResponseQuery(
@@ -1272,7 +1416,7 @@ async def test_online_checksum_duplicate_rejection_ignores_fallback_warmup_failu
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Duplicate online checksum remains a terminal reject when warmup fails."""
+    """ウォームアップ failure 時も重複 online checksum は terminal reject のままにする。"""
     _score_repo, submission_repo, _ = repos
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
@@ -1323,7 +1467,7 @@ async def test_online_checksum_duplicate_rejection_ignores_file_pending_warmup(
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Duplicate online checksum remains terminal rejected when file warmup is pending."""
+    """ファイル warmup pending 時も重複 online checksum は terminal reject のままにする。"""
     _score_repo, submission_repo, _ = repos
     warmup = RequestBeatmapFileWarmupUseCase(
         FakeWarmupResolver(
@@ -1382,7 +1526,7 @@ async def test_replay_checksum_duplicate_rejection(
     service: ProcessScoreSubmissionUseCase,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """Duplicate replay checksum is rejected."""
+    """重複 replay checksum を terminal reject する。"""
     _, _, _replay_repo = repos
 
     # First submission
@@ -1412,7 +1556,7 @@ async def test_replay_checksum_duplicate_rejection_ignores_fallback_warmup_failu
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Duplicate replay checksum remains a terminal reject when warmup fails."""
+    """ウォームアップ failure 時も重複 replay checksum は terminal reject のままにする。"""
     _score_repo, submission_repo, _replay_repo = repos
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
@@ -1456,7 +1600,7 @@ async def test_submission_fingerprint_idempotency(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """Same request content returns cached persisted result."""
+    """同じ request content は保存済み result を cache として返す。"""
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
@@ -1484,7 +1628,7 @@ async def test_same_fingerprint_retry_rebuilds_response_from_existing_score_perf
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Same-fingerprint retry reads current performance for the existing score."""
+    """同じ fingerprint の retry は既存 score の current performance を読む。"""
     _score_repo, submission_repo, _replay_repo = repos
     performance_request = RecordingPerformanceCalculationRequest()
     performance_response = RecordingPerformanceResponseQuery(
@@ -1543,7 +1687,7 @@ async def test_submission_fingerprint_idempotency_ignores_fallback_warmup_failur
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Same-fingerprint cached result is unchanged by fallback warmup failure."""
+    """代替 warmup failure は同じ fingerprint の cached result を変えない。"""
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
     service = ProcessScoreSubmissionUseCase(
@@ -1579,7 +1723,7 @@ async def test_in_progress_retry_returns_accepted_pending(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """Same fingerprint in processing state returns accepted_pending."""
+    """処理中 state の同じ fingerprint は accepted_pending を返す。"""
     _score_repo, submission_repo, _replay_repo = repos
 
     input_data = replace(
@@ -1612,7 +1756,7 @@ async def test_authorization_failure_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """Authorization failure returns terminal reject."""
+    """認可 failure は terminal reject を返す。"""
 
     # Invalid password
     invalid_input = ParsedSubmissionInput(
@@ -1642,7 +1786,7 @@ async def test_beatmap_ineligibility_terminal_reject(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """Ineligible beatmap returns terminal reject."""
+    """不適格 beatmap は terminal reject を返す。"""
 
     beatmap_resolver.eligibility = _ineligible_beatmap()
 
@@ -1663,7 +1807,7 @@ async def test_validation_failure_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """Validation failure returns terminal reject."""
+    """検証 failure は terminal reject を返す。"""
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
@@ -1682,7 +1826,7 @@ async def test_metrics_logged_on_success(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """Metrics are logged on successful submission."""
+    """成功 submission では metrics を log に出す。"""
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(

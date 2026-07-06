@@ -1,4 +1,4 @@
-"""score submission の command workflow 全体を編成する use-case。"""
+"""スコア submission の command workflow 全体を編成する use-case。"""
 
 import hashlib
 import time
@@ -32,6 +32,7 @@ from osu_server.services.commands.scores.authorization import (
 )
 from osu_server.services.commands.scores.performance import (
     RequestPerformanceCalculationCommand,
+    RequestPerformanceCalculationOutcome,
     RequestPerformanceCalculationResult,
 )
 from osu_server.services.commands.scores.submit_score import (
@@ -53,6 +54,15 @@ from osu_server.services.queries.scores import (
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 _REPLAY_CONTENT_TYPE = "application/octet-stream"
+_PERFORMANCE_RESPONSE_AVAILABLE_OUTCOMES = frozenset(
+    {
+        RequestPerformanceCalculationOutcome.CREATED,
+        RequestPerformanceCalculationOutcome.CREATED_REPLACEMENT,
+        RequestPerformanceCalculationOutcome.REUSED_PENDING,
+        RequestPerformanceCalculationOutcome.REUSED_REPLACEMENT_PENDING,
+        RequestPerformanceCalculationOutcome.ALREADY_CURRENT,
+    }
+)
 
 
 class _FingerprintHasher(Protocol):
@@ -151,7 +161,7 @@ class BeatmapPersonalBestRankQueryUseCase(Protocol):
 
 
 class SubmissionOutcome(Enum):
-    """score submission workflow の最終 outcome。"""
+    """スコア submission workflow の最終 outcome。"""
 
     COMPLETED = "completed"
     TERMINAL_REJECTED = "terminal_rejected"
@@ -161,7 +171,7 @@ class SubmissionOutcome(Enum):
 
 @dataclass(frozen=True, slots=True)
 class BeatmapRankDelta:
-    """Stable submit response に載せる beatmap leaderboard 順位差分。"""
+    """安定版 submit response に載せる beatmap leaderboard 順位差分。"""
 
     before: int | None
     after: int | None
@@ -169,7 +179,7 @@ class BeatmapRankDelta:
 
 @dataclass(frozen=True, slots=True)
 class SubmissionResult:
-    """transport に返す score submission 結果。"""
+    """転送層に返す score submission 結果。"""
 
     outcome: SubmissionOutcome
     user_id: int | None = None
@@ -197,7 +207,36 @@ class SubmissionResult:
 
 @dataclass(frozen=True, slots=True)
 class ParsedSubmissionInput:
-    """score submit transport から正規化された command input。"""
+    """安定版 score submit を command 境界へ渡す正規化済み入力。
+
+    振る舞い:
+        Transport 層で復号と wire payload parse を済ませた score submit 情報を保持する。
+        Command use-case はこの型だけを受け取り、stable multipart や暗号化 payload の
+        wire 表現には依存しない。
+
+    Args:
+        parsed_score: payload から得た canonical score 値。
+        request_hash: idempotency と診断に使う stable request hash。
+        opaque_field_hashes: token などの opaque metadata を SHA-256 化した値。
+        decrypt_latency_ms: transport 側の復号処理時間。
+        replay_data: 添付 replay binary。送信されない場合は None。
+        password_md5: stable client が送る password-md5 credential。
+        fail_time_ms: stable client の fail time。未送信の場合は None。
+        osu_version: stable client version。未送信の場合は None。
+        submitted_at: server が request を受け取った時刻。
+        beatmap_id: form field 由来の beatmap id。未送信の場合は None。
+        submit_exit_classification: client 終了種別の診断値。未送信の場合は None。
+
+    Returns:
+        dataclass のため値は返さず、command input として参照される。
+
+    Raises:
+        生成時に独自例外は送出しない。値の妥当性検証は use-case 側で行う。
+
+    Constraints:
+        Transport wire 型や暗号化済み payload を含めない。credential と replay は
+        logging せず、opaque metadata は hash 済み値だけを保持する。
+    """
 
     parsed_score: ParsedScore
     request_hash: str
@@ -233,7 +272,7 @@ def generate_submission_fingerprint(
     submitted_timestamp: str | None,
     request_hash: str,
 ) -> str:
-    """idempotency 判定に使う submission fingerprint を生成する。"""
+    """冪等性判定に使う submission fingerprint を生成する。"""
     hasher = hashlib.sha256()
     _update_fingerprint_text(hasher, "user_id", str(user_id))
     _update_fingerprint_text(hasher, "beatmap_checksum", beatmap_checksum)
@@ -596,7 +635,7 @@ def _completed_submit_response_result(
 
 
 class ProcessScoreSubmissionUseCase:
-    """score submission command workflow を編成する module。
+    """スコア submission command workflow を編成する module。
 
     authorization、beatmap eligibility、validation、replay storage、
     score persistence、performance request をこの interface の内側に集中させる。
@@ -639,15 +678,26 @@ class ProcessScoreSubmissionUseCase:
         )
 
     async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult:
-        """score を検証し、durable state と replay blob に反映する。
+        """スコアを検証し、durable state と replay blob に反映する。
 
-        処理順序は fingerprint 生成、authorization、beatmap eligibility、
-        hit count validation、replay 保存、score persistence、
-        performance calculation request の順に固定する。
+        Args:
+            input_data: transport 層で復号と parse を完了した score submit 入力。
 
-        retry で再送されても同じ request と同じ score 送信を識別できるよう、
-        request hash は transport adapter が wire request から生成し、
-        submission fingerprint は durable mutation 前に生成する。
+        Returns:
+            durable state への反映結果と stable response に必要な差分情報を含む
+            SubmissionResult。
+
+        Raises:
+            公開境界では内部停止例外を返さない。phase helper が送出する
+            _SubmissionStoppedError はこの method 内で SubmissionResult に変換する。
+
+        Constraints:
+            処理順序は fingerprint 生成、authorization、beatmap eligibility、
+            hit count validation、replay 保存、score persistence、
+            performance calculation request の順に固定する。retry で再送されても
+            同じ request と同じ score 送信を識別できるよう、request hash は
+            transport adapter が生成し、submission fingerprint は durable mutation 前に
+            生成する。
         """
         attempt = _SubmissionAttempt(
             input_data=input_data,
@@ -1011,8 +1061,9 @@ class ProcessScoreSubmissionUseCase:
                 overall_stats_before=baseline.overall_stats_before,
             )
 
+        performance_response_available = command_result.existing_submission
         if not command_result.existing_submission:
-            await self._request_performance_calculation(
+            performance_response_available = await self._request_performance_calculation(
                 score_id=command_result.score_id,
                 requested_at=attempt.input_data.submitted_at,
             )
@@ -1033,6 +1084,7 @@ class ProcessScoreSubmissionUseCase:
             beatmap_rank_before=baseline.beatmap_rank_before,
             include_beatmap_rank_delta=accepted_beatmap.leaderboard_eligible_at_submission,
             overall_stats_before=baseline.overall_stats_before,
+            wait_for_performance=performance_response_available,
         )
 
     async def _request_performance_calculation(
@@ -1040,13 +1092,13 @@ class ProcessScoreSubmissionUseCase:
         *,
         score_id: int | None,
         requested_at: datetime,
-    ) -> None:
+    ) -> bool:
         if (
             score_id is None
             or self._performance_calculation_request is None
             or self._performance_calculator_identity is None
         ):
-            return
+            return False
 
         try:
             result = await self._performance_calculation_request.execute(
@@ -1063,7 +1115,7 @@ class ProcessScoreSubmissionUseCase:
                 score_id=score_id,
                 error=type(exc).__name__,
             )
-            return
+            return False
 
         logger.info(
             "score_performance_calculation_requested",
@@ -1073,6 +1125,7 @@ class ProcessScoreSubmissionUseCase:
             worker_wake_requested=result.worker_wake_requested,
             worker_wake_failed=result.worker_wake_failed,
         )
+        return result.outcome in _PERFORMANCE_RESPONSE_AVAILABLE_OUTCOMES
 
     async def _submit_response_deltas(
         self,
@@ -1112,8 +1165,13 @@ class ProcessScoreSubmissionUseCase:
         beatmap_rank_before: int | None,
         include_beatmap_rank_delta: bool,
         overall_stats_before: UserCurrentStats | None,
+        wait_for_performance: bool,
     ) -> SubmissionResult:
-        if command_result.score_id is None or self._performance_response_query is None:
+        if (
+            not wait_for_performance
+            or command_result.score_id is None
+            or self._performance_response_query is None
+        ):
             deltas = await self._submit_response_deltas(
                 command_result,
                 beatmap_checksum=beatmap_checksum,
@@ -1401,7 +1459,7 @@ class ProcessScoreSubmissionUseCase:
         return _submission_result_from_command(result)
 
     def _format_auth_error(self, ctx: AuthorizationContext) -> str:
-        """credential を露出せず authorization error を整形する。"""
+        """認証 credential を露出せず authorization error を整形する。"""
         if not ctx.password_valid:
             return "authorization_failed: invalid_password"
         if not ctx.session_valid:
@@ -1411,5 +1469,5 @@ class ProcessScoreSubmissionUseCase:
         return "authorization_failed: unknown"
 
     def _is_relax_or_autopilot(self, mods: ModCombination) -> bool:
-        """Relax または Autopilot mod を含む submission か判定する。"""
+        """リラックスまたは Autopilot mod を含む submission か判定する。"""
         return mods.has(Mod.RELAX) or mods.has(Mod.AUTOPILOT)
