@@ -19,17 +19,20 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 app = FastAPI(title="API Template", version="1.0.0", docs_url="/api/docs")
 
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "api.example.com"]
+ALLOWED_ORIGINS = ["http://localhost:3000", "https://app.example.com"]
+
 # Security Middleware
 # Trusted Host: Prevents HTTP Host Header attacks
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["*"],  # Example policy: restrict to ["api.example.com"] in production
+    allowed_hosts=ALLOWED_HOSTS,
 )
 
 # CORS: Configures Cross-Origin Resource Sharing
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Example policy: use specific origins in production
+    allow_origins=ALLOWED_ORIGINS,
     # Set True only when cookies/auth headers are needed and origins are restricted.
     allow_credentials=False,
     allow_methods=["*"],
@@ -119,6 +122,38 @@ class ErrorResponse(BaseModel):
     details: list[ErrorDetail] | None = None
 
 
+def _error_message(detail: Any) -> str:
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, dict):
+        message = detail.get("message")
+        if isinstance(message, str):
+            return message
+    return "Error"
+
+
+def _error_details(detail: Any) -> list[ErrorDetail] | None:
+    if not isinstance(detail, dict):
+        return None
+
+    raw_details = detail.get("details")
+    if not isinstance(raw_details, list):
+        return None
+
+    details: list[ErrorDetail] = []
+    for raw_detail in raw_details:
+        if isinstance(raw_detail, ErrorDetail):
+            details.append(raw_detail)
+        elif isinstance(raw_detail, dict):
+            try:
+                details.append(ErrorDetail.model_validate(raw_detail))
+            except ValueError:
+                return None
+        else:
+            return None
+    return details
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_request, exc):
     """HTTPException を共通 error response に変換する。
@@ -134,10 +169,8 @@ async def http_exception_handler(_request, exc):
         status_code=exc.status_code,
         content=ErrorResponse(
             error=exc.__class__.__name__,
-            message=exc.detail
-            if isinstance(exc.detail, str)
-            else exc.detail.get("message", "Error"),
-            details=exc.detail.get("details") if isinstance(exc.detail, dict) else None,
+            message=_error_message(exc.detail),
+            details=_error_details(exc.detail),
         ).model_dump(),
     )
 
@@ -226,7 +259,16 @@ async def get_user(user_id: str = Path(..., description="User ID")):
     if user_id == "999":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"message": "User not found", "details": {"id": user_id}},
+            detail={
+                "message": "User not found",
+                "details": [
+                    {
+                        "field": "id",
+                        "message": f"User {user_id} was not found",
+                        "code": "not_found",
+                    },
+                ],
+            },
         )
 
     return User(
