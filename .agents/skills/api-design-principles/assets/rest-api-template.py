@@ -7,6 +7,7 @@ Constraints:
     Project 固有の認証、永続化、origin policy は利用先で差し替える。
 """
 
+import os
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any
@@ -19,8 +20,14 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 app = FastAPI(title="API Template", version="1.0.0", docs_url="/api/docs")
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "api.example.com"]
-ALLOWED_ORIGINS = ["http://localhost:3000", "https://app.example.com"]
+
+def _csv_env(name: str, default: str) -> list[str]:
+    values = os.getenv(name, default)
+    return [value.strip() for value in values.split(",") if value.strip()]
+
+
+ALLOWED_HOSTS = _csv_env("ALLOWED_HOSTS", "localhost,127.0.0.1")
+ALLOWED_ORIGINS = _csv_env("ALLOWED_ORIGINS", "http://localhost:3000")
 
 # Security Middleware
 # Trusted Host: Prevents HTTP Host Header attacks
@@ -122,6 +129,14 @@ class ErrorResponse(BaseModel):
     details: list[ErrorDetail] | None = None
 
 
+def _error_name(detail: Any, fallback: str) -> str:
+    if isinstance(detail, dict):
+        error = detail.get("error")
+        if isinstance(error, str):
+            return error
+    return fallback
+
+
 def _error_message(detail: Any) -> str:
     if isinstance(detail, str):
         return detail
@@ -168,7 +183,7 @@ async def http_exception_handler(_request, exc):
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
-            error=exc.__class__.__name__,
+            error=_error_name(exc.detail, exc.__class__.__name__),
             message=_error_message(exc.detail),
             details=_error_details(exc.detail),
         ).model_dump(),
@@ -260,6 +275,7 @@ async def get_user(user_id: str = Path(..., description="User ID")):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
+                "error": "not_found",
                 "message": "User not found",
                 "details": [
                     {
