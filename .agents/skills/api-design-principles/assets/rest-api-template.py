@@ -1,8 +1,13 @@
-"""
-Production-ready REST API template using FastAPI.
-Includes pagination, filtering, error handling, and best practices.
+"""FastAPI による REST API template。
+
+Pagination、filtering、error handling、security middleware を含む
+実用的な API skeleton を示す。
+
+Constraints:
+    Project 固有の認証、永続化、origin policy は利用先で差し替える。
 """
 
+import os
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any
@@ -15,18 +20,27 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 app = FastAPI(title="API Template", version="1.0.0", docs_url="/api/docs")
 
+
+def _csv_env(name: str, default: str) -> list[str]:
+    values = os.getenv(name, default)
+    return [value.strip() for value in values.split(",") if value.strip()]
+
+
+ALLOWED_HOSTS = _csv_env("ALLOWED_HOSTS", "localhost,127.0.0.1")
+ALLOWED_ORIGINS = _csv_env("ALLOWED_ORIGINS", "http://localhost:3000")
+
 # Security Middleware
 # Trusted Host: Prevents HTTP Host Header attacks
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["*"],  # TODO: Configure this in production, e.g. ["api.example.com"]
+    allowed_hosts=ALLOWED_HOSTS,
 )
 
 # CORS: Configures Cross-Origin Resource Sharing
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Update this with specific origins in production
-    # TODO: Set to True if you need cookies/auth headers, but restrict origins
+    allow_origins=ALLOWED_ORIGINS,
+    # Set True only when cookies/auth headers are needed and origins are restricted.
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,42 +49,62 @@ app.add_middleware(
 
 # Models
 class UserStatus(StrEnum):
+    """User account status の template enum。"""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
 
 
 class UserBase(BaseModel):
+    """User 作成/更新で共有する入力 fields。"""
+
     email: EmailStr
     name: str = Field(..., min_length=1, max_length=100)
     status: UserStatus = UserStatus.ACTIVE
 
 
 class UserCreate(UserBase):
+    """User 作成 request body。"""
+
     password: str = Field(..., min_length=8)
 
 
 class UserUpdate(BaseModel):
+    """User 部分更新 request body。"""
+
     email: EmailStr | None = None
     name: str | None = Field(None, min_length=1, max_length=100)
     status: UserStatus | None = None
 
 
 class User(UserBase):
-    id: str
+    """User response model。
+
+    Attributes:
+        user_id: Response では JSON field `id` として出力する user identifier。
+        created_at: User 作成日時。
+        updated_at: User 更新日時。
+    """
+
+    user_id: str = Field(alias="id")
     created_at: datetime
     updated_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 # Pagination
 class PaginationParams(BaseModel):
+    """Pagination query parameters。"""
+
     page: int = Field(1, ge=1)
     page_size: int = Field(20, ge=1, le=100)
 
 
 class PaginatedResponse(BaseModel):
+    """Paginated list response。"""
+
     items: list[Any]
     total: int
     page: int
@@ -80,27 +114,78 @@ class PaginatedResponse(BaseModel):
 
 # Error handling
 class ErrorDetail(BaseModel):
+    """Field 単位の error detail。"""
+
     field: str | None = None
     message: str
     code: str
 
 
 class ErrorResponse(BaseModel):
+    """API error response body。"""
+
     error: str
     message: str
     details: list[ErrorDetail] | None = None
 
 
+def _error_name(detail: Any, fallback: str) -> str:
+    if isinstance(detail, dict):
+        error = detail.get("error")
+        if isinstance(error, str):
+            return error
+    return fallback
+
+
+def _error_message(detail: Any) -> str:
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, dict):
+        message = detail.get("message")
+        if isinstance(message, str):
+            return message
+    return "Error"
+
+
+def _error_details(detail: Any) -> list[ErrorDetail] | None:
+    if not isinstance(detail, dict):
+        return None
+
+    raw_details = detail.get("details")
+    if not isinstance(raw_details, list):
+        return None
+
+    details: list[ErrorDetail] = []
+    for raw_detail in raw_details:
+        if isinstance(raw_detail, ErrorDetail):
+            details.append(raw_detail)
+        elif isinstance(raw_detail, dict):
+            try:
+                details.append(ErrorDetail.model_validate(raw_detail))
+            except ValueError:
+                return None
+        else:
+            return None
+    return details
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_request, exc):
+    """HTTPException を共通 error response に変換する。
+
+    Args:
+        _request: FastAPI から渡される request object。この template では参照しない。
+        exc: 変換対象の HTTPException。
+
+    Returns:
+        JSONResponse。status code と error body を保持する。
+    """
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
-            error=exc.__class__.__name__,
-            message=exc.detail
-            if isinstance(exc.detail, str)
-            else exc.detail.get("message", "Error"),
-            details=exc.detail.get("details") if isinstance(exc.detail, dict) else None,
+            error=_error_name(exc.detail, exc.__class__.__name__),
+            message=_error_message(exc.detail),
+            details=_error_details(exc.detail),
         ).model_dump(),
     )
 
@@ -113,18 +198,28 @@ async def list_users(
     status_filter: Annotated[UserStatus | None, Query(alias="status")] = None,
     search: Annotated[str | None, Query()] = None,
 ):
-    """List users with pagination and filtering."""
+    """User 一覧を pagination/filtering 付きで返す。
+
+    Args:
+        page: 1 始まりの page number。
+        page_size: 1 page あたりの item 数。
+        status_filter: Optional account status filter。Query name は `status`。
+        search: Optional name substring filter。
+
+    Returns:
+        PaginatedResponse。items には User response dict を含める。
+    """
     # Mock implementation
     total = 100
     items = [
         User(
-            id=str(i),
+            user_id=str(i),
             email=f"user{i}@example.com",
             name=f"User {i}",
             status=UserStatus.ACTIVE,
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
-        ).model_dump()
+        ).model_dump(by_alias=True)
         for i in range((page - 1) * page_size, min(page * page_size, total))
     ]
     if status_filter is not None:
@@ -143,10 +238,17 @@ async def list_users(
 
 @app.post("/api/users", response_model=User, status_code=status.HTTP_201_CREATED, tags=["Users"])
 async def create_user(user: UserCreate):
-    """Create a new user."""
+    """User を作成する。
+
+    Args:
+        user: 作成する user の request body。
+
+    Returns:
+        作成された User response model。
+    """
     # Mock implementation
     return User(
-        id="123",
+        user_id="123",
         email=user.email,
         name=user.name,
         status=user.status,
@@ -157,16 +259,36 @@ async def create_user(user: UserCreate):
 
 @app.get("/api/users/{user_id}", response_model=User, tags=["Users"])
 async def get_user(user_id: str = Path(..., description="User ID")):
-    """Get user by ID."""
+    """User ID で user を取得する。
+
+    Args:
+        user_id: 取得対象の user identifier。
+
+    Returns:
+        User response model。
+
+    Raises:
+        HTTPException: User が見つからない場合。
+    """
     # Mock: Check if exists
     if user_id == "999":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"message": "User not found", "details": {"id": user_id}},
+            detail={
+                "error": "not_found",
+                "message": "User not found",
+                "details": [
+                    {
+                        "field": "id",
+                        "message": f"User {user_id} was not found",
+                        "code": "not_found",
+                    },
+                ],
+            },
         )
 
     return User(
-        id=user_id,
+        user_id=user_id,
         email="user@example.com",
         name="User Name",
         status=UserStatus.ACTIVE,
@@ -177,7 +299,18 @@ async def get_user(user_id: str = Path(..., description="User ID")):
 
 @app.patch("/api/users/{user_id}", response_model=User, tags=["Users"])
 async def update_user(user_id: str, update: UserUpdate):
-    """Partially update user."""
+    """User を部分更新する。
+
+    Args:
+        user_id: 更新対象の user identifier。
+        update: 更新する fields。
+
+    Returns:
+        更新後の User response model。
+
+    Raises:
+        HTTPException: User が見つからない場合。
+    """
     # Validate user exists
     existing = await get_user(user_id)
 
@@ -192,7 +325,17 @@ async def update_user(user_id: str, update: UserUpdate):
 
 @app.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Users"])
 async def delete_user(user_id: str):
-    """Delete user."""
+    """User を削除する。
+
+    Args:
+        user_id: 削除対象の user identifier。
+
+    Returns:
+        None。HTTP 204 response として扱う。
+
+    Raises:
+        HTTPException: User が見つからない場合。
+    """
     await get_user(user_id)  # Verify exists
 
 

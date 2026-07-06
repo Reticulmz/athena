@@ -48,7 +48,7 @@ class ComplianceFramework(Enum):
 
 @dataclass
 class SecurityRequirement:
-    id: str
+    requirement_id: str
     title: str
     description: str
     req_type: RequirementType
@@ -67,7 +67,7 @@ class SecurityRequirement:
     def to_user_story(self) -> str:
         """Convert to user story format."""
         return f"""
-**{self.id}: {self.title}**
+**{self.requirement_id}: {self.title}**
 
 As a security-conscious system,
 I need to {self.description.lower()},
@@ -84,7 +84,7 @@ So that {self.rationale.lower()}.
     def to_test_spec(self) -> str:
         """Convert to test specification."""
         return f"""
-## Test Specification: {self.id}
+## Test Specification: {self.requirement_id}
 
 ### Requirement
 {self.description}
@@ -139,7 +139,7 @@ class RequirementSet:
             for threat_id in req.threat_refs:
                 if threat_id not in matrix:
                     matrix[threat_id] = []
-                matrix[threat_id].append(req.id)
+                matrix[threat_id].append(req.requirement_id)
         return matrix
 ```
 
@@ -151,7 +151,7 @@ from typing import List, Dict, Tuple
 
 @dataclass
 class ThreatInput:
-    id: str
+    threat_id: str
     category: str  # STRIDE category
     title: str
     description: str
@@ -268,14 +268,14 @@ class RequirementExtractor:
 
         for i, (title_pattern, desc_pattern) in enumerate(patterns):
             req = SecurityRequirement(
-                id=f"SR-{start_id + i:03d}",
+                requirement_id=f"SR-{start_id + i:03d}",
                 title=title_pattern.format(target=threat.target),
                 description=desc_pattern.format(target=threat.target),
                 req_type=RequirementType.FUNCTIONAL,
                 domain=domains[i % len(domains)] if domains else SecurityDomain.DATA_PROTECTION,
                 priority=priority,
                 rationale=f"Mitigates threat: {threat.title}",
-                threat_refs=[threat.id],
+                threat_refs=[threat.threat_id],
                 acceptance_criteria=self._generate_acceptance_criteria(
                     threat.category, threat.target
                 ),
@@ -471,7 +471,7 @@ class ComplianceMapper:
                         requirement_set, framework, control
                     )
                     if reqs:
-                        matrix[framework.value][control] = [r.id for r in reqs]
+                        matrix[framework.value][control] = [r.requirement_id for r in reqs]
 
         return matrix
 
@@ -535,7 +535,7 @@ class SecurityUserStoryGenerator:
         )
 
         story = f"""
-## {requirement.id}: {requirement.title}
+## {requirement.requirement_id}: {requirement.title}
 
 **User Story:**
 As a {template['as_a']},
@@ -566,10 +566,10 @@ So that {template['so_that']}.
         return story
 
     def _format_acceptance_criteria(self, criteria: List[str]) -> str:
-        return "\n".join(f"- [ ] {c}" for c in criteria) if criteria else "- [ ] TBD"
+        return "\n".join(f"- [ ] {c}" for c in criteria) if criteria else "- [ ] Criteria pending"
 
     def _format_test_cases(self, tests: List[str]) -> str:
-        return "\n".join(f"- {t}" for t in tests) if tests else "- TBD"
+        return "\n".join(f"- {t}" for t in tests) if tests else "- Test cases pending"
 
     def generate_epic(
         self,
@@ -591,7 +591,7 @@ This epic covers all security requirements related to {domain.value.replace('_',
 - Reduce security risk
 
 ## Stories in this Epic
-{chr(10).join(f'- [{r.id}] {r.title}' for r in reqs)}
+{chr(10).join(f'- [{r.requirement_id}] {r.title}' for r in reqs)}
 
 ## Acceptance Criteria
 - All stories complete
