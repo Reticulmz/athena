@@ -27,6 +27,7 @@ _DEVELOPMENT_ENVIRONMENT = "development"
 _BEATMAP_URL_TEMPLATE_FIELD = "beatmap_id"
 _DEFAULT_ENVIRONMENT = "development"
 _ENVIRONMENT_VARIABLE = "ENVIRONMENT"
+type _BeatmapUrlTemplateField = tuple[str, str | None, str | None]
 
 
 class AppConfig(BaseSettings):
@@ -244,27 +245,56 @@ class AppConfig(BaseSettings):
         field_name: str,
         environment: str,
     ) -> None:
+        parsed_fields = AppConfig._parse_beatmap_url_template_fields(
+            template,
+            field_name=field_name,
+        )
+        AppConfig._validate_beatmap_url_template_fields(
+            parsed_fields,
+            field_name=field_name,
+        )
+        candidate = AppConfig._render_beatmap_url_template_candidate(
+            template,
+            field_name=field_name,
+        )
+        AppConfig._validate_beatmap_http_url(
+            candidate,
+            field_name=field_name,
+            environment=environment,
+            absolute_url_label="URL template",
+        )
+
+    @staticmethod
+    def _parse_beatmap_url_template_fields(
+        template: str,
+        *,
+        field_name: str,
+    ) -> tuple[_BeatmapUrlTemplateField, ...]:
         try:
             parsed_template = tuple(Formatter().parse(template))
         except ValueError as exc:
             msg = f"{field_name} must be a valid URL template"
             raise ValueError(msg) from exc
 
-        parsed_fields = tuple(
+        return tuple(
             (placeholder, conversion, format_spec)
             for _, placeholder, format_spec, conversion in parsed_template
             if placeholder is not None
         )
+
+    @staticmethod
+    def _validate_beatmap_url_template_fields(
+        parsed_fields: tuple[_BeatmapUrlTemplateField, ...],
+        *,
+        field_name: str,
+    ) -> None:
         beatmap_id_fields = tuple(
             field for field in parsed_fields if field[0] == _BEATMAP_URL_TEMPLATE_FIELD
         )
-        if len(beatmap_id_fields) != 1:
-            msg = f"{field_name} must include exactly one {_BEATMAP_URL_TEMPLATE_TOKEN}"
-            raise ValueError(msg)
-        _, conversion, format_spec = beatmap_id_fields[0]
-        if conversion or format_spec:
-            msg = f"{field_name} must use exactly {_BEATMAP_URL_TEMPLATE_TOKEN}"
-            raise ValueError(msg)
+        AppConfig._validate_single_beatmap_id_template_field(
+            beatmap_id_fields,
+            field_name=field_name,
+        )
 
         unsupported_placeholders = tuple(
             placeholder
@@ -279,14 +309,43 @@ class AppConfig(BaseSettings):
             )
             raise ValueError(msg)
 
+    @staticmethod
+    def _validate_single_beatmap_id_template_field(
+        beatmap_id_fields: tuple[_BeatmapUrlTemplateField, ...],
+        *,
+        field_name: str,
+    ) -> None:
+        if len(beatmap_id_fields) != 1:
+            msg = f"{field_name} must include exactly one {_BEATMAP_URL_TEMPLATE_TOKEN}"
+            raise ValueError(msg)
+        _, conversion, format_spec = beatmap_id_fields[0]
+        if conversion or format_spec:
+            msg = f"{field_name} must use exactly {_BEATMAP_URL_TEMPLATE_TOKEN}"
+            raise ValueError(msg)
+
+    @staticmethod
+    def _render_beatmap_url_template_candidate(
+        template: str,
+        *,
+        field_name: str,
+    ) -> str:
         try:
-            candidate = template.format(beatmap_id=1)
+            return template.format(beatmap_id=1)
         except ValueError as exc:
             msg = f"{field_name} must be a valid URL template"
             raise ValueError(msg) from exc
-        parsed = urlparse(candidate)
+
+    @staticmethod
+    def _validate_beatmap_http_url(
+        value: str,
+        *,
+        field_name: str,
+        environment: str,
+        absolute_url_label: str,
+    ) -> None:
+        parsed = urlparse(value)
         if not parsed.scheme or not parsed.netloc:
-            msg = f"{field_name} must be an absolute URL template"
+            msg = f"{field_name} must be an absolute {absolute_url_label}"
             raise ValueError(msg)
         if parsed.scheme not in {"http", "https"}:
             msg = f"{field_name} must use HTTP or HTTPS"
@@ -302,16 +361,12 @@ class AppConfig(BaseSettings):
         field_name: str,
         environment: str,
     ) -> None:
-        parsed = urlparse(base_url)
-        if not parsed.scheme or not parsed.netloc:
-            msg = f"{field_name} must be an absolute URL"
-            raise ValueError(msg)
-        if parsed.scheme not in {"http", "https"}:
-            msg = f"{field_name} must use HTTP or HTTPS"
-            raise ValueError(msg)
-        if environment != _TEST_ENVIRONMENT and parsed.scheme != "https":
-            msg = f"{field_name} must use HTTPS outside test configuration"
-            raise ValueError(msg)
+        AppConfig._validate_beatmap_http_url(
+            base_url,
+            field_name=field_name,
+            environment=environment,
+            absolute_url_label="URL",
+        )
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="")
 
