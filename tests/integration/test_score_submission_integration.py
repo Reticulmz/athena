@@ -30,7 +30,6 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
-from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import Mod
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset
@@ -50,11 +49,12 @@ from osu_server.services.commands.scores import (
     SubmissionOutcome,
     SubmitScoreUseCase,
     generate_submission_fingerprint,
-    generate_submission_request_hash,
 )
-from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
-from tests.support.credentials import fixed_test_password_md5
-from tests.support.fakes import StubScorePayloadDecryptor, make_score_authorization_service
+from tests.support.fakes import (
+    make_score_authorization_service,
+    make_test_parsed_score,
+    make_test_submission_input,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -138,7 +138,7 @@ def _fingerprint_for(
         user_id=user_id,
         beatmap_checksum=beatmap_checksum,
         submitted_timestamp=submitted_timestamp,
-        request_hash=generate_submission_request_hash(input_data),
+        request_hash=input_data.request_hash,
     )
 
 
@@ -377,14 +377,8 @@ def uow_factory(
 
 
 @pytest.fixture
-def score_decryptor() -> StubScorePayloadDecryptor:
-    return StubScorePayloadDecryptor()
-
-
-@pytest.fixture
 def service(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> ProcessScoreSubmissionUseCase:
     """Create ProcessScoreSubmissionUseCase with SQLAlchemy repositories."""
     auth_service = make_score_authorization_service()
@@ -393,8 +387,6 @@ def service(
     return ProcessScoreSubmissionUseCase(
         submit_score_use_case,
         SQLAlchemyBlobStorageStub(uow_factory),
-        score_decryptor,
-        StableScorePayloadParser(),
         auth_service,
         beatmap_resolver,
     )
@@ -403,16 +395,9 @@ def service(
 @pytest.fixture
 def valid_input() -> ParsedSubmissionInput:
     """Valid submission input."""
-    return ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data",
-        iv=b"0" * 32,
+    return make_test_submission_input(
         replay_data=b"replay_binary_data_integration",
-        password_md5=fixed_test_password_md5(),
-        client_hash="integration_test_hash",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
+        request_hash="integration_test_hash",
     )
 
 
@@ -421,29 +406,22 @@ async def test_e2e_valid_submission_persists_to_database(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
-    score_decryptor: StubScorePayloadDecryptor,
     query_budget: QueryBudget,
 ) -> None:
     """E2E: Valid submission creates score, replay, and submission records in DB."""
-
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:integration_test_checksum_001:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+        ),
+    )
 
     with query_budget(
         max_queries=30,
         name="score-submission-valid-execute",
         duplicate_threshold=1,
     ):
-        result = await service.execute(valid_input)
+        result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -458,12 +436,12 @@ async def test_e2e_valid_submission_persists_to_database(
     assert score.playstyle == Playstyle.VANILLA
     assert score.beatmap_status_at_submission == BeatmapRankStatus.RANKED.value
 
-    assert valid_input.replay_data is not None
-    replay_checksum = hashlib.sha256(valid_input.replay_data).hexdigest()
+    assert input_data.replay_data is not None
+    replay_checksum = hashlib.sha256(input_data.replay_data).hexdigest()
     async with uow_factory() as uow:
         assert await uow.replays.exists_by_checksum(replay_checksum)
 
-    fingerprint = _fingerprint_for(valid_input)
+    fingerprint = _fingerprint_for(input_data)
     async with uow_factory() as uow:
         submission = await uow.submissions.get_by_fingerprint(fingerprint)
     assert submission is not None
@@ -480,32 +458,14 @@ async def test_e2e_valid_submission_persists_to_database(
 async def test_e2e_database_transaction_handling(
     service: ProcessScoreSubmissionUseCase,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Database transactions are handled correctly."""
-
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        payload = (
+    input_data = make_test_submission_input(
+        payload=(
             "1000:test_user:abc123:integration_test_checksum_002:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data",
-        iv=b"0" * 32,
+        ),
+        request_hash="tx_test_hash",
         replay_data=b"replay_data_tx_test",
-        password_md5=fixed_test_password_md5(),
-        client_hash="tx_test_hash",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
     )
 
     result = await service.execute(input_data)
@@ -526,37 +486,14 @@ async def test_e2e_database_transaction_handling(
 async def test_e2e_concurrent_submission_handling(
     service: ProcessScoreSubmissionUseCase,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Concurrent submissions with different checksums are handled correctly."""
-    call_count = 0
-
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        nonlocal call_count
-        call_count += 1
-        payload = (
-            f"1000:test_user:abc123:int_test_cc_{call_count}:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
     # Create 3 concurrent submissions with different fingerprints
     inputs = [
-        ParsedSubmissionInput(
-            encrypted_payload=f"encrypted_data_{i}".encode(),
-            iv=b"0" * 32,
+        make_test_submission_input(
+            payload=f"1000:test_user:abc123:int_test_cc_{i}:0:0:100:10:5:0:0:2:500000:99:1:1",
+            request_hash=f"concurrent_hash_{i}",
             replay_data=f"replay_data_concurrent_{i}".encode(),
-            password_md5=fixed_test_password_md5(),
-            client_hash=f"concurrent_hash_{i}",
-            fail_time_ms=None,
-            osu_version="20240101",
-            beatmap_id=1,
-            submitted_at=datetime.now(UTC),
         )
         for i in range(3)
     ]
@@ -582,46 +519,26 @@ async def test_e2e_concurrent_submission_handling(
 async def test_e2e_duplicate_online_checksum_rejected_in_db(
     service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Duplicate online checksum rejects a different submission."""
-
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:int_test_dup:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+    parsed_score = make_test_parsed_score(
+        "1000:test_user:abc123:int_test_dup:0:0:100:10:5:0:0:2:500000:99:1:1"
+    )
 
     # First submission
-    input1 = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data_1",
-        iv=b"0" * 32,
+    input1 = make_test_submission_input(
+        parsed_score=parsed_score,
+        request_hash="duplicate_test_hash_1",
         replay_data=b"replay_data_1",
-        password_md5=fixed_test_password_md5(),
-        client_hash="duplicate_test_hash_1",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
     )
     result1 = await service.execute(input1)
     assert result1.outcome == SubmissionOutcome.COMPLETED
 
     # Second submission (different fingerprint, same online checksum)
-    input2 = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data_2",
-        iv=b"0" * 32,
+    input2 = make_test_submission_input(
+        parsed_score=parsed_score,
+        request_hash="duplicate_test_hash_2",
         replay_data=b"replay_data_2",
-        password_md5=fixed_test_password_md5(),
-        client_hash="duplicate_test_hash_2",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
     )
     result2 = await service.execute(input2)
     assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
@@ -642,35 +559,13 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
     service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
     uow_factory: SQLAlchemyUnitOfWorkFactory,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Eligible submit updates score-priority projection; retry returns saved PB delta."""
 
-    def mock_decrypt(
-        encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        if encrypted == b"encrypted_data_previous_best":
-            payload = "1000:test_user:abc123:int_test_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1"
-        else:
-            payload = (
-                "1000:test_user:abc123:int_test_lb_retry:0:"
-                f"{int(Mod.DOUBLE_TIME)}:100:10:5:0:0:2:500000:99:1:1"
-            )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    previous_input = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data_previous_best",
-        iv=b"0" * 32,
+    previous_input = make_test_submission_input(
+        payload="1000:test_user:abc123:int_test_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1",
+        request_hash="leaderboard_previous_hash",
         replay_data=b"replay_data_previous_best",
-        password_md5=fixed_test_password_md5(),
-        client_hash="leaderboard_previous_hash",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
         submitted_at=datetime.fromisoformat("2024-01-01T12:00:00+00:00"),
     )
     previous_result = await service.execute(previous_input)
@@ -682,15 +577,13 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
     assert previous_result.personal_best_delta.after_score_id == previous_result.score_id
     assert previous_result.personal_best_delta.updated is True
 
-    new_input = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data_new_best",
-        iv=b"0" * 32,
+    new_input = make_test_submission_input(
+        payload=(
+            "1000:test_user:abc123:int_test_lb_retry:0:"
+            f"{int(Mod.DOUBLE_TIME)}:100:10:5:0:0:2:500000:99:1:1"
+        ),
+        request_hash="leaderboard_new_hash",
         replay_data=b"replay_data_new_best",
-        password_md5=fixed_test_password_md5(),
-        client_hash="leaderboard_new_hash",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
         submitted_at=datetime.fromisoformat("2024-01-01T12:01:00+00:00"),
     )
     new_result = await service.execute(new_input)
@@ -756,31 +649,13 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
 async def test_e2e_failed_play_persists_to_database(
     service: ProcessScoreSubmissionUseCase,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: Failed play (passed=0) is stored in database."""
-
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        # passed=0 (last field)
-        payload = "1000:test_user:abc123:int_test_failed:0:0:50:10:5:0:0:10:200000:40:0:0"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data",
-        iv=b"0" * 32,
+    input_data = make_test_submission_input(
+        payload="1000:test_user:abc123:int_test_failed:0:0:50:10:5:0:0:10:200000:40:0:0",
+        request_hash="failed-play-hash",
         replay_data=b"replay_data_failed",
-        password_md5=fixed_test_password_md5(),
-        client_hash="1",
         fail_time_ms=30000,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
         submit_exit_classification="1",
     )
 
@@ -803,7 +678,6 @@ async def test_e2e_failed_play_persists_to_database(
 @pytest.mark.asyncio
 async def test_e2e_passed_score_submission_uses_beatmap_length_for_play_time(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """E2E: accepted passed score stores beatmap-length play time."""
     auth_service = make_score_authorization_service()
@@ -812,31 +686,15 @@ async def test_e2e_passed_score_submission_uses_beatmap_length_for_play_time(
     service = ProcessScoreSubmissionUseCase(
         submit_score_use_case,
         SQLAlchemyBlobStorageStub(uow_factory),
-        score_decryptor,
-        StableScorePayloadParser(),
         auth_service,
         beatmap_resolver,
     )
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:int_test_passed_timing:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data",
-        iv=b"0" * 32,
+    input_data = make_test_submission_input(
+        payload="1000:test_user:abc123:int_test_passed_timing:0:0:100:10:5:0:0:2:500000:99:1:1",
+        request_hash="passed-timing-hash",
         replay_data=b"replay_data_passed_timing",
-        password_md5=fixed_test_password_md5(),
-        client_hash="1",
         fail_time_ms=0,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
         submit_exit_classification="1",
     )
 
@@ -858,30 +716,13 @@ async def test_e2e_passed_score_submission_uses_beatmap_length_for_play_time(
 async def test_e2e_idempotent_retry_returns_cached_result(
     service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
-    score_decryptor: StubScorePayloadDecryptor,
     query_budget: QueryBudget,
 ) -> None:
     """E2E: Idempotent retry returns cached result from database."""
-
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:int_test_idem:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data",
-        iv=b"0" * 32,
+    input_data = make_test_submission_input(
+        payload="1000:test_user:abc123:int_test_idem:0:0:100:10:5:0:0:2:500000:99:1:1",
+        request_hash="idempotent_test_hash",
         replay_data=b"replay_data_idempotent",
-        password_md5=fixed_test_password_md5(),
-        client_hash="idempotent_test_hash",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
         submitted_at=datetime.fromisoformat("2024-01-01T12:00:00+00:00"),
     )
 

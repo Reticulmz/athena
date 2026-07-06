@@ -3,7 +3,7 @@
 import hashlib
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Never, Protocol
@@ -11,9 +11,8 @@ from typing import Never, Protocol
 import structlog
 
 from osu_server.domain.beatmaps import Beatmap, BeatmapResolveOptions, BeatmapResolveResult
-from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import Mod, ModCombination
-from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
+from osu_server.domain.scores.payload_parser import ParsedScore
 from osu_server.domain.scores.personal_best import PersonalBestDelta
 from osu_server.domain.scores.score import Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.domain.scores.user_stats import UserCurrentStats
@@ -50,16 +49,10 @@ from osu_server.services.queries.scores import (
     PerformanceSubmitResponseQuery,
     PerformanceSubmitResponseState,
 )
-from osu_server.shared.errors import DecryptionError
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 _REPLAY_CONTENT_TYPE = "application/octet-stream"
-_OPAQUE_METADATA_FIELDS = frozenset({"fs", "bmk", "sbk", "c1", "st", "i", "token"})
-
-
-def _empty_submission_metadata() -> dict[str, str]:
-    return {}
 
 
 class _FingerprintHasher(Protocol):
@@ -109,19 +102,6 @@ class ReplayBlobStorage(Protocol):
         *,
         content_type: str,
     ) -> BlobStoreResult: ...
-
-
-class ScorePayloadDecryptor(Protocol):
-    def decrypt_score_payload(
-        self,
-        encrypted: bytes,
-        iv: bytes,
-        osu_version: str | None,
-    ) -> DecryptedPayload: ...
-
-
-class ScorePayloadParser(Protocol):
-    def parse(self, payload: str) -> ParsedScore: ...
 
 
 class BeatmapFileWarmupUseCase(Protocol):
@@ -219,26 +199,17 @@ class SubmissionResult:
 class ParsedSubmissionInput:
     """score submit transport から正規化された command input。"""
 
-    encrypted_payload: bytes
-    iv: bytes
+    parsed_score: ParsedScore
+    request_hash: str
+    opaque_field_hashes: Mapping[str, str]
+    decrypt_latency_ms: float
     replay_data: bytes | None
     password_md5: str
-    client_hash: str
     fail_time_ms: int | None
     osu_version: str | None
     submitted_at: datetime
     beatmap_id: int | None = None
     submit_exit_classification: str | None = None
-    submission_metadata: Mapping[str, str] = field(default_factory=_empty_submission_metadata)
-
-
-def hash_submission_metadata(metadata: Mapping[str, str]) -> dict[str, str]:
-    """任意の opaque submission field を SHA-256 hash にして返す。"""
-    return {
-        f"{key}_sha256": hashlib.sha256(value.encode()).hexdigest()
-        for key, value in sorted(metadata.items())
-        if key in _OPAQUE_METADATA_FIELDS
-    }
 
 
 def _grade_discrepancy(client_grade: str | None, server_grade: str) -> dict[str, str] | None:
@@ -253,33 +224,6 @@ def _grade_discrepancy(client_grade: str | None, server_grade: str) -> dict[str,
         "client_grade": client_grade,
         "server_grade": server_grade,
     }
-
-
-def generate_submission_request_hash(input_data: ParsedSubmissionInput) -> str:
-    """network retry 間で安定する request material を hash 化する。"""
-    hasher = hashlib.sha256()
-    _update_fingerprint_bytes(hasher, b"encrypted_payload", input_data.encrypted_payload)
-    _update_fingerprint_bytes(hasher, b"iv", input_data.iv)
-    _update_fingerprint_text(
-        hasher,
-        "password_md5_hash",
-        hashlib.sha256(input_data.password_md5.encode()).hexdigest(),
-    )
-    replay_marker = b"" if input_data.replay_data is None else input_data.replay_data
-    _update_fingerprint_bytes(hasher, b"replay", replay_marker)
-    _update_fingerprint_text(hasher, "replay_present", str(input_data.replay_data is not None))
-    _update_fingerprint_text(hasher, "client_hash", input_data.client_hash)
-    _update_fingerprint_text(hasher, "fail_time_ms", str(input_data.fail_time_ms))
-    _update_fingerprint_text(
-        hasher,
-        "submit_exit_classification",
-        str(input_data.submit_exit_classification),
-    )
-    _update_fingerprint_text(hasher, "osu_version", str(input_data.osu_version))
-    _update_fingerprint_text(hasher, "beatmap_id", str(input_data.beatmap_id or ""))
-    for key, digest in hash_submission_metadata(input_data.submission_metadata).items():
-        _update_fingerprint_text(hasher, f"metadata:{key}", digest)
-    return hasher.hexdigest()
 
 
 def generate_submission_fingerprint(
@@ -385,12 +329,6 @@ class _SubmissionAttempt:
     start_time: float
     request_hash: str
     opaque_field_hashes: Mapping[str, str]
-
-
-@dataclass(frozen=True, slots=True)
-class _DecryptedSubmission:
-    payload: DecryptedPayload
-    latency_ms: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -660,17 +598,14 @@ def _completed_submit_response_result(
 class ProcessScoreSubmissionUseCase:
     """score submission command workflow を編成する module。
 
-    decryption、parse、authorization、beatmap eligibility、validation、
-    replay storage、score persistence、performance request をこの interface の内側に
-    集中させる。
+    authorization、beatmap eligibility、validation、replay storage、
+    score persistence、performance request をこの interface の内側に集中させる。
     """
 
     def __init__(
         self,
         submit_score_use_case: SubmitScoreUseCase,
         replay_blob_storage: ReplayBlobStorage,
-        payload_decryptor: ScorePayloadDecryptor,
-        payload_parser: ScorePayloadParser,
         auth_service: ScoreSubmissionAuthorizer,
         beatmap_resolver: BeatmapEligibilityResolver,
         beatmap_file_warmup_use_case: BeatmapFileWarmupUseCase | None = None,
@@ -682,8 +617,6 @@ class ProcessScoreSubmissionUseCase:
     ) -> None:
         self._submit_score_use_case: SubmitScoreUseCase = submit_score_use_case
         self._replay_blob_storage: ReplayBlobStorage = replay_blob_storage
-        self._payload_decryptor: ScorePayloadDecryptor = payload_decryptor
-        self._payload_parser: ScorePayloadParser = payload_parser
         self._auth_service: ScoreSubmissionAuthorizer = auth_service
         self._beatmap_resolver: BeatmapEligibilityResolver = beatmap_resolver
         self._beatmap_file_warmup_use_case: BeatmapFileWarmupUseCase | None = (
@@ -708,24 +641,23 @@ class ProcessScoreSubmissionUseCase:
     async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult:
         """score を検証し、durable state と replay blob に反映する。
 
-        処理順序は request hash/fingerprint の生成、payload 復号、parse、
-        authorization、beatmap eligibility、hit count validation、replay 保存、
-        score persistence、performance calculation request の順に固定する。
+        処理順序は fingerprint 生成、authorization、beatmap eligibility、
+        hit count validation、replay 保存、score persistence、
+        performance calculation request の順に固定する。
 
         retry で再送されても同じ request と同じ score 送信を識別できるよう、
-        request hash と submission fingerprint は durable mutation 前に生成する。
+        request hash は transport adapter が wire request から生成し、
+        submission fingerprint は durable mutation 前に生成する。
         """
         attempt = _SubmissionAttempt(
             input_data=input_data,
             start_time=time.perf_counter(),
-            request_hash=generate_submission_request_hash(input_data),
-            opaque_field_hashes=hash_submission_metadata(input_data.submission_metadata),
+            request_hash=input_data.request_hash,
+            opaque_field_hashes=input_data.opaque_field_hashes,
         )
 
         try:
-            decrypted = self._decrypt_submission_payload(attempt)
-            parsed = self._parse_submission_payload(attempt, decrypted)
-            authorized = await self._authorize_submission(attempt, parsed)
+            authorized = await self._authorize_submission(attempt, input_data.parsed_score)
             await self._reject_unsupported_playstyle(attempt, authorized)
             accepted_beatmap = await self._resolve_accepted_beatmap(attempt, authorized)
             validated = await self._validate_submission(attempt, authorized)
@@ -743,70 +675,10 @@ class ProcessScoreSubmissionUseCase:
                 accepted_beatmap=accepted_beatmap,
                 validated=validated,
                 replay=replay,
-                decrypt_latency_ms=decrypted.latency_ms,
+                decrypt_latency_ms=input_data.decrypt_latency_ms,
             )
         except _SubmissionStoppedError as stopped:
             return stopped.result
-
-    def _decrypt_submission_payload(self, attempt: _SubmissionAttempt) -> _DecryptedSubmission:
-        decrypt_start = time.perf_counter()
-        try:
-            decrypted = self._payload_decryptor.decrypt_score_payload(
-                attempt.input_data.encrypted_payload,
-                attempt.input_data.iv,
-                attempt.input_data.osu_version,
-            )
-            decrypt_latency_ms = (time.perf_counter() - decrypt_start) * 1000
-        except DecryptionError as e:
-            logger.warning(
-                "score_submission_failed",
-                reason="decryption_failed",
-                request_hash=attempt.request_hash,
-                opaque_fields=attempt.opaque_field_hashes or None,
-                error=str(e),
-            )
-            _stop_submission(
-                SubmissionResult(
-                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                    error_reason=f"decryption_failed: {e}",
-                )
-            )
-        if not decrypted.checksum_valid:
-            logger.warning(
-                "score_submission_failed",
-                reason="crypto_checksum_invalid",
-                request_hash=attempt.request_hash,
-                opaque_fields=attempt.opaque_field_hashes or None,
-            )
-            _stop_submission(
-                SubmissionResult(
-                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                    error_reason="crypto_checksum_invalid",
-                )
-            )
-        return _DecryptedSubmission(payload=decrypted, latency_ms=decrypt_latency_ms)
-
-    def _parse_submission_payload(
-        self,
-        attempt: _SubmissionAttempt,
-        decrypted: _DecryptedSubmission,
-    ) -> ParsedScore:
-        try:
-            return self._payload_parser.parse(decrypted.payload.plaintext)
-        except ParseError as e:
-            logger.warning(
-                "score_submission_failed",
-                reason="parse_failed",
-                request_hash=attempt.request_hash,
-                opaque_fields=attempt.opaque_field_hashes or None,
-                error=str(e),
-            )
-            _stop_submission(
-                SubmissionResult(
-                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
-                    error_reason=f"parse_failed: {e}",
-                )
-            )
 
     async def _authorize_submission(
         self,

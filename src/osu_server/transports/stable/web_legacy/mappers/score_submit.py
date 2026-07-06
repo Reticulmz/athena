@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from starlette.responses import Response
 
@@ -24,8 +26,10 @@ from osu_server.services.commands.scores import (
     SubmissionOutcome,
     SubmissionResult,
 )
+from osu_server.shared.errors import DecryptionError
 
 if TYPE_CHECKING:
+    from osu_server.domain.scores.decryption import DecryptedPayload
     from osu_server.domain.scores.personal_best import PersonalBestDelta
     from osu_server.domain.scores.user_stats import UserCurrentStats
 
@@ -36,12 +40,62 @@ _NO_PAYLOAD_USER_ID = 0
 _STABLE_SUBMITTED_AT_INDEX = 16
 _STABLE_CLIENT_VERSION_INDEX = 17
 _STABLE_CLIENT_CHECKSUM_INDEX = 18
+_OPAQUE_METADATA_FIELDS = frozenset({"fs", "bmk", "sbk", "c1", "st", "i", "token"})
+
+
+class _FingerprintHasher(Protocol):
+    def update(self, data: bytes, /) -> None: ...
+
+
+def _update_fingerprint_bytes(hasher: _FingerprintHasher, label: bytes, value: bytes) -> None:
+    hasher.update(label)
+    hasher.update(b"\0")
+    hasher.update(str(len(value)).encode())
+    hasher.update(b"\0")
+    hasher.update(value)
+    hasher.update(b"\0")
+
+
+def _update_fingerprint_text(hasher: _FingerprintHasher, label: str, value: str) -> None:
+    _update_fingerprint_bytes(hasher, label.encode(), value.encode())
+
+
+def _hash_submission_metadata(metadata: dict[str, str]) -> dict[str, str]:
+    return {
+        f"{key}_sha256": hashlib.sha256(value.encode()).hexdigest()
+        for key, value in sorted(metadata.items())
+        if key in _OPAQUE_METADATA_FIELDS
+    }
+
+
+class StableScorePayloadDecryptor(Protocol):
+    """Stable score payload の復号 port."""
+
+    def decrypt_score_payload(
+        self,
+        encrypted: bytes,
+        iv: bytes,
+        osu_version: str | None,
+    ) -> DecryptedPayload:
+        """encrypted payload と IV を復号し checksum 検証結果を返す."""
+        ...
 
 
 class StableScorePayloadParser:
-    """Map stable score payload text into canonical score domain values."""
+    """Stable score payload text を canonical score domain 値へ変換する parser."""
 
     def parse(self, payload: str) -> ParsedScore:
+        """legacy/stable score payload を ParsedScore に変換する.
+
+        Args:
+            payload: stable client が送る colon-delimited payload.
+
+        Returns:
+            ParsedScore.
+
+        Raises:
+            ParseError: payload が空, field count が不正, または field 値を変換できない場合.
+        """
         if not payload:
             raise ParseError("Payload cannot be empty")
 
@@ -59,8 +113,28 @@ class StableScorePayloadParser:
 
 
 @dataclass(frozen=True, slots=True)
+class StableScoreSubmitRequestMapping:
+    """Stable multipart request から取り出した wire material と診断情報."""
+
+    encrypted_payload: bytes
+    iv: bytes
+    replay_data: bytes | None
+    password_md5: str
+    client_hash: str
+    submitted_at: datetime
+    score_field_count: int
+    replay_present: bool
+    replay_byte_size: int | None
+    fail_time_ms: int | None
+    submit_exit_classification: str | None
+    osu_version: str | None
+    beatmap_id: int | None
+    submission_metadata: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
 class StableScoreSubmitCommandMapping:
-    """Mapped command input plus stable transport diagnostics."""
+    """Command input と stable transport 診断情報をまとめた結果."""
 
     input_data: ParsedSubmissionInput
     score_field_count: int
@@ -69,6 +143,26 @@ class StableScoreSubmitCommandMapping:
     fail_time_ms: int | None
     submit_exit_classification: str | None
     osu_version: str | None
+
+
+class StableScoreSubmitDecodeError(Exception):
+    """Stable score submit payload を command input に変換できない場合の例外。"""
+
+    def __init__(
+        self,
+        *,
+        result: SubmissionResult,
+        reason: str,
+        request_hash: str,
+        opaque_field_hashes: dict[str, str],
+        error: str | None = None,
+    ) -> None:
+        super().__init__(result.error_reason)
+        self.result: SubmissionResult = result
+        self.reason: str = reason
+        self.request_hash: str = request_hash
+        self.opaque_field_hashes: dict[str, str] = opaque_field_hashes
+        self.error: str | None = error
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +222,7 @@ class _OverallChartFields:
 
 
 class StableScoreSubmitMapper:
-    """Map stable legacy score submit wire data to command inputs and responses."""
+    """Stable legacy score submit の wire request/response を変換する mapper."""
 
     def __init__(
         self,
@@ -138,47 +232,42 @@ class StableScoreSubmitMapper:
         self._limits: MultipartLimits = limits or MultipartLimits()
         self._stable_web_base_url: str = stable_web_base_url.rstrip("/")
 
-    def to_command_input(
+    def to_request_mapping(
         self,
         *,
         body: bytes,
         content_type: str,
         submitted_at: datetime,
-    ) -> ParsedSubmissionInput:
-        return self.to_command_mapping(
-            body=body,
-            content_type=content_type,
-            submitted_at=submitted_at,
-        ).input_data
+    ) -> StableScoreSubmitRequestMapping:
+        """multipart body を復号前の request mapping に変換する.
 
-    def to_command_mapping(
-        self,
-        *,
-        body: bytes,
-        content_type: str,
-        submitted_at: datetime,
-    ) -> StableScoreSubmitCommandMapping:
+        Args:
+            body: stable client が送信した multipart body.
+            content_type: multipart boundary を含む Content-Type header.
+            submitted_at: transport が request を受け取った時刻.
+
+        Returns:
+            復号前 payload, replay, metadata を含む request mapping.
+
+        Raises:
+            MultipartParseError: multipart body が stable score submit として不正な場合.
+        """
         parsed = parse(body, content_type, self._limits)
-        input_data = ParsedSubmissionInput(
+        return StableScoreSubmitRequestMapping(
             encrypted_payload=parsed.encrypted_payload,
             iv=parsed.iv,
             replay_data=parsed.replay_data,
             password_md5=parsed.password_md5,
             client_hash=parsed.client_hash,
-            fail_time_ms=parsed.fail_time_ms,
-            osu_version=parsed.osu_version,
             submitted_at=submitted_at,
-            submit_exit_classification=parsed.submit_exit_classification,
-            submission_metadata=parsed.submission_metadata,
-        )
-        return StableScoreSubmitCommandMapping(
-            input_data=input_data,
             score_field_count=parsed.score_field_count,
             replay_present=parsed.replay_data is not None,
             replay_byte_size=len(parsed.replay_data) if parsed.replay_data is not None else None,
             fail_time_ms=parsed.fail_time_ms,
             submit_exit_classification=parsed.submit_exit_classification,
             osu_version=parsed.osu_version,
+            beatmap_id=None,
+            submission_metadata=parsed.submission_metadata,
         )
 
     def to_response(
@@ -198,6 +287,152 @@ class StableScoreSubmitMapper:
         if result.outcome in {SubmissionOutcome.RETRYABLE, SubmissionOutcome.ACCEPTED_PENDING}:
             return Response(b"error: yes", status_code=200)
         return Response(b"error: no", status_code=200)
+
+
+class StableScoreSubmitDecoder:
+    """Stable score submit wire payload を command input に変換する。"""
+
+    def __init__(
+        self,
+        payload_decryptor: StableScorePayloadDecryptor,
+        payload_parser: StableScorePayloadParser,
+    ) -> None:
+        self._payload_decryptor: StableScorePayloadDecryptor = payload_decryptor
+        self._payload_parser: StableScorePayloadParser = payload_parser
+
+    def to_command_input(
+        self,
+        request_mapping: StableScoreSubmitRequestMapping,
+    ) -> ParsedSubmissionInput:
+        """request mapping を復号して command input だけを返す.
+
+        Args:
+            request_mapping: Stable multipart から取り出した復号前 request material.
+
+        Returns:
+            score submission command に渡す parsed input.
+
+        Raises:
+            StableScoreSubmitDecodeError: 復号, checksum 検証, または payload parse に失敗した場合.
+        """
+        return self.to_command_mapping(request_mapping).input_data
+
+    def to_command_mapping(
+        self,
+        request_mapping: StableScoreSubmitRequestMapping,
+    ) -> StableScoreSubmitCommandMapping:
+        """request mapping を復号/parse し command mapping に変換する.
+
+        Args:
+            request_mapping: Stable multipart から取り出した復号前 request material.
+
+        Returns:
+            command input と stable transport 診断情報.
+
+        Raises:
+            StableScoreSubmitDecodeError: 復号, checksum 検証, または payload parse に失敗した場合.
+        """
+        request_hash = _generate_stable_score_submit_request_hash(request_mapping)
+        opaque_field_hashes = _hash_submission_metadata(request_mapping.submission_metadata)
+        decrypt_start = time.perf_counter()
+        try:
+            decrypted = self._payload_decryptor.decrypt_score_payload(
+                request_mapping.encrypted_payload,
+                request_mapping.iv,
+                request_mapping.osu_version,
+            )
+            decrypt_latency_ms = (time.perf_counter() - decrypt_start) * 1000
+        except DecryptionError as exc:
+            raise StableScoreSubmitDecodeError(
+                result=SubmissionResult(
+                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
+                    error_reason=f"decryption_failed: {exc}",
+                ),
+                reason="decryption_failed",
+                request_hash=request_hash,
+                opaque_field_hashes=opaque_field_hashes,
+                error=str(exc),
+            ) from exc
+
+        if not decrypted.checksum_valid:
+            raise StableScoreSubmitDecodeError(
+                result=SubmissionResult(
+                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
+                    error_reason="crypto_checksum_invalid",
+                ),
+                reason="crypto_checksum_invalid",
+                request_hash=request_hash,
+                opaque_field_hashes=opaque_field_hashes,
+            )
+
+        try:
+            parsed_score = self._payload_parser.parse(decrypted.plaintext)
+        except ParseError as exc:
+            raise StableScoreSubmitDecodeError(
+                result=SubmissionResult(
+                    outcome=SubmissionOutcome.TERMINAL_REJECTED,
+                    error_reason=f"parse_failed: {exc}",
+                ),
+                reason="parse_failed",
+                request_hash=request_hash,
+                opaque_field_hashes=opaque_field_hashes,
+                error=str(exc),
+            ) from exc
+
+        input_data = ParsedSubmissionInput(
+            parsed_score=parsed_score,
+            request_hash=request_hash,
+            opaque_field_hashes=opaque_field_hashes,
+            decrypt_latency_ms=decrypt_latency_ms,
+            replay_data=request_mapping.replay_data,
+            password_md5=request_mapping.password_md5,
+            fail_time_ms=request_mapping.fail_time_ms,
+            osu_version=request_mapping.osu_version,
+            submitted_at=request_mapping.submitted_at,
+            beatmap_id=request_mapping.beatmap_id,
+            submit_exit_classification=request_mapping.submit_exit_classification,
+        )
+        return StableScoreSubmitCommandMapping(
+            input_data=input_data,
+            score_field_count=request_mapping.score_field_count,
+            replay_present=request_mapping.replay_present,
+            replay_byte_size=request_mapping.replay_byte_size,
+            fail_time_ms=request_mapping.fail_time_ms,
+            submit_exit_classification=request_mapping.submit_exit_classification,
+            osu_version=request_mapping.osu_version,
+        )
+
+
+def _generate_stable_score_submit_request_hash(
+    request_mapping: StableScoreSubmitRequestMapping,
+) -> str:
+    hasher = hashlib.sha256()
+    _update_fingerprint_bytes(hasher, b"encrypted_payload", request_mapping.encrypted_payload)
+    _update_fingerprint_bytes(hasher, b"iv", request_mapping.iv)
+    _update_fingerprint_text(
+        hasher,
+        "password_md5_hash",
+        hashlib.sha256(request_mapping.password_md5.encode()).hexdigest(),
+    )
+    replay_marker = b"" if request_mapping.replay_data is None else request_mapping.replay_data
+    _update_fingerprint_bytes(hasher, b"replay", replay_marker)
+    _update_fingerprint_text(
+        hasher,
+        "replay_present",
+        str(request_mapping.replay_data is not None),
+    )
+    _update_fingerprint_text(hasher, "client_hash", request_mapping.client_hash)
+    _update_fingerprint_text(hasher, "fail_time_ms", str(request_mapping.fail_time_ms))
+    _update_fingerprint_text(
+        hasher,
+        "submit_exit_classification",
+        str(request_mapping.submit_exit_classification),
+    )
+    _update_fingerprint_text(hasher, "osu_version", str(request_mapping.osu_version))
+    _update_fingerprint_text(hasher, "beatmap_id", str(request_mapping.beatmap_id or ""))
+    for key, digest in _hash_submission_metadata(request_mapping.submission_metadata).items():
+        _update_fingerprint_text(hasher, f"metadata:{key}", digest)
+    return hasher.hexdigest()
 
 
 def _is_int(value: str) -> bool:
@@ -522,6 +757,9 @@ __all__ = [
     "MultipartParseError",
     "StableScorePayloadParser",
     "StableScoreSubmitCommandMapping",
+    "StableScoreSubmitDecodeError",
+    "StableScoreSubmitDecoder",
     "StableScoreSubmitMapper",
     "StableScoreSubmitOverallStats",
+    "StableScoreSubmitRequestMapping",
 ]

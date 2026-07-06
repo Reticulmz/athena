@@ -8,6 +8,7 @@ from dishka import Provider, Scope
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
+from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
@@ -37,6 +38,8 @@ from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
     ReplayDownloadQueryParser,
+    StableScorePayloadParser,
+    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
 )
 from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
@@ -60,7 +63,10 @@ _DISHKA_RUNTIME_HINTS = (
     ReplayDownloadQuery,
     ReplayDownloadQueryParser,
     ReplayDownloadHandler,
+    ScoreCryptoService,
     SessionCredentialsQueryUseCase,
+    StableScorePayloadParser,
+    StableScoreSubmitDecoder,
     UserQueryRepository,
 )
 
@@ -135,15 +141,32 @@ class StableWebLegacyProviderSet(Provider):
         )
 
     @provide
+    def stable_score_payload_parser(self) -> StableScorePayloadParser:
+        return StableScorePayloadParser()
+
+    @provide
+    def stable_score_submit_decoder(
+        self,
+        payload_decryptor: ScoreCryptoService,
+        payload_parser: StableScorePayloadParser,
+    ) -> StableScoreSubmitDecoder:
+        return StableScoreSubmitDecoder(
+            payload_decryptor=payload_decryptor,
+            payload_parser=payload_parser,
+        )
+
+    @provide
     def score_submit_handler(
         self,
         submit_score_command: ProcessScoreSubmissionUseCase,
         mapper: StableScoreSubmitMapper,
+        decoder: StableScoreSubmitDecoder,
         current_user_stats_query: CurrentUserStatsQuery,
         event_bus: LocalEventBus,
     ) -> ScoreSubmitHandler:
         return ScoreSubmitHandler(
             submit_score_command=submit_score_command,
+            decoder=decoder,
             mapper=mapper,
             current_user_stats_query=current_user_stats_query,
             event_bus=event_bus,

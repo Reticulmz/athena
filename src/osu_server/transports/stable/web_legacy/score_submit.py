@@ -18,6 +18,8 @@ from osu_server.services.queries.scores import (
 )
 from osu_server.transports.stable.web_legacy.mappers import (
     MultipartParseError,
+    StableScoreSubmitDecodeError,
+    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
     StableScoreSubmitOverallStats,
 )
@@ -56,12 +58,14 @@ class ScoreSubmitHandler:
     def __init__(
         self,
         submit_score_command: ScoreSubmissionCommand,
+        decoder: StableScoreSubmitDecoder,
         limits: MultipartLimits | None = None,
         mapper: StableScoreSubmitMapper | None = None,
         current_user_stats_query: CurrentUserStatsQueryPort | None = None,
         event_bus: LocalEventBus | None = None,
     ) -> None:
         self._submit_score_command: ScoreSubmissionCommand = submit_score_command
+        self._decoder: StableScoreSubmitDecoder = decoder
         self._mapper: StableScoreSubmitMapper = mapper or StableScoreSubmitMapper(limits)
         self._current_user_stats_query: CurrentUserStatsQueryPort | None = current_user_stats_query
         self._event_bus: LocalEventBus | None = event_bus
@@ -71,7 +75,7 @@ class ScoreSubmitHandler:
         try:
             body = await request.body()
             content_type = request.headers.get("content-type", "")
-            command_mapping = self._mapper.to_command_mapping(
+            request_mapping = self._mapper.to_request_mapping(
                 body=body,
                 content_type=content_type,
                 submitted_at=datetime.now(UTC),
@@ -83,6 +87,18 @@ class ScoreSubmitHandler:
                 error=str(exc),
             )
             return Response(b"error: no", status_code=200)
+
+        try:
+            command_mapping = self._decoder.to_command_mapping(request_mapping)
+        except StableScoreSubmitDecodeError as exc:
+            logger.warning(
+                "score_submission_failed",
+                reason=exc.reason,
+                request_hash=exc.request_hash,
+                opaque_fields=exc.opaque_field_hashes or None,
+                error=exc.error,
+            )
+            return self._mapper.to_response(exc.result)
 
         logger.debug(
             "score_submission_multipart_parsed",

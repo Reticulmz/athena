@@ -7,7 +7,6 @@ from typing import final
 from dishka import Provider, Scope
 
 from osu_server.composition.providers._dishka import provide
-from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.infrastructure.performance.interfaces import PerformanceCalculator
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
 from osu_server.repositories.interfaces.session_store import SessionStore
@@ -24,7 +23,6 @@ from osu_server.services.queries.scores import (
     CurrentUserStatsQuery,
     PerformanceResponseQuery,
 )
-from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
 
 _DISHKA_RUNTIME_HINTS = (
     BeatmapMirrorService,
@@ -35,9 +33,7 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapPersonalBestRankQuery,
     CurrentUserStatsQuery,
     RequestPerformanceCalculationUseCase,
-    ScoreCryptoService,
     SessionStore,
-    StableScorePayloadParser,
     SubmitScoreUseCase,
     RequestBeatmapFileWarmupUseCase,
     UnitOfWorkFactory,
@@ -69,16 +65,10 @@ class ScoreSubmissionProviderSet(Provider):
         return SubmitScoreUseCase(unit_of_work_factory=uow_factory)
 
     @provide
-    def stable_score_payload_parser(self) -> StableScorePayloadParser:
-        return StableScorePayloadParser()
-
-    @provide
     def process_score_submission_use_case(
         self,
         submit_score_use_case: SubmitScoreUseCase,
         replay_blob_storage: BlobStorageService,
-        payload_decryptor: ScoreCryptoService,
-        payload_parser: StableScorePayloadParser,
         auth_service: ScoreAuthorizationService,
         beatmap_resolver: BeatmapMirrorService,
         beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
@@ -91,8 +81,6 @@ class ScoreSubmissionProviderSet(Provider):
         return ProcessScoreSubmissionUseCase(
             submit_score_use_case=submit_score_use_case,
             replay_blob_storage=replay_blob_storage,
-            payload_decryptor=payload_decryptor,
-            payload_parser=payload_parser,
             auth_service=auth_service,
             beatmap_resolver=beatmap_resolver,
             beatmap_file_warmup_use_case=beatmap_file_warmup,

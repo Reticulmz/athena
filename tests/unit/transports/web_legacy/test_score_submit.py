@@ -1,6 +1,7 @@
 """Unit tests for score submit handler."""
 
 import base64
+import hashlib
 from decimal import Decimal
 from typing import Protocol, final
 
@@ -11,6 +12,7 @@ from starlette.responses import Response
 
 from osu_server.domain.events.scores import CurrentUserStatsUpdated
 from osu_server.domain.scores import Playstyle, Ruleset
+from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.user_stats import UserCurrentStats
 from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
@@ -21,8 +23,13 @@ from osu_server.services.queries.scores import (
     CurrentUserStatsQueryInput,
     CurrentUserStatsQueryResult,
 )
-from osu_server.transports.stable.web_legacy.mappers import StableScoreSubmitMapper
+from osu_server.transports.stable.web_legacy.mappers import (
+    StableScorePayloadParser,
+    StableScoreSubmitDecoder,
+    StableScoreSubmitMapper,
+)
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
+from tests.support.fakes import StubScorePayloadDecryptor
 from tests.support.starlette_requests import make_starlette_request
 
 
@@ -76,6 +83,18 @@ def _score_submit_request(body: bytes, content_type: str) -> Request:
         path="/web/osu-submit-modular-selector.php",
         headers=((b"content-type", content_type.encode()),),
         body=body,
+    )
+
+
+def _score_submit_decoder() -> StableScoreSubmitDecoder:
+    return StableScoreSubmitDecoder(
+        payload_decryptor=StubScorePayloadDecryptor(
+            DecryptedPayload(
+                plaintext="1000:test_user:abc123:online_checksum:0:0:100:10:5:0:0:2:500000:99:1:1",
+                checksum_valid=True,
+            )
+        ),
+        payload_parser=StableScorePayloadParser(),
     )
 
 
@@ -135,7 +154,7 @@ async def test_handle_score_submit_completed(mock_request: Request) -> None:
             score_id=12345,
         )
     )
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(service, decoder=_score_submit_decoder())
 
     with structlog.testing.capture_logs() as cap_logs:
         response = await handler(mock_request)
@@ -146,7 +165,9 @@ async def test_handle_score_submit_completed(mock_request: Request) -> None:
     assert b"chartId:" in response.body
     assert service.last_input is not None
     assert service.last_input.beatmap_id is None
-    assert service.last_input.submission_metadata == {"token": "session_token"}
+    assert service.last_input.opaque_field_hashes == {
+        "token_sha256": hashlib.sha256(b"session_token").hexdigest()
+    }
     assert any(
         entry["event"] == "score_submission_multipart_parsed"
         and entry["score_field_count"] == 2
@@ -183,6 +204,7 @@ async def test_handle_score_submit_fires_current_user_stats_event(
     event_bus = StubLocalEventBus()
     handler = ScoreSubmitHandler(
         service,
+        decoder=_score_submit_decoder(),
         mapper=StableScoreSubmitMapper(stable_web_base_url="https://osu.athena.localhost"),
         current_user_stats_query=stats_query,
         event_bus=event_bus,
@@ -254,6 +276,7 @@ async def test_handle_score_submit_uses_result_current_stats_for_response_and_ev
     event_bus = StubLocalEventBus()
     handler = ScoreSubmitHandler(
         service,
+        decoder=_score_submit_decoder(),
         current_user_stats_query=stats_query,
         event_bus=event_bus,
     )
@@ -286,7 +309,7 @@ async def test_handle_score_submit_terminal_reject(mock_request: Request) -> Non
             error_reason="authorization_failure",
         )
     )
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(service, decoder=_score_submit_decoder())
 
     with structlog.testing.capture_logs() as cap_logs:
         response = await handler(mock_request)
@@ -310,7 +333,7 @@ async def test_handle_score_submit_retryable(mock_request: Request) -> None:
             error_reason="temporary_error",
         )
     )
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(service, decoder=_score_submit_decoder())
 
     response = await handler(mock_request)
 
@@ -325,7 +348,7 @@ async def test_handle_score_submit_parsing_error(valid_multipart_body: bytes) ->
     service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(outcome=SubmissionOutcome.COMPLETED, score_id=1)
     )
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(service, decoder=_score_submit_decoder())
 
     request = _score_submit_request(valid_multipart_body, "text/plain")
 

@@ -26,7 +26,6 @@ from osu_server.domain.beatmaps import (
     BeatmapResolveResult,
     BeatmapSourceVerification,
 )
-from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -35,17 +34,15 @@ from osu_server.services.commands.scores import (
     ProcessScoreSubmissionUseCase,
     SubmissionOutcome,
     generate_submission_fingerprint,
-    generate_submission_request_hash,
 )
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from tests.support.fakes import (
     StubBlobStorageService,
-    StubScorePayloadDecryptor,
-    StubScorePayloadParser,
     UowScoreSubmissionRepositoryView,
     make_score_authorization_service,
     make_score_repository_views,
     make_submit_score_use_case,
+    make_test_submission_input,
 )
 
 
@@ -88,7 +85,32 @@ def _fingerprint_for(
         user_id=user_id,
         beatmap_checksum=beatmap_checksum,
         submitted_timestamp=submitted_timestamp,
-        request_hash=generate_submission_request_hash(input_data),
+        request_hash=input_data.request_hash,
+    )
+
+
+def _valid_parsed_score(
+    *,
+    beatmap_checksum: str = "valid_checksum",
+    online_checksum: str = "12345678",
+) -> ParsedScore:
+    return ParsedScore(
+        user_id=1000,
+        username="test_user",
+        beatmap_checksum=beatmap_checksum,
+        online_checksum=online_checksum,
+        ruleset=0,
+        mods=ModCombination.none(),
+        n300=300,
+        n100=100,
+        n50=50,
+        geki=5,
+        katu=3,
+        miss=2,
+        score=1000000,
+        max_combo=500,
+        perfect=False,
+        passed=True,
     )
 
 
@@ -138,25 +160,20 @@ class FakeBeatmapResolver:
 def _make_process_score_submission_use_case(
     *,
     resolver: FakeBeatmapResolver,
-    score_decryptor: StubScorePayloadDecryptor,
     auth_service: ScoreAuthorizationService,
 ) -> tuple[
     ProcessScoreSubmissionUseCase,
     UowScoreSubmissionRepositoryView,
-    StubScorePayloadParser,
 ]:
     uow_factory = InMemoryUnitOfWorkFactory()
     _, submission_repo, _ = make_score_repository_views(uow_factory)
-    payload_parser = StubScorePayloadParser()
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        payload_parser,
         auth_service,
         resolver,
     )
-    return service, submission_repo, payload_parser
+    return service, submission_repo
 
 
 @pytest.mark.asyncio
@@ -185,58 +202,18 @@ async def test_authorization_failure_does_not_log_raw_password_md5() -> None:
         )
     )
 
-    score_decryptor = StubScorePayloadDecryptor()
-    service, _, payload_parser = _make_process_score_submission_use_case(
+    service, _ = _make_process_score_submission_use_case(
         resolver=resolver,
-        score_decryptor=score_decryptor,
         auth_service=auth_service,
     )
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        return DecryptedPayload(
-            plaintext="1000|test_user|0|300|100|50|5|3|2|1|500|1000|True|0|12345678|0|0|98765432|0",
-            checksum_valid=True,
-        )
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    def mock_parse(_plaintext: str) -> ParsedScore:
-        return ParsedScore(
-            user_id=1000,
-            username="test_user",
-            beatmap_checksum="valid_checksum",
-            online_checksum="12345678",
-            ruleset=0,
-            mods=ModCombination.none(),
-            n300=300,
-            n100=100,
-            n50=50,
-            geki=5,
-            katu=3,
-            miss=2,
-            score=1000000,
-            max_combo=500,
-            perfect=False,
-            passed=True,
-        )
-
-    payload_parser.set_factory(mock_parse)
-
     invalid_password = "invalid_password_md5_hash_12345"
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted",
-        iv=b"1234567890123456",
+    input_data = make_test_submission_input(
+        parsed_score=_valid_parsed_score(),
         replay_data=None,
         password_md5=invalid_password,
-        client_hash="client123",
-        fail_time_ms=None,
         osu_version="2024.101.0",
         beatmap_id=123,
-        submitted_at=datetime.now(UTC),
     )
 
     # Capture actual log output
@@ -295,56 +272,17 @@ async def test_failure_categories_are_logged() -> None:
             denial_reason=None,
         )
     )
-    score_decryptor = StubScorePayloadDecryptor()
-    service, _, payload_parser = _make_process_score_submission_use_case(
+    service, _ = _make_process_score_submission_use_case(
         resolver=resolver,
-        score_decryptor=score_decryptor,
         auth_service=auth_service,
     )
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        return DecryptedPayload(
-            plaintext="1000|test_user|0|300|100|50|5|3|2|1|500|1000|True|0|12345678|0|0|98765432|0",
-            checksum_valid=True,
-        )
-
-    def mock_parse(_plaintext: str) -> ParsedScore:
-        return ParsedScore(
-            user_id=1000,
-            username="test_user",
-            beatmap_checksum="valid_checksum",
-            online_checksum="12345678",
-            ruleset=0,
-            mods=ModCombination.none(),
-            n300=300,
-            n100=100,
-            n50=50,
-            geki=5,
-            katu=3,
-            miss=2,
-            score=1000000,
-            max_combo=500,
-            perfect=False,
-            passed=True,
-        )
-
-    score_decryptor.set_factory(mock_decrypt)
-    payload_parser.set_factory(mock_parse)
-
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted",
-        iv=b"1234567890123456",
+    input_data = make_test_submission_input(
+        parsed_score=_valid_parsed_score(),
         replay_data=None,
         password_md5="invalid",
-        client_hash="client123",
-        fail_time_ms=None,
         osu_version="2024.101.0",
         beatmap_id=123,
-        submitted_at=datetime.now(UTC),
     )
 
     with structlog.testing.capture_logs() as cap_logs:
@@ -376,25 +314,17 @@ async def test_failure_categories_are_logged() -> None:
             denial_reason="status_not_ranked",
         )
     )
-    score_decryptor2 = StubScorePayloadDecryptor()
-    service2, _, payload_parser2 = _make_process_score_submission_use_case(
+    service2, _ = _make_process_score_submission_use_case(
         resolver=ineligible_resolver,
-        score_decryptor=score_decryptor2,
         auth_service=auth_service,
     )
-    score_decryptor2.set_factory(mock_decrypt)
-    payload_parser2.set_factory(mock_parse)
 
-    valid_input = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted",
-        iv=b"1234567890123456",
+    valid_input = make_test_submission_input(
+        parsed_score=_valid_parsed_score(),
         replay_data=None,
         password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",  # valid test password
-        client_hash="client123",
-        fail_time_ms=None,
         osu_version="2024.101.0",
         beatmap_id=123,
-        submitted_at=datetime.now(UTC),
     )
 
     with structlog.testing.capture_logs() as cap_logs2:
@@ -434,45 +364,10 @@ async def test_opaque_fields_stored_as_sha256_hashes_only() -> None:
         )
     )
 
-    score_decryptor = StubScorePayloadDecryptor()
-    service, submission_repo, payload_parser = _make_process_score_submission_use_case(
+    service, submission_repo = _make_process_score_submission_use_case(
         resolver=resolver,
-        score_decryptor=score_decryptor,
         auth_service=auth_service,
     )
-
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        return DecryptedPayload(
-            plaintext="1000|test_user|valid_checksum|300|100|50|5|3|2|1000000|500|True|0|12345678|0|0|98765432|0",
-            checksum_valid=True,
-        )
-
-    def mock_parse(_plaintext: str) -> ParsedScore:
-        return ParsedScore(
-            user_id=1000,
-            username="test_user",
-            beatmap_checksum="valid_checksum",
-            online_checksum="12345678",
-            ruleset=0,
-            mods=ModCombination.none(),
-            n300=300,
-            n100=100,
-            n50=50,
-            geki=5,
-            katu=3,
-            miss=2,
-            score=1000000,
-            max_combo=500,
-            perfect=False,
-            passed=True,
-        )
-
-    score_decryptor.set_factory(mock_decrypt)
-    payload_parser.set_factory(mock_parse)
 
     opaque_fields = {
         "fs": "fullscreen_flag",
@@ -483,17 +378,18 @@ async def test_opaque_fields_stored_as_sha256_hashes_only() -> None:
         "i": "info_field",
         "token": "session_token",
     }
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted",
-        iv=b"1234567890123456",
+    opaque_field_hashes = {
+        f"{key}_sha256": hashlib.sha256(value.encode()).hexdigest()
+        for key, value in opaque_fields.items()
+    }
+    input_data = make_test_submission_input(
+        parsed_score=_valid_parsed_score(),
+        opaque_field_hashes=opaque_field_hashes,
         replay_data=b"replay_binary_data",
         password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        client_hash="client123",
-        fail_time_ms=None,
         osu_version="2024.101.0",
         beatmap_id=123,
         submitted_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-        submission_metadata=opaque_fields,
     )
 
     result = await service.execute(input_data)
@@ -540,10 +436,8 @@ async def test_no_raw_credentials_in_logs() -> None:
         )
     )
 
-    score_decryptor = StubScorePayloadDecryptor()
-    service, _, payload_parser = _make_process_score_submission_use_case(
+    service, _ = _make_process_score_submission_use_case(
         resolver=resolver,
-        score_decryptor=score_decryptor,
         auth_service=auth_service,
     )
 
@@ -551,50 +445,16 @@ async def test_no_raw_credentials_in_logs() -> None:
     secret_payload = b"this_is_encrypted_secret_payload"
     secret_token = "raw_session_token"
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        return DecryptedPayload(
-            plaintext="1000|test_user|valid_checksum|300|100|50|5|3|2|1000000|500|True|0|12345678|0|0|98765432|0",
-            checksum_valid=True,
-        )
-
-    def mock_parse(_plaintext: str) -> ParsedScore:
-        return ParsedScore(
-            user_id=1000,
-            username="test_user",
-            beatmap_checksum="valid_checksum",
-            online_checksum="12345678",
-            ruleset=0,
-            mods=ModCombination.none(),
-            n300=300,
-            n100=100,
-            n50=50,
-            geki=5,
-            katu=3,
-            miss=2,
-            score=1000000,
-            max_combo=500,
-            perfect=False,
-            passed=True,
-        )
-
-    score_decryptor.set_factory(mock_decrypt)
-    payload_parser.set_factory(mock_parse)
-
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=secret_payload,
-        iv=b"1234567890123456",
+    input_data = make_test_submission_input(
+        parsed_score=_valid_parsed_score(),
         replay_data=b"replay_binary_data",
         password_md5=secret_password,
-        client_hash="client123",
-        fail_time_ms=None,
         osu_version="2024.101.0",
         beatmap_id=123,
         submitted_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-        submission_metadata={"token": secret_token},
+        opaque_field_hashes={
+            "token_sha256": hashlib.sha256(secret_token.encode()).hexdigest(),
+        },
     )
 
     # Capture actual log output
@@ -606,7 +466,7 @@ async def test_no_raw_credentials_in_logs() -> None:
     # Verify NO sensitive data in ANY log message
     all_logs = "".join(str(entry) for entry in cap_logs)
     assert secret_password not in all_logs
-    assert "this_is_encrypted_secret_payload" not in all_logs
+    assert secret_payload.decode() not in all_logs
     assert secret_token not in all_logs
 
 
@@ -637,53 +497,15 @@ async def test_submission_fingerprint_and_result_snapshot_recorded() -> None:
         )
     )
 
-    score_decryptor = StubScorePayloadDecryptor()
-    service, submission_repo, payload_parser = _make_process_score_submission_use_case(
+    service, submission_repo = _make_process_score_submission_use_case(
         resolver=resolver,
-        score_decryptor=score_decryptor,
         auth_service=auth_service,
     )
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        return DecryptedPayload(
-            plaintext="1000|test_user|valid_checksum|300|100|50|5|3|2|1000000|500|True|0|12345678|0|0|98765432|0",
-            checksum_valid=True,
-        )
-
-    def mock_parse(_plaintext: str) -> ParsedScore:
-        return ParsedScore(
-            user_id=1000,
-            username="test_user",
-            beatmap_checksum="valid_checksum",
-            online_checksum="12345678",
-            ruleset=0,
-            mods=ModCombination.none(),
-            n300=300,
-            n100=100,
-            n50=50,
-            geki=5,
-            katu=3,
-            miss=2,
-            score=1000000,
-            max_combo=500,
-            perfect=False,
-            passed=True,
-        )
-
-    score_decryptor.set_factory(mock_decrypt)
-    payload_parser.set_factory(mock_parse)
-
-    input_data = ParsedSubmissionInput(
-        encrypted_payload=b"encrypted",
-        iv=b"1234567890123456",
+    input_data = make_test_submission_input(
+        parsed_score=_valid_parsed_score(),
         replay_data=b"replay_binary_data",
         password_md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        client_hash="client123",
-        fail_time_ms=None,
         osu_version="2024.101.0",
         beatmap_id=123,
         submitted_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),

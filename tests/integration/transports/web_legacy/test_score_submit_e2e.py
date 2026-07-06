@@ -41,6 +41,7 @@ from osu_server.services.commands.scores import (
 from osu_server.services.commands.scores.authorization import AuthorizationContext
 from osu_server.transports.stable.web_legacy.mappers import (
     StableScorePayloadParser,
+    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
 )
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
@@ -208,6 +209,15 @@ def _score_payload_decryptor() -> StubScorePayloadDecryptor:
     )
 
 
+def _score_submit_decoder(
+    payload_decryptor: StubScorePayloadDecryptor | None = None,
+) -> StableScoreSubmitDecoder:
+    return StableScoreSubmitDecoder(
+        payload_decryptor=payload_decryptor or _score_payload_decryptor(),
+        payload_parser=StableScorePayloadParser(),
+    )
+
+
 def _make_process_score_submission_use_case(
     *, auth_service: ScoreSubmissionAuthorizer
 ) -> ProcessScoreSubmissionUseCase:
@@ -215,8 +225,6 @@ def _make_process_score_submission_use_case(
     return ProcessScoreSubmissionUseCase(
         submit_score_use_case=make_submit_score_use_case(uow_factory),
         replay_blob_storage=StubBlobStorageService(),
-        payload_decryptor=_score_payload_decryptor(),
-        payload_parser=StableScorePayloadParser(),
         auth_service=auth_service,
         beatmap_resolver=MockBeatmapResolver(),
     )
@@ -276,6 +284,7 @@ async def test_e2e_score_submit_completed_response() -> None:
     service = _make_process_score_submission_use_case(auth_service=auth_service)
     handler = ScoreSubmitHandler(
         service,
+        decoder=_score_submit_decoder(),
         mapper=StableScoreSubmitMapper(stable_web_base_url="https://osu.athena.localhost"),
     )
 
@@ -321,12 +330,13 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
     service = ProcessScoreSubmissionUseCase(
         submit_score_use_case=make_submit_score_use_case(uow_factory),
         replay_blob_storage=StubBlobStorageService(),
-        payload_decryptor=StubScorePayloadDecryptor(factory=decrypt_payload),
-        payload_parser=StableScorePayloadParser(),
         auth_service=MockAuthService(),
         beatmap_resolver=MockBeatmapResolver(),
     )
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(
+        service,
+        decoder=_score_submit_decoder(StubScorePayloadDecryptor(factory=decrypt_payload)),
+    )
 
     previous_body, previous_content_type = _create_valid_multipart_body(
         encrypted_payload=b"previous_best_payload",
@@ -396,7 +406,7 @@ async def test_e2e_score_submit_terminal_reject_format() -> None:
             )
 
     service = _make_process_score_submission_use_case(auth_service=FailingAuthService())
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(service, decoder=_score_submit_decoder())
 
     body, content_type = _create_valid_multipart_body()
     request = _request(body, content_type)

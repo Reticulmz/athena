@@ -39,7 +39,10 @@ from osu_server.services.queries.scores import (
     PerformanceSubmitResponseQuery,
     PerformanceSubmitResponseState,
 )
-from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
+from osu_server.transports.stable.web_legacy.mappers import (
+    StableScorePayloadParser,
+    StableScoreSubmitDecoder,
+)
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 
 if TYPE_CHECKING:
@@ -228,8 +231,6 @@ def _make_handler(
     service = ProcessScoreSubmissionUseCase(
         submit_score_use_case=make_submit_score_use_case(uow_factory),
         replay_blob_storage=StubBlobStorageService(),
-        payload_decryptor=payload_decryptor,
-        payload_parser=StableScorePayloadParser(),
         auth_service=make_score_authorization_service(),
         beatmap_resolver=_BeatmapResolver(rank_status),
         performance_calculation_request=performance_request or _PerformanceCalculationRequest(),
@@ -237,7 +238,11 @@ def _make_handler(
         performance_response_query=performance_response,
     )
     body, content_type = _multipart_body()
-    return ScoreSubmitHandler(service), body, content_type, uow_factory
+    decoder = StableScoreSubmitDecoder(
+        payload_decryptor=payload_decryptor,
+        payload_parser=StableScorePayloadParser(),
+    )
+    return ScoreSubmitHandler(service, decoder=decoder), body, content_type, uow_factory
 
 
 def _multipart_body() -> tuple[bytes, str]:

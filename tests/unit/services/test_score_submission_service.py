@@ -20,7 +20,6 @@ from osu_server.domain.beatmaps import (
     BeatmapResolveResult,
     BeatmapSourceVerification,
 )
-from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.domain.scores.submission import ScoreSubmission
 from osu_server.domain.scores.user_stats import UserCurrentStats
@@ -39,7 +38,6 @@ from osu_server.services.commands.scores import (
     ProcessScoreSubmissionUseCase,
     SubmissionOutcome,
     generate_submission_fingerprint,
-    generate_submission_request_hash,
 )
 from osu_server.services.commands.scores.performance import (
     RequestPerformanceCalculationCommand,
@@ -55,16 +53,19 @@ from osu_server.services.queries.scores import (
     PerformanceSubmitResponseQuery,
     PerformanceSubmitResponseState,
 )
-from tests.support.credentials import fixed_test_password_md5
 from tests.support.fakes import (
     ScoreRepositoryViews,
     StubBlobStorageService,
-    StubScorePayloadDecryptor,
-    StubScorePayloadParser,
     make_score_authorization_service,
     make_score_repository_views,
     make_submit_score_use_case,
+    make_test_parsed_score,
+    make_test_submission_input,
 )
+
+
+def _score_payload(*parts: str) -> str:
+    return "".join(parts)
 
 
 def _eligible_beatmap() -> BeatmapEligibility:
@@ -354,49 +355,25 @@ def blob_storage() -> StubBlobStorageService:
 
 
 @pytest.fixture
-def score_decryptor() -> StubScorePayloadDecryptor:
-    return StubScorePayloadDecryptor()
-
-
-@pytest.fixture
 def service(
     uow_factory: InMemoryUnitOfWorkFactory,
     beatmap_resolver: FakeBeatmapResolver,
     blob_storage: StubBlobStorageService,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> ProcessScoreSubmissionUseCase:
     """Create service with in-memory repositories."""
     auth_service = make_score_authorization_service()
     return ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         blob_storage,
-        score_decryptor,
-        StubScorePayloadParser(),
         auth_service,
         beatmap_resolver,
     )
 
 
 @pytest.fixture
-def valid_payload() -> bytes:
-    """Valid encrypted score payload (mock)."""
-    return b"encrypted_data"
-
-
-@pytest.fixture
-def valid_input(valid_payload: bytes) -> ParsedSubmissionInput:
+def valid_input() -> ParsedSubmissionInput:
     """Valid submission input."""
-    return ParsedSubmissionInput(
-        encrypted_payload=valid_payload,
-        iv=b"0" * 32,
-        replay_data=b"replay_binary_data",
-        password_md5=fixed_test_password_md5(),
-        client_hash="test_hash",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,  # Ranked in mock
-        submitted_at=datetime.now(UTC),
-    )
+    return make_test_submission_input()
 
 
 def _fingerprint_for(
@@ -410,7 +387,7 @@ def _fingerprint_for(
         user_id=user_id,
         beatmap_checksum=beatmap_checksum,
         submitted_timestamp=submitted_timestamp,
-        request_hash=generate_submission_request_hash(input_data),
+        request_hash=input_data.request_hash,
     )
 
 
@@ -419,17 +396,9 @@ async def test_happy_path_valid_submission_creates_score(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Happy path: valid submission creates score record."""
     score_repo, submission_repo, _replay_repo = repos
-
-    # Mock decrypt
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:online_checksum_1:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
 
     result = await service.execute(valid_input)
 
@@ -463,7 +432,6 @@ async def test_completed_submission_requests_performance_calculation(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Accepted score persistence is followed by a durable performance request."""
@@ -472,23 +440,20 @@ async def test_completed_submission_requests_performance_calculation(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=performance_request,
         performance_calculator_identity=StubPerformanceCalculatorIdentity(),
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_perf_request:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -498,7 +463,7 @@ async def test_completed_submission_requests_performance_calculation(
             score_id=result.score_id,
             calculator_name="test-calculator",
             calculator_version="1.2.3",
-            requested_at=valid_input.submitted_at,
+            requested_at=input_data.submitted_at,
         )
     ]
 
@@ -508,7 +473,6 @@ async def test_completed_submission_waits_for_performance_response_after_request
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Accepted scores request calculation before building performance response."""
@@ -523,8 +487,6 @@ async def test_completed_submission_waits_for_performance_response_after_request
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=performance_request,
@@ -532,15 +494,14 @@ async def test_completed_submission_waits_for_performance_response_after_request
         performance_response_query=performance_response,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_perf_wait:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -556,15 +517,12 @@ async def test_completed_submission_waits_for_performance_response_after_request
 async def test_performance_wait_response_preserves_cumulative_beatmap_counts(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """PP wait 経由の completed response でも beatmap play/pass count を保持する。"""
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=RecordingPerformanceCalculationRequest(),
@@ -576,25 +534,24 @@ async def test_performance_wait_response_preserves_cumulative_beatmap_counts(
             )
         ),
     )
-    payloads = [
-        "1000:test_user:abc123:online_checksum_counts_1:0:0:100:10:5:0:0:2:500000:99:1:1",
-        "1000:test_user:abc123:online_checksum_counts_2:0:0:100:10:5:0:0:2:600000:99:1:1",
-    ]
-
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        return DecryptedPayload(plaintext=payloads.pop(0), checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    first = await service.execute(valid_input)
-    second = await service.execute(
-        replace(
-            valid_input,
-            client_hash="different_hash",
-            replay_data=b"second_replay_data",
-            submitted_at=datetime.now(UTC),
-        )
+    first_input = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_counts_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
     )
+    second_input = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_counts_2:0:0:100:10:5:0:0:2:600000:99:1:1"
+        ),
+        request_hash="different_hash",
+        replay_data=b"second_replay_data",
+        submitted_at=datetime.now(UTC),
+    )
+
+    first = await service.execute(first_input)
+    second = await service.execute(second_input)
 
     assert first.outcome == SubmissionOutcome.COMPLETED
     assert first.beatmap_playcount == 1
@@ -608,7 +565,6 @@ async def test_performance_wait_response_preserves_cumulative_beatmap_counts(
 async def test_completed_submission_returns_overall_stats_delta(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Submit response 用に current stats の before/after を返す。"""
@@ -637,8 +593,6 @@ async def test_completed_submission_returns_overall_stats_delta(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=RecordingPerformanceCalculationRequest(),
@@ -652,15 +606,14 @@ async def test_completed_submission_returns_overall_stats_delta(
         current_user_stats_query=current_stats_query,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_overall_delta:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.overall_stats_before is not None
@@ -693,7 +646,6 @@ async def test_completed_submission_returns_overall_stats_delta(
 async def test_completed_submission_returns_beatmap_rank_delta(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Submit response 用に beatmap rank の before/after を返す。"""
@@ -701,8 +653,6 @@ async def test_completed_submission_returns_beatmap_rank_delta(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=RecordingPerformanceCalculationRequest(),
@@ -716,15 +666,14 @@ async def test_completed_submission_returns_beatmap_rank_delta(
         beatmap_personal_best_rank_query=beatmap_rank_query,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_rank_delta:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.beatmap_rank_delta == BeatmapRankDelta(before=4, after=2)
@@ -751,7 +700,6 @@ async def test_retryable_performance_response_keeps_score_accepted_without_rejec
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Pending performance returns retryable response while the score remains durable."""
@@ -765,8 +713,6 @@ async def test_retryable_performance_response_keeps_score_accepted_without_rejec
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=RecordingPerformanceCalculationRequest(),
@@ -774,21 +720,20 @@ async def test_retryable_performance_response_keeps_score_accepted_without_rejec
         performance_response_query=performance_response,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_perf_retryable:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.RETRYABLE
     assert result.score_id is not None
     assert result.error_reason == "performance_calculation_pending"
     assert await score_repo.get_by_id(result.score_id) is not None
-    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(valid_input))
+    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(input_data))
     assert submission is not None
     assert submission.state == "completed"
 
@@ -798,7 +743,6 @@ async def test_completed_performance_pp_is_result_only_not_submission_snapshot(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Stable PP is response data, not canonical submission snapshot data."""
@@ -806,8 +750,6 @@ async def test_completed_performance_pp_is_result_only_not_submission_snapshot(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=RecordingPerformanceCalculationRequest(),
@@ -820,19 +762,18 @@ async def test_completed_performance_pp_is_result_only_not_submission_snapshot(
         ),
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_perf_snapshot:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.stable_pp == 321
-    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(valid_input))
+    submission = await submission_repo.get_by_fingerprint(_fingerprint_for(input_data))
     assert submission is not None
     assert submission.result_snapshot is not None
     assert "pp" not in submission.result_snapshot
@@ -843,7 +784,6 @@ async def test_completed_performance_pp_is_result_only_not_submission_snapshot(
 async def test_performance_calculation_request_failure_keeps_completed_response(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Worker wake/request diagnostics do not reject an accepted stable submission."""
@@ -851,24 +791,21 @@ async def test_performance_calculation_request_failure_keeps_completed_response(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=performance_request,
         performance_calculator_identity=StubPerformanceCalculatorIdentity(),
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_perf_failure:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+        ),
+    )
 
     with structlog.testing.capture_logs() as logs:
-        result = await service.execute(valid_input)
+        result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -886,27 +823,27 @@ async def test_client_server_grade_discrepancy_is_preserved(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Client/server grade mismatches are logged and stored for diagnostics."""
     _score_repo, submission_repo, _replay_repo = repos
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
-            "abc123:test_user:online_grade_discrepancy:"
-            "300:0:0:0:0:0:1000000:500:1:D:0:1:0:"
-            "20240101:b20240101:client_checksum"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            _score_payload(
+                "abc123:test_user:online_grade_discrepancy:",
+                "300:0:0:0:0:0:1000000:500:1:D:0:1:0:",
+                "20240101:b20240101:client_checksum",
+            )
+        ),
+    )
 
     with structlog.testing.capture_logs() as cap_logs:
-        result = await service.execute(valid_input)
+        result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     submission = await submission_repo.get_by_fingerprint(
-        _fingerprint_for(valid_input, submitted_timestamp="20240101")
+        _fingerprint_for(input_data, submitted_timestamp="20240101")
     )
     assert submission is not None
     assert submission.result_snapshot is not None
@@ -923,48 +860,21 @@ async def test_client_server_grade_discrepancy_is_preserved(
 
 
 @pytest.mark.asyncio
-async def test_crypto_checksum_invalid_is_terminal_reject(
-    service: ProcessScoreSubmissionUseCase,
-    valid_input: ParsedSubmissionInput,
-    repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
-) -> None:
-    """Crypto checksum mismatch is rejected before parsing or persistence."""
-    score_repo, _, _ = repos
-
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
-            "1000:test_user:abc123:online_checksum_bad_crypto:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=False)
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
-
-    assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
-    assert result.error_reason == "crypto_checksum_invalid"
-    assert not await score_repo.exists_by_online_checksum("online_checksum_bad_crypto")
-
-
-@pytest.mark.asyncio
 async def test_failed_play_handling(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Failed play (passed=0) is stored."""
     score_repo, _, _ = repos
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_2:0:0:50:10:5:0:0:10:200000:40:0:0"
+        ),
+    )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        # passed=0 (last field)
-        payload = "1000:test_user:abc123:online_checksum_2:0:0:50:10:5:0:0:10:200000:40:0:0"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -979,20 +889,20 @@ async def test_failed_play_without_replay_is_accepted_without_blob_write(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Failed play can be stored without replay data."""
     score_repo, _, _ = repos
-    input_without_replay = replace(valid_input, replay_data=None, fail_time_ms=42_000)
-
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
-            "1000:test_user:abc123:online_checksum_failed_no_replay:"
-            "0:0:50:10:5:0:0:10:200000:40:0:0"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+    input_without_replay = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            _score_payload(
+                "1000:test_user:abc123:online_checksum_failed_no_replay:",
+                "0:0:50:10:5:0:0:10:200000:40:0:0",
+            )
+        ),
+        replay_data=None,
+        fail_time_ms=42_000,
+    )
 
     result = await service.execute(input_without_replay)
 
@@ -1010,20 +920,19 @@ async def test_passed_play_without_replay_is_accepted_without_blob_write(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Passed play without replay data creates a score without an attachment."""
     score_repo, _, _ = repos
-    input_without_replay = replace(valid_input, replay_data=None)
-
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
-            "1000:test_user:abc123:online_checksum_passed_no_replay:"
-            "0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+    input_without_replay = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            _score_payload(
+                "1000:test_user:abc123:online_checksum_passed_no_replay:",
+                "0:0:100:10:5:0:0:2:500000:99:1:1",
+            )
+        ),
+        replay_data=None,
+    )
 
     result = await service.execute(input_without_replay)
 
@@ -1039,26 +948,26 @@ async def test_replay_attachment(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Replay data is attached to score."""
     _, _, replay_repo = repos
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:online_checksum_3:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_3:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
 
     # Verify replay exists
-    assert valid_input.replay_data is not None
-    replay_checksum = hashlib.sha256(valid_input.replay_data).hexdigest()
+    assert input_data.replay_data is not None
+    replay_checksum = hashlib.sha256(input_data.replay_data).hexdigest()
     assert await replay_repo.exists_by_checksum(replay_checksum)
-    assert blob_storage.writes == [valid_input.replay_data]
+    assert blob_storage.writes == [input_data.replay_data]
     assert blob_storage.stored[0].sha256 == replay_checksum
 
 
@@ -1066,7 +975,6 @@ async def test_replay_attachment(
 async def test_score_submit_fallback_warmup_runs_before_replay_blob_storage(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Accepted submissions ignore warmup result and warm before replay storage."""
@@ -1076,20 +984,18 @@ async def test_score_submit_fallback_warmup_runs_before_replay_blob_storage(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         blob_storage,
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         beatmap_file_warmup_use_case=warmup,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:online_checksum_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    input_data = replace(valid_input, beatmap_id=42)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+        beatmap_id=42,
+    )
     result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
@@ -1109,7 +1015,6 @@ async def test_score_submit_fallback_warmup_runs_before_replay_blob_storage(
 async def test_score_submit_accepts_file_pending_and_logs_fallback_warmup(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Beatmap File pending is diagnostics-only and keeps accepted response shape."""
@@ -1122,23 +1027,20 @@ async def test_score_submit_accepts_file_pending_and_logs_fallback_warmup(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         beatmap_file_warmup_use_case=warmup,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_warmup_pending:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+        ),
+    )
 
     with structlog.testing.capture_logs() as logs:
-        result = await service.execute(valid_input)
+        result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.error_reason is None
@@ -1159,7 +1061,6 @@ async def test_score_submit_accepts_file_pending_and_logs_fallback_warmup(
 async def test_score_submit_fallback_warmup_precedes_retryable_replay_storage_failure(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Replay storage retryable failures happen after fallback warmup is requested."""
@@ -1169,22 +1070,19 @@ async def test_score_submit_fallback_warmup_precedes_retryable_replay_storage_fa
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         blob_storage,
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         beatmap_file_warmup_use_case=warmup,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_warmup_retry:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.RETRYABLE
     assert result.error_reason == "replay_blob_store_failed"
@@ -1203,7 +1101,6 @@ async def test_score_submit_fallback_warmup_precedes_retryable_replay_storage_fa
 async def test_score_submit_terminal_reject_does_not_request_fallback_warmup(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Terminal rejects before hit validation do not trigger score submit fallback warmup."""
@@ -1212,22 +1109,19 @@ async def test_score_submit_terminal_reject_does_not_request_fallback_warmup(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         beatmap_file_warmup_use_case=warmup,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_warmup_reject:0:0:0:0:0:0:0:0:500000:0:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
@@ -1241,28 +1135,27 @@ async def test_online_checksum_duplicate_rejection(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Duplicate online checksum rejects a different submission."""
     _score_repo, submission_repo, _ = repos
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:duplicate_checksum:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+    parsed_score = make_test_parsed_score(
+        "1000:test_user:abc123:duplicate_checksum:0:0:100:10:5:0:0:2:500000:99:1:1"
+    )
 
     # First submission
-    result1 = await service.execute(valid_input)
+    input1 = replace(valid_input, parsed_score=parsed_score, request_hash="duplicate-hash-1")
+    result1 = await service.execute(input1)
     assert result1.outcome == SubmissionOutcome.COMPLETED
 
     # Second submission (different fingerprint but same online checksum)
     input2 = ParsedSubmissionInput(
-        encrypted_payload=valid_input.encrypted_payload,
-        iv=valid_input.iv,
+        parsed_score=parsed_score,
+        request_hash="duplicate-hash-2",
+        opaque_field_hashes=valid_input.opaque_field_hashes,
+        decrypt_latency_ms=valid_input.decrypt_latency_ms,
         replay_data=valid_input.replay_data,
         password_md5=valid_input.password_md5,
-        client_hash="different_hash",  # Different hash = different fingerprint
         fail_time_ms=valid_input.fail_time_ms,
         osu_version=valid_input.osu_version,
         beatmap_id=valid_input.beatmap_id,
@@ -1283,7 +1176,6 @@ async def test_performance_integration_preserves_duplicate_terminal_rejects(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Duplicate checksum terminal rejects do not wait for performance response."""
@@ -1298,8 +1190,6 @@ async def test_performance_integration_preserves_duplicate_terminal_rejects(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=performance_request,
@@ -1307,41 +1197,36 @@ async def test_performance_integration_preserves_duplicate_terminal_rejects(
         performance_response_query=performance_response,
     )
 
-    def mock_decrypt(encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        if encrypted in {b"online-first", b"online-second"}:
-            payload = (
-                "1000:test_user:abc123:duplicate_perf_online:0:0:100:10:5:0:0:2:500000:99:1:1"
-            )
-        elif encrypted == b"replay-first":
-            payload = "1000:test_user:abc123:perf_replay_online_1:0:0:100:10:5:0:0:2:500000:99:1:1"
-        else:
-            payload = "1000:test_user:abc123:perf_replay_online_2:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+    duplicate_online_score = make_test_parsed_score(
+        "1000:test_user:abc123:duplicate_perf_online:0:0:100:10:5:0:0:2:500000:99:1:1"
+    )
     online_first = replace(
         valid_input,
-        encrypted_payload=b"online-first",
+        parsed_score=duplicate_online_score,
+        request_hash="online-hash-1",
         replay_data=b"online-duplicate-replay-1",
-        client_hash="online-hash-1",
     )
     online_second = replace(
         valid_input,
-        encrypted_payload=b"online-second",
+        parsed_score=duplicate_online_score,
+        request_hash="online-hash-2",
         replay_data=b"online-duplicate-replay-2",
-        client_hash="online-hash-2",
     )
     replay_first = replace(
         valid_input,
-        encrypted_payload=b"replay-first",
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:perf_replay_online_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+        request_hash="replay-hash-1",
         replay_data=b"same-performance-replay",
-        client_hash="replay-hash-1",
     )
     replay_second = replace(
         valid_input,
-        encrypted_payload=b"replay-second",
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:perf_replay_online_2:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+        request_hash="replay-hash-2",
         replay_data=b"same-performance-replay",
-        client_hash="replay-hash-2",
     )
 
     online_result1 = await service.execute(online_first)
@@ -1385,7 +1270,6 @@ async def test_online_checksum_duplicate_rejection_ignores_fallback_warmup_failu
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Duplicate online checksum remains a terminal reject when warmup fails."""
@@ -1395,22 +1279,26 @@ async def test_online_checksum_duplicate_rejection_ignores_fallback_warmup_failu
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         beatmap_file_warmup_use_case=warmup,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
-            "1000:test_user:abc123:duplicate_checksum_with_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-    input1 = replace(valid_input, replay_data=b"online_duplicate_replay_1", client_hash="hash1")
-    input2 = replace(valid_input, replay_data=b"online_duplicate_replay_2", client_hash="hash2")
+    parsed_score = make_test_parsed_score(
+        "1000:test_user:abc123:duplicate_checksum_with_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
+    )
+    input1 = replace(
+        valid_input,
+        parsed_score=parsed_score,
+        replay_data=b"online_duplicate_replay_1",
+        request_hash="hash1",
+    )
+    input2 = replace(
+        valid_input,
+        parsed_score=parsed_score,
+        replay_data=b"online_duplicate_replay_2",
+        request_hash="hash2",
+    )
 
     result1 = await service.execute(input1)
     result2 = await service.execute(input2)
@@ -1433,7 +1321,6 @@ async def test_online_checksum_duplicate_rejection_ignores_file_pending_warmup(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Duplicate online checksum remains terminal rejected when file warmup is pending."""
@@ -1447,23 +1334,29 @@ async def test_online_checksum_duplicate_rejection_ignores_file_pending_warmup(
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         beatmap_file_warmup_use_case=warmup,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = (
-            "1000:test_user:abc123:duplicate_checksum_pending_warmup:0:0:100:10:5:0:0:2:"
-            "500000:99:1:1"
+    parsed_score = make_test_parsed_score(
+        _score_payload(
+            "1000:test_user:abc123:duplicate_checksum_pending_warmup:0:0:100:10:5:0:0:2:",
+            "500000:99:1:1",
         )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-    input1 = replace(valid_input, replay_data=b"online_pending_replay_1", client_hash="hash1")
-    input2 = replace(valid_input, replay_data=b"online_pending_replay_2", client_hash="hash2")
+    )
+    input1 = replace(
+        valid_input,
+        parsed_score=parsed_score,
+        replay_data=b"online_pending_replay_1",
+        request_hash="hash1",
+    )
+    input2 = replace(
+        valid_input,
+        parsed_score=parsed_score,
+        replay_data=b"online_pending_replay_2",
+        request_hash="hash2",
+    )
 
     with structlog.testing.capture_logs() as logs:
         result1 = await service.execute(input1)
@@ -1488,47 +1381,24 @@ async def test_online_checksum_duplicate_rejection_ignores_file_pending_warmup(
 async def test_replay_checksum_duplicate_rejection(
     service: ProcessScoreSubmissionUseCase,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Duplicate replay checksum is rejected."""
     _, _, _replay_repo = repos
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        # Different online checksums
-        if b"first" in _encrypted:
-            payload = "1000:test_user:abc123:online_1:0:0:100:10:5:0:0:2:500000:99:1:1"
-        else:
-            payload = "1000:test_user:abc123:online_2:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
     # First submission
-    input1 = ParsedSubmissionInput(
-        encrypted_payload=b"first",
-        iv=b"0" * 32,
+    input1 = make_test_submission_input(
+        payload="1000:test_user:abc123:online_1:0:0:100:10:5:0:0:2:500000:99:1:1",
+        request_hash="hash1",
         replay_data=b"same_replay_data",
-        password_md5=fixed_test_password_md5(),
-        client_hash="hash1",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
     )
     result1 = await service.execute(input1)
     assert result1.outcome == SubmissionOutcome.COMPLETED
 
     # Second submission (same replay)
-    input2 = ParsedSubmissionInput(
-        encrypted_payload=b"second",
-        iv=b"0" * 32,
+    input2 = make_test_submission_input(
+        payload="1000:test_user:abc123:online_2:0:0:100:10:5:0:0:2:500000:99:1:1",
+        request_hash="hash2",
         replay_data=b"same_replay_data",
-        password_md5=fixed_test_password_md5(),
-        client_hash="hash2",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
     )
     result2 = await service.execute(input2)
     assert result2.outcome == SubmissionOutcome.TERMINAL_REJECTED
@@ -1540,7 +1410,6 @@ async def test_replay_checksum_duplicate_rejection(
 async def test_replay_checksum_duplicate_rejection_ignores_fallback_warmup_failure(
     uow_factory: InMemoryUnitOfWorkFactory,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Duplicate replay checksum remains a terminal reject when warmup fails."""
@@ -1550,46 +1419,20 @@ async def test_replay_checksum_duplicate_rejection_ignores_fallback_warmup_failu
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         beatmap_file_warmup_use_case=warmup,
     )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        if b"first" in _encrypted:
-            payload = (
-                "1000:test_user:abc123:online_warmup_replay_1:0:0:100:10:5:0:0:2:500000:99:1:1"
-            )
-        else:
-            payload = (
-                "1000:test_user:abc123:online_warmup_replay_2:0:0:100:10:5:0:0:2:500000:99:1:1"
-            )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-    input1 = ParsedSubmissionInput(
-        encrypted_payload=b"first",
-        iv=b"0" * 32,
+    input1 = make_test_submission_input(
+        payload=("1000:test_user:abc123:online_warmup_replay_1:0:0:100:10:5:0:0:2:500000:99:1:1"),
+        request_hash="hash1",
         replay_data=b"same_warmup_replay_data",
-        password_md5=fixed_test_password_md5(),
-        client_hash="hash1",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
     )
-    input2 = ParsedSubmissionInput(
-        encrypted_payload=b"second",
-        iv=b"0" * 32,
+    input2 = make_test_submission_input(
+        payload=("1000:test_user:abc123:online_warmup_replay_2:0:0:100:10:5:0:0:2:500000:99:1:1"),
+        request_hash="hash2",
         replay_data=b"same_warmup_replay_data",
-        password_md5=fixed_test_password_md5(),
-        client_hash="hash2",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
     )
 
     result1 = await service.execute(input1)
@@ -1612,31 +1455,26 @@ async def test_replay_checksum_duplicate_rejection_ignores_fallback_warmup_failu
 async def test_submission_fingerprint_idempotency(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Same request content returns cached persisted result."""
-    decrypt_call_count = 0
-
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        nonlocal decrypt_call_count
-        decrypt_call_count += 1
-        payload = "1000:test_user:abc123:online_checksum_idem:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_idem:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
 
     # First submission
-    result1 = await service.execute(valid_input)
+    result1 = await service.execute(input_data)
     assert result1.outcome == SubmissionOutcome.COMPLETED
     score_id1 = result1.score_id
 
-    resent_input = replace(valid_input, submitted_at=datetime.now(UTC))
+    resent_input = replace(input_data, submitted_at=datetime.now(UTC))
 
     # Second submission has a different server receive time but identical request content.
     result2 = await service.execute(resent_input)
     assert result2.outcome == SubmissionOutcome.COMPLETED
     assert result2.score_id == score_id1  # Same score ID
-    assert decrypt_call_count == 2
 
 
 @pytest.mark.asyncio
@@ -1644,7 +1482,6 @@ async def test_same_fingerprint_retry_rebuilds_response_from_existing_score_perf
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Same-fingerprint retry reads current performance for the existing score."""
@@ -1659,24 +1496,19 @@ async def test_same_fingerprint_retry_rebuilds_response_from_existing_score_perf
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         performance_calculation_request=performance_request,
         performance_calculator_identity=StubPerformanceCalculatorIdentity(),
         performance_response_query=performance_response,
     )
-    decrypt_call_count = 0
-
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        nonlocal decrypt_call_count
-        decrypt_call_count += 1
-        payload = "1000:test_user:abc123:online_checksum_idem_pp:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-    replayless_input = replace(valid_input, replay_data=None)
+    replayless_input = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_idem_pp:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+        replay_data=None,
+    )
 
     result1 = await service.execute(replayless_input)
     result2 = await service.execute(replace(replayless_input, submitted_at=datetime.now(UTC)))
@@ -1698,7 +1530,6 @@ async def test_same_fingerprint_retry_rebuilds_response_from_existing_score_perf
         PerformanceSubmitResponseQuery(score_id=result1.score_id),
         PerformanceSubmitResponseQuery(score_id=result1.score_id),
     ]
-    assert decrypt_call_count == 2
     submission = await submission_repo.get_by_fingerprint(_fingerprint_for(replayless_input))
     assert submission is not None
     assert submission.result_snapshot is not None
@@ -1710,7 +1541,6 @@ async def test_same_fingerprint_retry_rebuilds_response_from_existing_score_perf
 async def test_submission_fingerprint_idempotency_ignores_fallback_warmup_failure(
     uow_factory: InMemoryUnitOfWorkFactory,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
     """Same-fingerprint cached result is unchanged by fallback warmup failure."""
@@ -1719,24 +1549,17 @@ async def test_submission_fingerprint_idempotency_ignores_fallback_warmup_failur
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         make_score_authorization_service(),
         beatmap_resolver,
         beatmap_file_warmup_use_case=warmup,
     )
-    decrypt_call_count = 0
-
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        nonlocal decrypt_call_count
-        decrypt_call_count += 1
-        payload = (
+    replayless_input = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             "1000:test_user:abc123:online_checksum_idem_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-    replayless_input = replace(valid_input, replay_data=None)
+        ),
+        replay_data=None,
+    )
 
     result1 = await service.execute(replayless_input)
     result2 = await service.execute(replace(replayless_input, submitted_at=datetime.now(UTC)))
@@ -1748,7 +1571,6 @@ async def test_submission_fingerprint_idempotency_ignores_fallback_warmup_failur
     assert result2.score_id == result1.score_id
     assert len(warmup.requests) == 2
     assert events == ["warmup", "warmup"]
-    assert decrypt_call_count == 2
 
 
 @pytest.mark.asyncio
@@ -1756,30 +1578,30 @@ async def test_in_progress_retry_returns_accepted_pending(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Same fingerprint in processing state returns accepted_pending."""
     _score_repo, submission_repo, _replay_repo = repos
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:online_checksum_pending:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-    fingerprint = _fingerprint_for(valid_input)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_pending:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
+    fingerprint = _fingerprint_for(input_data)
     _ = await submission_repo.create(
         ScoreSubmission(
             id=None,
             fingerprint=fingerprint,
             user_id=1000,
             beatmap_checksum="abc123",
-            submitted_at=valid_input.submitted_at,
+            submitted_at=input_data.submitted_at,
             state="processing",
             result_snapshot=None,
         )
     )
 
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.ACCEPTED_PENDING
     assert result.error_reason == "accepted_pending"
@@ -1789,23 +1611,19 @@ async def test_in_progress_retry_returns_accepted_pending(
 async def test_authorization_failure_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Authorization failure returns terminal reject."""
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:online_checksum_auth:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
     # Invalid password
     invalid_input = ParsedSubmissionInput(
-        encrypted_payload=valid_input.encrypted_payload,
-        iv=valid_input.iv,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_auth:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+        request_hash=valid_input.request_hash,
+        opaque_field_hashes=valid_input.opaque_field_hashes,
+        decrypt_latency_ms=valid_input.decrypt_latency_ms,
         replay_data=valid_input.replay_data,
         password_md5="invalid_md5",
-        client_hash=valid_input.client_hash,
         fail_time_ms=valid_input.fail_time_ms,
         osu_version=valid_input.osu_version,
         beatmap_id=valid_input.beatmap_id,
@@ -1823,19 +1641,18 @@ async def test_beatmap_ineligibility_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Ineligible beatmap returns terminal reject."""
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:online_checksum_elig:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
     beatmap_resolver.eligibility = _ineligible_beatmap()
 
-    result = await service.execute(valid_input)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_elig:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
+    result = await service.execute(input_data)
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
     assert "beatmap_ineligible" in result.error_reason
@@ -1845,18 +1662,16 @@ async def test_beatmap_ineligibility_terminal_reject(
 async def test_validation_failure_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Validation failure returns terminal reject."""
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_val:0:0:0:0:0:0:0:0:500000:0:1:1"
+        ),
+    )
 
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        # Invalid: total_hits=0
-        payload = "1000:test_user:abc123:online_checksum_val:0:0:0:0:0:0:0:0:500000:0:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
     assert "validation_failed" in result.error_reason
@@ -1866,18 +1681,17 @@ async def test_validation_failure_terminal_reject(
 async def test_metrics_logged_on_success(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Metrics are logged on successful submission."""
-
-    def mock_decrypt(_encrypted: bytes, _iv: bytes, _osu_version: str | None) -> DecryptedPayload:
-        payload = "1000:test_user:abc123:online_checksum_metrics:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
-
-    score_decryptor.set_factory(mock_decrypt)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_checksum_metrics:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
 
     with structlog.testing.capture_logs() as cap_logs:
-        result = await service.execute(valid_input)
+        result = await service.execute(input_data)
     assert result.outcome == SubmissionOutcome.COMPLETED
 
     logged_metrics = next(

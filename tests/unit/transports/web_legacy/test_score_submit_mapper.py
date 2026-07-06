@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
+
 from athena_cli.stable_verification.parsers import parse_score_submit_response
+from osu_server.domain.scores.decryption import DecryptedPayload
+from osu_server.domain.scores.payload_parser import ParseError
 from osu_server.domain.scores.personal_best import PersonalBestDelta
 from osu_server.domain.scores.user_stats import UserCurrentStats
 from osu_server.services.commands.scores import (
@@ -15,9 +20,13 @@ from osu_server.services.commands.scores import (
     SubmissionResult,
 )
 from osu_server.transports.stable.web_legacy.mappers import (
+    StableScorePayloadParser,
+    StableScoreSubmitDecodeError,
+    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
     StableScoreSubmitOverallStats,
 )
+from tests.support.fakes import StubScorePayloadDecryptor
 
 _BEATMAP_CHART_REQUIRED_FIELDS = (
     "achieved",
@@ -80,24 +89,92 @@ def _valid_multipart_body() -> bytes:
     )
 
 
-def test_score_submit_mapper_converts_multipart_to_command_input() -> None:
+def _score_submit_decoder(
+    payload: str = "1000:test_user:abc123:online_checksum:0:0:100:10:5:0:0:2:500000:99:1:1",
+    *,
+    checksum_valid: bool = True,
+) -> StableScoreSubmitDecoder:
+    return StableScoreSubmitDecoder(
+        payload_decryptor=StubScorePayloadDecryptor(
+            DecryptedPayload(plaintext=payload, checksum_valid=checksum_valid)
+        ),
+        payload_parser=StableScorePayloadParser(),
+    )
+
+
+def test_score_submit_mapper_converts_multipart_to_request_mapping() -> None:
     mapper = StableScoreSubmitMapper()
     submitted_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
-    command_input = mapper.to_command_input(
+    request_mapping = mapper.to_request_mapping(
         body=_valid_multipart_body(),
         content_type="multipart/form-data; boundary=----WebKitFormBoundary",
         submitted_at=submitted_at,
     )
 
-    assert command_input.encrypted_payload == b"encrypted_payload_data"
-    assert command_input.iv == b"0" * 32
+    assert request_mapping.encrypted_payload == b"encrypted_payload_data"
+    assert request_mapping.iv == b"0" * 32
+    assert request_mapping.password_md5 == "password_md5_hash"
+    assert request_mapping.client_hash == "client_hash"
+    assert request_mapping.fail_time_ms == 0
+    assert request_mapping.osu_version == "20241201"
+    assert request_mapping.submitted_at == submitted_at
+    assert request_mapping.submission_metadata == {"token": "session_token"}
+
+
+def test_score_submit_decoder_converts_request_mapping_to_command_input() -> None:
+    mapper = StableScoreSubmitMapper()
+    submitted_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    request_mapping = mapper.to_request_mapping(
+        body=_valid_multipart_body(),
+        content_type="multipart/form-data; boundary=----WebKitFormBoundary",
+        submitted_at=submitted_at,
+    )
+
+    command_input = _score_submit_decoder().to_command_input(request_mapping)
+
+    assert command_input.parsed_score.username == "test_user"
+    assert command_input.parsed_score.online_checksum == "online_checksum"
+    assert command_input.request_hash
+    assert command_input.opaque_field_hashes == {
+        "token_sha256": hashlib.sha256(b"session_token").hexdigest()
+    }
+    assert command_input.replay_data == b"replay_binary_data"
     assert command_input.password_md5 == "password_md5_hash"
-    assert command_input.client_hash == "client_hash"
     assert command_input.fail_time_ms == 0
     assert command_input.osu_version == "20241201"
     assert command_input.submitted_at == submitted_at
-    assert command_input.submission_metadata == {"token": "session_token"}
+
+
+def test_score_submit_decoder_rejects_invalid_crypto_checksum() -> None:
+    mapper = StableScoreSubmitMapper()
+    request_mapping = mapper.to_request_mapping(
+        body=_valid_multipart_body(),
+        content_type="multipart/form-data; boundary=----WebKitFormBoundary",
+        submitted_at=datetime.now(UTC),
+    )
+
+    with pytest.raises(StableScoreSubmitDecodeError) as exc_info:
+        _ = _score_submit_decoder(checksum_valid=False).to_command_input(request_mapping)
+
+    assert exc_info.value.reason == "crypto_checksum_invalid"
+    assert exc_info.value.result.error_reason == "crypto_checksum_invalid"
+
+
+def test_score_submit_decoder_rejects_unparseable_payload() -> None:
+    mapper = StableScoreSubmitMapper()
+    request_mapping = mapper.to_request_mapping(
+        body=_valid_multipart_body(),
+        content_type="multipart/form-data; boundary=----WebKitFormBoundary",
+        submitted_at=datetime.now(UTC),
+    )
+
+    with pytest.raises(StableScoreSubmitDecodeError) as exc_info:
+        _ = _score_submit_decoder(payload="not:enough:fields").to_command_input(request_mapping)
+
+    assert exc_info.value.reason == "parse_failed"
+    assert exc_info.value.error is not None
+    assert ParseError.__name__ not in exc_info.value.error
 
 
 def test_score_submit_mapper_formats_completed_response() -> None:

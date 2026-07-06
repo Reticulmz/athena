@@ -1,7 +1,6 @@
 """Unit tests for ProcessScoreSubmissionUseCase playstyle validation (Task 17.1)."""
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
 
 import pytest
 
@@ -16,7 +15,6 @@ from osu_server.domain.beatmaps import (
     BeatmapResolveResult,
     BeatmapSourceVerification,
 )
-from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.scores import (
     ParsedSubmissionInput,
@@ -26,10 +24,10 @@ from osu_server.services.commands.scores import (
 from tests.support.credentials import fixed_test_password_md5
 from tests.support.fakes import (
     StubBlobStorageService,
-    StubScorePayloadDecryptor,
-    StubScorePayloadParser,
     make_score_authorization_service,
     make_submit_score_use_case,
+    make_test_parsed_score,
+    make_test_submission_input,
 )
 
 # Mod bit constants (from osu! stable protocol)
@@ -137,23 +135,15 @@ def beatmap_resolver() -> FakeBeatmapResolver:
 
 
 @pytest.fixture
-def score_decryptor() -> StubScorePayloadDecryptor:
-    return StubScorePayloadDecryptor()
-
-
-@pytest.fixture
 def service(
     uow_factory: InMemoryUnitOfWorkFactory,
     beatmap_resolver: FakeBeatmapResolver,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> ProcessScoreSubmissionUseCase:
     """Create service with in-memory repositories."""
     auth_service = make_score_authorization_service()
     return ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
         StubBlobStorageService(),
-        score_decryptor,
-        StubScorePayloadParser(),
         auth_service,
         beatmap_resolver,
     )
@@ -162,39 +152,24 @@ def service(
 @pytest.fixture
 def valid_input() -> ParsedSubmissionInput:
     """Valid submission input."""
-    return ParsedSubmissionInput(
-        encrypted_payload=b"encrypted_data",
-        iv=b"0" * 32,
-        replay_data=b"replay_binary_data",
-        password_md5=fixed_test_password_md5(),
-        client_hash="test_hash",
-        fail_time_ms=None,
-        osu_version="20240101",
-        beatmap_id=1,
-        submitted_at=datetime.now(UTC),
-    )
+    return make_test_submission_input(password_md5=fixed_test_password_md5())
 
 
 @pytest.mark.asyncio
 async def test_relax_mod_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Requirement 1.3: Relax mod submissions are rejected."""
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        # mods field = RELAX (128)
-        payload = f"1000:test_user:abc123:online_rx:0:{RELAX}:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            f"1000:test_user:abc123:online_rx:0:{RELAX}:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
@@ -205,22 +180,17 @@ async def test_relax_mod_terminal_reject(
 async def test_autopilot_mod_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Requirement 1.3: Autopilot mod submissions are rejected."""
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        # mods field = AUTOPILOT (8192)
-        payload = f"1000:test_user:abc123:online_ap:0:{AUTOPILOT}:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            f"1000:test_user:abc123:online_ap:0:{AUTOPILOT}:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
@@ -231,25 +201,18 @@ async def test_autopilot_mod_terminal_reject(
 async def test_relax_and_autopilot_combined_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Requirement 1.3: Combined Relax + Autopilot is rejected."""
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        # mods field = RELAX | AUTOPILOT (128 | 8192 = 8320)
-        combined_mods = RELAX | AUTOPILOT
-        payload = (
+    combined_mods = RELAX | AUTOPILOT
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
             f"1000:test_user:abc123:online_both:0:{combined_mods}:100:10:5:0:0:2:500000:99:1:1"
-        )
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.TERMINAL_REJECTED
     assert result.error_reason is not None
@@ -260,22 +223,17 @@ async def test_relax_and_autopilot_combined_terminal_reject(
 async def test_vanilla_mod_accepted(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Requirement 1.2: Vanilla gameplay is accepted."""
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        # mods field = 0 (no mods, vanilla)
-        payload = "1000:test_user:abc123:online_vanilla:0:0:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            "1000:test_user:abc123:online_vanilla:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None
@@ -286,24 +244,18 @@ async def test_vanilla_mod_accepted(
 async def test_other_mods_accepted(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
-    score_decryptor: StubScorePayloadDecryptor,
 ) -> None:
     """Requirement 1.2: Other mods (HD, HR, DT, etc.) are accepted."""
 
-    def mock_decrypt(
-        _encrypted: bytes,
-        _iv: bytes,
-        _osu_version: str | None,
-    ) -> DecryptedPayload:
-        # mods field = Hidden (8) | HardRock (16) | DoubleTime (64) = 88
-        # No Relax or Autopilot
-        other_mods = 8 | 16 | 64
-        payload = f"1000:test_user:abc123:online_other:0:{other_mods}:100:10:5:0:0:2:500000:99:1:1"
-        return DecryptedPayload(plaintext=payload, checksum_valid=True)
+    other_mods = 8 | 16 | 64
+    input_data = replace(
+        valid_input,
+        parsed_score=make_test_parsed_score(
+            f"1000:test_user:abc123:online_other:0:{other_mods}:100:10:5:0:0:2:500000:99:1:1"
+        ),
+    )
 
-    score_decryptor.set_factory(mock_decrypt)
-
-    result = await service.execute(valid_input)
+    result = await service.execute(input_data)
 
     assert result.outcome == SubmissionOutcome.COMPLETED
     assert result.score_id is not None

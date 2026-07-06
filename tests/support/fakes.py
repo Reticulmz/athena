@@ -13,7 +13,7 @@ from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.domain.storage.blobs import Blob, BlobStored
-from osu_server.services.commands.scores import SubmitScoreUseCase
+from osu_server.services.commands.scores import ParsedSubmissionInput, SubmitScoreUseCase
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from osu_server.services.queries.identity.password_service import PasswordService
 from tests.support.credentials import FIXED_TEST_PASSWORD_MD5
@@ -350,6 +350,46 @@ class StubBlobStorageService:
 
 type ScorePayloadDecryptFactory = Callable[[bytes, bytes, str | None], DecryptedPayload]
 type ScorePayloadParseFactory = Callable[[str], ParsedScore]
+
+_DEFAULT_TEST_SCORE_PAYLOAD = (
+    "1000:test_user:abc123:online_checksum_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+)
+
+
+def make_test_parsed_score(payload: str = _DEFAULT_TEST_SCORE_PAYLOAD) -> ParsedScore:
+    """test 用 stable score payload を ParsedScore に変換する。"""
+    return _parse_test_score_payload(payload)
+
+
+def make_test_submission_input(
+    *,
+    payload: str = _DEFAULT_TEST_SCORE_PAYLOAD,
+    parsed_score: ParsedScore | None = None,
+    request_hash: str = "test_request_hash",
+    replay_data: bytes | None = b"replay_binary_data",
+    password_md5: str = FIXED_TEST_PASSWORD_MD5,
+    fail_time_ms: int | None = None,
+    osu_version: str | None = "20240101",
+    beatmap_id: int | None = 1,
+    submitted_at: datetime | None = None,
+    submit_exit_classification: str | None = None,
+    opaque_field_hashes: dict[str, str] | None = None,
+    decrypt_latency_ms: float = 0.0,
+) -> ParsedSubmissionInput:
+    """score submission command test 用 input を作る。"""
+    return ParsedSubmissionInput(
+        parsed_score=parsed_score or make_test_parsed_score(payload),
+        request_hash=request_hash,
+        opaque_field_hashes=opaque_field_hashes or {},
+        decrypt_latency_ms=decrypt_latency_ms,
+        replay_data=replay_data,
+        password_md5=password_md5,
+        fail_time_ms=fail_time_ms,
+        osu_version=osu_version,
+        submitted_at=submitted_at or datetime.now(UTC),
+        beatmap_id=beatmap_id,
+        submit_exit_classification=submit_exit_classification,
+    )
 
 
 class StubScorePayloadDecryptor:
