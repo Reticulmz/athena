@@ -15,8 +15,11 @@ from osu_server.transports.stable.web_legacy.mappers.score_submit import (
     MultipartParseError,
     StableScorePayloadParser,
     StableScoreSubmitCommandMapping,
+    StableScoreSubmitDecodeError,
+    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
     StableScoreSubmitOverallStats,
+    StableScoreSubmitRequestMapping,
 )
 
 __all__ = [
@@ -30,6 +33,9 @@ __all__ = [
     "StableGetscoresLeaderboardMapper",
     "StableScorePayloadParser",
     "StableScoreSubmitCommandMapping",
+    "StableScoreSubmitDecodeError",
+    "StableScoreSubmitDecoder",
     "StableScoreSubmitMapper",
     "StableScoreSubmitOverallStats",
+    "StableScoreSubmitRequestMapping",
 ]

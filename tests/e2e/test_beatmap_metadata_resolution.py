@@ -39,9 +39,9 @@ from osu_server.services.queries.beatmaps.mirror import (
 )
 from tests.support.beatmaps import InMemoryBeatmapStore
 
-_NOW = datetime(2026, 6, 6, tzinfo=UTC)
 _ONE_HOUR = timedelta(hours=1)
 _THIRTY_DAYS = timedelta(days=30)
+_NOW = datetime.now(UTC)
 
 _BEATMAP_ID = 2000
 _BEATMAPSET_ID = 1000

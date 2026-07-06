@@ -1,4 +1,4 @@
-"""Stable web legacy transport providers."""
+"""安定版 web legacy transport provider。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from dishka import Provider, Scope
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
+from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
@@ -37,6 +38,8 @@ from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
     ReplayDownloadQueryParser,
+    StableScorePayloadParser,
+    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
 )
 from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
@@ -60,14 +63,17 @@ _DISHKA_RUNTIME_HINTS = (
     ReplayDownloadQuery,
     ReplayDownloadQueryParser,
     ReplayDownloadHandler,
+    ScoreCryptoService,
     SessionCredentialsQueryUseCase,
+    StableScorePayloadParser,
+    StableScoreSubmitDecoder,
     UserQueryRepository,
 )
 
 
 @final
 class StableWebLegacyProviderSet(Provider):
-    """Providers for stable legacy web handlers, parsers, and mappers."""
+    """安定版 legacy web handler、parser、mapper の provider set。"""
 
     scope = Scope.APP
 
@@ -135,15 +141,79 @@ class StableWebLegacyProviderSet(Provider):
         )
 
     @provide
+    def stable_score_payload_parser(self) -> StableScorePayloadParser:
+        """安定版 score payload parser を提供する。
+
+        Args:
+            なし。
+
+        Returns:
+            Stable plaintext score payload を ParsedScore へ変換する parser。
+
+        Raises:
+            生成時に独自例外は送出しない。
+
+        Constraints:
+            Parser は transport 層の decode 境界で使い、command use-case へ直接渡さない。
+        """
+        return StableScorePayloadParser()
+
+    @provide
+    def stable_score_submit_decoder(
+        self,
+        payload_decryptor: ScoreCryptoService,
+        payload_parser: StableScorePayloadParser,
+    ) -> StableScoreSubmitDecoder:
+        """安定版 score submit decoder を提供する。
+
+        Args:
+            payload_decryptor: encrypted stable payload を復号する ScoreCryptoService。
+            payload_parser: 復号後 plaintext を ParsedScore へ変換する parser。
+
+        Returns:
+            stable request mapping を ParsedSubmissionInput へ変換する decoder。
+
+        Raises:
+            生成時に独自例外は送出しない。
+
+        Constraints:
+            復号と wire payload parse は stable transport 境界に閉じ込める。
+        """
+        return StableScoreSubmitDecoder(
+            payload_decryptor=payload_decryptor,
+            payload_parser=payload_parser,
+        )
+
+    @provide
     def score_submit_handler(
         self,
         submit_score_command: ProcessScoreSubmissionUseCase,
         mapper: StableScoreSubmitMapper,
+        decoder: StableScoreSubmitDecoder,
         current_user_stats_query: CurrentUserStatsQuery,
         event_bus: LocalEventBus,
     ) -> ScoreSubmitHandler:
+        """安定版 score submit handler を提供する。
+
+        Args:
+            submit_score_command: 正規化済み score submission を処理する command use-case。
+            mapper: stable multipart request と response body を変換する mapper。
+            decoder: stable payload を command input へ変換する decoder。
+            current_user_stats_query: completed response 用 stats を補完する query。
+            event_bus: score submit 後の domain event を配送する local event bus。
+
+        Returns:
+            /web/osu-submit-modular-selector.php 用 handler。
+
+        Raises:
+            生成時に独自例外は送出しない。
+
+        Constraints:
+            Provider は依存を組み立てるだけで、request state や DB session を保持しない。
+        """
         return ScoreSubmitHandler(
             submit_score_command=submit_score_command,
+            decoder=decoder,
             mapper=mapper,
             current_user_stats_query=current_user_stats_query,
             event_bus=event_bus,

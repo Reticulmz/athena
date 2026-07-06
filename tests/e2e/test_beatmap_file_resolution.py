@@ -47,9 +47,9 @@ from tests.support.beatmaps import InMemoryBeatmapStore
 if TYPE_CHECKING:
     from osu_server.domain.storage.blobs import BlobStored
 
-_NOW = datetime(2026, 6, 6, tzinfo=UTC)
 _ONE_HOUR = timedelta(hours=1)
 _THIRTY_DAYS = timedelta(days=30)
+_NOW = datetime.now(UTC)
 
 _BEATMAP_ID = 3000
 _BEATMAPSET_ID = 1500

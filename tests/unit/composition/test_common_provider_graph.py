@@ -162,6 +162,7 @@ from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
     StableScorePayloadParser,
+    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
 )
 from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
@@ -333,6 +334,7 @@ async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
         ScoreAuthorizationService,
         SubmitScoreUseCase,
         StableScorePayloadParser,
+        StableScoreSubmitDecoder,
         ProcessScoreSubmissionUseCase,
         LoginResponseBuilder,
         LoginWorkflow,

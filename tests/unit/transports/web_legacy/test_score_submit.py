@@ -1,6 +1,7 @@
-"""Unit tests for score submit handler."""
+"""スコア submit handler の unit test。"""
 
 import base64
+import hashlib
 from decimal import Decimal
 from typing import Protocol, final
 
@@ -21,19 +22,22 @@ from osu_server.services.queries.scores import (
     CurrentUserStatsQueryInput,
     CurrentUserStatsQueryResult,
 )
-from osu_server.transports.stable.web_legacy.mappers import StableScoreSubmitMapper
+from osu_server.transports.stable.web_legacy.mappers import (
+    StableScoreSubmitMapper,
+)
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
+from tests.support.fakes import make_stable_score_submit_decoder
 from tests.support.starlette_requests import make_starlette_request
 
 
 class ProcessScoreSubmissionUseCaseProtocol(Protocol):
-    """Protocol for score submission service."""
+    """スコア submission command の test 用 Protocol。"""
 
     async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult: ...
 
 
 class StubProcessScoreSubmissionUseCase:
-    """Stub service for testing."""
+    """ハンドラー test が command 結果を固定するための stub。"""
 
     def __init__(self, result: SubmissionResult) -> None:
         self._result: SubmissionResult = result
@@ -81,7 +85,20 @@ def _score_submit_request(body: bytes, content_type: str) -> Request:
 
 @pytest.fixture
 def valid_multipart_body() -> bytes:
-    """Valid multipart request body fixture."""
+    """有効な stable multipart request body を返す。
+
+    Args:
+        なし。
+
+    Returns:
+        score payload, IV, credential, metadata, replay を含む multipart body。
+
+    Raises:
+        例外は送出しない。
+
+    Constraints:
+        payload は decoder fake が復号する前提の dummy binary として扱う。
+    """
     encrypted_payload = base64.b64encode(b"encrypted_payload_data")
     iv = base64.b64encode(b"0" * 32)
 
@@ -120,7 +137,20 @@ def valid_multipart_body() -> bytes:
 
 @pytest.fixture
 def mock_request(valid_multipart_body: bytes) -> Request:
-    """Mock Starlette request."""
+    """スコア submit handler に渡す Starlette request を作る。
+
+    Args:
+        valid_multipart_body: valid_multipart_body fixture が返す multipart body。
+
+    Returns:
+        stable score submit endpoint への POST request。
+
+    Raises:
+        例外は送出しない。
+
+    Constraints:
+        TestClient を使わず、handler に必要な request surface だけを持つ。
+    """
     return _score_submit_request(
         valid_multipart_body, "multipart/form-data; boundary=----WebKitFormBoundary"
     )
@@ -128,14 +158,27 @@ def mock_request(valid_multipart_body: bytes) -> Request:
 
 @pytest.mark.asyncio
 async def test_handle_score_submit_completed(mock_request: Request) -> None:
-    """Test completed response format."""
+    """完了 result を stable chart response に変換する。
+
+    Args:
+        mock_request: valid multipart body を持つ request。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: response body や command input mapping が期待と異なる場合。
+
+    Constraints:
+        opaque token は hash 化され、生値は command input に残さない。
+    """
     service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(
             outcome=SubmissionOutcome.COMPLETED,
             score_id=12345,
         )
     )
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(service, decoder=make_stable_score_submit_decoder())
 
     with structlog.testing.capture_logs() as cap_logs:
         response = await handler(mock_request)
@@ -146,7 +189,9 @@ async def test_handle_score_submit_completed(mock_request: Request) -> None:
     assert b"chartId:" in response.body
     assert service.last_input is not None
     assert service.last_input.beatmap_id is None
-    assert service.last_input.submission_metadata == {"token": "session_token"}
+    assert service.last_input.opaque_field_hashes == {
+        "token_sha256": hashlib.sha256(b"session_token").hexdigest()
+    }
     assert any(
         entry["event"] == "score_submission_multipart_parsed"
         and entry["score_field_count"] == 2
@@ -183,6 +228,7 @@ async def test_handle_score_submit_fires_current_user_stats_event(
     event_bus = StubLocalEventBus()
     handler = ScoreSubmitHandler(
         service,
+        decoder=make_stable_score_submit_decoder(),
         mapper=StableScoreSubmitMapper(stable_web_base_url="https://osu.athena.localhost"),
         current_user_stats_query=stats_query,
         event_bus=event_bus,
@@ -254,6 +300,7 @@ async def test_handle_score_submit_uses_result_current_stats_for_response_and_ev
     event_bus = StubLocalEventBus()
     handler = ScoreSubmitHandler(
         service,
+        decoder=make_stable_score_submit_decoder(),
         current_user_stats_query=stats_query,
         event_bus=event_bus,
     )
@@ -279,14 +326,27 @@ async def test_handle_score_submit_uses_result_current_stats_for_response_and_ev
 
 @pytest.mark.asyncio
 async def test_handle_score_submit_terminal_reject(mock_request: Request) -> None:
-    """Test terminal reject response format."""
+    """終端 reject result を stable reject response に変換する。
+
+    Args:
+        mock_request: valid multipart body を持つ request。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: response body や warning log が期待と異なる場合。
+
+    Constraints:
+        command の error_reason は log に残すが response body は legacy 互換形式にする。
+    """
     service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(
             outcome=SubmissionOutcome.TERMINAL_REJECTED,
             error_reason="authorization_failure",
         )
     )
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(service, decoder=make_stable_score_submit_decoder())
 
     with structlog.testing.capture_logs() as cap_logs:
         response = await handler(mock_request)
@@ -303,14 +363,27 @@ async def test_handle_score_submit_terminal_reject(mock_request: Request) -> Non
 
 @pytest.mark.asyncio
 async def test_handle_score_submit_retryable(mock_request: Request) -> None:
-    """Test retryable response format."""
+    """再試行 result を stable retry response に変換する。
+
+    Args:
+        mock_request: valid multipart body を持つ request。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: response status と body が期待と異なる場合。
+
+    Constraints:
+        retryable response は legacy client が再送する ``error: yes`` を返す。
+    """
     service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(
             outcome=SubmissionOutcome.RETRYABLE,
             error_reason="temporary_error",
         )
     )
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(service, decoder=make_stable_score_submit_decoder())
 
     response = await handler(mock_request)
 
@@ -321,11 +394,24 @@ async def test_handle_score_submit_retryable(mock_request: Request) -> None:
 
 @pytest.mark.asyncio
 async def test_handle_score_submit_parsing_error(valid_multipart_body: bytes) -> None:
-    """Test parsing error returns terminal reject."""
+    """マルチパート parse 失敗を stable terminal reject response に変換する。
+
+    Args:
+        valid_multipart_body: content-type 不一致で parse 失敗させる multipart body。
+
+    Returns:
+        None。
+
+    Raises:
+        AssertionError: response body や log reason が期待と異なる場合。
+
+    Constraints:
+        multipart parse 失敗では command use-case を呼び出さない。
+    """
     service = StubProcessScoreSubmissionUseCase(
         SubmissionResult(outcome=SubmissionOutcome.COMPLETED, score_id=1)
     )
-    handler = ScoreSubmitHandler(service)
+    handler = ScoreSubmitHandler(service, decoder=make_stable_score_submit_decoder())
 
     request = _score_submit_request(valid_multipart_body, "text/plain")
 

@@ -1,4 +1,4 @@
-"""POST /web/osu-submit-modular-selector.php — stable client score submission handler."""
+"""安定版 POST /web/osu-submit-modular-selector.php の score submit handler。"""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ from osu_server.services.queries.scores import (
 )
 from osu_server.transports.stable.web_legacy.mappers import (
     MultipartParseError,
+    StableScoreSubmitDecodeError,
+    StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
     StableScoreSubmitOverallStats,
 )
@@ -48,30 +50,69 @@ class CurrentUserStatsQueryPort(Protocol):
 
 
 class ScoreSubmitHandler:
-    """Handler for POST /web/osu-submit-modular-selector.php.
+    """安定版 POST /web/osu-submit-modular-selector.php を処理する handler。
 
-    Stable client score submission endpoint.
+    Stable client の multipart score submission を request mapping に変換し、
+    decoder で command input 化して score submission command workflow へ渡す。
     """
 
     def __init__(
         self,
         submit_score_command: ScoreSubmissionCommand,
+        decoder: StableScoreSubmitDecoder,
         limits: MultipartLimits | None = None,
         mapper: StableScoreSubmitMapper | None = None,
         current_user_stats_query: CurrentUserStatsQueryPort | None = None,
         event_bus: LocalEventBus | None = None,
     ) -> None:
+        """処理 handler の command, decoder, mapper, side-effect 境界を設定する。
+
+        Args:
+            submit_score_command: 正規化済み入力を処理する score submission command。
+            decoder: stable encrypted payload を ParsedSubmissionInput へ変換する decoder。
+            limits: mapper を省略した場合に使う multipart parser 制限。
+            mapper: stable request/response mapper。None の場合は limits から生成する。
+            current_user_stats_query: completed response 用 stats を補完する query。
+            event_bus: completed 後に current stats update event を発火する bus。
+
+        Returns:
+            None。
+
+        Raises:
+            生成時に独自例外は送出しない。
+
+        Constraints:
+            Handler は transport adaptation に閉じ、repository や DB session を直接扱わない。
+        """
         self._submit_score_command: ScoreSubmissionCommand = submit_score_command
+        self._decoder: StableScoreSubmitDecoder = decoder
         self._mapper: StableScoreSubmitMapper = mapper or StableScoreSubmitMapper(limits)
         self._current_user_stats_query: CurrentUserStatsQueryPort | None = current_user_stats_query
         self._event_bus: LocalEventBus | None = event_bus
 
     async def __call__(self, request: Request) -> Response:
-        """Adapt a stable score submission request into the command workflow."""
+        """安定版 score submit request を command workflow へ適用する。
+
+        Args:
+            request: stable client から届いた multipart HTTP request。
+
+        Returns:
+            stable client 互換の score submit response。
+
+        Raises:
+            公開境界では decode や command の失敗を送出しない。multipart parse 失敗と
+            decoder 失敗は stable terminal response に変換し、command の retryable や
+            pending 結果も stable response body へ変換する。
+
+        Constraints:
+            復号済み payload、password-md5、replay binary、opaque metadata の生値を
+            logging しない。current stats 補完と event 発火の失敗は submission response を
+            失敗扱いにしない。
+        """
         try:
             body = await request.body()
             content_type = request.headers.get("content-type", "")
-            command_mapping = self._mapper.to_command_mapping(
+            request_mapping = self._mapper.to_request_mapping(
                 body=body,
                 content_type=content_type,
                 submitted_at=datetime.now(UTC),
@@ -83,6 +124,18 @@ class ScoreSubmitHandler:
                 error=str(exc),
             )
             return Response(b"error: no", status_code=200)
+
+        try:
+            command_mapping = self._decoder.to_command_mapping(request_mapping)
+        except StableScoreSubmitDecodeError as exc:
+            logger.warning(
+                "score_submission_failed",
+                reason=exc.reason,
+                request_hash=exc.request_hash,
+                opaque_fields=exc.opaque_field_hashes or None,
+                error=exc.error,
+            )
+            return self._mapper.to_response(exc.result)
 
         logger.debug(
             "score_submission_multipart_parsed",
