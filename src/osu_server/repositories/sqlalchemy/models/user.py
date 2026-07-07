@@ -26,6 +26,11 @@ class UserModel(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    latest_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 
 class DisallowedUsernameModel(Base):

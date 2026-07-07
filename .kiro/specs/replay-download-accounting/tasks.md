@@ -9,7 +9,7 @@
   - _Requirements: 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 5.6_
   - _Boundary: Score Replay View Persistence_
 
-- [ ] 1.2 Add viewer latest activity durable storage
+- [x] 1.2 Add viewer latest activity durable storage
   - Add durable latest activity metadata for users without using row update metadata as a substitute.
   - Backfill existing users with a non-null activity timestamp and ensure new users receive one.
   - Keep latest activity as metadata rather than a per-download audit trail.

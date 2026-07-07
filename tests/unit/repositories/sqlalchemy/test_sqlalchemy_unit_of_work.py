@@ -168,6 +168,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
                 self._next_user_id += 1
                 instance.created_at = _NOW
                 instance.updated_at = _NOW
+                instance.latest_activity_at = _NOW
             if isinstance(instance, ChannelModel) and getattr(instance, "id", None) is None:
                 instance.id = self._next_channel_id
                 self._next_channel_id += 1
@@ -218,6 +219,7 @@ async def test_commit_persists_multi_repository_outcome_once_through_unit_of_wor
         created_channel = await uow.channels.create(make_channel(name="#sql"))
 
         assert created_user.id == 10
+        assert created_user.latest_activity_at == _NOW
         assert created_channel.id == 20
         assert session.commits == 0
         assert session.rollbacks == 0

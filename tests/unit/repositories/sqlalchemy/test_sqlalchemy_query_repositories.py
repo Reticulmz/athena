@@ -82,6 +82,7 @@ if TYPE_CHECKING:
 PROJECT_ROOT = Path(__file__).parents[3]
 QUERY_ROOT = PROJECT_ROOT / "src" / "osu_server" / "repositories" / "sqlalchemy" / "queries"
 _NOW = datetime(2026, 6, 14, 12, 0, tzinfo=UTC)
+_LATEST_ACTIVITY_AT = datetime(2026, 7, 7, 1, 2, 3, tzinfo=UTC)
 
 
 class FakeResult:
@@ -240,6 +241,7 @@ async def test_identity_and_channel_query_repositories_use_short_read_sessions()
     assert user_by_id.username == "QueryUser"
     assert user_by_name.id == user_model.id
     assert user_by_email.email == "query@example.com"
+    assert user_by_id.latest_activity_at == _LATEST_ACTIVITY_AT
     assert role_by_id.name == "Default"
     assert role_by_name.id == role_model.id
     assert [role.id for role in await roles.get_roles_for_user(user_model.id)] == [role_model.id]
@@ -823,6 +825,7 @@ def _user_model() -> UserModel:
         country="JP",
         created_at=_NOW,
         updated_at=_NOW,
+        latest_activity_at=_LATEST_ACTIVITY_AT,
     )
 
 

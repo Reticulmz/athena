@@ -59,6 +59,7 @@ def user_to_domain(model: UserModel) -> User:
         country=model.country,
         created_at=model.created_at,
         updated_at=model.updated_at,
+        latest_activity_at=model.latest_activity_at,
     )
 
 

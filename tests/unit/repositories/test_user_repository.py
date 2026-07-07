@@ -80,6 +80,8 @@ class TestCreate:
         assert created.email == "peppy@ppy.sh"
         assert created.country == "AU"
         assert created.password_hash == "$argon2id$hash"
+        assert created.latest_activity_at == user.latest_activity_at
+        assert created.latest_activity_at is not None
 
     async def test_auto_increment_ids(self, repo: InMemoryUserCommandRepository) -> None:
         user_a = await repo.create(_make_user(username="PlayerA", email="a@test.com"))

@@ -55,6 +55,7 @@ class SQLAlchemyUserCommandRepository:
             email=normalized_email,
             password_hash=user.password_hash,
             country=user.country,
+            latest_activity_at=user.latest_activity_at,
         )
         self._session.add(model)
         try:
@@ -180,4 +181,5 @@ def _user_to_domain(model: UserModel) -> User:
         country=model.country,
         created_at=model.created_at,
         updated_at=model.updated_at,
+        latest_activity_at=model.latest_activity_at,
     )
