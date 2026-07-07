@@ -71,6 +71,17 @@ async def test_create_persists_leaderboard_eligibility_snapshot() -> None:
     assert created.leaderboard_eligible_at_submission is False
 
 
+async def test_create_exposes_zero_replay_view_count_for_new_score() -> None:
+    session = FakeSession()
+    repository = SQLAlchemyScoreCommandRepository(cast("AsyncSession", cast("object", session)))
+
+    created = await repository.create(_score(leaderboard_eligible_at_submission=False))
+
+    assert session.added_model is not None
+    assert session.added_model.replay_view_count == 0
+    assert created.replay_view_count == 0
+
+
 async def test_create_persists_timing_fields() -> None:
     session = FakeSession()
     repository = SQLAlchemyScoreCommandRepository(cast("AsyncSession", cast("object", session)))

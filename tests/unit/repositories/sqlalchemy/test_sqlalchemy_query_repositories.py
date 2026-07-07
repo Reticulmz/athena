@@ -300,6 +300,8 @@ async def test_score_and_blob_query_repositories_are_read_only() -> None:
     assert blob_by_sha256 is not None
     assert score_by_id.online_checksum == "online"
     assert score_by_checksum.id == fixture.score.id
+    assert score_by_id.replay_view_count == 0
+    assert score_by_checksum.replay_view_count == 0
     assert blob_by_id.sha256 == "a" * 64
     assert blob_by_sha256.id == fixture.blob.id
     assert fixture.session.closed is True
@@ -872,6 +874,7 @@ def _score_model(
         client_version="b20260614",
         submitted_at=_NOW,
         beatmap_status_at_submission="ranked",
+        replay_view_count=0,
     )
 
 

@@ -54,6 +54,7 @@ class SQLAlchemyScoreCommandRepository:
             play_time_seconds=score.play_time_seconds,
             play_time_source=score.play_time_source.value if score.play_time_source else None,
             submit_exit_classification=score.submit_exit_classification,
+            replay_view_count=score.replay_view_count,
         )
         self._session.add(model)
         try:
@@ -178,6 +179,7 @@ def _score_to_domain(model: ScoreModel) -> Score:
             PlayTimeSource(model.play_time_source) if model.play_time_source is not None else None
         ),
         submit_exit_classification=model.submit_exit_classification,
+        replay_view_count=model.replay_view_count,
     )
 
 

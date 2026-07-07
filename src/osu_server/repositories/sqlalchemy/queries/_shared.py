@@ -126,6 +126,7 @@ def score_to_domain(model: ScoreModel) -> Score:
             PlayTimeSource(model.play_time_source) if model.play_time_source is not None else None
         ),
         submit_exit_classification=model.submit_exit_classification,
+        replay_view_count=model.replay_view_count,
     )
 
 
