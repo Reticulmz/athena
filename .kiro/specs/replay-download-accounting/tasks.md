@@ -17,7 +17,7 @@
   - _Requirements: 4.1, 4.7_
   - _Boundary: User Latest Activity Persistence_
 
-- [ ] 1.3 Add durable mutation operations for replay count and activity
+- [x] 1.3 Add durable mutation operations for replay count and activity
   - Add command-side score count increment behavior that reports whether the score existed.
   - Add command-side latest activity touch behavior that reports whether the viewer user existed.
   - Keep both operations available through the existing command persistence boundary.

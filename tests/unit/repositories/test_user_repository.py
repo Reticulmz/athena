@@ -21,6 +21,7 @@ def _make_user(
     email: str = "test@example.com",
     password_hash: str = "$argon2id$hash",
     country: str = "JP",
+    latest_activity_at: datetime | None = None,
 ) -> User:
     """Create a User with sensible defaults for testing."""
     now = datetime.now(UTC)
@@ -33,6 +34,7 @@ def _make_user(
         country=country,
         created_at=now,
         updated_at=now,
+        latest_activity_at=latest_activity_at,
     )
 
 
@@ -201,6 +203,53 @@ class TestIsUsernameDisallowed:
 
         assert await repo.is_username_disallowed("badname") is True
         assert await repo.is_username_disallowed("BADNAME") is True
+
+
+class TestTouchLatestActivity:
+    """touch_latest_activity() の tests。"""
+
+    async def test_updates_only_target_user_latest_activity(
+        self,
+        repo: InMemoryUserCommandRepository,
+        query_repo: InMemoryUserQueryRepository,
+    ) -> None:
+        """対象 user の latest_activity_at だけを更新する。"""
+        old_activity = datetime(2026, 7, 1, tzinfo=UTC)
+        new_activity = datetime(2026, 7, 2, tzinfo=UTC)
+        target = await repo.create(
+            _make_user(
+                username="TargetUser",
+                email="target@example.com",
+                latest_activity_at=old_activity,
+            )
+        )
+        other = await repo.create(
+            _make_user(
+                username="OtherUser",
+                email="other@example.com",
+                latest_activity_at=old_activity,
+            )
+        )
+
+        touched = await repo.touch_latest_activity(target.id, new_activity)
+
+        updated_target = await query_repo.get_by_id(target.id)
+        unchanged_other = await query_repo.get_by_id(other.id)
+        assert touched is True
+        assert updated_target is not None
+        assert unchanged_other is not None
+        assert updated_target.latest_activity_at == new_activity
+        assert updated_target.created_at == target.created_at
+        assert updated_target.updated_at == target.updated_at
+        assert unchanged_other.latest_activity_at == old_activity
+
+    async def test_returns_false_when_user_missing(
+        self, repo: InMemoryUserCommandRepository
+    ) -> None:
+        """対象 user が存在しない場合は False を返す。"""
+        touched = await repo.touch_latest_activity(999, datetime(2026, 7, 2, tzinfo=UTC))
+
+        assert touched is False
 
     async def test_add_duplicate_is_idempotent(self, repo: InMemoryUserCommandRepository) -> None:
         await repo.add_disallowed_username("badname")

@@ -187,6 +187,33 @@ class TestCountSubmissionsForBeatmap:
         assert counts.pass_count == 0
 
 
+class TestIncrementReplayViewCount:
+    """increment_replay_view_count() の tests。"""
+
+    async def test_increments_existing_score_count(
+        self, repository: InMemoryScoreCommandRepository, sample_score: Score
+    ) -> None:
+        """対象 score の Replay View Count を 1 増やす。"""
+        created = await repository.create(replace(sample_score, replay_view_count=2))
+        assert created.id is not None
+
+        incremented = await repository.increment_replay_view_count(created.id)
+
+        updated = await repository.get_by_id(created.id)
+        assert incremented is True
+        assert updated is not None
+        assert updated.replay_view_count == 3
+        assert updated.online_checksum == created.online_checksum
+
+    async def test_returns_false_when_score_missing(
+        self, repository: InMemoryScoreCommandRepository
+    ) -> None:
+        """対象 score が存在しない場合は False を返す。"""
+        incremented = await repository.increment_replay_view_count(999)
+
+        assert incremented is False
+
+
 class TestListCurrentStatsScoresForUser:
     """list_current_stats_scores_for_user() の tests。"""
 

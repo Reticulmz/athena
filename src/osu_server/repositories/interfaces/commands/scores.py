@@ -29,6 +29,10 @@ class ScoreCommandRepository(Protocol):
         """Return a score by identifier for command-side consistency checks."""
         ...
 
+    async def increment_replay_view_count(self, score_id: int) -> bool:
+        """対象 score の Replay View Count を 1 増やし、存在したか返す。"""
+        ...
+
     async def count_submissions_for_beatmap(self, beatmap_id: int) -> BeatmapSubmissionCounts:
         """Return cumulative submitted play/pass count for one beatmap."""
         ...

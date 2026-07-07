@@ -191,6 +191,7 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
         "exists_by_online_checksum",
         "get_by_id",
         "get_by_online_checksum",
+        "increment_replay_view_count",
         "list_current_stats_scores_for_user",
         "list_leaderboard_rebuild_candidates_for_beatmap_ids",
         "list_leaderboard_rebuild_candidates_for_user",

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.elements import ClauseElement
 
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
@@ -25,15 +26,20 @@ class FakeExecuteResult:
         self,
         models: tuple[ScoreModel, ...] = (),
         row: tuple[int, int] = (0, 0),
+        value: object | None = None,
     ) -> None:
         self._models: tuple[ScoreModel, ...] = models
         self._row: tuple[int, int] = row
+        self._value: object | None = value
 
     def scalars(self) -> tuple[ScoreModel, ...]:
         return self._models
 
     def one(self) -> tuple[int, int]:
         return self._row
+
+    def scalar_one_or_none(self) -> object | None:
+        return self._value
 
 
 class FakeSession:
@@ -43,6 +49,8 @@ class FakeSession:
         self.added_model: ScoreModel | None = None
         self.statements: list[object] = []
         self.execute_row: tuple[int, int] = (0, 0)
+        self.execute_value: object | None = None
+        self.flushes: int = 0
 
     def add(self, instance: object) -> None:
         assert isinstance(instance, ScoreModel)
@@ -50,11 +58,12 @@ class FakeSession:
 
     async def execute(self, statement: object) -> FakeExecuteResult:
         self.statements.append(statement)
-        return FakeExecuteResult(row=self.execute_row)
+        return FakeExecuteResult(row=self.execute_row, value=self.execute_value)
 
     async def flush(self) -> None:
-        assert self.added_model is not None
-        self.added_model.id = 42
+        self.flushes += 1
+        if self.added_model is not None:
+            self.added_model.id = 42
 
     async def refresh(self, instance: object) -> None:
         assert instance is self.added_model
@@ -181,6 +190,33 @@ async def test_count_submissions_for_beatmap_selects_play_and_pass_counts() -> N
     assert "scores.beatmap_id = %(beatmap_id_1)s" in sql
 
 
+async def test_increment_replay_view_count_uses_atomic_update_returning() -> None:
+    session = FakeSession()
+    session.execute_value = 42
+    repository = SQLAlchemyScoreCommandRepository(cast("AsyncSession", cast("object", session)))
+
+    result = await repository.increment_replay_view_count(42)
+
+    assert result is True
+    assert session.flushes == 1
+    assert len(session.statements) == 1
+    sql = _compiled_clause(session.statements[0])
+    assert "UPDATE scores SET" in sql
+    assert "replay_view_count=(scores.replay_view_count + " in sql
+    assert "WHERE scores.id = " in sql
+    assert "RETURNING scores.id" in sql
+
+
+async def test_increment_replay_view_count_returns_false_when_score_missing() -> None:
+    session = FakeSession()
+    repository = SQLAlchemyScoreCommandRepository(cast("AsyncSession", cast("object", session)))
+
+    result = await repository.increment_replay_view_count(404)
+
+    assert result is False
+    assert session.flushes == 1
+
+
 def _score(*, leaderboard_eligible_at_submission: bool) -> Score:
     return Score(
         id=None,
@@ -213,3 +249,8 @@ def _score(*, leaderboard_eligible_at_submission: bool) -> Score:
 def _compiled_select(statement: object) -> str:
     typed_statement = cast("Select[tuple[ScoreModel]]", statement)
     return str(typed_statement.compile(dialect=postgresql.dialect()))
+
+
+def _compiled_clause(statement: object) -> str:
+    assert isinstance(statement, ClauseElement)
+    return str(statement.compile(dialect=postgresql.dialect()))

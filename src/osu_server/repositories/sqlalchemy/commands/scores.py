@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import Select, case, func, literal, select
+from sqlalchemy import Select, case, func, literal, select, update
 from sqlalchemy.exc import IntegrityError
 
 from osu_server.domain.scores.mods import Mod, ModCombination
@@ -86,6 +86,31 @@ class SQLAlchemyScoreCommandRepository:
     async def get_by_id(self, score_id: int) -> Score | None:
         model = await self._session.get(ScoreModel, score_id)
         return _score_to_domain(model) if isinstance(model, ScoreModel) else None
+
+    async def increment_replay_view_count(self, score_id: int) -> bool:
+        """対象 score の Replay View Count を 1 増やす。
+
+        引数:
+            score_id: 更新対象 score の identifier.
+
+        戻り値:
+            対象 score が存在し、更新された場合は True.
+
+        例外:
+            SQLAlchemy session の永続化例外は呼び出し元へ送出する.
+
+        制約:
+            Unit of Work 所有 session を使い、この method では commit しない.
+        """
+        stmt = (
+            update(ScoreModel)
+            .where(ScoreModel.id == score_id)
+            .values(replay_view_count=ScoreModel.replay_view_count + 1)
+            .returning(ScoreModel.id)
+        )
+        result = await self._session.execute(stmt)
+        await self._session.flush()
+        return result.scalar_one_or_none() is not None
 
     async def count_submissions_for_beatmap(self, beatmap_id: int) -> BeatmapSubmissionCounts:
         raw_row = cast(
