@@ -44,7 +44,7 @@
   - _Boundary: ReplayDownloadAccountingGate_
 
 - [ ] 3. Replay download accounting command policy
-- [ ] 3.1 Apply Replay View Count policy
+- [x] 3.1 Apply Replay View Count policy
   - Count successful non-owner replay downloads when the duplicate cooldown gate is open.
   - Skip owner self-view without treating it as a counted view.
   - Suppress repeated same-viewer same-score downloads within the cooldown window.
