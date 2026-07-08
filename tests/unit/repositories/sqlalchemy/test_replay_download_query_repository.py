@@ -186,6 +186,8 @@ async def test_get_candidate_maps_available_replay_metadata_and_uses_short_read_
             FakeResult(
                 [
                     _row(
+                        score_id=12,
+                        score_owner_user_id=98,
                         replay_download_visible=True,
                         blob_id=456,
                         checksum="b" * 64,
@@ -204,6 +206,8 @@ async def test_get_candidate_maps_available_replay_metadata_and_uses_short_read_
     )
 
     assert result == ReplayDownloadAvailableReplayCandidate(
+        score_id=12,
+        score_owner_user_id=98,
         blob_id=456,
         checksum="b" * 64,
         byte_size=8192,
@@ -228,6 +232,7 @@ async def test_get_candidate_statement_reads_replay_metadata_without_storage_det
     assert "LEFT OUTER JOIN replay_file_attachments" in sql
     assert "scores.id = 50" in sql
     assert "scores.ruleset = 0" in sql
+    assert "scores.user_id" in sql
     assert "scores.passed IS true" in sql
     assert "scores.leaderboard_eligible_at_submission IS true" in sql
     assert "replay_file_attachments.blob_id" in sql
@@ -250,12 +255,15 @@ def _repository(session: FakeQuerySession) -> SQLAlchemyReplayDownloadQueryRepos
 def _row(
     *,
     replay_download_visible: bool,
+    score_id: int = 10,
+    score_owner_user_id: int = 20,
     blob_id: int | None = None,
     checksum: str | None = None,
     byte_size: int | None = None,
 ) -> Mapping[str, object]:
     return {
-        "score_id": 10,
+        "score_id": score_id,
+        "score_owner_user_id": score_owner_user_id,
         "replay_download_visible": replay_download_visible,
         "blob_id": blob_id,
         "checksum": checksum,

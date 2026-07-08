@@ -26,7 +26,7 @@
   - _Boundary: Score Replay View Persistence, User Latest Activity Persistence_
 
 - [ ] 2. Core accounting metadata and temporary gates
-- [ ] 2.1 Extend replay download success metadata
+- [x] 2.1 Extend replay download success metadata
   - Include score identity and score owner identity in successful replay download query results.
   - Ensure non-success replay download branches cannot carry accounting metadata.
   - Keep metadata internal so it is not serialized into the stable replay download response.

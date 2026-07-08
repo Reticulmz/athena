@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import TYPE_CHECKING, Protocol, final
 
@@ -53,33 +53,71 @@ class ReplayDownloadQueryInput:
 
 
 @dataclass(slots=True, frozen=True)
+class ReplayDownloadAccountingMetadata:
+    """Replay download accounting に必要な内部 identity を表す.
+
+    引数:
+        score_id: Accounting 対象になる score identifier.
+        score_owner_user_id: Self-view 判定に使う score owner user id.
+
+    戻り値:
+        Dataclass のため戻り値はない.
+
+    例外:
+        なし.
+
+    制約:
+        Transport query value, credential value, replay payload, storage backend detail,
+        local artifact path は保持しない. Stable response へ serialize しない.
+    """
+
+    score_id: int
+    score_owner_user_id: int
+
+
+@dataclass(slots=True, frozen=True)
 class ReplayDownloadQueryResult:
     """Replay download query use-case の branch result を表す.
 
     引数:
         branch: Client-visible response branch.
         response_body: Success branch で返す response body.
+        accounting_metadata: Success branch の accounting に使う内部 identity.
 
     戻り値:
         Dataclass のため戻り値はない.
 
     例外:
-        ValueError: Success branch と response body の有無が矛盾する場合.
+        ValueError: Success branch と response body / metadata の有無が矛盾する場合.
 
     制約:
-        Success 以外の branch は body を保持しない. Storage backend detail,
-        credential value, raw query value, local artifact path は保持しない.
+        Success 以外の branch は body と accounting metadata を保持しない.
+        Storage backend detail, credential value, raw query value, local artifact path
+        は保持しない.
     """
 
     branch: ReplayDownloadBranch
     response_body: ReplayDownloadResponseBody | None = None
+    accounting_metadata: ReplayDownloadAccountingMetadata | None = field(
+        default=None,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if self.branch is ReplayDownloadBranch.SUCCESS and self.response_body is None:
             msg = "success replay download query result requires response body"
             raise ValueError(msg)
+        if self.branch is ReplayDownloadBranch.SUCCESS and self.accounting_metadata is None:
+            msg = "success replay download query result requires accounting metadata"
+            raise ValueError(msg)
         if self.branch is not ReplayDownloadBranch.SUCCESS and self.response_body is not None:
             msg = "non-success replay download query result must not include response body"
+            raise ValueError(msg)
+        if (
+            self.branch is not ReplayDownloadBranch.SUCCESS
+            and self.accounting_metadata is not None
+        ):
+            msg = "non-success replay download query result must not include accounting metadata"
             raise ValueError(msg)
 
     @property
@@ -99,7 +137,11 @@ class ReplayDownloadQueryResult:
             HTTP status や transport response には依存しない.
         """
 
-        return self.branch is ReplayDownloadBranch.SUCCESS and self.response_body is not None
+        return (
+            self.branch is ReplayDownloadBranch.SUCCESS
+            and self.response_body is not None
+            and self.accounting_metadata is not None
+        )
 
 
 class _ReplayDownloadBodyBuilder(Protocol):
@@ -356,9 +398,18 @@ class ReplayDownloadQuery:
                 stored_blob=ReplayDownloadStoredBlobObject(payload=blob_bytes),
             )
         )
+        accounting_metadata = (
+            ReplayDownloadAccountingMetadata(
+                score_id=candidate.score_id,
+                score_owner_user_id=candidate.score_owner_user_id,
+            )
+            if build_result.branch is ReplayDownloadBranch.SUCCESS
+            else None
+        )
         return ReplayDownloadQueryResult(
             branch=build_result.branch,
             response_body=build_result.response_body,
+            accounting_metadata=accounting_metadata,
         )
 
 
@@ -370,6 +421,7 @@ def _blocked_result() -> ReplayDownloadBodyBuildResult:
 
 
 __all__ = [
+    "ReplayDownloadAccountingMetadata",
     "ReplayDownloadBodyAssembler",
     "ReplayDownloadBodyBuildInput",
     "ReplayDownloadBodyBuildResult",

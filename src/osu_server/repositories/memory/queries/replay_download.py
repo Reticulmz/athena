@@ -78,7 +78,13 @@ class InMemoryReplayDownloadQueryRepository:
         """
         state = self._snapshot_provider.snapshot()
         score = state.scores_by_id.get(query.score_id)
-        if score is None or score.id != query.score_id or score.ruleset is not query.ruleset:
+        score_id = score.id if score is not None else None
+        if (
+            score is None
+            or score_id is None
+            or score_id != query.score_id
+            or score.ruleset is not query.ruleset
+        ):
             return ReplayDownloadScoreNotFoundCandidate()
 
         if not _score_is_replay_download_visible(state, score):
@@ -89,6 +95,8 @@ class InMemoryReplayDownloadQueryRepository:
             return ReplayDownloadMissingReplayCandidate()
 
         return ReplayDownloadAvailableReplayCandidate(
+            score_id=score_id,
+            score_owner_user_id=score.user_id,
             blob_id=replay.blob_id,
             checksum=replay.checksum_sha256,
             byte_size=replay.byte_size,

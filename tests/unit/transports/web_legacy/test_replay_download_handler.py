@@ -18,6 +18,7 @@ from osu_server.services.queries.identity import (
     SessionCredentialsQueryResult,
 )
 from osu_server.services.queries.scores import (
+    ReplayDownloadAccountingMetadata,
     ReplayDownloadQueryInput,
     ReplayDownloadQueryResult,
 )
@@ -241,6 +242,10 @@ async def test_success_query_result_returns_response_body() -> None:
         ReplayDownloadQueryResult(
             branch=ReplayDownloadBranch.SUCCESS,
             response_body=ReplayDownloadResponseBody(payload=_SUCCESS_BODY),
+            accounting_metadata=ReplayDownloadAccountingMetadata(
+                score_id=515,
+                score_owner_user_id=616,
+            ),
         )
     )
     handler = _make_handler(
@@ -257,7 +262,7 @@ async def test_success_query_result_returns_response_body() -> None:
     assert len(response.body) == len(_SUCCESS_BODY)
     assert response.headers["content-type"] == "zip"
     assert response.headers["content-disposition"] == 'attachment; filename="replay.osr"'
-    _assert_response_excludes_raw_inputs(response, query)
+    _assert_response_excludes_raw_inputs(response, query, extra_values=("515", "616"))
 
 
 async def test_unhandled_query_result_branch_fails_loudly() -> None:
