@@ -34,7 +34,7 @@
   - _Requirements: 1.1, 1.6, 3.8, 5.4_
   - _Boundary: Replay Download Metadata Extension_
 
-- [ ] 2.2 (P) Build temporary replay accounting gates
+- [x] 2.2 (P) Build temporary replay accounting gates
   - Add a 24-hour first-claim cooldown per viewer and score.
   - Add a 5-minute first-claim latest activity throttle per viewer.
   - Provide Valkey-backed and in-memory behavior with the same claim semantics.
