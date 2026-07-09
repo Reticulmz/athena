@@ -104,7 +104,7 @@
   - _Requirements: 1.2, 1.3, 1.4, 1.5, 1.6, 5.3, 5.4, 6.6, 6.7, 6.8_
   - _Boundary: Stable Replay Handler Hook_
 
-- [ ] 5.2 (P) Verify durable persistence and migration integrity
+- [x] 5.2 (P) Verify durable persistence and migration integrity
   - Verify existing scores and new scores expose Replay View Count as `0` until counted downloads occur.
   - Verify Replay View Count increments by exactly one for an accepted counted download.
   - Verify users have non-null latest activity and touch updates only the viewer user.
