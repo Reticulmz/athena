@@ -123,7 +123,7 @@
   - _Requirements: 3.3, 3.4, 3.5, 3.6, 3.7, 4.3, 4.4, 4.5, 4.6, 6.3, 6.4, 6.5, 6.8_
   - _Boundary: ReplayDownloadAccountingGate, ReplayDownloadAccountingUseCase_
 
-- [ ] 5.4 Run focused implementation validation
+- [x] 5.4 Run focused implementation validation
   - Run the replay download accounting unit and integration test set.
   - Run the relevant formatting, lint, type, and import-boundary checks for touched modules.
   - Fix any drift between generated tasks, requirements, design, and implementation before claiming completion.
