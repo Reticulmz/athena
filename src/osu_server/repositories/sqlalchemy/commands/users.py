@@ -188,12 +188,23 @@ class SQLAlchemyUserCommandRepository:
 
 
 def _user_uniqueness_error(user: User, exc: IntegrityError) -> ValueError:
-    text = str(exc)
-    if "safe_username" in text:
+    constraint_name = _constraint_name(exc)
+    text = str(getattr(exc, "orig", exc))
+    if constraint_name == "users_safe_username_key" or "users_safe_username_key" in text:
         return ValueError(f"safe_username already exists: {user.safe_username}")
-    if "email" in text:
+    if constraint_name == "users_email_key" or "users_email_key" in text:
         return ValueError(f"email already exists: {user.email}")
     return ValueError("user uniqueness constraint failed")
+
+
+def _constraint_name(exc: IntegrityError) -> str | None:
+    orig = exc.orig
+    direct = getattr(orig, "constraint_name", None)
+    if isinstance(direct, str):
+        return direct
+    diag = getattr(orig, "diag", None)
+    from_diag = getattr(diag, "constraint_name", None)
+    return from_diag if isinstance(from_diag, str) else None
 
 
 def _user_to_domain(model: UserModel) -> User:

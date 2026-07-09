@@ -52,6 +52,42 @@ def test_parse_valid_multipart_with_all_required_fields():
     assert result.submission_metadata == {}
 
 
+def test_parse_normalizes_uppercase_password_md5_hex():
+    """Stable password MD5 hex は大小文字差を canonicalization で吸収する."""
+    boundary = "----boundary"
+    fields = [
+        ("score", SCORE_B64),
+        ("iv", IV_B64),
+        ("pass", b"ABCDEF0123456789ABCDEF0123456789"),
+        ("x", b"client_hash_value"),
+        ("osuver", b"20260412"),
+    ]
+    body = make_multipart_body(boundary, fields)
+    content_type = f"multipart/form-data; boundary={boundary}"
+
+    result = parse(body, content_type)
+
+    assert result.password_md5 == "abcdef0123456789abcdef0123456789"
+
+
+def test_parse_preserves_non_md5_password_credential():
+    """32文字 hex ではない credential は従来どおりそのまま保持する."""
+    boundary = "----boundary"
+    fields = [
+        ("score", SCORE_B64),
+        ("iv", IV_B64),
+        ("pass", b"password_md5_hash"),
+        ("x", b"client_hash_value"),
+        ("osuver", b"20260412"),
+    ]
+    body = make_multipart_body(boundary, fields)
+    content_type = f"multipart/form-data; boundary={boundary}"
+
+    result = parse(body, content_type)
+
+    assert result.password_md5 == "password_md5_hash"
+
+
 def test_parse_duplicate_score_field_order_preservation():
     """First score field is payload, second is replay."""
     boundary = "----boundary"
