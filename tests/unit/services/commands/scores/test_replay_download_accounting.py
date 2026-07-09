@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, cast
 
 import pytest
+import structlog.testing
 
 from osu_server.domain.identity.users import User
 from osu_server.domain.scores.mods import ModCombination
@@ -20,6 +22,13 @@ from osu_server.services.commands.scores.replay_download_accounting import (
     ReplayDownloadAccountingUseCase,
     ReplayViewAccountingOutcome,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from contextlib import AbstractAsyncContextManager
+    from typing import Self
+
+    from osu_server.repositories.interfaces.unit_of_work import UnitOfWork
 
 _OLD_ACTIVITY = datetime(2026, 7, 7, 12, 0, 0, tzinfo=UTC)
 _NOW = datetime(2026, 7, 8, 12, 0, 0, tzinfo=UTC)
@@ -99,6 +108,54 @@ class _FailingLatestActivityGate:
     async def claim_latest_activity(self, viewer_user_id: int, ttl_seconds: int) -> bool:
         del viewer_user_id, ttl_seconds
         raise RuntimeError("activity gate unavailable")
+
+
+@dataclass(slots=True)
+class _FailingScoreRepository:
+    async def increment_replay_view_count(self, score_id: int) -> bool:
+        del score_id
+        raise RuntimeError("raw replay bytes: /tmp/replay.osr?score=1&token=secret")
+
+
+@dataclass(slots=True)
+class _FailingUsersRepository:
+    async def touch_latest_activity(self, user_id: int, occurred_at: datetime) -> bool:
+        del user_id, occurred_at
+        raise RuntimeError("password=secret /var/lib/replays/private.osr")
+
+
+@dataclass(slots=True)
+class _FailingOperationUnitOfWork:
+    scores: _FailingScoreRepository = field(default_factory=_FailingScoreRepository)
+    users: _FailingUsersRepository = field(default_factory=_FailingUsersRepository)
+    committed: bool = False
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: object,
+    ) -> None:
+        del exc_type, exc, traceback
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def rollback(self) -> None:
+        self.committed = False
+
+
+@dataclass(slots=True)
+class _FailingOperationUnitOfWorkFactory:
+    units: list[_FailingOperationUnitOfWork] = field(default_factory=list)
+
+    def __call__(self) -> AbstractAsyncContextManager[UnitOfWork]:
+        unit = _FailingOperationUnitOfWork()
+        self.units.append(unit)
+        return cast("AbstractAsyncContextManager[UnitOfWork]", unit)
 
 
 @dataclass(slots=True)
@@ -301,6 +358,74 @@ async def test_latest_activity_gate_failure_is_treated_as_open() -> None:
     assert await _latest_activity_at(factory, viewer.id) == _NOW
 
 
+@pytest.mark.asyncio
+async def test_operation_failures_are_distinguishable_and_sanitized() -> None:
+    factory = _FailingOperationUnitOfWorkFactory()
+    use_case = ReplayDownloadAccountingUseCase(
+        unit_of_work_factory=factory,
+        accounting_gate=_RecordingAccountingGate(),
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        result = await use_case.execute(
+            ReplayDownloadAccountingInput(
+                score_id=123,
+                score_owner_user_id=10,
+                viewer_user_id=20,
+                occurred_at=_NOW,
+            )
+        )
+
+    assert result.replay_view_outcome is ReplayViewAccountingOutcome.FAILED
+    assert result.latest_activity_outcome is LatestActivityAccountingOutcome.FAILED
+    assert [entry["event"] for entry in logs] == [
+        "replay_download_accounting_replay_view_failed",
+        "replay_download_accounting_latest_activity_failed",
+    ]
+    assert {entry["operation"] for entry in logs} == {
+        "replay_view_count",
+        "latest_activity",
+    }
+    assert {entry["score_id"] for entry in logs} == {123}
+    assert {entry["viewer_user_id"] for entry in logs} == {20}
+    assert {entry["score_owner_user_id"] for entry in logs} == {10}
+    assert {entry["outcome"] for entry in logs} == {"failed"}
+    assert {entry["exception_type"] for entry in logs} == {"RuntimeError"}
+    assert _logs_do_not_expose_sensitive_values(logs)
+
+
+@pytest.mark.asyncio
+async def test_gate_failures_are_operator_visible_and_sanitized() -> None:
+    factory = InMemoryUnitOfWorkFactory()
+    owner = await _create_user(factory, username="Owner")
+    viewer = await _create_user(factory, username="Viewer")
+    score = await _create_score(factory, owner_user_id=owner.id)
+    score_id = _require_score_id(score)
+    use_case = ReplayDownloadAccountingUseCase(
+        unit_of_work_factory=factory,
+        accounting_gate=_FailingLatestActivityGate(),
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        result = await use_case.execute(
+            ReplayDownloadAccountingInput(
+                score_id=score_id,
+                score_owner_user_id=owner.id,
+                viewer_user_id=viewer.id,
+                occurred_at=_NOW,
+            )
+        )
+
+    assert result.latest_activity_outcome is LatestActivityAccountingOutcome.TOUCHED
+    assert [entry["event"] for entry in logs] == [
+        "replay_download_accounting_activity_gate_failed"
+    ]
+    assert logs[0]["operation"] == "activity_gate"
+    assert logs[0]["outcome"] == "opened"
+    assert logs[0]["exception_type"] == "RuntimeError"
+    assert _logs_do_not_expose_sensitive_values(logs)
+
+
 async def _create_user(
     factory: InMemoryUnitOfWorkFactory,
     *,
@@ -352,6 +477,20 @@ def _user(*, username: str) -> User:
         updated_at=_OLD_ACTIVITY,
         latest_activity_at=_OLD_ACTIVITY,
     )
+
+
+def _logs_do_not_expose_sensitive_values(logs: Sequence[Mapping[str, object]]) -> bool:
+    rendered = repr(logs)
+    forbidden_fragments = (
+        "raw replay bytes",
+        "password=",
+        "token=",
+        "/tmp/",
+        "/var/",
+        ".osr",
+        "secret",
+    )
+    return all(fragment not in rendered for fragment in forbidden_fragments)
 
 
 def _score(*, owner_user_id: int) -> Score:

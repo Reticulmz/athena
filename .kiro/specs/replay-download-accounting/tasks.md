@@ -64,7 +64,7 @@
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 6.4, 6.5_
   - _Boundary: ReplayDownloadAccountingUseCase_
 
-- [ ] 3.3 Add operation outcomes and sanitized failure observability
+- [x] 3.3 Add operation outcomes and sanitized failure observability
   - Distinguish replay count failure from latest activity failure in command results and logs.
   - Allow count and activity operations to fail independently without rolling back the other operation.
   - Exclude raw replay payloads, raw query values, credential values, and local artifact paths from all accounting diagnostics.

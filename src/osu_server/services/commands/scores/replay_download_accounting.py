@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
+
+import structlog
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -16,6 +18,11 @@ if TYPE_CHECKING:
 
 _REPLAY_VIEW_DUPLICATE_COOLDOWN_SECONDS: Final = 86_400
 _LATEST_ACTIVITY_THROTTLE_SECONDS: Final = 300
+
+_logger: structlog.stdlib.BoundLogger = cast(
+    "structlog.stdlib.BoundLogger",
+    structlog.get_logger(__name__),
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -157,7 +164,7 @@ class ReplayDownloadAccountingUseCase:
         if not cooldown_open:
             return ReplayViewAccountingOutcome.SKIPPED_DUPLICATE
 
-        incremented = await self._increment_replay_view_count(input_data.score_id)
+        incremented = await self._increment_replay_view_count(input_data)
         if not incremented:
             return ReplayViewAccountingOutcome.FAILED
 
@@ -187,7 +194,14 @@ class ReplayDownloadAccountingUseCase:
                 score_id=input_data.score_id,
                 ttl_seconds=_REPLAY_VIEW_DUPLICATE_COOLDOWN_SECONDS,
             )
-        except Exception:
+        except Exception as exc:
+            _log_accounting_failure(
+                "replay_download_accounting_cooldown_gate_failed",
+                input_data=input_data,
+                operation="cooldown_gate",
+                outcome="opened",
+                exception=exc,
+            )
             return True
 
     async def _claim_latest_activity_or_open(
@@ -199,17 +213,41 @@ class ReplayDownloadAccountingUseCase:
                 viewer_user_id=input_data.viewer_user_id,
                 ttl_seconds=_LATEST_ACTIVITY_THROTTLE_SECONDS,
             )
-        except Exception:
+        except Exception as exc:
+            _log_accounting_failure(
+                "replay_download_accounting_activity_gate_failed",
+                input_data=input_data,
+                operation="activity_gate",
+                outcome="opened",
+                exception=exc,
+            )
             return True
 
-    async def _increment_replay_view_count(self, score_id: int) -> bool:
+    async def _increment_replay_view_count(
+        self,
+        input_data: ReplayDownloadAccountingInput,
+    ) -> bool:
         try:
             async with self._unit_of_work_factory() as uow:
-                score_exists = await uow.scores.increment_replay_view_count(score_id)
+                score_exists = await uow.scores.increment_replay_view_count(input_data.score_id)
                 if not score_exists:
+                    _log_accounting_failure(
+                        "replay_download_accounting_replay_view_failed",
+                        input_data=input_data,
+                        operation="replay_view_count",
+                        outcome="failed",
+                        exception_type="ScoreNotFound",
+                    )
                     return False
                 await uow.commit()
-        except Exception:
+        except Exception as exc:
+            _log_accounting_failure(
+                "replay_download_accounting_replay_view_failed",
+                input_data=input_data,
+                operation="replay_view_count",
+                outcome="failed",
+                exception=exc,
+            )
             return False
         return True
 
@@ -224,9 +262,23 @@ class ReplayDownloadAccountingUseCase:
                     input_data.occurred_at,
                 )
                 if not user_exists:
+                    _log_accounting_failure(
+                        "replay_download_accounting_latest_activity_failed",
+                        input_data=input_data,
+                        operation="latest_activity",
+                        outcome="failed",
+                        exception_type="UserNotFound",
+                    )
                     return False
                 await uow.commit()
-        except Exception:
+        except Exception as exc:
+            _log_accounting_failure(
+                "replay_download_accounting_latest_activity_failed",
+                input_data=input_data,
+                operation="latest_activity",
+                outcome="failed",
+                exception=exc,
+            )
             return False
         return True
 
@@ -235,6 +287,26 @@ def _validate_positive_id(name: str, value: int) -> None:
     if value <= 0:
         msg = f"{name} must be positive"
         raise ValueError(msg)
+
+
+def _log_accounting_failure(
+    event: str,
+    *,
+    input_data: ReplayDownloadAccountingInput,
+    operation: str,
+    outcome: str,
+    exception: BaseException | None = None,
+    exception_type: str | None = None,
+) -> None:
+    _logger.warning(
+        event,
+        operation=operation,
+        score_id=input_data.score_id,
+        viewer_user_id=input_data.viewer_user_id,
+        score_owner_user_id=input_data.score_owner_user_id,
+        outcome=outcome,
+        exception_type=exception_type or type(exception).__name__,
+    )
 
 
 __all__ = [
