@@ -19,7 +19,11 @@ class _NoResult:
     """Repository の事前存在確認で未検出を返す result double."""
 
     def scalar_one_or_none(self) -> None:
-        return None
+        """単一行取得結果が存在しないことを返す.
+
+        Returns:
+            事前存在確認で対象ユーザーが見つからなかったことを表す None.
+        """
 
 
 @final
@@ -30,20 +34,54 @@ class _IntegrityErrorSession:
     added: list[object]
 
     def __init__(self, error: IntegrityError) -> None:
+        """flush 時に送出する IntegrityError を保持する.
+
+        Args:
+            error: repository.create() の flush で送出する IntegrityError.
+        """
         self._error = error
         self.added = []
 
     async def execute(self, statement: object) -> _NoResult:
+        """事前存在確認 query に対して未検出の result double を返す.
+
+        Args:
+            statement: repository が発行した SQLAlchemy statement.
+
+        Returns:
+            scalar_one_or_none() が None を返す result double.
+        """
         _ = statement
         return _NoResult()
 
     def add(self, instance: object) -> None:
+        """追加対象 instance を記録する.
+
+        Args:
+            instance: repository が session に追加する SQLAlchemy model instance.
+
+        Returns:
+            None.
+        """
         self.added.append(instance)
 
     async def flush(self) -> None:
+        """flush 失敗として設定済み IntegrityError を送出する.
+
+        Raises:
+            IntegrityError: この double の初期化時に渡された永続化エラー.
+        """
         raise self._error
 
     async def refresh(self, instance: object) -> None:
+        """refresh 対象 instance を受け取り、何も変更せずに終了する.
+
+        Args:
+            instance: repository が refresh しようとした SQLAlchemy model instance.
+
+        Returns:
+            None.
+        """
         _ = instance
 
 
