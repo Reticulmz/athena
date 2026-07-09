@@ -36,7 +36,7 @@ from osu_server.transports.stable.web_legacy.replay_download import ReplayDownlo
 from tests.support.starlette_requests import make_starlette_request
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from starlette.requests import Request
     from starlette.responses import Response
@@ -360,6 +360,54 @@ async def test_accounting_failure_preserves_success_response_and_logs_sanitized_
     _assert_response_excludes_raw_inputs(response, query, extra_values=("515", "616"))
 
 
+async def test_accounting_input_failure_preserves_success_response() -> None:
+    auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
+    parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
+    accounting = _RecordingReplayDownloadAccounting()
+    replay_query = _ReplayDownloadQuery(
+        ReplayDownloadQueryResult(
+            branch=ReplayDownloadBranch.SUCCESS,
+            response_body=ReplayDownloadResponseBody(payload=_SUCCESS_BODY),
+            accounting_metadata=ReplayDownloadAccountingMetadata(
+                score_id=515,
+                score_owner_user_id=616,
+            ),
+        )
+    )
+    handler = _make_handler(
+        auth_query=auth_query,
+        parser=parser,
+        replay_query=replay_query,
+        accounting=accounting,
+        now_func=lambda: _ACCOUNTING_OCCURRED_AT.replace(tzinfo=None),
+    )
+    query = _query()
+
+    response = await handler(_request(query))
+    with structlog.testing.capture_logs() as logs:
+        await _run_background(response)
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.body == _SUCCESS_BODY
+    assert response.headers["content-type"] == "zip"
+    assert response.headers["content-disposition"] == 'attachment; filename="replay.osr"'
+    assert accounting.inputs == []
+    assert logs == [
+        {
+            "event": "replay_download_accounting_failed",
+            "log_level": "warning",
+            "operation": "accounting_input",
+            "score_id": 515,
+            "viewer_user_id": 42,
+            "score_owner_user_id": 616,
+            "outcome": "failed",
+            "exception_type": "ValueError",
+        }
+    ]
+    assert _logs_do_not_expose_sensitive_values(logs)
+    _assert_response_excludes_raw_inputs(response, query, extra_values=("515", "616"))
+
+
 async def test_unhandled_query_result_branch_fails_loudly() -> None:
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
@@ -387,6 +435,7 @@ def _make_handler(
     parser: _RecordingReplayDownloadQueryParser,
     replay_query: _ReplayDownloadQuery,
     accounting: _RecordingReplayDownloadAccounting | None = None,
+    now_func: Callable[[], datetime] | None = None,
 ) -> ReplayDownloadHandler:
     return ReplayDownloadHandler(
         auth_query=cast("SessionCredentialsQuery", auth_query),
@@ -396,7 +445,7 @@ def _make_handler(
             "ReplayDownloadAccountingPublisher | None",
             accounting,
         ),
-        now_func=lambda: _ACCOUNTING_OCCURRED_AT,
+        now_func=now_func or (lambda: _ACCOUNTING_OCCURRED_AT),
     )
 
 

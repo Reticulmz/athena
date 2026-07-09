@@ -90,6 +90,20 @@ class _FakeValkeyClient:
             del self.expirations[key]
 
 
+class _InvalidResultValkeyClient:
+    """非 integer script result を返す Valkey client テストダブル。"""
+
+    async def invoke_script(
+        self,
+        script: Script,
+        keys: list[TEncodable] | None = None,
+        args: list[TEncodable] | None = None,
+    ) -> object:
+        """claim result conversion の型検証用 payload を返す。"""
+        del script, keys, args
+        return b"1"
+
+
 @dataclass(slots=True)
 class _GateHarness:
     gate: ReplayDownloadAccountingGate
@@ -133,6 +147,25 @@ def test_gate_adapters_implement_protocol() -> None:
         ValkeyReplayDownloadAccountingGate(client),
         ReplayDownloadAccountingGate,
     )
+
+
+@pytest.mark.parametrize("factory", _GATE_FACTORIES, ids=["memory", "valkey"])
+async def test_claim_rejects_non_positive_ttl(
+    factory: _HarnessFactory,
+) -> None:
+    harness = factory()
+
+    with pytest.raises(ValueError, match="ttl_seconds must be positive"):
+        _ = await harness.gate.claim_replay_view(10, 100, ttl_seconds=0)
+    with pytest.raises(ValueError, match="ttl_seconds must be positive"):
+        _ = await harness.gate.claim_latest_activity(10, ttl_seconds=-1)
+
+
+async def test_valkey_claim_raises_type_error_on_non_integer_result() -> None:
+    gate = ValkeyReplayDownloadAccountingGate(_InvalidResultValkeyClient())
+
+    with pytest.raises(TypeError, match="Unexpected replay accounting claim result"):
+        _ = await gate.claim_replay_view(10, 100, VIEW_COOLDOWN_SECONDS)
 
 
 @pytest.mark.parametrize("factory", _GATE_FACTORIES, ids=["memory", "valkey"])

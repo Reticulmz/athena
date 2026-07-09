@@ -204,6 +204,12 @@ class TestIsUsernameDisallowed:
         assert await repo.is_username_disallowed("badname") is True
         assert await repo.is_username_disallowed("BADNAME") is True
 
+    async def test_add_duplicate_is_idempotent(self, repo: InMemoryUserCommandRepository) -> None:
+        await repo.add_disallowed_username("badname")
+        await repo.add_disallowed_username("badname")
+
+        assert await repo.is_username_disallowed("badname") is True
+
 
 class TestTouchLatestActivity:
     """touch_latest_activity() の tests。"""
@@ -250,9 +256,3 @@ class TestTouchLatestActivity:
         touched = await repo.touch_latest_activity(999, datetime(2026, 7, 2, tzinfo=UTC))
 
         assert touched is False
-
-    async def test_add_duplicate_is_idempotent(self, repo: InMemoryUserCommandRepository) -> None:
-        await repo.add_disallowed_username("badname")
-        await repo.add_disallowed_username("badname")
-
-        assert await repo.is_username_disallowed("badname") is True

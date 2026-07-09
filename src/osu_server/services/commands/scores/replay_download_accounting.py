@@ -166,6 +166,17 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> ReplayViewAccountingOutcome:
+        """Replay view count 更新 policy を適用する。
+
+        Args:
+            input_data: replay download 成功後の accounting 入力。
+
+        Returns:
+            self-view skip、duplicate cooldown skip、失敗、または increment 成功の結果。
+
+        Raises:
+            なし。gate や durable 更新の失敗は outcome に畳み込む。
+        """
         if input_data.viewer_user_id == input_data.score_owner_user_id:
             return ReplayViewAccountingOutcome.SKIPPED_SELF_VIEW
 
@@ -186,6 +197,17 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> LatestActivityAccountingOutcome:
+        """Latest activity 更新 policy を適用する。
+
+        Args:
+            input_data: replay download 成功後の accounting 入力。
+
+        Returns:
+            throttle skip、touch 成功、または失敗の結果。
+
+        Raises:
+            なし。gate や durable 更新の失敗は outcome に畳み込む。
+        """
         throttle_claim = await self._claim_latest_activity(input_data)
         if throttle_claim is _GateClaimOutcome.CLOSED:
             return LatestActivityAccountingOutcome.THROTTLED
@@ -335,6 +357,18 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> bool:
+        """Score の replay view count を 1 増やす。
+
+        Args:
+            input_data: replay download 成功後の accounting 入力。
+
+        Returns:
+            更新に成功した場合は True。score が存在しない、または例外が発生した
+            場合は False。
+
+        Raises:
+            なし。例外は warning log に畳み込み False を返す。
+        """
         try:
             async with self._unit_of_work_factory() as uow:
                 score_exists = await uow.scores.increment_replay_view_count(input_data.score_id)
@@ -363,6 +397,18 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> bool:
+        """Viewer の latest activity を更新する。
+
+        Args:
+            input_data: replay download 成功後の accounting 入力。
+
+        Returns:
+            更新に成功した場合は True。user が存在しない、または例外が発生した
+            場合は False。
+
+        Raises:
+            なし。例外は warning log に畳み込み False を返す。
+        """
         try:
             async with self._unit_of_work_factory() as uow:
                 user_exists = await uow.users.touch_latest_activity(
@@ -413,6 +459,18 @@ class ReplayDownloadAccountingPublisher(Protocol):
 
 
 def _validate_positive_id(name: str, value: int) -> None:
+    """id が正の整数であることを検証する。
+
+    Args:
+        name: 検証対象の引数名。
+        value: 検証する整数値。
+
+    Returns:
+        None。
+
+    Raises:
+        ValueError: value が 0 以下の場合。
+    """
     if value <= 0:
         msg = f"{name} must be positive"
         raise ValueError(msg)
@@ -427,6 +485,22 @@ def _log_accounting_failure(
     exception: BaseException | None = None,
     exception_type: str | None = None,
 ) -> None:
+    """Accounting 失敗を sanitize した warning log として記録する。
+
+    Args:
+        event: structlog event 名。
+        input_data: replay download 成功後の accounting 入力。
+        operation: 失敗した操作名。
+        outcome: 失敗時の outcome 分類。
+        exception: 発生した例外。例外 message は log に含めない。
+        exception_type: 例外型名の明示上書き。
+
+    Returns:
+        None。
+
+    Raises:
+        なし。
+    """
     _logger.warning(
         event,
         operation=operation,

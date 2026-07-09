@@ -30,7 +30,15 @@ class ScoreCommandRepository(Protocol):
         ...
 
     async def increment_replay_view_count(self, score_id: int) -> bool:
-        """対象 score の Replay View Count を 1 増やし、存在したか返す。"""
+        """対象 score の Replay View Count を 1 増やし、存在したか返す。
+
+        Args:
+            score_id: Replay View Count を増やす対象 score の identifier。
+
+        Returns:
+            対象 score が存在し、increment を実行した場合は True。
+            存在しない場合は False。
+        """
         ...
 
     async def count_submissions_for_beatmap(self, beatmap_id: int) -> BeatmapSubmissionCounts:

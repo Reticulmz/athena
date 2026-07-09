@@ -31,7 +31,7 @@ _OCCURRED_AT = datetime(2026, 7, 9, 12, 0, 0, tzinfo=UTC)
 
 
 class _FakeAccountingExecutor:
-    """Replay download accounting use-case test double."""
+    """Replay download accounting use-case のテストダブル。"""
 
     inputs: list[ReplayDownloadAccountingInput]
 
@@ -51,7 +51,7 @@ class _FakeAccountingExecutor:
 
 @final
 class _StubTask:
-    """Taskiq task test double."""
+    """Taskiq task のテストダブル。"""
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]]
     _error: Exception | None
@@ -69,7 +69,7 @@ class _StubTask:
 
 @final
 class _StubBroker:
-    """Task lookup test double."""
+    """Task lookup のテストダブル。"""
 
     _task: _StubTask | None
     task_names: list[str]

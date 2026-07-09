@@ -168,7 +168,8 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
                 self._next_user_id += 1
                 instance.created_at = _NOW
                 instance.updated_at = _NOW
-                instance.latest_activity_at = _NOW
+                if getattr(instance, "latest_activity_at", None) is None:
+                    instance.latest_activity_at = _NOW
             if isinstance(instance, ChannelModel) and getattr(instance, "id", None) is None:
                 instance.id = self._next_channel_id
                 self._next_channel_id += 1
@@ -211,15 +212,20 @@ def _factory(session: FakeSession) -> SQLAlchemyUnitOfWorkFactory:
 async def test_commit_persists_multi_repository_outcome_once_through_unit_of_work() -> None:
     session = FakeSession()
     factory = _factory(session)
+    source_latest_activity = datetime(2026, 6, 13, tzinfo=UTC)
 
     async with factory() as uow:
         created_user = await uow.users.create(
-            make_user(username="SQL User", email="sql@example.com")
+            make_user(
+                username="SQL User",
+                email="sql@example.com",
+                created_at=source_latest_activity,
+            )
         )
         created_channel = await uow.channels.create(make_channel(name="#sql"))
 
         assert created_user.id == 10
-        assert created_user.latest_activity_at == _NOW
+        assert created_user.latest_activity_at == source_latest_activity
         assert created_channel.id == 20
         assert session.commits == 0
         assert session.rollbacks == 0

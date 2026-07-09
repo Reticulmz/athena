@@ -144,7 +144,7 @@ async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() 
     assert result.response_body.payload == replay_payload
     assert result.response_body.byte_size == len(replay_payload)
     assert result.accounting_metadata is not None
-    assert type(result.accounting_metadata).__name__ == "ReplayDownloadAccountingMetadata"
+    assert isinstance(result.accounting_metadata, ReplayDownloadAccountingMetadata)
     assert result.accounting_metadata.score_id == 515
     assert result.accounting_metadata.score_owner_user_id == 616
     assert result.is_success is True

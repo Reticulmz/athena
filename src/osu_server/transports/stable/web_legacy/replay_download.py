@@ -156,18 +156,37 @@ class StableReplayDownloadExchange:
 
         return BackgroundTask(
             self._publish_successful_download_accounting,
-            ReplayDownloadAccountingInput(
-                score_id=metadata.score_id,
-                score_owner_user_id=metadata.score_owner_user_id,
-                viewer_user_id=viewer_user_id,
-                occurred_at=self._now_func(),
-            ),
+            score_id=metadata.score_id,
+            score_owner_user_id=metadata.score_owner_user_id,
+            viewer_user_id=viewer_user_id,
         )
 
     async def _publish_successful_download_accounting(
         self,
-        input_data: ReplayDownloadAccountingInput,
+        *,
+        score_id: int,
+        score_owner_user_id: int,
+        viewer_user_id: int,
     ) -> None:
+        try:
+            input_data = ReplayDownloadAccountingInput(
+                score_id=score_id,
+                score_owner_user_id=score_owner_user_id,
+                viewer_user_id=viewer_user_id,
+                occurred_at=self._now_func(),
+            )
+        except Exception as exc:
+            logger.warning(
+                "replay_download_accounting_failed",
+                operation="accounting_input",
+                score_id=score_id,
+                viewer_user_id=viewer_user_id,
+                score_owner_user_id=score_owner_user_id,
+                outcome="failed",
+                exception_type=type(exc).__name__,
+            )
+            return
+
         try:
             if self._replay_download_accounting is None:
                 return

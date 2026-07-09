@@ -18,7 +18,7 @@ _NEW_ACTIVITY = datetime(2026, 7, 3, tzinfo=UTC)
 
 @final
 class FakeSession:
-    """Minimal AsyncSession substitute for user command checks."""
+    """User command repository 検証用の AsyncSession 最小テストダブル。"""
 
     def __init__(self, model: UserModel | None) -> None:
         self._model: UserModel | None = model
