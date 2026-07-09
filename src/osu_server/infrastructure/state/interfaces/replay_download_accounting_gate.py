@@ -37,6 +37,28 @@ class ReplayDownloadAccountingGate(Protocol):
         """
         ...
 
+    async def release_replay_view(
+        self,
+        viewer_user_id: int,
+        score_id: int,
+    ) -> None:
+        """viewer と score の replay view marker を削除する.
+
+        Args:
+            viewer_user_id: 認証済み viewer user id。
+            score_id: download 対象 score id。
+
+        Returns:
+            None。
+
+        Raises:
+            実装依存の一時 state 削除エラー。
+
+        Constraints:
+            durable mutation 失敗後の best-effort 補償で使う。
+        """
+        ...
+
     async def claim_latest_activity(
         self,
         viewer_user_id: int,
@@ -56,5 +78,25 @@ class ReplayDownloadAccountingGate(Protocol):
 
         Constraints:
             throttle identity は viewer_user_id だけで構成する。
+        """
+        ...
+
+    async def release_latest_activity(
+        self,
+        viewer_user_id: int,
+    ) -> None:
+        """viewer の latest activity marker を削除する.
+
+        Args:
+            viewer_user_id: 認証済み viewer user id。
+
+        Returns:
+            None。
+
+        Raises:
+            実装依存の一時 state 削除エラー。
+
+        Constraints:
+            durable mutation 失敗後の best-effort 補償で使う。
         """
         ...

@@ -22,7 +22,7 @@ from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCas
 from osu_server.services.commands.identity import RegisterUserCommandUseCase
 from osu_server.services.commands.scores import (
     ProcessScoreSubmissionUseCase,
-    ReplayDownloadAccountingUseCase,
+    ReplayDownloadAccountingPublisher,
 )
 from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 from osu_server.services.queries.identity import (
@@ -63,7 +63,7 @@ _DISHKA_RUNTIME_HINTS = (
     LocalEventBus,
     RegisterUserCommandUseCase,
     RequestBeatmapFileWarmupUseCase,
-    ReplayDownloadAccountingUseCase,
+    ReplayDownloadAccountingPublisher,
     ReplayDownloadQuery,
     ReplayDownloadQueryParser,
     ReplayDownloadHandler,
@@ -229,7 +229,7 @@ class StableWebLegacyProviderSet(Provider):
         auth_query: SessionCredentialsQueryUseCase,
         replay_download_parser: ReplayDownloadQueryParser,
         replay_download_query: ReplayDownloadQuery,
-        replay_download_accounting: ReplayDownloadAccountingUseCase,
+        replay_download_accounting: ReplayDownloadAccountingPublisher,
     ) -> ReplayDownloadHandler:
         return ReplayDownloadHandler(
             auth_query=auth_query,

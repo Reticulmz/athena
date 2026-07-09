@@ -58,8 +58,6 @@ class _FakeValkeyClient:
         _ = script
         if keys is None or len(keys) != 1:
             raise AssertionError(f"expected one key, got {keys!r}")
-        if args is None or len(args) != 2:
-            raise AssertionError(f"expected marker and ttl args, got {args!r}")
 
         now = self.clock()
         self._prune(now)
@@ -67,6 +65,14 @@ class _FakeValkeyClient:
         key = keys[0]
         if not isinstance(key, str):
             raise TypeError(f"expected string key, got {key!r}")
+        if args == []:
+            self.invocations.append(_ScriptInvocation((key,), ()))
+            _ = self.expirations.pop(key, None)
+            return 1
+
+        if args is None or len(args) != 2:
+            raise AssertionError(f"expected marker and ttl args, got {args!r}")
+
         ttl_arg = args[1]
         if not isinstance(ttl_arg, str | int):
             raise TypeError(f"expected string or int ttl, got {ttl_arg!r}")
@@ -179,6 +185,17 @@ async def test_replay_view_claim_allows_again_after_cooldown(
 
 
 @pytest.mark.parametrize("factory", _GATE_FACTORIES, ids=["memory", "valkey"])
+async def test_replay_view_release_allows_immediate_retry(
+    factory: _HarnessFactory,
+) -> None:
+    harness = factory()
+
+    assert await harness.gate.claim_replay_view(10, 100, VIEW_COOLDOWN_SECONDS) is True
+    await harness.gate.release_replay_view(10, 100)
+    assert await harness.gate.claim_replay_view(10, 100, VIEW_COOLDOWN_SECONDS) is True
+
+
+@pytest.mark.parametrize("factory", _GATE_FACTORIES, ids=["memory", "valkey"])
 async def test_latest_activity_claim_is_viewer_scoped(
     factory: _HarnessFactory,
 ) -> None:
@@ -217,6 +234,17 @@ async def test_latest_activity_claim_allows_again_after_throttle(
     harness.clock.advance(ACTIVITY_THROTTLE_SECONDS - 1)
     assert await harness.gate.claim_latest_activity(10, ACTIVITY_THROTTLE_SECONDS) is False
     harness.clock.advance(1)
+    assert await harness.gate.claim_latest_activity(10, ACTIVITY_THROTTLE_SECONDS) is True
+
+
+@pytest.mark.parametrize("factory", _GATE_FACTORIES, ids=["memory", "valkey"])
+async def test_latest_activity_release_allows_immediate_retry(
+    factory: _HarnessFactory,
+) -> None:
+    harness = factory()
+
+    assert await harness.gate.claim_latest_activity(10, ACTIVITY_THROTTLE_SECONDS) is True
+    await harness.gate.release_latest_activity(10)
     assert await harness.gate.claim_latest_activity(10, ACTIVITY_THROTTLE_SECONDS) is True
 
 

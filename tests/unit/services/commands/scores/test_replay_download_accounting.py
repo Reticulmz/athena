@@ -49,11 +49,19 @@ class _LatestActivityClaim:
 
 
 @dataclass(slots=True)
+class _ReplayViewRelease:
+    viewer_user_id: int
+    score_id: int
+
+
+@dataclass(slots=True)
 class _RecordingAccountingGate:
     replay_view_result: bool = True
     latest_activity_result: bool = True
     claims: list[_ReplayViewClaim] = field(default_factory=list)
     activity_claims: list[_LatestActivityClaim] = field(default_factory=list)
+    releases: list[_ReplayViewRelease] = field(default_factory=list)
+    activity_releases: list[int] = field(default_factory=list)
 
     async def claim_replay_view(
         self,
@@ -70,6 +78,14 @@ class _RecordingAccountingGate:
         )
         return self.replay_view_result
 
+    async def release_replay_view(self, viewer_user_id: int, score_id: int) -> None:
+        self.releases.append(
+            _ReplayViewRelease(
+                viewer_user_id=viewer_user_id,
+                score_id=score_id,
+            )
+        )
+
     async def claim_latest_activity(self, viewer_user_id: int, ttl_seconds: int) -> bool:
         self.activity_claims.append(
             _LatestActivityClaim(
@@ -78,6 +94,9 @@ class _RecordingAccountingGate:
             )
         )
         return self.latest_activity_result
+
+    async def release_latest_activity(self, viewer_user_id: int) -> None:
+        self.activity_releases.append(viewer_user_id)
 
 
 class _FailingReplayViewGate:
@@ -90,9 +109,15 @@ class _FailingReplayViewGate:
         del viewer_user_id, score_id, ttl_seconds
         raise RuntimeError("temporary gate unavailable")
 
+    async def release_replay_view(self, viewer_user_id: int, score_id: int) -> None:
+        del viewer_user_id, score_id
+
     async def claim_latest_activity(self, viewer_user_id: int, ttl_seconds: int) -> bool:
         del viewer_user_id, ttl_seconds
         return True
+
+    async def release_latest_activity(self, viewer_user_id: int) -> None:
+        del viewer_user_id
 
 
 class _FailingLatestActivityGate:
@@ -105,9 +130,15 @@ class _FailingLatestActivityGate:
         del viewer_user_id, score_id, ttl_seconds
         return True
 
+    async def release_replay_view(self, viewer_user_id: int, score_id: int) -> None:
+        del viewer_user_id, score_id
+
     async def claim_latest_activity(self, viewer_user_id: int, ttl_seconds: int) -> bool:
         del viewer_user_id, ttl_seconds
         raise RuntimeError("activity gate unavailable")
+
+    async def release_latest_activity(self, viewer_user_id: int) -> None:
+        del viewer_user_id
 
 
 @dataclass(slots=True)
@@ -307,7 +338,7 @@ async def test_duplicate_cooldown_hit_can_still_touch_latest_activity() -> None:
 
 
 @pytest.mark.asyncio
-async def test_duplicate_cooldown_gate_failure_is_treated_as_open() -> None:
+async def test_duplicate_cooldown_gate_failure_fails_closed_without_increment() -> None:
     factory = InMemoryUnitOfWorkFactory()
     owner = await _create_user(factory, username="Owner")
     viewer = await _create_user(factory, username="Viewer")
@@ -318,19 +349,26 @@ async def test_duplicate_cooldown_gate_failure_is_treated_as_open() -> None:
         accounting_gate=_FailingReplayViewGate(),
     )
 
-    result = await use_case.execute(
-        ReplayDownloadAccountingInput(
-            score_id=score_id,
-            score_owner_user_id=owner.id,
-            viewer_user_id=viewer.id,
-            occurred_at=_NOW,
+    with structlog.testing.capture_logs() as logs:
+        result = await use_case.execute(
+            ReplayDownloadAccountingInput(
+                score_id=score_id,
+                score_owner_user_id=owner.id,
+                viewer_user_id=viewer.id,
+                occurred_at=_NOW,
+            )
         )
-    )
 
-    assert result.replay_view_outcome is ReplayViewAccountingOutcome.INCREMENTED
+    assert result.replay_view_outcome is ReplayViewAccountingOutcome.FAILED
     assert result.latest_activity_outcome is LatestActivityAccountingOutcome.TOUCHED
-    assert await _replay_view_count(factory, score_id) == 1
+    assert await _replay_view_count(factory, score_id) == 0
     assert await _latest_activity_at(factory, viewer.id) == _NOW
+    assert [entry["event"] for entry in logs] == [
+        "replay_download_accounting_cooldown_gate_failed"
+    ]
+    assert logs[0]["operation"] == "cooldown_gate"
+    assert logs[0]["outcome"] == "failed_closed"
+    assert logs[0]["exception_type"] == "RuntimeError"
 
 
 @pytest.mark.asyncio
@@ -361,9 +399,10 @@ async def test_latest_activity_gate_failure_is_treated_as_open() -> None:
 @pytest.mark.asyncio
 async def test_operation_failures_are_distinguishable_and_sanitized() -> None:
     factory = _FailingOperationUnitOfWorkFactory()
+    gate = _RecordingAccountingGate()
     use_case = ReplayDownloadAccountingUseCase(
         unit_of_work_factory=factory,
-        accounting_gate=_RecordingAccountingGate(),
+        accounting_gate=gate,
     )
 
     with structlog.testing.capture_logs() as logs:
@@ -391,6 +430,8 @@ async def test_operation_failures_are_distinguishable_and_sanitized() -> None:
     assert {entry["score_owner_user_id"] for entry in logs} == {10}
     assert {entry["outcome"] for entry in logs} == {"failed"}
     assert {entry["exception_type"] for entry in logs} == {"RuntimeError"}
+    assert gate.releases == [_ReplayViewRelease(viewer_user_id=20, score_id=123)]
+    assert gate.activity_releases == [20]
     assert _logs_do_not_expose_sensitive_values(logs)
 
 

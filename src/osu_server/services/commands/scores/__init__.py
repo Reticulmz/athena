@@ -23,6 +23,7 @@ from osu_server.services.commands.scores.process_submission import (
 from osu_server.services.commands.scores.replay_download_accounting import (
     LatestActivityAccountingOutcome,
     ReplayDownloadAccountingInput,
+    ReplayDownloadAccountingPublisher,
     ReplayDownloadAccountingResult,
     ReplayDownloadAccountingUseCase,
     ReplayViewAccountingOutcome,
@@ -50,6 +51,7 @@ __all__ = [
     "RebuildBeatmapLeaderboardsForUserUseCase",
     "RebuildBeatmapLeaderboardsResult",
     "ReplayDownloadAccountingInput",
+    "ReplayDownloadAccountingPublisher",
     "ReplayDownloadAccountingResult",
     "ReplayDownloadAccountingUseCase",
     "ReplayViewAccountingOutcome",

@@ -33,7 +33,7 @@ from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.scores.replay_download_accounting import (
     ReplayDownloadAccountingInput,
-    ReplayDownloadAccountingUseCase,
+    ReplayDownloadAccountingPublisher,
 )
 from osu_server.services.commands.storage.blob_storage import BlobStorageService
 from osu_server.services.queries.identity.password_service import PasswordService
@@ -65,7 +65,7 @@ class _FailingReplayDownloadAccounting:
     def __init__(self) -> None:
         self.inputs = []
 
-    async def execute(self, input_data: ReplayDownloadAccountingInput) -> object:
+    async def publish(self, input_data: ReplayDownloadAccountingInput) -> None:
         self.inputs.append(input_data)
         raise RuntimeError("raw query token=secret /tmp/replay.osr")
 
@@ -139,7 +139,6 @@ def test_replay_download_route_returns_direct_blob_bytes_for_available_replay(
                 "http://osu.athena.localhost/web/osu-getreplay.php",
                 params=_query(score_id, username=_VIEWER_USERNAME),
             )
-            replay_view_count = asyncio.run(_replay_view_count(app, score_id))
             viewer_activity = asyncio.run(
                 _latest_activity_at(app, username=_VIEWER_USERNAME),
             )
@@ -149,9 +148,8 @@ def test_replay_download_route_returns_direct_blob_bytes_for_available_replay(
     assert response.content == b"synthetic-replay-download-body"
     assert response.headers["content-type"] == "zip"
     assert response.headers["content-disposition"] == 'attachment; filename="replay.osr"'
-    assert replay_view_count == 1
     assert before_viewer_activity == _NOW
-    assert viewer_activity > before_viewer_activity
+    assert viewer_activity == before_viewer_activity
     assert owner_activity == before_owner_activity
     assert viewer_id != owner_id
 
@@ -434,8 +432,8 @@ def _create_app(
         overrides.append(
             TestProviderSet(
                 replace_value(
-                    ReplayDownloadAccountingUseCase,
-                    cast("ReplayDownloadAccountingUseCase", cast("object", accounting)),
+                    ReplayDownloadAccountingPublisher,
+                    cast("ReplayDownloadAccountingPublisher", cast("object", accounting)),
                 )
             )
         )

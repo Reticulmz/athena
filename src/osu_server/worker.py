@@ -39,6 +39,9 @@ from osu_server.services.commands.scores.performance import (
     ExecutePerformanceCalculationUseCase,
     ProcessPerformanceRecalculationBatchUseCase,
 )
+from osu_server.services.commands.scores.replay_download_accounting import (
+    ReplayDownloadAccountingUseCase,
+)
 
 if TYPE_CHECKING:
     from dishka import AsyncContainer
@@ -67,6 +70,7 @@ def _clear_worker_runtime_state(state: TaskiqState) -> None:
     state.performance_recalculation_batch_processor = None
     state.beatmap_leaderboard_user_rebuild_use_case = None
     state.beatmap_leaderboard_beatmapset_rebuild_use_case = None
+    state.replay_download_accounting_executor = None
 
 
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
@@ -100,6 +104,9 @@ async def startup(state: TaskiqState) -> None:
         )
         state.beatmap_leaderboard_beatmapset_rebuild_use_case = await worker_container.get(
             RebuildBeatmapLeaderboardsForBeatmapsetUseCase
+        )
+        state.replay_download_accounting_executor = await worker_container.get(
+            ReplayDownloadAccountingUseCase
         )
     except Exception:
         _clear_worker_runtime_state(state)

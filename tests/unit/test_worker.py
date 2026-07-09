@@ -32,6 +32,9 @@ from osu_server.services.commands.scores.performance import (
     ExecutePerformanceCalculationUseCase,
     ProcessPerformanceRecalculationBatchUseCase,
 )
+from osu_server.services.commands.scores.replay_download_accounting import (
+    ReplayDownloadAccountingUseCase,
+)
 from osu_server.services.queries.chat import (
     ListPrivateMessagesQuery,
     ListPrivateMessagesQueryInput,
@@ -186,6 +189,10 @@ def _state_beatmap_leaderboard_beatmapset_rebuild_use_case(
     )
 
 
+def _state_replay_download_accounting_executor(state: TaskiqState) -> object | None:
+    return cast("object | None", getattr(state, "replay_download_accounting_executor", None))
+
+
 async def _run_startup(state: TaskiqState) -> None:
     hook = cast("WorkerLifecycleHook", worker_module.startup)
     await hook(state)
@@ -277,6 +284,10 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
             _state_beatmap_leaderboard_beatmapset_rebuild_use_case(state),
             RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
         )
+        assert isinstance(
+            _state_replay_download_accounting_executor(state),
+            ReplayDownloadAccountingUseCase,
+        )
     finally:
         await _run_shutdown(state)
 
@@ -312,6 +323,7 @@ async def test_worker_startup_failure_closes_dishka_container(
     assert _state_performance_recalculation_batch_processor(state) is None
     assert _state_beatmap_leaderboard_user_rebuild_use_case(state) is None
     assert _state_beatmap_leaderboard_beatmapset_rebuild_use_case(state) is None
+    assert _state_replay_download_accounting_executor(state) is None
     assert failing_container.close_calls == 1
 
 
@@ -362,6 +374,7 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     state.performance_recalculation_batch_processor = object()
     state.beatmap_leaderboard_user_rebuild_use_case = object()
     state.beatmap_leaderboard_beatmapset_rebuild_use_case = object()
+    state.replay_download_accounting_executor = object()
 
     await _run_shutdown(state)
 
@@ -374,4 +387,5 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     assert _state_performance_recalculation_batch_processor(state) is None
     assert _state_beatmap_leaderboard_user_rebuild_use_case(state) is None
     assert _state_beatmap_leaderboard_beatmapset_rebuild_use_case(state) is None
+    assert _state_replay_download_accounting_executor(state) is None
     assert dishka_container.close_calls == 1

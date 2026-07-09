@@ -89,6 +89,7 @@ from osu_server.services.commands.identity import LoginCommandUseCase, RegisterU
 from osu_server.services.commands.identity.auth_service import AuthService
 from osu_server.services.commands.scores.replay_download_accounting import (
     ReplayDownloadAccountingInput,
+    ReplayDownloadAccountingPublisher,
     ReplayDownloadAccountingUseCase,
 )
 from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
@@ -174,15 +175,14 @@ class _InjectedReplayDownloadQuery:
         )
 
 
-class _InjectedReplayDownloadAccounting:
+class _InjectedReplayDownloadAccountingPublisher:
     inputs: list[ReplayDownloadAccountingInput]
 
     def __init__(self) -> None:
         self.inputs = []
 
-    async def execute(self, input_data: ReplayDownloadAccountingInput) -> object:
+    async def publish(self, input_data: ReplayDownloadAccountingInput) -> None:
         self.inputs.append(input_data)
-        return object()
 
 
 def test_public_app_entrypoint_exposes_starlette_app() -> None:
@@ -426,7 +426,7 @@ async def test_app_container_resolves_transport_handler_graph(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_app_container_injects_replay_download_accounting_into_handler(
+async def test_app_container_injects_replay_download_accounting_publisher_into_handler(
     tmp_path: Path,
 ) -> None:
     config = make_app_config(
@@ -434,7 +434,7 @@ async def test_app_container_injects_replay_download_accounting_into_handler(
         blob_storage_local_root=str(tmp_path / "blobs"),
     )
     replay_query = _InjectedReplayDownloadQuery()
-    accounting = _InjectedReplayDownloadAccounting()
+    accounting = _InjectedReplayDownloadAccountingPublisher()
     container = make_app_container(
         config,
         overrides=(
@@ -452,8 +452,8 @@ async def test_app_container_injects_replay_download_accounting_into_handler(
                     cast("ReplayDownloadQuery", cast("object", replay_query)),
                 ),
                 replace_value(
-                    ReplayDownloadAccountingUseCase,
-                    cast("ReplayDownloadAccountingUseCase", cast("object", accounting)),
+                    ReplayDownloadAccountingPublisher,
+                    cast("ReplayDownloadAccountingPublisher", cast("object", accounting)),
                 ),
             ),
         ),
@@ -471,6 +471,9 @@ async def test_app_container_injects_replay_download_accounting_into_handler(
 
         assert response.status_code == HTTPStatus.OK
         assert response.body == b"di-replay-body"
+        if response.background is None:
+            raise AssertionError("expected replay download accounting background task")
+        await response.background()
         assert replay_query.inputs == [
             ReplayDownloadQueryInput(
                 authenticated_user_id=42,

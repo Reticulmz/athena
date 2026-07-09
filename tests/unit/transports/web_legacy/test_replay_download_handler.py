@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from starlette.responses import Response
 
     from osu_server.services.commands.scores.replay_download_accounting import (
-        ReplayDownloadAccountingUseCase,
+        ReplayDownloadAccountingPublisher,
     )
     from osu_server.services.queries.identity import SessionCredentialsQuery
     from osu_server.services.queries.scores import ReplayDownloadQuery
@@ -103,11 +103,10 @@ class _RecordingReplayDownloadAccounting:
         self.raises = raises
         self.inputs: list[ReplayDownloadAccountingInput] = []
 
-    async def execute(self, input_data: ReplayDownloadAccountingInput) -> object:
+    async def publish(self, input_data: ReplayDownloadAccountingInput) -> None:
         self.inputs.append(input_data)
         if self.raises:
             raise RuntimeError("raw query token=secret /tmp/replay.osr")
-        return object()
 
 
 async def test_auth_failure_returns_empty_401_without_parse_or_query() -> None:
@@ -301,6 +300,8 @@ async def test_success_query_result_returns_response_body() -> None:
     assert len(response.body) == len(_SUCCESS_BODY)
     assert response.headers["content-type"] == "zip"
     assert response.headers["content-disposition"] == 'attachment; filename="replay.osr"'
+    assert accounting.inputs == []
+    await _run_background(response)
     assert accounting.inputs == [
         ReplayDownloadAccountingInput(
             score_id=515,
@@ -334,8 +335,9 @@ async def test_accounting_failure_preserves_success_response_and_logs_sanitized_
     )
     query = _query()
 
+    response = await handler(_request(query))
     with structlog.testing.capture_logs() as logs:
-        response = await handler(_request(query))
+        await _run_background(response)
 
     assert response.status_code == HTTPStatus.OK
     assert response.body == _SUCCESS_BODY
@@ -391,11 +393,17 @@ def _make_handler(
         replay_download_parser=cast("ReplayDownloadQueryParser", cast("object", parser)),
         replay_download_query=cast("ReplayDownloadQuery", cast("object", replay_query)),
         replay_download_accounting=cast(
-            "ReplayDownloadAccountingUseCase | None",
+            "ReplayDownloadAccountingPublisher | None",
             accounting,
         ),
         now_func=lambda: _ACCOUNTING_OCCURRED_AT,
     )
+
+
+async def _run_background(response: Response) -> None:
+    if response.background is None:
+        raise AssertionError("expected response background task")
+    await response.background()
 
 
 def _request(params: Mapping[str, str]) -> Request:

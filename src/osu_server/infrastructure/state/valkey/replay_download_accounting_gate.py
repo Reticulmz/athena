@@ -31,6 +31,8 @@ if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', tonumber(ARGV[2])) then
     return 1
 end
 return 0""")
+    _RELEASE_SCRIPT: ClassVar[Script] = Script("""\
+return redis.call('DEL', KEYS[1])""")
 
     def __init__(
         self,
@@ -90,6 +92,28 @@ return 0""")
             ttl_seconds,
         )
 
+    async def release_replay_view(
+        self,
+        viewer_user_id: int,
+        score_id: int,
+    ) -> None:
+        """viewer と score の replay view marker を削除する.
+
+        Args:
+            viewer_user_id: 認証済み viewer user id。
+            score_id: download 対象 score id。
+
+        Returns:
+            None。
+
+        Raises:
+            Valkey script 実行時の例外。
+
+        Constraints:
+            存在しない marker の削除は成功扱いにする。
+        """
+        await self._release(self._view_key(viewer_user_id, score_id))
+
     async def claim_latest_activity(
         self,
         viewer_user_id: int,
@@ -116,6 +140,26 @@ return 0""")
             ttl_seconds,
         )
 
+    async def release_latest_activity(
+        self,
+        viewer_user_id: int,
+    ) -> None:
+        """viewer の latest activity marker を削除する.
+
+        Args:
+            viewer_user_id: 認証済み viewer user id。
+
+        Returns:
+            None。
+
+        Raises:
+            Valkey script 実行時の例外。
+
+        Constraints:
+            存在しない marker の削除は成功扱いにする。
+        """
+        await self._release(self._activity_key(viewer_user_id))
+
     async def _claim(self, key: str, ttl_seconds: int) -> bool:
         _validate_ttl_seconds(ttl_seconds)
 
@@ -126,6 +170,13 @@ return 0""")
             args=args,
         )
         return _claim_result_to_bool(result)
+
+    async def _release(self, key: str) -> None:
+        _ = await self._client.invoke_script(
+            self._RELEASE_SCRIPT,
+            keys=[key],
+            args=[],
+        )
 
 
 def _claim_result_to_bool(result: object) -> bool:

@@ -65,6 +65,28 @@ class InMemoryReplayDownloadAccountingGate:
             ttl_seconds,
         )
 
+    async def release_replay_view(
+        self,
+        viewer_user_id: int,
+        score_id: int,
+    ) -> None:
+        """viewer と score の replay view marker を削除する.
+
+        Args:
+            viewer_user_id: 認証済み viewer user id。
+            score_id: download 対象 score id。
+
+        Returns:
+            None。
+
+        Raises:
+            なし。
+
+        Constraints:
+            存在しない marker の削除は成功扱いにする。
+        """
+        _ = self._view_markers.pop((viewer_user_id, score_id), None)
+
     async def claim_latest_activity(
         self,
         viewer_user_id: int,
@@ -90,6 +112,26 @@ class InMemoryReplayDownloadAccountingGate:
             viewer_user_id,
             ttl_seconds,
         )
+
+    async def release_latest_activity(
+        self,
+        viewer_user_id: int,
+    ) -> None:
+        """viewer の latest activity marker を削除する.
+
+        Args:
+            viewer_user_id: 認証済み viewer user id。
+
+        Returns:
+            None。
+
+        Raises:
+            なし。
+
+        Constraints:
+            存在しない marker の削除は成功扱いにする。
+        """
+        _ = self._activity_markers.pop(viewer_user_id, None)
 
     def _claim(
         self,

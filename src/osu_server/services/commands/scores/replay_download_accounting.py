@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final, Protocol, cast
 
 import structlog
 
@@ -75,6 +75,15 @@ class LatestActivityAccountingOutcome(StrEnum):
     TOUCHED = "touched"
     THROTTLED = "throttled"
     FAILED = "failed"
+
+
+class _GateClaimOutcome(StrEnum):
+    """Temporary gate claim の内部判定結果。"""
+
+    OPEN = "open"
+    CLOSED = "closed"
+    FAILED_OPEN = "failed_open"
+    FAILED_CLOSED = "failed_closed"
 
 
 @dataclass(slots=True, frozen=True)
@@ -160,12 +169,15 @@ class ReplayDownloadAccountingUseCase:
         if input_data.viewer_user_id == input_data.score_owner_user_id:
             return ReplayViewAccountingOutcome.SKIPPED_SELF_VIEW
 
-        cooldown_open = await self._claim_replay_view_or_open(input_data)
-        if not cooldown_open:
+        cooldown_claim = await self._claim_replay_view(input_data)
+        if cooldown_claim is _GateClaimOutcome.CLOSED:
             return ReplayViewAccountingOutcome.SKIPPED_DUPLICATE
+        if cooldown_claim is _GateClaimOutcome.FAILED_CLOSED:
+            return ReplayViewAccountingOutcome.FAILED
 
         incremented = await self._increment_replay_view_count(input_data)
         if not incremented:
+            await self._release_replay_view_if_claimed(input_data, cooldown_claim)
             return ReplayViewAccountingOutcome.FAILED
 
         return ReplayViewAccountingOutcome.INCREMENTED
@@ -174,22 +186,34 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> LatestActivityAccountingOutcome:
-        throttle_open = await self._claim_latest_activity_or_open(input_data)
-        if not throttle_open:
+        throttle_claim = await self._claim_latest_activity(input_data)
+        if throttle_claim is _GateClaimOutcome.CLOSED:
             return LatestActivityAccountingOutcome.THROTTLED
 
         touched = await self._touch_latest_activity(input_data)
         if not touched:
+            await self._release_latest_activity_if_claimed(input_data, throttle_claim)
             return LatestActivityAccountingOutcome.FAILED
 
         return LatestActivityAccountingOutcome.TOUCHED
 
-    async def _claim_replay_view_or_open(
+    async def _claim_replay_view(
         self,
         input_data: ReplayDownloadAccountingInput,
-    ) -> bool:
+    ) -> _GateClaimOutcome:
+        """Replay view duplicate marker を claim する.
+
+        Args:
+            input_data: replay download 成功後の accounting 入力。
+
+        Returns:
+            Claim の成功、既存 marker、または fail-closed error を表す内部結果。
+
+        Raises:
+            なし。gate 例外は fail-closed 結果と warning log に畳み込む。
+        """
         try:
-            return await self._accounting_gate.claim_replay_view(
+            claimed = await self._accounting_gate.claim_replay_view(
                 viewer_user_id=input_data.viewer_user_id,
                 score_id=input_data.score_id,
                 ttl_seconds=_REPLAY_VIEW_DUPLICATE_COOLDOWN_SECONDS,
@@ -199,17 +223,31 @@ class ReplayDownloadAccountingUseCase:
                 "replay_download_accounting_cooldown_gate_failed",
                 input_data=input_data,
                 operation="cooldown_gate",
-                outcome="opened",
+                outcome="failed_closed",
                 exception=exc,
             )
-            return True
+            return _GateClaimOutcome.FAILED_CLOSED
+        if claimed:
+            return _GateClaimOutcome.OPEN
+        return _GateClaimOutcome.CLOSED
 
-    async def _claim_latest_activity_or_open(
+    async def _claim_latest_activity(
         self,
         input_data: ReplayDownloadAccountingInput,
-    ) -> bool:
+    ) -> _GateClaimOutcome:
+        """Latest activity throttle marker を claim する.
+
+        Args:
+            input_data: replay download 成功後の accounting 入力。
+
+        Returns:
+            Claim の成功、既存 marker、または fail-open error を表す内部結果。
+
+        Raises:
+            なし。gate 例外は fail-open 結果と warning log に畳み込む。
+        """
         try:
-            return await self._accounting_gate.claim_latest_activity(
+            claimed = await self._accounting_gate.claim_latest_activity(
                 viewer_user_id=input_data.viewer_user_id,
                 ttl_seconds=_LATEST_ACTIVITY_THROTTLE_SECONDS,
             )
@@ -221,7 +259,77 @@ class ReplayDownloadAccountingUseCase:
                 outcome="opened",
                 exception=exc,
             )
-            return True
+            return _GateClaimOutcome.FAILED_OPEN
+        if claimed:
+            return _GateClaimOutcome.OPEN
+        return _GateClaimOutcome.CLOSED
+
+    async def _release_replay_view_if_claimed(
+        self,
+        input_data: ReplayDownloadAccountingInput,
+        claim_outcome: _GateClaimOutcome,
+    ) -> None:
+        """Replay view durable 更新失敗時に marker を best-effort で戻す.
+
+        Args:
+            input_data: replay download 成功後の accounting 入力。
+            claim_outcome: 直前の replay view marker claim 結果。
+
+        Returns:
+            None。
+
+        Raises:
+            なし。release 失敗は warning log に畳み込む。
+        """
+        if claim_outcome is not _GateClaimOutcome.OPEN:
+            return
+
+        try:
+            await self._accounting_gate.release_replay_view(
+                viewer_user_id=input_data.viewer_user_id,
+                score_id=input_data.score_id,
+            )
+        except Exception as exc:
+            _log_accounting_failure(
+                "replay_download_accounting_cooldown_release_failed",
+                input_data=input_data,
+                operation="cooldown_gate_release",
+                outcome="release_failed",
+                exception=exc,
+            )
+
+    async def _release_latest_activity_if_claimed(
+        self,
+        input_data: ReplayDownloadAccountingInput,
+        claim_outcome: _GateClaimOutcome,
+    ) -> None:
+        """Latest activity durable 更新失敗時に marker を best-effort で戻す.
+
+        Args:
+            input_data: replay download 成功後の accounting 入力。
+            claim_outcome: 直前の latest activity marker claim 結果。
+
+        Returns:
+            None。
+
+        Raises:
+            なし。release 失敗は warning log に畳み込む。
+        """
+        if claim_outcome is not _GateClaimOutcome.OPEN:
+            return
+
+        try:
+            await self._accounting_gate.release_latest_activity(
+                viewer_user_id=input_data.viewer_user_id,
+            )
+        except Exception as exc:
+            _log_accounting_failure(
+                "replay_download_accounting_activity_release_failed",
+                input_data=input_data,
+                operation="activity_gate_release",
+                outcome="release_failed",
+                exception=exc,
+            )
 
     async def _increment_replay_view_count(
         self,
@@ -283,6 +391,27 @@ class ReplayDownloadAccountingUseCase:
         return True
 
 
+class ReplayDownloadAccountingPublisher(Protocol):
+    """Replay download accounting work を非同期実行境界へ発行する port。"""
+
+    async def publish(self, input_data: ReplayDownloadAccountingInput) -> None:
+        """Accounting work を best-effort に発行する。
+
+        Args:
+            input_data: replay download 成功後の accounting 入力。
+
+        Returns:
+            None。
+
+        Raises:
+            実装依存。transport 側は best-effort 境界として例外を握り、ログに残す。
+
+        Constraints:
+            実装は replay download response body の生成や永続更新を直接行わない。
+        """
+        ...
+
+
 def _validate_positive_id(name: str, value: int) -> None:
     if value <= 0:
         msg = f"{name} must be positive"
@@ -312,6 +441,7 @@ def _log_accounting_failure(
 __all__ = [
     "LatestActivityAccountingOutcome",
     "ReplayDownloadAccountingInput",
+    "ReplayDownloadAccountingPublisher",
     "ReplayDownloadAccountingResult",
     "ReplayDownloadAccountingUseCase",
     "ReplayViewAccountingOutcome",
