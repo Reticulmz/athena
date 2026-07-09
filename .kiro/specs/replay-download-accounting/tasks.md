@@ -74,7 +74,7 @@
   - _Boundary: ReplayDownloadAccountingUseCase_
 
 - [ ] 4. Stable replay download integration
-- [ ] 4.1 Attach accounting to successful replay download responses
+- [x] 4.1 Attach accounting to successful replay download responses
   - Invoke accounting only after a successful replay download body and metadata are available.
   - Do not invoke accounting for auth failure, malformed request, hidden score, missing replay, storage-missing replay, or unavailable branches.
   - Preserve the existing stable response status, headers, and body whether accounting succeeds or fails.

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast, final
 
 import pytest
+import structlog.testing
 
 from osu_server.domain.compatibility.stable import (
     ReplayDownloadBranch,
@@ -13,6 +15,9 @@ from osu_server.domain.compatibility.stable import (
 )
 from osu_server.domain.identity.authentication import LegacyWebAuthFailure, LegacyWebAuthResult
 from osu_server.domain.scores.score import Ruleset
+from osu_server.services.commands.scores.replay_download_accounting import (
+    ReplayDownloadAccountingInput,
+)
 from osu_server.services.queries.identity import (
     SessionCredentialsQueryInput,
     SessionCredentialsQueryResult,
@@ -36,6 +41,9 @@ if TYPE_CHECKING:
     from starlette.requests import Request
     from starlette.responses import Response
 
+    from osu_server.services.commands.scores.replay_download_accounting import (
+        ReplayDownloadAccountingUseCase,
+    )
     from osu_server.services.queries.identity import SessionCredentialsQuery
     from osu_server.services.queries.scores import ReplayDownloadQuery
     from osu_server.transports.stable.web_legacy.mappers import ReplayDownloadQueryParser
@@ -46,6 +54,7 @@ _RAW_PASSWORD_HASH = "SYNTHETIC_RAW_REPLAY_DOWNLOAD_HASH"
 _RAW_SCORE_ID = "SYNTHETIC_RAW_REPLAY_DOWNLOAD_SCORE_ID"
 _RAW_MODE = "SYNTHETIC_RAW_REPLAY_DOWNLOAD_MODE"
 _SUCCESS_BODY = b"SYNTHETIC_SUCCESS_REPLAY_DOWNLOAD_BODY"
+_ACCOUNTING_OCCURRED_AT = datetime(2026, 7, 9, 12, 0, 0, tzinfo=UTC)
 
 
 @final
@@ -88,16 +97,31 @@ class _ReplayDownloadQuery:
         return self.result
 
 
+@final
+class _RecordingReplayDownloadAccounting:
+    def __init__(self, *, raises: bool = False) -> None:
+        self.raises = raises
+        self.inputs: list[ReplayDownloadAccountingInput] = []
+
+    async def execute(self, input_data: ReplayDownloadAccountingInput) -> object:
+        self.inputs.append(input_data)
+        if self.raises:
+            raise RuntimeError("raw query token=secret /tmp/replay.osr")
+        return object()
+
+
 async def test_auth_failure_returns_empty_401_without_parse_or_query() -> None:
     auth_query = _AuthQuery(
         LegacyWebAuthResult(failure=LegacyWebAuthFailure.INVALID_CREDENTIALS),
     )
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     replay_query = _ReplayDownloadQuery(_hidden_score_result())
+    accounting = _RecordingReplayDownloadAccounting()
     handler = _make_handler(
         auth_query=auth_query,
         parser=parser,
         replay_query=replay_query,
+        accounting=accounting,
     )
     query = _query()
 
@@ -116,6 +140,7 @@ async def test_auth_failure_returns_empty_401_without_parse_or_query() -> None:
     ]
     assert parser.call_count == 0
     assert replay_query.inputs == []
+    assert accounting.inputs == []
     _assert_response_excludes_raw_inputs(response, query)
 
 
@@ -125,10 +150,12 @@ async def test_auth_success_shape_without_user_id_returns_empty_401_without_pars
     auth_query = _AuthQuery(LegacyWebAuthResult(username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     replay_query = _ReplayDownloadQuery(_hidden_score_result())
+    accounting = _RecordingReplayDownloadAccounting()
     handler = _make_handler(
         auth_query=auth_query,
         parser=parser,
         replay_query=replay_query,
+        accounting=accounting,
     )
     query = _query()
 
@@ -138,6 +165,7 @@ async def test_auth_success_shape_without_user_id_returns_empty_401_without_pars
     assert response.body == b""
     assert parser.call_count == 0
     assert replay_query.inputs == []
+    assert accounting.inputs == []
     _assert_response_excludes_raw_inputs(response, query)
 
 
@@ -145,10 +173,12 @@ async def test_auth_success_calls_parser_and_malformed_request_returns_empty_404
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_malformed_parse_result())
     replay_query = _ReplayDownloadQuery(_hidden_score_result())
+    accounting = _RecordingReplayDownloadAccounting()
     handler = _make_handler(
         auth_query=auth_query,
         parser=parser,
         replay_query=replay_query,
+        accounting=accounting,
     )
     query = _query()
 
@@ -161,6 +191,7 @@ async def test_auth_success_calls_parser_and_malformed_request_returns_empty_404
     assert "content-disposition" not in response.headers
     assert parser.call_count == 1
     assert replay_query.inputs == []
+    assert accounting.inputs == []
     _assert_response_excludes_raw_inputs(
         response,
         query,
@@ -175,10 +206,12 @@ async def test_valid_request_calls_query_with_authenticated_user_and_parsed_valu
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     replay_query = _ReplayDownloadQuery(_hidden_score_result())
+    accounting = _RecordingReplayDownloadAccounting()
     handler = _make_handler(
         auth_query=auth_query,
         parser=parser,
         replay_query=replay_query,
+        accounting=accounting,
     )
     query = _query()
 
@@ -196,6 +229,7 @@ async def test_valid_request_calls_query_with_authenticated_user_and_parsed_valu
             ruleset=Ruleset.MANIA,
         )
     ]
+    assert accounting.inputs == []
     _assert_response_excludes_raw_inputs(
         response,
         query,
@@ -218,10 +252,12 @@ async def test_unavailable_query_result_returns_empty_404_without_branch_leak(
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     replay_query = _ReplayDownloadQuery(ReplayDownloadQueryResult(branch=branch))
+    accounting = _RecordingReplayDownloadAccounting()
     handler = _make_handler(
         auth_query=auth_query,
         parser=parser,
         replay_query=replay_query,
+        accounting=accounting,
     )
     query = _query()
 
@@ -232,12 +268,14 @@ async def test_unavailable_query_result_returns_empty_404_without_branch_leak(
     assert len(response.body) == 0
     assert "content-type" not in response.headers
     assert "content-disposition" not in response.headers
+    assert accounting.inputs == []
     _assert_response_excludes_raw_inputs(response, query, extra_values=(branch.value,))
 
 
 async def test_success_query_result_returns_response_body() -> None:
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
+    accounting = _RecordingReplayDownloadAccounting()
     replay_query = _ReplayDownloadQuery(
         ReplayDownloadQueryResult(
             branch=ReplayDownloadBranch.SUCCESS,
@@ -252,6 +290,7 @@ async def test_success_query_result_returns_response_body() -> None:
         auth_query=auth_query,
         parser=parser,
         replay_query=replay_query,
+        accounting=accounting,
     )
     query = _query()
 
@@ -262,6 +301,60 @@ async def test_success_query_result_returns_response_body() -> None:
     assert len(response.body) == len(_SUCCESS_BODY)
     assert response.headers["content-type"] == "zip"
     assert response.headers["content-disposition"] == 'attachment; filename="replay.osr"'
+    assert accounting.inputs == [
+        ReplayDownloadAccountingInput(
+            score_id=515,
+            score_owner_user_id=616,
+            viewer_user_id=42,
+            occurred_at=_ACCOUNTING_OCCURRED_AT,
+        )
+    ]
+    _assert_response_excludes_raw_inputs(response, query, extra_values=("515", "616"))
+
+
+async def test_accounting_failure_preserves_success_response_and_logs_sanitized_failure() -> None:
+    auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
+    parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
+    accounting = _RecordingReplayDownloadAccounting(raises=True)
+    replay_query = _ReplayDownloadQuery(
+        ReplayDownloadQueryResult(
+            branch=ReplayDownloadBranch.SUCCESS,
+            response_body=ReplayDownloadResponseBody(payload=_SUCCESS_BODY),
+            accounting_metadata=ReplayDownloadAccountingMetadata(
+                score_id=515,
+                score_owner_user_id=616,
+            ),
+        )
+    )
+    handler = _make_handler(
+        auth_query=auth_query,
+        parser=parser,
+        replay_query=replay_query,
+        accounting=accounting,
+    )
+    query = _query()
+
+    with structlog.testing.capture_logs() as logs:
+        response = await handler(_request(query))
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.body == _SUCCESS_BODY
+    assert response.headers["content-type"] == "zip"
+    assert response.headers["content-disposition"] == 'attachment; filename="replay.osr"'
+    assert len(accounting.inputs) == 1
+    assert logs == [
+        {
+            "event": "replay_download_accounting_failed",
+            "log_level": "warning",
+            "operation": "accounting_command",
+            "score_id": 515,
+            "viewer_user_id": 42,
+            "score_owner_user_id": 616,
+            "outcome": "failed",
+            "exception_type": "RuntimeError",
+        }
+    ]
+    assert _logs_do_not_expose_sensitive_values(logs)
     _assert_response_excludes_raw_inputs(response, query, extra_values=("515", "616"))
 
 
@@ -291,11 +384,17 @@ def _make_handler(
     auth_query: _AuthQuery,
     parser: _RecordingReplayDownloadQueryParser,
     replay_query: _ReplayDownloadQuery,
+    accounting: _RecordingReplayDownloadAccounting | None = None,
 ) -> ReplayDownloadHandler:
     return ReplayDownloadHandler(
         auth_query=cast("SessionCredentialsQuery", auth_query),
         replay_download_parser=cast("ReplayDownloadQueryParser", cast("object", parser)),
         replay_download_query=cast("ReplayDownloadQuery", cast("object", replay_query)),
+        replay_download_accounting=cast(
+            "ReplayDownloadAccountingUseCase | None",
+            accounting,
+        ),
+        now_func=lambda: _ACCOUNTING_OCCURRED_AT,
     )
 
 
@@ -349,3 +448,19 @@ def _assert_response_excludes_raw_inputs(
             raise AssertionError("response body rendered a raw replay download query value")
         if raw_value_bytes in header_block:
             raise AssertionError("response header rendered a raw replay download query value")
+
+
+def _logs_do_not_expose_sensitive_values(logs: object) -> bool:
+    rendered = repr(logs)
+    forbidden_fragments = (
+        "raw query",
+        "token=",
+        "/tmp/",
+        ".osr",
+        "secret",
+        _RAW_USERNAME,
+        _RAW_PASSWORD_HASH,
+        _RAW_SCORE_ID,
+        _RAW_MODE,
+    )
+    return all(fragment not in rendered for fragment in forbidden_fragments)
