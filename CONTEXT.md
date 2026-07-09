@@ -498,6 +498,59 @@ _Avoid_: guessed build, reference-only build assumption, anonymous capture witho
 Replay download implementation を開始できない auth contract gap。Target Stable Client traffic で auth field presence が確認できない場合、または target traffic / reference evidence で auth success condition と failure response が確認できない場合は、download endpoint 実装を implementation-ready と扱わない。
 _Avoid_: guessed public replay access, guessed credential requirement, auth TODO in implementation
 
+### Replay Download Accounting Event
+成功した認証済み Replay Download request を accounting policy へ渡す domain input。Durable event table として保存せず、Stable client が実際に replay playback を開始した事実でもなく、現時点で確認済みの server-observable replay consumption signal として扱う。
+_Avoid_: Replay playback event, actual watch event, raw HTTP log, durable audit event
+
+### Replay View Count
+Replay Download Accounting Event から派生する score-scoped replay count projection。実視聴開始数とは呼ばず、User total が必要になった場合は score 側の projection から集計し、将来 Target Stable Client traffic で playback signal が確認された場合は別の `Replay Playback Event` として projection policy を見直す。
+_Avoid_: exact playback count, replay download request log, per-user stats source of truth, user-scoped replay source of truth
+
+**関係性**:
+- Replay View Count の初期 durable storage は score row の integer column とする
+- 既存 score は migration で `0` backfill し、`NULL` は許容しない
+- Replay Download Accounting Event は durable event table として保存しない
+- Replay Duplicate View Cooldown は Replay View Count の source of truth ではなく temporary deduplication marker である
+
+### Replay Self-View
+Replay の score owner が自分の Replay Download request を成功させた accounting event。Replay Download Accounting Event として記録できるが、Replay View Count projection には counted view として含めない。
+_Avoid_: public replay view, duplicate view, owner playback proof
+
+### Replay Duplicate View Cooldown
+同じ viewer user が同じ score replay を短時間に複数回 download したとき、Replay View Count projection を二重加算しないための temporary accounting window。初期 policy は `viewer_user_id + score_id` 単位の24時間 Valkey TTL marker とし、marker loss 時の再加算は許容する。IP address、session token、durable audit record は cooldown の source of truth にしない。
+_Avoid_: IP cooldown, session cooldown, global replay cooldown, durable cooldown invariant
+
+**関係性**:
+- Replay View Count increment の前に Valkey `SET NX EX` 相当で cooldown gate を取得する
+- Cooldown marker 取得後に durable increment が失敗した場合、その window では過少計上になり得るが best-effort accounting として許容する
+
+### Replay Download Activity Touch
+成功した認証済み Replay Download request によって viewer user の latest activity を更新する accounting side effect。Replay Self-View や Replay Duplicate View Cooldown hit でも activity として扱うが、auth failure、missing replay、hidden score、storage-missing replay は成功 download ではないため対象にしない。Durable write は `viewer_user_id` 単位の5分 Valkey TTL marker で throttle する。
+_Avoid_: replay view count increment, failed download activity, unauthenticated activity, replay view cooldown
+
+**関係性**:
+- Latest activity durable write の前に Valkey `SET NX EX` 相当で throttle gate を取得する
+- Throttle marker 取得後に durable activity write が失敗した場合、その5分 window では再試行されないが throttled activity として許容する
+- Replay View Count increment と Replay Download Activity Touch は同じ replay accounting command use-case で扱う
+- Command 内の persistence operation は分け、どの side effect が失敗したかを observability で区別する
+- Replay View Count increment と Replay Download Activity Touch の atomicity は要求せず、片方が失敗してももう片方の成功を rollback しない
+
+### Replay Download Accounting Failure
+Replay View Count や Replay Download Activity Touch の更新に失敗した状態。Replay Download Response Body、status、headers の互換 contract とは独立した side effect failure として扱い、成功 download response を失敗 response に変換しない。
+_Avoid_: replay download failure, storage-missing replay, response contract failure
+
+### Replay Download Accounting Point
+Replay Download Response Body が success として生成可能であることを確認した後、HTTP response construction の直前に replay accounting command を呼び出す境界。Fire-and-forget job ではなく同期的に command を実行するが、Replay Download Accounting Failure は response contract に反映しない。
+_Avoid_: pre-auth mutation, storage-missing mutation, background-only accounting
+
+### Replay Download Accounting Input
+Replay Download Accounting Point から command use-case へ渡す最小入力。`score_id`、`score_owner_user_id`、`viewer_user_id`、`occurred_at` を含み、ruleset、IP address、session token、raw query value は accounting policy の入力にしない。
+_Avoid_: raw replay download query, IP-based accounting input, session-based accounting input
+
+### Replay Download Accounting Metadata
+Replay Download query success result が response body と一緒に返す accounting 用 metadata。Stable transport が追加 repository lookup を行わずに Replay Download Accounting Input を組み立てられるよう、`score_id` と `score_owner_user_id` を含める。
+_Avoid_: transport-side score lookup, response header metadata, client-visible accounting data
+
 ---
 
 ### Legacy Web Endpoint Inventory Classification
