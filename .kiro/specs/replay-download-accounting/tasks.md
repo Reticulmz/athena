@@ -113,7 +113,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 4.1, 4.7, 6.1_
   - _Boundary: Score Replay View Persistence, User Latest Activity Persistence_
 
-- [ ] 5.3 (P) Verify cooldown, throttle, and partial failure behavior
+- [x] 5.3 (P) Verify cooldown, throttle, and partial failure behavior
   - Verify duplicate cooldown suppresses repeated same-viewer same-score increments within 24 hours.
   - Verify cooldown identity is independent per score and per viewer.
   - Verify latest activity throttle avoids repeated durable writes within 5 minutes.
