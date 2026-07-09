@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Protocol
 from starlette.responses import Response
 
 from osu_server.domain.compatibility.stable.mods import stable_mod_bitmask_to_mod_combination
+from osu_server.domain.identity.passwords import normalize_legacy_md5_hex
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.infrastructure.parsers.multipart_parser import (
     MultipartLimits,
@@ -568,7 +569,9 @@ def _generate_stable_score_submit_request_hash(
     _update_fingerprint_text(
         hasher,
         "password_md5_hash",
-        hashlib.sha256(request_mapping.password_md5.encode()).hexdigest(),
+        hashlib.sha256(
+            normalize_legacy_md5_hex(request_mapping.password_md5).encode()
+        ).hexdigest(),
     )
     replay_marker = b"" if request_mapping.replay_data is None else request_mapping.replay_data
     _update_fingerprint_bytes(hasher, b"replay", replay_marker)

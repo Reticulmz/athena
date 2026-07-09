@@ -93,6 +93,16 @@ class TestPreparePassword:
         client_md5 = hashlib.md5(plain.encode(), usedforsecurity=False).hexdigest()
         assert await svc.verify(stored_hash, client_md5) is True
 
+    async def test_prepare_password_accepts_uppercase_client_md5(self) -> None:
+        """Stable auth の password MD5 hex は大小文字差を認証差にしない."""
+        svc = PasswordService()
+        plain = "SecurePass1234"
+        stored_hash = await svc.prepare_password(plain)
+
+        client_md5 = hashlib.md5(plain.encode(), usedforsecurity=False).hexdigest().upper()
+
+        assert await svc.verify(stored_hash, client_md5) is True
+
 
 class TestCheckHibp:
     """PasswordService.check_hibp のテスト。"""

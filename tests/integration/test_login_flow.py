@@ -238,6 +238,22 @@ class TestRegisterAndLoginFlow:
                 assert response.status_code == HTTPStatus.OK
                 assert len(response.content) > _PACKET_HEADER_SIZE
 
+    def test_register_then_login_accepts_uppercase_password_md5(self) -> None:
+        """Stable login の password MD5 hex は大小文字差を認証差にしない."""
+        with _test_env():
+            app = create_app()
+            with TestClient(app, raise_server_exceptions=False) as client:
+                _seed_test_data(app)
+                _register_user(client)
+
+                response = client.post(
+                    _BANCHO_URL,
+                    content=_login_body(password_md5=_TEST_PASSWORD_MD5.upper()),
+                )
+
+                assert response.status_code == HTTPStatus.OK
+                assert "cho-token" in response.headers
+
 
 # ── Test: Login success packet verification ──────────────────────────────
 
