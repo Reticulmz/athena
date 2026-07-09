@@ -126,6 +126,17 @@ async def test_authenticate_succeeds_with_valid_credentials_and_session() -> Non
     assert result.failure is None
 
 
+async def test_authenticate_accepts_uppercase_password_md5() -> None:
+    """Legacy web auth の password MD5 hex は大小文字差を認証差にしない."""
+    query, user_id = await _make_query_with_user()
+
+    result = await _authenticate(query, username=_USERNAME, password_md5=_MD5_HEX.upper())
+
+    assert result.user_id == user_id
+    assert result.username == _USERNAME
+    assert result.failure is None
+
+
 async def test_authenticate_fails_when_username_is_none() -> None:
     query, _ = await _make_query_with_user()
 

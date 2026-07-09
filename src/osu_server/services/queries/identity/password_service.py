@@ -13,6 +13,9 @@ if TYPE_CHECKING:
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
+_MD5_HEX_LENGTH = 32
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
 
 class PasswordService:
     """パスワードのハッシュと検証を担当するサービス。
@@ -40,8 +43,13 @@ class PasswordService:
         return await loop.run_in_executor(None, self._hasher.hash, password)
 
     async def verify(self, hashed: str, password: str) -> bool:
-        """ハッシュ照合。VerifyMismatchError → False。"""
+        """ハッシュ照合。VerifyMismatchError -> False。
+
+        Stable auth の password は MD5 hex credential として届くため、
+        32文字の hex 値は大小文字差を認証差にしない。
+        """
         loop = asyncio.get_running_loop()
+        password = _normalize_legacy_md5_hex(password)
         try:
             return await loop.run_in_executor(None, self._hasher.verify, hashed, password)
         except VerifyMismatchError:
@@ -119,3 +127,12 @@ class PasswordService:
         if is_compromised:
             logger.warning("password_banned", source="hibp")
         return is_compromised
+
+
+def _normalize_legacy_md5_hex(value: str) -> str:
+    """MD5 hex credential だけを lowercase に正規化する."""
+    if len(value) != _MD5_HEX_LENGTH:
+        return value
+    if any(character not in _HEX_DIGITS for character in value):
+        return value
+    return value.lower()
