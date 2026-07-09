@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
 _REPLAY_VIEW_DUPLICATE_COOLDOWN_SECONDS: Final = 86_400
+_LATEST_ACTIVITY_THROTTLE_SECONDS: Final = 300
 
 
 @dataclass(slots=True, frozen=True)
@@ -61,12 +62,21 @@ class ReplayViewAccountingOutcome(StrEnum):
     FAILED = "failed"
 
 
+class LatestActivityAccountingOutcome(StrEnum):
+    """Latest activity 更新の結果。"""
+
+    TOUCHED = "touched"
+    THROTTLED = "throttled"
+    FAILED = "failed"
+
+
 @dataclass(slots=True, frozen=True)
 class ReplayDownloadAccountingResult:
     """Replay download accounting command の結果。
 
     Args:
         replay_view_outcome: Replay View Count branch の結果。
+        latest_activity_outcome: Latest activity branch の結果。
 
     Returns:
         なし。
@@ -75,10 +85,11 @@ class ReplayDownloadAccountingResult:
         なし。
 
     Constraints:
-        task 3.1 では latest activity outcome を持たず、task 3.2 で拡張する。
+        Replay View Count と latest activity の結果は独立して表現する。
     """
 
     replay_view_outcome: ReplayViewAccountingOutcome
+    latest_activity_outcome: LatestActivityAccountingOutcome
 
 
 class ReplayDownloadAccountingUseCase:
@@ -112,41 +123,59 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> ReplayDownloadAccountingResult:
-        """Replay View Count policy を適用する。
+        """Replay download accounting policy を適用する。
 
         Args:
             input_data: replay download 成功後の accounting 入力。
 
         Returns:
-            Replay View Count branch の結果。
+            Replay View Count と latest activity branch の結果。
 
         Raises:
-            なし。temporary gate や durable count 更新の失敗は result に畳み込む。
+            なし。temporary gate や durable 更新の失敗は result に畳み込む。
 
         Constraints:
             self-view は count せず、non-owner は 24h duplicate cooldown が open の時だけ
-            score-scoped Replay View Count を 1 増やす。
+            score-scoped Replay View Count を 1 増やす。latest activity は self-view と
+            duplicate cooldown hit を含むすべての成功 replay download で評価する。
         """
+        replay_view_outcome = await self._apply_replay_view_policy(input_data)
+        latest_activity_outcome = await self._apply_latest_activity_policy(input_data)
+        return ReplayDownloadAccountingResult(
+            replay_view_outcome=replay_view_outcome,
+            latest_activity_outcome=latest_activity_outcome,
+        )
+
+    async def _apply_replay_view_policy(
+        self,
+        input_data: ReplayDownloadAccountingInput,
+    ) -> ReplayViewAccountingOutcome:
         if input_data.viewer_user_id == input_data.score_owner_user_id:
-            return ReplayDownloadAccountingResult(
-                replay_view_outcome=ReplayViewAccountingOutcome.SKIPPED_SELF_VIEW,
-            )
+            return ReplayViewAccountingOutcome.SKIPPED_SELF_VIEW
 
         cooldown_open = await self._claim_replay_view_or_open(input_data)
         if not cooldown_open:
-            return ReplayDownloadAccountingResult(
-                replay_view_outcome=ReplayViewAccountingOutcome.SKIPPED_DUPLICATE,
-            )
+            return ReplayViewAccountingOutcome.SKIPPED_DUPLICATE
 
         incremented = await self._increment_replay_view_count(input_data.score_id)
         if not incremented:
-            return ReplayDownloadAccountingResult(
-                replay_view_outcome=ReplayViewAccountingOutcome.FAILED,
-            )
+            return ReplayViewAccountingOutcome.FAILED
 
-        return ReplayDownloadAccountingResult(
-            replay_view_outcome=ReplayViewAccountingOutcome.INCREMENTED,
-        )
+        return ReplayViewAccountingOutcome.INCREMENTED
+
+    async def _apply_latest_activity_policy(
+        self,
+        input_data: ReplayDownloadAccountingInput,
+    ) -> LatestActivityAccountingOutcome:
+        throttle_open = await self._claim_latest_activity_or_open(input_data)
+        if not throttle_open:
+            return LatestActivityAccountingOutcome.THROTTLED
+
+        touched = await self._touch_latest_activity(input_data)
+        if not touched:
+            return LatestActivityAccountingOutcome.FAILED
+
+        return LatestActivityAccountingOutcome.TOUCHED
 
     async def _claim_replay_view_or_open(
         self,
@@ -157,6 +186,18 @@ class ReplayDownloadAccountingUseCase:
                 viewer_user_id=input_data.viewer_user_id,
                 score_id=input_data.score_id,
                 ttl_seconds=_REPLAY_VIEW_DUPLICATE_COOLDOWN_SECONDS,
+            )
+        except Exception:
+            return True
+
+    async def _claim_latest_activity_or_open(
+        self,
+        input_data: ReplayDownloadAccountingInput,
+    ) -> bool:
+        try:
+            return await self._accounting_gate.claim_latest_activity(
+                viewer_user_id=input_data.viewer_user_id,
+                ttl_seconds=_LATEST_ACTIVITY_THROTTLE_SECONDS,
             )
         except Exception:
             return True
@@ -172,6 +213,23 @@ class ReplayDownloadAccountingUseCase:
             return False
         return True
 
+    async def _touch_latest_activity(
+        self,
+        input_data: ReplayDownloadAccountingInput,
+    ) -> bool:
+        try:
+            async with self._unit_of_work_factory() as uow:
+                user_exists = await uow.users.touch_latest_activity(
+                    input_data.viewer_user_id,
+                    input_data.occurred_at,
+                )
+                if not user_exists:
+                    return False
+                await uow.commit()
+        except Exception:
+            return False
+        return True
+
 
 def _validate_positive_id(name: str, value: int) -> None:
     if value <= 0:
@@ -180,6 +238,7 @@ def _validate_positive_id(name: str, value: int) -> None:
 
 
 __all__ = [
+    "LatestActivityAccountingOutcome",
     "ReplayDownloadAccountingInput",
     "ReplayDownloadAccountingResult",
     "ReplayDownloadAccountingUseCase",

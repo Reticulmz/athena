@@ -54,7 +54,7 @@
   - _Requirements: 2.1, 3.1, 3.2, 3.3, 3.6, 3.7, 5.1, 5.2, 5.5, 6.1, 6.2, 6.3_
   - _Boundary: ReplayDownloadAccountingUseCase_
 
-- [ ] 3.2 Apply latest activity touch policy
+- [x] 3.2 Apply latest activity touch policy
   - Make every successful authenticated replay download eligible for latest activity update.
   - Keep self-view and duplicate cooldown hits eligible for latest activity.
   - Suppress durable activity writes while the viewer is inside the throttle window.
