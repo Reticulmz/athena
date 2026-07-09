@@ -16,14 +16,25 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """users.id sequence を既存最大 id と同期する."""
+    """users.id sequence を既存最大 id と同期する.
+
+    Returns:
+        None: Alembic migration として永続的な schema/data repair を行う.
+
+    Raises:
+        Exception: SQL 実行時に Alembic/SQLAlchemy 由来の例外が送出される可能性がある.
+
+    Notes:
+        PostgreSQL の pg_get_serial_sequence と setval に依存する.
+    """
     op.execute(
         """
         SELECT setval(
             pg_get_serial_sequence('users', 'id'),
-            COALESCE((SELECT MAX(id) FROM users), 1),
-            (SELECT COUNT(*) > 0 FROM users)
+            COALESCE(existing_users.max_id, 1),
+            existing_users.max_id IS NOT NULL
         )
+        FROM (SELECT MAX(id) AS max_id FROM users) AS existing_users
         """
     )
 

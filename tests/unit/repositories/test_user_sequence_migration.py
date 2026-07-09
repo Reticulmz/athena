@@ -12,6 +12,7 @@ def test_users_id_sequence_migration_syncs_with_existing_users() -> None:
     assert 'revision: str = "20260710_0100"' in migration
     assert 'down_revision: str | None = "20260630_0300"' in migration
     assert "pg_get_serial_sequence('users', 'id')" in migration
-    assert "SELECT MAX(id) FROM users" in migration
-    assert "SELECT COUNT(*) > 0 FROM users" in migration
+    assert "SELECT MAX(id) AS max_id FROM users" in migration
+    assert "existing_users.max_id IS NOT NULL" in migration
+    assert "COUNT(*)" not in migration
     assert "setval(" in migration
