@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from email import message_from_bytes
 from email.message import Message
 
+from osu_server.domain.identity.passwords import normalize_legacy_md5_hex
+
 _REPLAY_FIELD_INDEX = 1
 _RIJNDAEL_IV_SIZE = 32
 _DEFAULT_TOTAL_BODY_SIZE = 1_048_576
@@ -142,7 +144,7 @@ def _extract_required_fields(
         msg = f"Invalid iv length: expected {_RIJNDAEL_IV_SIZE} bytes, got {len(iv)}"
         raise ParseError(msg)
 
-    password_md5 = fields["pass"][0].decode("utf-8")
+    password_md5 = normalize_legacy_md5_hex(fields["pass"][0].decode("utf-8"))
     client_hash = fields["x"][0].decode("utf-8")
     submit_exit_classification = None
     osu_version = fields["osuver"][0].decode("utf-8")
