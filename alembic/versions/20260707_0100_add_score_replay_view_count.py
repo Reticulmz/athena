@@ -1,7 +1,7 @@
 """Add score replay view count.
 
 Revision ID: 20260707_0100
-Revises: 20260630_0300
+Revises: 20260710_0100
 Create Date: 2026-07-07 01:00:00.000000
 """
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 revision: str = "20260707_0100"
-down_revision: str | None = "20260630_0300"
+down_revision: str | None = "20260710_0100"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
