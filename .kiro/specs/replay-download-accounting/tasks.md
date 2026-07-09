@@ -95,7 +95,7 @@
   - _Boundary: Stable Replay Handler Hook, ReplayDownloadAccountingGate, ReplayDownloadAccountingUseCase_
 
 - [ ] 5. Verification and regression coverage
-- [ ] 5.1 Verify replay download response preservation end to end
+- [x] 5.1 Verify replay download response preservation end to end
   - Cover accounting success and accounting failure on a successful replay download.
   - Cover auth failure, malformed request, hidden score, missing replay, and storage-missing replay as no-update branches.
   - Assert response status, headers, and body remain the Issue #36 contract in accounting success and failure paths.
