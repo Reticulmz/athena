@@ -84,7 +84,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 5.3, 5.4, 6.6, 6.7_
   - _Boundary: Stable Replay Handler Hook_
 
-- [ ] 4.2 Wire runtime and test composition
+- [x] 4.2 Wire runtime and test composition
   - Provide the accounting command through the score service graph.
   - Provide the production temporary gate through the Valkey-backed infrastructure graph.
   - Replace the gate with an in-memory adapter in test composition.

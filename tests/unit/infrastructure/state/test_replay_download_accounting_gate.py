@@ -52,12 +52,11 @@ class _FakeValkeyClient:
     async def invoke_script(
         self,
         script: Script,
-        *,
-        keys: list[str],
+        keys: list[TEncodable] | None = None,
         args: list[TEncodable] | None = None,
     ) -> int:
         _ = script
-        if len(keys) != 1:
+        if keys is None or len(keys) != 1:
             raise AssertionError(f"expected one key, got {keys!r}")
         if args is None or len(args) != 2:
             raise AssertionError(f"expected marker and ttl args, got {args!r}")
@@ -66,11 +65,17 @@ class _FakeValkeyClient:
         self._prune(now)
 
         key = keys[0]
-        self.invocations.append(_ScriptInvocation(tuple(keys), tuple(args)))
+        if not isinstance(key, str):
+            raise TypeError(f"expected string key, got {key!r}")
+        ttl_arg = args[1]
+        if not isinstance(ttl_arg, str | int):
+            raise TypeError(f"expected string or int ttl, got {ttl_arg!r}")
+
+        self.invocations.append(_ScriptInvocation((key,), tuple(args)))
         if key in self.expirations:
             return 0
 
-        self.expirations[key] = now + int(args[1])
+        self.expirations[key] = now + int(ttl_arg)
         return 1
 
     def _prune(self, now: float) -> None:

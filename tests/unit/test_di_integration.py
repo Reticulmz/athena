@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import httpx
 import pytest
+from glide import GlideClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
 from starlette.routing import Host, Mount, Route, Router
@@ -15,22 +16,41 @@ from taskiq import AsyncBroker
 
 from osu_server.app import app, create_app
 from osu_server.composition.providers.container import make_app_container
-from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
+from osu_server.composition.providers.test import (
+    TestProviderSet,
+    make_in_memory_runtime_provider_set,
+    replace_value,
+)
 from osu_server.config import AppConfig, load_routing_config
+from osu_server.domain.compatibility.stable import (
+    ReplayDownloadBranch,
+    ReplayDownloadResponseBody,
+)
+from osu_server.domain.identity.authentication import LegacyWebAuthResult
+from osu_server.domain.scores.score import Ruleset
 from osu_server.infrastructure.country.cloudflare import CloudflareCountryResolver
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.infrastructure.state.interfaces.replay_download_accounting_gate import (
+    ReplayDownloadAccountingGate,
+)
 from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
     StableUserStatusStore,
 )
 from osu_server.infrastructure.state.memory.channel_state_store import InMemoryChannelStateStore
 from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQueue
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.infrastructure.state.memory.replay_download_accounting_gate import (
+    InMemoryReplayDownloadAccountingGate,
+)
 from osu_server.infrastructure.state.memory.stable_user_status_store import (
     InMemoryStableUserStatusStore,
+)
+from osu_server.infrastructure.state.valkey.replay_download_accounting_gate import (
+    ValkeyReplayDownloadAccountingGate,
 )
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
@@ -67,6 +87,10 @@ from osu_server.services.commands.chat import (
 from osu_server.services.commands.chat.bancho_bot.command_service import CommandService
 from osu_server.services.commands.identity import LoginCommandUseCase, RegisterUserCommandUseCase
 from osu_server.services.commands.identity.auth_service import AuthService
+from osu_server.services.commands.scores.replay_download_accounting import (
+    ReplayDownloadAccountingInput,
+    ReplayDownloadAccountingUseCase,
+)
 from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 from osu_server.services.queries.chat import (
     ListAutojoinChannelsQuery,
@@ -79,7 +103,18 @@ from osu_server.services.queries.chat import (
 from osu_server.services.queries.chat.private_message_service import PrivateMessageService
 from osu_server.services.queries.identity.password_service import PasswordService
 from osu_server.services.queries.identity.permission_service import PermissionService
-from osu_server.services.queries.scores import ReplayDownloadBodyAssembler, ReplayDownloadQuery
+from osu_server.services.queries.identity.session_credentials import (
+    SessionCredentialsQueryInput,
+    SessionCredentialsQueryResult,
+    SessionCredentialsQueryUseCase,
+)
+from osu_server.services.queries.scores import (
+    ReplayDownloadAccountingMetadata,
+    ReplayDownloadBodyAssembler,
+    ReplayDownloadQuery,
+    ReplayDownloadQueryInput,
+    ReplayDownloadQueryResult,
+)
 from osu_server.services.queries.storage import BlobByteReader, BlobByteReaderAdapter
 from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
@@ -93,11 +128,61 @@ from osu_server.transports.stable.web_legacy.registration import RegistrationHan
 from osu_server.transports.stable.web_legacy.replay_download import ReplayDownloadHandler
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 from tests.factories.config import make_app_config
+from tests.support.starlette_requests import make_starlette_request
 
 _EXPECTED_MIN_HOST_ROUTES = 4
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+class _FakeValkeyClient:
+    async def invoke_script(self, *args: object, **kwargs: object) -> object:
+        del args, kwargs
+        return 1
+
+
+class _InjectedSessionCredentialsQuery:
+    async def execute(
+        self,
+        input_data: SessionCredentialsQueryInput,
+    ) -> SessionCredentialsQueryResult:
+        del input_data
+        return SessionCredentialsQueryResult(
+            outcome=LegacyWebAuthResult(user_id=42, username="PlayerOne")
+        )
+
+
+class _InjectedReplayDownloadQuery:
+    inputs: list[ReplayDownloadQueryInput]
+
+    def __init__(self) -> None:
+        self.inputs = []
+
+    async def execute(
+        self,
+        input_data: ReplayDownloadQueryInput,
+    ) -> ReplayDownloadQueryResult:
+        self.inputs.append(input_data)
+        return ReplayDownloadQueryResult(
+            branch=ReplayDownloadBranch.SUCCESS,
+            response_body=ReplayDownloadResponseBody(payload=b"di-replay-body"),
+            accounting_metadata=ReplayDownloadAccountingMetadata(
+                score_id=515,
+                score_owner_user_id=616,
+            ),
+        )
+
+
+class _InjectedReplayDownloadAccounting:
+    inputs: list[ReplayDownloadAccountingInput]
+
+    def __init__(self) -> None:
+        self.inputs = []
+
+    async def execute(self, input_data: ReplayDownloadAccountingInput) -> object:
+        self.inputs.append(input_data)
+        return object()
 
 
 def test_public_app_entrypoint_exposes_starlette_app() -> None:
@@ -223,6 +308,10 @@ async def test_app_container_uses_explicit_in_memory_test_overrides(
         assert isinstance(await container.get(ChannelStateStore), InMemoryChannelStateStore)
         assert isinstance(await container.get(RateLimiter), InMemoryRateLimiter)
         assert isinstance(
+            await container.get(ReplayDownloadAccountingGate),
+            InMemoryReplayDownloadAccountingGate,
+        )
+        assert isinstance(
             await container.get(StableUserStatusStore),
             InMemoryStableUserStatusStore,
         )
@@ -320,6 +409,7 @@ async def test_app_container_resolves_transport_handler_graph(tmp_path: Path) ->
         ScoreSubmitHandler,
         ReplayDownloadBodyAssembler,
         ReplayDownloadQuery,
+        ReplayDownloadAccountingUseCase,
         ReplayDownloadHandler,
     )
 
@@ -327,8 +417,98 @@ async def test_app_container_resolves_transport_handler_graph(tmp_path: Path) ->
         for dependency_type in expected_types:
             resolved = await container.get(dependency_type)
             assert isinstance(resolved, dependency_type)
+        handler = await container.get(ReplayDownloadHandler)
+        assert isinstance(handler, ReplayDownloadHandler)
         blob_reader = await container.get(BlobByteReader)
         assert isinstance(blob_reader, BlobByteReaderAdapter)
+    finally:
+        await container.close()
+
+
+@pytest.mark.asyncio
+async def test_app_container_injects_replay_download_accounting_into_handler(
+    tmp_path: Path,
+) -> None:
+    config = make_app_config(
+        environment="test",
+        blob_storage_local_root=str(tmp_path / "blobs"),
+    )
+    replay_query = _InjectedReplayDownloadQuery()
+    accounting = _InjectedReplayDownloadAccounting()
+    container = make_app_container(
+        config,
+        overrides=(
+            make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),
+            TestProviderSet(
+                replace_value(
+                    SessionCredentialsQueryUseCase,
+                    cast(
+                        "SessionCredentialsQueryUseCase",
+                        cast("object", _InjectedSessionCredentialsQuery()),
+                    ),
+                ),
+                replace_value(
+                    ReplayDownloadQuery,
+                    cast("ReplayDownloadQuery", cast("object", replay_query)),
+                ),
+                replace_value(
+                    ReplayDownloadAccountingUseCase,
+                    cast("ReplayDownloadAccountingUseCase", cast("object", accounting)),
+                ),
+            ),
+        ),
+    )
+
+    try:
+        handler = await container.get(ReplayDownloadHandler)
+        response = await handler(
+            make_starlette_request(
+                method="GET",
+                path="/web/osu-getreplay.php",
+                query_params={"c": "8675309", "m": "3", "u": "user", "h": "hash"},
+            )
+        )
+
+        assert response.status_code == HTTPStatus.OK
+        assert response.body == b"di-replay-body"
+        assert replay_query.inputs == [
+            ReplayDownloadQueryInput(
+                authenticated_user_id=42,
+                score_id=8675309,
+                ruleset=Ruleset.MANIA,
+            )
+        ]
+        assert len(accounting.inputs) == 1
+        assert accounting.inputs[0].score_id == 515
+        assert accounting.inputs[0].score_owner_user_id == 616
+        assert accounting.inputs[0].viewer_user_id == 42
+    finally:
+        await container.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_graph_provides_valkey_replay_download_accounting_gate(
+    tmp_path: Path,
+) -> None:
+    config = make_app_config(
+        environment="test",
+        blob_storage_local_root=str(tmp_path / "blobs"),
+    )
+    container = make_app_container(
+        config,
+        overrides=(
+            TestProviderSet(
+                replace_value(
+                    GlideClient,
+                    cast("GlideClient", cast("object", _FakeValkeyClient())),
+                ),
+            ),
+        ),
+    )
+
+    try:
+        gate = await container.get(ReplayDownloadAccountingGate)
+        assert isinstance(gate, ValkeyReplayDownloadAccountingGate)
     finally:
         await container.close()
 

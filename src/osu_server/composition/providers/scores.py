@@ -10,6 +10,9 @@ from taskiq import AsyncBroker
 from osu_server.composition.providers._dishka import provide
 from osu_server.domain.compatibility.stable import ReplayDownloadBodyStrategy
 from osu_server.infrastructure.crypto import ScoreCryptoService
+from osu_server.infrastructure.state.interfaces.replay_download_accounting_gate import (
+    ReplayDownloadAccountingGate,
+)
 from osu_server.jobs.beatmap_leaderboards import TaskiqBeatmapLeaderboardRebuildWorkerWake
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     BeatmapLeaderboardQueryRepository,
@@ -25,6 +28,9 @@ from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.scores.leaderboards import (
     RebuildBeatmapLeaderboardsForBeatmapsetUseCase,
     RebuildBeatmapLeaderboardsForUserUseCase,
+)
+from osu_server.services.commands.scores.replay_download_accounting import (
+    ReplayDownloadAccountingUseCase,
 )
 from osu_server.services.queries.scores import (
     BeatmapLeaderboardQuery,
@@ -48,6 +54,8 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapScoreListingQueryRepository,
     BlobByteReader,
     CurrentUserStatsQuery,
+    ReplayDownloadAccountingGate,
+    ReplayDownloadAccountingUseCase,
     ReplayDownloadBodyAssembler,
     ReplayDownloadQuery,
     ReplayDownloadQueryRepository,
@@ -117,6 +125,17 @@ class ScoreProviderSet(Provider):
             blob_reader=blob_reader,
             body_assembler=body_assembler,
             body_strategy=ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES,
+        )
+
+    @provide
+    def replay_download_accounting(
+        self,
+        uow_factory: UnitOfWorkFactory,
+        accounting_gate: ReplayDownloadAccountingGate,
+    ) -> ReplayDownloadAccountingUseCase:
+        return ReplayDownloadAccountingUseCase(
+            unit_of_work_factory=uow_factory,
+            accounting_gate=accounting_gate,
         )
 
     @provide

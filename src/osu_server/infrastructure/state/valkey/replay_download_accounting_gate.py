@@ -14,8 +14,7 @@ class _ValkeyReplayDownloadAccountingClient(Protocol):
     async def invoke_script(
         self,
         script: Script,
-        *,
-        keys: list[str],
+        keys: list[TEncodable] | None = None,
         args: list[TEncodable] | None = None,
     ) -> object: ...
 
