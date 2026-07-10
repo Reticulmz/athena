@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from sqlalchemy.dialects.postgresql import ENUM
 
 MIGRATION_PATH = Path(
-    "alembic/versions/20260710_0100_use_enum_types_and_explicit_leaderboard_scope.py"
+    "alembic/versions/20260710_0200_use_enum_types_and_explicit_leaderboard_scope.py"
 )
 
 
@@ -38,8 +38,8 @@ def _enum_name(table: Table, column_name: str) -> str:
 def test_enum_scope_migration_converts_closed_value_columns_and_leaderboard_scope() -> None:
     migration = MIGRATION_PATH.read_text()
 
-    assert 'revision: str = "20260710_0100"' in migration
-    assert 'down_revision: str | None = "20260630_0300"' in migration
+    assert 'revision: str = "20260710_0200"' in migration
+    assert 'down_revision: str | None = "20260710_0100"' in migration
     assert 'name="play_time_source"' in migration
     assert 'name="beatmap_mode"' in migration
     assert 'name="beatmap_fetch_target_kind"' in migration

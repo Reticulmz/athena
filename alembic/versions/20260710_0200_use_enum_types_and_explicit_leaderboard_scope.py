@@ -1,7 +1,7 @@
 """Use enum types and explicit leaderboard scopes.
 
-Revision ID: 20260710_0100
-Revises: 20260630_0300
+Revision ID: 20260710_0200
+Revises: 20260710_0100
 Create Date: 2026-07-10 01:00:00.000000
 """
 
@@ -16,8 +16,8 @@ from sqlalchemy.dialects import postgresql
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-revision: str = "20260710_0100"
-down_revision: str | None = "20260630_0300"
+revision: str = "20260710_0200"
+down_revision: str | None = "20260710_0100"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
