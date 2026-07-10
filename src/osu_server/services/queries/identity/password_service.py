@@ -8,6 +8,8 @@ import structlog
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
+from osu_server.domain.identity.passwords import normalize_legacy_md5_hex
+
 if TYPE_CHECKING:
     from osu_server.infrastructure.security.hibp import HIBPClient
 
@@ -40,8 +42,24 @@ class PasswordService:
         return await loop.run_in_executor(None, self._hasher.hash, password)
 
     async def verify(self, hashed: str, password: str) -> bool:
-        """ハッシュ照合。VerifyMismatchError → False。"""
+        """Argon2id hash と password credential を照合する.
+
+        Args:
+            hashed: 保存済み password hash.
+            password: 照合対象の password credential. Stable auth の 32文字
+                MD5 hex credential は大小文字差を認証差にしない.
+
+        Returns:
+            bool: 照合に成功した場合は True. VerifyMismatchError の場合は False.
+
+        Raises:
+            Exception: argon2-cffi の verify 処理が予期しない理由で失敗した場合.
+
+        Notes:
+            CPU bound な verify 処理は run_in_executor で実行する.
+        """
         loop = asyncio.get_running_loop()
+        password = normalize_legacy_md5_hex(password)
         try:
             return await loop.run_in_executor(None, self._hasher.verify, hashed, password)
         except VerifyMismatchError:

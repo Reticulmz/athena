@@ -49,7 +49,7 @@ _OVERALL_CHART_REQUIRED_FIELDS = (
 )
 
 
-def _valid_multipart_body() -> bytes:
+def _valid_multipart_body(password_md5: bytes = b"password_md5_hash") -> bytes:
     encrypted_payload = base64.b64encode(b"encrypted_payload_data")
     iv = base64.b64encode(b"0" * 32)
 
@@ -65,7 +65,8 @@ def _valid_multipart_body() -> bytes:
             b"\r\n",
             b"------WebKitFormBoundary\r\n",
             b'Content-Disposition: form-data; name="pass"\r\n\r\n',
-            b"password_md5_hash\r\n",
+            password_md5,
+            b"\r\n",
             b"------WebKitFormBoundary\r\n",
             b'Content-Disposition: form-data; name="x"\r\n\r\n',
             b"client_hash\r\n",
@@ -156,6 +157,43 @@ def test_score_submit_decoder_converts_request_mapping_to_command_input() -> Non
     assert command_input.fail_time_ms == 0
     assert command_input.osu_version == "20241201"
     assert command_input.submitted_at == submitted_at
+
+
+def test_score_submit_request_hash_ignores_password_md5_hex_case() -> None:
+    """Password MD5 hex の大小文字差は request hash と command input に残さない.
+
+    Args:
+        なし.
+
+    Returns:
+        None.
+
+    Raises:
+        AssertionError: 大小文字だけが異なる password MD5 hex で request hash が分岐する場合.
+
+    Constraints:
+        32文字 hex credential だけを canonicalize し, その他の credential は対象外とする.
+    """
+    mapper = StableScoreSubmitMapper()
+    submitted_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    lowercase_request = mapper.to_request_mapping(
+        body=_valid_multipart_body(b"abcdef0123456789abcdef0123456789"),
+        content_type="multipart/form-data; boundary=----WebKitFormBoundary",
+        submitted_at=submitted_at,
+    )
+    uppercase_request = mapper.to_request_mapping(
+        body=_valid_multipart_body(b"ABCDEF0123456789ABCDEF0123456789"),
+        content_type="multipart/form-data; boundary=----WebKitFormBoundary",
+        submitted_at=submitted_at,
+    )
+
+    lowercase_input = make_stable_score_submit_decoder().to_command_input(lowercase_request)
+    uppercase_input = make_stable_score_submit_decoder().to_command_input(uppercase_request)
+
+    assert lowercase_request.password_md5 == "abcdef0123456789abcdef0123456789"
+    assert uppercase_request.password_md5 == "abcdef0123456789abcdef0123456789"
+    assert lowercase_input.request_hash == uppercase_input.request_hash
+    assert lowercase_input.password_md5 == uppercase_input.password_md5
 
 
 def test_score_submit_decoder_rejects_invalid_crypto_checksum() -> None:

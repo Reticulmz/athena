@@ -364,6 +364,9 @@ Use the [Lekuruu/bancho-documentation Wiki](https://github.com/Lekuruu/bancho-do
 ### Python Docstring Language
 
 - Python docstrings は日本語で記述する。新規または変更する公開 class / function / method では、挙動、引数、戻り値、例外、制約を日本語で説明する。
+- Private class / function / method に docstring を書く場合も同じルールを適用する。公開 API ではないことを理由に、型、引数、戻り値、例外、制約、前提条件の記述を省略しない。
+- Python docstrings は Google Style で記述する。説明文だけで終わらせず、必要に応じて `Args:`、`Returns:`、`Yields:`、`Raises:`、`Attributes:`、`Examples:`、`Notes:` を使い、型、引数、戻り値、発生し得る例外、制約、前提条件を網羅する。
+- `Args:` と `Returns:` / `Yields:` には型と意味を明記し、型注釈と矛盾させない。戻り値がない公開関数や method では `Returns:` に `None` とその意味を記述する。
 - 外部仕様名、wire field 名、エラーコード、プロトコル値、引用元の英語表現は原文のまま書いてよい。ただし、それらの意味や Athena 側の判断は日本語で補足する。
 - To avoid Ruff RUF002, use ASCII punctuation `()`, `:`, `/`, `-` even in Japanese docstrings. Do not use ambiguous fullwidth symbols.
 

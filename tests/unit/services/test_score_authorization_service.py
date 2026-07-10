@@ -133,6 +133,23 @@ class TestScoreAuthorizationService:
         assert result.payload_identity_match
 
     @pytest.mark.asyncio
+    async def test_repository_backed_authorization_accepts_uppercase_password_md5(
+        self,
+    ) -> None:
+        """Score submit の password MD5 hex は大小文字差を認証差にしない."""
+        service, password_md5, user_id = await _make_repository_backed_service()
+
+        result = await service.authorize_submission(
+            password_md5=password_md5.upper(),
+            payload_username="PlayerOne",
+            payload_user_id=0,
+        )
+
+        assert result.authorized
+        assert result.user_id == user_id
+        assert result.password_valid
+
+    @pytest.mark.asyncio
     async def test_repository_backed_authorization_trims_payload_username(self) -> None:
         """Stable score payload usernames may contain trailing padding spaces."""
         service, password_md5, user_id = await _make_repository_backed_service()
