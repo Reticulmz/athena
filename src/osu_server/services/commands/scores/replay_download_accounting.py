@@ -462,11 +462,11 @@ def _validate_positive_id(name: str, value: int) -> None:
     """id が正の整数であることを検証する。
 
     Args:
-        name: 検証対象の引数名。
-        value: 検証する整数値。
+        name (str): 検証対象の引数名。
+        value (int): 検証する整数値。
 
     Returns:
-        None。
+        None: 検証のみを行い、正常時は値を返さない。
 
     Raises:
         ValueError: value が 0 以下の場合。
@@ -488,15 +488,17 @@ def _log_accounting_failure(
     """Accounting 失敗を sanitize した warning log として記録する。
 
     Args:
-        event: structlog event 名。
-        input_data: replay download 成功後の accounting 入力。
-        operation: 失敗した操作名。
-        outcome: 失敗時の outcome 分類。
-        exception: 発生した例外。例外 message は log に含めない。
-        exception_type: 例外型名の明示上書き。
+        event (str): structlog event 名。
+        input_data (ReplayDownloadAccountingInput): replay download 成功後の
+            accounting 入力。
+        operation (str): 失敗した操作名。
+        outcome (str): 失敗時の outcome 分類。
+        exception (BaseException | None): 発生した例外。
+            例外 message は log に含めない。
+        exception_type (str | None): 例外型名の明示上書き。
 
     Returns:
-        None。
+        None: warning log の記録だけを行い、値を返さない。
 
     Raises:
         なし。

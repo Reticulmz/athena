@@ -39,18 +39,20 @@ class User:
         updated_at は行更新 metadata であり activity の代替にはしない。
 
         Args:
-            id: 永続化済み user id。未永続化の test/domain fixture では 0 を許容する。
-            username: 表示用 username。
-            safe_username: 一意性判定用に正規化済みの username。
-            email: user の email address。
-            password_hash: 認証用 password hash。
-            country: ISO 3166-1 alpha-2 country code。
-            created_at: user 作成時刻。
-            updated_at: user 行の最終更新時刻。
-            latest_activity_at: user の latest activity 時刻。未指定時は created_at。
+            id (int): 永続化済み user id。未永続化の test/domain fixture では 0 を許容する。
+            username (str): 表示用 username。
+            safe_username (str): 一意性判定用に正規化済みの username。
+            email (str): user の email address。
+            password_hash (str): 認証用 password hash。
+            country (str): ISO 3166-1 alpha-2 country code。
+                Athena では2文字国コードとして扱う。
+            created_at (datetime): user 作成時刻。
+            updated_at (datetime): user 行の最終更新時刻。
+            latest_activity_at (datetime | None): user の latest activity 時刻。
+                未指定時は created_at。
 
         Returns:
-            None。
+            None: instance 初期化だけを行い、値を返さない。
 
         Raises:
             なし。

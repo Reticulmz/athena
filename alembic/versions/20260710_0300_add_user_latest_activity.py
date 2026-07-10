@@ -1,8 +1,8 @@
 """Add user latest activity metadata.
 
-Revision ID: 20260707_0200
-Revises: 20260707_0100
-Create Date: 2026-07-07 02:00:00.000000
+Revision ID: 20260710_0300
+Revises: 20260710_0200
+Create Date: 2026-07-10 03:00:00.000000
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from alembic import op
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-revision: str = "20260707_0200"
-down_revision: str | None = "20260707_0100"
+revision: str = "20260710_0300"
+down_revision: str | None = "20260710_0200"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

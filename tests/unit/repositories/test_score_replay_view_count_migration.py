@@ -5,7 +5,7 @@ from sqlalchemy import BigInteger, CheckConstraint, Column, Table
 
 from osu_server.repositories.sqlalchemy.models import ScoreModel
 
-MIGRATION_PATH = Path("alembic/versions/20260707_0100_add_score_replay_view_count.py")
+MIGRATION_PATH = Path("alembic/versions/20260710_0200_add_score_replay_view_count.py")
 
 
 def _column(table: Table, name: str) -> Column[object]:
@@ -23,7 +23,7 @@ def _check_constraints(table: Table) -> set[str]:
 def test_score_replay_view_count_migration_adds_non_null_default_and_constraint() -> None:
     migration = MIGRATION_PATH.read_text()
 
-    assert 'revision: str = "20260707_0100"' in migration
+    assert 'revision: str = "20260710_0200"' in migration
     assert 'down_revision: str | None = "20260710_0100"' in migration
     assert '"replay_view_count"' in migration
     assert "sa.BigInteger()" in migration

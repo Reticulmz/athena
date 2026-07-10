@@ -161,7 +161,8 @@ src/osu_server/
     └── test.py
 
 alembic/versions/
-└── 20260707_0100_add_replay_download_accounting.py
+├── 20260710_0200_add_score_replay_view_count.py
+└── 20260710_0300_add_user_latest_activity.py
 
 tests/
 ├── unit/services/commands/scores/test_replay_download_accounting.py

@@ -5,7 +5,7 @@ from sqlalchemy import Column, DateTime, Table
 
 from osu_server.repositories.sqlalchemy.models import UserModel
 
-MIGRATION_PATH = Path("alembic/versions/20260707_0200_add_user_latest_activity.py")
+MIGRATION_PATH = Path("alembic/versions/20260710_0300_add_user_latest_activity.py")
 
 
 def _column(table: Table, name: str) -> Column[object]:
@@ -15,8 +15,8 @@ def _column(table: Table, name: str) -> Column[object]:
 def test_user_latest_activity_migration_adds_non_null_metadata_column() -> None:
     migration = MIGRATION_PATH.read_text()
 
-    assert 'revision: str = "20260707_0200"' in migration
-    assert 'down_revision: str | None = "20260707_0100"' in migration
+    assert 'revision: str = "20260710_0300"' in migration
+    assert 'down_revision: str | None = "20260710_0200"' in migration
     assert '"latest_activity_at"' in migration
     assert "sa.DateTime(timezone=True)" in migration
     assert "UPDATE users" in migration

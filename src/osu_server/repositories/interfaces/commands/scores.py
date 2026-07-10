@@ -33,10 +33,10 @@ class ScoreCommandRepository(Protocol):
         """対象 score の Replay View Count を 1 増やし、存在したか返す。
 
         Args:
-            score_id: Replay View Count を増やす対象 score の identifier。
+            score_id (int): Replay View Count を増やす対象 score の identifier。
 
         Returns:
-            対象 score が存在し、increment を実行した場合は True。
+            bool: 対象 score が存在し、increment を実行した場合は True。
             存在しない場合は False。
         """
         ...
