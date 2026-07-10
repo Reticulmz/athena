@@ -1,6 +1,10 @@
 """Unit tests for Score domain model."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
+from typing import cast
+
+import pytest
 
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
@@ -72,6 +76,25 @@ def test_score_without_id() -> None:
     assert score.id is None
 
 
+def test_score_replay_view_count_defaults_to_zero() -> None:
+    """Replay View Count は未指定時に 0 で利用できる。"""
+    score = _score()
+
+    assert score.replay_view_count == 0
+
+
+def test_score_replay_view_count_rejects_null() -> None:
+    """Replay View Count は null を受け入れない。"""
+    with pytest.raises(ValueError, match="replay_view_count cannot be null"):
+        _ = replace(_score(), replay_view_count=cast("int", cast("object", None)))
+
+
+def test_score_replay_view_count_rejects_negative_value() -> None:
+    """Replay View Count は負数を受け入れない。"""
+    with pytest.raises(ValueError, match="replay_view_count must be non-negative"):
+        _ = replace(_score(), replay_view_count=-1)
+
+
 def test_ruleset_enum_values() -> None:
     """Rulesetがosu/taiko/catch/maniaをサポート。"""
     assert Ruleset.OSU.value == 0
@@ -95,3 +118,31 @@ def test_grade_enum_values() -> None:
     assert Grade.B.value == "B"
     assert Grade.C.value == "C"
     assert Grade.D.value == "D"
+
+
+def _score() -> Score:
+    return Score(
+        id=1,
+        user_id=100,
+        beatmap_id=200,
+        beatmap_checksum="abc123",
+        online_checksum="xyz789",
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        mods=ModCombination.none(),
+        n300=300,
+        n100=50,
+        n50=10,
+        geki=0,
+        katu=0,
+        miss=5,
+        score=500000,
+        max_combo=350,
+        accuracy=0.95,
+        grade=Grade.A,
+        passed=True,
+        perfect=False,
+        client_version="b20250101",
+        submitted_at=datetime(2026, 6, 11, 0, 0, 0, tzinfo=UTC),
+        beatmap_status_at_submission="ranked",
+    )

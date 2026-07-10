@@ -20,6 +20,9 @@ from osu_server.infrastructure.state.interfaces.performance_completion_signal im
     PerformanceCompletionSignal,
 )
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.infrastructure.state.interfaces.replay_download_accounting_gate import (
+    ReplayDownloadAccountingGate,
+)
 from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
     StableUserStatusStore,
 )
@@ -29,6 +32,9 @@ from osu_server.infrastructure.state.memory.performance_completion_signal import
     InMemoryPerformanceCompletionSignal,
 )
 from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimiter
+from osu_server.infrastructure.state.memory.replay_download_accounting_gate import (
+    InMemoryReplayDownloadAccountingGate,
+)
 from osu_server.infrastructure.state.memory.stable_user_status_store import (
     InMemoryStableUserStatusStore,
 )
@@ -128,6 +134,11 @@ def make_in_memory_runtime_provider_set(
         ),
         replace_value(ChannelStateStore, InMemoryChannelStateStore(), scope=Scope.APP),
         replace_value(RateLimiter, InMemoryRateLimiter(), scope=Scope.APP),
+        replace_value(
+            ReplayDownloadAccountingGate,
+            InMemoryReplayDownloadAccountingGate(),
+            scope=Scope.APP,
+        ),
         replace_value(StableUserStatusStore, InMemoryStableUserStatusStore(), scope=Scope.APP),
         replace_value(
             PerformanceCompletionSignal,

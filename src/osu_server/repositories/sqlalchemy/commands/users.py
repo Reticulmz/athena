@@ -15,6 +15,8 @@ from osu_server.repositories.sqlalchemy.models.user import (
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from osu_server.domain.identity.system_users import SystemUserIdentity
@@ -55,6 +57,7 @@ class SQLAlchemyUserCommandRepository:
             email=normalized_email,
             password_hash=user.password_hash,
             country=user.country,
+            latest_activity_at=user.latest_activity_at,
         )
         self._session.add(model)
         try:
@@ -113,6 +116,29 @@ class SQLAlchemyUserCommandRepository:
         if not isinstance(model, UserModel):
             return False
         model.password_hash = password_hash
+        await self._session.flush()
+        return True
+
+    async def touch_latest_activity(self, user_id: int, occurred_at: datetime) -> bool:
+        """対象 user の latest activity を更新する。
+
+        引数:
+            user_id: 更新対象 user の identifier.
+            occurred_at: replay download activity が発生した時刻.
+
+        戻り値:
+            対象 user が存在し、更新された場合は True.
+
+        例外:
+            SQLAlchemy session の永続化例外は呼び出し元へ送出する.
+
+        制約:
+            updated_at は activity metadata として扱わない.
+        """
+        model = await self._session.get(UserModel, user_id)
+        if not isinstance(model, UserModel):
+            return False
+        model.latest_activity_at = occurred_at
         await self._session.flush()
         return True
 
@@ -191,4 +217,5 @@ def _user_to_domain(model: UserModel) -> User:
         country=model.country,
         created_at=model.created_at,
         updated_at=model.updated_at,
+        latest_activity_at=model.latest_activity_at,
     )

@@ -59,6 +59,7 @@ def user_to_domain(model: UserModel) -> User:
         country=model.country,
         created_at=model.created_at,
         updated_at=model.updated_at,
+        latest_activity_at=model.latest_activity_at,
     )
 
 
@@ -126,6 +127,7 @@ def score_to_domain(model: ScoreModel) -> Score:
             PlayTimeSource(model.play_time_source) if model.play_time_source is not None else None
         ),
         submit_exit_classification=model.submit_exit_classification,
+        replay_view_count=model.replay_view_count,
     )
 
 

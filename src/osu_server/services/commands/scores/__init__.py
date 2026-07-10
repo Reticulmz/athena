@@ -20,6 +20,14 @@ from osu_server.services.commands.scores.process_submission import (
     SubmissionResult,
     generate_submission_fingerprint,
 )
+from osu_server.services.commands.scores.replay_download_accounting import (
+    LatestActivityAccountingOutcome,
+    ReplayDownloadAccountingInput,
+    ReplayDownloadAccountingPublisher,
+    ReplayDownloadAccountingResult,
+    ReplayDownloadAccountingUseCase,
+    ReplayViewAccountingOutcome,
+)
 from osu_server.services.commands.scores.submit_score import (
     SubmitScoreCommand,
     SubmitScoreCommandOutcome,
@@ -34,6 +42,7 @@ from osu_server.services.commands.scores.user_stats_projection import (
 __all__ = [
     "AuthorizationContext",
     "BeatmapRankDelta",
+    "LatestActivityAccountingOutcome",
     "ParsedSubmissionInput",
     "ProcessScoreSubmissionUseCase",
     "RebuildBeatmapLeaderboardsForBeatmapsetCommand",
@@ -41,6 +50,11 @@ __all__ = [
     "RebuildBeatmapLeaderboardsForUserCommand",
     "RebuildBeatmapLeaderboardsForUserUseCase",
     "RebuildBeatmapLeaderboardsResult",
+    "ReplayDownloadAccountingInput",
+    "ReplayDownloadAccountingPublisher",
+    "ReplayDownloadAccountingResult",
+    "ReplayDownloadAccountingUseCase",
+    "ReplayViewAccountingOutcome",
     "ScoreAuthorizationService",
     "ScoreSubmissionAuthorizer",
     "SubmissionOutcome",

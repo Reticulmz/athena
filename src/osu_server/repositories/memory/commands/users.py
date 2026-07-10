@@ -75,6 +75,17 @@ class InMemoryUserCommandRepository:
         )
         return True
 
+    async def touch_latest_activity(self, user_id: int, occurred_at: datetime) -> bool:
+        """対象 user の latest activity を更新する。"""
+        existing = self._state.users_by_id.get(user_id)
+        if existing is None:
+            return False
+        self._state.users_by_id[user_id] = replace(
+            existing,
+            latest_activity_at=occurred_at,
+        )
+        return True
+
     async def sync_system_user(self, identity: SystemUserIdentity) -> None:
         safe_username = User.normalize_username(identity.username)
         conflict_id = self._state.user_id_by_safe_username.get(safe_username)

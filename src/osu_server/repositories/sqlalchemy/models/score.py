@@ -55,6 +55,10 @@ class ScoreModel(Base):
             name="ck_scores_play_time_seconds_non_negative",
         ),
         CheckConstraint(
+            "replay_view_count >= 0",
+            name="ck_scores_replay_view_count_non_negative",
+        ),
+        CheckConstraint(
             _PLAY_TIME_SOURCE_CHECK,
             name="ck_scores_play_time_source_known",
         ),
@@ -94,6 +98,12 @@ class ScoreModel(Base):
     play_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     play_time_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     submit_exit_classification: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    replay_view_count: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
 
 
 class ScoreSubmissionModel(Base):

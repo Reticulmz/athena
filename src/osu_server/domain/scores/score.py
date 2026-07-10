@@ -79,13 +79,27 @@ class Score:
     play_time_seconds: int | None = None
     play_time_source: PlayTimeSource | None = None
     submit_exit_classification: str | None = None
+    replay_view_count: int = 0
 
     def __post_init__(self) -> None:
         _validate_non_negative_timing("fail_time_ms", self.fail_time_ms)
         _validate_non_negative_timing("play_time_seconds", self.play_time_seconds)
+        _validate_replay_view_count(self.replay_view_count)
 
 
 def _validate_non_negative_timing(field_name: str, value: int | None) -> None:
     if value is not None and value < 0:
         msg = f"{field_name} must be non-negative"
+        raise ValueError(msg)
+
+
+def _validate_replay_view_count(value: object) -> None:
+    if value is None:
+        msg = "replay_view_count cannot be null"
+        raise ValueError(msg)
+    if not isinstance(value, int):
+        msg = "replay_view_count must be an integer"
+        raise TypeError(msg)
+    if value < 0:
+        msg = "replay_view_count must be non-negative"
         raise ValueError(msg)

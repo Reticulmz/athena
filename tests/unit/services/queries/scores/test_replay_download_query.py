@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Final, final
 
+import pytest
+
 from osu_server.domain.compatibility.stable import (
     ReplayDownloadBodyStrategy,
     ReplayDownloadBranch,
+    ReplayDownloadResponseBody,
 )
 from osu_server.domain.scores import Ruleset
 from osu_server.repositories.interfaces.queries.replay_download import (
@@ -20,6 +23,7 @@ from osu_server.repositories.interfaces.queries.replay_download import (
     ReplayDownloadScoreNotFoundCandidate,
 )
 from osu_server.services.queries.scores import (
+    ReplayDownloadAccountingMetadata,
     ReplayDownloadBodyAssembler,
     ReplayDownloadBodyBuildInput,
     ReplayDownloadBodyBuildResult,
@@ -123,7 +127,12 @@ async def test_available_replay_with_default_strategy_returns_body_strategy_bloc
 async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() -> None:
     replay_payload = b"rd"
     harness = _make_harness(
-        candidate=_available_replay(blob_id=909, payload=replay_payload),
+        candidate=_available_replay(
+            score_id=515,
+            score_owner_user_id=616,
+            blob_id=909,
+            payload=replay_payload,
+        ),
         blob_payload=replay_payload,
         body_strategy=ReplayDownloadBodyStrategy.DIRECT_BLOB_BYTES,
     )
@@ -134,6 +143,10 @@ async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() 
     assert result.response_body is not None
     assert result.response_body.payload == replay_payload
     assert result.response_body.byte_size == len(replay_payload)
+    assert result.accounting_metadata is not None
+    assert isinstance(result.accounting_metadata, ReplayDownloadAccountingMetadata)
+    assert result.accounting_metadata.score_id == 515
+    assert result.accounting_metadata.score_owner_user_id == 616
     assert result.is_success is True
     assert harness.blob_reader.read_blob_ids == [909]
     assert [entry.strategy for entry in harness.body_assembler.inputs] == [
@@ -142,6 +155,32 @@ async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() 
     assert harness.repository.replay_view_update_count == 0
     assert harness.repository.latest_activity_update_count == 0
     assert repr(replay_payload) not in repr(result)
+    assert "score_owner_user_id=616" not in repr(result)
+
+
+def test_success_result_rejects_missing_accounting_metadata() -> None:
+    with pytest.raises(
+        ValueError,
+        match="success replay download query result requires accounting metadata",
+    ):
+        _ = ReplayDownloadQueryResult(
+            branch=ReplayDownloadBranch.SUCCESS,
+            response_body=ReplayDownloadResponseBody(payload=b"rd"),
+        )
+
+
+def test_non_success_result_rejects_accounting_metadata() -> None:
+    with pytest.raises(
+        ValueError,
+        match="non-success replay download query result must not include accounting metadata",
+    ):
+        _ = ReplayDownloadQueryResult(
+            branch=ReplayDownloadBranch.HIDDEN_SCORE,
+            accounting_metadata=ReplayDownloadAccountingMetadata(
+                score_id=1,
+                score_owner_user_id=2,
+            ),
+        )
 
 
 async def test_available_replay_with_assemble_strategy_remains_blocked() -> None:
@@ -323,13 +362,17 @@ def _input(
 
 
 def _available_replay(
-    blob_id: int,
     *,
+    score_id: int = 13,
+    score_owner_user_id: int = 24,
+    blob_id: int,
     payload: bytes = b"synthetic-stored-replay",
     checksum: str | None = None,
     byte_size: int | None = None,
 ) -> ReplayDownloadAvailableReplayCandidate:
     return ReplayDownloadAvailableReplayCandidate(
+        score_id=score_id,
+        score_owner_user_id=score_owner_user_id,
         blob_id=blob_id,
         checksum=checksum or sha256(payload).hexdigest(),
         byte_size=len(payload) if byte_size is None else byte_size,

@@ -116,6 +116,8 @@ async def test_get_candidate_maps_available_replay_metadata_without_blob_state()
     )
 
     assert result == ReplayDownloadAvailableReplayCandidate(
+        score_id=40,
+        score_owner_user_id=100,
         blob_id=456,
         checksum="c" * 64,
         byte_size=8192,
