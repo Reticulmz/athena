@@ -25,12 +25,18 @@ from osu_server.infrastructure.security.hibp import HIBPClient, HTTPHIBPClient
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
 from osu_server.infrastructure.state.interfaces.packet_queue import PacketQueue
 from osu_server.infrastructure.state.interfaces.rate_limiter import RateLimiter
+from osu_server.infrastructure.state.interfaces.replay_download_accounting_gate import (
+    ReplayDownloadAccountingGate,
+)
 from osu_server.infrastructure.state.interfaces.stable_user_status_store import (
     StableUserStatusStore,
 )
 from osu_server.infrastructure.state.valkey.channel_state_store import ValkeyChannelStateStore
 from osu_server.infrastructure.state.valkey.packet_queue import ValkeyPacketQueue
 from osu_server.infrastructure.state.valkey.rate_limiter import ValkeyRateLimiter
+from osu_server.infrastructure.state.valkey.replay_download_accounting_gate import (
+    ValkeyReplayDownloadAccountingGate,
+)
 from osu_server.infrastructure.state.valkey.stable_user_status_store import (
     ValkeyStableUserStatusStore,
 )
@@ -54,6 +60,7 @@ _DISHKA_RUNTIME_HINTS = (
     HIBPClient,
     PacketQueue,
     RateLimiter,
+    ReplayDownloadAccountingGate,
     SessionStore,
     StableUserStatusStore,
     async_sessionmaker,
@@ -139,6 +146,13 @@ class InfrastructureProviderSet(Provider):
     @provide
     def rate_limiter(self, valkey: GlideClient) -> RateLimiter:
         return ValkeyRateLimiter(valkey)
+
+    @provide
+    def replay_download_accounting_gate(
+        self,
+        valkey: GlideClient,
+    ) -> ReplayDownloadAccountingGate:
+        return ValkeyReplayDownloadAccountingGate(valkey)
 
     @provide
     def country_resolver(self) -> CountryResolver:

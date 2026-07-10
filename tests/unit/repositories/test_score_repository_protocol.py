@@ -27,6 +27,9 @@ class ConcreteScoreRepository:
     async def get_by_id(self, _score_id: int) -> Score | None:
         return None
 
+    async def increment_replay_view_count(self, _score_id: int) -> bool:
+        return False
+
     async def count_submissions_for_beatmap(self, _beatmap_id: int) -> BeatmapSubmissionCounts:
         return BeatmapSubmissionCounts(play_count=0, pass_count=0)
 

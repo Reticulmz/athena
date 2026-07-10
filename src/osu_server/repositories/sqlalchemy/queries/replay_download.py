@@ -113,6 +113,7 @@ def _candidate_statement(query: ReplayDownloadCandidateQuery) -> Executable:
     return (
         select(
             ScoreModel.id.label("score_id"),
+            ScoreModel.user_id.label("score_owner_user_id"),
             replay_download_visible.label("replay_download_visible"),
             ReplayModel.blob_id.label("blob_id"),
             ReplayModel.checksum_sha256.label("checksum"),
@@ -161,6 +162,8 @@ def _candidate_from_mapping(row: Mapping[str, object]) -> ReplayDownloadCandidat
         return ReplayDownloadMissingReplayCandidate()
 
     return ReplayDownloadAvailableReplayCandidate(
+        score_id=_int_value(row, "score_id"),
+        score_owner_user_id=_int_value(row, "score_owner_user_id"),
         blob_id=_int_value(row, "blob_id"),
         checksum=_str_value(row, "checksum"),
         byte_size=_int_value(row, "byte_size"),

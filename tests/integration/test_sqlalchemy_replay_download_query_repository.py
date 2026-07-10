@@ -113,6 +113,8 @@ async def test_get_candidate_uses_real_role_visibility_and_replay_metadata(
         )
 
     assert visible == ReplayDownloadAvailableReplayCandidate(
+        score_id=visible_score_id,
+        score_owner_user_id=_VISIBLE_USER_ID,
         blob_id=blob_id,
         checksum=checksum,
         byte_size=1024,

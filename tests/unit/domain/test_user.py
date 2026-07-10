@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
+from datetime import UTC, datetime
 
 from osu_server.domain.identity.users import User
 
@@ -46,5 +47,23 @@ class TestUserDataclass:
             "country",
             "created_at",
             "updated_at",
+            "latest_activity_at",
         }
         assert field_names == expected
+
+    def test_latest_activity_defaults_to_created_at(self) -> None:
+        created_at = datetime(2026, 7, 7, 1, 2, 3, tzinfo=UTC)
+        updated_at = datetime(2026, 7, 7, 4, 5, 6, tzinfo=UTC)
+
+        user = User(
+            id=1,
+            username="TestPlayer",
+            safe_username="testplayer",
+            email="test@example.com",
+            password_hash="hash",
+            country="JP",
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+
+        assert user.latest_activity_at == created_at

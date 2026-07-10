@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from osu_server.domain.identity.system_users import SystemUserIdentity
     from osu_server.domain.identity.users import User
 
@@ -39,6 +41,10 @@ class UserCommandRepository(Protocol):
 
     async def update_password_hash(self, user_id: int, password_hash: str) -> bool:
         """Persist a user's password hash and return whether the user existed."""
+        ...
+
+    async def touch_latest_activity(self, user_id: int, occurred_at: datetime) -> bool:
+        """対象 user の latest activity を更新し、存在したか返す。"""
         ...
 
     async def sync_system_user(self, identity: SystemUserIdentity) -> None:

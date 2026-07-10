@@ -30,6 +30,7 @@ class _FakeReplayDownloadCandidateRow:
     ruleset: Ruleset
     hidden: bool
     replay: _FakeReplayAttachment | None
+    score_owner_user_id: int = 0
 
 
 class _TypedFakeReplayDownloadQueryRepository:
@@ -48,6 +49,8 @@ class _TypedFakeReplayDownloadQueryRepository:
             if row.replay is None:
                 return ReplayDownloadMissingReplayCandidate()
             return ReplayDownloadAvailableReplayCandidate(
+                score_id=row.score_id,
+                score_owner_user_id=row.score_owner_user_id,
                 blob_id=row.replay.blob_id,
                 checksum=row.replay.checksum,
                 byte_size=row.replay.byte_size,
@@ -126,6 +129,7 @@ async def test_available_replay_candidate_exposes_only_attachment_metadata() -> 
         (
             _FakeReplayDownloadCandidateRow(
                 score_id=13,
+                score_owner_user_id=27,
                 ruleset=Ruleset.OSU,
                 hidden=False,
                 replay=_FakeReplayAttachment(
@@ -142,12 +146,16 @@ async def test_available_replay_candidate_exposes_only_attachment_metadata() -> 
     )
 
     assert result == ReplayDownloadAvailableReplayCandidate(
+        score_id=13,
+        score_owner_user_id=27,
         blob_id=102,
         checksum=checksum,
         byte_size=4096,
     )
     assert result.kind is ReplayDownloadCandidateKind.AVAILABLE_REPLAY
     assert tuple(field.name for field in fields(result)) == (
+        "score_id",
+        "score_owner_user_id",
         "blob_id",
         "checksum",
         "byte_size",
@@ -156,6 +164,8 @@ async def test_available_replay_candidate_exposes_only_attachment_metadata() -> 
     assert not hasattr(result, "raw_bytes")
     assert not hasattr(result, "storage_key")
     assert not hasattr(result, "filesystem_path")
+    assert not hasattr(result, "query_string")
+    assert not hasattr(result, "session_token")
     assert checksum not in repr(result)
 
 

@@ -48,6 +48,17 @@ class InMemoryScoreCommandRepository:
     async def get_by_id(self, score_id: int) -> Score | None:
         return self._state.scores_by_id.get(score_id)
 
+    async def increment_replay_view_count(self, score_id: int) -> bool:
+        """対象 score の Replay View Count を 1 増やす。"""
+        existing = self._state.scores_by_id.get(score_id)
+        if existing is None:
+            return False
+        self._state.scores_by_id[score_id] = replace(
+            existing,
+            replay_view_count=existing.replay_view_count + 1,
+        )
+        return True
+
     async def count_submissions_for_beatmap(self, beatmap_id: int) -> BeatmapSubmissionCounts:
         scores = tuple(
             score for score in self._state.scores_by_id.values() if score.beatmap_id == beatmap_id

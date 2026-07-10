@@ -123,6 +123,8 @@ class ReplayDownloadAvailableReplayCandidate:
     """利用可能な Replay attachment metadata の candidate branch を表す.
 
     引数:
+        score_id: Accounting 対象になる score identifier.
+        score_owner_user_id: Accounting の self-view 判定に使う score owner user id.
         blob_id: Stored Replay blob を参照する identifier.
         checksum: Replay attachment metadata の checksum.
         byte_size: Replay attachment metadata の byte size.
@@ -136,9 +138,11 @@ class ReplayDownloadAvailableReplayCandidate:
     制約:
         Raw replay bytes, storage key, filesystem path, local artifact path,
         credential value は保持しない. Blob の存在確認と byte read は別 boundary
-        が担当する.
+        が担当する. Accounting 用 identity は score id と owner user id だけに限定する.
     """
 
+    score_id: int = field(repr=False)
+    score_owner_user_id: int = field(repr=False)
     blob_id: int
     checksum: str = field(repr=False)
     byte_size: int
