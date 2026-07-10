@@ -3,24 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING, Protocol
+
+from osu_server.domain.scores.performance import RecalculationCandidateReason
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculation
+    from osu_server.domain.scores.performance import (
+        FormulaProfile,
+        PerformanceCalculation,
+    )
     from osu_server.domain.scores.score import Ruleset
-
-
-class RecalculationCandidateReason(Enum):
-    """Operator-visible reason a score needs PP recalculation."""
-
-    UNCALCULATED = "uncalculated"
-    STALE = "stale"
-    CALCULATOR_VERSION_MISMATCH = "calculator_version_mismatch"
-    FORMULA_PROFILE_MISMATCH = "formula_profile_mismatch"
-    UNAVAILABLE = "unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,3 +68,12 @@ class ScorePerformanceQueryRepository(Protocol):
     ) -> ScorePerformanceRecalculationCandidateResult:
         """Return recalculation candidates and dry-run reason counts."""
         ...
+
+
+__all__ = [
+    "RecalculationCandidateReason",
+    "ScorePerformanceCandidateSelection",
+    "ScorePerformanceQueryRepository",
+    "ScorePerformanceRecalculationCandidate",
+    "ScorePerformanceRecalculationCandidateResult",
+]

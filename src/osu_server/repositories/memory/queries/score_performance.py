@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING
 from osu_server.domain.scores.performance import (
     PerformanceCalculationState,
     PerformanceEligibilityPolicy,
+    RecalculationCandidateReason,
 )
 from osu_server.repositories.interfaces.queries.score_performance import (
-    RecalculationCandidateReason,
     ScorePerformanceRecalculationCandidate,
     ScorePerformanceRecalculationCandidateResult,
 )

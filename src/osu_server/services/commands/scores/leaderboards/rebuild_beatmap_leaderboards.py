@@ -179,6 +179,6 @@ def _projection_row_sort_key(
         row.scope.ruleset.value,
         row.scope.playstyle.value,
         row.scope.user_id,
-        -1 if row.scope.mod_filter_key is None else row.scope.mod_filter_key,
+        row.scope.mod_filter_key,
         row.rank_key.ordering_key,
     )

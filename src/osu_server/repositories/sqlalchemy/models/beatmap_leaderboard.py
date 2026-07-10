@@ -22,8 +22,8 @@ class BeatmapLeaderboardUserBestModel(Base):
     __tablename__: str = "beatmap_leaderboard_user_bests"
     __table_args__: tuple[CheckConstraint | Index, ...] = (
         CheckConstraint(
-            "mod_filter_key IS NULL OR mod_filter_key >= 0",
-            name="ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative",
+            "mod_filter_key >= -1",
+            name="ck_beatmap_leaderboard_user_bests_mod_filter_key_scope",
         ),
         Index(
             "idx_beatmap_leaderboard_user_bests_scope_unique",
@@ -31,7 +31,7 @@ class BeatmapLeaderboardUserBestModel(Base):
             "ruleset",
             "playstyle",
             "user_id",
-            text("COALESCE(mod_filter_key, -1)"),
+            "mod_filter_key",
             unique=True,
         ),
         Index(
@@ -39,7 +39,7 @@ class BeatmapLeaderboardUserBestModel(Base):
             "beatmap_id",
             "ruleset",
             "playstyle",
-            text("COALESCE(mod_filter_key, -1)"),
+            "mod_filter_key",
             text("score DESC"),
             text("submitted_at ASC"),
             text("score_id ASC"),
@@ -58,7 +58,7 @@ class BeatmapLeaderboardUserBestModel(Base):
     ruleset: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     playstyle: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    mod_filter_key: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mod_filter_key: Mapped[int] = mapped_column(Integer, nullable=False)
     score_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("scores.id", name="fk_beatmap_leaderboard_user_bests_score_id"),

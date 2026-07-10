@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
@@ -71,7 +71,7 @@ def _make_submission(
     *,
     fingerprint: str = "test_fp_001",
     user_id: int = 1000,
-    state: str = "received",
+    state: ScoreSubmissionState = ScoreSubmissionState.RECEIVED,
 ) -> ScoreSubmission:
     """Create a valid ScoreSubmission for testing."""
     return ScoreSubmission(
@@ -147,22 +147,25 @@ async def test_sqlalchemy_submission_repository_idempotent_retrieval(
 async def test_sqlalchemy_submission_repository_updates_state(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    submission = _make_submission(fingerprint="test_fp_004", state="received")
+    submission = _make_submission(
+        fingerprint="test_fp_004",
+        state=ScoreSubmissionState.RECEIVED,
+    )
     async with uow_factory() as uow:
         created = await uow.submissions.create(submission)
         await uow.commit()
 
     assert created.id is not None
-    assert created.state == "received"
+    assert created.state is ScoreSubmissionState.RECEIVED
 
     async with uow_factory() as uow:
-        await uow.submissions.update_state(created.id, "completed")
+        await uow.submissions.update_state(created.id, ScoreSubmissionState.COMPLETED)
         await uow.commit()
 
     async with uow_factory() as uow:
         retrieved = await uow.submissions.get_by_fingerprint(created.fingerprint)
     assert retrieved is not None
-    assert retrieved.state == "completed"
+    assert retrieved.state is ScoreSubmissionState.COMPLETED
 
 
 async def test_sqlalchemy_submission_repository_update_state_raises_for_nonexistent_id(
@@ -170,7 +173,7 @@ async def test_sqlalchemy_submission_repository_update_state_raises_for_nonexist
 ) -> None:
     with pytest.raises(ValueError, match="Submission not found"):
         async with uow_factory() as uow:
-            await uow.submissions.update_state(999999, "completed")
+            await uow.submissions.update_state(999999, ScoreSubmissionState.COMPLETED)
 
 
 async def test_sqlalchemy_submission_repository_preserves_result_snapshot(

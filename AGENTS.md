@@ -155,6 +155,13 @@ composition -> runtime adapters -> command/query use-cases -> repositories -> in
 - Query repositories expose read-only, read-optimized methods and do not require command Unit of Work.
 - Services, transports, and jobs must not directly use SQLAlchemy models, DB sessions, or raw SQL.
 - Production DB target is PostgreSQL + asyncpg. Do not add SQLite / aiosqlite just for unit tests.
+- Prefer `NOT NULL` for persistence columns. Use explicit zero, empty, sentinel, or enum members
+  when a value is meaningfully present; reserve `NULL` for genuinely unknown, unavailable, or
+  not-applicable data.
+- State, kind, category, source, lifecycle, and other finite semantic values must be represented by
+  domain enums and constrained in persistence. Do not use free-form `VARCHAR` for closed value sets.
+- Projection tables must encode their semantic identity in non-null unique scope columns. Do not use
+  nullable scope columns to carry business meaning such as "all" or "default".
 - Use EventBus (fire-and-forget) and JobQueue (delivery guaranteed) for their respective use cases.
 
 ### Domain Rules

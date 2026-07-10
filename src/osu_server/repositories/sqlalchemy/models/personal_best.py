@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 - SQLAlchemy Mapped requires runtime import
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, SmallInteger, String, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, SmallInteger, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
+from osu_server.repositories.sqlalchemy.models.enum_types import LEADERBOARD_CATEGORY_ENUM
 
 
 class PersonalBestModel(Base):
@@ -29,7 +30,7 @@ class PersonalBestModel(Base):
     beatmap_id: Mapped[int] = mapped_column(Integer, nullable=False)
     ruleset: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     playstyle: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    category: Mapped[str] = mapped_column(LEADERBOARD_CATEGORY_ENUM, nullable=False)
     score_id: Mapped[int] = mapped_column(
         ForeignKey("scores.id", name="fk_personal_bests_score_id"),
         nullable=False,

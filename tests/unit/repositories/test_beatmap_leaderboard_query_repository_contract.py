@@ -17,7 +17,7 @@ from osu_server.domain.beatmaps import (
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.users import User
-from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.performance import (
     FormulaProfile,
@@ -199,7 +199,7 @@ async def test_selected_mods_use_mod_filter_key_and_preserve_displayed_mods() ->
         score_id=20,
         user_id=20,
         score=900_000,
-        mod_filter_key=None,
+        mod_filter_key=ALL_MODS_FILTER_KEY,
         mods=ModCombination.from_bitmask(int(Mod.NIGHTCORE)),
     )
     _seed_leaderboard_score(
@@ -445,7 +445,7 @@ def _scope(
     *,
     category: LeaderboardCategory = LeaderboardCategory.GLOBAL,
     beatmap_checksum: str = _CURRENT_CHECKSUM,
-    mod_filter_key: int | None = None,
+    mod_filter_key: int = ALL_MODS_FILTER_KEY,
     country: str | None = None,
     eligible_user_ids: tuple[int, ...] | None = None,
 ) -> LeaderboardReadScope:
@@ -513,7 +513,7 @@ def _seed_leaderboard_score(
     submitted_at: datetime = _NOW,
     country: str = "JP",
     visible: bool = True,
-    mod_filter_key: int | None = None,
+    mod_filter_key: int = ALL_MODS_FILTER_KEY,
     mods: ModCombination | None = None,
     beatmap_checksum: str = _CURRENT_CHECKSUM,
     passed: bool = True,

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY
+
 if TYPE_CHECKING:
     from datetime import datetime
     from decimal import Decimal
@@ -56,7 +58,7 @@ class LeaderboardReadScope:
     ruleset: Ruleset
     playstyle: Playstyle
     category: LeaderboardCategory
-    mod_filter_key: int | None
+    mod_filter_key: int
     country: str | None = None
     eligible_user_ids: tuple[int, ...] | None = None
 
@@ -64,8 +66,8 @@ class LeaderboardReadScope:
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
             raise ValueError(msg)
-        if self.mod_filter_key is not None and self.mod_filter_key < 0:
-            msg = "mod_filter_key must not be negative"
+        if self.mod_filter_key < ALL_MODS_FILTER_KEY:
+            msg = "mod_filter_key must be all-mods sentinel or non-negative"
             raise ValueError(msg)
 
 

@@ -111,7 +111,7 @@ def _slice_contains(
     return scope.beatmap_id in slice_.beatmap_ids
 
 
-def _scope_key(scope: BeatmapLeaderboardUserBestScope) -> tuple[int, int, int, int, int | None]:
+def _scope_key(scope: BeatmapLeaderboardUserBestScope) -> tuple[int, int, int, int, int]:
     return (
         scope.beatmap_id,
         scope.ruleset.value,

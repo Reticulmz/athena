@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     BeatmapLeaderboardRow,
@@ -144,7 +145,9 @@ def _projection_matches_scope(
 ) -> bool:
     projection_scope = projection.scope
     required_mod_filter_key = (
-        scope.mod_filter_key if scope.category is LeaderboardCategory.SELECTED_MODS else None
+        scope.mod_filter_key
+        if scope.category is LeaderboardCategory.SELECTED_MODS
+        else ALL_MODS_FILTER_KEY
     )
     return (
         projection_scope.beatmap_id == scope.beatmap_id

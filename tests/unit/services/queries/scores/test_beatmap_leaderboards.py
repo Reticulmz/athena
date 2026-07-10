@@ -21,7 +21,7 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.users import User
-from osu_server.domain.scores.leaderboards import filter_from_mod_combination
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, filter_from_mod_combination
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
@@ -310,7 +310,7 @@ class TestBeatmapLeaderboardQuery:
                     ruleset=Ruleset.OSU,
                     playstyle=Playstyle.VANILLA,
                     category=LeaderboardCategory.GLOBAL,
-                    mod_filter_key=None,
+                    mod_filter_key=ALL_MODS_FILTER_KEY,
                 ),
                 50,
             )
@@ -479,7 +479,7 @@ class TestBeatmapLeaderboardQuery:
             ruleset=Ruleset.OSU,
             playstyle=Playstyle.VANILLA,
             category=LeaderboardCategory.COUNTRY,
-            mod_filter_key=None,
+            mod_filter_key=ALL_MODS_FILTER_KEY,
             country="JP",
         )
         assert result.header is not None
@@ -579,7 +579,7 @@ class TestBeatmapLeaderboardQuery:
             ruleset=Ruleset.OSU,
             playstyle=Playstyle.VANILLA,
             category=LeaderboardCategory.FRIENDS,
-            mod_filter_key=None,
+            mod_filter_key=ALL_MODS_FILTER_KEY,
             eligible_user_ids=(9, 20),
         )
         assert result.header is not None
@@ -630,7 +630,7 @@ class TestBeatmapLeaderboardQuery:
                     ruleset=Ruleset.OSU,
                     playstyle=Playstyle.VANILLA,
                     category=LeaderboardCategory.GLOBAL,
-                    mod_filter_key=None,
+                    mod_filter_key=ALL_MODS_FILTER_KEY,
                 ),
                 50,
             )

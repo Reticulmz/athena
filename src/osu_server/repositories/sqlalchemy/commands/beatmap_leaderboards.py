@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Select, and_, delete, func, or_, select, text
+from sqlalchemy import Select, and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from osu_server.domain.scores.leaderboards import ScoreRankKey
@@ -86,17 +86,12 @@ def _select_by_scope(
 def _scope_conditions(
     scope: BeatmapLeaderboardUserBestScope,
 ) -> tuple[ColumnElement[bool], ...]:
-    mod_filter_condition = (
-        BeatmapLeaderboardUserBestModel.mod_filter_key.is_(None)
-        if scope.mod_filter_key is None
-        else BeatmapLeaderboardUserBestModel.mod_filter_key == scope.mod_filter_key
-    )
     return (
         BeatmapLeaderboardUserBestModel.beatmap_id == scope.beatmap_id,
         BeatmapLeaderboardUserBestModel.ruleset == scope.ruleset.value,
         BeatmapLeaderboardUserBestModel.playstyle == scope.playstyle.value,
         BeatmapLeaderboardUserBestModel.user_id == scope.user_id,
-        mod_filter_condition,
+        BeatmapLeaderboardUserBestModel.mod_filter_key == scope.mod_filter_key,
     )
 
 
@@ -117,7 +112,7 @@ def _upsert_if_better_statement(command: UpsertBeatmapLeaderboardUserBest) -> In
             BeatmapLeaderboardUserBestModel.ruleset,
             BeatmapLeaderboardUserBestModel.playstyle,
             BeatmapLeaderboardUserBestModel.user_id,
-            text("COALESCE(mod_filter_key, -1)"),
+            BeatmapLeaderboardUserBestModel.mod_filter_key,
         ],
         set_={
             "score_id": command.score_id,

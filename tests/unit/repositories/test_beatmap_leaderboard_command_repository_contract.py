@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardBeatmapProjectionSlice,
@@ -105,7 +105,7 @@ async def test_upsert_uses_submitted_at_and_lower_score_id_as_tie_breakers() -> 
 
 async def test_same_score_can_project_into_multiple_mod_filter_keys() -> None:
     factory = _memory_factory()
-    all_mods_scope = _scope(mod_filter_key=None)
+    all_mods_scope = _scope()
     selected_mods_scope = _scope(mod_filter_key=64)
 
     async with factory() as uow:
@@ -210,7 +210,7 @@ def _scope(
     *,
     user_id: int = 1000,
     beatmap_id: int = 1,
-    mod_filter_key: int | None = None,
+    mod_filter_key: int = ALL_MODS_FILTER_KEY,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=beatmap_id,

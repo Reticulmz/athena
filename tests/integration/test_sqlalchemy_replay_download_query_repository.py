@@ -248,7 +248,7 @@ def _blob_row(*, label: str, blob_id: int) -> dict[str, object]:
         "sha256": _checksum(f"blob-{label}"),
         "byte_size": 1024,
         "content_type": "application/octet-stream",
-        "storage_backend": "test",
+        "storage_backend": "local",
         "storage_key": f"{_BLOB_STORAGE_PREFIX}{label}.osr",
     }
 

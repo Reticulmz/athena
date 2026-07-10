@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -20,7 +22,7 @@ class BeatmapLeaderboardUserBestScope:
     ruleset: Ruleset
     playstyle: Playstyle
     user_id: int
-    mod_filter_key: int | None
+    mod_filter_key: int
 
     def __post_init__(self) -> None:
         if self.beatmap_id <= 0:
@@ -29,8 +31,8 @@ class BeatmapLeaderboardUserBestScope:
         if self.user_id <= 0:
             msg = "user_id must be positive"
             raise ValueError(msg)
-        if self.mod_filter_key is not None and self.mod_filter_key < 0:
-            msg = "mod_filter_key must not be negative"
+        if self.mod_filter_key < ALL_MODS_FILTER_KEY:
+            msg = "mod_filter_key must be all-mods sentinel or non-negative"
             raise ValueError(msg)
 
 

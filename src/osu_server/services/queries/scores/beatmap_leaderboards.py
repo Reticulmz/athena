@@ -108,7 +108,7 @@ class BeatmapPersonalBestRankQueryInput:
     ruleset: Ruleset
     playstyle: Playstyle
     category: LeaderboardCategory = LeaderboardCategory.GLOBAL
-    mod_filter_key: int | None = ALL_MODS_FILTER_KEY
+    mod_filter_key: int = ALL_MODS_FILTER_KEY
 
 
 @dataclass(slots=True, frozen=True)
@@ -440,12 +440,14 @@ def _leaderboard_scope_from_request(
     if request.category is None:
         return None
 
-    mod_filter_key: int | None = None
+    mod_filter_key = ALL_MODS_FILTER_KEY
     if request.category is LeaderboardCategory.SELECTED_MODS:
         filter_result = request.selected_mod_filter
         if filter_result is None or not filter_result.is_supported:
             return None
         mod_filter_key = filter_result.key
+        if mod_filter_key is None:
+            return None
 
     return LeaderboardReadScope(
         beatmap_id=beatmap.id,

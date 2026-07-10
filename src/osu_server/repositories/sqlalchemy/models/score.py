@@ -21,10 +21,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
-
-_PLAY_TIME_SOURCE_VALUES = ("'fail_time'", "'beatmap_total_length'")
-_PLAY_TIME_SOURCE_CHECK = "play_time_source IS NULL OR play_time_source IN ({})".format(
-    ", ".join(_PLAY_TIME_SOURCE_VALUES)
+from osu_server.repositories.sqlalchemy.models.enum_types import (
+    BEATMAP_RANK_STATUS_ENUM,
+    PLAY_TIME_SOURCE_ENUM,
+    SCORE_GRADE_ENUM,
+    SCORE_SUBMISSION_STATE_ENUM,
 )
 
 
@@ -54,10 +55,6 @@ class ScoreModel(Base):
             "play_time_seconds IS NULL OR play_time_seconds >= 0",
             name="ck_scores_play_time_seconds_non_negative",
         ),
-        CheckConstraint(
-            _PLAY_TIME_SOURCE_CHECK,
-            name="ck_scores_play_time_source_known",
-        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -77,14 +74,16 @@ class ScoreModel(Base):
     score: Mapped[int] = mapped_column(Integer, nullable=False)
     max_combo: Mapped[int] = mapped_column(Integer, nullable=False)
     accuracy: Mapped[float] = mapped_column(Float, nullable=False)
-    grade: Mapped[str] = mapped_column(String(2), nullable=False)
+    grade: Mapped[str] = mapped_column(SCORE_GRADE_ENUM, nullable=False)
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     perfect: Mapped[bool] = mapped_column(Boolean, nullable=False)
     client_version: Mapped[str] = mapped_column(String(32), nullable=False)
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    beatmap_status_at_submission: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    beatmap_status_at_submission: Mapped[str | None] = mapped_column(
+        BEATMAP_RANK_STATUS_ENUM, nullable=True
+    )
     leaderboard_eligible_at_submission: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -92,7 +91,7 @@ class ScoreModel(Base):
     )
     fail_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     play_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    play_time_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    play_time_source: Mapped[str | None] = mapped_column(PLAY_TIME_SOURCE_ENUM, nullable=True)
     submit_exit_classification: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
@@ -110,7 +109,7 @@ class ScoreSubmissionModel(Base):
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(SCORE_SUBMISSION_STATE_ENUM, nullable=False)
     result_snapshot: Mapped[dict[str, Any] | None] = mapped_column(  # pyright: ignore[reportExplicitAny] — opaque JSONB field
         JSONB, nullable=True
     )

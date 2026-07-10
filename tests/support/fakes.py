@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from osu_server.domain.identity.system_users import SystemUserIdentity
     from osu_server.domain.scores.replay import Replay
     from osu_server.domain.scores.score import Score
-    from osu_server.domain.scores.submission import ScoreSubmission
+    from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
     from osu_server.infrastructure.security.hibp import HIBPClient
     from osu_server.repositories.interfaces.queries.users import UserQueryRepository
     from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -278,7 +278,7 @@ class UowScoreSubmissionRepositoryView:
     async def update_state(
         self,
         submission_id: int,
-        state: str,
+        state: ScoreSubmissionState,
         result_snapshot: dict[str, object] | None = None,
     ) -> None:
         async with self._unit_of_work_factory() as uow:
@@ -344,7 +344,7 @@ class StubBlobStorageService:
             sha256=digest,
             byte_size=len(data),
             content_type=content_type,
-            storage_backend="test",
+            storage_backend="local",
             storage_key=f"sha256/{digest[:2]}/{digest[2:4]}/{digest}",
             created_at=datetime.now(UTC),
         )

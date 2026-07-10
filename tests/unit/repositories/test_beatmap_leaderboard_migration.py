@@ -150,7 +150,7 @@ def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
     assert not _column(table, "ruleset").nullable
     assert not _column(table, "playstyle").nullable
     assert not _column(table, "user_id").nullable
-    assert _column(table, "mod_filter_key").nullable
+    assert not _column(table, "mod_filter_key").nullable
     assert not _column(table, "score_id").nullable
     assert not _column(table, "score").nullable
     assert not _column(table, "submitted_at").nullable
@@ -160,23 +160,24 @@ def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
         "score_id",
         "scores.id",
     )
-    assert "ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative" in _check_constraints(
-        table
-    )
+    assert "ck_beatmap_leaderboard_user_bests_mod_filter_key_scope" in _check_constraints(table)
 
     indexes = _indexes(table)
     unique_scope_index = indexes["idx_beatmap_leaderboard_user_bests_scope_unique"]
     assert unique_scope_index.unique is True
-    unique_scope_sql = _index_sql(unique_scope_index)
-    assert "beatmap_id, ruleset, playstyle, user_id, COALESCE(mod_filter_key, -1)" in (
-        unique_scope_sql
+    assert _index_columns(unique_scope_index) == (
+        "beatmap_id",
+        "ruleset",
+        "playstyle",
+        "user_id",
+        "mod_filter_key",
     )
 
     ordering_index = indexes["idx_beatmap_leaderboard_user_bests_ordering"]
     assert ordering_index.unique is False
     ordering_sql = _index_sql(ordering_index)
     assert (
-        "beatmap_id, ruleset, playstyle, COALESCE(mod_filter_key, -1), "
+        "beatmap_id, ruleset, playstyle, mod_filter_key, "
         "score DESC, submitted_at ASC, score_id ASC"
     ) in ordering_sql
 

@@ -6,12 +6,14 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import and_, case, func, literal, select
+from sqlalchemy import String, and_, case, func, literal, select
+from sqlalchemy import cast as sql_cast
 
 from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.identity.leaderboard_visibility import (
     LEADERBOARD_VISIBLE_PERMISSION_MASK,
 )
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.personal_best import (
     LeaderboardCategory,
@@ -226,7 +228,10 @@ def _role_permissions_subquery() -> Subquery:
 def _effective_beatmap_status_expression() -> ColumnElement[str]:
     return cast(
         "ColumnElement[str]",
-        func.coalesce(BeatmapModel.local_status_override, BeatmapModel.official_status),
+        func.coalesce(
+            sql_cast(BeatmapModel.local_status_override, String),
+            sql_cast(BeatmapModel.official_status, String),
+        ),
     )
 
 
@@ -243,7 +248,7 @@ def _leaderboard_visible_condition(role_permissions: Subquery) -> ColumnElement[
 def _mod_filter_condition(scope: LeaderboardReadScope) -> ColumnElement[bool]:
     if scope.category is LeaderboardCategory.SELECTED_MODS:
         return BeatmapLeaderboardUserBestModel.mod_filter_key == scope.mod_filter_key
-    return BeatmapLeaderboardUserBestModel.mod_filter_key.is_(None)
+    return BeatmapLeaderboardUserBestModel.mod_filter_key == ALL_MODS_FILTER_KEY
 
 
 def _category_filter_condition(scope: LeaderboardReadScope) -> ColumnElement[bool] | None:

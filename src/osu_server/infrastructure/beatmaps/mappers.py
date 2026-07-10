@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 from osu_server.domain.beatmaps import (
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapsetSnapshot,
     BeatmapSnapshot,
     BeatmapSourceVerification,
@@ -269,12 +270,16 @@ def _mode_text(value: object) -> str:
     mode = _maybe_int(value)
     if mode is not None:
         return {
-            0: "osu",
-            1: "taiko",
-            2: "fruits",
-            3: "mania",
-        }.get(mode, "")
-    return (_maybe_str(value) or "").strip()
+            0: BeatmapMode.OSU.value,
+            1: BeatmapMode.TAIKO.value,
+            2: BeatmapMode.FRUITS.value,
+            3: BeatmapMode.MANIA.value,
+        }.get(mode, BeatmapMode.UNKNOWN.value)
+    text = (_maybe_str(value) or "").strip()
+    try:
+        return BeatmapMode(text).value
+    except ValueError:
+        return BeatmapMode.UNKNOWN.value
 
 
 def _status_text(value: object) -> str:

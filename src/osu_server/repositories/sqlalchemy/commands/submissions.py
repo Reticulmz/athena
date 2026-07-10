@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
 from osu_server.repositories.sqlalchemy.models.score import ScoreSubmissionModel
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ class SQLAlchemyScoreSubmissionCommandRepository:
             user_id=submission.user_id,
             beatmap_checksum=submission.beatmap_checksum,
             submitted_at=submission.submitted_at,
-            state=submission.state,
+            state=submission.state.value,
             result_snapshot=submission.result_snapshot,
         )
         self._session.add(model)
@@ -51,7 +51,7 @@ class SQLAlchemyScoreSubmissionCommandRepository:
     async def update_state(
         self,
         submission_id: int,
-        state: str,
+        state: ScoreSubmissionState,
         result_snapshot: dict[str, object] | None = None,
     ) -> None:
         model = await self._session.get(ScoreSubmissionModel, submission_id)
@@ -60,7 +60,7 @@ class SQLAlchemyScoreSubmissionCommandRepository:
             raise ValueError(msg)
         assert isinstance(model, ScoreSubmissionModel)
 
-        model.state = state
+        model.state = state.value
         model.result_snapshot = result_snapshot
         await self._session.flush()
 
@@ -72,6 +72,6 @@ def _submission_to_domain(model: ScoreSubmissionModel) -> ScoreSubmission:
         user_id=model.user_id,
         beatmap_checksum=model.beatmap_checksum,
         submitted_at=model.submitted_at,
-        state=model.state,
+        state=ScoreSubmissionState(model.state),
         result_snapshot=model.result_snapshot,
     )

@@ -19,7 +19,7 @@ from osu_server.domain.beatmaps import (
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.users import User
-from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
@@ -337,7 +337,7 @@ async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_d
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
                 user_id=1000,
-                mod_filter_key=None,
+                mod_filter_key=ALL_MODS_FILTER_KEY,
             )
         )
         selected_mods_best = await uow.beatmap_leaderboards.get_user_best(
@@ -388,7 +388,7 @@ async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_d
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
                 user_id=1000,
-                mod_filter_key=None,
+                mod_filter_key=ALL_MODS_FILTER_KEY,
             )
         )
         lower_submission = await uow.submissions.get_by_fingerprint("fingerprint-pb-2")
@@ -432,7 +432,7 @@ async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_d
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
                 user_id=1000,
-                mod_filter_key=None,
+                mod_filter_key=ALL_MODS_FILTER_KEY,
             )
         )
 
@@ -535,7 +535,7 @@ async def test_ineligible_submission_does_not_update_submit_personal_best_delta(
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
                 user_id=1000,
-                mod_filter_key=None,
+                mod_filter_key=ALL_MODS_FILTER_KEY,
             )
         )
 
@@ -620,7 +620,7 @@ async def test_stored_but_ineligible_submission_is_not_returned_from_leaderboard
             ruleset=Ruleset.OSU,
             playstyle=Playstyle.VANILLA,
             user_id=1000,
-            mod_filter_key=None,
+            mod_filter_key=ALL_MODS_FILTER_KEY,
         ),
         score_id=result.score_id,
         rank_key=ScoreRankKey(
@@ -630,7 +630,7 @@ async def test_stored_but_ineligible_submission_is_not_returned_from_leaderboard
         ),
     )
     state.beatmap_leaderboard_user_best_id_by_scope[
-        (1, Ruleset.OSU.value, Playstyle.VANILLA.value, 1000, None)
+        (1, Ruleset.OSU.value, Playstyle.VANILLA.value, 1000, ALL_MODS_FILTER_KEY)
     ] = result.score_id
     factory.commit_state(state)
 
@@ -642,7 +642,7 @@ async def test_stored_but_ineligible_submission_is_not_returned_from_leaderboard
             ruleset=Ruleset.OSU,
             playstyle=Playstyle.VANILLA,
             category=LeaderboardCategory.GLOBAL,
-            mod_filter_key=None,
+            mod_filter_key=ALL_MODS_FILTER_KEY,
             country=None,
             eligible_user_ids=None,
         ),

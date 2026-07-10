@@ -31,6 +31,16 @@ class BeatmapRankStatus(Enum):
     UNKNOWN = "unknown"
 
 
+class BeatmapMode(Enum):
+    """beatmap の game mode"""
+
+    OSU = "osu"
+    TAIKO = "taiko"
+    FRUITS = "fruits"
+    MANIA = "mania"
+    UNKNOWN = "unknown"
+
+
 class LocalBeatmapStatus(Enum):
     """Athena operator が上書きできるローカルの beatmap 公開状態。"""
 
@@ -623,6 +633,9 @@ class BeatmapMetadataProvider(Protocol):
 class BeatmapFileSource(Enum):
     """osu file を取得した source。"""
 
+    OFFICIAL = "official"
+    LEGACY_OFFICIAL = "legacy_official"
+    MIRROR = "mirror"
     OSU_CURRENT = "osu_current"
     OSU_LEGACY = "osu_legacy"
     COMMUNITY_MIRROR = "community_mirror"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from osu_server.domain.scores.submission import ScoreSubmission
+    from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
 
 
 class ScoreSubmissionCommandRepository(Protocol):
@@ -22,7 +22,7 @@ class ScoreSubmissionCommandRepository(Protocol):
     async def update_state(
         self,
         submission_id: int,
-        state: str,
+        state: ScoreSubmissionState,
         result_snapshot: dict[str, object] | None = None,
     ) -> None:
         """Persist the processing state and optional result snapshot."""

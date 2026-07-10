@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardBeatmapProjectionSlice,
@@ -61,7 +61,7 @@ class FakeSession:
         self.rollback_calls += 1
 
 
-async def test_upsert_targets_projection_expression_unique_index_and_rank_key_guard() -> None:
+async def test_upsert_targets_projection_unique_index_and_rank_key_guard() -> None:
     model = _model(score_id=12, score=1_100, submitted_at=_NOW + timedelta(seconds=1))
     session = FakeSession(execute_results=[None, model])
     repo = _repo(session)
@@ -74,8 +74,7 @@ async def test_upsert_targets_projection_expression_unique_index_and_rank_key_gu
     assert result.rank_key.score == 1_100
     upsert_sql = _compiled_sql(session.statements[0])
     assert (
-        "ON CONFLICT (beatmap_id, ruleset, playstyle, user_id, "
-        "COALESCE(mod_filter_key, -1)) DO UPDATE"
+        "ON CONFLICT (beatmap_id, ruleset, playstyle, user_id, mod_filter_key) DO UPDATE"
     ) in upsert_sql
     assert "ON CONSTRAINT" not in upsert_sql
     assert "score_id = " in upsert_sql
@@ -89,17 +88,17 @@ async def test_upsert_targets_projection_expression_unique_index_and_rank_key_gu
     assert session.rollback_calls == 0
 
 
-async def test_get_user_best_uses_is_null_for_all_mods_scope() -> None:
-    model = _model(mod_filter_key=None, score_id=10, score=1_000, submitted_at=_NOW)
+async def test_get_user_best_uses_explicit_all_mods_scope() -> None:
+    model = _model(score_id=10, score=1_000, submitted_at=_NOW)
     session = FakeSession(execute_results=[model])
     repo = _repo(session)
 
-    result = await repo.get_user_best(_scope(mod_filter_key=None))
+    result = await repo.get_user_best(_scope())
 
     assert result is not None
-    assert result.scope.mod_filter_key is None
+    assert result.scope.mod_filter_key == ALL_MODS_FILTER_KEY
     assert result.score_id == 10
-    assert "mod_filter_key IS NULL" in _compiled_sql(session.statements[0])
+    assert "mod_filter_key =" in _compiled_sql(session.statements[0])
 
 
 async def test_upsert_returns_current_row_when_candidate_does_not_win() -> None:
@@ -176,7 +175,7 @@ def _scope(
     *,
     user_id: int = 1000,
     beatmap_id: int = 1,
-    mod_filter_key: int | None = None,
+    mod_filter_key: int = ALL_MODS_FILTER_KEY,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=beatmap_id,
@@ -206,7 +205,7 @@ def _model(
     row_id: int = 1,
     beatmap_id: int = 1,
     user_id: int = 1000,
-    mod_filter_key: int | None = None,
+    mod_filter_key: int = ALL_MODS_FILTER_KEY,
     score_id: int,
     score: int,
     submitted_at: datetime,

@@ -21,7 +21,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
 )
 from osu_server.domain.scores.score import Playstyle, Ruleset
-from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
 from osu_server.domain.scores.user_stats import UserCurrentStats
 from osu_server.domain.storage.blobs import BlobStored
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -2076,7 +2076,7 @@ async def test_in_progress_retry_returns_accepted_pending(
             user_id=1000,
             beatmap_checksum="abc123",
             submitted_at=input_data.submitted_at,
-            state="processing",
+            state=ScoreSubmissionState.PROCESSING,
             result_snapshot=None,
         )
     )

@@ -29,7 +29,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
-from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
 from osu_server.domain.scores.mods import Mod
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset
 from osu_server.domain.storage.blobs import BlobStored, NewBlob
@@ -144,7 +144,7 @@ def _fingerprint_for(
 def _leaderboard_scope(
     *,
     user_id: int = 1000,
-    mod_filter_key: int | None = None,
+    mod_filter_key: int = ALL_MODS_FILTER_KEY,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
@@ -253,7 +253,7 @@ class SQLAlchemyBlobStorageStub:
                     sha256=digest,
                     byte_size=len(data),
                     content_type=content_type,
-                    storage_backend="test",
+                    storage_backend="local",
                     storage_key=f"test/replay/{digest}.osr",
                 )
             )

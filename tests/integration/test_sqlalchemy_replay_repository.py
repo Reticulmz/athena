@@ -139,7 +139,7 @@ async def _create_blob(
                 sha256=sha256,
                 byte_size=1024,
                 content_type="application/octet-stream",
-                storage_backend="test",
+                storage_backend="local",
                 storage_key=f"test/replay/{checksum}.osr",
             )
         )

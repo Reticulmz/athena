@@ -12,10 +12,10 @@ from osu_server.domain.scores.performance import (
     PerformanceCalculation,
     PerformanceCalculationState,
     PerformanceEligibilityPolicy,
+    RecalculationCandidateReason,
 )
 from osu_server.domain.scores.score import Playstyle
 from osu_server.repositories.interfaces.queries.score_performance import (
-    RecalculationCandidateReason,
     ScorePerformanceRecalculationCandidate,
     ScorePerformanceRecalculationCandidateResult,
 )

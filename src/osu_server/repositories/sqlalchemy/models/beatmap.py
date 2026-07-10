@@ -20,6 +20,15 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
+from osu_server.repositories.sqlalchemy.models.enum_types import (
+    BEATMAP_FETCH_STATE_ENUM,
+    BEATMAP_FETCH_TARGET_KIND_ENUM,
+    BEATMAP_FILE_SOURCE_ENUM,
+    BEATMAP_METADATA_SOURCE_ENUM,
+    BEATMAP_MODE_ENUM,
+    BEATMAP_RANK_STATUS_ENUM,
+    LOCAL_BEATMAP_STATUS_ENUM,
+)
 
 
 class BeatmapSetModel(Base):
@@ -31,8 +40,11 @@ class BeatmapSetModel(Base):
     creator: Mapped[str] = mapped_column(String(255), nullable=False)
     artist_unicode: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title_unicode: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    official_status: Mapped[str] = mapped_column(String(32), nullable=False)
-    official_status_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    official_status: Mapped[str] = mapped_column(BEATMAP_RANK_STATUS_ENUM, nullable=False)
+    official_status_source: Mapped[str] = mapped_column(
+        BEATMAP_METADATA_SOURCE_ENUM,
+        nullable=False,
+    )
     official_status_verified: Mapped[bool] = mapped_column(Boolean, nullable=False)
     last_fetched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -67,7 +79,7 @@ class BeatmapModel(Base):
         ForeignKey("beatmapsets.id", name="fk_beatmaps_beatmapset_id"), nullable=False
     )
     checksum_md5: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    mode: Mapped[str] = mapped_column(BEATMAP_MODE_ENUM, nullable=False)
     version: Mapped[str] = mapped_column(String(255), nullable=False)
     total_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hit_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -78,10 +90,16 @@ class BeatmapModel(Base):
     ar: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     hp: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     difficulty_rating: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
-    official_status: Mapped[str] = mapped_column(String(32), nullable=False)
-    official_status_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    official_status: Mapped[str] = mapped_column(BEATMAP_RANK_STATUS_ENUM, nullable=False)
+    official_status_source: Mapped[str] = mapped_column(
+        BEATMAP_METADATA_SOURCE_ENUM,
+        nullable=False,
+    )
     official_status_verified: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    local_status_override: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    local_status_override: Mapped[str | None] = mapped_column(
+        LOCAL_BEATMAP_STATUS_ENUM,
+        nullable=True,
+    )
     local_status_override_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -128,7 +146,7 @@ class BeatmapFileAttachmentModel(Base):
     )
     checksum_md5: Mapped[str] = mapped_column(String(32), nullable=False)
     verified_md5: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(BEATMAP_FILE_SOURCE_ENUM, nullable=False)
     original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -145,9 +163,9 @@ class BeatmapFetchStateModel(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_type: Mapped[str] = mapped_column(BEATMAP_FETCH_TARGET_KIND_ENUM, nullable=False)
     target_key: Mapped[str] = mapped_column(String(255), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(BEATMAP_FETCH_STATE_ENUM, nullable=False)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     pending_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

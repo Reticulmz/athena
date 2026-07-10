@@ -8,7 +8,7 @@ import pytest
 
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
-from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
@@ -199,7 +199,7 @@ def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=2,
-        mod_filter_key=None,
+        mod_filter_key=ALL_MODS_FILTER_KEY,
     )
 
 

@@ -1,12 +1,20 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 
 SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 
 class InvalidBlobError(ValueError):
     """Raised when blob metadata violates domain invariants."""
+
+
+class BlobStorageBackendKind(StrEnum):
+    """blob metadata に記録する storage backend kind"""
+
+    LOCAL = "local"
+    S3 = "s3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,8 +37,7 @@ class Blob:
         if not SHA256_PATTERN.match(self.sha256):
             raise InvalidBlobError("sha256 must be a 64-character lowercase hexadecimal string")
 
-        if not self.storage_backend:
-            raise InvalidBlobError("storage_backend must not be empty")
+        _validate_storage_backend(self.storage_backend)
 
         if not self.storage_key:
             raise InvalidBlobError("storage_key must not be empty")
@@ -56,8 +63,7 @@ class NewBlob:
         if not SHA256_PATTERN.match(self.sha256):
             raise InvalidBlobError("sha256 must be a 64-character lowercase hexadecimal string")
 
-        if not self.storage_backend:
-            raise InvalidBlobError("storage_backend must not be empty")
+        _validate_storage_backend(self.storage_backend)
 
         if not self.storage_key:
             raise InvalidBlobError("storage_key must not be empty")
@@ -78,3 +84,12 @@ class BlobDeduplicated:
 
 
 type BlobStoreResult = BlobStored | BlobDeduplicated
+
+
+def _validate_storage_backend(value: str) -> None:
+    if not value:
+        raise InvalidBlobError("storage_backend must not be empty")
+    try:
+        _ = BlobStorageBackendKind(value)
+    except ValueError as exc:
+        raise InvalidBlobError(f"unknown storage_backend: {value}") from exc

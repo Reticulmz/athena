@@ -15,7 +15,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
-from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
@@ -65,7 +65,7 @@ async def test_user_rebuild_recalculates_user_slice_from_source_scores() -> None
     assert result.source_score_count == 3
     assert result.projection_row_count == 3
     rows = _projection_rows(factory)
-    assert rows[_scope(user_id=1000, beatmap_id=1, mod_filter_key=None)].score_id == 2
+    assert rows[_scope(user_id=1000, beatmap_id=1)].score_id == 2
     assert rows[_scope(user_id=1000, beatmap_id=1, mod_filter_key=0)].score_id == 2
     selected_scope = _scope(
         user_id=1000,
@@ -73,7 +73,7 @@ async def test_user_rebuild_recalculates_user_slice_from_source_scores() -> None
         mod_filter_key=int(Mod.HIDDEN | Mod.DOUBLE_TIME),
     )
     assert rows[selected_scope].score_id == 3
-    assert rows[_scope(user_id=2000, beatmap_id=1, mod_filter_key=None)].score_id == 4
+    assert rows[_scope(user_id=2000, beatmap_id=1)].score_id == 4
     assert 1 in factory.snapshot().scores_by_id
 
 
@@ -105,9 +105,9 @@ async def test_beatmapset_rebuild_recalculates_only_beatmapset_slice() -> None:
     assert result.source_score_count == 2
     assert result.projection_row_count == 4
     rows = _projection_rows(factory)
-    assert rows[_scope(user_id=1000, beatmap_id=1, mod_filter_key=None)].score_id == 1
-    assert rows[_scope(user_id=1000, beatmap_id=2, mod_filter_key=None)].score_id == 2
-    assert rows[_scope(user_id=1000, beatmap_id=3, mod_filter_key=None)].score_id == 3
+    assert rows[_scope(user_id=1000, beatmap_id=1)].score_id == 1
+    assert rows[_scope(user_id=1000, beatmap_id=2)].score_id == 2
+    assert rows[_scope(user_id=1000, beatmap_id=3)].score_id == 3
 
 
 @pytest.mark.asyncio
@@ -232,7 +232,7 @@ def _projection_rows(
 
 def _public_projection_result(
     factory: InMemoryUnitOfWorkFactory,
-) -> tuple[tuple[tuple[int, int, int, int, int | None], int], ...]:
+) -> tuple[tuple[tuple[int, int, int, int, int], int], ...]:
     return tuple(
         sorted(
             (
@@ -241,7 +241,7 @@ def _public_projection_result(
                     row.scope.ruleset.value,
                     row.scope.playstyle.value,
                     row.scope.user_id,
-                    -1 if row.scope.mod_filter_key is None else row.scope.mod_filter_key,
+                    row.scope.mod_filter_key,
                 ),
                 row.score_id,
             )
@@ -254,7 +254,7 @@ def _scope(
     *,
     user_id: int,
     beatmap_id: int,
-    mod_filter_key: int | None,
+    mod_filter_key: int = ALL_MODS_FILTER_KEY,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=beatmap_id,
@@ -271,7 +271,7 @@ def _projection(
     beatmap_id: int,
     score_id: int,
     score: int = 9_000,
-    mod_filter_key: int | None = None,
+    mod_filter_key: int = ALL_MODS_FILTER_KEY,
 ) -> UpsertBeatmapLeaderboardUserBest:
     submitted_at = _NOW + timedelta(seconds=score_id)
     return UpsertBeatmapLeaderboardUserBest(

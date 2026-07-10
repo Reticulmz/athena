@@ -21,18 +21,15 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
-
-_KNOWN_STATE_VALUES = (
-    "queued",
-    "fetching_file",
-    "calculating",
-    "completed",
-    "unavailable",
-    "superseded",
+from osu_server.repositories.sqlalchemy.models.enum_types import (
+    FORMULA_PROFILE_ENUM,
+    PERFORMANCE_CALCULATION_STATE_ENUM,
+    PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
+    PERFORMANCE_RECALCULATION_REASON_ENUM,
+    PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
 )
-_KNOWN_STATES_SQL = ", ".join(f"'{state}'" for state in _KNOWN_STATE_VALUES)
-_KNOWN_STATE_SQL = f"state IN ({_KNOWN_STATES_SQL})"
-_COMPLETED_VALUES_SQL = "state != 'completed' OR {completed_values}".format(
+
+_COMPLETED_VALUES_SQL = "state::text != 'completed' OR {completed_values}".format(
     completed_values="(pp IS NOT NULL AND star_rating IS NOT NULL AND calculated_at IS NOT NULL)"
 )
 
@@ -41,15 +38,11 @@ class ScorePerformanceCalculationModel(Base):
     __tablename__: str = "score_performance_calculations"
     __table_args__: tuple[CheckConstraint | Index, ...] = (
         CheckConstraint(
-            _KNOWN_STATE_SQL,
-            name="ck_score_performance_state_known",
-        ),
-        CheckConstraint(
             _COMPLETED_VALUES_SQL,
             name="ck_score_performance_completed_values",
         ),
         CheckConstraint(
-            "state != 'unavailable' OR unavailable_reason IS NOT NULL",
+            "state::text != 'unavailable' OR unavailable_reason IS NOT NULL",
             name="ck_score_performance_unavailable_reason",
         ),
         Index(
@@ -70,13 +63,13 @@ class ScorePerformanceCalculationModel(Base):
         ForeignKey("scores.id", name="fk_score_performance_calculations_score_id"),
         nullable=False,
     )
-    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(PERFORMANCE_CALCULATION_STATE_ENUM, nullable=False)
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False)
     pp: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     star_rating: Mapped[Decimal | None] = mapped_column(Numeric(8, 5), nullable=True)
     calculator_name: Mapped[str] = mapped_column(String(64), nullable=False)
     calculator_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    formula_profile: Mapped[str] = mapped_column(String(64), nullable=False)
+    formula_profile: Mapped[str] = mapped_column(FORMULA_PROFILE_ENUM, nullable=False)
     beatmap_file_attachment_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey(
@@ -112,11 +105,14 @@ class PerformanceRecalculationBatchModel(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
+        nullable=False,
+    )
     filters: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     reason_counts: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     target_calculator_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    target_formula_profile: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_formula_profile: Mapped[str] = mapped_column(FORMULA_PROFILE_ENUM, nullable=False)
     candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     completed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     unavailable_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
@@ -157,8 +153,11 @@ class PerformanceRecalculationWorkItemModel(Base):
         ForeignKey("scores.id", name="fk_performance_recalculation_work_items_score_id"),
         nullable=False,
     )
-    reason: Mapped[str] = mapped_column(String(64), nullable=False)
-    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str] = mapped_column(PERFORMANCE_RECALCULATION_REASON_ENUM, nullable=False)
+    state: Mapped[str] = mapped_column(
+        PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
+        nullable=False,
+    )
     calculation_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey(

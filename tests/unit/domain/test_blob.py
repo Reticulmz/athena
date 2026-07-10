@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from osu_server.domain.storage.blobs import Blob, InvalidBlobError
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind, InvalidBlobError
 from tests.support.runtime_assertions import assert_rejects_setattr
 
 VALID_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -113,6 +113,23 @@ def test_blob_rejects_missing_storage_backend() -> None:
             storage_key="key",
             created_at=datetime.now(UTC),
         )
+
+
+def test_blob_rejects_unknown_storage_backend() -> None:
+    with pytest.raises(InvalidBlobError, match="unknown storage_backend: memory"):
+        _ = Blob(
+            id=1,
+            sha256=VALID_SHA256,
+            byte_size=10,
+            content_type="text/plain",
+            storage_backend="memory",
+            storage_key="key",
+            created_at=datetime.now(UTC),
+        )
+
+
+def test_blob_storage_backend_kind_is_closed_value_set() -> None:
+    assert {backend.value for backend in BlobStorageBackendKind} == {"local", "s3"}
 
 
 def test_blob_rejects_missing_storage_key() -> None:

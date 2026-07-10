@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from osu_server.domain.scores.score import Playstyle, Ruleset
 
 
-ALL_MODS_FILTER_KEY: Final[None] = None
+ALL_MODS_FILTER_KEY: Final[int] = -1
 NO_MOD_FILTER_KEY: Final[int] = 0
 
 _MIRROR_SELECTED_FILTER_KEY: Final[None] = None
@@ -49,14 +49,14 @@ class LeaderboardScope:
     beatmap_id: int
     ruleset: Ruleset
     playstyle: Playstyle
-    mod_filter_key: int | None = ALL_MODS_FILTER_KEY
+    mod_filter_key: int = ALL_MODS_FILTER_KEY
 
     def __post_init__(self) -> None:
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
             raise ValueError(msg)
-        if self.mod_filter_key is not None and self.mod_filter_key < 0:
-            msg = "mod_filter_key must not be negative"
+        if self.mod_filter_key < ALL_MODS_FILTER_KEY:
+            msg = "mod_filter_key must be all-mods sentinel or non-negative"
             raise ValueError(msg)
 
 
@@ -71,8 +71,8 @@ class LeaderboardModFilter:
         if self.unsupported and self.key is not None:
             msg = "unsupported mod filter must not expose a key"
             raise ValueError(msg)
-        if not self.unsupported and self.key is not None and self.key < 0:
-            msg = "mod filter key must not be negative"
+        if not self.unsupported and self.key is not None and self.key < ALL_MODS_FILTER_KEY:
+            msg = "mod filter key must be all-mods sentinel or non-negative"
             raise ValueError(msg)
 
     @classmethod
@@ -89,7 +89,7 @@ class LeaderboardModFilter:
 
     @property
     def is_all_mods(self) -> bool:
-        return self.is_supported and self.key is ALL_MODS_FILTER_KEY
+        return self.is_supported and self.key == ALL_MODS_FILTER_KEY
 
     @property
     def is_no_mod(self) -> bool:
@@ -111,9 +111,9 @@ def filter_from_mod_combination(mods: ModCombination) -> LeaderboardModFilter:
     return LeaderboardModFilter(key=_canonical_filter_key(mods))
 
 
-def projection_keys_for_score(mods: ModCombination) -> tuple[int | None, ...]:
+def projection_keys_for_score(mods: ModCombination) -> tuple[int, ...]:
     """Return all leaderboard mod filter keys a source score can project into."""
-    keys: list[int | None] = [ALL_MODS_FILTER_KEY]
+    keys: list[int] = [ALL_MODS_FILTER_KEY]
     if _is_no_mod_candidate(mods):
         keys.append(NO_MOD_FILTER_KEY)
 

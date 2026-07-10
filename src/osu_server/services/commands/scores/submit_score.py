@@ -19,7 +19,7 @@ from osu_server.domain.scores.personal_best import (
 )
 from osu_server.domain.scores.replay import Replay
 from osu_server.domain.scores.score import Playstyle, Ruleset
-from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
 from osu_server.domain.scores.user_stats import UserStatsPolicy
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
@@ -34,10 +34,10 @@ if TYPE_CHECKING:
     from osu_server.domain.scores.score import Score
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWork, UnitOfWorkFactory
 
-_STATE_PROCESSING = "processing"
-_STATE_COMPLETED = "completed"
-_STATE_TERMINAL_REJECTED = "terminal_rejected"
-_STATE_RETRYABLE = "retryable"
+_STATE_PROCESSING = ScoreSubmissionState.PROCESSING
+_STATE_COMPLETED = ScoreSubmissionState.COMPLETED
+_STATE_TERMINAL_REJECTED = ScoreSubmissionState.TERMINAL_REJECTED
+_STATE_RETRYABLE = ScoreSubmissionState.RETRYABLE
 
 
 class SubmitScoreCommandOutcome(Enum):
@@ -310,7 +310,7 @@ async def _record_retryable(
 
 def _result_from_existing_submission(submission: ScoreSubmission) -> SubmitScoreCommandResult:
     """Return a client-safe result from an existing idempotency record."""
-    if submission.state in {_STATE_PROCESSING, "received"}:
+    if submission.state in {_STATE_PROCESSING, ScoreSubmissionState.RECEIVED}:
         return SubmitScoreCommandResult(
             outcome=SubmitScoreCommandOutcome.ACCEPTED_PENDING,
             user_id=submission.user_id,
@@ -510,7 +510,7 @@ async def _upsert_matching_leaderboard_scopes(
                 rank_key=rank_key,
             )
         )
-        if mod_filter_key is ALL_MODS_FILTER_KEY:
+        if mod_filter_key == ALL_MODS_FILTER_KEY:
             all_mods_best = best
     return all_mods_best
 
@@ -535,7 +535,7 @@ def _all_mods_leaderboard_scope(
 def _leaderboard_scope(
     command: SubmitScoreCommand,
     score: Score,
-    mod_filter_key: int | None,
+    mod_filter_key: int,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         user_id=command.user_id,

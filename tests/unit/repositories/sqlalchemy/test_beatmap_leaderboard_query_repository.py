@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast, override
 
 from sqlalchemy.dialects import postgresql
 
+from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
@@ -237,9 +238,9 @@ async def test_category_filters_use_all_mods_for_country_and_friends() -> None:
     country_sql = _compiled_sql(country_session.statements[0])
     friends_sql = _compiled_sql(friends_session.statements[0])
     selected_mods_sql = _compiled_sql(selected_mods_session.statements[0])
-    assert "beatmap_leaderboard_user_bests.mod_filter_key IS NULL" in country_sql
+    assert "beatmap_leaderboard_user_bests.mod_filter_key = -1" in country_sql
     assert "users.country = " in country_sql
-    assert "beatmap_leaderboard_user_bests.mod_filter_key IS NULL" in friends_sql
+    assert "beatmap_leaderboard_user_bests.mod_filter_key = -1" in friends_sql
     assert "users.id IN " in friends_sql
     assert "beatmap_leaderboard_user_bests.mod_filter_key = " in selected_mods_sql
     assert "users.country = " not in selected_mods_sql
@@ -282,7 +283,7 @@ def _repository(
 def _scope(
     *,
     category: LeaderboardCategory = LeaderboardCategory.GLOBAL,
-    mod_filter_key: int | None = None,
+    mod_filter_key: int = ALL_MODS_FILTER_KEY,
     country: str | None = None,
     eligible_user_ids: tuple[int, ...] | None = None,
 ) -> LeaderboardReadScope:

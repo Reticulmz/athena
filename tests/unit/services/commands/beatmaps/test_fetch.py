@@ -765,7 +765,7 @@ class StubBlobStorageService:
             sha256=hashlib.sha256(data).hexdigest(),
             byte_size=len(data),
             content_type=content_type,
-            storage_backend="stub",
+            storage_backend="local",
             storage_key=f"stub/{self.next_blob_id}",
             created_at=_NOW,
         )

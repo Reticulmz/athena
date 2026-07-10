@@ -78,6 +78,16 @@ class PerformanceRecalculationWorkItemState(Enum):
         return self in self.terminal_states()
 
 
+class RecalculationCandidateReason(Enum):
+    """PP recalculation が必要な operator-visible reason"""
+
+    UNCALCULATED = "uncalculated"
+    STALE = "stale"
+    CALCULATOR_VERSION_MISMATCH = "calculator_version_mismatch"
+    FORMULA_PROFILE_MISMATCH = "formula_profile_mismatch"
+    UNAVAILABLE = "unavailable"
+
+
 class FormulaProfile(Enum):
     """Playstyle-scoped formula profile key."""
 
@@ -413,4 +423,5 @@ __all__ = [
     "PerformanceRecalculationBatchStatus",
     "PerformanceRecalculationWorkItem",
     "PerformanceRecalculationWorkItemState",
+    "RecalculationCandidateReason",
 ]
