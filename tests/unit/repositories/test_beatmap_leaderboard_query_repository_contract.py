@@ -6,6 +6,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
@@ -45,6 +47,32 @@ _CURRENT_CHECKSUM = "a" * 32
 _OLD_CHECKSUM = "b" * 32
 _NEW_CHECKSUM = "c" * 32
 _VISIBLE_ROLE_ID = 1
+
+
+@pytest.mark.parametrize(
+    "checksum",
+    [
+        pytest.param("", id="empty"),
+        pytest.param("a" * 31, id="short"),
+        pytest.param("a" * 33, id="long"),
+        pytest.param("A" * 32, id="uppercase"),
+        pytest.param("g" * 32, id="non-hex"),
+    ],
+)
+def test_leaderboard_scope_rejects_invalid_beatmap_checksum(checksum: str) -> None:
+    """Leaderboard scopeが不正なBeatmap checksumを拒否することを検証する.
+
+    Args:
+        checksum (str): 空、長さ不正、または小文字16進数ではないchecksum.
+
+    Returns:
+        None: 不正なchecksumが拒否されたことを示す.
+
+    Raises:
+        AssertionError: 不正なchecksumでscopeを構築できた場合.
+    """
+    with pytest.raises(ValueError, match="beatmap_checksum must be"):
+        _ = _scope(beatmap_checksum=checksum)
 
 
 async def test_top_rows_are_limited_to_50_and_use_score_ordering() -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
@@ -13,6 +14,8 @@ if TYPE_CHECKING:
 
     from osu_server.domain.scores.mods import ModCombination
     from osu_server.domain.scores.score import Playstyle, Ruleset
+
+_MD5_PATTERN = re.compile(r"[0-9a-f]{32}")
 
 
 @dataclass(slots=True, frozen=True)
@@ -54,7 +57,7 @@ class LeaderboardReadScope:
 
     Attributes:
         beatmap_id (int): 対象 Beatmap ID. 正の値でなければならない.
-        beatmap_checksum (str): 現在の Beatmap checksum.
+        beatmap_checksum (str): 現在の32文字小文字16進数Beatmap checksum.
         ruleset (Ruleset): 対象 ruleset.
         playstyle (Playstyle): 対象 playstyle.
         category (LeaderboardCategory): 表示する category.
@@ -75,6 +78,9 @@ class LeaderboardReadScope:
     def __post_init__(self) -> None:
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
+            raise ValueError(msg)
+        if _MD5_PATTERN.fullmatch(self.beatmap_checksum) is None:
+            msg = "beatmap_checksum must be a 32-character lowercase hexadecimal string"
             raise ValueError(msg)
         is_selected_mods = self.category is LeaderboardCategory.SELECTED_MODS
         if is_selected_mods and self.mod_filter_key is None:
