@@ -90,6 +90,7 @@ select = [
     "TRY",    # tryceratops
     "FLY",    # flynt
     "PERF",   # perflint
+    "D",      # pydocstyle
     "RUF",    # ruff-specific
 ]
 ignore = [
@@ -108,9 +109,13 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["osu_server", "athena_cli"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+docstring-code-format = true
 
 [tool.basedpyright]
 pythonVersion = "3.14"
