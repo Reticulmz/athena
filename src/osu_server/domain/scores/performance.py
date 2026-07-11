@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -12,14 +11,13 @@ from typing import TYPE_CHECKING
 from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.scores.mods import Mod
 from osu_server.domain.scores.score import Playstyle
+from osu_server.shared.checksums import MD5_HEX_LENGTH, is_lowercase_md5_hexdigest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from datetime import datetime
 
     from osu_server.domain.scores.score import Score
-
-_MD5_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 
 class PerformanceCalculationState(Enum):
@@ -309,8 +307,11 @@ def _validate_provenance(calculation: PerformanceCalculation) -> None:
         msg = "beatmap_file_attachment_id must be positive"
         raise ValueError(msg)
     checksum = calculation.beatmap_file_checksum_md5
-    if checksum is not None and _MD5_PATTERN.fullmatch(checksum) is None:
-        msg = "beatmap_file_checksum_md5 must be a 32-character lowercase hexadecimal string"
+    if checksum is not None and not is_lowercase_md5_hexdigest(checksum):
+        msg = (
+            f"beatmap_file_checksum_md5 must be a {MD5_HEX_LENGTH}-character "
+            "lowercase hexadecimal string"
+        )
         raise ValueError(msg)
 
 

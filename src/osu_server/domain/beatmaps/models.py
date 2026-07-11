@@ -6,15 +6,14 @@ leaderboard eligibility がここで同じ語彙として扱われる。
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from osu_server.shared.checksums import MD5_HEX_LENGTH, is_lowercase_md5_hexdigest
+
 if TYPE_CHECKING:
     from datetime import datetime, timedelta
-
-_MD5_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 
 
 class BeatmapRankStatus(Enum):
@@ -194,8 +193,8 @@ class BeatmapSet:
 
 
 def _validate_md5(checksum_md5: str) -> None:
-    if not _MD5_PATTERN.fullmatch(checksum_md5):
-        msg = "checksum_md5 must be a 32-character lowercase hexadecimal string"
+    if not is_lowercase_md5_hexdigest(checksum_md5):
+        msg = f"checksum_md5 must be a {MD5_HEX_LENGTH}-character lowercase hexadecimal string"
         raise ValueError(msg)
 
 

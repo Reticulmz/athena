@@ -40,12 +40,13 @@ from osu_server.repositories.memory.queries.beatmap_leaderboards import (
     InMemoryBeatmapLeaderboardQueryRepository,
 )
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
+from osu_server.shared.checksums import MD5_HEX_LENGTH
 
 _NOW = datetime(2026, 6, 18, 0, 0, 0, tzinfo=UTC)
 _BEATMAP_ID = 75
-_CURRENT_CHECKSUM = "a" * 32
-_OLD_CHECKSUM = "b" * 32
-_NEW_CHECKSUM = "c" * 32
+_CURRENT_CHECKSUM = "a" * MD5_HEX_LENGTH
+_OLD_CHECKSUM = "b" * MD5_HEX_LENGTH
+_NEW_CHECKSUM = "c" * MD5_HEX_LENGTH
 _VISIBLE_ROLE_ID = 1
 
 
@@ -53,10 +54,10 @@ _VISIBLE_ROLE_ID = 1
     "checksum",
     [
         pytest.param("", id="empty"),
-        pytest.param("a" * 31, id="short"),
-        pytest.param("a" * 33, id="long"),
-        pytest.param("A" * 32, id="uppercase"),
-        pytest.param("g" * 32, id="non-hex"),
+        pytest.param("a" * (MD5_HEX_LENGTH - 1), id="short"),
+        pytest.param("a" * (MD5_HEX_LENGTH + 1), id="long"),
+        pytest.param("A" * MD5_HEX_LENGTH, id="uppercase"),
+        pytest.param("g" * MD5_HEX_LENGTH, id="non-hex"),
     ],
 )
 def test_leaderboard_scope_rejects_invalid_beatmap_checksum(checksum: str) -> None:
