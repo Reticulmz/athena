@@ -13,7 +13,8 @@ from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.identity.leaderboard_visibility import (
     LEADERBOARD_VISIBLE_PERMISSION_MASK,
 )
-from osu_server.domain.scores.mods import ModCombination
+from osu_server.domain.scores.leaderboards import NO_MOD_FILTER_KEY
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import (
     LeaderboardCategory,
     country_leaderboard_is_available,
@@ -43,6 +44,12 @@ if TYPE_CHECKING:
     from osu_server.repositories.sqlalchemy.queries._shared import SQLAlchemyQuerySessionFactory
 
 _MAX_QUERY_LIMIT = 50
+_NIGHTCORE_BIT = int(Mod.NIGHTCORE)
+_DOUBLE_TIME_BIT = int(Mod.DOUBLE_TIME)
+_PERFECT_BIT = int(Mod.PERFECT)
+_SUDDEN_DEATH_BIT = int(Mod.SUDDEN_DEATH)
+_MIRROR_BIT = int(Mod.MIRROR)
+_PREFERENCE_ONLY_NO_MODS_BITS = int(Mod.SUDDEN_DEATH | Mod.PERFECT | Mod.MIRROR)
 _VISIBLE_BEATMAP_STATUS_VALUES = (
     BeatmapRankStatus.RANKED.value,
     BeatmapRankStatus.APPROVED.value,
@@ -98,7 +105,7 @@ class SQLAlchemyBeatmapLeaderboardQueryRepository:
         *,
         viewer_user_id: int,
     ) -> BeatmapLeaderboardRow | None:
-        """viewer の Personal Best と全体順位を返す.
+        """Viewer の Personal Best と全体順位を返す.
 
         Args:
             scope (LeaderboardReadScope): Beatmapとcategory filterを含むscope.
@@ -298,7 +305,30 @@ def _selected_mod_filter_condition(
     if filter_key is None:
         msg = "selected-mods scope requires mod_filter_key"
         raise ValueError(msg)
-    return ScoreModel.leaderboard_mod_filter_keys.contains([filter_key])
+    canonical_mods = _canonical_mods_expression(
+        cast("ColumnElement[int]", cast("object", ScoreModel.mods))
+    )
+    if filter_key == NO_MOD_FILTER_KEY:
+        return canonical_mods.bitwise_and(~_PREFERENCE_ONLY_NO_MODS_BITS) == 0
+    return canonical_mods == filter_key
+
+
+def _canonical_mods_expression(mods: ColumnElement[int]) -> ColumnElement[int]:
+    nightcore_normalized = case(
+        (
+            mods.bitwise_and(_NIGHTCORE_BIT) != 0,
+            mods.bitwise_or(_DOUBLE_TIME_BIT).bitwise_and(~_NIGHTCORE_BIT),
+        ),
+        else_=mods,
+    )
+    perfect_normalized = case(
+        (
+            nightcore_normalized.bitwise_and(_PERFECT_BIT) != 0,
+            nightcore_normalized.bitwise_or(_SUDDEN_DEATH_BIT).bitwise_and(~_PERFECT_BIT),
+        ),
+        else_=nightcore_normalized,
+    )
+    return perfect_normalized.bitwise_and(~_MIRROR_BIT)
 
 
 def _category_filter_condition(scope: LeaderboardReadScope) -> ColumnElement[bool] | None:

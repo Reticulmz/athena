@@ -11,10 +11,10 @@ from osu_server.domain.scores.performance import (
     FormulaProfile,
     PerformanceCalculation,
     PerformanceCalculationState,
+    RecalculationCandidateReason,
 )
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.queries.score_performance import (
-    RecalculationCandidateReason,
     ScorePerformanceCandidateSelection,
 )
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState

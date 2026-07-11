@@ -581,16 +581,18 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         model: ScorePerformanceCalculationModel,
     ) -> PerformanceCalculation:
+        model.claim_owner = None
+        model.claim_expires_at = None
         if not model.is_current:
             old_current = await self._get_current_model_for_score(model.score_id)
             if old_current is not None and old_current.id != model.id:
                 old_current.state = PerformanceCalculationState.SUPERSEDED.value
                 old_current.is_current = False
+                old_current.claim_owner = None
+                old_current.claim_expires_at = None
                 await self._flush_or_raise_conflict()
             model.is_current = True
 
-        model.claim_owner = None
-        model.claim_expires_at = None
         await self._flush_or_raise_conflict()
         await self._session.refresh(model)
         return _model_to_domain(model)
@@ -712,16 +714,11 @@ def _batch_model_to_domain(
     *,
     last_error: str | None,
 ) -> PerformanceRecalculationBatch:
-    reason_counts = {
-        RecalculationCandidateReason(reason): count
-        for reason, count in model.reason_counts.items()
-        if isinstance(count, int)
-    }
     return PerformanceRecalculationBatch(
         id=model.id,
         status=PerformanceRecalculationBatchStatus(model.status),
         filters=model.filters,
-        reason_counts=reason_counts,
+        reason_counts=_reason_counts_to_domain(model),
         target_calculator_version=model.target_calculator_version,
         target_formula_profile=FormulaProfile(model.target_formula_profile),
         candidate_count=model.candidate_count,
@@ -731,6 +728,18 @@ def _batch_model_to_domain(
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
+
+
+def _reason_counts_to_domain(
+    model: PerformanceRecalculationBatchModel,
+) -> dict[RecalculationCandidateReason, int]:
+    reason_counts: dict[RecalculationCandidateReason, int] = {}
+    for reason, count in model.reason_counts.items():
+        if isinstance(count, bool) or not isinstance(count, int):
+            msg = f"batch {model.id} has non-integer reason_counts value for {reason!r}: {count!r}"
+            raise TypeError(msg)
+        reason_counts[RecalculationCandidateReason(reason)] = count
+    return reason_counts
 
 
 def _work_item_model_to_domain(

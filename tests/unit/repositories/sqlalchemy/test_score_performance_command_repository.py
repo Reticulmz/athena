@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
+import pytest
+
 from osu_server.domain.scores.performance import (
     FormulaProfile,
     PerformanceCalculationState,
@@ -354,19 +356,31 @@ async def test_sqlalchemy_repository_does_not_update_terminal_calculation_state(
 
 
 async def test_sqlalchemy_replacement_completion_supersedes_old_current_atomically() -> None:
+    """claim中のreplacement完了時に旧currentを原子的にsupersedeすることを確認する.
+
+    Returns:
+        None: 両計算のclaim解除とcurrent切替が完了したことを示す.
+
+    Raises:
+        AssertionError: state, current flag, claim lifecycle, またはflush回数が異なる場合.
+    """
     old_current = _model(
         calculation_id=1,
         score_id=10,
-        state=PerformanceCalculationState.COMPLETED,
+        state=PerformanceCalculationState.CALCULATING,
         is_current=True,
     )
+    old_current.claim_owner = "old-worker"
+    old_current.claim_expires_at = _NOW + timedelta(minutes=5)
     replacement = _model(
         calculation_id=2,
         score_id=10,
-        state=PerformanceCalculationState.QUEUED,
+        state=PerformanceCalculationState.CALCULATING,
         is_current=False,
         calculator_version="4.1.0",
     )
+    replacement.claim_owner = "replacement-worker"
+    replacement.claim_expires_at = _NOW + timedelta(minutes=5)
     session = FakeSession(
         execute_results=[old_current],
         get_results={(ScorePerformanceCalculationModel, 2): replacement},
@@ -393,7 +407,11 @@ async def test_sqlalchemy_replacement_completion_supersedes_old_current_atomical
     assert completed.state is PerformanceCalculationState.COMPLETED
     assert old_current.is_current is False
     assert old_current.state == PerformanceCalculationState.SUPERSEDED.value
+    assert old_current.claim_owner is None
+    assert old_current.claim_expires_at is None
     assert replacement.is_current is True
+    assert replacement.claim_owner is None
+    assert replacement.claim_expires_at is None
     assert replacement.pp == Decimal("222.222222")
     assert session.flush_calls == 2
     assert session.commit_calls == 0
@@ -475,6 +493,30 @@ async def test_sqlalchemy_repository_claims_recalculation_work_without_commit() 
     assert session.flush_calls == 1
     assert session.commit_calls == 0
     assert session.rollback_calls == 0
+
+
+async def test_sqlalchemy_repository_rejects_non_integer_recalculation_reason_count() -> None:
+    """永続化済みreason countの非整数値を黙殺しないことを確認する.
+
+    Returns:
+        None: 不正なJSONB値がTypeErrorとして観測できたことを示す.
+
+    Raises:
+        AssertionError: repositoryが不正値を受理または異なるerrorを返す場合.
+    """
+    batch = _batch_model(batch_id=200, candidate_count=1)
+    batch.reason_counts = {"uncalculated": "1"}
+    session = FakeSession(
+        execute_results=[None],
+        get_results={(PerformanceRecalculationBatchModel, 200): batch},
+    )
+    repo = _repo(session)
+
+    with pytest.raises(
+        TypeError,
+        match="batch 200 has non-integer reason_counts value for 'uncalculated': '1'",
+    ):
+        _ = await repo.get_recalculation_batch_by_id(200)
 
 
 async def test_sqlalchemy_repository_marks_recalculation_work_completed_without_commit() -> None:

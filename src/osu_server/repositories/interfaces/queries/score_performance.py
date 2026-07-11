@@ -5,14 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from osu_server.domain.scores.performance import RecalculationCandidateReason
-
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from osu_server.domain.scores.performance import (
         FormulaProfile,
         PerformanceCalculation,
+        RecalculationCandidateReason,
     )
     from osu_server.domain.scores.score import Ruleset
 
@@ -71,7 +70,6 @@ class ScorePerformanceQueryRepository(Protocol):
 
 
 __all__ = [
-    "RecalculationCandidateReason",
     "ScorePerformanceCandidateSelection",
     "ScorePerformanceQueryRepository",
     "ScorePerformanceRecalculationCandidate",

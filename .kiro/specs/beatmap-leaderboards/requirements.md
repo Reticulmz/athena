@@ -135,9 +135,9 @@ stable client player と将来の Web leaderboard viewer は、Beatmap ごとの
 2. Athena Serverはpersistence columnを原則`NOT NULL`とし、`NULL`を本当にunknown、unavailable、またはnot-applicableな値だけに使用しなければならない。
 3. `score_performance_calculations`では`queued`、`fetching_file`、`calculating`の処理中stateに限って`claim_owner`と`claim_expires_at`のpairを保持でき、未claim時および`completed`、`unavailable`、`superseded`では両方を`NULL`にしなければならない。`performance_recalculation_work_items`では`claimed`のときだけ両方を非`NULL`にし、`pending`およびterminal stateでは両方を`NULL`にしなければならない。
 4. Athena ServerはBeatmap、ruleset、playstyle、userのnatural identityごとにGlobal all-mods rowを`beatmap_leaderboard_user_bests`へ1行だけ保存し、current Beatmap checksumを非`NULL`の置換可能なfreshness属性として保持しなければならない。`score_id` uniquenessにより1 source Scoreから重複projection rowが作られてはならない。
-5. Athena ServerはSelected Mods互換性をsource Scoreのgenerated canonical filter keysとして保存し、追加のSelected Mods projection rowを作成してはならない。
+5. Athena ServerはSelected Mods互換性をsource Scoreのactual modsからread-time canonical predicateで導き、derived filter key columnや追加のSelected Mods projection rowを作成してはならない。
 6. Historically unconstrainedなstring columnをPostgreSQL Enumへ変換する前に、migrationは既存の非`NULL`値がdestination Enumに含まれることを検証しなければならない。
 7. Repository queryとAlembic data migrationはSQLAlchemy Core/ORM式を使用し、textual SQLはPostgreSQL `USING`のようにtextual DDL fragmentを要求するAPIへ限定し、その理由をcall siteへ記録しなければならない。
 8. Upgrade時、migrationは有効なGlobal projection dataを保持し、重複するSelected Mods projection rowを削除し、stale-checksum Global rowをcurrent-checksum candidateへ置き換えなければならない。
 9. Downgrade時、migrationはcurrent-checksum eligible source Scoresからlegacy Global/Selected Mods projection rowを再構築し、NoMod、NC/DT、PF/SD互換性を復元しなければならない。
-10. PostgreSQL integration testsはgenerated filter keys、window ranking、stale-checksum replacement、Enum bind behavior、`upgrade -> downgrade -> upgrade` round tripを検証しなければならない。
+10. PostgreSQL integration testsはread-time mod predicates、window ranking、stale-checksum replacement、Enum bind behavior、`upgrade -> downgrade -> upgrade` round tripを検証しなければならない。

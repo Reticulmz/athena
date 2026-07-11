@@ -62,8 +62,8 @@ def test_enum_migration_converts_closed_values_and_score_based_leaderboards() ->
     assert "beatmaps.c.checksum_md5 == scores.c.beatmap_checksum" in migration
     assert "op.execute(sa.delete(projection))" in migration
     assert 'op.drop_column("beatmap_leaderboard_user_bests", "mod_filter_key")' in migration
-    assert '"leaderboard_mod_filter_keys"' in migration
-    assert "sa.Computed(_LEADERBOARD_MOD_FILTER_KEYS" in migration
+    assert '"leaderboard_mod_filter_keys"' not in migration
+    assert "_selected_mod_filter_keys_expression(scores.c.mods)" in migration
     assert "_validate_enum_column" in migration
     assert (
         '"play_time_source",\n        sa.String(length=32),\n        PLAY_TIME_SOURCE_ENUM,'

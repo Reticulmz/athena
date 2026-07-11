@@ -18,7 +18,7 @@
 - [x] 1.3 Leaderboard projection と score eligibility の schema migration を追加する
   - Score に submission-time leaderboard eligibility evidence を保存できるようにする
   - beatmap/ruleset/playstyle/userのnatural identityごとに1行のGlobal-only score-priority projectionを保存し、current checksumを置換可能なfreshness属性として保持する
-  - `score_id` uniqueness と source Score の generated mod filter key array/indexを用意する
+  - `score_id` uniqueness と source Score ranking用のpartial candidate indexを用意する
   - 完了時には migration 適用後に projection table、score eligibility column、constraints、indexes が検証できる
   - _Requirements: 2.1, 2.2, 2.6, 5.7, 6.1, 6.2, 7.2, 10.5_
 
@@ -33,7 +33,7 @@
   - Score、Beatmap fetch、Score Submission、Score Performance、Blobなどの閉集合値をdomain EnumとPostgreSQL Enumで一致させる
   - persistence columnは原則`NOT NULL`とし、calculation claimは処理中state、recalculation work item claimは`claimed` stateに限定し、それ以外ではpairを`NULL`へ戻す
   - Alembic data migrationはSQLAlchemy式を使い、PostgreSQL `USING`だけ最小のtextual DDL fragmentとして理由を記録する
-  - 完了時にはout-of-set validation、Enum bind、generated keys、window rank、upgrade/downgrade round-tripの実PostgreSQL testsが通る
+  - 完了時にはout-of-set validation、Enum bind、read-time mod predicate、window rank、upgrade/downgrade round-tripの実PostgreSQL testsが通る
   - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7, 11.8, 11.9, 11.10_
 
 - [ ] 2. Projection persistence を command/query 境界で実装する
@@ -58,7 +58,7 @@
 - [x] 2.3 (P) Beatmap Leaderboard query repository contract と in-memory behavior を実装する
   - top rows はsource Scoresからcurrent Beatmap、checksum、passed、submission eligibility、owner visibilityを適用して読む
   - PB rank は rows と同じ filtered candidate ordering から actual rank を計算する
-  - Country と Friends はread-time filterとし、Selected Modsだけgenerated mod filter key membershipを使う
+  - Country と Friends はread-time filterとし、Selected Modsだけactual modsへのcanonical predicateを使う
   - 完了時には top 50、PB outside top 50、Country/Friends filter、visibility、checksum の in-memory repository contract tests が通る
   - _Requirements: 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.1, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 7.1, 7.3, 7.4, 7.6, 8.5, 10.4_
   - _Boundary: Beatmap leaderboard query repo_
@@ -68,7 +68,7 @@
   - query repository はScore、Beatmap、User/Role、Replay、current Performance Calculationをread-onlyにjoinする
   - rows と PB rank は同じ filtered candidate ordering を使い、rank と display order が diverge しない
   - PP は current Ranked / Approved row の enrichment として返し、missing PP や Loved / Qualified で row を隠さない
-  - 完了時にはSQLAlchemy query repository testsがwindow rank、current filters、nullable PP、source-score SQL、Selected Mods generated-key filterを確認できる
+  - 完了時にはSQLAlchemy query repository testsがwindow rank、current filters、nullable PP、source-score SQL、Selected Mods canonical mods filterを確認できる
   - _Requirements: 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.1, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 7.1, 7.3, 7.4, 7.6, 8.5, 9.1, 9.2, 9.3, 9.4, 10.4_
   - _Depends: 2.3_
 
@@ -115,7 +115,7 @@
   - _Depends: 2.4_
 
 - [x] 4.2 Viewer-dependent scopes と Personal Best resolution を実装する
-  - Global/Country/Friends PBはmods predicateなし、Selected Mods PBだけgenerated key filter付きでsource Scoresから解決する
+  - Global/Country/Friends PBはmods predicateなし、Selected Mods PBだけcanonical mods predicate付きでsource Scoresから解決する
   - authenticated visible viewer の PB は top rows と別枠で返し、top 50 内なら重複表示を許可する
   - non-visible viewer は PB だけ suppress し、public rows は返せるようにする
   - 完了時には PB outside top 50、PB duplicated in rows、Country/Friends viewer guards、non-visible viewer behavior の query tests が通る

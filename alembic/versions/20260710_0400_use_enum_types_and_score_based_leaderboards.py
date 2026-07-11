@@ -16,46 +16,52 @@ from sqlalchemy.dialects import postgresql
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from sqlalchemy.sql.elements import ColumnElement
+
 revision: str = "20260710_0400"
 down_revision: str | None = "20260710_0300"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Alembic exposes PostgreSQL USING only through this textual DDL hook.
 _NIGHTCORE_BIT = 1 << 9
 _DOUBLE_TIME_BIT = 1 << 6
 _PERFECT_BIT = 1 << 14
 _SUDDEN_DEATH_BIT = 1 << 5
 _MIRROR_BIT = 1 << 30
 _PREFERENCE_ONLY_NO_MODS_BITS = _SUDDEN_DEATH_BIT | _PERFECT_BIT | _MIRROR_BIT
-_MODS_COLUMN = sa.column("mods", sa.Integer())
-_NIGHTCORE_NORMALIZED_MODS = sa.case(
-    (
-        _MODS_COLUMN.bitwise_and(_NIGHTCORE_BIT) != 0,
-        _MODS_COLUMN.bitwise_or(_DOUBLE_TIME_BIT).bitwise_and(~_NIGHTCORE_BIT),
-    ),
-    else_=_MODS_COLUMN,
-)
-_PERFECT_NORMALIZED_MODS = sa.case(
-    (
-        _NIGHTCORE_NORMALIZED_MODS.bitwise_and(_PERFECT_BIT) != 0,
-        _NIGHTCORE_NORMALIZED_MODS.bitwise_or(_SUDDEN_DEATH_BIT).bitwise_and(~_PERFECT_BIT),
-    ),
-    else_=_NIGHTCORE_NORMALIZED_MODS,
-)
-_CANONICAL_MODS = _PERFECT_NORMALIZED_MODS.bitwise_and(~_MIRROR_BIT)
-_IS_NO_MOD_CANDIDATE = _CANONICAL_MODS.bitwise_and(~_PREFERENCE_ONLY_NO_MODS_BITS) == 0
-_LEADERBOARD_MOD_FILTER_KEYS = sa.case(
-    (
-        sa.and_(_IS_NO_MOD_CANDIDATE, _CANONICAL_MODS == 0),
-        postgresql.array([0]),
-    ),
-    (
-        _IS_NO_MOD_CANDIDATE,
-        postgresql.array([0, _CANONICAL_MODS]),
-    ),
-    else_=postgresql.array([_CANONICAL_MODS]),
-)
+
+
+def _selected_mod_filter_keys_expression(
+    mods: ColumnElement[int],
+) -> ColumnElement[list[int]]:
+    nightcore_normalized = sa.case(
+        (
+            mods.bitwise_and(_NIGHTCORE_BIT) != 0,
+            mods.bitwise_or(_DOUBLE_TIME_BIT).bitwise_and(~_NIGHTCORE_BIT),
+        ),
+        else_=mods,
+    )
+    perfect_normalized = sa.case(
+        (
+            nightcore_normalized.bitwise_and(_PERFECT_BIT) != 0,
+            nightcore_normalized.bitwise_or(_SUDDEN_DEATH_BIT).bitwise_and(~_PERFECT_BIT),
+        ),
+        else_=nightcore_normalized,
+    )
+    canonical_mods = perfect_normalized.bitwise_and(~_MIRROR_BIT)
+    is_no_mod_candidate = canonical_mods.bitwise_and(~_PREFERENCE_ONLY_NO_MODS_BITS) == 0
+    return sa.case(
+        (
+            sa.and_(is_no_mod_candidate, canonical_mods == 0),
+            postgresql.array([0]),
+        ),
+        (
+            is_no_mod_candidate,
+            postgresql.array([0, canonical_mods]),
+        ),
+        else_=postgresql.array([canonical_mods]),
+    )
+
 
 BEATMAP_FETCH_STATE_ENUM = postgresql.ENUM(
     "fresh",
@@ -292,15 +298,6 @@ def _upgrade_leaderboard_storage() -> None:
         ["score_id"],
     )
 
-    op.add_column(
-        "scores",
-        sa.Column(
-            "leaderboard_mod_filter_keys",
-            postgresql.ARRAY(sa.Integer()),
-            sa.Computed(_LEADERBOARD_MOD_FILTER_KEYS, persisted=True),
-            nullable=False,
-        ),
-    )
     op.create_index(
         "idx_scores_beatmap_leaderboard_candidates",
         "scores",
@@ -318,12 +315,6 @@ def _upgrade_leaderboard_storage() -> None:
             sa.column("passed", sa.Boolean()).is_(True),
             sa.column("leaderboard_eligible_at_submission", sa.Boolean()).is_(True),
         ),
-    )
-    op.create_index(
-        "idx_scores_leaderboard_mod_filter_keys",
-        "scores",
-        ["leaderboard_mod_filter_keys"],
-        postgresql_using="gin",
     )
 
 
@@ -441,10 +432,6 @@ def _rebuild_current_global_projection() -> None:
 def _downgrade_leaderboard_storage() -> None:
     mod_filter_key = sa.column("mod_filter_key", sa.Integer())
     op.drop_index(
-        "idx_scores_leaderboard_mod_filter_keys",
-        table_name="scores",
-    )
-    op.drop_index(
         "idx_scores_beatmap_leaderboard_candidates",
         table_name="scores",
     )
@@ -468,7 +455,6 @@ def _downgrade_leaderboard_storage() -> None:
     )
     op.drop_column("beatmap_leaderboard_user_bests", "beatmap_checksum")
     _restore_legacy_leaderboard_projection()
-    op.drop_column("scores", "leaderboard_mod_filter_keys")
     op.create_check_constraint(
         "ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative",
         "beatmap_leaderboard_user_bests",
@@ -521,11 +507,11 @@ def _restore_legacy_leaderboard_projection() -> None:
         sa.column("ruleset", sa.SmallInteger()),
         sa.column("playstyle", sa.SmallInteger()),
         sa.column("user_id", sa.Integer()),
+        sa.column("mods", sa.Integer()),
         sa.column("score", sa.Integer()),
         sa.column("submitted_at", sa.DateTime(timezone=True)),
         sa.column("passed", sa.Boolean()),
         sa.column("leaderboard_eligible_at_submission", sa.Boolean()),
-        sa.column("leaderboard_mod_filter_keys", postgresql.ARRAY(sa.Integer())),
     )
     beatmaps = sa.table(
         "beatmaps",
@@ -560,10 +546,9 @@ def _restore_legacy_leaderboard_projection() -> None:
         .select_from(current_scores)
         .where(common_filter)
     )
-    mod_filter_key = sa.func.unnest(scores.c.leaderboard_mod_filter_keys).column_valued(
-        "mod_filter_key",
-        joins_implicitly=True,
-    )
+    mod_filter_key = sa.func.unnest(
+        _selected_mod_filter_keys_expression(scores.c.mods)
+    ).column_valued("mod_filter_key", joins_implicitly=True)
     selected_mod_candidates = (
         sa.select(
             *common_columns,

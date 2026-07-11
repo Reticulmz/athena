@@ -1,6 +1,5 @@
 """Query repository interface package."""
 
-from osu_server.domain.scores.performance import RecalculationCandidateReason
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     BeatmapLeaderboardQueryRepository,
     BeatmapLeaderboardRow,
@@ -61,7 +60,6 @@ __all__ = [
     "FriendRelationshipQueryRepository",
     "LeaderboardReadScope",
     "PersonalBestQueryRepository",
-    "RecalculationCandidateReason",
     "ReplayDownloadAvailableReplayCandidate",
     "ReplayDownloadCandidate",
     "ReplayDownloadCandidateKind",

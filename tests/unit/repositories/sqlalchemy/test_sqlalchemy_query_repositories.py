@@ -20,11 +20,14 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
 )
 from osu_server.domain.chat.channels import ChannelType
-from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculationState
+from osu_server.domain.scores.performance import (
+    FormulaProfile,
+    PerformanceCalculationState,
+    RecalculationCandidateReason,
+)
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
 from osu_server.repositories.interfaces.queries.score_performance import (
-    RecalculationCandidateReason,
     ScorePerformanceCandidateSelection,
     ScorePerformanceQueryRepository,
 )

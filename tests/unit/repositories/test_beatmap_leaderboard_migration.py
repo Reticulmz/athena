@@ -10,7 +10,6 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
 )
-from sqlalchemy.dialects import postgresql
 
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import BeatmapLeaderboardUserBestModel, ScoreModel
@@ -152,12 +151,9 @@ def test_score_metadata_includes_submission_time_leaderboard_eligibility() -> No
     )
     assert rebuild_index.unique is False
 
-    filter_keys_column = _column(table, "leaderboard_mod_filter_keys")
-    assert isinstance(filter_keys_column.type, postgresql.ARRAY)
-    assert not filter_keys_column.nullable
-    assert filter_keys_column.computed is not None
+    assert "leaderboard_mod_filter_keys" not in table.c
     assert "idx_scores_beatmap_leaderboard_candidates" in _indexes(table)
-    assert "idx_scores_leaderboard_mod_filter_keys" in _indexes(table)
+    assert "idx_scores_leaderboard_mod_filter_keys" not in _indexes(table)
 
 
 def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:

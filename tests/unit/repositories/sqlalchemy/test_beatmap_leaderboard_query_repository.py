@@ -237,11 +237,13 @@ async def test_only_selected_mods_category_applies_mod_filter_key() -> None:
     country_sql = _compiled_sql(country_session.statements[0])
     friends_sql = _compiled_sql(friends_session.statements[0])
     selected_mods_sql = _compiled_sql(selected_mods_session.statements[0])
-    assert "leaderboard_mod_filter_keys" not in country_sql
+    assert "scores.mods & 512" not in country_sql
     assert "users.country = " in country_sql
-    assert "leaderboard_mod_filter_keys" not in friends_sql
+    assert "scores.mods & 512" not in friends_sql
     assert "users.id IN " in friends_sql
-    assert "scores.leaderboard_mod_filter_keys @> ARRAY[64]" in selected_mods_sql
+    assert "scores.mods & 512" in selected_mods_sql
+    assert "leaderboard_mod_filter_keys" not in selected_mods_sql
+    assert " = 64" in selected_mods_sql
     assert "users.country = " not in selected_mods_sql
 
 

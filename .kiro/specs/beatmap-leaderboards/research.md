@@ -21,7 +21,7 @@
 ## 決定への反映
 
 - Selected Mods の Personal Best は Global の Personal Best とは別に、Leaderboard Mod Filter 内の自己ベストとして導く。
-- Global / Country / Friends / Selected Mods の Personal Best は current checksum の eligible source Scores から read-time に解決する。Selected Mods の場合だけ `scores.leaderboard_mod_filter_keys` に request の canonical key が含まれることを要求する。
+- Global / Country / Friends / Selected Mods の Personal Best は current checksum の eligible source Scores から read-time に解決する。Selected Mods の場合だけ source Score の actual mods を canonicalize した predicate と request key の一致を要求する。
 - Country / Friends の Personal Best は viewer 自身がその Leaderboard Category の eligible set に入る場合だけ返す。Country では viewer country が有効で、viewer 自身の current country がその country に一致する必要がある。Friends は viewer 自身を Friends Leaderboard Eligible Set に含めるため、viewer が Leaderboard Visible User なら自分の Personal Best を返せる。
 - Viewer 自身が Leaderboard Visible User ではない場合、Friends category でも public rows は返せるが viewer Personal Best は返さない。Friends Leaderboard Eligible Set に self を含めることと、viewer 自身の Score を Personal Best として表示できることは別条件として扱う。
 - Stable getscores request の viewer identity が未認証または不明な場合、Global rows は返せるが Country rows、Friends rows、Personal Best は返さない。Country / Friends / Personal Best は viewer identity に依存する scope として扱う。
@@ -47,14 +47,14 @@
 - Migration / backfill 中に source score が存在しない旧 `personal_bests` row は新 projection に移行しない。Projection は source score から導く view なので、source がない代表 row は温存せず、必要に応じて migration log / metric に件数を出す。
 - `beatmap_leaderboard_user_bests` は Beatmap / Ruleset / Playstyle / User ごとのGlobal all-mods score-priority projectionとして扱い、mod filter dimensionを持たない。`beatmap_checksum`はその1行が表すcurrent revisionを示す非`NULL`の置換可能なfreshness属性とする。
 - `beatmap_leaderboard_user_bests` のuniquenessは `beatmap_id, ruleset, playstyle, user_id` で定義し、checksum更新時も同じnatural identityの行を置き換える。`score_id`にも一意制約を置いて1 source Scoreから複数projection rowが作られないようにする。
-- Selected Modsのcanonical integer keysは `scores.leaderboard_mod_filter_keys` generated arrayに保存する。NCとDT、PFとSDを同じkeyへ正規化し、NoMod互換を含む複数一致を1 Score rowで表現する。
+- Selected Modsのcanonical integer keyはsource Scoreのactual modsからquery時に導く。NCとDT、PFとSDを同じkeyへ正規化し、NoMod互換を含む複数一致を追加columnやprojection rowなしで表現する。
 - Generated keysはscore自身のcanonical keyと、NoMod条件を満たす場合の`0`だけを生成する。HD+DT scoreからHD単独やDT単独のsubset keyは生成しない。
-- Public Global / Country / Friends readsはmods predicateを持たず、Selected Modsの場合だけgenerated array membershipで絞る。Displayed modsは常にsource Scoreの実値を使う。
+- Public Global / Country / Friends readsはmods predicateを持たず、Selected Modsの場合だけactual modsへのcanonical bitwise predicateで絞る。Displayed modsは常にsource Scoreの実値を使う。
 - 1つのscore submissionはGlobal all-mods projectionを最大1行だけupsertする。Selected Mods、Country、Friendsの代表Scoreは永続化せず、source Scoresからread-timeに導出する。
-- Downgradeではnullable `mod_filter_key` を持つ旧schemaを復元し、current-checksum eligible source Scoresとgenerated keysからlegacy Global/Selected Mods rowsを再構築する。
+- Downgradeではnullable `mod_filter_key` を持つ旧schemaを復元し、current-checksum eligible source Scoresと同じcanonical SQLAlchemy式からlegacy Global/Selected Mods rowsを再構築する。
 - `beatmap_leaderboard_user_bests` は `score_id` に加えて ranking keys として `score` / `submitted_at` / `score_id` を projection 側にも保持する。Score 原本の source of truth は `scores` のままだが、Global submit delta、upsert replacement、reconciliationを同じ `score desc -> submitted_at asc -> score_id asc` で実行するため、projection に並び替え key を持たせる。Public top rowsとPersonal Best rankはsource Scoresから導き、表示用 hit counts、username、country などの snapshot は持たせない。
 - Beatmap Leaderboard rowsのread queryはeligible source Scoresを起点にし、Beatmap、User/Role、Replay、current Performance Calculationをjoinしてuser bestとrankをwindow functionで導出する。Global projectionの欠落や遅延はpublic outputへ影響させない。
-- Selected ModsのNoModはgenerated key `0`へのmembershipで解決し、Global projectionとは別rowを作らない。
+- Selected ModsのNoModはcanonical modsからgameplay-affecting bitsがないことをquery時に判定し、Global projectionとは別rowを作らない。
 - `beatmap_leaderboard_user_bests` の既存 entry は、同じ scope の候補 Score が score 優先順で既存 entry を上回る場合だけ置き換える。score が同点の場合は Beatmap Leaderboard Rank の tie-break を使い、server-side submission time が早い Score、次に Score ID 昇順を優先する。
 - `beatmap_leaderboard_user_bests` は score submission 成功時に score 原本保存と同じ Unit of Work 内で upsert する。worker job は user visibility、beatmap status、checksum 変更、schema migration、projection 欠損などの rebuild / 補正に使い、通常 submit の即時反映を worker completion に依存させない。現行 `personal_bests` も score 作成後、同じ command transaction 内で `upsert_if_better` してから commit している。
 - 通常 submit path の projection upsert は current Beatmap status、current checksum、passed、submission-time eligibility を満たす score に限定する。User visibility は hidden projection を許容するが、beatmap/checksum/failed の競技条件を満たさない score は `beatmap_leaderboard_user_bests` に入れない。
@@ -363,9 +363,9 @@ Use dedicated new domain/query/command contracts, but migrate incrementally:
 - **Findings**:
   - Public Global/Country/Friends/Selected Mods reads can derive one user best per scope directly from indexed source Scores with a window function.
   - `beatmap_performance_bests` belongs to future user-stats, because its ranking key is PP and it is not a Beatmap Leaderboard row source.
-  - Selected Mods compatibility belongs on each Score as generated canonical keys; storing one projection row per key duplicates `score_id` and creates divergent update paths.
+  - Selected Mods compatibility belongs in a read-time policy over each Score's actual mods; storing derived keys or one projection row per key creates redundant state and divergent update paths.
 - **Implications**:
-  - Public reads use source Scores as the source of truth and apply the Selected Mods generated-key predicate only for that category.
+  - Public reads use source Scores as the source of truth and apply the Selected Mods canonical mods predicate only for that category.
   - `beatmap_leaderboard_user_bests` stores only the Global all-mods representative needed by submit PB delta and reconciliation.
   - Projection uniqueness is `beatmap_id, ruleset, playstyle, user_id`; current Beatmap checksum is a non-null replaceable freshness attribute, and `score_id` is globally unique inside the table.
 
@@ -390,7 +390,7 @@ Use dedicated new domain/query/command contracts, but migrate incrementally:
 | --- | --- | --- | --- | --- |
 | Extend `personal_bests` | Add mod and rank fields to the current PB table | Smallest initial diff | Keeps misleading name and stable-shaped query contract | Rejected for final design |
 | Per-scope leaderboard projection | Store Global and Selected Mods representatives separately | Simple reads after convergence | Duplicates `score_id`, fans out writes, and makes stale projection correctness complex | Rejected |
-| Source-score public reads plus Global-only projection | Rank indexed source Scores at read time and keep one Global representative for submit delta | One Score row represents every mod scope; public output is projection-independent | Requires window queries and generated-key indexes | Selected target architecture |
+| Source-score public reads plus Global-only projection | Rank indexed source Scores at read time and keep one Global representative for submit delta | One Score row represents every mod scope; public output is projection-independent | Requires window queries and a read-time mods predicate after indexed Beatmap narrowing | Selected target architecture |
 
 ## Design Decisions
 
@@ -402,8 +402,8 @@ Use dedicated new domain/query/command contracts, but migrate incrementally:
   2. Store one projection row for every Global/Selected Mods scope.
   3. Rank source Scores for public reads and keep only the Global submit projection.
 - **Selected Approach**: Public rows/PB use source Scores; `beatmap_leaderboard_user_bests` stores one Global all-mods representative per user/current Beatmap checksum; `beatmap_performance_bests` remains owned by user-stats.
-- **Rationale**: One Score row can expose all generated mod keys without duplicate projection rows, while submit PB delta still has a transactional comparison point.
-- **Trade-offs**: Read queries are more sophisticated, but generated-key and candidate indexes keep them bounded and projection drift cannot corrupt public output.
+- **Rationale**: One Score row can participate in all compatible mod scopes without storing derived keys or duplicate projection rows, while submit PB delta still has a transactional comparison point.
+- **Trade-offs**: Read queries are more sophisticated, but the Beatmap candidate partial index narrows rows before the bitwise predicate and projection drift cannot corrupt public output.
 - **Follow-up**: Migration must skip source-missing rows, collapse Selected Mods duplicates, and reconstruct legacy scopes on downgrade.
 
 ### Decision: Keep Country And Friends As Read-Time Filters

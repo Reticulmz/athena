@@ -12,10 +12,10 @@ from osu_server.domain.scores.performance import (
     FormulaProfile,
     PerformanceRecalculationBatch,
     PerformanceRecalculationBatchStatus,
+    RecalculationCandidateReason,
 )
 from osu_server.domain.scores.score import Ruleset
 from osu_server.repositories.interfaces.queries.score_performance import (
-    RecalculationCandidateReason,
     ScorePerformanceCandidateSelection,
     ScorePerformanceRecalculationCandidate,
     ScorePerformanceRecalculationCandidateResult,

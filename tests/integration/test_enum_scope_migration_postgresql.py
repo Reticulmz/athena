@@ -4,6 +4,7 @@ import importlib.util
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -16,6 +17,7 @@ from alembic.script import ScriptDirectory
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, async_sessionmaker
 
 from osu_server.domain.beatmaps import (
+    BeatmapFileSource,
     BeatmapMetadataSource,
     BeatmapMode,
     BeatmapRankStatus,
@@ -25,12 +27,17 @@ from osu_server.domain.identity.leaderboard_visibility import (
 )
 from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import Mod
+from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculationState
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
+from osu_server.domain.storage.blobs import BlobStorageBackendKind
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
     UpsertBeatmapLeaderboardUserBest,
+)
+from osu_server.repositories.interfaces.commands.score_performance import (
+    CompleteScorePerformanceCalculation,
 )
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     LeaderboardReadScope,
@@ -38,12 +45,23 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
 from osu_server.repositories.sqlalchemy.commands.beatmap_leaderboards import (
     SQLAlchemyBeatmapLeaderboardCommandRepository,
 )
-from osu_server.repositories.sqlalchemy.models.beatmap import BeatmapModel, BeatmapSetModel
+from osu_server.repositories.sqlalchemy.commands.score_performance import (
+    SQLAlchemyScorePerformanceCommandRepository,
+)
+from osu_server.repositories.sqlalchemy.models.beatmap import (
+    BeatmapFileAttachmentModel,
+    BeatmapModel,
+    BeatmapSetModel,
+)
 from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
     BeatmapLeaderboardUserBestModel,
 )
+from osu_server.repositories.sqlalchemy.models.blob import BlobModel
 from osu_server.repositories.sqlalchemy.models.role import RoleModel, UserRoleModel
 from osu_server.repositories.sqlalchemy.models.score import ScoreModel
+from osu_server.repositories.sqlalchemy.models.score_performance import (
+    ScorePerformanceCalculationModel,
+)
 from osu_server.repositories.sqlalchemy.models.user import UserModel
 from osu_server.repositories.sqlalchemy.queries.beatmap_leaderboards import (
     SQLAlchemyBeatmapLeaderboardQueryRepository,
@@ -74,6 +92,10 @@ _PERFECT_SCORE_ID = 9_700_000_004
 _SUDDEN_DEATH_SCORE_ID = 9_700_000_005
 _USER_2_NIGHTCORE_SCORE_ID = 9_700_000_006
 _STALE_SCORE_ID = 9_700_000_007
+_BLOB_ID = 1_970_200_001
+_ATTACHMENT_ID = 9_700_100_001
+_OLD_CALCULATION_ID = 9_700_200_001
+_REPLACEMENT_CALCULATION_ID = 9_700_200_002
 _SCORE_IDS = (
     _NO_MOD_SCORE_ID,
     _NIGHTCORE_SCORE_ID,
@@ -141,7 +163,7 @@ async def postgres_engine() -> AsyncGenerator[AsyncEngine]:
 async def postgres_connection(
     postgres_engine: AsyncEngine,
 ) -> AsyncGenerator[AsyncConnection]:
-    """migration test専用schemaへ接続するtransactional connectionを提供する.
+    """Migration test専用schemaへ接続するtransactional connectionを提供する.
 
     Args:
         postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
@@ -167,10 +189,10 @@ async def postgres_connection(
                 await transaction.rollback()
 
 
-async def test_postgresql_generated_filter_keys_and_window_ranking(
+async def test_postgresql_selected_mod_predicates_and_window_ranking(
     postgres_connection: AsyncConnection,
 ) -> None:
-    """生成済みMod filter keyとscore正本のwindow rankingを確認する.
+    """read-time Mod predicateとscore正本のwindow rankingを確認する.
 
     Args:
         postgres_connection (AsyncConnection): 専用schemaへ接続した非同期接続.
@@ -179,22 +201,12 @@ async def test_postgresql_generated_filter_keys_and_window_ranking(
         None: GlobalとSelected Modsのrankingが期待値と一致したことを示す.
 
     Raises:
-        AssertionError: 生成key, ranking, またはprojection更新結果が異なる場合.
+        AssertionError: filter, ranking, またはprojection更新結果が異なる場合.
 
     Notes:
-        GlobalはMod条件なし, Selected Modsだけ生成keyで絞り込む.
+        GlobalはMod条件なし, Selected Modsだけsource Scoreのmodsで絞り込む.
     """
     await _seed_fixture(postgres_connection)
-
-    assert await _generated_filter_keys(postgres_connection) == {
-        _NO_MOD_SCORE_ID: (0,),
-        _NIGHTCORE_SCORE_ID: (int(Mod.DOUBLE_TIME),),
-        _DOUBLE_TIME_SCORE_ID: (int(Mod.DOUBLE_TIME),),
-        _PERFECT_SCORE_ID: (0, int(Mod.SUDDEN_DEATH)),
-        _SUDDEN_DEATH_SCORE_ID: (0, int(Mod.SUDDEN_DEATH)),
-        _USER_2_NIGHTCORE_SCORE_ID: (int(Mod.DOUBLE_TIME),),
-        _STALE_SCORE_ID: (0,),
-    }
 
     session_factory = async_sessionmaker(
         postgres_connection,
@@ -260,6 +272,119 @@ async def test_postgresql_generated_filter_keys_and_window_ranking(
     assert current.scope.beatmap_checksum == _CURRENT_CHECKSUM
 
 
+async def test_postgresql_claimed_replacement_completion_clears_claims_before_flush(
+    postgres_connection: AsyncConnection,
+) -> None:
+    """claim中のreplacementを制約違反なしで完了できることを確認する.
+
+    Args:
+        postgres_connection (AsyncConnection): 専用schemaへ接続した非同期接続.
+
+    Returns:
+        None: replacementと旧currentのclaim pairがterminal化前に解除されたことを示す.
+
+    Raises:
+        AssertionError: 完了結果またはclaim lifecycleが期待値と異なる場合.
+
+    Notes:
+        実PostgreSQLのclaim metadata制約を通して最初のflush順序を検証する.
+    """
+    await _seed_fixture(postgres_connection)
+
+    session_factory = async_sessionmaker(
+        postgres_connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    async with session_factory() as session:
+        blob = BlobModel(
+            id=_BLOB_ID,
+            sha256="c" * 64,
+            byte_size=1,
+            content_type="application/octet-stream",
+            storage_backend=BlobStorageBackendKind.LOCAL.value,
+            storage_key="enum-scope/performance-test.osu",
+        )
+        attachment = BeatmapFileAttachmentModel(
+            id=_ATTACHMENT_ID,
+            beatmap_id=_BEATMAP_ID,
+            blob_id=_BLOB_ID,
+            checksum_md5=_CURRENT_CHECKSUM,
+            verified_md5=_CURRENT_CHECKSUM,
+            source=BeatmapFileSource.OFFICIAL.value,
+            original_filename="performance-test.osu",
+            fetched_at=_NOW,
+            verified_at=_NOW,
+        )
+        old_current = ScorePerformanceCalculationModel(
+            id=_OLD_CALCULATION_ID,
+            score_id=_NO_MOD_SCORE_ID,
+            state=PerformanceCalculationState.CALCULATING.value,
+            is_current=True,
+            pp=None,
+            star_rating=None,
+            calculator_name="rosu-pp-py",
+            calculator_version="4.0.2",
+            formula_profile=FormulaProfile.VANILLA_RANKED.value,
+            beatmap_file_attachment_id=None,
+            beatmap_file_checksum_md5=None,
+            unavailable_reason=None,
+            claim_owner="old-worker",
+            claim_expires_at=_NOW + timedelta(minutes=5),
+            attempt_count=1,
+            calculated_at=None,
+        )
+        replacement = ScorePerformanceCalculationModel(
+            id=_REPLACEMENT_CALCULATION_ID,
+            score_id=_NO_MOD_SCORE_ID,
+            state=PerformanceCalculationState.CALCULATING.value,
+            is_current=False,
+            pp=None,
+            star_rating=None,
+            calculator_name="rosu-pp-py",
+            calculator_version="4.1.0",
+            formula_profile=FormulaProfile.VANILLA_RANKED.value,
+            beatmap_file_attachment_id=None,
+            beatmap_file_checksum_md5=None,
+            unavailable_reason=None,
+            claim_owner="replacement-worker",
+            claim_expires_at=_NOW + timedelta(minutes=5),
+            attempt_count=1,
+            calculated_at=None,
+        )
+        session.add(blob)
+        await session.flush()
+        session.add(attachment)
+        await session.flush()
+        session.add_all((old_current, replacement))
+        await session.flush()
+
+        repository = SQLAlchemyScorePerformanceCommandRepository(session)
+        completed = await repository.mark_completed(
+            CompleteScorePerformanceCalculation(
+                calculation_id=_REPLACEMENT_CALCULATION_ID,
+                pp=Decimal("222.222222"),
+                star_rating=Decimal("6.54321"),
+                calculator_name="rosu-pp-py",
+                calculator_version="4.1.0",
+                formula_profile=FormulaProfile.VANILLA_RANKED,
+                beatmap_file_attachment_id=_ATTACHMENT_ID,
+                beatmap_file_checksum_md5=_CURRENT_CHECKSUM,
+                calculated_at=_NOW,
+            )
+        )
+
+        assert completed is not None
+        assert completed.state is PerformanceCalculationState.COMPLETED
+        assert completed.is_current is True
+        assert replacement.claim_owner is None
+        assert replacement.claim_expires_at is None
+        assert old_current.state == PerformanceCalculationState.SUPERSEDED.value
+        assert old_current.is_current is False
+        assert old_current.claim_owner is None
+        assert old_current.claim_expires_at is None
+
+
 async def test_postgresql_migration_round_trip_restores_legacy_projection(
     postgres_connection: AsyncConnection,
 ) -> None:
@@ -278,7 +403,6 @@ async def test_postgresql_migration_round_trip_restores_legacy_projection(
         stale checksumの旧Global行はcurrent checksumのsource scoreから再構築する.
     """
     await _seed_fixture(postgres_connection)
-    generated_before = await _generated_filter_keys(postgres_connection)
 
     await postgres_connection.run_sync(_run_downgrade)
 
@@ -294,7 +418,6 @@ async def test_postgresql_migration_round_trip_restores_legacy_projection(
     await _replace_legacy_global_with_stale_score(postgres_connection)
     await postgres_connection.run_sync(_run_upgrade)
 
-    assert await _generated_filter_keys(postgres_connection) == generated_before
     assert set(await _current_projection_rows(postgres_connection)) == {
         (_USER_1_ID, _CURRENT_CHECKSUM, _NO_MOD_SCORE_ID),
         (_USER_2_ID, _CURRENT_CHECKSUM, _USER_2_NIGHTCORE_SCORE_ID),
@@ -547,18 +670,6 @@ def _projection_upsert(
             score_id=score_id,
         ),
     )
-
-
-async def _generated_filter_keys(
-    connection: AsyncConnection,
-) -> dict[int, tuple[int, ...]]:
-    result = await connection.execute(
-        sa.select(ScoreModel.id, ScoreModel.leaderboard_mod_filter_keys)
-        .where(ScoreModel.id.in_(_SCORE_IDS))
-        .order_by(ScoreModel.id)
-    )
-    rows = result.tuples().all()
-    return {score_id: tuple(filter_keys) for score_id, filter_keys in rows}
 
 
 async def _legacy_projection_rows(
