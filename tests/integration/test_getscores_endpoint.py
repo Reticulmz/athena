@@ -28,6 +28,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
@@ -36,18 +37,9 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
-from osu_server.domain.scores.leaderboards import (
-    ALL_MODS_FILTER_KEY,
-    ScoreRankKey,
-    projection_keys_for_score,
-)
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory, PersonalBestScope
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
-from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
-    BeatmapLeaderboardUserBestScope,
-    UpsertBeatmapLeaderboardUserBest,
-)
 from osu_server.repositories.interfaces.commands.personal_bests import UpsertPersonalBest
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
@@ -187,12 +179,19 @@ async def _seed_visible_user(
 
 
 async def _seed_known_beatmap(app: Starlette) -> None:
-    """Seed a known submitted beatmap into command-side persistence."""
+    """submitted済みの既知Beatmapをcommand-side persistenceへ作成する.
+
+    Args:
+        app (Starlette): Unit of Work dependencyを解決するtest application.
+
+    Returns:
+        None: 既知Beatmapの永続化が完了したことを示す.
+    """
     beatmap = Beatmap(
         id=75,
         beatmapset_id=1,
         checksum_md5=_KNOWN_CHECKSUM,
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Insane",
         total_length=240,
         hit_length=220,
@@ -231,7 +230,21 @@ async def _seed_known_beatmap(app: Starlette) -> None:
 
 
 async def _seed_leaderboard_best(app: Starlette, *, user_id: int) -> int:
-    """Seed a score and current beatmap leaderboard projection for getscores."""
+    """getscoresのPersonal Best確認に使用するsource scoreを作成する.
+
+    Args:
+        app (Starlette): Unit of Work dependencyを解決するtest application.
+        user_id (int): scoreを所有するUser ID.
+
+    Returns:
+        int: 永続化したScore ID.
+
+    Raises:
+        AssertionError: repositoryが永続化済みScore IDを返さない場合.
+
+    Notes:
+        Beatmap Leaderboard projectionは作成せず、queryはsource scoresを参照する.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         score = await uow.scores.create(
@@ -258,28 +271,11 @@ async def _seed_leaderboard_best(app: Starlette, *, user_id: int) -> int:
                 perfect=True,
                 client_version="b20260617",
                 submitted_at=_NOW,
-                beatmap_status_at_submission="ranked",
+                beatmap_status_at_submission=BeatmapRankStatus.RANKED,
                 leaderboard_eligible_at_submission=True,
             )
         )
         assert score.id is not None
-        _ = await uow.beatmap_leaderboards.upsert_if_better(
-            UpsertBeatmapLeaderboardUserBest(
-                scope=BeatmapLeaderboardUserBestScope(
-                    beatmap_id=75,
-                    ruleset=Ruleset.OSU,
-                    playstyle=Playstyle.VANILLA,
-                    user_id=user_id,
-                    mod_filter_key=ALL_MODS_FILTER_KEY,
-                ),
-                score_id=score.id,
-                rank_key=ScoreRankKey(
-                    score=score.score,
-                    submitted_at=score.submitted_at,
-                    score_id=score.id,
-                ),
-            )
-        )
         await uow.commit()
         return score.id
 
@@ -292,7 +288,21 @@ async def _seed_leaderboard_score(
     mods: ModCombination | None = None,
     submitted_offset_seconds: int = 0,
 ) -> _SeededLeaderboardScore:
-    """Seed a score and every matching leaderboard projection key."""
+    """Beatmap Leaderboard readで使用するsource scoreを作成する.
+
+    Args:
+        app (Starlette): dependencyを解決するtest application.
+        user_id (int): scoreを所有するUser ID.
+        score_value (int): 永続化するscore値.
+        mods (ModCombination | None): scoreへ適用するMod. NoneはNo Modを示す.
+        submitted_offset_seconds (int): 基準日時へ加算する秒数.
+
+    Returns:
+        _SeededLeaderboardScore: 永続化したscoreの識別情報.
+
+    Raises:
+        AssertionError: repositoryが永続化済みScore IDを返さない場合.
+    """
     score_mods = mods if mods is not None else ModCombination.none()
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
@@ -323,29 +333,11 @@ async def _seed_leaderboard_score(
                 perfect=True,
                 client_version="b20260617",
                 submitted_at=_NOW + timedelta(seconds=submitted_offset_seconds),
-                beatmap_status_at_submission="ranked",
+                beatmap_status_at_submission=BeatmapRankStatus.RANKED,
                 leaderboard_eligible_at_submission=True,
             )
         )
         assert score.id is not None
-        for mod_filter_key in projection_keys_for_score(score.mods):
-            _ = await uow.beatmap_leaderboards.upsert_if_better(
-                UpsertBeatmapLeaderboardUserBest(
-                    scope=BeatmapLeaderboardUserBestScope(
-                        beatmap_id=75,
-                        ruleset=Ruleset.OSU,
-                        playstyle=Playstyle.VANILLA,
-                        user_id=user_id,
-                        mod_filter_key=mod_filter_key,
-                    ),
-                    score_id=score.id,
-                    rank_key=ScoreRankKey(
-                        score=score.score,
-                        submitted_at=score.submitted_at,
-                        score_id=score.id,
-                    ),
-                )
-            )
         await uow.commit()
         return _SeededLeaderboardScore(
             score_id=score.id,
@@ -412,7 +404,21 @@ async def _seed_selected_mod_scenario(app: Starlette) -> None:
 
 
 async def _seed_legacy_personal_best(app: Starlette, *, user_id: int) -> int:
-    """Seed only the retired personal best projection for fallback regression checks."""
+    """retired Personal Best projectionだけをfallback回帰確認用に作成する.
+
+    Args:
+        app (Starlette): Unit of Work dependencyを解決するtest application.
+        user_id (int): legacy Personal Bestを所有するUser ID.
+
+    Returns:
+        int: projectionが参照するScore ID.
+
+    Raises:
+        AssertionError: repositoryが永続化済みScore IDを返さない場合.
+
+    Notes:
+        source scoreはleaderboard対象外とし、projectionがscore rowへ混入しないか検証する.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         score = await uow.scores.create(
@@ -439,8 +445,8 @@ async def _seed_legacy_personal_best(app: Starlette, *, user_id: int) -> int:
                 perfect=True,
                 client_version="b20260617",
                 submitted_at=_NOW,
-                beatmap_status_at_submission="ranked",
-                leaderboard_eligible_at_submission=True,
+                beatmap_status_at_submission=BeatmapRankStatus.RANKED,
+                leaderboard_eligible_at_submission=False,
             )
         )
         assert score.id is not None
@@ -769,6 +775,13 @@ class TestStableResponse:
                     )
                     _ = await _seed_leaderboard_score(
                         app,
+                        user_id=viewer_id,
+                        score_value=950_000,
+                        mods=ModCombination(Mod.DOUBLE_TIME),
+                        submitted_offset_seconds=4,
+                    )
+                    _ = await _seed_leaderboard_score(
+                        app,
                         user_id=japan_rival_id,
                         score_value=1_100_000,
                         submitted_offset_seconds=2,
@@ -798,6 +811,8 @@ class TestStableResponse:
                     _TEST_USERNAME,
                 ]
                 assert [row.rank for row in local_rows] == [1, 2, 3]
+                assert local_rows[-1].score == 950_000
+                assert local_rows[-1].mods == int(Mod.DOUBLE_TIME)
                 assert local_pb is not None
                 assert local_pb.username == _TEST_USERNAME
                 assert local_pb.rank == 3
@@ -817,6 +832,8 @@ class TestStableResponse:
                     _TEST_USERNAME,
                 ]
                 assert [row.rank for row in country_rows] == [1, 2]
+                assert country_rows[-1].score == 950_000
+                assert country_rows[-1].mods == int(Mod.DOUBLE_TIME)
                 assert country_pb is not None
                 assert country_pb.username == _TEST_USERNAME
                 assert country_pb.rank == 2

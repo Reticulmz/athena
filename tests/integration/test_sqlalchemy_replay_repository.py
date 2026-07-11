@@ -17,7 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.replay import Replay
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
-from osu_server.domain.storage.blobs import NewBlob
+from osu_server.domain.storage.blobs import BlobStorageBackendKind, NewBlob
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWorkFactory
@@ -139,7 +139,7 @@ async def _create_blob(
                 sha256=sha256,
                 byte_size=1024,
                 content_type="application/octet-stream",
-                storage_backend="local",
+                storage_backend=BlobStorageBackendKind.LOCAL,
                 storage_key=f"test/replay/{checksum}.osr",
             )
         )

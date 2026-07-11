@@ -15,6 +15,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapResolveResult,
@@ -109,7 +110,7 @@ def _resolved_beatmap() -> Beatmap:
         id=1,
         beatmapset_id=10,
         checksum_md5="0123456789abcdef0123456789abcdef",
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Test",
         total_length=None,
         hit_length=None,
@@ -472,7 +473,7 @@ async def test_happy_path_valid_submission_creates_score(
     assert score.passed is True
     assert score.ruleset == Ruleset.OSU
     assert score.playstyle == Playstyle.VANILLA
-    assert score.beatmap_status_at_submission == BeatmapRankStatus.RANKED.value
+    assert score.beatmap_status_at_submission is BeatmapRankStatus.RANKED
 
     submission = await submission_repo.get_by_fingerprint(_fingerprint_for(valid_input))
     assert submission is not None

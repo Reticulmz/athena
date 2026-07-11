@@ -10,7 +10,12 @@ from typing import Never, Protocol
 
 import structlog
 
-from osu_server.domain.beatmaps import Beatmap, BeatmapResolveOptions, BeatmapResolveResult
+from osu_server.domain.beatmaps import (
+    Beatmap,
+    BeatmapRankStatus,
+    BeatmapResolveOptions,
+    BeatmapResolveResult,
+)
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore
 from osu_server.domain.scores.personal_best import PersonalBestDelta
@@ -491,7 +496,9 @@ def _build_score(
         perfect=parsed.perfect,
         client_version=attempt.input_data.osu_version or "unknown",
         submitted_at=attempt.input_data.submitted_at,
-        beatmap_status_at_submission=accepted_beatmap.beatmap_status_at_submission,
+        beatmap_status_at_submission=BeatmapRankStatus(
+            accepted_beatmap.beatmap_status_at_submission
+        ),
         leaderboard_eligible_at_submission=accepted_beatmap.leaderboard_eligible_at_submission,
         fail_time_ms=accepted_beatmap.fail_time_ms,
         play_time_seconds=accepted_beatmap.play_time_seconds,

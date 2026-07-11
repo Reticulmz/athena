@@ -179,7 +179,7 @@ def _from_beatmapset_json(
             beatmap_id=bm.get("id", 0),
             beatmapset_id=bm.get("beatmapset_id", beatmapset_id),
             checksum_md5=bm.get("checksum", "0" * 32),
-            mode=bm.get("mode", ""),
+            mode=_mode_text(bm.get("mode")),
             version=bm.get("version", ""),
             official_status=map_external_status(bm.get("status", "")),
             official_status_source=source,
@@ -266,20 +266,20 @@ def _maybe_datetime(value: object) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
-def _mode_text(value: object) -> str:
+def _mode_text(value: object) -> BeatmapMode:
     mode = _maybe_int(value)
     if mode is not None:
         return {
-            0: BeatmapMode.OSU.value,
-            1: BeatmapMode.TAIKO.value,
-            2: BeatmapMode.FRUITS.value,
-            3: BeatmapMode.MANIA.value,
-        }.get(mode, BeatmapMode.UNKNOWN.value)
+            0: BeatmapMode.OSU,
+            1: BeatmapMode.TAIKO,
+            2: BeatmapMode.FRUITS,
+            3: BeatmapMode.MANIA,
+        }.get(mode, BeatmapMode.UNKNOWN)
     text = (_maybe_str(value) or "").strip()
     try:
-        return BeatmapMode(text).value
+        return BeatmapMode(text)
     except ValueError:
-        return BeatmapMode.UNKNOWN.value
+        return BeatmapMode.UNKNOWN
 
 
 def _status_text(value: object) -> str:

@@ -5,7 +5,7 @@ from typing import get_type_hints
 
 import pytest
 
-from osu_server.domain.storage.blobs import Blob, NewBlob
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind, NewBlob
 from osu_server.repositories.interfaces.commands import blobs
 from osu_server.repositories.interfaces.commands.blobs import (
     BlobCommandRepository,
@@ -80,7 +80,7 @@ def test_new_blob_validates_metadata_before_repository_create() -> None:
             sha256=VALID_SHA256,
             byte_size=1,
             content_type="",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
         )
 
@@ -89,7 +89,7 @@ def test_new_blob_validates_metadata_before_repository_create() -> None:
             sha256="short",
             byte_size=1,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
         )
 

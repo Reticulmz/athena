@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from osu_server.domain.scores.leaderboards import (
     ScoreRankKey,
-    projection_keys_for_score,
     score_beats_current,
 )
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
@@ -149,21 +148,20 @@ def _projection_rows_from_scores(
             submitted_at=score.submitted_at,
             score_id=score.id,
         )
-        for mod_filter_key in projection_keys_for_score(score.mods):
-            scope = BeatmapLeaderboardUserBestScope(
-                beatmap_id=score.beatmap_id,
-                ruleset=score.ruleset,
-                playstyle=score.playstyle,
-                user_id=score.user_id,
-                mod_filter_key=mod_filter_key,
+        scope = BeatmapLeaderboardUserBestScope(
+            beatmap_id=score.beatmap_id,
+            beatmap_checksum=score.beatmap_checksum,
+            ruleset=score.ruleset,
+            playstyle=score.playstyle,
+            user_id=score.user_id,
+        )
+        current = best_by_scope.get(scope)
+        if current is None or score_beats_current(rank_key, current.rank_key):
+            best_by_scope[scope] = UpsertBeatmapLeaderboardUserBest(
+                scope=scope,
+                score_id=score.id,
+                rank_key=rank_key,
             )
-            current = best_by_scope.get(scope)
-            if current is None or score_beats_current(rank_key, current.rank_key):
-                best_by_scope[scope] = UpsertBeatmapLeaderboardUserBest(
-                    scope=scope,
-                    score_id=score.id,
-                    rank_key=rank_key,
-                )
     return tuple(sorted(best_by_scope.values(), key=_projection_row_sort_key))
 
 
@@ -173,12 +171,11 @@ def _can_project_score(score: Score) -> bool:
 
 def _projection_row_sort_key(
     row: UpsertBeatmapLeaderboardUserBest,
-) -> tuple[int, int, int, int, int, tuple[int, datetime, int]]:
+) -> tuple[int, int, int, int, tuple[int, datetime, int]]:
     return (
         row.scope.beatmap_id,
         row.scope.ruleset.value,
         row.scope.playstyle.value,
         row.scope.user_id,
-        row.scope.mod_filter_key,
         row.rank_key.ordering_key,
     )

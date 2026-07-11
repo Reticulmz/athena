@@ -17,6 +17,8 @@ from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast, final
 
+from osu_server.domain.beatmaps import BeatmapFileSource, BeatmapMode
+
 if TYPE_CHECKING:
     from glide_shared.constants import TEncodable
     from starlette.applications import Starlette
@@ -181,7 +183,7 @@ async def _seed_status_change_beatmap(app: Starlette) -> None:
         id=_STATUS_BEATMAP_ID,
         beatmapset_id=_STATUS_BEATMAPSET_ID,
         checksum_md5=_STATUS_CHECKSUM,
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Insane",
         total_length=240,
         hit_length=220,
@@ -229,7 +231,7 @@ async def _attach_status_change_beatmap_file(app: Starlette) -> None:
             beatmap_id=_STATUS_BEATMAP_ID,
             blob_id=1,
             checksum_md5=_STATUS_CHECKSUM,
-            source="legacy_official",
+            source=BeatmapFileSource.LEGACY_OFFICIAL,
             original_filename=_STATUS_FILENAME,
             fetched_at=now,
             verified_at=now,

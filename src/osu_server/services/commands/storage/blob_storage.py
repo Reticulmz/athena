@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from osu_server.domain.storage.blobs import BlobDeduplicated, BlobStored, BlobStoreResult, NewBlob
+from osu_server.domain.storage.blobs import (
+    BlobDeduplicated,
+    BlobStorageBackendKind,
+    BlobStored,
+    BlobStoreResult,
+    NewBlob,
+)
 from osu_server.infrastructure.storage.errors import BlobContentMissingError
 
 if TYPE_CHECKING:
@@ -40,7 +46,7 @@ class BlobStorageService:
     _blob_query_repo: BlobQueryRepository
     _uow_factory: UnitOfWorkFactory
     _backend: BlobStorageBackend
-    _storage_backend: str
+    _storage_backend: BlobStorageBackendKind
 
     def __init__(
         self,
@@ -48,7 +54,7 @@ class BlobStorageService:
         blob_query_repo: BlobQueryRepository,
         uow_factory: UnitOfWorkFactory,
         backend: BlobStorageBackend,
-        storage_backend: str,
+        storage_backend: BlobStorageBackendKind,
     ) -> None:
         self._blob_query_repo = blob_query_repo
         self._uow_factory = uow_factory

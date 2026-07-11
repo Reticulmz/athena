@@ -6,7 +6,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
-from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculationState
+from osu_server.domain.scores.performance import (
+    FormulaProfile,
+    PerformanceCalculationState,
+    RecalculationCandidateReason,
+)
 from osu_server.repositories.interfaces.commands.score_performance import (
     ClaimScorePerformanceCalculation,
     ClaimScorePerformanceRecalculationWork,
@@ -403,17 +407,20 @@ async def test_sqlalchemy_repository_creates_recalculation_batch_without_commit(
     batch = await repo.create_recalculation_batch(
         CreateScorePerformanceRecalculationBatch(
             filters={"all": True},
-            reason_counts={"uncalculated": 1, "stale": 1},
+            reason_counts={
+                RecalculationCandidateReason.UNCALCULATED: 1,
+                RecalculationCandidateReason.STALE: 1,
+            },
             target_calculator_version="4.1.0",
             target_formula_profile=FormulaProfile.VANILLA_RANKED,
             work_items=(
                 CreateScorePerformanceRecalculationWorkItem(
                     score_id=101,
-                    reason="uncalculated",
+                    reason=RecalculationCandidateReason.UNCALCULATED,
                 ),
                 CreateScorePerformanceRecalculationWorkItem(
                     score_id=102,
-                    reason="stale",
+                    reason=RecalculationCandidateReason.STALE,
                 ),
             ),
             created_at=_NOW,

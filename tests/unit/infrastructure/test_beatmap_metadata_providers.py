@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 from osu_server.domain.beatmaps import (
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
@@ -298,7 +299,7 @@ class TestLookupByBeatmapsetId:
         bm = result.beatmaps[0]
         assert bm.beatmap_id == _BEATMAP_ID
         assert bm.checksum_md5 == _CHECKSUM
-        assert bm.mode == "osu"
+        assert bm.mode is BeatmapMode.OSU
         assert bm.version == "Another"
         assert bm.bpm == 220.0
 

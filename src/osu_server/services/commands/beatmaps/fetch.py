@@ -80,7 +80,7 @@ class FetchBeatmapMetadataUseCase:
             if not acquired:
                 logger.debug(
                     "beatmap_fetch_already_pending",
-                    target_type=target.target_type,
+                    target_type=target.kind.value,
                     target_key=target.target_key,
                 )
                 return
@@ -95,7 +95,7 @@ class FetchBeatmapMetadataUseCase:
                 await uow.commit()
                 logger.info(
                     "beatmap_metadata_fetch_cache_hit",
-                    target_type=target.target_type,
+                    target_type=target.kind.value,
                     target_key=target.target_key,
                 )
                 return
@@ -103,7 +103,7 @@ class FetchBeatmapMetadataUseCase:
 
         logger.info(
             "beatmap_metadata_fetch_started",
-            target_type=target.target_type,
+            target_type=target.kind.value,
             target_key=target.target_key,
         )
 
@@ -117,7 +117,7 @@ class FetchBeatmapMetadataUseCase:
             )
             logger.exception(
                 "beatmap_metadata_fetch_failed",
-                target_type=target.target_type,
+                target_type=target.kind.value,
                 target_key=target.target_key,
                 error=str(exc),
             )
@@ -131,7 +131,7 @@ class FetchBeatmapMetadataUseCase:
             )
             logger.error(
                 "beatmap_metadata_fetch_failed",
-                target_type=target.target_type,
+                target_type=target.kind.value,
                 target_key=target.target_key,
                 error="all configured metadata providers returned no result",
             )
@@ -154,7 +154,7 @@ class FetchBeatmapMetadataUseCase:
             except Exception as exc:
                 logger.error(
                     "beatmap_leaderboard_rebuild_enqueue_failed",
-                    target_type=target.target_type,
+                    target_type=target.kind.value,
                     target_key=target.target_key,
                     beatmapset_id=beatmapset.id,
                     reason=rebuild_reason,
@@ -164,7 +164,7 @@ class FetchBeatmapMetadataUseCase:
 
         logger.info(
             "beatmap_metadata_fetch_succeeded",
-            target_type=target.target_type,
+            target_type=target.kind.value,
             target_key=target.target_key,
             beatmapset_id=snapshot.beatmapset_id,
             source=snapshot.official_status_source.value,
@@ -266,14 +266,14 @@ class FetchBeatmapFileUseCase:
         if not acquired:
             logger.debug(
                 "beatmap_file_fetch_already_pending",
-                target_type=target.target_type,
+                target_type=target.kind.value,
                 target_key=target.target_key,
             )
             return
 
         logger.info(
             "beatmap_file_fetch_started",
-            target_type=target.target_type,
+            target_type=target.kind.value,
             target_key=target.target_key,
         )
 
@@ -287,7 +287,7 @@ class FetchBeatmapFileUseCase:
             )
             logger.exception(
                 "beatmap_file_fetch_failed",
-                target_type=target.target_type,
+                target_type=target.kind.value,
                 target_key=target.target_key,
                 error=str(exc),
             )
@@ -303,7 +303,7 @@ class FetchBeatmapFileUseCase:
             )
             logger.error(
                 "beatmap_file_fetch_failed",
-                target_type=target.target_type,
+                target_type=target.kind.value,
                 target_key=target.target_key,
                 beatmap_id=beatmap_id,
                 error=f"beatmap {beatmap_id} not found in repository",
@@ -317,7 +317,7 @@ class FetchBeatmapFileUseCase:
             await self._mark_succeeded(target=target, now=now)
             logger.info(
                 "beatmap_file_fetch_succeeded",
-                target_type=target.target_type,
+                target_type=target.kind.value,
                 target_key=target.target_key,
                 beatmap_id=beatmap_id,
                 source=existing_attachment.source,
@@ -334,7 +334,7 @@ class FetchBeatmapFileUseCase:
             )
             logger.error(
                 "beatmap_file_fetch_failed",
-                target_type=target.target_type,
+                target_type=target.kind.value,
                 target_key=target.target_key,
                 beatmap_id=beatmap_id,
                 error=f"{type(exc).__name__}: {exc}",
@@ -358,7 +358,7 @@ class FetchBeatmapFileUseCase:
             )
             logger.error(
                 "beatmap_file_fetch_failed",
-                target_type=target.target_type,
+                target_type=target.kind.value,
                 target_key=target.target_key,
                 beatmap_id=beatmap_id,
                 error="checksum mismatch",
@@ -373,7 +373,7 @@ class FetchBeatmapFileUseCase:
             beatmap_id=beatmap_id,
             blob_id=store_result.blob.id,
             checksum_md5=expected_md5,
-            source=result.source.value,
+            source=result.source,
             original_filename=result.original_filename,
             fetched_at=now,
             verified_at=now,
@@ -385,7 +385,7 @@ class FetchBeatmapFileUseCase:
 
         logger.info(
             "beatmap_file_fetch_succeeded",
-            target_type=target.target_type,
+            target_type=target.kind.value,
             target_key=target.target_key,
             beatmap_id=beatmap_id,
             source=result.source.value,

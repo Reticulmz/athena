@@ -14,6 +14,7 @@ import pytest
 import structlog.testing
 from taskiq import Context, InMemoryBroker, TaskiqMessage, TaskiqState
 
+from osu_server.domain.beatmaps import BeatmapFetchTargetKind
 from osu_server.infrastructure.jobs.registry import jobs
 from osu_server.jobs.beatmap_fetch import (
     fetch_beatmap_file,
@@ -176,7 +177,7 @@ class TestBeatmapFetchTaskExecution:
             context=context,
         )
         assert len(fake.calls) == 1
-        assert fake.calls[0].target_type == "metadata:beatmap"
+        assert fake.calls[0].kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID
         assert fake.calls[0].target_key == "2000"
         assert fake.calls[0].force_refresh is False
 
@@ -189,7 +190,7 @@ class TestBeatmapFetchTaskExecution:
             context=context,
         )
         assert len(fake.calls) == 1
-        assert fake.calls[0].target_type == "file:beatmap"
+        assert fake.calls[0].kind is BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID
         assert fake.calls[0].target_key == "2000"
 
     async def test_metadata_task_constructs_beatmap_fetch_target(self) -> None:
@@ -202,7 +203,7 @@ class TestBeatmapFetchTaskExecution:
             context=context,
         )
         assert len(fake.calls) == 1
-        assert fake.calls[0].target_type == "metadata:checksum"
+        assert fake.calls[0].kind is BeatmapFetchTargetKind.METADATA_BY_CHECKSUM
         assert fake.calls[0].target_key == "md5:checksum-for-test"
 
     async def test_metadata_task_preserves_force_refresh_flag(self) -> None:
@@ -228,7 +229,7 @@ class TestBeatmapFetchTaskExecution:
             context=context,
         )
         assert len(fake.calls) == 1
-        assert fake.calls[0].target_type == "file:beatmap"
+        assert fake.calls[0].kind is BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID
         assert fake.calls[0].target_key == "9999"
 
 

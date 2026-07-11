@@ -4,14 +4,14 @@ from datetime import datetime  # noqa: TC003 -- SQLAlchemy Mapped requires runti
 
 from sqlalchemy import (
     BigInteger,
-    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     SmallInteger,
+    String,
+    UniqueConstraint,
     func,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,30 +19,25 @@ from osu_server.infrastructure.database.base import Base
 
 
 class BeatmapLeaderboardUserBestModel(Base):
+    """Global all-mods のユーザー最高 score を保持する ORM model.
+
+    Notes:
+        1ユーザーにつき Beatmap/ruleset/playstyle ごとに1行だけ保持する. score_id も一意で、
+        Selected Mods 用の scope 行は保存しない.
+    """
+
     __tablename__: str = "beatmap_leaderboard_user_bests"
-    __table_args__: tuple[CheckConstraint | Index, ...] = (
-        CheckConstraint(
-            "mod_filter_key >= -1",
-            name="ck_beatmap_leaderboard_user_bests_mod_filter_key_scope",
-        ),
-        Index(
-            "idx_beatmap_leaderboard_user_bests_scope_unique",
+    __table_args__: tuple[Index | UniqueConstraint, ...] = (
+        UniqueConstraint(
             "beatmap_id",
             "ruleset",
             "playstyle",
             "user_id",
-            "mod_filter_key",
-            unique=True,
+            name="uq_beatmap_leaderboard_user_bests_scope",
         ),
-        Index(
-            "idx_beatmap_leaderboard_user_bests_ordering",
-            "beatmap_id",
-            "ruleset",
-            "playstyle",
-            "mod_filter_key",
-            text("score DESC"),
-            text("submitted_at ASC"),
-            text("score_id ASC"),
+        UniqueConstraint(
+            "score_id",
+            name="uq_beatmap_leaderboard_user_bests_score_id",
         ),
         Index(
             "idx_beatmap_leaderboard_user_bests_user_rebuild",
@@ -55,10 +50,10 @@ class BeatmapLeaderboardUserBestModel(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     beatmap_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    beatmap_checksum: Mapped[str] = mapped_column(String(32), nullable=False)
     ruleset: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     playstyle: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    mod_filter_key: Mapped[int] = mapped_column(Integer, nullable=False)
     score_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("scores.id", name="fk_beatmap_leaderboard_user_bests_score_id"),

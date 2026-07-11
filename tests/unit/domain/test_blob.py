@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
@@ -18,7 +19,7 @@ def test_blob_creation_valid() -> None:
         sha256=VALID_SHA256,
         byte_size=0,
         content_type="application/octet-stream",
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
         storage_key=VALID_STORAGE_KEY,
         created_at=now,
     )
@@ -39,7 +40,7 @@ def test_blob_rejects_empty_content_type() -> None:
             sha256=VALID_SHA256,
             byte_size=0,
             content_type="",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -52,7 +53,7 @@ def test_blob_rejects_negative_byte_size() -> None:
             sha256=VALID_SHA256,
             byte_size=-1,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -68,7 +69,7 @@ def test_blob_rejects_invalid_sha256() -> None:
             sha256="short",
             byte_size=10,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -82,7 +83,7 @@ def test_blob_rejects_invalid_sha256() -> None:
             sha256=UPPERCASE_SHA256,
             byte_size=10,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -96,7 +97,7 @@ def test_blob_rejects_invalid_sha256() -> None:
             sha256=NON_HEX_SHA256,
             byte_size=10,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -109,7 +110,7 @@ def test_blob_rejects_missing_storage_backend() -> None:
             sha256=VALID_SHA256,
             byte_size=10,
             content_type="text/plain",
-            storage_backend="",
+            storage_backend=cast("BlobStorageBackendKind", cast("object", "")),
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -122,7 +123,7 @@ def test_blob_rejects_unknown_storage_backend() -> None:
             sha256=VALID_SHA256,
             byte_size=10,
             content_type="text/plain",
-            storage_backend="memory",
+            storage_backend=cast("BlobStorageBackendKind", cast("object", "memory")),
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -139,7 +140,7 @@ def test_blob_rejects_missing_storage_key() -> None:
             sha256=VALID_SHA256,
             byte_size=10,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="",
             created_at=datetime.now(UTC),
         )
@@ -182,7 +183,7 @@ def test_blob_is_immutable() -> None:
         sha256=VALID_SHA256,
         byte_size=0,
         content_type="application/octet-stream",
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
         storage_key="key",
         created_at=now,
     )

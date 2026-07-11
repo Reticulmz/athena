@@ -17,9 +17,11 @@ import pytest
 from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFetchTarget,
+    BeatmapFetchTargetKind,
     BeatmapFileState,
     BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapsetSnapshot,
@@ -83,7 +85,7 @@ def _make_snapshot(
         beatmap_id=beatmap_id,
         beatmapset_id=beatmapset_id,
         checksum_md5=checksum_md5,
-        mode=mode,
+        mode=BeatmapMode(mode),
         version=version,
         official_status=official_status,
         official_status_source=official_status_source,
@@ -205,7 +207,7 @@ class TestMetadataResolutionByBeatmapIdE2E:
         assert result1.verified is False
         assert result1.reason == "unsolicited"
         assert len(enqueued) == 1
-        assert enqueued[0].target_type == "metadata:beatmap"
+        assert enqueued[0].kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID
         assert enqueued[0].target_key == str(_BEATMAP_ID)
 
         # --- Execute the metadata job ------------------------------------------
@@ -217,7 +219,7 @@ class TestMetadataResolutionByBeatmapIdE2E:
         assert result2.beatmap is not None
         assert result2.beatmap.id == _BEATMAP_ID
         assert result2.beatmap.checksum_md5 == _CHECKSUM
-        assert result2.beatmap.mode == "osu"
+        assert result2.beatmap.mode is BeatmapMode.OSU
         assert result2.beatmap.version == "Another"
         assert result2.beatmapset is not None
         assert result2.beatmapset.id == _BEATMAPSET_ID
@@ -303,7 +305,7 @@ class TestMetadataResolutionByBeatmapsetIdE2E:
         assert result1.verified is False
         assert result1.reason == "unsolicited"
         assert len(enqueued) == 1
-        assert enqueued[0].target_type == "metadata:beatmapset"
+        assert enqueued[0].kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID
 
         await job.execute(enqueued[0])
 
@@ -342,7 +344,7 @@ class TestMetadataResolutionByChecksumE2E:
         assert result1.verified is False
         assert result1.reason == "unsolicited"
         assert len(enqueued) == 1
-        assert enqueued[0].target_type == "metadata:checksum"
+        assert enqueued[0].kind is BeatmapFetchTargetKind.METADATA_BY_CHECKSUM
         assert enqueued[0].target_key == checksum
 
         await job.execute(enqueued[0])
@@ -543,7 +545,7 @@ class TestBeatmapIdentityAfterResolutionE2E:
         assert result.beatmap.id == _BEATMAP_ID
         assert result.beatmap.beatmapset_id == _BEATMAPSET_ID
         assert result.beatmap.checksum_md5 == _CHECKSUM
-        assert result.beatmap.mode == "osu"
+        assert result.beatmap.mode is BeatmapMode.OSU
         assert result.beatmap.version == "Another"
         assert result.beatmap.total_length == 240
         assert result.beatmap.bpm == 180.0

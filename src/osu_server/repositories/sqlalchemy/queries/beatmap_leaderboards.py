@@ -13,7 +13,6 @@ from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.identity.leaderboard_visibility import (
     LEADERBOARD_VISIBLE_PERMISSION_MASK,
 )
-from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.personal_best import (
     LeaderboardCategory,
@@ -27,9 +26,6 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     ScoreHitCounts,
 )
 from osu_server.repositories.sqlalchemy.models.beatmap import BeatmapModel
-from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
-    BeatmapLeaderboardUserBestModel,
-)
 from osu_server.repositories.sqlalchemy.models.role import RoleModel, UserRoleModel
 from osu_server.repositories.sqlalchemy.models.score import ReplayModel, ScoreModel
 from osu_server.repositories.sqlalchemy.models.score_performance import (
@@ -60,7 +56,11 @@ _PP_VISIBLE_BEATMAP_STATUS_VALUES = (
 
 
 class SQLAlchemyBeatmapLeaderboardQueryRepository:
-    """Read-only Beatmap Leaderboard projection repository backed by short sessions."""
+    """source scores から Beatmap Leaderboard を構築する query repository.
+
+    Notes:
+        read-only の short session を使い、projection table を参照または更新しない.
+    """
 
     def __init__(self, session_factory: SQLAlchemyQuerySessionFactory) -> None:
         self._session_factory: SQLAlchemyQuerySessionFactory = session_factory
@@ -71,6 +71,15 @@ class SQLAlchemyBeatmapLeaderboardQueryRepository:
         *,
         limit: int,
     ) -> tuple[BeatmapLeaderboardRow, ...]:
+        """指定 scope の上位行を deterministic な順位で返す.
+
+        Args:
+            scope (LeaderboardReadScope): Beatmapとcategory filterを含むscope.
+            limit (int): 取得上限. repository上限を超える値は切り詰める.
+
+        Returns:
+            tuple[BeatmapLeaderboardRow, ...]: User別最高scoreの順位付き行.
+        """
         capped_limit = min(max(limit, 0), _MAX_QUERY_LIMIT)
         if capped_limit == 0:
             return ()
@@ -89,6 +98,15 @@ class SQLAlchemyBeatmapLeaderboardQueryRepository:
         *,
         viewer_user_id: int,
     ) -> BeatmapLeaderboardRow | None:
+        """viewer の Personal Best と全体順位を返す.
+
+        Args:
+            scope (LeaderboardReadScope): Beatmapとcategory filterを含むscope.
+            viewer_user_id (int): Personal Bestを取得するUser ID.
+
+        Returns:
+            BeatmapLeaderboardRow | None: 対象scoreの順位付き行またはNone.
+        """
         ranked_candidates = _ranked_candidates_subquery(scope)
         statement = (
             _select_ranked_candidate_rows(ranked_candidates)
@@ -105,21 +123,47 @@ class SQLAlchemyBeatmapLeaderboardQueryRepository:
         return tuple(_row_from_mapping(cast("object", row)) for row in rows)
 
 
-def _ranked_candidates_subquery(scope: LeaderboardReadScope) -> Subquery:
-    role_permissions = _role_permissions_subquery()
-    effective_status = _effective_beatmap_status_expression()
+def _user_best_score_ids_subquery(scope: LeaderboardReadScope) -> Subquery:
     candidate_filters: list[ColumnElement[bool]] = [
-        BeatmapLeaderboardUserBestModel.beatmap_id == scope.beatmap_id,
-        BeatmapLeaderboardUserBestModel.ruleset == scope.ruleset.value,
-        BeatmapLeaderboardUserBestModel.playstyle == scope.playstyle.value,
-        _mod_filter_condition(scope),
-        ScoreModel.id == BeatmapLeaderboardUserBestModel.score_id,
         ScoreModel.beatmap_id == scope.beatmap_id,
         ScoreModel.beatmap_checksum == scope.beatmap_checksum,
         ScoreModel.ruleset == scope.ruleset.value,
         ScoreModel.playstyle == scope.playstyle.value,
         ScoreModel.passed.is_(True),
         ScoreModel.leaderboard_eligible_at_submission.is_(True),
+    ]
+    selected_mod_filter = _selected_mod_filter_condition(scope)
+    if selected_mod_filter is not None:
+        candidate_filters.append(selected_mod_filter)
+
+    user_rank = func.row_number().over(
+        partition_by=ScoreModel.user_id,
+        order_by=(
+            ScoreModel.score.desc(),
+            ScoreModel.submitted_at.asc(),
+            ScoreModel.id.asc(),
+        ),
+    )
+    ranked_user_scores = (
+        select(
+            ScoreModel.id.label("score_id"),
+            user_rank.label("user_rank"),
+        )
+        .where(*candidate_filters)
+        .subquery("ranked_user_scores")
+    )
+    return (
+        select(ranked_user_scores.c.score_id)
+        .where(ranked_user_scores.c.user_rank == 1)
+        .subquery("user_best_score_ids")
+    )
+
+
+def _ranked_candidates_subquery(scope: LeaderboardReadScope) -> Subquery:
+    user_best_score_ids = _user_best_score_ids_subquery(scope)
+    role_permissions = _role_permissions_subquery()
+    effective_status = _effective_beatmap_status_expression()
+    candidate_filters: list[ColumnElement[bool]] = [
         BeatmapModel.id == scope.beatmap_id,
         BeatmapModel.checksum_md5 == scope.beatmap_checksum,
         effective_status.in_(_VISIBLE_BEATMAP_STATUS_VALUES),
@@ -141,9 +185,9 @@ def _ranked_candidates_subquery(scope: LeaderboardReadScope) -> Subquery:
     )
     rank = func.row_number().over(
         order_by=(
-            BeatmapLeaderboardUserBestModel.score.desc(),
-            BeatmapLeaderboardUserBestModel.submitted_at.asc(),
-            BeatmapLeaderboardUserBestModel.score_id.asc(),
+            ScoreModel.score.desc(),
+            ScoreModel.submitted_at.asc(),
+            ScoreModel.id.asc(),
         )
     )
 
@@ -170,9 +214,9 @@ def _ranked_candidates_subquery(scope: LeaderboardReadScope) -> Subquery:
             pp.label("pp"),
             rank.label("rank"),
         )
-        .select_from(BeatmapLeaderboardUserBestModel)
-        .join(ScoreModel, ScoreModel.id == BeatmapLeaderboardUserBestModel.score_id)
-        .join(BeatmapModel, BeatmapModel.id == BeatmapLeaderboardUserBestModel.beatmap_id)
+        .select_from(user_best_score_ids)
+        .join(ScoreModel, ScoreModel.id == user_best_score_ids.c.score_id)
+        .join(BeatmapModel, BeatmapModel.id == ScoreModel.beatmap_id)
         .join(UserModel, UserModel.id == ScoreModel.user_id)
         .outerjoin(role_permissions, role_permissions.c.user_id == UserModel.id)
         .outerjoin(
@@ -245,10 +289,16 @@ def _leaderboard_visible_condition(role_permissions: Subquery) -> ColumnElement[
     )
 
 
-def _mod_filter_condition(scope: LeaderboardReadScope) -> ColumnElement[bool]:
-    if scope.category is LeaderboardCategory.SELECTED_MODS:
-        return BeatmapLeaderboardUserBestModel.mod_filter_key == scope.mod_filter_key
-    return BeatmapLeaderboardUserBestModel.mod_filter_key == ALL_MODS_FILTER_KEY
+def _selected_mod_filter_condition(
+    scope: LeaderboardReadScope,
+) -> ColumnElement[bool] | None:
+    if scope.category is not LeaderboardCategory.SELECTED_MODS:
+        return None
+    filter_key = scope.mod_filter_key
+    if filter_key is None:
+        msg = "selected-mods scope requires mod_filter_key"
+        raise ValueError(msg)
+    return ScoreModel.leaderboard_mod_filter_keys.contains([filter_key])
 
 
 def _category_filter_condition(scope: LeaderboardReadScope) -> ColumnElement[bool] | None:

@@ -16,7 +16,7 @@ from osu_server.domain.identity.friends import (
     FriendableSystemUserCatalog,
     FriendMutationStatus,
 )
-from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
+from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
@@ -467,10 +467,10 @@ async def _raise_after_leaderboard_mutation(
 def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
+        beatmap_checksum="a" * 32,
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=2,
-        mod_filter_key=ALL_MODS_FILTER_KEY,
     )
 
 
@@ -496,10 +496,10 @@ def _leaderboard_model(
     return BeatmapLeaderboardUserBestModel(
         id=40,
         beatmap_id=scope.beatmap_id,
+        beatmap_checksum=scope.beatmap_checksum,
         ruleset=scope.ruleset.value,
         playstyle=scope.playstyle.value,
         user_id=scope.user_id,
-        mod_filter_key=scope.mod_filter_key,
         score_id=score_id,
         score=score,
         submitted_at=_NOW,

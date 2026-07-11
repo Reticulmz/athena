@@ -12,7 +12,7 @@ from osu_server.domain.identity.users import User
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
-from osu_server.domain.storage.blobs import Blob, BlobStored
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind, BlobStored
 from osu_server.services.commands.scores import ParsedSubmissionInput, SubmitScoreUseCase
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from osu_server.services.queries.identity.password_service import PasswordService
@@ -344,7 +344,7 @@ class StubBlobStorageService:
             sha256=digest,
             byte_size=len(data),
             content_type=content_type,
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key=f"sha256/{digest[:2]}/{digest[2:4]}/{digest}",
             created_at=datetime.now(UTC),
         )

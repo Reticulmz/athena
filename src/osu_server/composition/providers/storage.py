@@ -8,6 +8,7 @@ from dishka import Provider, Scope
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
+from osu_server.domain.storage.blobs import BlobStorageBackendKind
 from osu_server.infrastructure.storage.interfaces import BlobStorageBackend
 from osu_server.repositories.interfaces.queries.blobs import BlobQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
@@ -44,7 +45,7 @@ class StorageProviderSet(Provider):
             blob_query_repo=blob_query_repo,
             uow_factory=uow_factory,
             backend=backend,
-            storage_backend=config.blob_storage_backend,
+            storage_backend=BlobStorageBackendKind(config.blob_storage_backend),
         )
 
     @provide

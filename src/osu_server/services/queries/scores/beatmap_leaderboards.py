@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Protocol
 
 from osu_server.domain.beatmaps import BeatmapFetchState, BeatmapFetchTarget, BeatmapRankStatus
 from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
-from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import LeaderboardReadScope
@@ -100,7 +99,17 @@ class BeatmapLeaderboardResult:
 
 @dataclass(slots=True, frozen=True)
 class BeatmapPersonalBestRankQueryInput:
-    """Beatmap personal best rank を読むための入力。"""
+    """Beatmap personal best rank を読むための入力.
+
+    Attributes:
+        user_id (int): 対象 User ID.
+        beatmap_id (int): 対象 Beatmap ID.
+        beatmap_checksum (str): 現在の Beatmap checksum.
+        ruleset (Ruleset): 対象 ruleset.
+        playstyle (Playstyle): 対象 playstyle.
+        category (LeaderboardCategory): 順位を評価する category.
+        mod_filter_key (int | None): Selected Mods の場合だけ使う非負 filter key.
+    """
 
     user_id: int
     beatmap_id: int
@@ -108,7 +117,7 @@ class BeatmapPersonalBestRankQueryInput:
     ruleset: Ruleset
     playstyle: Playstyle
     category: LeaderboardCategory = LeaderboardCategory.GLOBAL
-    mod_filter_key: int = ALL_MODS_FILTER_KEY
+    mod_filter_key: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -125,7 +134,7 @@ class _ViewerLeaderboardContext:
 
 
 class BeatmapPersonalBestRankQuery:
-    """Beatmap leaderboard projection から user の現在順位を読む。"""
+    """source scores から user の現在の Beatmap 順位を読む query."""
 
     _leaderboards: BeatmapLeaderboardQueryRepository
 
@@ -137,7 +146,17 @@ class BeatmapPersonalBestRankQuery:
         self,
         input_data: BeatmapPersonalBestRankQueryInput,
     ) -> BeatmapPersonalBestRankQueryResult:
-        """入力 scope に一致する personal best の順位を返す。"""
+        """入力 scope に一致する personal best の順位を返す.
+
+        Args:
+            input_data (BeatmapPersonalBestRankQueryInput): 対象 user と leaderboard scope.
+
+        Returns:
+            BeatmapPersonalBestRankQueryResult: score がない場合は rank=None の結果.
+
+        Raises:
+            ValueError: category と mod_filter_key の組み合わせが不正な場合.
+        """
         if input_data.user_id <= 0:
             return BeatmapPersonalBestRankQueryResult(rank=None)
 
@@ -431,17 +450,17 @@ def _leaderboard_scope_from_request(
     request: BeatmapLeaderboardRequest,
     beatmap: Beatmap,
 ) -> LeaderboardReadScope | None:
-    if request.header_only:
+    category = request.category
+    if (
+        request.header_only
+        or request.ruleset is None
+        or request.playstyle is not Playstyle.VANILLA
+        or category is None
+    ):
         return None
 
-    if request.ruleset is None or request.playstyle is not Playstyle.VANILLA:
-        return None
-
-    if request.category is None:
-        return None
-
-    mod_filter_key = ALL_MODS_FILTER_KEY
-    if request.category is LeaderboardCategory.SELECTED_MODS:
+    mod_filter_key = None
+    if category is LeaderboardCategory.SELECTED_MODS:
         filter_result = request.selected_mod_filter
         if filter_result is None or not filter_result.is_supported:
             return None
@@ -454,7 +473,7 @@ def _leaderboard_scope_from_request(
         beatmap_checksum=beatmap.checksum_md5,
         ruleset=request.ruleset,
         playstyle=request.playstyle,
-        category=request.category,
+        category=category,
         mod_filter_key=mod_filter_key,
     )
 

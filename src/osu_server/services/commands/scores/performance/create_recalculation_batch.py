@@ -70,11 +70,26 @@ class CreatePerformanceRecalculationBatchCommand:
 
 @dataclass(frozen=True, slots=True)
 class CreatePerformanceRecalculationBatchResult:
-    """Typed result for dry-run or durable recalculation batch creation."""
+    """Dry-runまたは永続batch作成の結果.
+
+    Attributes:
+        outcome (CreatePerformanceRecalculationBatchOutcome): 実行結果の種別.
+        candidate_count (int): 選択された候補件数.
+        reason_counts (Mapping[RecalculationCandidateReason, int]): 理由別候補件数.
+        filters (Mapping[str, object]): 実行に使用したfilter snapshot.
+        target_calculator_name (str): 対象calculator名.
+        target_calculator_version (str): 対象calculator version.
+        target_formula_profile (FormulaProfile): 対象formula profile.
+        batch (PerformanceRecalculationBatch | None): 作成済みbatch. 未作成時はNone.
+        worker_wake_requested (bool): Worker起動を要求したか.
+        worker_wake_failed (bool): Worker起動要求が失敗したか.
+        worker_wake_error (str | None): Worker起動error. 未発生時はNone.
+        rejection_reason (str | None): 作成拒否理由. 拒否されなければNone.
+    """
 
     outcome: CreatePerformanceRecalculationBatchOutcome
     candidate_count: int
-    reason_counts: Mapping[str, int]
+    reason_counts: Mapping[RecalculationCandidateReason, int]
     filters: Mapping[str, object]
     target_calculator_name: str
     target_calculator_version: str
@@ -141,7 +156,20 @@ class CreatePerformanceRecalculationBatchUseCase:
         self,
         command: CreatePerformanceRecalculationBatchCommand,
     ) -> CreatePerformanceRecalculationBatchResult:
-        """Execute dry-run selection or durable batch creation."""
+        """Dry-run候補選択または永続batch作成を実行する.
+
+        Args:
+            command (CreatePerformanceRecalculationBatchCommand): Scope、mode、要求日時.
+
+        Returns:
+            CreatePerformanceRecalculationBatchResult: 候補集計とbatch作成結果.
+
+        Raises:
+            ValueError: 永続化後のbatch IDがworker起動前に割り当てられていない場合.
+
+        Notes:
+            Full-scope確認がない危険な要求はrepositoryを開かずREJECTEDで返す.
+        """
         filters = _filters_from_command(command)
         target_calculator_name = self._calculator_identity.calculator_name()
         target_calculator_version = self._calculator_identity.calculator_version()
@@ -171,7 +199,7 @@ class CreatePerformanceRecalculationBatchUseCase:
             include_unavailable=command.include_unavailable,
         )
         selected = await self._query_repository.select_recalculation_candidates(selection)
-        reason_counts = _reason_counts_as_strings(selected.reason_counts)
+        reason_counts = dict(selected.reason_counts)
 
         if command.mode is CreatePerformanceRecalculationBatchMode.DRY_RUN:
             return CreatePerformanceRecalculationBatchResult(
@@ -199,7 +227,7 @@ class CreatePerformanceRecalculationBatchUseCase:
         *,
         command: CreatePerformanceRecalculationBatchCommand,
         selected: ScorePerformanceRecalculationCandidateResult,
-        reason_counts: Mapping[str, int],
+        reason_counts: Mapping[RecalculationCandidateReason, int],
         filters: Mapping[str, object],
         target_calculator_name: str,
         target_calculator_version: str,
@@ -208,7 +236,7 @@ class CreatePerformanceRecalculationBatchUseCase:
         work_items = tuple(
             CreateScorePerformanceRecalculationWorkItem(
                 score_id=candidate.score_id,
-                reason=candidate.reason.value,
+                reason=candidate.reason,
             )
             for candidate in selected.candidates
         )
@@ -292,12 +320,6 @@ def _has_narrow_filter(command: CreatePerformanceRecalculationBatchCommand) -> b
         or command.user_id is not None
         or command.ruleset is not None
     )
-
-
-def _reason_counts_as_strings(
-    reason_counts: Mapping[RecalculationCandidateReason, int],
-) -> Mapping[str, int]:
-    return {reason.value: count for reason, count in reason_counts.items()}
 
 
 __all__ = (

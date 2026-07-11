@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
+from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardBeatmapProjectionSlice,
@@ -53,6 +53,35 @@ async def test_upsert_replaces_existing_user_best_only_when_candidate_ranks_high
     assert lower.score_id == 10
     assert higher.score_id == 12
     assert persisted == higher
+
+
+async def test_upsert_replaces_stale_revision_even_when_candidate_score_is_lower() -> None:
+    factory = _memory_factory()
+    stale_scope = _scope(beatmap_checksum="a" * 32)
+    current_scope = _scope(beatmap_checksum="b" * 32)
+
+    async with factory() as uow:
+        _ = await uow.beatmap_leaderboards.upsert_if_better(
+            _upsert(scope=stale_scope, score_id=20, score=2_000, submitted_at=_NOW)
+        )
+        current = await uow.beatmap_leaderboards.upsert_if_better(
+            _upsert(
+                scope=current_scope,
+                score_id=21,
+                score=1_000,
+                submitted_at=_NOW + timedelta(seconds=1),
+            )
+        )
+        await uow.commit()
+
+    async with factory() as uow:
+        stale = await uow.beatmap_leaderboards.get_user_best(stale_scope)
+        persisted = await uow.beatmap_leaderboards.get_user_best(current_scope)
+
+    assert stale is None
+    assert current.score_id == 21
+    assert current.scope == current_scope
+    assert persisted == current
 
 
 async def test_upsert_uses_submitted_at_and_lower_score_id_as_tie_breakers() -> None:
@@ -103,28 +132,24 @@ async def test_upsert_uses_submitted_at_and_lower_score_id_as_tie_breakers() -> 
     assert higher_score_id.score_id == 18
 
 
-async def test_same_score_can_project_into_multiple_mod_filter_keys() -> None:
+async def test_same_score_is_persisted_once_per_user_scope() -> None:
     factory = _memory_factory()
-    all_mods_scope = _scope()
-    selected_mods_scope = _scope(mod_filter_key=64)
+    scope = _scope()
 
     async with factory() as uow:
-        all_mods = await uow.beatmap_leaderboards.upsert_if_better(
-            _upsert(scope=all_mods_scope, score_id=40, score=1_000, submitted_at=_NOW)
+        first = await uow.beatmap_leaderboards.upsert_if_better(
+            _upsert(scope=scope, score_id=40, score=1_000, submitted_at=_NOW)
         )
-        selected_mods = await uow.beatmap_leaderboards.upsert_if_better(
-            _upsert(scope=selected_mods_scope, score_id=40, score=1_000, submitted_at=_NOW)
+        repeated = await uow.beatmap_leaderboards.upsert_if_better(
+            _upsert(scope=scope, score_id=40, score=1_000, submitted_at=_NOW)
         )
         await uow.commit()
 
     async with factory() as uow:
-        persisted_all_mods = await uow.beatmap_leaderboards.get_user_best(all_mods_scope)
-        persisted_selected_mods = await uow.beatmap_leaderboards.get_user_best(selected_mods_scope)
+        persisted = await uow.beatmap_leaderboards.get_user_best(scope)
 
-    assert all_mods.score_id == selected_mods.score_id == 40
-    assert all_mods.id != selected_mods.id
-    assert persisted_all_mods == all_mods
-    assert persisted_selected_mods == selected_mods
+    assert repeated == first
+    assert persisted == first
 
 
 async def test_replace_projection_slice_can_delete_stale_user_rows_with_empty_rows() -> None:
@@ -210,14 +235,14 @@ def _scope(
     *,
     user_id: int = 1000,
     beatmap_id: int = 1,
-    mod_filter_key: int = ALL_MODS_FILTER_KEY,
+    beatmap_checksum: str | None = None,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=beatmap_id,
+        beatmap_checksum=beatmap_checksum or f"{beatmap_id:032x}",
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=user_id,
-        mod_filter_key=mod_filter_key,
     )
 
 

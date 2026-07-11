@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 
@@ -35,7 +36,7 @@ def test_score_creation_with_all_fields() -> None:
         perfect=False,
         client_version="b20250101",
         submitted_at=datetime(2026, 6, 11, 0, 0, 0, tzinfo=UTC),
-        beatmap_status_at_submission="ranked",
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
     )
 
     assert score.id == 1
@@ -43,7 +44,7 @@ def test_score_creation_with_all_fields() -> None:
     assert score.ruleset == Ruleset.OSU
     assert score.playstyle == Playstyle.VANILLA
     assert score.grade == Grade.A
-    assert score.beatmap_status_at_submission == "ranked"
+    assert score.beatmap_status_at_submission is BeatmapRankStatus.RANKED
 
 
 def test_score_without_id() -> None:
@@ -144,5 +145,5 @@ def _score() -> Score:
         perfect=False,
         client_version="b20250101",
         submitted_at=datetime(2026, 6, 11, 0, 0, 0, tzinfo=UTC),
-        beatmap_status_at_submission="ranked",
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
     )

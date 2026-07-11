@@ -155,6 +155,13 @@ composition -> runtime adapters -> command/query use-cases -> repositories -> in
 - Query repositories expose read-only, read-optimized methods and do not require command Unit of Work.
 - Services, transports, and jobs must not directly use SQLAlchemy models, DB sessions, or raw SQL.
 - Production DB target is PostgreSQL + asyncpg. Do not add SQLite / aiosqlite just for unit tests.
+- Repository queries and Alembic data migrations must use SQLAlchemy Core / ORM expressions such as
+  `select()`, `update()`, `delete()`, `case()`, joins, and typed column operators. Do not construct
+  queries, predicates, generated-column expressions, indexes, or constraints with raw SQL strings or
+  `sa.text()` when SQLAlchemy can represent them structurally.
+- Textual SQL is allowed only when a SQLAlchemy / Alembic API requires a textual DDL fragment, such as
+  PostgreSQL `USING` during a type conversion. Keep that fragment narrowly scoped and document why a
+  structured SQLAlchemy expression cannot be used.
 - Prefer `NOT NULL` for persistence columns. Use explicit zero, empty, sentinel, or enum members
   when a value is meaningfully present; reserve `NULL` for genuinely unknown, unavailable, or
   not-applicable data.

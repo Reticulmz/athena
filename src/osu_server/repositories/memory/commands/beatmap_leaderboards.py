@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 class InMemoryBeatmapLeaderboardCommandRepository:
-    """Beatmap leaderboard command repository backed by active in-memory UoW state."""
+    """active な in-memory UoW state で Global all-mods best を管理する repository."""
 
     def __init__(self, state: InMemoryCommandRepositoryState) -> None:
         self._state: InMemoryCommandRepositoryState = state
@@ -32,16 +32,42 @@ class InMemoryBeatmapLeaderboardCommandRepository:
         self,
         scope: BeatmapLeaderboardUserBestScope,
     ) -> BeatmapLeaderboardUserBest | None:
+        """指定 scope のユーザー最高 score を返す.
+
+        Args:
+            scope (BeatmapLeaderboardUserBestScope): 検索する Global all-mods scope.
+
+        Returns:
+            BeatmapLeaderboardUserBest | None: 保存行. 未登録時は None.
+        """
         row_id = self._state.beatmap_leaderboard_user_best_id_by_scope.get(_scope_key(scope))
         if row_id is None:
             return None
-        return self._state.beatmap_leaderboard_user_bests_by_id.get(row_id)
+        row = self._state.beatmap_leaderboard_user_bests_by_id.get(row_id)
+        if row is None or row.scope.beatmap_checksum != scope.beatmap_checksum:
+            return None
+        return row
 
     async def upsert_if_better(
         self,
         command: UpsertBeatmapLeaderboardUserBest,
     ) -> BeatmapLeaderboardUserBest:
-        current = await self.get_user_best(command.scope)
+        """候補が現在値より上位の場合だけ state を更新する.
+
+        Args:
+            command (UpsertBeatmapLeaderboardUserBest): 比較対象の候補 score.
+
+        Returns:
+            BeatmapLeaderboardUserBest: 更新後の保存行.
+        """
+        current_id = self._state.beatmap_leaderboard_user_best_id_by_scope.get(
+            _scope_key(command.scope)
+        )
+        current = (
+            self._state.beatmap_leaderboard_user_bests_by_id.get(current_id)
+            if current_id is not None
+            else None
+        )
         if current is None:
             created = BeatmapLeaderboardUserBest(
                 id=self._state.next_beatmap_leaderboard_user_best_id,
@@ -57,11 +83,13 @@ class InMemoryBeatmapLeaderboardCommandRepository:
             )
             return created
 
-        if not score_beats_current(command.rank_key, current.rank_key):
+        same_revision = current.scope.beatmap_checksum == command.scope.beatmap_checksum
+        if same_revision and not score_beats_current(command.rank_key, current.rank_key):
             return current
 
         updated = replace(
             current,
+            scope=command.scope,
             score_id=command.score_id,
             rank_key=command.rank_key,
         )
@@ -74,6 +102,18 @@ class InMemoryBeatmapLeaderboardCommandRepository:
         slice_: BeatmapLeaderboardProjectionSlice,
         rows: Iterable[UpsertBeatmapLeaderboardUserBest],
     ) -> None:
+        """再構築対象 slice の Global best を置換する.
+
+        Args:
+            slice_ (BeatmapLeaderboardProjectionSlice): user または Beatmap の対象範囲.
+            rows (Iterable[UpsertBeatmapLeaderboardUserBest]): 置換後の score 群.
+
+        Returns:
+            None: 置換が完了したことを示す.
+
+        Raises:
+            ValueError: 対象外 scope の行が含まれる場合.
+        """
         rows_to_insert = tuple(rows)
         for row in rows_to_insert:
             if not _slice_contains(slice_, row.scope):
@@ -111,11 +151,10 @@ def _slice_contains(
     return scope.beatmap_id in slice_.beatmap_ids
 
 
-def _scope_key(scope: BeatmapLeaderboardUserBestScope) -> tuple[int, int, int, int, int]:
+def _scope_key(scope: BeatmapLeaderboardUserBestScope) -> tuple[int, int, int, int]:
     return (
         scope.beatmap_id,
         scope.ruleset.value,
         scope.playstyle.value,
         scope.user_id,
-        scope.mod_filter_key,
     )

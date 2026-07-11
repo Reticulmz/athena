@@ -391,7 +391,7 @@ def _score(
         perfect=False,
         client_version="b20250101",
         submitted_at=_NOW + timedelta(seconds=score_id),
-        beatmap_status_at_submission=BeatmapRankStatus.RANKED.value,
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
         leaderboard_eligible_at_submission=leaderboard_eligible_at_submission,
         play_time_seconds=play_time_seconds,
     )

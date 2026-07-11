@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY
-
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -16,23 +14,31 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class BeatmapLeaderboardUserBestScope:
-    """Natural key for one user's representative score inside a leaderboard scope."""
+    """Global all-mods のユーザー最高 score と current revision を識別する scope.
+
+    Attributes:
+        beatmap_id (int): 対象 Beatmap ID. 正の値でなければならない.
+        beatmap_checksum (str): projection が表す current Beatmap checksum.
+        ruleset (Ruleset): 対象 ruleset.
+        playstyle (Playstyle): 対象 playstyle.
+        user_id (int): score owner の User ID. 正の値でなければならない.
+    """
 
     beatmap_id: int
+    beatmap_checksum: str
     ruleset: Ruleset
     playstyle: Playstyle
     user_id: int
-    mod_filter_key: int
 
     def __post_init__(self) -> None:
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
             raise ValueError(msg)
+        if not self.beatmap_checksum:
+            msg = "beatmap_checksum must not be empty"
+            raise ValueError(msg)
         if self.user_id <= 0:
             msg = "user_id must be positive"
-            raise ValueError(msg)
-        if self.mod_filter_key < ALL_MODS_FILTER_KEY:
-            msg = "mod_filter_key must be all-mods sentinel or non-negative"
             raise ValueError(msg)
 
 
@@ -107,20 +113,34 @@ type BeatmapLeaderboardProjectionSlice = (
 
 
 class BeatmapLeaderboardCommandRepository(Protocol):
-    """Mutation and consistency-check port for beatmap leaderboard projections."""
+    """Global all-mods のユーザー最高 score を更新する command port."""
 
     async def get_user_best(
         self,
         scope: BeatmapLeaderboardUserBestScope,
     ) -> BeatmapLeaderboardUserBest | None:
-        """Return the current representative score for one user and scope."""
+        """ユーザーの現在の最高 score を返す.
+
+        Args:
+            scope (BeatmapLeaderboardUserBestScope): 検索する Global all-mods scope.
+
+        Returns:
+            BeatmapLeaderboardUserBest | None: 保存済みの最高 score. 未登録時は None.
+        """
         ...
 
     async def upsert_if_better(
         self,
         command: UpsertBeatmapLeaderboardUserBest,
     ) -> BeatmapLeaderboardUserBest:
-        """Persist the candidate if it ranks above the current representative."""
+        """候補が現在値より上位の場合だけ保存する.
+
+        Args:
+            command (UpsertBeatmapLeaderboardUserBest): 比較対象の候補 score.
+
+        Returns:
+            BeatmapLeaderboardUserBest: upsert 後の最高 score.
+        """
         ...
 
     async def replace_projection_slice(
@@ -128,5 +148,13 @@ class BeatmapLeaderboardCommandRepository(Protocol):
         slice_: BeatmapLeaderboardProjectionSlice,
         rows: Iterable[UpsertBeatmapLeaderboardUserBest],
     ) -> None:
-        """Replace all projection rows in a rebuilt slice with the supplied rows."""
+        """再構築対象 slice の行を指定された Global best で置換する.
+
+        Args:
+            slice_ (BeatmapLeaderboardProjectionSlice): user または Beatmap の再構築範囲.
+            rows (Iterable[UpsertBeatmapLeaderboardUserBest]): 置換後の最高 score 群.
+
+        Returns:
+            None: 永続化が完了したことを示す.
+        """
         ...

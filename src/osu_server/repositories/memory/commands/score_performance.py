@@ -12,6 +12,7 @@ from osu_server.domain.scores.performance import (
     PerformanceRecalculationBatchStatus,
     PerformanceRecalculationWorkItem,
     PerformanceRecalculationWorkItemState,
+    RecalculationCandidateReason,
 )
 from osu_server.repositories.interfaces.commands.score_performance import (
     ScorePerformanceCalculationClaimResult,
@@ -188,6 +189,17 @@ class InMemoryScorePerformanceCommandRepository:
         self,
         command: CreateScorePerformanceRecalculationBatch,
     ) -> PerformanceRecalculationBatch:
+        """再計算batchとwork itemをtransactional memory stateへ追加する.
+
+        Args:
+            command (CreateScorePerformanceRecalculationBatch): Batch metadataと型付き候補.
+
+        Returns:
+            PerformanceRecalculationBatch: IDが割り当てられた再計算batch.
+
+        Notes:
+            永続化表現はSQLAlchemy adapterと同じEnum value文字列を保持する.
+        """
         batch_id = self._state.next_performance_recalculation_batch_id
         self._state.next_performance_recalculation_batch_id += 1
         batch_status = (
@@ -199,7 +211,7 @@ class InMemoryScorePerformanceCommandRepository:
             id=batch_id,
             status=batch_status.value,
             filters=dict(command.filters),
-            reason_counts=dict(command.reason_counts),
+            reason_counts={reason.value: count for reason, count in command.reason_counts.items()},
             target_calculator_version=command.target_calculator_version,
             target_formula_profile=command.target_formula_profile,
             candidate_count=len(command.work_items),
@@ -218,7 +230,7 @@ class InMemoryScorePerformanceCommandRepository:
                 id=work_item_id,
                 batch_id=batch_id,
                 score_id=work.score_id,
-                reason=work.reason,
+                reason=work.reason.value,
                 state=PerformanceRecalculationWorkItemState.PENDING.value,
                 calculation_id=None,
                 claim=None,
@@ -514,7 +526,10 @@ class InMemoryScorePerformanceCommandRepository:
             id=batch.id,
             status=PerformanceRecalculationBatchStatus(batch.status),
             filters=batch.filters,
-            reason_counts=batch.reason_counts,
+            reason_counts={
+                RecalculationCandidateReason(reason): count
+                for reason, count in batch.reason_counts.items()
+            },
             target_calculator_version=batch.target_calculator_version,
             target_formula_profile=batch.target_formula_profile,
             candidate_count=batch.candidate_count,
@@ -590,7 +605,7 @@ def _work_item_to_domain(
         id=item.id,
         batch_id=item.batch_id,
         score_id=item.score_id,
-        reason=item.reason,
+        reason=RecalculationCandidateReason(item.reason),
         state=PerformanceRecalculationWorkItemState(item.state),
         calculation_id=item.calculation_id,
         claim_owner=claim_owner,

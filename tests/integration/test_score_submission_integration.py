@@ -23,16 +23,17 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapResolveResult,
     BeatmapSet,
     BeatmapSourceVerification,
 )
-from osu_server.domain.scores.leaderboards import ALL_MODS_FILTER_KEY, ScoreRankKey
+from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import Mod
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset
-from osu_server.domain.storage.blobs import BlobStored, NewBlob
+from osu_server.domain.storage.blobs import BlobStorageBackendKind, BlobStored, NewBlob
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
@@ -86,7 +87,7 @@ def _resolved_beatmap(*, total_length: int | None = None) -> Beatmap:
         id=1,
         beatmapset_id=10,
         checksum_md5="0123456789abcdef0123456789abcdef",
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Integration",
         total_length=total_length,
         hit_length=None,
@@ -144,14 +145,13 @@ def _fingerprint_for(
 def _leaderboard_scope(
     *,
     user_id: int = 1000,
-    mod_filter_key: int = ALL_MODS_FILTER_KEY,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
+        beatmap_checksum="abc123",
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=user_id,
-        mod_filter_key=mod_filter_key,
     )
 
 
@@ -253,7 +253,7 @@ class SQLAlchemyBlobStorageStub:
                     sha256=digest,
                     byte_size=len(data),
                     content_type=content_type,
-                    storage_backend="local",
+                    storage_backend=BlobStorageBackendKind.LOCAL,
                     storage_key=f"test/replay/{digest}.osr",
                 )
             )
@@ -475,7 +475,7 @@ async def test_e2e_valid_submission_persists_to_database(
     assert score.passed is True
     assert score.ruleset == Ruleset.OSU
     assert score.playstyle == Playstyle.VANILLA
-    assert score.beatmap_status_at_submission == BeatmapRankStatus.RANKED.value
+    assert score.beatmap_status_at_submission is BeatmapRankStatus.RANKED
 
     assert input_data.replay_data is not None
     replay_checksum = hashlib.sha256(input_data.replay_data).hexdigest()
@@ -642,14 +642,8 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
         uow_factory,
         _leaderboard_scope(),
     )
-    selected_mods_best = await _get_leaderboard_best(
-        uow_factory,
-        _leaderboard_scope(mod_filter_key=int(Mod.DOUBLE_TIME)),
-    )
     assert all_mods_best is not None
     assert all_mods_best.score_id == new_result.score_id
-    assert selected_mods_best is not None
-    assert selected_mods_best.score_id == new_result.score_id
 
     await _replace_user_projection_with_score(
         uow_factory,
@@ -669,13 +663,8 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
         uow_factory,
         _leaderboard_scope(),
     )
-    selected_mods_best_after_retry = await _get_leaderboard_best(
-        uow_factory,
-        _leaderboard_scope(mod_filter_key=int(Mod.DOUBLE_TIME)),
-    )
     assert all_mods_best_after_retry is not None
     assert all_mods_best_after_retry.score_id == previous_result.score_id
-    assert selected_mods_best_after_retry is None
 
     async with session_factory() as session:
         query_result = await session.execute(

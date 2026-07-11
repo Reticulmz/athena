@@ -6,7 +6,7 @@
 - `ppy/osu-web` の `BeatmapScores` は beatmap score listing の既定 sort を `score_desc` にし、limit を既定 50 にして user ごとに dedupe する。`userBest()` は top rows に viewer の score が含まれていなければ、同じ base params に viewer の user id と size 1 を加えて別取得するため、Personal Best は top 50 rows の外でも返せる。
 - `ppy/osu-web` の `BeatmapsController::beatmapScores()` は `scores` と `user_score` / `userScore` を別 field として返す。`BeatmapScores::userBest()` は top rows に viewer score がある場合に `result[$userId]` を返すだけで、`scores` 側から除外しないため、同じ score が top rows と user score の両方に現れる構造になっている。
 - `ppy/osu-web` の `ScoreSearchParams` は `score_desc` と `pp_desc` を別 sort として扱い、friends type では friend ids に viewer 自身を含める。`score_desc` は `score desc -> id asc` 相当で、rank 計算側も同 score では `id < beforeScore.id` を上位として扱う。
-- `ppy/osu-web` の `beatmap_leaders` table は `score_id` primary key と `beatmap_id` / `ruleset_id` / `user_id` だけを持つ軽い projection で、`score` や hit counts の表示 snapshot は持たない。用途は Beatmap / Ruleset ごとの首位 score であり、`BeatmapLeader::sync()` は `ScoreSearch` の `sort = score_desc` / `limit = 1` から score を選び直す。Athena の `beatmap_leaderboard_user_bests` は User / Scope ごとの代表 score を top 50 と rank 計算に直接使うため、同じ最小主義を保ちつつ ranking keys は projection に持つ判断になる。
+- `ppy/osu-web` の `beatmap_leaders` table は `score_id` primary key と `beatmap_id` / `ruleset_id` / `user_id` だけを持つ軽い projection で、`score` や hit counts の表示 snapshot は持たない。用途は Beatmap / Ruleset ごとの首位 score であり、`BeatmapLeader::sync()` は `ScoreSearch` の `sort = score_desc` / `limit = 1` から score を選び直す。Athena の `beatmap_leaderboard_user_bests` も Global submit delta、replacement、reconciliationに限定した軽いprojectionとし、public top 50とPersonal Best rankはsource Scoresから導く。
 - `ppy/osu-web` の `ScoreSearch` は mods filter に implied mods を使う。`Mods::IMPLIED_MODS` は `NC => DT` と `PF => SD` を含み、filter matching と displayed mods を分ける根拠になる。NoMod filter では excluded mod 集合から `CL` / `PF` / `SD` / `MR` を外しており、preference-only mod を NoMod 候補から除外しない根拠になる。`addModsFilter()` は NoMod subquery と selected-mods subquery を `shouldMatch(1)` で OR するため、preference-only mod を含む score は NoMod filter と explicit preference filter の両方に入り得る。
 - `osuAkatsuki/bancho.py` は stable getscores で `LIMIT 50` を使い、vanilla の scoring metric は score を使う。Friends は `player.friends | {player.id}` を使う。row ordering は `ORDER BY _score DESC` のみで、同 score の deterministic tie-break は明示されていない。
 - `osuAkatsuki/bancho.py` の stable getscores response は `personal_best_score_row` を先に append し、その後 `score_rows` をそのまま enumerate して append する。PB が top 50 rows に含まれていても除外処理はない。
@@ -21,7 +21,7 @@
 ## 決定への反映
 
 - Selected Mods の Personal Best は Global の Personal Best とは別に、Leaderboard Mod Filter 内の自己ベストとして導く。
-- Global / Country / Friends の Personal Best は all-mods `mod_filter_key = NULL` の `beatmap_leaderboard_user_bests` から解決する。Selected Mods の Personal Best だけ request の Leaderboard Mod Filter に対応する `mod_filter_key` から解決する。
+- Global / Country / Friends / Selected Mods の Personal Best は current checksum の eligible source Scores から read-time に解決する。Selected Mods の場合だけ `scores.leaderboard_mod_filter_keys` に request の canonical key が含まれることを要求する。
 - Country / Friends の Personal Best は viewer 自身がその Leaderboard Category の eligible set に入る場合だけ返す。Country では viewer country が有効で、viewer 自身の current country がその country に一致する必要がある。Friends は viewer 自身を Friends Leaderboard Eligible Set に含めるため、viewer が Leaderboard Visible User なら自分の Personal Best を返せる。
 - Viewer 自身が Leaderboard Visible User ではない場合、Friends category でも public rows は返せるが viewer Personal Best は返さない。Friends Leaderboard Eligible Set に self を含めることと、viewer 自身の Score を Personal Best として表示できることは別条件として扱う。
 - Stable getscores request の viewer identity が未認証または不明な場合、Global rows は返せるが Country rows、Friends rows、Personal Best は返さない。Country / Friends / Personal Best は viewer identity に依存する scope として扱う。
@@ -40,25 +40,25 @@
 - MR は stable supported mods に含まれるが、beatmap-leaderboards 初期 scope では explicit MR filter を実装対象外にする。NoMod candidate 判定では preference-only mod として扱い、MR を含む score を NoMod から除外しない。
 - Selected Mods で SD または PF を明示選択した場合は、NoMod とは異なり SD/PF 系の Score だけを候補にする。SD score と PF score は同じ Leaderboard Mod Filter に属するが、displayed mods は実 Score mods を保持する。
 - Selected Mods の複数 mod filter は osu-web 寄せで、選択された gameplay-affecting mod をすべて要求し、未選択の gameplay-affecting mod を含む Score を候補から外す。例: `HD+DT` は HD を含み、DT/NC 系を含み、他の gameplay-affecting mod を含まない Score を候補にする。
-- マイグレーションは許容されるため、既存 `personal_bests` の category だけに意味を押し込まず、Leaderboard Scope を表現できる projection 構造を設計フェーズで定義する。
-- 既存 `personal_bests` は score 優先の Beatmap Leaderboard 用 projection として `beatmap_leaderboard_user_bests` にリネーム/再構成する。旧 `personal_bests` table は互換用に残さず、必要な既存データは migration / backfill で新構造へ移す。PP 優先の譜面別代表 Score は `beatmap_performance_bests` として別projectionにする。
-- 既存 `personal_bests` から migration できる row は all-mods `mod_filter_key = NULL` として移す。現行 `personal_bests` には mod dimension がないため、Selected Mods 用 entries は score 原本を読み直す backfill / rebuild で生成する。
+- マイグレーションは許容されるため、既存 `personal_bests` の category だけに意味を押し込まず、公開readの正本を `scores`、submit delta/reconciliation用の派生状態をGlobal-only projectionとして分離する。
+- 既存 `personal_bests` は score 優先のGlobal all-mods projection `beatmap_leaderboard_user_bests` にリネーム/再構成する。旧 `personal_bests` table は互換用に残さず、PP優先の譜面別代表Scoreは `beatmap_performance_bests` として別projectionにする。
+- 既存の有効なGlobal rowはcurrent Beatmap checksumと一致するsource Scoreに限って移行し、Selected Modsの重複rowはforward migrationで削除する。
 - Migration 時は旧 `personal_bests.ranking_value` だけに依存せず、旧 row の `score_id` から `scores.score` / `scores.submitted_at` / `scores.id` を join して新 `beatmap_leaderboard_user_bests` の ranking keys を埋める。旧 `ranking_value` は score と一致するかの検証/補助に留める。
 - Migration / backfill 中に source score が存在しない旧 `personal_bests` row は新 projection に移行しない。Projection は source score から導く view なので、source がない代表 row は温存せず、必要に応じて migration log / metric に件数を出す。
-- `beatmap_leaderboard_user_bests` は Beatmap / Ruleset / Playstyle / User / `mod_filter_key` ごとの score 優先 projection として扱う。`mod_filter_key` は raw mods ではなく Leaderboard Mod Filter の正規化 key であり、all-mods leaderboard 用の entry と Selected Mods 用の entry を区別する。
-- `beatmap_leaderboard_user_bests` の uniqueness は `beatmap_id, ruleset, playstyle, user_id, mod_filter_key` で定義し、各 Leaderboard Mod Filter scope で 1 user 1 representative score を保証する。Country と Friends は projection dimension にせず、all-mods entry または Selected Mods entry を read-time filter で絞る。
-- `mod_filter_key` は raw stable bitmask equality ではなく、Leaderboard Mod Filter の semantic key として永続化する。NC と DT は同一 key、PF と SD は同一 key に正規化し、Score row の displayed mods は実 Score mods を保持する。NoMod は all-mods とは異なる Selected Mods 用 key として扱う。
-- `mod_filter_key` は all-mods entry では `NULL` にし、Selected Mods entry では必ず非 `NULL` の canonical integer mask にする。これにより Global / Country / Friends が共有する all-mods scope と Selected Mods の NoMod scope を DB 上も混同しない。PostgreSQL では `NULL` を含む一意性の扱いに注意し、design phase で `NULLS NOT DISTINCT` または expression unique index を選ぶ。
-- Selected Mods の `mod_filter_key` canonical integer mask は raw score mods ではなく、Leaderboard Mod Filter policy で implied mods を正規化した mask として扱う。例: all-mods は `NULL`、NoMod は `0`、HD+NC は implied DT として `72` (`HD | DT`)、PF は implied SD として `32` にする。mask 生成は stable compatibility / Leaderboard Mod Filter policy に閉じ込め、DB query code が raw bitmask semantics を再実装しないようにする。
-- 1つの score submission は all-mods entry と、Score が候補になり得る Selected Mods の複数 `mod_filter_key` entry を upsert できる。例: PF score は displayed mods を PF のまま保持しつつ、all-mods `NULL`、NoMod `0`、SD/PF filter `32` の candidate になり得る。これにより osu-web の NoMod OR explicit mods filter と同じ候補集合を projection で表現する。
-- Selected Mods の projection keys は、score 自身の canonical mod key と、NoMod 条件を満たす場合の `0` だけを生成する。HD+DT score から HD 単独や DT 単独などの subset key は作らない。これは osu-web の selected mods filter が未選択 gameplay mod を含む score を除外する挙動に合わせるためで、PF/SD など preference-only score が NoMod `0` と SD/PF key の両方に入るのは例外として扱う。
-- `beatmap_leaderboard_user_bests` は `score_id` に加えて ranking keys として `score` / `submitted_at` / `score_id` を projection 側にも保持する。Score 原本の source of truth は `scores` のままだが、top rows、Personal Best rank、upsert replacement を同じ `score desc -> submitted_at asc -> score_id asc` で効率よく実行するため、projection に並び替え key を持たせる。表示用 hit counts、username、country などの snapshot は重複が大きいため持たせない。
-- Beatmap Leaderboard rows の read query は `beatmap_leaderboard_user_bests` を起点にし、`scores`、`users`、`replays`、current Performance Calculation などを join して表示値を組み立てる。Projection は「Leaderboard Scope における User の代表 score_id」と並び順 key だけを持ち、Score 原本と表示 snapshot の source of truth にはしない。
-- NoMod の Selected Mods も all-mods entry とは別の `mod_filter_key` entry として扱う。Global は全mods混在の自己ベスト、Selected Mods の NoMod は NoMod 内の自己ベストとして区別する。
+- `beatmap_leaderboard_user_bests` は Beatmap / Ruleset / Playstyle / User ごとのGlobal all-mods score-priority projectionとして扱い、mod filter dimensionを持たない。`beatmap_checksum`はその1行が表すcurrent revisionを示す非`NULL`の置換可能なfreshness属性とする。
+- `beatmap_leaderboard_user_bests` のuniquenessは `beatmap_id, ruleset, playstyle, user_id` で定義し、checksum更新時も同じnatural identityの行を置き換える。`score_id`にも一意制約を置いて1 source Scoreから複数projection rowが作られないようにする。
+- Selected Modsのcanonical integer keysは `scores.leaderboard_mod_filter_keys` generated arrayに保存する。NCとDT、PFとSDを同じkeyへ正規化し、NoMod互換を含む複数一致を1 Score rowで表現する。
+- Generated keysはscore自身のcanonical keyと、NoMod条件を満たす場合の`0`だけを生成する。HD+DT scoreからHD単独やDT単独のsubset keyは生成しない。
+- Public Global / Country / Friends readsはmods predicateを持たず、Selected Modsの場合だけgenerated array membershipで絞る。Displayed modsは常にsource Scoreの実値を使う。
+- 1つのscore submissionはGlobal all-mods projectionを最大1行だけupsertする。Selected Mods、Country、Friendsの代表Scoreは永続化せず、source Scoresからread-timeに導出する。
+- Downgradeではnullable `mod_filter_key` を持つ旧schemaを復元し、current-checksum eligible source Scoresとgenerated keysからlegacy Global/Selected Mods rowsを再構築する。
+- `beatmap_leaderboard_user_bests` は `score_id` に加えて ranking keys として `score` / `submitted_at` / `score_id` を projection 側にも保持する。Score 原本の source of truth は `scores` のままだが、Global submit delta、upsert replacement、reconciliationを同じ `score desc -> submitted_at asc -> score_id asc` で実行するため、projection に並び替え key を持たせる。Public top rowsとPersonal Best rankはsource Scoresから導き、表示用 hit counts、username、country などの snapshot は持たせない。
+- Beatmap Leaderboard rowsのread queryはeligible source Scoresを起点にし、Beatmap、User/Role、Replay、current Performance Calculationをjoinしてuser bestとrankをwindow functionで導出する。Global projectionの欠落や遅延はpublic outputへ影響させない。
+- Selected ModsのNoModはgenerated key `0`へのmembershipで解決し、Global projectionとは別rowを作らない。
 - `beatmap_leaderboard_user_bests` の既存 entry は、同じ scope の候補 Score が score 優先順で既存 entry を上回る場合だけ置き換える。score が同点の場合は Beatmap Leaderboard Rank の tie-break を使い、server-side submission time が早い Score、次に Score ID 昇順を優先する。
 - `beatmap_leaderboard_user_bests` は score submission 成功時に score 原本保存と同じ Unit of Work 内で upsert する。worker job は user visibility、beatmap status、checksum 変更、schema migration、projection 欠損などの rebuild / 補正に使い、通常 submit の即時反映を worker completion に依存させない。現行 `personal_bests` も score 作成後、同じ command transaction 内で `upsert_if_better` してから commit している。
 - 通常 submit path の projection upsert は current Beatmap status、current checksum、passed、submission-time eligibility を満たす score に限定する。User visibility は hidden projection を許容するが、beatmap/checksum/failed の競技条件を満たさない score は `beatmap_leaderboard_user_bests` に入れない。
-- 1つの score submission は、Global / Country / Friends が共有する all-mods entry と、Selected Mods 用の `mod_filter_key` entries を更新対象にする。Country と Friends は専用 projection を持たず、all-mods entry を read 時に Score owner の現在 country または Friends Leaderboard Eligible Set で絞る。Country snapshot は `beatmap_leaderboard_user_bests` に重複保存しない。
+- 1つの score submission はGlobal all-mods entryだけを更新対象にする。Country、Friends、Selected Modsは専用projectionを持たず、read時にsource Scoresへviewer/filter条件を適用する。
 - Country Leaderboard は Score owner の現在 country で read-time filter する。Score submission 時点の country snapshot は持たず、country 変更時も Beatmap Leaderboard projection rebuild は不要とする。
 - Country Leaderboard で viewer country が未設定または `XX` の場合、Country rows と Personal Best は候補なしとして返す。`XX` を国別ランキングの国コードとして扱わない。
 - Friends Leaderboard は viewer の現在 Friend Relationship targets と viewer 自身で構成する Friends Leaderboard Eligible Set により read-time filter する。Friend 追加/削除時に Beatmap Leaderboard projection rebuild は不要とする。
@@ -70,8 +70,8 @@
 - Beatmap Leaderboard projection rebuild は user visibility、beatmap status、checksum 変更などの運用イベントごとに対象 user または対象 beatmapset 単位の差分 worker job として積む。通常 path で全件同期 rebuild は行わない。schema migration や大規模補正に必要な full backfill は別の管理用 batch 経路に分ける。
 - Rebuild worker は `jobs/` 配下の薄い taskiq adapter から起動し、`services/commands/scores/leaderboards/...` の command use-case に委譲する。task payload は primitive のみを受け取り、`user_id`、`beatmapset_id`、`reason` などの最小情報にする。既存の score performance job と同じ adapter/use-case 分離を維持する。
 - Rebuild job は idempotent にし、同じ `user_id` / `beatmapset_id` / reason が重複投入されても、score 原本と current Beatmap/User state から同じ final projection へ収束すれば成功扱いにする。
-- Projection rebuild は score 原本から対象 scope の候補を再評価し、同一 `beatmap_id, ruleset, playstyle, user_id, mod_filter_key` 内で `score desc -> submitted_at asc -> score_id asc` の先頭 score を representative として選び直す。候補が存在しない場合は `beatmap_leaderboard_user_bests` row を削除する。score 原本は削除せず、projection だけを置き換えまたは削除する。
-- Beatmap Leaderboard read path は projection rebuild の遅延を前提に、current Beatmap status、current checksum、Score owner visibility、passed / submission-time eligibility などの read-time filters を必ず適用する。古い projection row が残っていても、現在の公開条件を満たさない row は返さない。
+- Projection rebuildはscore原本からcurrent checksumのGlobal候補を再評価し、同一 `beatmap_id, ruleset, playstyle, user_id` 内で `score desc -> submitted_at asc -> score_id asc` の先頭scoreを選び直す。勝者の`beatmap_checksum`をfreshness属性として同じnatural identityの行へ保存し、候補が存在しない場合はprojection rowを削除してscore原本は保持する。
+- Beatmap Leaderboard read pathはprojectionを参照せず、current Beatmap status、current checksum、Score owner visibility、passed / submission-time eligibilityをsource Scoresへ直接適用する。
 - `beatmap_performance_bests` は `user-stats` 側の PP 優先 projection とし、Beatmap / Ruleset / Playstyle / User ごとに、PP が既存 entry を上回る場合だけ置き換える。PP 同点時の tie-break は `pp desc -> submitted_at asc -> score_id asc` とし、Beatmap Leaderboard の順位付けには使わない。
 - `beatmap_performance_bests` も failed score は候補外にし、PP が存在する passed score だけを対象にする。PP 優先 projection の ownership は user-stats 側だが、Beatmap Leaderboard の Personal Best と同様に failed score を代表 score にしない。
 - `beatmap_performance_bests` は current Performance Calculation の PP を入力にする。Calculator 更新や performance recalculation により PP が変わった場合は、user-stats 側の rebuild / replace workflow が `beatmap_performance_bests` を更新する。beatmap-leaderboards ではこの projection を実装せず、dependency / roadmap として扱う。
@@ -361,13 +361,13 @@ Use dedicated new domain/query/command contracts, but migrate incrementally:
   - Score model, current score indexes, and score performance model.
   - Gap analysis above.
 - **Findings**:
-  - A single `personal_bests` row keyed only by category cannot represent all-mods versus NoMod and cannot apply deterministic tie-breaks without joining Score on every upsert.
+  - Public Global/Country/Friends/Selected Mods reads can derive one user best per scope directly from indexed source Scores with a window function.
   - `beatmap_performance_bests` belongs to future user-stats, because its ranking key is PP and it is not a Beatmap Leaderboard row source.
-  - `mod_filter_key = NULL` for all-mods and non-null canonical integer keys for Selected Mods preserve the conceptual distinction between Global and NoMod.
+  - Selected Mods compatibility belongs on each Score as generated canonical keys; storing one projection row per key duplicates `score_id` and creates divergent update paths.
 - **Implications**:
-  - The design uses `beatmap_leaderboard_user_bests` as the score-priority projection.
-  - Projection rows store ranking keys copied from Score: `score`, `submitted_at`, and `score_id`.
-  - PostgreSQL uniqueness uses `COALESCE(mod_filter_key, -1)` instead of `NULLS NOT DISTINCT` to avoid PostgreSQL version coupling.
+  - Public reads use source Scores as the source of truth and apply the Selected Mods generated-key predicate only for that category.
+  - `beatmap_leaderboard_user_bests` stores only the Global all-mods representative needed by submit PB delta and reconciliation.
+  - Projection uniqueness is `beatmap_id, ruleset, playstyle, user_id`; current Beatmap checksum is a non-null replaceable freshness attribute, and `score_id` is globally unique inside the table.
 
 ### Read-Time Correctness And Reconciliation
 
@@ -379,42 +379,43 @@ Use dedicated new domain/query/command contracts, but migrate incrementally:
 - **Findings**:
   - Worker jobs are suitable for projection rebuild but must be idempotent.
   - User visibility and country/friend changes are current-state reads and should not require synchronous projection mutation.
-  - Beatmap status and checksum changes can leave stale projection rows, so reads must filter current status and checksum before returning rows.
+  - Beatmap status and checksum changes can leave stale Global projection rows, but public reads can remain correct by querying source Scores directly.
 - **Implications**:
-  - Rebuild jobs converge projection state but are not trusted as the sole correctness boundary.
-  - Public queries apply all eligibility and visibility predicates every time.
+  - Rebuild jobs converge only the Global projection used by submit-time comparison.
+  - Public queries apply all eligibility, checksum, visibility, viewer, and Selected Mods predicates directly to source Scores.
 
 ## Architecture Pattern Evaluation
 
 | Option | Description | Strengths | Risks / Limitations | Notes |
 | --- | --- | --- | --- | --- |
 | Extend `personal_bests` | Add mod and rank fields to the current PB table | Smallest initial diff | Keeps misleading name and stable-shaped query contract | Rejected for final design |
-| Dedicated leaderboard projection | Create score-priority `beatmap_leaderboard_user_bests` with command/query ports | Clean ownership, exact scope keys, deterministic rank | More migration and provider wiring | Selected target architecture |
-| Fully computed read query from `scores` only | Avoid projection and rank directly from source scores | No derived table drift | Expensive top 50 and PB rank reads, more complex category filters | Rejected for high-traffic stable getscores |
+| Per-scope leaderboard projection | Store Global and Selected Mods representatives separately | Simple reads after convergence | Duplicates `score_id`, fans out writes, and makes stale projection correctness complex | Rejected |
+| Source-score public reads plus Global-only projection | Rank indexed source Scores at read time and keep one Global representative for submit delta | One Score row represents every mod scope; public output is projection-independent | Requires window queries and generated-key indexes | Selected target architecture |
 
 ## Design Decisions
 
-### Decision: Replace Current Personal Best Projection With Beatmap Leaderboard User Bests
+### Decision: Use Source Scores For Public Reads And A Global-Only Submit Projection
 
 - **Context**: Beatmap Leaderboard Personal Best is score-priority, while profile/ranking best is PP-priority.
 - **Alternatives Considered**:
   1. Keep `personal_bests` and add fields.
-  2. Rename/restructure to `beatmap_leaderboard_user_bests`.
-  3. Read from `scores` only.
-- **Selected Approach**: Use `beatmap_leaderboard_user_bests` for score-priority representative scores and reserve `beatmap_performance_bests` for future user-stats.
-- **Rationale**: The name and schema match actual ownership and prevent PP-driven stats from depending on score leaderboard semantics.
-- **Trade-offs**: Requires migration and test rewrites, but avoids an ambiguous persistence model.
-- **Follow-up**: Migration must skip source-missing rows and backfill all-mods entries from existing source scores.
+  2. Store one projection row for every Global/Selected Mods scope.
+  3. Rank source Scores for public reads and keep only the Global submit projection.
+- **Selected Approach**: Public rows/PB use source Scores; `beatmap_leaderboard_user_bests` stores one Global all-mods representative per user/current Beatmap checksum; `beatmap_performance_bests` remains owned by user-stats.
+- **Rationale**: One Score row can expose all generated mod keys without duplicate projection rows, while submit PB delta still has a transactional comparison point.
+- **Trade-offs**: Read queries are more sophisticated, but generated-key and candidate indexes keep them bounded and projection drift cannot corrupt public output.
+- **Follow-up**: Migration must skip source-missing rows, collapse Selected Mods duplicates, and reconstruct legacy scopes on downgrade.
 
 ### Decision: Keep Country And Friends As Read-Time Filters
 
 - **Context**: Country and friend relationships are current viewer context and can change independently of score submission.
 - **Alternatives Considered**:
   1. Store country/friends-specific projection rows.
-  2. Filter all-mods projection at read time.
-- **Selected Approach**: Store only all-mods and Selected Mods projection rows. Country and Friends query paths filter by current country or current friend target set.
+  2. Filter Global projection rows at read time.
+  3. Filter eligible source Scores at read time.
+- **Selected Approach**: Country and Friends query paths filter eligible source Scores by current country or current friend target set without applying a mods predicate.
 - **Rationale**: Avoids stale country/friend snapshots and rebuild storms.
-- **Trade-offs**: Query joins are slightly heavier, but top 50 and PB rank still start from one representative row per user/scope.
+- **Trade-offs**: Query joins are heavier, but one window query derives the representative row and actual PB rank from the same candidate set.
 - **Follow-up**: Add indexes and query tests for Country/Friends filters.
 
 ### Decision: Projection Rebuild Is Corrective, Reads Are Authoritative For Public Filtering
@@ -424,10 +425,10 @@ Use dedicated new domain/query/command contracts, but migrate incrementally:
   1. Block public reads until rebuild completes.
   2. Return projection state directly.
   3. Revalidate current predicates on every read.
-- **Selected Approach**: Rebuild asynchronously and always apply current public filters on read.
-- **Rationale**: Keeps public output correct without coupling stable getscores latency to worker completion.
-- **Trade-offs**: Query predicates are more explicit and must be duplicated carefully between rows and PB rank.
-- **Follow-up**: Repository contract tests must verify stale projection rows are hidden.
+- **Selected Approach**: Rebuild the Global projection asynchronously while public reads rank source Scores independently.
+- **Rationale**: Keeps public output correct without coupling stable getscores latency to worker completion or projection freshness.
+- **Trade-offs**: Submit PB delta and public PB use different persistence paths that must share the same rank ordering policy.
+- **Follow-up**: Integration tests must verify stale Global projection does not affect public rows and rebuild later converges.
 
 ### Decision: Score Storage And Leaderboard Adoption Are Separate
 
@@ -478,7 +479,7 @@ Use dedicated new domain/query/command contracts, but migrate incrementally:
 - Wrong stable category mapping could show incorrect rows. Mitigation: add golden fixtures and compatibility tests before implementation completion.
 - Projection upsert and rebuild could diverge. Mitigation: centralize rank key comparison policy and reuse it in both command paths.
 - Hidden users could leak through joins. Mitigation: define bypass-free `LeaderboardVisibleUserPolicy` and test restricted/admin edge cases.
-- Stale beatmap checksum rows could remain after update. Mitigation: read-time current checksum filter plus beatmapset rebuild job.
+- Stale Global projection rows could remain after update. Mitigation: public reads use current-checksum source Scores and beatmapset rebuild later converges submit projection state.
 - Migration could preserve invalid legacy PB rows. Mitigation: migrate only rows with an existing source score that passes conservative eligibility rules.
 
 ## References

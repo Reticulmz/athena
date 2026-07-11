@@ -126,7 +126,7 @@ class SQLAlchemyBeatmapQueryRepository:
             model = (
                 await session.execute(
                     select(BeatmapFetchStateModel).where(
-                        BeatmapFetchStateModel.target_type == target.target_type,
+                        BeatmapFetchStateModel.target_type == target.target_type.value,
                         BeatmapFetchStateModel.target_key == target.target_key,
                     )
                 )

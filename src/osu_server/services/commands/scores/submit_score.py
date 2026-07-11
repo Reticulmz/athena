@@ -8,11 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, cast
 
-from osu_server.domain.scores.leaderboards import (
-    ALL_MODS_FILTER_KEY,
-    ScoreRankKey,
-    projection_keys_for_score,
-)
+from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.personal_best import (
     LeaderboardCategory,
     PersonalBestDelta,
@@ -436,7 +432,11 @@ def _completion_snapshot(
         "passed": created_score.passed,
         "beatmap_playcount": beatmap_playcount,
         "beatmap_passcount": beatmap_passcount,
-        "beatmap_status_at_submission": created_score.beatmap_status_at_submission,
+        "beatmap_status_at_submission": (
+            created_score.beatmap_status_at_submission.value
+            if created_score.beatmap_status_at_submission is not None
+            else None
+        ),
     }
     if command.beatmap_approved_at is not None:
         completion_snapshot["beatmap_approved_at"] = command.beatmap_approved_at.isoformat()
@@ -460,7 +460,7 @@ async def _submit_personal_best_delta(
     if not _can_use_score_for_personal_best(created_score):
         return None
 
-    scope = _all_mods_leaderboard_scope(command, created_score)
+    scope = _global_leaderboard_scope(command, created_score)
     before_score = (
         await _current_leaderboard_best_score(uow, scope)
         if command.include_personal_best_delta
@@ -470,13 +470,13 @@ async def _submit_personal_best_delta(
     updated = False
 
     if command.update_personal_best:
-        all_mods_best = await _upsert_matching_leaderboard_scopes(
+        global_best = await _upsert_global_leaderboard_best(
             uow,
             command=command,
             created_score=created_score,
         )
-        if all_mods_best is not None and command.include_personal_best_delta:
-            after_score = await uow.scores.get_by_id(all_mods_best.score_id)
+        if command.include_personal_best_delta:
+            after_score = await uow.scores.get_by_id(global_best.score_id)
         updated = after_score is not None and after_score.id == created_score.id
 
     if not command.include_personal_best_delta:
@@ -489,30 +489,25 @@ async def _submit_personal_best_delta(
     )
 
 
-async def _upsert_matching_leaderboard_scopes(
+async def _upsert_global_leaderboard_best(
     uow: UnitOfWork,
     *,
     command: SubmitScoreCommand,
     created_score: Score,
-) -> BeatmapLeaderboardUserBest | None:
+) -> BeatmapLeaderboardUserBest:
     assert created_score.id is not None
     rank_key = ScoreRankKey(
         score=created_score.score,
         submitted_at=created_score.submitted_at,
         score_id=created_score.id,
     )
-    all_mods_best = None
-    for mod_filter_key in projection_keys_for_score(created_score.mods):
-        best = await uow.beatmap_leaderboards.upsert_if_better(
-            UpsertBeatmapLeaderboardUserBest(
-                scope=_leaderboard_scope(command, created_score, mod_filter_key),
-                score_id=created_score.id,
-                rank_key=rank_key,
-            )
+    return await uow.beatmap_leaderboards.upsert_if_better(
+        UpsertBeatmapLeaderboardUserBest(
+            scope=_global_leaderboard_scope(command, created_score),
+            score_id=created_score.id,
+            rank_key=rank_key,
         )
-        if mod_filter_key == ALL_MODS_FILTER_KEY:
-            all_mods_best = best
-    return all_mods_best
+    )
 
 
 async def _current_leaderboard_best_score(
@@ -525,24 +520,16 @@ async def _current_leaderboard_best_score(
     return await uow.scores.get_by_id(best.score_id)
 
 
-def _all_mods_leaderboard_scope(
+def _global_leaderboard_scope(
     command: SubmitScoreCommand,
     score: Score,
-) -> BeatmapLeaderboardUserBestScope:
-    return _leaderboard_scope(command, score, ALL_MODS_FILTER_KEY)
-
-
-def _leaderboard_scope(
-    command: SubmitScoreCommand,
-    score: Score,
-    mod_filter_key: int,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         user_id=command.user_id,
         beatmap_id=score.beatmap_id,
+        beatmap_checksum=score.beatmap_checksum,
         ruleset=score.ruleset,
         playstyle=score.playstyle,
-        mod_filter_key=mod_filter_key,
     )
 
 

@@ -1,0 +1,1258 @@
+"""Enum 型と score 正本の leaderboard filter を導入する migration.
+
+Revision ID: 20260710_0400
+Revises: 20260710_0300
+Create Date: 2026-07-10 01:00:00.000000
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects import postgresql
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+revision: str = "20260710_0400"
+down_revision: str | None = "20260710_0300"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+# Alembic exposes PostgreSQL USING only through this textual DDL hook.
+_NIGHTCORE_BIT = 1 << 9
+_DOUBLE_TIME_BIT = 1 << 6
+_PERFECT_BIT = 1 << 14
+_SUDDEN_DEATH_BIT = 1 << 5
+_MIRROR_BIT = 1 << 30
+_PREFERENCE_ONLY_NO_MODS_BITS = _SUDDEN_DEATH_BIT | _PERFECT_BIT | _MIRROR_BIT
+_MODS_COLUMN = sa.column("mods", sa.Integer())
+_NIGHTCORE_NORMALIZED_MODS = sa.case(
+    (
+        _MODS_COLUMN.bitwise_and(_NIGHTCORE_BIT) != 0,
+        _MODS_COLUMN.bitwise_or(_DOUBLE_TIME_BIT).bitwise_and(~_NIGHTCORE_BIT),
+    ),
+    else_=_MODS_COLUMN,
+)
+_PERFECT_NORMALIZED_MODS = sa.case(
+    (
+        _NIGHTCORE_NORMALIZED_MODS.bitwise_and(_PERFECT_BIT) != 0,
+        _NIGHTCORE_NORMALIZED_MODS.bitwise_or(_SUDDEN_DEATH_BIT).bitwise_and(~_PERFECT_BIT),
+    ),
+    else_=_NIGHTCORE_NORMALIZED_MODS,
+)
+_CANONICAL_MODS = _PERFECT_NORMALIZED_MODS.bitwise_and(~_MIRROR_BIT)
+_IS_NO_MOD_CANDIDATE = _CANONICAL_MODS.bitwise_and(~_PREFERENCE_ONLY_NO_MODS_BITS) == 0
+_LEADERBOARD_MOD_FILTER_KEYS = sa.case(
+    (
+        sa.and_(_IS_NO_MOD_CANDIDATE, _CANONICAL_MODS == 0),
+        postgresql.array([0]),
+    ),
+    (
+        _IS_NO_MOD_CANDIDATE,
+        postgresql.array([0, _CANONICAL_MODS]),
+    ),
+    else_=postgresql.array([_CANONICAL_MODS]),
+)
+
+BEATMAP_FETCH_STATE_ENUM = postgresql.ENUM(
+    "fresh",
+    "stale",
+    "pending_fetch",
+    "failed",
+    name="beatmap_fetch_state",
+)
+BEATMAP_FETCH_TARGET_KIND_ENUM = postgresql.ENUM(
+    "metadata:beatmap",
+    "metadata:beatmapset",
+    "metadata:checksum",
+    "file:beatmap",
+    name="beatmap_fetch_target_kind",
+)
+BEATMAP_FILE_SOURCE_ENUM = postgresql.ENUM(
+    "official",
+    "legacy_official",
+    "mirror",
+    "osu_current",
+    "osu_legacy",
+    "community_mirror",
+    "archive_extracted",
+    name="beatmap_file_source",
+)
+BEATMAP_METADATA_SOURCE_ENUM = postgresql.ENUM(
+    "official",
+    "legacy_official",
+    "mirror",
+    name="beatmap_metadata_source",
+)
+BEATMAP_MODE_ENUM = postgresql.ENUM(
+    "osu",
+    "taiko",
+    "fruits",
+    "mania",
+    "unknown",
+    name="beatmap_mode",
+)
+BEATMAP_RANK_STATUS_ENUM = postgresql.ENUM(
+    "ranked",
+    "approved",
+    "loved",
+    "qualified",
+    "pending",
+    "wip",
+    "graveyard",
+    "not_submitted",
+    "unknown",
+    name="beatmap_rank_status",
+)
+BLOB_STORAGE_BACKEND_ENUM = postgresql.ENUM(
+    "local",
+    "s3",
+    name="blob_storage_backend",
+)
+CHANNEL_TYPE_ENUM = postgresql.ENUM(
+    "public",
+    "multiplayer",
+    "spectator",
+    "temporary",
+    name="channel_type",
+)
+FORMULA_PROFILE_ENUM = postgresql.ENUM(
+    "vanilla_ranked_legacy",
+    "vanilla_ranked_v1",
+    name="formula_profile",
+)
+LEADERBOARD_CATEGORY_ENUM = postgresql.ENUM(
+    "global",
+    "country",
+    "selected_mods",
+    "friends",
+    name="leaderboard_category",
+)
+LOCAL_BEATMAP_STATUS_ENUM = postgresql.ENUM(
+    "ranked",
+    "loved",
+    "qualified",
+    "pending",
+    "wip",
+    "graveyard",
+    "not_submitted",
+    "unknown",
+    name="local_beatmap_status",
+)
+PERFORMANCE_CALCULATION_STATE_ENUM = postgresql.ENUM(
+    "queued",
+    "fetching_file",
+    "calculating",
+    "completed",
+    "unavailable",
+    "superseded",
+    name="performance_calculation_state",
+)
+PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM = postgresql.ENUM(
+    "pending",
+    "running",
+    "completed",
+    name="performance_recalculation_batch_status",
+)
+PERFORMANCE_RECALCULATION_REASON_ENUM = postgresql.ENUM(
+    "uncalculated",
+    "stale",
+    "calculator_version_mismatch",
+    "formula_profile_mismatch",
+    "unavailable",
+    name="performance_recalculation_reason",
+)
+PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM = postgresql.ENUM(
+    "pending",
+    "claimed",
+    "completed",
+    "unavailable",
+    name="performance_recalculation_work_item_state",
+)
+PLAY_TIME_SOURCE_ENUM = postgresql.ENUM(
+    "fail_time",
+    "beatmap_total_length",
+    name="play_time_source",
+)
+SCORE_GRADE_ENUM = postgresql.ENUM("XH", "X", "SH", "S", "A", "B", "C", "D", name="score_grade")
+SCORE_SUBMISSION_STATE_ENUM = postgresql.ENUM(
+    "received",
+    "processing",
+    "completed",
+    "terminal_rejected",
+    "retryable",
+    name="score_submission_state",
+)
+
+_ENUM_TYPES = (
+    BEATMAP_FETCH_STATE_ENUM,
+    BEATMAP_FETCH_TARGET_KIND_ENUM,
+    BEATMAP_FILE_SOURCE_ENUM,
+    BEATMAP_METADATA_SOURCE_ENUM,
+    BEATMAP_MODE_ENUM,
+    BEATMAP_RANK_STATUS_ENUM,
+    BLOB_STORAGE_BACKEND_ENUM,
+    CHANNEL_TYPE_ENUM,
+    FORMULA_PROFILE_ENUM,
+    LEADERBOARD_CATEGORY_ENUM,
+    LOCAL_BEATMAP_STATUS_ENUM,
+    PERFORMANCE_CALCULATION_STATE_ENUM,
+    PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
+    PERFORMANCE_RECALCULATION_REASON_ENUM,
+    PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
+    PLAY_TIME_SOURCE_ENUM,
+    SCORE_GRADE_ENUM,
+    SCORE_SUBMISSION_STATE_ENUM,
+)
+
+
+def upgrade() -> None:
+    """閉集合カラムと leaderboard storage を新しい契約へ移行する.
+
+    Returns:
+        None: migration が完了したことを示す.
+
+    Raises:
+        RuntimeError: Enum の許容値外データまたは重複 score_id を検出した場合.
+    """
+    bind = op.get_bind()
+    for enum_type in _ENUM_TYPES:
+        enum_type.create(bind, checkfirst=True)
+
+    _upgrade_leaderboard_storage()
+    _upgrade_score_enums()
+    _upgrade_beatmap_enums()
+    _upgrade_blob_enums()
+    _upgrade_channel_enums()
+    _upgrade_personal_best_enums()
+    _upgrade_performance_enums()
+
+
+def downgrade() -> None:
+    """Enum と leaderboard storage を直前の契約へ戻す.
+
+    Returns:
+        None: downgrade が完了したことを示す.
+
+    Notes:
+        旧 Global/Selected Mods projection は current checksum の source scores から再生成する.
+    """
+    _downgrade_performance_enums()
+    _downgrade_personal_best_enums()
+    _downgrade_channel_enums()
+    _downgrade_blob_enums()
+    _downgrade_beatmap_enums()
+    _downgrade_score_enums()
+    _downgrade_leaderboard_storage()
+
+    bind = op.get_bind()
+    for enum_type in reversed(_ENUM_TYPES):
+        enum_type.drop(bind, checkfirst=True)
+
+
+def _upgrade_leaderboard_storage() -> None:
+    op.add_column(
+        "beatmap_leaderboard_user_bests",
+        sa.Column("beatmap_checksum", sa.String(length=32), nullable=True),
+    )
+    _rebuild_current_global_projection()
+    op.alter_column(
+        "beatmap_leaderboard_user_bests",
+        "beatmap_checksum",
+        existing_type=sa.String(length=32),
+        existing_nullable=True,
+        nullable=False,
+    )
+    op.drop_index(
+        "idx_beatmap_leaderboard_user_bests_scope_unique",
+        table_name="beatmap_leaderboard_user_bests",
+    )
+    op.drop_index(
+        "idx_beatmap_leaderboard_user_bests_ordering",
+        table_name="beatmap_leaderboard_user_bests",
+    )
+    _validate_unique_projection_score_ids()
+    op.drop_constraint(
+        "ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative",
+        "beatmap_leaderboard_user_bests",
+        type_="check",
+    )
+    op.drop_column("beatmap_leaderboard_user_bests", "mod_filter_key")
+    op.create_unique_constraint(
+        "uq_beatmap_leaderboard_user_bests_scope",
+        "beatmap_leaderboard_user_bests",
+        ["beatmap_id", "ruleset", "playstyle", "user_id"],
+    )
+    op.create_unique_constraint(
+        "uq_beatmap_leaderboard_user_bests_score_id",
+        "beatmap_leaderboard_user_bests",
+        ["score_id"],
+    )
+
+    op.add_column(
+        "scores",
+        sa.Column(
+            "leaderboard_mod_filter_keys",
+            postgresql.ARRAY(sa.Integer()),
+            sa.Computed(_LEADERBOARD_MOD_FILTER_KEYS, persisted=True),
+            nullable=False,
+        ),
+    )
+    op.create_index(
+        "idx_scores_beatmap_leaderboard_candidates",
+        "scores",
+        [
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "beatmap_checksum",
+            "user_id",
+            sa.column("score", sa.Integer()).desc(),
+            sa.column("submitted_at", sa.DateTime(timezone=True)).asc(),
+            sa.column("id", sa.BigInteger()).asc(),
+        ],
+        postgresql_where=sa.and_(
+            sa.column("passed", sa.Boolean()).is_(True),
+            sa.column("leaderboard_eligible_at_submission", sa.Boolean()).is_(True),
+        ),
+    )
+    op.create_index(
+        "idx_scores_leaderboard_mod_filter_keys",
+        "scores",
+        ["leaderboard_mod_filter_keys"],
+        postgresql_using="gin",
+    )
+
+
+def _rebuild_current_global_projection() -> None:
+    """Current checksumのsource ScoresからGlobal projectionを再構築する.
+
+    Returns:
+        None: Natural identityごとのGlobal winnerを旧projectionへ保存したことを示す.
+
+    Notes:
+        Migration upgrade中に全旧projection行を置き換え、Selected Mods行と
+        stale-checksum Global行を同時に除去する.
+    """
+    projection = sa.table(
+        "beatmap_leaderboard_user_bests",
+        sa.column("beatmap_id", sa.Integer()),
+        sa.column("ruleset", sa.SmallInteger()),
+        sa.column("playstyle", sa.SmallInteger()),
+        sa.column("user_id", sa.Integer()),
+        sa.column("mod_filter_key", sa.Integer()),
+        sa.column("score_id", sa.BigInteger()),
+        sa.column("score", sa.Integer()),
+        sa.column("submitted_at", sa.DateTime(timezone=True)),
+        sa.column("beatmap_checksum", sa.String(length=32)),
+    )
+    scores = sa.table(
+        "scores",
+        sa.column("id", sa.BigInteger()),
+        sa.column("beatmap_id", sa.Integer()),
+        sa.column("beatmap_checksum", sa.String(length=32)),
+        sa.column("ruleset", sa.SmallInteger()),
+        sa.column("playstyle", sa.SmallInteger()),
+        sa.column("user_id", sa.Integer()),
+        sa.column("score", sa.Integer()),
+        sa.column("submitted_at", sa.DateTime(timezone=True)),
+        sa.column("passed", sa.Boolean()),
+        sa.column("leaderboard_eligible_at_submission", sa.Boolean()),
+    )
+    beatmaps = sa.table(
+        "beatmaps",
+        sa.column("id", sa.Integer()),
+        sa.column("checksum_md5", sa.String(length=32)),
+    )
+    current_scores = scores.join(
+        beatmaps,
+        sa.and_(
+            beatmaps.c.id == scores.c.beatmap_id,
+            beatmaps.c.checksum_md5 == scores.c.beatmap_checksum,
+        ),
+    )
+    ranked = (
+        sa.select(
+            scores.c.beatmap_id,
+            scores.c.ruleset,
+            scores.c.playstyle,
+            scores.c.user_id,
+            sa.cast(sa.null(), sa.Integer()).label("mod_filter_key"),
+            scores.c.id.label("score_id"),
+            scores.c.score,
+            scores.c.submitted_at,
+            scores.c.beatmap_checksum,
+            sa.func.row_number()
+            .over(
+                partition_by=(
+                    scores.c.beatmap_id,
+                    scores.c.ruleset,
+                    scores.c.playstyle,
+                    scores.c.user_id,
+                ),
+                order_by=(
+                    scores.c.score.desc(),
+                    scores.c.submitted_at.asc(),
+                    scores.c.id.asc(),
+                ),
+            )
+            .label("candidate_rank"),
+        )
+        .select_from(current_scores)
+        .where(
+            scores.c.passed.is_(True),
+            scores.c.leaderboard_eligible_at_submission.is_(True),
+        )
+        .subquery("ranked_current_global_projection")
+    )
+
+    op.execute(sa.delete(projection))
+    op.execute(
+        sa.insert(projection).from_select(
+            (
+                "beatmap_id",
+                "ruleset",
+                "playstyle",
+                "user_id",
+                "mod_filter_key",
+                "score_id",
+                "score",
+                "submitted_at",
+                "beatmap_checksum",
+            ),
+            sa.select(
+                ranked.c.beatmap_id,
+                ranked.c.ruleset,
+                ranked.c.playstyle,
+                ranked.c.user_id,
+                ranked.c.mod_filter_key,
+                ranked.c.score_id,
+                ranked.c.score,
+                ranked.c.submitted_at,
+                ranked.c.beatmap_checksum,
+            ).where(ranked.c.candidate_rank == 1),
+        )
+    )
+
+
+def _downgrade_leaderboard_storage() -> None:
+    mod_filter_key = sa.column("mod_filter_key", sa.Integer())
+    op.drop_index(
+        "idx_scores_leaderboard_mod_filter_keys",
+        table_name="scores",
+    )
+    op.drop_index(
+        "idx_scores_beatmap_leaderboard_candidates",
+        table_name="scores",
+    )
+    op.drop_constraint(
+        "uq_beatmap_leaderboard_user_bests_score_id",
+        "beatmap_leaderboard_user_bests",
+        type_="unique",
+    )
+    op.drop_constraint(
+        "uq_beatmap_leaderboard_user_bests_scope",
+        "beatmap_leaderboard_user_bests",
+        type_="unique",
+    )
+    op.add_column(
+        "beatmap_leaderboard_user_bests",
+        sa.Column(
+            "mod_filter_key",
+            sa.Integer(),
+            nullable=True,
+        ),
+    )
+    op.drop_column("beatmap_leaderboard_user_bests", "beatmap_checksum")
+    _restore_legacy_leaderboard_projection()
+    op.drop_column("scores", "leaderboard_mod_filter_keys")
+    op.create_check_constraint(
+        "ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative",
+        "beatmap_leaderboard_user_bests",
+        sa.or_(mod_filter_key.is_(None), mod_filter_key >= 0),
+    )
+    op.create_index(
+        "idx_beatmap_leaderboard_user_bests_scope_unique",
+        "beatmap_leaderboard_user_bests",
+        [
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "user_id",
+            sa.func.coalesce(mod_filter_key, -1),
+        ],
+        unique=True,
+    )
+    op.create_index(
+        "idx_beatmap_leaderboard_user_bests_ordering",
+        "beatmap_leaderboard_user_bests",
+        [
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            sa.func.coalesce(mod_filter_key, -1),
+            sa.column("score", sa.Integer()).desc(),
+            sa.column("submitted_at", sa.DateTime(timezone=True)).asc(),
+            sa.column("score_id", sa.BigInteger()).asc(),
+        ],
+    )
+
+
+def _restore_legacy_leaderboard_projection() -> None:
+    projection = sa.table(
+        "beatmap_leaderboard_user_bests",
+        sa.column("beatmap_id", sa.Integer()),
+        sa.column("ruleset", sa.SmallInteger()),
+        sa.column("playstyle", sa.SmallInteger()),
+        sa.column("user_id", sa.Integer()),
+        sa.column("mod_filter_key", sa.Integer()),
+        sa.column("score_id", sa.BigInteger()),
+        sa.column("score", sa.Integer()),
+        sa.column("submitted_at", sa.DateTime(timezone=True)),
+    )
+    scores = sa.table(
+        "scores",
+        sa.column("id", sa.BigInteger()),
+        sa.column("beatmap_id", sa.Integer()),
+        sa.column("beatmap_checksum", sa.String(length=32)),
+        sa.column("ruleset", sa.SmallInteger()),
+        sa.column("playstyle", sa.SmallInteger()),
+        sa.column("user_id", sa.Integer()),
+        sa.column("score", sa.Integer()),
+        sa.column("submitted_at", sa.DateTime(timezone=True)),
+        sa.column("passed", sa.Boolean()),
+        sa.column("leaderboard_eligible_at_submission", sa.Boolean()),
+        sa.column("leaderboard_mod_filter_keys", postgresql.ARRAY(sa.Integer())),
+    )
+    beatmaps = sa.table(
+        "beatmaps",
+        sa.column("id", sa.Integer()),
+        sa.column("checksum_md5", sa.String(length=32)),
+    )
+    current_scores = scores.join(
+        beatmaps,
+        sa.and_(
+            beatmaps.c.id == scores.c.beatmap_id,
+            beatmaps.c.checksum_md5 == scores.c.beatmap_checksum,
+        ),
+    )
+    common_columns = (
+        scores.c.beatmap_id,
+        scores.c.ruleset,
+        scores.c.playstyle,
+        scores.c.user_id,
+    )
+    common_filter = sa.and_(
+        scores.c.passed.is_(True),
+        scores.c.leaderboard_eligible_at_submission.is_(True),
+    )
+    global_candidates = (
+        sa.select(
+            *common_columns,
+            sa.cast(sa.null(), sa.Integer()).label("mod_filter_key"),
+            scores.c.id.label("score_id"),
+            scores.c.score,
+            scores.c.submitted_at,
+        )
+        .select_from(current_scores)
+        .where(common_filter)
+    )
+    mod_filter_key = sa.func.unnest(scores.c.leaderboard_mod_filter_keys).column_valued(
+        "mod_filter_key",
+        joins_implicitly=True,
+    )
+    selected_mod_candidates = (
+        sa.select(
+            *common_columns,
+            mod_filter_key,
+            scores.c.id.label("score_id"),
+            scores.c.score,
+            scores.c.submitted_at,
+        )
+        .select_from(current_scores)
+        .where(common_filter)
+    )
+    candidates = sa.union_all(global_candidates, selected_mod_candidates).subquery(
+        "legacy_leaderboard_candidates"
+    )
+    ranked = sa.select(
+        *tuple(candidates.c),
+        sa.func.row_number()
+        .over(
+            partition_by=(
+                candidates.c.beatmap_id,
+                candidates.c.ruleset,
+                candidates.c.playstyle,
+                candidates.c.user_id,
+                candidates.c.mod_filter_key,
+            ),
+            order_by=(
+                candidates.c.score.desc(),
+                candidates.c.submitted_at.asc(),
+                candidates.c.score_id.asc(),
+            ),
+        )
+        .label("candidate_rank"),
+    ).subquery("ranked_legacy_leaderboard_candidates")
+
+    op.execute(sa.delete(projection))
+    op.execute(
+        sa.insert(projection).from_select(
+            (
+                "beatmap_id",
+                "ruleset",
+                "playstyle",
+                "user_id",
+                "mod_filter_key",
+                "score_id",
+                "score",
+                "submitted_at",
+            ),
+            sa.select(
+                ranked.c.beatmap_id,
+                ranked.c.ruleset,
+                ranked.c.playstyle,
+                ranked.c.user_id,
+                ranked.c.mod_filter_key,
+                ranked.c.score_id,
+                ranked.c.score,
+                ranked.c.submitted_at,
+            ).where(ranked.c.candidate_rank == 1),
+        )
+    )
+
+
+def _upgrade_score_enums() -> None:
+    op.drop_constraint("ck_scores_play_time_source_known", "scores", type_="check")
+    _alter_enum_column(
+        "scores",
+        "grade",
+        sa.String(length=2),
+        SCORE_GRADE_ENUM,
+        "score_grade",
+    )
+    _alter_enum_column(
+        "scores",
+        "beatmap_status_at_submission",
+        sa.String(length=32),
+        BEATMAP_RANK_STATUS_ENUM,
+        "beatmap_rank_status",
+        nullable=True,
+    )
+    _alter_enum_column(
+        "scores",
+        "play_time_source",
+        sa.String(length=32),
+        PLAY_TIME_SOURCE_ENUM,
+        "play_time_source",
+        nullable=True,
+    )
+    _alter_enum_column(
+        "score_submissions",
+        "state",
+        sa.String(length=32),
+        SCORE_SUBMISSION_STATE_ENUM,
+        "score_submission_state",
+    )
+
+
+def _downgrade_score_enums() -> None:
+    play_time_source = sa.column("play_time_source", sa.String(length=32))
+    _alter_string_column(
+        "score_submissions",
+        "state",
+        SCORE_SUBMISSION_STATE_ENUM,
+        length=32,
+    )
+    _alter_string_column(
+        "scores",
+        "play_time_source",
+        PLAY_TIME_SOURCE_ENUM,
+        length=32,
+        nullable=True,
+    )
+    _alter_string_column(
+        "scores",
+        "beatmap_status_at_submission",
+        BEATMAP_RANK_STATUS_ENUM,
+        length=32,
+        nullable=True,
+    )
+    _alter_string_column(
+        "scores",
+        "grade",
+        SCORE_GRADE_ENUM,
+        length=2,
+    )
+    op.create_check_constraint(
+        "ck_scores_play_time_source_known",
+        "scores",
+        sa.or_(
+            play_time_source.is_(None),
+            play_time_source.in_(tuple(PLAY_TIME_SOURCE_ENUM.enums)),
+        ),
+    )
+
+
+def _upgrade_beatmap_enums() -> None:
+    beatmaps = sa.table("beatmaps", sa.column("mode", sa.String(length=16)))
+    fetch_states = sa.table(
+        "beatmap_fetch_states",
+        sa.column("target_type", sa.String(length=32)),
+    )
+    op.execute(
+        sa.update(beatmaps)
+        .where(beatmaps.c.mode.not_in(("osu", "taiko", "fruits", "mania")))
+        .values(mode="unknown")
+    )
+    op.execute(
+        sa.update(fetch_states).values(
+            target_type=sa.case(
+                (fetch_states.c.target_type == "beatmap", "metadata:beatmap"),
+                (fetch_states.c.target_type == "beatmapset", "metadata:beatmapset"),
+                (fetch_states.c.target_type == "checksum", "metadata:checksum"),
+                (fetch_states.c.target_type == "file", "file:beatmap"),
+                else_=fetch_states.c.target_type,
+            )
+        )
+    )
+    _alter_enum_column(
+        "beatmapsets",
+        "official_status",
+        sa.String(length=32),
+        BEATMAP_RANK_STATUS_ENUM,
+        "beatmap_rank_status",
+    )
+    _alter_enum_column(
+        "beatmapsets",
+        "official_status_source",
+        sa.String(length=64),
+        BEATMAP_METADATA_SOURCE_ENUM,
+        "beatmap_metadata_source",
+    )
+    _alter_enum_column(
+        "beatmaps",
+        "mode",
+        sa.String(length=16),
+        BEATMAP_MODE_ENUM,
+        "beatmap_mode",
+    )
+    _alter_enum_column(
+        "beatmaps",
+        "official_status",
+        sa.String(length=32),
+        BEATMAP_RANK_STATUS_ENUM,
+        "beatmap_rank_status",
+    )
+    _alter_enum_column(
+        "beatmaps",
+        "official_status_source",
+        sa.String(length=64),
+        BEATMAP_METADATA_SOURCE_ENUM,
+        "beatmap_metadata_source",
+    )
+    _alter_enum_column(
+        "beatmaps",
+        "local_status_override",
+        sa.String(length=32),
+        LOCAL_BEATMAP_STATUS_ENUM,
+        "local_beatmap_status",
+        nullable=True,
+    )
+    _alter_enum_column(
+        "beatmap_file_attachments",
+        "source",
+        sa.String(length=32),
+        BEATMAP_FILE_SOURCE_ENUM,
+        "beatmap_file_source",
+    )
+    _alter_enum_column(
+        "beatmap_fetch_states",
+        "target_type",
+        sa.String(length=32),
+        BEATMAP_FETCH_TARGET_KIND_ENUM,
+        "beatmap_fetch_target_kind",
+    )
+    _alter_enum_column(
+        "beatmap_fetch_states",
+        "status",
+        sa.String(length=32),
+        BEATMAP_FETCH_STATE_ENUM,
+        "beatmap_fetch_state",
+    )
+
+
+def _downgrade_beatmap_enums() -> None:
+    _alter_string_column(
+        "beatmap_fetch_states",
+        "status",
+        BEATMAP_FETCH_STATE_ENUM,
+        length=32,
+    )
+    _alter_string_column(
+        "beatmap_fetch_states",
+        "target_type",
+        BEATMAP_FETCH_TARGET_KIND_ENUM,
+        length=32,
+    )
+    fetch_states = sa.table(
+        "beatmap_fetch_states",
+        sa.column("target_type", sa.String(length=32)),
+    )
+    op.execute(
+        sa.update(fetch_states).values(
+            target_type=sa.case(
+                (fetch_states.c.target_type == "metadata:beatmap", "beatmap"),
+                (fetch_states.c.target_type == "metadata:beatmapset", "beatmapset"),
+                (fetch_states.c.target_type == "metadata:checksum", "checksum"),
+                (fetch_states.c.target_type == "file:beatmap", "file"),
+                else_=fetch_states.c.target_type,
+            )
+        )
+    )
+    _alter_string_column(
+        "beatmap_file_attachments",
+        "source",
+        BEATMAP_FILE_SOURCE_ENUM,
+        length=32,
+    )
+    _alter_string_column(
+        "beatmaps",
+        "local_status_override",
+        LOCAL_BEATMAP_STATUS_ENUM,
+        length=32,
+        nullable=True,
+    )
+    _alter_string_column(
+        "beatmaps",
+        "mode",
+        BEATMAP_MODE_ENUM,
+        length=16,
+    )
+    _alter_string_column(
+        "beatmaps",
+        "official_status_source",
+        BEATMAP_METADATA_SOURCE_ENUM,
+        length=64,
+    )
+    _alter_string_column(
+        "beatmaps",
+        "official_status",
+        BEATMAP_RANK_STATUS_ENUM,
+        length=32,
+    )
+    _alter_string_column(
+        "beatmapsets",
+        "official_status_source",
+        BEATMAP_METADATA_SOURCE_ENUM,
+        length=64,
+    )
+    _alter_string_column(
+        "beatmapsets",
+        "official_status",
+        BEATMAP_RANK_STATUS_ENUM,
+        length=32,
+    )
+
+
+def _upgrade_blob_enums() -> None:
+    _alter_enum_column(
+        "blobs",
+        "storage_backend",
+        sa.String(length=32),
+        BLOB_STORAGE_BACKEND_ENUM,
+        "blob_storage_backend",
+    )
+
+
+def _downgrade_blob_enums() -> None:
+    _alter_string_column(
+        "blobs",
+        "storage_backend",
+        BLOB_STORAGE_BACKEND_ENUM,
+        length=32,
+    )
+
+
+def _upgrade_channel_enums() -> None:
+    op.alter_column(
+        "channels",
+        "channel_type",
+        existing_type=sa.String(length=16),
+        server_default=None,
+        existing_nullable=False,
+    )
+    _alter_enum_column(
+        "channels",
+        "channel_type",
+        sa.String(length=16),
+        CHANNEL_TYPE_ENUM,
+        "channel_type",
+    )
+    op.alter_column(
+        "channels",
+        "channel_type",
+        existing_type=CHANNEL_TYPE_ENUM,
+        server_default=sa.cast(sa.literal("public"), CHANNEL_TYPE_ENUM),
+        existing_nullable=False,
+    )
+
+
+def _downgrade_channel_enums() -> None:
+    op.alter_column(
+        "channels",
+        "channel_type",
+        existing_type=CHANNEL_TYPE_ENUM,
+        server_default=None,
+        existing_nullable=False,
+    )
+    _alter_string_column(
+        "channels",
+        "channel_type",
+        CHANNEL_TYPE_ENUM,
+        length=16,
+    )
+    op.alter_column(
+        "channels",
+        "channel_type",
+        existing_type=sa.String(length=16),
+        server_default="public",
+        existing_nullable=False,
+    )
+
+
+def _upgrade_personal_best_enums() -> None:
+    _alter_enum_column(
+        "personal_bests",
+        "category",
+        sa.String(length=32),
+        LEADERBOARD_CATEGORY_ENUM,
+        "leaderboard_category",
+    )
+
+
+def _downgrade_personal_best_enums() -> None:
+    _alter_string_column(
+        "personal_bests",
+        "category",
+        LEADERBOARD_CATEGORY_ENUM,
+        length=32,
+    )
+
+
+def _upgrade_performance_enums() -> None:
+    state = sa.column("state", PERFORMANCE_CALCULATION_STATE_ENUM)
+    pp = sa.column("pp", sa.Numeric())
+    star_rating = sa.column("star_rating", sa.Numeric())
+    calculated_at = sa.column("calculated_at", sa.DateTime(timezone=True))
+    unavailable_reason = sa.column("unavailable_reason", sa.String())
+    claim_owner = sa.column("claim_owner", sa.String(length=128))
+    claim_expires_at = sa.column("claim_expires_at", sa.DateTime(timezone=True))
+    calculations = sa.table(
+        "score_performance_calculations",
+        state,
+        claim_owner,
+        claim_expires_at,
+    )
+    work_item_state = sa.column(
+        "state",
+        PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
+    )
+    work_item_claim_owner = sa.column("claim_owner", sa.String(length=128))
+    work_item_claim_expires_at = sa.column(
+        "claim_expires_at",
+        sa.DateTime(timezone=True),
+    )
+    op.drop_constraint(
+        "ck_score_performance_unavailable_reason",
+        "score_performance_calculations",
+        type_="check",
+    )
+    op.drop_constraint(
+        "ck_score_performance_completed_values",
+        "score_performance_calculations",
+        type_="check",
+    )
+    op.drop_constraint(
+        "ck_score_performance_state_known",
+        "score_performance_calculations",
+        type_="check",
+    )
+    _alter_enum_column(
+        "score_performance_calculations",
+        "state",
+        sa.String(length=32),
+        PERFORMANCE_CALCULATION_STATE_ENUM,
+        "performance_calculation_state",
+    )
+    _alter_enum_column(
+        "score_performance_calculations",
+        "formula_profile",
+        sa.String(length=64),
+        FORMULA_PROFILE_ENUM,
+        "formula_profile",
+    )
+    op.execute(
+        sa.update(calculations)
+        .where(state.not_in(("queued", "fetching_file", "calculating")))
+        .values(claim_owner=None, claim_expires_at=None)
+    )
+    op.create_check_constraint(
+        "ck_score_performance_completed_values",
+        "score_performance_calculations",
+        sa.or_(
+            state != "completed",
+            sa.and_(
+                pp.is_not(None),
+                star_rating.is_not(None),
+                calculated_at.is_not(None),
+            ),
+        ),
+    )
+    op.create_check_constraint(
+        "ck_score_performance_unavailable_reason",
+        "score_performance_calculations",
+        sa.or_(state != "unavailable", unavailable_reason.is_not(None)),
+    )
+    op.create_check_constraint(
+        "ck_score_performance_claim_metadata_pair",
+        "score_performance_calculations",
+        sa.or_(
+            sa.and_(
+                state.in_(("queued", "fetching_file", "calculating")),
+                sa.or_(
+                    sa.and_(claim_owner.is_(None), claim_expires_at.is_(None)),
+                    sa.and_(claim_owner.is_not(None), claim_expires_at.is_not(None)),
+                ),
+            ),
+            sa.and_(
+                state.not_in(("queued", "fetching_file", "calculating")),
+                claim_owner.is_(None),
+                claim_expires_at.is_(None),
+            ),
+        ),
+    )
+    _alter_enum_column(
+        "performance_recalculation_batches",
+        "status",
+        sa.String(length=32),
+        PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
+        "performance_recalculation_batch_status",
+    )
+    _alter_enum_column(
+        "performance_recalculation_batches",
+        "target_formula_profile",
+        sa.String(length=64),
+        FORMULA_PROFILE_ENUM,
+        "formula_profile",
+    )
+    _alter_enum_column(
+        "performance_recalculation_work_items",
+        "reason",
+        sa.String(length=64),
+        PERFORMANCE_RECALCULATION_REASON_ENUM,
+        "performance_recalculation_reason",
+    )
+    _alter_enum_column(
+        "performance_recalculation_work_items",
+        "state",
+        sa.String(length=32),
+        PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
+        "performance_recalculation_work_item_state",
+    )
+    op.create_check_constraint(
+        "ck_performance_recalculation_work_item_claim_metadata",
+        "performance_recalculation_work_items",
+        sa.or_(
+            sa.and_(
+                work_item_state == "claimed",
+                work_item_claim_owner.is_not(None),
+                work_item_claim_expires_at.is_not(None),
+            ),
+            sa.and_(
+                work_item_state != "claimed",
+                work_item_claim_owner.is_(None),
+                work_item_claim_expires_at.is_(None),
+            ),
+        ),
+    )
+
+
+def _downgrade_performance_enums() -> None:
+    state = sa.column("state", sa.String(length=32))
+    pp = sa.column("pp", sa.Numeric())
+    star_rating = sa.column("star_rating", sa.Numeric())
+    calculated_at = sa.column("calculated_at", sa.DateTime(timezone=True))
+    unavailable_reason = sa.column("unavailable_reason", sa.String())
+    op.drop_constraint(
+        "ck_performance_recalculation_work_item_claim_metadata",
+        "performance_recalculation_work_items",
+        type_="check",
+        if_exists=True,
+    )
+    _alter_string_column(
+        "performance_recalculation_work_items",
+        "state",
+        PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
+        length=32,
+    )
+    _alter_string_column(
+        "performance_recalculation_work_items",
+        "reason",
+        PERFORMANCE_RECALCULATION_REASON_ENUM,
+        length=64,
+    )
+    _alter_string_column(
+        "performance_recalculation_batches",
+        "target_formula_profile",
+        FORMULA_PROFILE_ENUM,
+        length=64,
+    )
+    _alter_string_column(
+        "performance_recalculation_batches",
+        "status",
+        PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
+        length=32,
+    )
+    op.drop_constraint(
+        "ck_score_performance_unavailable_reason",
+        "score_performance_calculations",
+        type_="check",
+    )
+    op.drop_constraint(
+        "ck_score_performance_completed_values",
+        "score_performance_calculations",
+        type_="check",
+    )
+    op.drop_constraint(
+        "ck_score_performance_claim_metadata_pair",
+        "score_performance_calculations",
+        type_="check",
+        if_exists=True,
+    )
+    _alter_string_column(
+        "score_performance_calculations",
+        "formula_profile",
+        FORMULA_PROFILE_ENUM,
+        length=64,
+    )
+    _alter_string_column(
+        "score_performance_calculations",
+        "state",
+        PERFORMANCE_CALCULATION_STATE_ENUM,
+        length=32,
+    )
+    op.create_check_constraint(
+        "ck_score_performance_state_known",
+        "score_performance_calculations",
+        state.in_(tuple(PERFORMANCE_CALCULATION_STATE_ENUM.enums)),
+    )
+    op.create_check_constraint(
+        "ck_score_performance_completed_values",
+        "score_performance_calculations",
+        sa.or_(
+            state != "completed",
+            sa.and_(
+                pp.is_not(None),
+                star_rating.is_not(None),
+                calculated_at.is_not(None),
+            ),
+        ),
+    )
+    op.create_check_constraint(
+        "ck_score_performance_unavailable_reason",
+        "score_performance_calculations",
+        sa.or_(state != "unavailable", unavailable_reason.is_not(None)),
+    )
+
+
+def _alter_enum_column(
+    table_name: str,
+    column_name: str,
+    existing_type: sa.TypeEngine[object],
+    enum_type: postgresql.ENUM,
+    enum_name: str,
+    *,
+    nullable: bool = False,
+) -> None:
+    _validate_enum_column(table_name, column_name, enum_type)
+    op.alter_column(
+        table_name,
+        column_name,
+        existing_type=existing_type,
+        type_=enum_type,
+        existing_nullable=nullable,
+        # Alembic の postgresql_using は PostgreSQL USING 句を文字列でのみ受け取る.
+        postgresql_using=f"{column_name}::text::{enum_name}",
+    )
+
+
+def _validate_enum_column(
+    table_name: str,
+    column_name: str,
+    enum_type: postgresql.ENUM,
+) -> None:
+    column = sa.column(column_name, sa.String())
+    table = sa.table(table_name, column)
+    statement = (
+        sa.select(column)
+        .select_from(table)
+        .where(
+            column.is_not(None),
+            column.not_in(tuple(enum_type.enums)),
+        )
+        .distinct()
+        .limit(10)
+    )
+    invalid_values = tuple(str(row[0]) for row in op.get_bind().execute(statement))
+    if invalid_values:
+        msg = (
+            f"{table_name}.{column_name} contains values outside {enum_type.name}: "
+            f"{invalid_values!r}"
+        )
+        raise RuntimeError(msg)
+
+
+def _validate_unique_projection_score_ids() -> None:
+    projection = sa.table(
+        "beatmap_leaderboard_user_bests",
+        sa.column("score_id", sa.BigInteger()),
+    )
+    statement = (
+        sa.select(projection.c.score_id)
+        .group_by(projection.c.score_id)
+        .having(sa.func.count() > 1)
+        .order_by(projection.c.score_id)
+        .limit(10)
+    )
+    duplicate_score_ids = tuple(
+        int(score_id) for score_id in op.get_bind().execute(statement).scalars()
+    )
+    if duplicate_score_ids:
+        msg = (
+            "beatmap_leaderboard_user_bests contains duplicate all-mods score_id values: "
+            f"{duplicate_score_ids!r}"
+        )
+        raise RuntimeError(msg)
+
+
+def _alter_string_column(
+    table_name: str,
+    column_name: str,
+    existing_type: postgresql.ENUM,
+    *,
+    length: int,
+    nullable: bool = False,
+) -> None:
+    op.alter_column(
+        table_name,
+        column_name,
+        existing_type=existing_type,
+        type_=sa.String(length=length),
+        existing_nullable=nullable,
+        # Alembic の postgresql_using は PostgreSQL USING 句を文字列でのみ受け取る.
+        postgresql_using=f"{column_name}::text",
+    )

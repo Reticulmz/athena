@@ -32,7 +32,18 @@ class BeatmapRankStatus(Enum):
 
 
 class BeatmapMode(Enum):
-    """beatmap の game mode"""
+    """Beatmapのgame modeを表す閉集合.
+
+    Attributes:
+        OSU (str): osu!standard modeの永続化値.
+        TAIKO (str): osu!taiko modeの永続化値.
+        FRUITS (str): osu!catch modeの永続化値.
+        MANIA (str): osu!mania modeの永続化値.
+        UNKNOWN (str): provider値をmodeへ確定できない場合の永続化値.
+
+    Notes:
+        Domain内ではEnum memberを使い、wire/DB境界だけで文字列値へ変換する.
+    """
 
     OSU = "osu"
     TAIKO = "taiko"
@@ -89,12 +100,26 @@ class BeatmapFileState(Enum):
 
 @dataclass(slots=True, frozen=True)
 class BeatmapFileAttachment:
-    """beatmap に紐づく取得済み osu file blob。"""
+    """Beatmapに紐づく取得済みosu file blobを表す.
+
+    Attributes:
+        beatmap_id (int): attachmentを所有するBeatmap ID.
+        blob_id (int): osu file本体を保持するBlob ID.
+        checksum_md5 (str): osu file内容のMD5 checksum.
+        source (BeatmapFileSource): fileを取得したsource.
+        original_filename (str | None): sourceが提示した元file名.
+        fetched_at (datetime): fileを取得した日時.
+        verified_at (datetime | None): checksumを検証した日時.
+        id (int | None): 永続化前はNoneとなるattachment ID.
+
+    Notes:
+        checksum_md5は32文字の16進数で、設定済みidは正の値に限る.
+    """
 
     beatmap_id: int
     blob_id: int
     checksum_md5: str
-    source: str
+    source: BeatmapFileSource
     original_filename: str | None
     fetched_at: datetime
     verified_at: datetime | None
@@ -114,7 +139,7 @@ class Beatmap:
     id: int
     beatmapset_id: int
     checksum_md5: str
-    mode: str
+    mode: BeatmapMode
     version: str
     total_length: int | None
     hit_length: int | None
@@ -437,13 +462,12 @@ class BeatmapFetchQueuePayload:
 class BeatmapFetchTarget:
     """fetch queue encoding を隠す beatmap metadata/file 取得対象。"""
 
-    target_type: str
+    target_type: BeatmapFetchTargetKind
     target_key: str
     force_refresh: bool = field(default=False, compare=False, hash=False)
 
     def __post_init__(self) -> None:
-        if not self.target_type:
-            raise ValueError("target_type must not be empty")
+        _ = self.kind
         if not self.target_key:
             raise ValueError("target_key must not be empty")
 
@@ -493,7 +517,7 @@ class BeatmapFetchTarget:
     def queue_payload(self) -> BeatmapFetchQueuePayload:
         """encoding の詳細を隠して worker queue payload を返す。"""
         return BeatmapFetchQueuePayload(
-            target_type=self.target_type,
+            target_type=self.kind.value,
             target_key=self.target_key,
             force_refresh=self.force_refresh,
         )
@@ -508,7 +532,7 @@ class BeatmapFetchTarget:
     ) -> BeatmapFetchTarget:
         """worker queue payload から fetch target を復元する。"""
         return cls(
-            target_type=target_type,
+            target_type=BeatmapFetchTargetKind(target_type),
             target_key=target_key,
             force_refresh=force_refresh,
         )
@@ -519,7 +543,7 @@ class BeatmapFetchTarget:
     ) -> BeatmapFetchTarget:
         """beatmap id を指定した metadata fetch target を作る。"""
         return cls(
-            target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID.value,
+            target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID,
             target_key=str(beatmap_id),
             force_refresh=force_refresh,
         )
@@ -530,7 +554,7 @@ class BeatmapFetchTarget:
     ) -> BeatmapFetchTarget:
         """beatmapset id を指定した metadata fetch target を作る。"""
         return cls(
-            target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID.value,
+            target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID,
             target_key=str(beatmapset_id),
             force_refresh=force_refresh,
         )
@@ -541,7 +565,7 @@ class BeatmapFetchTarget:
     ) -> BeatmapFetchTarget:
         """MD5 checksum を指定した metadata fetch target を作る。"""
         return cls(
-            target_type=BeatmapFetchTargetKind.METADATA_BY_CHECKSUM.value,
+            target_type=BeatmapFetchTargetKind.METADATA_BY_CHECKSUM,
             target_key=checksum_md5,
             force_refresh=force_refresh,
         )
@@ -549,7 +573,7 @@ class BeatmapFetchTarget:
     @classmethod
     def file_by_beatmap_id(cls, beatmap_id: int) -> BeatmapFetchTarget:
         return cls(
-            target_type=BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID.value,
+            target_type=BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID,
             target_key=str(beatmap_id),
         )
 
@@ -578,7 +602,7 @@ class BeatmapSnapshot:
     beatmap_id: int
     beatmapset_id: int
     checksum_md5: str
-    mode: str
+    mode: BeatmapMode
     version: str
     official_status: BeatmapRankStatus
     official_status_source: BeatmapMetadataSource

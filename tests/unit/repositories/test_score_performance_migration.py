@@ -138,6 +138,7 @@ def test_score_performance_calculation_metadata_matches_current_contract() -> No
         "fk_score_performance_calculations_beatmap_file_attachment_id"
     ] == ("beatmap_file_attachment_id", "beatmap_file_attachments.id")
     assert {
+        "ck_score_performance_claim_metadata_pair",
         "ck_score_performance_completed_values",
         "ck_score_performance_unavailable_reason",
     }.issubset(_check_constraints(table))
@@ -211,6 +212,9 @@ def test_recalculation_batch_and_work_item_metadata_match_durable_work_contract(
     assert _foreign_key_constraints(work_items)[
         "fk_performance_recalculation_work_items_calculation_id"
     ] == ("calculation_id", "score_performance_calculations.id")
+    assert "ck_performance_recalculation_work_item_claim_metadata" in _check_constraints(
+        work_items
+    )
     assert _indexes(work_items)["idx_performance_recalculation_work_items_batch_state"] == (
         ("batch_id", "state"),
         False,

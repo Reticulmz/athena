@@ -7,6 +7,7 @@ from osu_server.repositories.sqlalchemy.models import BlobModel
 
 if TYPE_CHECKING:
     from sqlalchemy.dialects.postgresql import ENUM
+    from sqlalchemy.sql.elements import ColumnElement
 
 
 def _table() -> Table:
@@ -74,7 +75,11 @@ def test_blob_model_enforces_unique_sha256_and_non_negative_size() -> None:
         if isinstance(constraint, UniqueConstraint)
     }
     check_constraints = {
-        constraint.name: str(cast("object", constraint.sqltext))
+        constraint.name: str(
+            cast("ColumnElement[bool]", constraint.sqltext).compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
         for constraint in table.constraints
         if isinstance(constraint, CheckConstraint)
     }

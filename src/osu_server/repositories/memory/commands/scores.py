@@ -100,7 +100,8 @@ class InMemoryScoreCommandRepository:
                 (
                     score
                     for score in self._state.scores_by_id.values()
-                    if score.user_id == user_id and _is_leaderboard_rebuild_candidate(score)
+                    if score.user_id == user_id
+                    and _is_leaderboard_rebuild_candidate(score, self._state)
                 ),
                 key=_rebuild_candidate_sort_key,
             )
@@ -119,15 +120,25 @@ class InMemoryScoreCommandRepository:
                     score
                     for score in self._state.scores_by_id.values()
                     if score.beatmap_id in beatmap_id_set
-                    and _is_leaderboard_rebuild_candidate(score)
+                    and _is_leaderboard_rebuild_candidate(score, self._state)
                 ),
                 key=_rebuild_candidate_sort_key,
             )
         )
 
 
-def _is_leaderboard_rebuild_candidate(score: Score) -> bool:
-    return score.passed and score.leaderboard_eligible_at_submission and score.id is not None
+def _is_leaderboard_rebuild_candidate(
+    score: Score,
+    state: InMemoryCommandRepositoryState,
+) -> bool:
+    beatmap = state.beatmaps_by_id.get(score.beatmap_id)
+    return (
+        score.passed
+        and score.leaderboard_eligible_at_submission
+        and score.id is not None
+        and beatmap is not None
+        and score.beatmap_checksum == beatmap.checksum_md5
+    )
 
 
 def _is_current_stats_score(

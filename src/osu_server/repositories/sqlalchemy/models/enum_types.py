@@ -1,4 +1,4 @@
-"""PostgreSQL enum type definitions for SQLAlchemy ORM models."""
+"""SQLAlchemy ORM model で共有する PostgreSQL enum type を定義する."""
 
 from __future__ import annotations
 

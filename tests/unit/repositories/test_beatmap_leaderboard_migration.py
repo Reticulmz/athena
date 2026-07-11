@@ -1,9 +1,16 @@
 from pathlib import Path
 from typing import cast
 
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKeyConstraint, Index, Table
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    ForeignKeyConstraint,
+    Index,
+    Table,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.schema import CreateIndex
 
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import BeatmapLeaderboardUserBestModel, ScoreModel
@@ -42,12 +49,16 @@ def _indexes(table: Table) -> dict[str, Index]:
     return indexes
 
 
+def _unique_constraints(table: Table) -> dict[str, UniqueConstraint]:
+    return {
+        cast("str", constraint.name): constraint
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint) and constraint.name is not None
+    }
+
+
 def _index_columns(index: Index) -> tuple[str, ...]:
     return tuple(column.name for column in index.columns)
-
-
-def _index_sql(index: Index) -> str:
-    return str(CreateIndex(index).compile(dialect=postgresql.dialect()))
 
 
 def test_beatmap_leaderboard_migration_adds_score_eligibility_and_projection_schema() -> None:
@@ -141,6 +152,13 @@ def test_score_metadata_includes_submission_time_leaderboard_eligibility() -> No
     )
     assert rebuild_index.unique is False
 
+    filter_keys_column = _column(table, "leaderboard_mod_filter_keys")
+    assert isinstance(filter_keys_column.type, postgresql.ARRAY)
+    assert not filter_keys_column.nullable
+    assert filter_keys_column.computed is not None
+    assert "idx_scores_beatmap_leaderboard_candidates" in _indexes(table)
+    assert "idx_scores_leaderboard_mod_filter_keys" in _indexes(table)
+
 
 def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
     table = cast("Table", BeatmapLeaderboardUserBestModel.__table__)
@@ -150,7 +168,7 @@ def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
     assert not _column(table, "ruleset").nullable
     assert not _column(table, "playstyle").nullable
     assert not _column(table, "user_id").nullable
-    assert not _column(table, "mod_filter_key").nullable
+    assert "mod_filter_key" not in table.c
     assert not _column(table, "score_id").nullable
     assert not _column(table, "score").nullable
     assert not _column(table, "submitted_at").nullable
@@ -160,27 +178,23 @@ def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
         "score_id",
         "scores.id",
     )
-    assert "ck_beatmap_leaderboard_user_bests_mod_filter_key_scope" in _check_constraints(table)
+    assert "ck_beatmap_leaderboard_user_bests_mod_filter_key_scope" not in _check_constraints(
+        table
+    )
 
-    indexes = _indexes(table)
-    unique_scope_index = indexes["idx_beatmap_leaderboard_user_bests_scope_unique"]
-    assert unique_scope_index.unique is True
-    assert _index_columns(unique_scope_index) == (
+    unique_constraints = _unique_constraints(table)
+    unique_scope = unique_constraints["uq_beatmap_leaderboard_user_bests_scope"]
+    assert tuple(column.name for column in unique_scope.columns) == (
         "beatmap_id",
         "ruleset",
         "playstyle",
         "user_id",
-        "mod_filter_key",
     )
+    unique_score = unique_constraints["uq_beatmap_leaderboard_user_bests_score_id"]
+    assert tuple(column.name for column in unique_score.columns) == ("score_id",)
 
-    ordering_index = indexes["idx_beatmap_leaderboard_user_bests_ordering"]
-    assert ordering_index.unique is False
-    ordering_sql = _index_sql(ordering_index)
-    assert (
-        "beatmap_id, ruleset, playstyle, mod_filter_key, "
-        "score DESC, submitted_at ASC, score_id ASC"
-    ) in ordering_sql
-
+    indexes = _indexes(table)
+    assert "idx_beatmap_leaderboard_user_bests_ordering" not in indexes
     user_rebuild_index = indexes["idx_beatmap_leaderboard_user_bests_user_rebuild"]
     assert user_rebuild_index.unique is False
     assert _index_columns(user_rebuild_index) == (

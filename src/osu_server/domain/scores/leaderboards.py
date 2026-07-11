@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from osu_server.domain.scores.score import Playstyle, Ruleset
 
 
-ALL_MODS_FILTER_KEY: Final[int] = -1
 NO_MOD_FILTER_KEY: Final[int] = 0
 
 _MIRROR_SELECTED_FILTER_KEY: Final[None] = None
@@ -44,25 +43,32 @@ class ScoreRankKey:
 
 @dataclass(slots=True, frozen=True)
 class LeaderboardScope:
-    """Identity dimensions for one Beatmap Leaderboard candidate scope."""
+    """Beatmap Leaderboard の基本 scope を表す値オブジェクト.
+
+    Attributes:
+        beatmap_id (int): 対象 Beatmap ID. 正の値でなければならない.
+        ruleset (Ruleset): 対象 ruleset.
+        playstyle (Playstyle): 対象 playstyle.
+    """
 
     beatmap_id: int
     ruleset: Ruleset
     playstyle: Playstyle
-    mod_filter_key: int = ALL_MODS_FILTER_KEY
 
     def __post_init__(self) -> None:
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
             raise ValueError(msg)
-        if self.mod_filter_key < ALL_MODS_FILTER_KEY:
-            msg = "mod_filter_key must be all-mods sentinel or non-negative"
-            raise ValueError(msg)
 
 
 @dataclass(slots=True, frozen=True)
 class LeaderboardModFilter:
-    """Canonical selected-mods filter key for Beatmap Leaderboards."""
+    """Selected Mods 用の正規化済み filter を表す値オブジェクト.
+
+    Attributes:
+        key (int | None): 対応可能な filter の正規化済み非負キー. 対応不能時は None.
+        unsupported (bool): stable client の初期 scope で対応しない filter かどうか.
+    """
 
     key: int | None
     unsupported: bool = False
@@ -71,49 +77,82 @@ class LeaderboardModFilter:
         if self.unsupported and self.key is not None:
             msg = "unsupported mod filter must not expose a key"
             raise ValueError(msg)
-        if not self.unsupported and self.key is not None and self.key < ALL_MODS_FILTER_KEY:
-            msg = "mod filter key must be all-mods sentinel or non-negative"
+        if not self.unsupported and self.key is not None and self.key < 0:
+            msg = "mod filter key must be non-negative"
             raise ValueError(msg)
 
     @classmethod
-    def all_mods(cls) -> Self:
-        return cls(key=ALL_MODS_FILTER_KEY)
-
-    @classmethod
     def unsupported_filter(cls) -> Self:
+        """対応不能な Selected Mods filter を生成する.
+
+        Returns:
+            LeaderboardModFilter: key を公開しない対応不能 filter.
+        """
         return cls(key=_MIRROR_SELECTED_FILTER_KEY, unsupported=True)
 
     @property
     def is_supported(self) -> bool:
+        """filter を leaderboard query に適用できるか返す.
+
+        Returns:
+            bool: key を安全に利用できる場合は True.
+        """
         return not self.unsupported
 
     @property
-    def is_all_mods(self) -> bool:
-        return self.is_supported and self.key == ALL_MODS_FILTER_KEY
-
-    @property
     def is_no_mod(self) -> bool:
+        """NoMod filter かどうか返す.
+
+        Returns:
+            bool: 対応可能な key が NoMod を表す場合は True.
+        """
         return self.is_supported and self.key == NO_MOD_FILTER_KEY
 
 
 def score_beats_current(candidate: ScoreRankKey, current: ScoreRankKey | None) -> bool:
-    """Return whether candidate ranks above the current representative score."""
+    """候補 score が現在の代表 score より上位か判定する.
+
+    Args:
+        candidate (ScoreRankKey): 比較する候補 score の順位キー.
+        current (ScoreRankKey | None): 現在の代表 score. 未登録時は None.
+
+    Returns:
+        bool: 候補を代表 score として採用すべき場合は True.
+    """
     if current is None:
         return True
     return candidate.ordering_key < current.ordering_key
 
 
 def filter_from_mod_combination(mods: ModCombination) -> LeaderboardModFilter:
-    """Normalize a selected-mod filter into a canonical leaderboard key."""
+    """Selected Mods の入力を正規化済み filter に変換する.
+
+    Args:
+        mods (ModCombination): stable client から変換済みの mod 組み合わせ.
+
+    Returns:
+        LeaderboardModFilter: DT/NC と SD/PF を統合した filter. Mirror は対応不能になる.
+    """
     if mods.has(Mod.MIRROR):
         return LeaderboardModFilter.unsupported_filter()
 
     return LeaderboardModFilter(key=_canonical_filter_key(mods))
 
 
-def projection_keys_for_score(mods: ModCombination) -> tuple[int, ...]:
-    """Return all leaderboard mod filter keys a source score can project into."""
-    keys: list[int] = [ALL_MODS_FILTER_KEY]
+def selected_mod_filter_keys_for_score(mods: ModCombination) -> tuple[int, ...]:
+    """score が一致する Selected Mods filter key を返す.
+
+    Args:
+        mods (ModCombination): score に保存された actual mods.
+
+    Returns:
+        tuple[int, ...]: 重複のない非負 filter key. all-mods scope は含めない.
+
+    Notes:
+        NoMod と SD/PF の両方に一致する score は複数 key を返す. これにより score 行を
+        scope ごとに複製せず Selected Mods の互換 semantics を表現できる.
+    """
+    keys: list[int] = []
     if _is_no_mod_candidate(mods):
         keys.append(NO_MOD_FILTER_KEY)
 
@@ -122,6 +161,25 @@ def projection_keys_for_score(mods: ModCombination) -> tuple[int, ...]:
         keys.append(canonical_key)
 
     return tuple(keys)
+
+
+def score_matches_selected_mod_filter(mods: ModCombination, filter_key: int) -> bool:
+    """score が Selected Mods filter に一致するか判定する.
+
+    Args:
+        mods (ModCombination): score に保存された actual mods.
+        filter_key (int): 正規化済みの非負 filter key.
+
+    Returns:
+        bool: score が filter に一致する場合は True.
+
+    Raises:
+        ValueError: filter_key が負数の場合.
+    """
+    if filter_key < 0:
+        msg = "filter_key must be non-negative"
+        raise ValueError(msg)
+    return filter_key in selected_mod_filter_keys_for_score(mods)
 
 
 def _is_no_mod_candidate(mods: ModCombination) -> bool:
@@ -143,12 +201,12 @@ def _canonical_filter_key(mods: ModCombination) -> int:
 
 
 __all__ = [
-    "ALL_MODS_FILTER_KEY",
     "NO_MOD_FILTER_KEY",
     "LeaderboardModFilter",
     "LeaderboardScope",
     "ScoreRankKey",
     "filter_from_mod_combination",
-    "projection_keys_for_score",
     "score_beats_current",
+    "score_matches_selected_mod_filter",
+    "selected_mod_filter_keys_for_score",
 ]

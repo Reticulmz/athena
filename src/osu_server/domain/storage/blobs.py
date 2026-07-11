@@ -11,7 +11,15 @@ class InvalidBlobError(ValueError):
 
 
 class BlobStorageBackendKind(StrEnum):
-    """blob metadata に記録する storage backend kind"""
+    """Blob metadataへ記録するstorage backend kindの閉集合.
+
+    Attributes:
+        LOCAL (str): Local filesystem backendの永続化値.
+        S3 (str): S3互換object storage backendの永続化値.
+
+    Notes:
+        Domain内ではEnum memberを使い、設定/DB境界だけで文字列値へ変換する.
+    """
 
     LOCAL = "local"
     S3 = "s3"
@@ -19,11 +27,26 @@ class BlobStorageBackendKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Blob:
+    """永続化済み blob metadata.
+
+    Attributes:
+        id (int): repositoryが割り当てたBlob ID.
+        sha256 (str): content-addressingに使用するSHA-256 digest.
+        byte_size (int): blob本体のbyte数.
+        content_type (str): blob本体のmedia type.
+        storage_backend (BlobStorageBackendKind): 本体を保持するbackend kind.
+        storage_key (str): backend内でblob本体を識別するkey.
+        created_at (datetime): metadataを永続化した日時.
+
+    Notes:
+        sha256は64文字の小文字16進数、byte_sizeは0以上、文字列値は空を許可しない.
+    """
+
     id: int
     sha256: str
     byte_size: int
     content_type: str
-    storage_backend: str
+    storage_backend: BlobStorageBackendKind
     storage_key: str
     created_at: datetime
 
@@ -45,12 +68,23 @@ class Blob:
 
 @dataclass(frozen=True, slots=True)
 class NewBlob:
-    """Blob metadata before repository-assigned identity and creation time exist."""
+    """repositoryがIDと作成日時を割り当てる前のBlob metadataを表す.
+
+    Attributes:
+        sha256 (str): content-addressingに使用するSHA-256 digest.
+        byte_size (int): blob本体のbyte数.
+        content_type (str): blob本体のmedia type.
+        storage_backend (BlobStorageBackendKind): 本体を保持するbackend kind.
+        storage_key (str): backend内でblob本体を識別するkey.
+
+    Notes:
+        sha256は64文字の小文字16進数、byte_sizeは0以上、文字列値は空を許可しない.
+    """
 
     sha256: str
     byte_size: int
     content_type: str
-    storage_backend: str
+    storage_backend: BlobStorageBackendKind
     storage_key: str
 
     def __post_init__(self) -> None:
@@ -86,10 +120,8 @@ class BlobDeduplicated:
 type BlobStoreResult = BlobStored | BlobDeduplicated
 
 
-def _validate_storage_backend(value: str) -> None:
-    if not value:
+def _validate_storage_backend(value: object) -> None:
+    if value == "":
         raise InvalidBlobError("storage_backend must not be empty")
-    try:
-        _ = BlobStorageBackendKind(value)
-    except ValueError as exc:
-        raise InvalidBlobError(f"unknown storage_backend: {value}") from exc
+    if not isinstance(value, BlobStorageBackendKind):
+        raise InvalidBlobError(f"unknown storage_backend: {value}")

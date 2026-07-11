@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    column,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -29,6 +30,9 @@ from osu_server.repositories.sqlalchemy.models.enum_types import (
     BEATMAP_RANK_STATUS_ENUM,
     LOCAL_BEATMAP_STATUS_ENUM,
 )
+
+_PLAY_COUNT_COLUMN = column("play_count", BigInteger)
+_PASS_COUNT_COLUMN = column("pass_count", BigInteger)
 
 
 class BeatmapSetModel(Base):
@@ -67,9 +71,12 @@ class BeatmapModel(Base):
     __tablename__: str = "beatmaps"
     __table_args__: tuple[UniqueConstraint | Index | CheckConstraint, ...] = (
         UniqueConstraint("checksum_md5", name="uq_beatmaps_checksum_md5"),
-        CheckConstraint("play_count >= 0", name="ck_beatmaps_play_count_non_negative"),
-        CheckConstraint("pass_count >= 0", name="ck_beatmaps_pass_count_non_negative"),
-        CheckConstraint("pass_count <= play_count", name="ck_beatmaps_pass_count_lte_play_count"),
+        CheckConstraint(_PLAY_COUNT_COLUMN >= 0, name="ck_beatmaps_play_count_non_negative"),
+        CheckConstraint(_PASS_COUNT_COLUMN >= 0, name="ck_beatmaps_pass_count_non_negative"),
+        CheckConstraint(
+            _PASS_COUNT_COLUMN <= _PLAY_COUNT_COLUMN,
+            name="ck_beatmaps_pass_count_lte_play_count",
+        ),
         Index("idx_beatmaps_beatmapset_id", "beatmapset_id"),
         Index("idx_beatmaps_checksum_md5", "checksum_md5"),
     )

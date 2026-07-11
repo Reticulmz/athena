@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast, override
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from osu_server.domain.storage.blobs import Blob, NewBlob
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind, NewBlob
 from osu_server.repositories.interfaces.commands.blobs import (
     BlobCommandRepository,
     DuplicateBlobError,
@@ -102,7 +102,7 @@ def _new_blob(*, sha256: str = VALID_SHA256) -> NewBlob:
         sha256=sha256,
         byte_size=123,
         content_type="text/plain",
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
         storage_key="e3/b0/blob",
     )
 
@@ -142,7 +142,7 @@ async def test_create_persists_blob_model_and_returns_domain_blob() -> None:
         sha256=VALID_SHA256,
         byte_size=123,
         content_type="text/plain",
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
         storage_key="e3/b0/blob",
         created_at=CREATED_AT,
     )
@@ -161,7 +161,7 @@ async def test_get_by_id_maps_model_to_domain_blob() -> None:
         sha256=VALID_SHA256,
         byte_size=123,
         content_type="text/plain",
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
         storage_key="e3/b0/blob",
         created_at=CREATED_AT,
     )

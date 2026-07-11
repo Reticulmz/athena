@@ -23,6 +23,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFileState,
     BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapsetSnapshot,
@@ -30,7 +31,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
     OsuFileFetchResult,
 )
-from osu_server.domain.storage.blobs import Blob
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind
 from osu_server.infrastructure.beatmaps.metadata_sources import (
     CompositeBeatmapMetadataProvider,
 )
@@ -152,7 +153,7 @@ def _make_snapshot(
             beatmap_id=beatmap_id + i,
             beatmapset_id=beatmapset_id,
             checksum_md5=checksum_md5 if i == 0 else _ALT_CHECKSUM,
-            mode=mode,
+            mode=BeatmapMode(mode),
             version=version,
             official_status=official_status,
             official_status_source=official_status_source,
@@ -765,7 +766,7 @@ class StubBlobStorageService:
             sha256=hashlib.sha256(data).hexdigest(),
             byte_size=len(data),
             content_type=content_type,
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key=f"stub/{self.next_blob_id}",
             created_at=_NOW,
         )
@@ -795,7 +796,7 @@ async def _setup_repo_with_beatmap(
         id=beatmap_id,
         beatmapset_id=beatmapset_id,
         checksum_md5=checksum_md5,
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Another",
         total_length=None,
         hit_length=None,
@@ -889,7 +890,7 @@ class TestFetchBeatmapFileUseCase:
         assert attachment is not None
         assert attachment.blob_id == blob_storage.stored[0].id
         assert attachment.checksum_md5 == expected_md5
-        assert attachment.source == BeatmapFileSource.OSU_CURRENT.value
+        assert attachment.source is BeatmapFileSource.OSU_CURRENT
         assert attachment.original_filename == "2000.osu"
         assert attachment.fetched_at is not None
         assert attachment.verified_at is not None

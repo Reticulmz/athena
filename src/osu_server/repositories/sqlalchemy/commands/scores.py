@@ -7,9 +7,11 @@ from typing import TYPE_CHECKING, cast
 from sqlalchemy import Select, case, func, literal, select, update
 from sqlalchemy.exc import IntegrityError
 
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
+from osu_server.repositories.sqlalchemy.models.beatmap import BeatmapModel
 from osu_server.repositories.sqlalchemy.models.score import ScoreModel
 
 if TYPE_CHECKING:
@@ -48,7 +50,11 @@ class SQLAlchemyScoreCommandRepository:
             perfect=score.perfect,
             client_version=score.client_version,
             submitted_at=score.submitted_at,
-            beatmap_status_at_submission=score.beatmap_status_at_submission,
+            beatmap_status_at_submission=(
+                score.beatmap_status_at_submission.value
+                if score.beatmap_status_at_submission is not None
+                else None
+            ),
             leaderboard_eligible_at_submission=score.leaderboard_eligible_at_submission,
             fail_time_ms=score.fail_time_ms,
             play_time_seconds=score.play_time_seconds,
@@ -196,7 +202,11 @@ def _score_to_domain(model: ScoreModel) -> Score:
         perfect=model.perfect,
         client_version=model.client_version,
         submitted_at=model.submitted_at,
-        beatmap_status_at_submission=model.beatmap_status_at_submission,
+        beatmap_status_at_submission=(
+            BeatmapRankStatus(model.beatmap_status_at_submission)
+            if model.beatmap_status_at_submission is not None
+            else None
+        ),
         leaderboard_eligible_at_submission=model.leaderboard_eligible_at_submission,
         fail_time_ms=model.fail_time_ms,
         play_time_seconds=model.play_time_seconds,
@@ -253,9 +263,11 @@ def _initial_stats_mod_condition() -> ColumnElement[bool]:
 def _leaderboard_rebuild_candidate_statement() -> Select[tuple[ScoreModel]]:
     return (
         select(ScoreModel)
+        .join(BeatmapModel, BeatmapModel.id == ScoreModel.beatmap_id)
         .where(
             ScoreModel.passed.is_(True),
             ScoreModel.leaderboard_eligible_at_submission.is_(True),
+            ScoreModel.beatmap_checksum == BeatmapModel.checksum_md5,
         )
         .order_by(
             ScoreModel.beatmap_id.asc(),

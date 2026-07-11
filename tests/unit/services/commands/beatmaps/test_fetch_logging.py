@@ -27,6 +27,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFileState,
     BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapsetSnapshot,
@@ -34,7 +35,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
     OsuFileFetchResult,
 )
-from osu_server.domain.storage.blobs import Blob, BlobStored
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind, BlobStored
 from osu_server.infrastructure.beatmaps.metadata_sources import (
     CompositeBeatmapMetadataProvider,
 )
@@ -124,7 +125,7 @@ class StubBlobStorageService:
             sha256=hashlib.sha256(data).hexdigest(),
             byte_size=len(data),
             content_type=content_type,
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key=f"stub/{self.next_blob_id}",
             created_at=_NOW,
         )
@@ -164,7 +165,7 @@ def _make_snapshot(
             beatmap_id=beatmap_id + i,
             beatmapset_id=beatmapset_id,
             checksum_md5=checksum_md5 if i == 0 else "abcdef0123456789abcdef0123456789",
-            mode=mode,
+            mode=BeatmapMode(mode),
             version=version,
             official_status=official_status,
             official_status_source=official_status_source,
@@ -439,7 +440,7 @@ class TestFileFetchJobLogging:
             id=beatmap_id,
             beatmapset_id=beatmapset_id,
             checksum_md5=checksum_md5,
-            mode="osu",
+            mode=BeatmapMode.OSU,
             version="Another",
             total_length=None,
             hit_length=None,

@@ -4,7 +4,7 @@
 
 beatmap-leaderboards は、保存済み Score から Beatmap ごとの score-priority leaderboard rows と viewer 自身の score-priority Personal Best を提供する。stable client は `/web/osu-osz2-getscores.php` で Global、Local 互換、Country、Selected Mods、Friends を参照し、将来の Web 表示も同じ query result を再利用する。
 
-この設計は current `personal_bests` を延命しない。Beatmap Leaderboard 用の代表 Score は `beatmap_leaderboard_user_bests` に再設計し、PP-priority の `beatmap_performance_bests` は user-stats の責務として明確に分離する。
+この設計は current `personal_bests` を延命しない。公開 Beatmap Leaderboard rows と category ごとの Personal Best は `scores` を正本として read-time に導出する。`beatmap_leaderboard_user_bests` は Score Submit の Global all-mods Personal Best delta と reconciliation のために、1 user / Beatmap / ruleset / playstyle あたり1行だけ保持する。PP-priority の `beatmap_performance_bests` は user-stats の責務として明確に分離する。
 
 ### Goals
 
@@ -29,10 +29,11 @@ beatmap-leaderboards は、保存済み Score から Beatmap ごとの score-pri
 ### This Spec Owns
 
 - Beatmap Leaderboard category、scope、rank key、mod filter key、row result の domain language。
-- score-priority projection `beatmap_leaderboard_user_bests` の schema、migration、command/query repository contract。
+- Global all-mods projection `beatmap_leaderboard_user_bests` の schema、migration、command repository contract。
+- `scores.leaderboard_mod_filter_keys` generated column と source-score query repository contract。
 - `personal_bests` table の Beatmap Leaderboard 用 projection からの撤去と migration path。
 - `scores.leaderboard_eligible_at_submission` による submission-time leaderboard eligibility evidence。
-- Score record persistence と leaderboard adoption の分離。leaderboard 非対象でも保存対象として受け付けた Score は projection に採用しない。
+- Score record persistence と leaderboard eligibility の分離。leaderboard 非対象でも保存対象として受け付けた Score は公開 read と Global all-mods projection の候補にしない。
 - stable getscores request を Beatmap Leaderboard query input へ変換する compatibility mapper。
 - stable getscores response における header、Personal Best row、score rows、score count の contract。
 - Submit Score command が Global all-mods Personal Best delta を score-priority projection から計算すること。
@@ -69,7 +70,7 @@ Forbidden dependencies:
 ### Revalidation Triggers
 
 - Stable getscores `v`, `vv`, `mods`, or response row wire shape changes。
-- `beatmap_leaderboard_user_bests` natural key, rank key, or `mod_filter_key` semantics change。
+- `beatmap_leaderboard_user_bests` natural key、rank key、または `scores.leaderboard_mod_filter_keys` semantics change。
 - Score submission acceptance rules or `leaderboard_eligible_at_submission` meaning changes。
 - `score_performance_calculations` current-row semantics or PP display policy changes。
 - Friend Relationships eligible user set contract changes。
@@ -81,13 +82,13 @@ Forbidden dependencies:
 
 ### Existing Architecture Analysis
 
-Athena already uses a layered modular monolith with stable transport adapters, command/query use-cases, Unit of Work command persistence, query repositories, SQLAlchemy adapters, taskiq jobs, and Dishka composition. Existing getscores code resolves Beatmap header state and optional Global Personal Best, but it does not list rows, interpret category semantics, or maintain a projection suitable for mod-filtered scopes.
+Athena already uses a layered modular monolith with stable transport adapters, command/query use-cases, Unit of Work command persistence, query repositories, SQLAlchemy adapters, taskiq jobs, and Dishka composition. Getscores は Beatmap header state を解決した後、query repository が eligible source scores から user best と rank を導出する。Mod filter scope ごとの永続 projection は持たない。
 
-Score submission already creates Score, Replay, Personal Best projection, and idempotency snapshot in a single Unit of Work. This design keeps that transaction pattern but replaces the old Personal Best projection with a leaderboard-specific repository. Score PP Calculation already stores current Performance Calculation and remains the PP source for display enrichment.
+Score submission は Score、Replay、Global all-mods best projection、idempotency snapshot を同一 Unit of Work で保存する。Selected Mods、Country、Friends の代表 Score は保存せず、公開 read 時に source scores から導出する。Score PP Calculation は current Performance Calculation を保持し、表示 enrichment の PP source であり続ける。
 
 ### Architecture Pattern & Boundary Map
 
-Selected pattern: dedicated Beatmap Leaderboard subsystem with score-priority projection and transport-local stable compatibility mapping.
+Selected pattern: source-score read model、Global-only command projection、transport-local stable compatibility mapping を持つ Beatmap Leaderboard subsystem。
 
 ```mermaid
 graph TB
@@ -97,7 +98,6 @@ graph TB
     WebSurface[Future web surface] --> LeaderboardQuery
     LeaderboardQuery --> LeaderboardQueryRepo[Leaderboard query repo]
     LeaderboardQuery --> FriendQuery[Friend query]
-    LeaderboardQueryRepo --> Projection[Leaderboard projection]
     LeaderboardQueryRepo --> Scores[Scores]
     LeaderboardQueryRepo --> Users[Users and roles]
     LeaderboardQueryRepo --> Beatmaps[Beatmaps]
@@ -111,12 +111,13 @@ graph TB
 
 Key decisions:
 
-- `beatmap_leaderboard_user_bests` stores one representative Score per Beatmap, ruleset, playstyle, user, and mod filter scope。
-- Country and Friends are current viewer filters over all-mods projection rows, not projection dimensions。
-- Selected Mods uses canonical `mod_filter_key`; displayed mods always come from the source Score。
-- Rebuild jobs repair projection drift, while public reads still apply current eligibility and visibility predicates。
+- Public rows と category-specific Personal Best は eligible `scores` を user ごとに window rank し、各 user の最高 Score を選んだ後に全体順位を付ける。
+- `beatmap_leaderboard_user_bests` stores one Global all-mods representative Score per Beatmap, ruleset, playstyle, and user。
+- Country and Friends are current viewer filters over source scores, not projection dimensions。
+- Selected Mods の場合だけ `scores.leaderboard_mod_filter_keys` を filter し、displayed mods は source Score の値を保持する。
+- Rebuild jobs repair Global all-mods projection drift。public read correctness は projection state に依存しない。
 - PP may be read for row display, but PP never orders Beatmap Leaderboard rows。
-- Stored-but-ineligible Score rows remain source records and never become projection candidates until a future explicit migration policy says otherwise。
+- Stored-but-ineligible Score rows remain source records and never become public read or Global projection candidates。
 
 ### Technology Stack
 
@@ -124,7 +125,7 @@ Key decisions:
 | --- | --- | --- | --- |
 | Backend / Services | Python 3.14 dataclasses and Protocols | Domain policies and command/query inputs | No Pydantic in domain |
 | Stable transport | Starlette web legacy handler | `/web/osu-osz2-getscores.php` request/response adaptation | Existing endpoint |
-| Data / Storage | PostgreSQL + SQLAlchemy 2.0 async | Projection table, score eligibility snapshot, read joins | Alembic migration required |
+| Data / Storage | PostgreSQL + SQLAlchemy 2.0 async | Source-score ranking, generated mod filter keys, Global projection | Alembic migration required |
 | Messaging / Jobs | taskiq + taskiq-redis | Reconciliation jobs | Jobs are corrective, not read correctness source |
 | Composition | Dishka | App/worker/test provider wiring | Existing provider pattern |
 
@@ -203,7 +204,7 @@ alembic/
 - `src/osu_server/domain/compatibility/stable/getscores.py` — replace stable-shaped PB-only result with header, personal_best, rows, and category result values.
 - `src/osu_server/services/queries/scores/beatmap_score_listing.py` — preserve beatmap header resolution and delegate supported leaderboard reads to `BeatmapLeaderboardQuery`.
 - `src/osu_server/services/queries/identity/friend_relationships.py` — adjust `GetFriendEligibleUserIdsQuery` to return viewer plus current friend target IDs for Friends leaderboard filtering while keeping `ListFriendIdsQuery` target-only for login.
-- `src/osu_server/services/commands/scores/submit_score.py` — compute submit PB delta from Global all-mods `beatmap_leaderboard_user_bests` and upsert projection entries in the same Unit of Work.
+- `src/osu_server/services/commands/scores/submit_score.py` — compute submit PB delta from Global all-mods `beatmap_leaderboard_user_bests` and upsert one projection entry in the same Unit of Work.
 - `src/osu_server/services/commands/scores/process_submission.py` — pass `leaderboard_eligible_at_submission` and avoid using non-eligible scores for PB delta.
 - `src/osu_server/domain/beatmaps/models.py` and score submission eligibility flow — keep accepting stored Score records where score-ingestion allows them, while marking leaderboard adoption separately.
 - `src/osu_server/repositories/interfaces/unit_of_work.py` — expose `beatmap_leaderboards` command repository and remove `personal_bests` once migration is complete.
@@ -255,7 +256,7 @@ sequenceDiagram
     Submit->>Uow: open transaction
     Submit->>Scores: create score
     Submit->>Leaderboards: read previous global all mods best
-    Submit->>Leaderboards: upsert matching scopes
+    Submit->>Leaderboards: upsert global all mods best once
     Submit->>Submissions: store result snapshot
     Submit->>Uow: commit
 ```
@@ -270,13 +271,14 @@ graph TB
     Enqueue --> Job[Taskiq adapter]
     Job --> Command[Rebuild command]
     Command --> Select[Select source scores]
-    Select --> Replace[Replace projection rows]
+    Select --> Replace[Replace Global projection rows]
     Replace --> Done[Converged state]
-    Read[Public read] --> Filters[Current filters]
-    Filters --> Output[Correct output]
+    Read[Public read] --> Scores[Rank eligible source scores]
+    Scores --> Filters[Current category and visibility filters]
+    Filters --> Output[Correct output independent of projection]
 ```
 
-Read correctness does not wait for `Done`; stale projection rows are filtered by current public predicates.
+Read correctness does not wait for `Done`; public reads do not consume the Global all-mods projection.
 
 ## Requirements Traceability
 
@@ -288,50 +290,50 @@ Read correctness does not wait for `Done`; stale projection rows are filtered by
 | 1.4 | Unsupported category returns header with empty rows | Stable mapper, query | `UnsupportedLeaderboardCategory` result | Stable Getscores Read |
 | 1.5 | Non-vanilla returns empty leaderboard | Query request validation | `playstyle` guard | Stable Getscores Read |
 | 1.6 | Song select/editor suppresses rows and PB | Stable mapper, formatter | `song_select` flag | Stable Getscores Read |
-| 2.1 | One representative score per user per scope | Projection command repo | `upsert_if_better` | Submit Projection Update |
-| 2.2 | Rank order is score desc, submitted_at asc, score_id asc | `ScoreRankKey` | `beats` policy | Submit Projection Update |
+| 2.1 | One representative score per user per read scope | Source-score window query | partition by `user_id` | Stable Getscores Read |
+| 2.2 | Rank order is score desc, submitted_at asc, score_id asc | `ScoreRankKey`, query repo | shared ordering policy | Stable Getscores Read |
 | 2.3 | At most 50 rows | Query repo | `limit=50` contract | Stable Getscores Read |
 | 2.4 | Row ranks are 1 through returned rows | Query repo, formatter | `rank` field | Stable Getscores Read |
 | 2.5 | Stable score count excludes PB | Formatter | `score_count=len(rows)` | Stable Getscores Read |
-| 2.6 | Same score/time uses lower Score ID | `ScoreRankKey` | `score_id` tie-break | Submit Projection Update |
+| 2.6 | Same score/time uses lower Score ID | `ScoreRankKey`, query repo | `score_id` tie-break | Stable Getscores Read |
 | 3.1 | Authenticated viewer PB returned separately | Query use-case | `personal_best` result | Stable Getscores Read |
 | 3.2 | PB outside top 50 includes actual rank | Query repo | window rank for PB | Stable Getscores Read |
 | 3.3 | PB can also appear in rows | Formatter | no dedupe rule | Stable Getscores Read |
-| 3.4 | Global/Country/Friends PB ignores mods | Scope policy | all-mods `mod_filter_key=NULL` | Stable Getscores Read |
-| 3.5 | Selected Mods PB uses filter | Mod filter policy | `mod_filter_key` | Stable Getscores Read |
+| 3.4 | Global/Country/Friends PB ignores mods | Source-score scope policy | no mod predicate | Stable Getscores Read |
+| 3.5 | Selected Mods PB uses filter | Mod filter policy | generated key membership | Stable Getscores Read |
 | 3.6 | Unknown viewer has no PB | Query use-case | viewer context guard | Stable Getscores Read |
 | 3.7 | Non-visible viewer has no PB but public rows remain | Visibility policy | `LeaderboardVisibleUserPolicy` | Stable Getscores Read |
 | 4.1 | Country uses current owner country | Query repo | country filter | Stable Getscores Read |
 | 4.2 | Missing or `XX` viewer country returns empty | Query use-case | country guard | Stable Getscores Read |
 | 4.3 | Friends includes current friend targets and viewer | Friend query dependency | `GetFriendEligibleUserIdsQuery` | Stable Getscores Read |
 | 4.4 | Reverse-only relationship excluded | Friend query dependency | friend eligible set | Stable Getscores Read |
-| 4.5 | Country/Friends ignore selected mods | Scope policy | all-mods key | Stable Getscores Read |
+| 4.5 | Country/Friends ignore selected mods | Scope policy | no mod predicate | Stable Getscores Read |
 | 4.6 | Friend changes reflected on read | Friend query dependency | current read | Stable Getscores Read |
 | 4.7 | Country changes reflected on read | Query repo | current user country | Stable Getscores Read |
 | 4.8 | Unauthenticated viewer-dependent categories empty | Query use-case | viewer guard | Stable Getscores Read |
-| 5.1 | Selected Mods filters rows and PB | Mod filter policy, query repo | `mod_filter_key` | Stable Getscores Read |
-| 5.2 | NC matches DT and NC while displaying NC | Mod filter policy | canonical DT key | Submit Projection Update |
-| 5.3 | PF matches SD and PF while displaying PF | Mod filter policy | canonical SD key | Submit Projection Update |
-| 5.4 | NoMod includes non-gameplay preference mods | Mod filter policy | NoMod key `0` | Submit Projection Update |
-| 5.5 | NoMod excludes NC | Mod filter policy | gameplay mod check | Submit Projection Update |
-| 5.6 | Multiple gameplay mods require exact selected gameplay set | Mod filter policy | canonical key | Submit Projection Update |
-| 5.7 | Same score can appear in multiple matching scopes | Command repo | multi-key upsert | Submit Projection Update |
+| 5.1 | Selected Mods filters rows and PB | Mod filter policy, query repo | generated key membership | Stable Getscores Read |
+| 5.2 | NC matches DT and NC while displaying NC | generated key policy | canonical DT key | Stable Getscores Read |
+| 5.3 | PF matches SD and PF while displaying PF | generated key policy | canonical SD key | Stable Getscores Read |
+| 5.4 | NoMod includes non-gameplay preference mods | generated key policy | NoMod key `0` | Stable Getscores Read |
+| 5.5 | NoMod excludes NC | generated key policy | gameplay mod check | Stable Getscores Read |
+| 5.6 | Multiple gameplay mods require exact selected gameplay set | generated key policy | canonical key | Stable Getscores Read |
+| 5.7 | Same score can match multiple selected filters without duplicate rows | generated integer array | multiple keys in one Score row | Stable Getscores Read |
 | 5.8 | Explicit Mirror selected filter returns empty | Stable mapper, mod policy | unsupported filter result | Stable Getscores Read |
 | 6.1 | Failed scores excluded | Eligibility policy | `passed=true` predicate | Stable Getscores Read |
 | 6.2 | Stored ineligible scores remain excluded | Eligibility snapshot | `leaderboard_eligible_at_submission` | Stable Getscores Read |
 | 6.3 | Visible users may appear | Visibility policy | bitwise role predicate | Stable Getscores Read |
 | 6.4 | Non-visible owners excluded | Query repo | owner visibility filter | Stable Getscores Read |
 | 6.5 | Visibility changes apply on read | Query repo | current role join | Stable Getscores Read |
-| 6.6 | Visible again users can reappear | Projection retained, read filter | visibility filter | Reconciliation |
+| 6.6 | Visible again users can reappear | Source Score retained, read filter | visibility filter | Stable Getscores Read |
 | 6.7 | Non-visible viewer still sees public rows | Query use-case | PB-only viewer visibility guard | Stable Getscores Read |
 | 7.1 | Non-visible current Beatmap returns no rows/PB | Query use-case | current status guard | Stable Getscores Read |
-| 7.2 | Pre-promotion scores not adopted | Eligibility snapshot | submission-time flag | Reconciliation |
+| 7.2 | Pre-promotion scores not adopted | Eligibility snapshot | submission-time flag | Stable Getscores Read |
 | 7.3 | Downgraded Beatmap hides rows/PB | Query use-case | current status guard | Stable Getscores Read |
 | 7.4 | Old checksum scores excluded | Query repo | current checksum predicate | Stable Getscores Read |
 | 7.5 | Outdated request checksum returns update available | Header resolver | update outcome | Stable Getscores Read |
-| 7.6 | Pending reconciliation still filters current state | Query repo | read-time predicates | Reconciliation |
+| 7.6 | Pending reconciliation still filters current state | Query repo | source-score predicates | Stable Getscores Read |
 | 8.1 | Accepted eligible score compares previous Global all-mods PB | Submit command | command repo read | Submit Projection Update |
-| 8.2 | Stable submit PB delta uses Global all-mods only | Submit command | `mod_filter_key=NULL` | Submit Projection Update |
+| 8.2 | Stable submit PB delta uses Global all-mods only | Submit command | Global-only projection | Submit Projection Update |
 | 8.3 | Ineligible score does not improve submit delta | Eligibility snapshot | command guard | Submit Projection Update |
 | 8.4 | Retry uses saved submit result | Submit command | submission snapshot | Submit Projection Update |
 | 8.5 | Later categories resolve own PB | Query use-case | category scope | Stable Getscores Read |
@@ -345,6 +347,16 @@ Read correctness does not wait for `Done`; stale projection rows are filtered by
 | 10.3 | Beatmap checksum rebuild async | Rebuild job | beatmapset payload | Reconciliation |
 | 10.4 | Pending rebuild reads filter current state | Query repo | read-time predicates | Stable Getscores Read |
 | 10.5 | Repeated rebuild converges | Rebuild command repo | replace from source scores | Reconciliation |
+| 11.1 | Closed values use domain/PostgreSQL Enum | Domain enums, ORM enum registry, migration | typed model fields | Persistence Migration |
+| 11.2 | Persistence is NOT NULL by default | ORM models, migration | explicit nullability | Persistence Migration |
+| 11.3 | Calculationとwork itemのclaim scopeを分離する | Performance command repo, constraints | state別claim nullability | Performance Calculation |
+| 11.4 | Global projection and score ID are unique | Projection model, command repo | natural key, `score_id` constraint | Submit Projection Update |
+| 11.5 | Selected Mods uses generated Score keys | Score model, query repo | generated array membership | Stable Getscores Read |
+| 11.6 | Enum conversion validates legacy values | Alembic migration | `_validate_enum_column` | Persistence Migration |
+| 11.7 | Persistence code uses SQLAlchemy expressions | Repositories, Alembic migration | Core/ORM expressions | Persistence Migration |
+| 11.8 | Upgrade preserves current Global data | Alembic migration | checksum-aware replacement | Persistence Migration |
+| 11.9 | Downgrade reconstructs legacy scopes | Alembic migration | source-score window ranking | Persistence Migration |
+| 11.10 | Real PostgreSQL verifies migration semantics | Integration tests | generated keys, round trip, Enum bind | Persistence Migration |
 
 ## Components and Interfaces
 
@@ -354,9 +366,9 @@ Read correctness does not wait for `Done`; stale projection rows are filtered by
 | Leaderboard visible user policy | Domain identity | Public leaderboard visibility without admin bypass | 3.7, 6.3-6.7 | `Privileges` P0 | Service |
 | Stable getscores leaderboard mapper | Stable compatibility | Map raw stable fields to query category and mod filter | 1.3, 1.4, 1.6, 5.8 | stable parser P0 | Service |
 | Beatmap leaderboard query | Query service | Resolve header, rows, PB, viewer-dependent scopes | 1.1-7.6, 9.1-9.4, 10.4 | query repos P0, friend query P1 | Service |
-| Beatmap leaderboard command repo | Command persistence | Upsert and rebuild projection rows | 2.1-2.6, 5.7, 8.1-8.4, 10.5 | UoW P0 | State |
+| Beatmap leaderboard command repo | Command persistence | Upsert and rebuild Global all-mods projection rows | 8.1-8.4, 10.5 | UoW P0 | State |
 | Beatmap leaderboard query repo | Query persistence | Return top rows and PB rank with current filters | 2.3-4.8, 6.1-7.6, 9.1-9.4 | SQLAlchemy P0 | Service |
-| Submit leaderboard updater | Command service | Update projection and PB delta during accepted submit | 8.1-8.4 | submit command P0 | Service |
+| Submit leaderboard updater | Command service | Update Global projection and PB delta during accepted submit | 8.1-8.4 | submit command P0 | Service |
 | Rebuild command and jobs | Command and runtime | Correct projection after user/beatmap/checksum changes | 10.1-10.5 | taskiq P1, UoW P0 | Batch |
 | Stable getscores formatter | Stable transport | Emit compatible text response with separate PB and rows | 2.5, 3.1-3.3 | stable query result P0 | API |
 
@@ -372,9 +384,9 @@ Read correctness does not wait for `Done`; stale projection rows are filtered by
 Responsibilities and constraints:
 
 - `LeaderboardCategory` includes `GLOBAL`, `COUNTRY`, `SELECTED_MODS`, `FRIENDS` only.
-- `LeaderboardScope` identity is Beatmap, ruleset, playstyle, and optional `mod_filter_key`.
+- `LeaderboardScope` identity is Beatmap, ruleset, and playstyle.
 - `ScoreRankKey` orders by `score desc`, `submitted_at asc`, `score_id asc`.
-- `mod_filter_key` is `None` for all-mods and non-null canonical integer for Selected Mods.
+- `LeaderboardReadScope.mod_filter_key` is present only for Selected Mods. Other categories must not provide it.
 - Raw score mods are never overwritten for display.
 
 Service interface:
@@ -394,14 +406,15 @@ class LeaderboardModFilter:
     unsupported: bool = False
 
 def filter_from_mod_combination(mods: ModCombination) -> LeaderboardModFilter: ...
-def projection_keys_for_score(mods: ModCombination) -> tuple[int | None, ...]: ...
+def selected_mod_filter_keys_for_score(mods: ModCombination) -> tuple[int, ...]: ...
+def score_matches_selected_mod_filter(mods: ModCombination, filter_key: int) -> bool: ...
 ```
 
 Preconditions:
 
 - `score_id` and Beatmap/user identifiers are positive.
 - `submitted_at` is server submission acceptance time.
-- `mod_filter_key=None` is reserved for all-mods only.
+- Selected Mods filter key は non-negative でなければならない.
 
 Postconditions:
 
@@ -483,7 +496,7 @@ Responsibilities and constraints:
 - Builds viewer context for Country and Friends.
 - For Friends, consumes a self-inclusive `GetFriendEligibleUserIdsQuery` result: viewer ID plus current friend target IDs. If the underlying friend query implementation is target-only, this spec must update it before leaderboard query integration.
 - Requests rows and PB rank from query repository after all scope guards are known.
-- Does not mutate projection or repair missing rows.
+- Does not mutate Global all-mods projection or repair missing rows.
 
 Service interface:
 
@@ -521,7 +534,9 @@ class BeatmapLeaderboardQuery:
 
 Responsibilities and constraints:
 
-- Reads from `beatmap_leaderboard_user_bests` joined to Score, Beatmap, User, Role, Replay, and current Performance Calculation.
+- Reads eligible candidates directly from `scores`, joined to Beatmap, User, Role, Replay, and current Performance Calculation.
+- Applies Selected Mods key membership only when `category=SELECTED_MODS`; Global、Country、Friends have no mod predicate.
+- Selects one best Score per user with `row_number() over (partition by user_id ...)`, then ranks that candidate set with a second window.
 - Applies current public filters in every row and PB query.
 - Exposes PP only for current Ranked or Approved Beatmaps; Loved and Qualified rows remain visible with `pp=None`.
 - Uses window ranking over the filtered candidate set for PB actual rank.
@@ -553,14 +568,14 @@ class BeatmapLeaderboardQueryRepository(Protocol):
 
 | Field | Detail |
 | --- | --- |
-| Intent | Update Beatmap Leaderboard projection and submit PB delta inside score submission. |
-| Requirements | 2.1, 2.2, 2.6, 5.7, 8.1-8.4 |
+| Intent | Update Global all-mods projection and submit PB delta inside score submission. |
+| Requirements | 2.1, 2.2, 2.6, 8.1-8.4 |
 
 Responsibilities and constraints:
 
 - Runs only after Score creation and before submit snapshot persistence.
 - Reads previous Global all-mods best before replacing it.
-- Upserts all matching projection scopes for the accepted score.
+- Upserts the Global all-mods projection once for the accepted score.
 - Does not update projection when `passed=false` or `leaderboard_eligible_at_submission=false`.
 - Does not reject or delete the source Score when it is stored but leaderboard-ineligible.
 - Does not recalculate anything on idempotency replay.
@@ -575,7 +590,6 @@ class UpdateBeatmapLeaderboardForScoreCommand:
     beatmap_id: int
     ruleset: Ruleset
     playstyle: Playstyle
-    mods: ModCombination
     rank_key: ScoreRankKey
     leaderboard_eligible_at_submission: bool
 
@@ -587,12 +601,14 @@ class UpdateBeatmapLeaderboardForScoreUseCase:
 
 | Field | Detail |
 | --- | --- |
-| Intent | Mutate score-priority projection rows through Unit of Work. |
-| Requirements | 2.1, 2.2, 2.6, 5.7, 8.1-8.4, 10.5 |
+| Intent | Mutate Global all-mods score-priority projection rows through Unit of Work. |
+| Requirements | 2.1, 2.2, 2.6, 8.1-8.4, 10.5 |
 
 Responsibilities and constraints:
 
-- Natural key: `beatmap_id`, `ruleset`, `playstyle`, `user_id`, `mod_filter_key`.
+- Natural key: `beatmap_id`, `ruleset`, `playstyle`, `user_id`.
+- `beatmap_checksum` is a non-null replaceable freshness attribute and is not part of the natural key.
+- `score_id` is unique, so one source Score cannot create duplicate projection rows.
 - Replaces existing row only when candidate `ScoreRankKey` beats current row.
 - Supports idempotent rebuild by replacing all rows for a user or beatmap slice from source Score candidates.
 - Does not commit or rollback outside Unit of Work.
@@ -601,12 +617,16 @@ State contract:
 
 ```python
 @dataclass(slots=True, frozen=True)
-class UpsertBeatmapLeaderboardUserBest:
+class BeatmapLeaderboardUserBestScope:
     beatmap_id: int
+    beatmap_checksum: str
     ruleset: Ruleset
     playstyle: Playstyle
     user_id: int
-    mod_filter_key: int | None
+
+@dataclass(slots=True, frozen=True)
+class UpsertBeatmapLeaderboardUserBest:
+    scope: BeatmapLeaderboardUserBestScope
     score_id: int
     rank_key: ScoreRankKey
 
@@ -702,7 +722,7 @@ API contract:
 
 ```mermaid
 erDiagram
-    Score ||--o{ BeatmapLeaderboardUserBest : represents
+    Score ||--o| BeatmapLeaderboardUserBest : represents_global_best
     Beatmap ||--o{ BeatmapLeaderboardUserBest : has
     User ||--o{ BeatmapLeaderboardUserBest : owns
     Score ||--o{ ScorePerformanceCalculation : may_have
@@ -711,7 +731,8 @@ erDiagram
 Invariants:
 
 - A projection row is derived from exactly one source Score.
-- A source Score can appear in multiple projection rows when it matches all-mods and one or more Selected Mods scopes.
+- A source Score can appear in at most one `beatmap_leaderboard_user_bests` row because `score_id` is unique.
+- Selected Mods の複数一致は `scores.leaderboard_mod_filter_keys` の複数 key で表し、projection row を複製しない。
 - `beatmap_leaderboard_user_bests` is not the source of truth for score display fields.
 - PP display is an enrichment from current Performance Calculation and not part of the rank key.
 
@@ -720,15 +741,27 @@ Invariants:
 - `Score`
 - Source of truth for gameplay result, raw displayed mods, passed state, checksum, server `submitted_at`, and submission-time Beatmap status.
 - Adds explicit `leaderboard_eligible_at_submission`.
-- Allows stored Score records to exist with `leaderboard_eligible_at_submission=false`; such rows are excluded from projection, rows, PB, and submit PB delta.
+- Allows stored Score records to exist with `leaderboard_eligible_at_submission=false`; such rows are excluded from public rows、PB、Global projection、submit PB delta。
 - `BeatmapLeaderboardUserBest`
-  - Derived score-priority representative for one user inside one leaderboard scope.
-  - Stores only scope identity and rank keys required for efficient replacement and ordering.
+  - Derived Global all-mods score-priority representative for one user.
+  - Stores the natural identity, current checksum freshness attribute, and rank keys required for replacement and reconciliation.
 - `LeaderboardReadScope`
-  - Query-time view over projection plus current state filters.
+  - Query-time view over source scores plus current state filters.
   - Country/Friends are filters, not stored projection dimensions.
 
 ### Physical Data Model
+
+#### Claim Nullability Matrix
+
+| Table | State | `claim_owner` / `claim_expires_at` |
+| --- | --- | --- |
+| `score_performance_calculations` | `queued`, `fetching_file`, `calculating` | 未claimなら両方`NULL`、active lease中は両方非`NULL` |
+| `score_performance_calculations` | `completed`, `unavailable`, `superseded` | 両方`NULL` |
+| `performance_recalculation_work_items` | `pending` | 両方`NULL` |
+| `performance_recalculation_work_items` | `claimed` | 両方非`NULL` |
+| `performance_recalculation_work_items` | `completed`, `unavailable` | 両方`NULL` |
+
+どちらのtableでも片方だけが`NULL`になる状態は許可しない。Calculationのclaim pairは処理中stateでだけ保持でき、work itemのclaim pairは`claimed` stateでだけ保持できる。
 
 #### `scores`
 
@@ -737,10 +770,13 @@ Add column:
 | Column | Type | Null | Notes |
 | --- | --- | --- | --- |
 | `leaderboard_eligible_at_submission` | `Boolean` | no | `true` only when the score was passed and the Beatmap was leaderboard-visible at acceptance time |
+| `leaderboard_mod_filter_keys` | `Integer[]` generated stored | no | Selected Mods で一致する canonical key 群。NoMod と SD/PF の複数一致を1 Score rowで表す |
 
 Indexes:
 
 - `idx_scores_leaderboard_rebuild_candidate` on `beatmap_id`, `ruleset`, `playstyle`, `user_id`, `leaderboard_eligible_at_submission`, `passed`, `score`, `submitted_at`, `id`.
+- `idx_scores_beatmap_leaderboard_candidates` partial index on current source-score ranking columns for passed and submission-eligible rows.
+- `idx_scores_leaderboard_mod_filter_keys` GIN index on `leaderboard_mod_filter_keys`.
 - Existing checksum and beatmap indexes remain available for lookup.
 
 #### `beatmap_leaderboard_user_bests`
@@ -749,10 +785,10 @@ Indexes:
 | --- | --- | --- | --- |
 | `id` | `BigInteger` | no | Primary key |
 | `beatmap_id` | `Integer` | no | Beatmap identity |
+| `beatmap_checksum` | `String(32)` | no | Projection rowが表すcurrent Beatmap revision。natural keyには含めず、checksum更新時に置き換える |
 | `ruleset` | `SmallInteger` | no | Vanilla ruleset mode |
 | `playstyle` | `SmallInteger` | no | Initial scope uses vanilla only |
 | `user_id` | `Integer` | no | Score owner |
-| `mod_filter_key` | `Integer` | yes | `NULL` all-mods, `0` NoMod, positive canonical selected mods |
 | `score_id` | `BigInteger` | no | FK to `scores.id` |
 | `score` | `Integer` | no | Rank key copy from Score |
 | `submitted_at` | `DateTime timezone` | no | Rank key copy from Score |
@@ -762,15 +798,15 @@ Indexes:
 Constraints and indexes:
 
 - FK `score_id -> scores.id`.
-- Check `mod_filter_key IS NULL OR mod_filter_key >= 0`.
-- Unique expression index on `beatmap_id`, `ruleset`, `playstyle`, `user_id`, `COALESCE(mod_filter_key, -1)`.
-- Ordering index on `beatmap_id`, `ruleset`, `playstyle`, `COALESCE(mod_filter_key, -1)`, `score DESC`, `submitted_at ASC`, `score_id ASC`.
+- Unique constraint on `beatmap_id`, `ruleset`, `playstyle`, `user_id`.
+- Unique constraint on `score_id`.
+- `beatmap_checksum` is replaced with the winning current-revision Score and does not create a second scope row.
 - User rebuild index on `user_id`, `beatmap_id`, `ruleset`, `playstyle`.
 
 #### Removed Or Renamed Table
 
 - `personal_bests` is migrated away from Beatmap Leaderboard ownership.
-- Existing valid rows migrate to `beatmap_leaderboard_user_bests` with `mod_filter_key=NULL`.
+- Existing valid all-mods rows migrate to `beatmap_leaderboard_user_bests`; Selected Mods duplicate rows are removed before the new unique constraints are applied.
 - Rows whose source Score is missing are skipped and counted in migration diagnostics.
 
 ## Data Contracts & Integration
@@ -856,40 +892,40 @@ Metrics can be added later through the existing metrics surface; the design does
 
 ## Performance & Scalability
 
-- Stable getscores reads must be served from projection rows and indexed joins, not full scans of `scores`.
+- Stable getscores reads rank eligible source scores through the partial candidate index; they do not consume projection rows.
 - Top rows are limited to 50.
-- PB rank uses the same filtered candidate CTE/window ordering as rows so rank and display order cannot diverge.
+- PB rank and top rows use the same two-stage window query: first one best Score per user, then overall scope rank.
 - Rebuild jobs are idempotent and can run on multiple workers.
-- Country and Friends filters are read-time to avoid projection fanout when country or friend relationships change.
-- The design avoids `NULLS NOT DISTINCT` to keep uniqueness independent of PostgreSQL 15-specific syntax.
+- Country、Friends、Selected Mods filters are read-time to avoid projection fanout.
+- Generated `Integer[]` keys plus GIN index avoid duplicating one Score into multiple mod-filter rows.
 
 ## Migration Strategy
 
 ```mermaid
 graph TB
-    Start[Start migration] --> AddScoreFlag[Add score eligibility flag]
-    AddScoreFlag --> CreateProjection[Create leaderboard projection]
-    CreateProjection --> BackfillAllMods[Backfill all mods rows]
-    BackfillAllMods --> DropOld[Drop old personal best table]
-    DropOld --> Verify[Run contract tests]
+    Start[Start migration] --> CreateEnumTypes[Create PostgreSQL enum types]
+    CreateEnumTypes --> AddChecksum[Add nullable projection checksum]
+    AddChecksum --> RebuildProjection[Rebuild Global projection from current-checksum source Scores]
+    RebuildProjection --> ConstrainGlobal[Drop mod dimension and add Global scope and score uniqueness]
+    ConstrainGlobal --> AddGeneratedKeys[Add generated mod filter keys]
+    AddGeneratedKeys --> ConvertEnums[Validate and convert closed value columns]
+    ConvertEnums --> Verify[Run contract tests]
 ```
 
 Phase details:
 
-- Add `scores.leaderboard_eligible_at_submission` with default `false`.
-- Backfill existing scores conservatively: `passed=true` and `beatmap_status_at_submission` in Ranked, Approved, Loved, or Qualified.
+- Keep `scores.leaderboard_eligible_at_submission` as the submission-time eligibility snapshot.
+- Add nullable `beatmap_checksum` to the legacy projection, then delete and rebuild every projection row from ranked current-checksum eligible source Scores. This removes Selected Mods duplicates, stale-checksum Global rows, and rows without an eligible current source in one operation.
+- Make `beatmap_checksum` non-null, drop `mod_filter_key`, validate that rebuilt Global rows do not reuse one `score_id`, and add the natural-scope and `score_id` unique constraints.
+- Add stored generated `scores.leaderboard_mod_filter_keys` and its GIN index after the projection is normalized.
 - Existing or future stored scores with `leaderboard_eligible_at_submission=false` remain durable Score records but are not migrated into `beatmap_leaderboard_user_bests`.
-- Create `beatmap_leaderboard_user_bests`.
-- Migrate existing `personal_bests` rows to all-mods rows only when the source Score exists.
-- Populate rank keys from source `scores.score`, `scores.submitted_at`, and `scores.id`.
-- Do not generate Selected Mods rows from legacy `personal_bests`; use rebuild/backfill from source scores.
-- Drop old `personal_bests` table after command/query call sites are migrated.
-- Run a rebuild command for source scores to create Selected Mods projection keys.
+- Convert finite state/source/category columns to PostgreSQL enum types only after rejecting unknown values.
+- Public leaderboard reads immediately use source scores; no Selected Mods projection backfill is required.
 
 Rollback considerations:
 
-- Before dropping old `personal_bests`, migration can be rolled back by dropping the new projection and flag.
-- After dropping old `personal_bests`, rollback requires restoring from migration backup or source scores; implementation tasks must stage destructive drop after tests pass.
+- Downgrade restores the nullable `mod_filter_key` schema and reconstructs both legacy Global and Selected Mods rows from current-checksum eligible source Scores.
+- Reconstructed Selected Mods rows use the same generated NoMod、NC/DT、PF/SD canonical keys as the forward source-score query path.
 
 ## Testing Strategy
 
@@ -904,10 +940,10 @@ Rollback considerations:
 
 ### Repository Contract Tests
 
-- `tests/unit/repositories/test_beatmap_leaderboard_command_repository_contract.py`: upsert if better, tie-break replacement, same-score earlier submit wins, lower score ignored, multi-key score update, explicit slice replacement, and empty replacement deleting stale rows for 2.1, 2.2, 2.6, 5.7, 10.5.
+- `tests/unit/repositories/test_beatmap_leaderboard_command_repository_contract.py`: Global-only upsert、tie-break replacement、score uniqueness、explicit slice replacement、empty replacement deleting stale rows for 2.1, 2.2, 2.6, 8.1-8.4, 10.5.
 - `tests/unit/repositories/test_beatmap_leaderboard_query_repository_contract.py`: top 50 ordering, PB actual rank outside top 50, Country current filter, Friends self-inclusion, visibility suppression, current checksum filter for 2.3-7.6.
-- `tests/unit/repositories/test_beatmap_leaderboard_migration.py`: new table constraints, expression unique index, score eligibility column, legacy migration skip for missing source scores.
-- SQLAlchemy query repository tests verify generated SQL uses projection and does not read command Unit of Work.
+- `tests/unit/repositories/test_beatmap_leaderboard_migration.py`: Global scope uniqueness、score uniqueness、generated key column、candidate and GIN indexes。
+- SQLAlchemy query repository tests verify generated SQL ranks source scores、partitions by user、and filters generated keys only for Selected Mods。
 
 ### Service Tests
 
@@ -917,17 +953,17 @@ Rollback considerations:
 
 ### Integration Tests
 
-- `tests/integration/test_getscores_endpoint.py`: stable endpoint returns rows plus separate PB with correct count and no fallback row.
+- `tests/integration/test_getscores_endpoint.py`: stable endpoint returns rows plus separate PB、deduplicates each user to the highest source Score、ignores mods outside Selected Mods、and verifies NC/DT、PF/SD、NoMod matching against PostgreSQL generated keys。
 - `tests/integration/test_getscores_unavailable_paths.py`: outdated checksum returns update available without rows or PB.
 - `tests/integration/transports/web_legacy/test_score_submit_e2e.py`: accepted score updates leaderboard projection and retry returns saved snapshot.
-- `tests/integration/test_beatmap_leaderboard_reconciliation.py`: stale projection rows are hidden while rebuild pending and corrected after job execution.
+- `tests/integration/test_beatmap_leaderboard_reconciliation.py`: public source-score output remains correct while Global projection is stale, then rebuild converges the projection.
 
 ### Performance And Load
 
 - Seed more than 50 eligible users for one Beatmap and verify stable response returns exactly 50 rows.
 - Seed PB outside top 50 and verify PB rank query remains correct.
 - Rebuild repeated for same beatmapset must converge to the same projection.
-- Friends leaderboard with large friend set must stay bounded by projection and indexed user filters.
+- Friends leaderboard with large friend set must stay bounded by indexed source-score and user filters.
 
 ## Supporting References
 

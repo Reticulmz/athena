@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from osu_server.domain.beatmaps import BeatmapRankStatus
     from osu_server.domain.scores.mods import ModCombination
 
 
@@ -73,7 +74,7 @@ class Score:
     perfect: bool
     client_version: str
     submitted_at: datetime
-    beatmap_status_at_submission: str | None = None
+    beatmap_status_at_submission: BeatmapRankStatus | None = None
     leaderboard_eligible_at_submission: bool = False
     fail_time_ms: int | None = None
     play_time_seconds: int | None = None

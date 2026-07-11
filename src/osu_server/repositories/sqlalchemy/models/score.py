@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     Float,
     ForeignKey,
@@ -14,12 +15,17 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    and_,
+    case,
+    column,
     func,
+    or_,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, array
 from sqlalchemy.orm import Mapped, mapped_column
 
+from osu_server.domain.scores.mods import Mod
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models.enum_types import (
     BEATMAP_RANK_STATUS_ENUM,
@@ -27,6 +33,44 @@ from osu_server.repositories.sqlalchemy.models.enum_types import (
     SCORE_GRADE_ENUM,
     SCORE_SUBMISSION_STATE_ENUM,
 )
+
+_NIGHTCORE_BIT = int(Mod.NIGHTCORE)
+_DOUBLE_TIME_BIT = int(Mod.DOUBLE_TIME)
+_PERFECT_BIT = int(Mod.PERFECT)
+_SUDDEN_DEATH_BIT = int(Mod.SUDDEN_DEATH)
+_MIRROR_BIT = int(Mod.MIRROR)
+_PREFERENCE_ONLY_NO_MODS_BITS = int(Mod.SUDDEN_DEATH | Mod.PERFECT | Mod.MIRROR)
+_MODS_COLUMN = column("mods", Integer)
+_NIGHTCORE_NORMALIZED_MODS = case(
+    (
+        _MODS_COLUMN.bitwise_and(_NIGHTCORE_BIT) != 0,
+        _MODS_COLUMN.bitwise_or(_DOUBLE_TIME_BIT).bitwise_and(~_NIGHTCORE_BIT),
+    ),
+    else_=_MODS_COLUMN,
+)
+_PERFECT_NORMALIZED_MODS = case(
+    (
+        _NIGHTCORE_NORMALIZED_MODS.bitwise_and(_PERFECT_BIT) != 0,
+        _NIGHTCORE_NORMALIZED_MODS.bitwise_or(_SUDDEN_DEATH_BIT).bitwise_and(~_PERFECT_BIT),
+    ),
+    else_=_NIGHTCORE_NORMALIZED_MODS,
+)
+_CANONICAL_MODS = _PERFECT_NORMALIZED_MODS.bitwise_and(~_MIRROR_BIT)
+_IS_NO_MOD_CANDIDATE = _CANONICAL_MODS.bitwise_and(~_PREFERENCE_ONLY_NO_MODS_BITS) == 0
+_LEADERBOARD_MOD_FILTER_KEYS = case(
+    (
+        and_(_IS_NO_MOD_CANDIDATE, _CANONICAL_MODS == 0),
+        array([0]),
+    ),
+    (
+        _IS_NO_MOD_CANDIDATE,
+        array([0, _CANONICAL_MODS]),
+    ),
+    else_=array([_CANONICAL_MODS]),
+)
+_FAIL_TIME_MS_COLUMN = column("fail_time_ms", Integer)
+_PLAY_TIME_SECONDS_COLUMN = column("play_time_seconds", Integer)
+_REPLAY_VIEW_COUNT_COLUMN = column("replay_view_count", BigInteger)
 
 
 class ScoreModel(Base):
@@ -47,16 +91,36 @@ class ScoreModel(Base):
             "submitted_at",
             "id",
         ),
+        Index(
+            "idx_scores_beatmap_leaderboard_candidates",
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "beatmap_checksum",
+            "user_id",
+            column("score", Integer).desc(),
+            column("submitted_at", DateTime(timezone=True)).asc(),
+            column("id", BigInteger).asc(),
+            postgresql_where=and_(
+                column("passed", Boolean).is_(True),
+                column("leaderboard_eligible_at_submission", Boolean).is_(True),
+            ),
+        ),
+        Index(
+            "idx_scores_leaderboard_mod_filter_keys",
+            "leaderboard_mod_filter_keys",
+            postgresql_using="gin",
+        ),
         CheckConstraint(
-            "fail_time_ms IS NULL OR fail_time_ms >= 0",
+            or_(_FAIL_TIME_MS_COLUMN.is_(None), _FAIL_TIME_MS_COLUMN >= 0),
             name="ck_scores_fail_time_ms_non_negative",
         ),
         CheckConstraint(
-            "play_time_seconds IS NULL OR play_time_seconds >= 0",
+            or_(_PLAY_TIME_SECONDS_COLUMN.is_(None), _PLAY_TIME_SECONDS_COLUMN >= 0),
             name="ck_scores_play_time_seconds_non_negative",
         ),
         CheckConstraint(
-            "replay_view_count >= 0",
+            _REPLAY_VIEW_COUNT_COLUMN >= 0,
             name="ck_scores_replay_view_count_non_negative",
         ),
     )
@@ -69,6 +133,11 @@ class ScoreModel(Base):
     ruleset: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     playstyle: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     mods: Mapped[int] = mapped_column(Integer, nullable=False)
+    leaderboard_mod_filter_keys: Mapped[list[int]] = mapped_column(
+        ARRAY(Integer),
+        Computed(_LEADERBOARD_MOD_FILTER_KEYS, persisted=True),
+        nullable=False,
+    )
     n300: Mapped[int] = mapped_column(Integer, nullable=False)
     n100: Mapped[int] = mapped_column(Integer, nullable=False)
     n50: Mapped[int] = mapped_column(Integer, nullable=False)

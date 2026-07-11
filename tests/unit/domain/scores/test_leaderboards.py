@@ -5,14 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from osu_server.domain.scores.leaderboards import (
-    ALL_MODS_FILTER_KEY,
     NO_MOD_FILTER_KEY,
     LeaderboardModFilter,
     LeaderboardScope,
     ScoreRankKey,
     filter_from_mod_combination,
-    projection_keys_for_score,
     score_beats_current,
+    score_matches_selected_mod_filter,
+    selected_mod_filter_keys_for_score,
 )
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.score import Playstyle, Ruleset
@@ -51,32 +51,26 @@ def test_score_beats_current_uses_lower_score_id_as_final_tie_break() -> None:
     assert score_beats_current(candidate, None)
 
 
-def test_leaderboard_scope_distinguishes_all_mods_from_no_mod_filter() -> None:
-    all_mods_scope = LeaderboardScope(
+def test_leaderboard_scope_has_no_mod_filter_dimension() -> None:
+    scope = LeaderboardScope(
         beatmap_id=1,
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
-        mod_filter_key=ALL_MODS_FILTER_KEY,
-    )
-    no_mod_scope = LeaderboardScope(
-        beatmap_id=1,
-        ruleset=Ruleset.OSU,
-        playstyle=Playstyle.VANILLA,
-        mod_filter_key=NO_MOD_FILTER_KEY,
     )
 
-    assert all_mods_scope != no_mod_scope
+    assert scope.beatmap_id == 1
 
 
 def test_no_mod_filter_includes_preference_only_mods_but_excludes_nightcore() -> None:
-    assert projection_keys_for_score(ModCombination.none()) == (
-        ALL_MODS_FILTER_KEY,
-        NO_MOD_FILTER_KEY,
+    assert selected_mod_filter_keys_for_score(ModCombination.none()) == (NO_MOD_FILTER_KEY,)
+    assert NO_MOD_FILTER_KEY in selected_mod_filter_keys_for_score(
+        ModCombination(Mod.SUDDEN_DEATH)
     )
-    assert NO_MOD_FILTER_KEY in projection_keys_for_score(ModCombination(Mod.SUDDEN_DEATH))
-    assert NO_MOD_FILTER_KEY in projection_keys_for_score(ModCombination(Mod.PERFECT))
-    assert NO_MOD_FILTER_KEY in projection_keys_for_score(ModCombination(Mod.MIRROR))
-    assert NO_MOD_FILTER_KEY not in projection_keys_for_score(ModCombination(Mod.NIGHTCORE))
+    assert NO_MOD_FILTER_KEY in selected_mod_filter_keys_for_score(ModCombination(Mod.PERFECT))
+    assert NO_MOD_FILTER_KEY in selected_mod_filter_keys_for_score(ModCombination(Mod.MIRROR))
+    assert NO_MOD_FILTER_KEY not in selected_mod_filter_keys_for_score(
+        ModCombination(Mod.NIGHTCORE)
+    )
 
 
 def test_nightcore_and_double_time_share_filter_key_and_keep_source_mods() -> None:
@@ -91,10 +85,8 @@ def test_nightcore_and_double_time_share_filter_key_and_keep_source_mods() -> No
             key=int(Mod.DOUBLE_TIME),
         )
     )
-    assert projection_keys_for_score(nightcore_mods) == (
-        ALL_MODS_FILTER_KEY,
-        int(Mod.DOUBLE_TIME),
-    )
+    assert selected_mod_filter_keys_for_score(nightcore_mods) == (int(Mod.DOUBLE_TIME),)
+    assert score_matches_selected_mod_filter(nightcore_mods, int(Mod.DOUBLE_TIME))
     assert nightcore_mods.mods == Mod.NIGHTCORE
 
 
@@ -110,8 +102,7 @@ def test_perfect_and_sudden_death_share_filter_key_and_keep_source_mods() -> Non
             key=int(Mod.SUDDEN_DEATH),
         )
     )
-    assert projection_keys_for_score(perfect_mods) == (
-        ALL_MODS_FILTER_KEY,
+    assert selected_mod_filter_keys_for_score(perfect_mods) == (
         NO_MOD_FILTER_KEY,
         int(Mod.SUDDEN_DEATH),
     )
@@ -129,10 +120,7 @@ def test_multiple_gameplay_mods_use_exact_canonical_selected_key() -> None:
     assert filter_from_mod_combination(hidden_double_time) == LeaderboardModFilter(
         key=expected_key,
     )
-    assert projection_keys_for_score(hidden_nightcore) == (
-        ALL_MODS_FILTER_KEY,
-        expected_key,
-    )
+    assert selected_mod_filter_keys_for_score(hidden_nightcore) == (expected_key,)
 
 
 def test_mirror_selected_filter_is_unsupported_while_score_can_remain_no_mod() -> None:
@@ -142,8 +130,5 @@ def test_mirror_selected_filter_is_unsupported_while_score_can_remain_no_mod() -
         key=None,
         unsupported=True,
     )
-    assert projection_keys_for_score(mirror_mods) == (
-        ALL_MODS_FILTER_KEY,
-        NO_MOD_FILTER_KEY,
-    )
+    assert selected_mod_filter_keys_for_score(mirror_mods) == (NO_MOD_FILTER_KEY,)
     assert mirror_mods.mods == Mod.MIRROR

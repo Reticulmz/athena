@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import Column, Table
+from sqlalchemy import Column, Table, UniqueConstraint
 
 from osu_server.repositories.sqlalchemy.models import (
     BeatmapFetchStateModel,
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from sqlalchemy.dialects.postgresql import ENUM
 
 MIGRATION_PATH = Path(
-    "alembic/versions/20260710_0200_use_enum_types_and_explicit_leaderboard_scope.py"
+    "alembic/versions/20260710_0400_use_enum_types_and_score_based_leaderboards.py"
 )
 
 
@@ -35,23 +35,40 @@ def _enum_name(table: Table, column_name: str) -> str:
     return str(cast("ENUM", _column(table, column_name).type).name)
 
 
-def test_enum_scope_migration_converts_closed_value_columns_and_leaderboard_scope() -> None:
+def test_enum_migration_converts_closed_values_and_score_based_leaderboards() -> None:
+    """migrationがEnum変換とscore正本leaderboardを定義することを確認する.
+
+    Returns:
+        None: migration sourceの必須構造が存在することを示す.
+
+    Raises:
+        AssertionError: revision, Enum変換, またはleaderboard構造が不足する場合.
+
+    Notes:
+        PostgreSQLでの実動作はintegration migration testで別途検証する.
+    """
     migration = MIGRATION_PATH.read_text()
 
-    assert 'revision: str = "20260710_0200"' in migration
-    assert 'down_revision: str | None = "20260710_0100"' in migration
+    assert 'revision: str = "20260710_0400"' in migration
+    assert 'down_revision: str | None = "20260710_0300"' in migration
     assert 'name="play_time_source"' in migration
     assert 'name="beatmap_mode"' in migration
     assert 'name="beatmap_fetch_target_kind"' in migration
     assert 'name="blob_storage_backend"' in migration
     assert 'name="score_submission_state"' in migration
-    assert "target_type = CASE target_type" in migration
-    assert "WHEN 'beatmap' THEN 'metadata:beatmap'" in migration
-    assert "SET mod_filter_key = -1" in migration
-    assert "WHERE mod_filter_key IS NULL" in migration
-    assert "SET mode = 'unknown'" in migration
-    assert "mod_filter_key >= -1" in migration
-    assert 'postgresql_using="play_time_source::text::play_time_source"' in migration
+    assert "sa.update(fetch_states).values(" in migration
+    assert 'fetch_states.c.target_type == "beatmap"' in migration
+    assert "_rebuild_current_global_projection()" in migration
+    assert "beatmaps.c.checksum_md5 == scores.c.beatmap_checksum" in migration
+    assert "op.execute(sa.delete(projection))" in migration
+    assert 'op.drop_column("beatmap_leaderboard_user_bests", "mod_filter_key")' in migration
+    assert '"leaderboard_mod_filter_keys"' in migration
+    assert "sa.Computed(_LEADERBOARD_MOD_FILTER_KEYS" in migration
+    assert "_validate_enum_column" in migration
+    assert (
+        '"play_time_source",\n        sa.String(length=32),\n        PLAY_TIME_SOURCE_ENUM,'
+        in migration
+    )
     assert 'postgresql_using=f"{column_name}::text::{enum_name}"' in migration
     assert "ck_scores_play_time_source_known" in migration
     assert "ck_score_performance_state_known" in migration
@@ -109,19 +126,21 @@ def test_current_models_use_postgresql_enums_for_closed_value_columns() -> None:
     )
 
 
-def test_current_leaderboard_projection_scope_is_not_nullable() -> None:
+def test_current_leaderboard_projection_has_single_global_scope_and_unique_score() -> None:
     table = cast("Table", BeatmapLeaderboardUserBestModel.__table__)
-    unique_scope_index = next(
-        index
-        for index in table.indexes
-        if index.name == "idx_beatmap_leaderboard_user_bests_scope_unique"
-    )
+    unique_constraints = {
+        constraint.name: constraint
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
 
-    assert not _column(table, "mod_filter_key").nullable
-    assert tuple(column.name for column in unique_scope_index.columns) == (
+    assert "mod_filter_key" not in table.c
+    unique_scope = unique_constraints["uq_beatmap_leaderboard_user_bests_scope"]
+    assert tuple(column.name for column in unique_scope.columns) == (
         "beatmap_id",
         "ruleset",
         "playstyle",
         "user_id",
-        "mod_filter_key",
     )
+    unique_score = unique_constraints["uq_beatmap_leaderboard_user_bests_score_id"]
+    assert tuple(column.name for column in unique_score.columns) == ("score_id",)

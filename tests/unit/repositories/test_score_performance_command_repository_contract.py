@@ -12,6 +12,7 @@ from osu_server.domain.scores.performance import (
     PerformanceCalculationState,
     PerformanceRecalculationBatchStatus,
     PerformanceRecalculationWorkItemState,
+    RecalculationCandidateReason,
 )
 from osu_server.repositories.interfaces.commands.score_performance import (
     ClaimScorePerformanceCalculation,
@@ -320,9 +321,12 @@ async def test_recalculation_batch_creation_preserves_work_set() -> None:
             _batch(
                 filters={"all": True, "ruleset": "osu"},
                 candidates=(
-                    _work(score_id=101, reason="uncalculated"),
-                    _work(score_id=102, reason="stale"),
-                    _work(score_id=103, reason="stale"),
+                    _work(
+                        score_id=101,
+                        reason=RecalculationCandidateReason.UNCALCULATED,
+                    ),
+                    _work(score_id=102, reason=RecalculationCandidateReason.STALE),
+                    _work(score_id=103, reason=RecalculationCandidateReason.STALE),
                 ),
             )
         )
@@ -336,7 +340,10 @@ async def test_recalculation_batch_creation_preserves_work_set() -> None:
     assert durable_batch is not None
     assert durable_batch.status is PerformanceRecalculationBatchStatus.PENDING
     assert durable_batch.filters == {"all": True, "ruleset": "osu"}
-    assert durable_batch.reason_counts == {"uncalculated": 1, "stale": 2}
+    assert durable_batch.reason_counts == {
+        RecalculationCandidateReason.UNCALCULATED: 1,
+        RecalculationCandidateReason.STALE: 2,
+    }
     assert durable_batch.target_calculator_version == "4.1.0"
     assert durable_batch.target_formula_profile is FormulaProfile.VANILLA_RANKED
     assert durable_batch.candidate_count == 3
@@ -346,7 +353,7 @@ async def test_recalculation_batch_creation_preserves_work_set() -> None:
     assert first_work is not None
     assert first_work.batch_id == batch.id
     assert first_work.score_id == 101
-    assert first_work.reason == "uncalculated"
+    assert first_work.reason is RecalculationCandidateReason.UNCALCULATED
     assert first_work.state is PerformanceRecalculationWorkItemState.PENDING
 
 
@@ -524,9 +531,15 @@ async def _create_recalculation_batch(factory: UnitOfWorkFactory) -> int:
             _batch(
                 filters={"all": True},
                 candidates=(
-                    _work(score_id=101, reason="uncalculated"),
-                    _work(score_id=102, reason="stale"),
-                    _work(score_id=103, reason="formula_profile_mismatch"),
+                    _work(
+                        score_id=101,
+                        reason=RecalculationCandidateReason.UNCALCULATED,
+                    ),
+                    _work(score_id=102, reason=RecalculationCandidateReason.STALE),
+                    _work(
+                        score_id=103,
+                        reason=RecalculationCandidateReason.FORMULA_PROFILE_MISMATCH,
+                    ),
                 ),
             )
         )
@@ -607,9 +620,10 @@ def _batch(
     filters: dict[str, object],
     candidates: tuple[CreateScorePerformanceRecalculationWorkItem, ...],
 ) -> CreateScorePerformanceRecalculationBatch:
-    reason_counts: dict[str, int] = {}
+    reason_counts: dict[RecalculationCandidateReason, int] = {}
     for candidate in candidates:
-        reason_counts[candidate.reason] = reason_counts.get(candidate.reason, 0) + 1
+        reason = candidate.reason
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
     return CreateScorePerformanceRecalculationBatch(
         filters=filters,
         reason_counts=reason_counts,
@@ -623,7 +637,7 @@ def _batch(
 def _work(
     *,
     score_id: int,
-    reason: str,
+    reason: RecalculationCandidateReason,
 ) -> CreateScorePerformanceRecalculationWorkItem:
     return CreateScorePerformanceRecalculationWorkItem(
         score_id=score_id,

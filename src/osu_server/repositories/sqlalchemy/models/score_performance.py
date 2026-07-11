@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 -- SQLAlchemy Mapped requires runtime import
 from decimal import Decimal  # noqa: TC003 -- SQLAlchemy Mapped requires runtime import
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import (
     BigInteger,
@@ -14,8 +15,10 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    and_,
+    column,
     func,
-    text,
+    or_,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -29,27 +32,98 @@ from osu_server.repositories.sqlalchemy.models.enum_types import (
     PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
 )
 
-_COMPLETED_VALUES_SQL = "state::text != 'completed' OR {completed_values}".format(
-    completed_values="(pp IS NOT NULL AND star_rating IS NOT NULL AND calculated_at IS NOT NULL)"
+if TYPE_CHECKING:
+    from sqlalchemy.sql.elements import ColumnClause
+
+_CALCULATION_STATE_COLUMN = cast(
+    "ColumnClause[str]",
+    column("state", PERFORMANCE_CALCULATION_STATE_ENUM),
+)
+_CALCULATION_PP_COLUMN = column("pp", Numeric(12, 6))
+_CALCULATION_STAR_RATING_COLUMN = column("star_rating", Numeric(8, 5))
+_CALCULATION_CALCULATED_AT_COLUMN = column("calculated_at", DateTime(timezone=True))
+_CALCULATION_UNAVAILABLE_REASON_COLUMN = column("unavailable_reason", String(128))
+_CALCULATION_CLAIM_OWNER_COLUMN = column("claim_owner", String(128))
+_CALCULATION_CLAIM_EXPIRES_AT_COLUMN = column("claim_expires_at", DateTime(timezone=True))
+_CALCULATION_IS_CURRENT_COLUMN = column("is_current", Boolean)
+_COMPLETED_VALUES_CONSTRAINT = or_(
+    _CALCULATION_STATE_COLUMN != "completed",
+    and_(
+        _CALCULATION_PP_COLUMN.is_not(None),
+        _CALCULATION_STAR_RATING_COLUMN.is_not(None),
+        _CALCULATION_CALCULATED_AT_COLUMN.is_not(None),
+    ),
+)
+_UNAVAILABLE_REASON_CONSTRAINT = or_(
+    _CALCULATION_STATE_COLUMN != "unavailable",
+    _CALCULATION_UNAVAILABLE_REASON_COLUMN.is_not(None),
+)
+_CALCULATION_CLAIM_METADATA_PAIR = or_(
+    and_(
+        _CALCULATION_CLAIM_OWNER_COLUMN.is_(None),
+        _CALCULATION_CLAIM_EXPIRES_AT_COLUMN.is_(None),
+    ),
+    and_(
+        _CALCULATION_CLAIM_OWNER_COLUMN.is_not(None),
+        _CALCULATION_CLAIM_EXPIRES_AT_COLUMN.is_not(None),
+    ),
+)
+_CALCULATION_CLAIM_METADATA_CONSTRAINT = and_(
+    _CALCULATION_CLAIM_METADATA_PAIR,
+    or_(
+        _CALCULATION_STATE_COLUMN.in_(("queued", "fetching_file", "calculating")),
+        and_(
+            _CALCULATION_CLAIM_OWNER_COLUMN.is_(None),
+            _CALCULATION_CLAIM_EXPIRES_AT_COLUMN.is_(None),
+        ),
+    ),
+)
+_WORK_ITEM_STATE_COLUMN = cast(
+    "ColumnClause[str]",
+    column("state", PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM),
+)
+_WORK_ITEM_CLAIM_OWNER_COLUMN = column("claim_owner", String(128))
+_WORK_ITEM_CLAIM_EXPIRES_AT_COLUMN = column("claim_expires_at", DateTime(timezone=True))
+_WORK_ITEM_CLAIM_METADATA_CONSTRAINT = or_(
+    and_(
+        _WORK_ITEM_STATE_COLUMN == "claimed",
+        _WORK_ITEM_CLAIM_OWNER_COLUMN.is_not(None),
+        _WORK_ITEM_CLAIM_EXPIRES_AT_COLUMN.is_not(None),
+    ),
+    and_(
+        _WORK_ITEM_STATE_COLUMN != "claimed",
+        _WORK_ITEM_CLAIM_OWNER_COLUMN.is_(None),
+        _WORK_ITEM_CLAIM_EXPIRES_AT_COLUMN.is_(None),
+    ),
 )
 
 
 class ScorePerformanceCalculationModel(Base):
+    """1回の PP 計算と処理中の lease を保持する ORM model.
+
+    `claim_owner` は処理中 worker の識別子、`claim_expires_at` は lease 有効期限を表す.
+    未 claim または terminal state では両方を `NULL` にし、片方だけの保存を禁止する.
+    """
+
     __tablename__: str = "score_performance_calculations"
     __table_args__: tuple[CheckConstraint | Index, ...] = (
         CheckConstraint(
-            _COMPLETED_VALUES_SQL,
+            _COMPLETED_VALUES_CONSTRAINT,
             name="ck_score_performance_completed_values",
         ),
         CheckConstraint(
-            "state::text != 'unavailable' OR unavailable_reason IS NOT NULL",
+            _UNAVAILABLE_REASON_CONSTRAINT,
             name="ck_score_performance_unavailable_reason",
+        ),
+        CheckConstraint(
+            _CALCULATION_CLAIM_METADATA_CONSTRAINT,
+            name="ck_score_performance_claim_metadata_pair",
         ),
         Index(
             "idx_score_performance_current_unique",
             "score_id",
             unique=True,
-            postgresql_where=text("is_current = true"),
+            postgresql_where=_CALCULATION_IS_CURRENT_COLUMN.is_(True),
         ),
         Index("idx_score_performance_score_current", "score_id", "is_current"),
         Index("idx_score_performance_state_claim", "state", "claim_expires_at"),
@@ -128,8 +202,18 @@ class PerformanceRecalculationBatchModel(Base):
 
 
 class PerformanceRecalculationWorkItemModel(Base):
+    """再計算 batch 内の1 score と worker claim を保持する ORM model.
+
+    `CLAIMED` state だけが `claim_owner` と `claim_expires_at` を持つ. `PENDING` と
+    terminal state では両方を `NULL` にする.
+    """
+
     __tablename__: str = "performance_recalculation_work_items"
-    __table_args__: tuple[Index, ...] = (
+    __table_args__: tuple[CheckConstraint | Index, ...] = (
+        CheckConstraint(
+            _WORK_ITEM_CLAIM_METADATA_CONSTRAINT,
+            name="ck_performance_recalculation_work_item_claim_metadata",
+        ),
         Index("idx_performance_recalculation_work_items_batch_state", "batch_id", "state"),
         Index(
             "idx_performance_recalculation_work_items_state_claim",

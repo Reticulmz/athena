@@ -2,14 +2,14 @@
 
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.leaderboards import (
-    ALL_MODS_FILTER_KEY,
     NO_MOD_FILTER_KEY,
     LeaderboardModFilter,
     LeaderboardScope,
     ScoreRankKey,
     filter_from_mod_combination,
-    projection_keys_for_score,
     score_beats_current,
+    score_matches_selected_mod_filter,
+    selected_mod_filter_keys_for_score,
 )
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
@@ -53,7 +53,6 @@ from osu_server.domain.scores.validator import (
 )
 
 __all__ = [
-    "ALL_MODS_FILTER_KEY",
     "NO_MOD_FILTER_KEY",
     "DecryptedPayload",
     "FormulaProfile",
@@ -96,8 +95,9 @@ __all__ = [
     "country_leaderboard_is_available",
     "filter_from_mod_combination",
     "friends_leaderboard_is_available",
-    "projection_keys_for_score",
     "score_beats_current",
     "score_beats_personal_best",
+    "score_matches_selected_mod_filter",
+    "selected_mod_filter_keys_for_score",
     "validate_hit_counts",
 ]

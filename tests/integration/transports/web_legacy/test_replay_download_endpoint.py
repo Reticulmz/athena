@@ -22,6 +22,7 @@ from osu_server.composition.providers.test import (
     make_in_memory_runtime_provider_set,
     replace_value,
 )
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import SessionData
@@ -349,7 +350,7 @@ async def _seed_visible_score(app: Starlette, *, user_id: int) -> int:
                 perfect=True,
                 client_version="b20260705",
                 submitted_at=_NOW,
-                beatmap_status_at_submission="ranked",
+                beatmap_status_at_submission=BeatmapRankStatus.RANKED,
                 leaderboard_eligible_at_submission=True,
             )
         )

@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.identity.users import User
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.personal_best import (
@@ -181,7 +182,7 @@ def _score(
         perfect=True,
         client_version="b20260617",
         submitted_at=_NOW,
-        beatmap_status_at_submission="ranked",
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
     )
 
 
