@@ -33,28 +33,54 @@ _CURRENT_CHECKSUM = "a" * 32
 
 
 class FakeResult:
-    """Small SQLAlchemy result double returning mapping rows."""
+    """mapping行を返すSQLAlchemy結果のテストダブル."""
 
     _rows: list[Mapping[str, object]]
 
     def __init__(self, rows: Iterable[Mapping[str, object]] = ()) -> None:
+        """返却するmapping行を保持する.
+
+        Args:
+            rows (Iterable[Mapping[str, object]]): 返却対象の行。
+
+        Returns:
+            None: 初期化のみを行う。
+        """
         self._rows = list(rows)
 
     def mappings(self) -> FakeResult:
+        """mapping結果として自身を返す.
+
+        Returns:
+            FakeResult: mapping行を保持する自身。
+        """
         return self
 
     def all(self) -> list[Mapping[str, object]]:
+        """保持している全行を返す.
+
+        Returns:
+            list[Mapping[str, object]]: SQLAlchemy結果として返すmapping行。
+        """
         return self._rows
 
 
 class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
-    """AsyncSession-shaped fake that fails on mutation APIs."""
+    """更新APIの利用を拒否するAsyncSession互換テストダブル."""
 
     closed: bool
     statements: list[ClauseElement]
     _execute_results: list[FakeResult]
 
     def __init__(self, execute_results: Iterable[FakeResult] = ()) -> None:
+        """execute呼び出しごとの返却結果を保持する.
+
+        Args:
+            execute_results (Iterable[FakeResult]): 呼び出し順に返す結果。
+
+        Returns:
+            None: 初期化のみを行う。
+        """
         self.closed = False
         self.statements = []
         self._execute_results = list(execute_results)
@@ -76,54 +102,155 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
         await self.close()
 
     async def execute(self, statement: ClauseElement) -> FakeResult:
+        """SQL文を記録して次のテスト結果を返す.
+
+        Args:
+            statement (ClauseElement): repositoryが実行したSQLAlchemy文。
+
+        Returns:
+            FakeResult: 事前登録済みの次の結果。未登録時は空の結果。
+        """
         self.statements.append(statement)
         if self._execute_results:
             return self._execute_results.pop(0)
         return FakeResult()
 
     def add(self, instance: object) -> None:
+        """読み取り専用query repositoryによる追加操作を拒否する.
+
+        Args:
+            instance (object): 追加しようとしたインスタンス。
+
+        Returns:
+            None: 常に例外を送出するため返さない。
+
+        Raises:
+            AssertionError: 読み取り専用境界で追加が行われた場合。
+        """
         _ = instance
         raise AssertionError("query repository must not add instances")
 
     async def delete(self, instance: object) -> None:
+        """読み取り専用query repositoryによる削除操作を拒否する.
+
+        Args:
+            instance (object): 削除しようとしたインスタンス。
+
+        Returns:
+            None: 常に例外を送出するため返さない。
+
+        Raises:
+            AssertionError: 読み取り専用境界で削除が行われた場合。
+        """
         _ = instance
         raise AssertionError("query repository must not delete instances")
 
     async def merge(self, instance: object) -> object:
+        """読み取り専用query repositoryによるmerge操作を拒否する.
+
+        Args:
+            instance (object): mergeしようとしたインスタンス。
+
+        Returns:
+            object: 常に例外を送出するため返さない。
+
+        Raises:
+            AssertionError: 読み取り専用境界でmergeが行われた場合。
+        """
         _ = instance
         raise AssertionError("query repository must not merge instances")
 
     async def flush(self) -> None:
+        """読み取り専用query repositoryによるflush操作を拒否する.
+
+        Returns:
+            None: 常に例外を送出するため返さない。
+
+        Raises:
+            AssertionError: 読み取り専用境界でflushが行われた場合。
+        """
         raise AssertionError("query repository must not flush")
 
     async def commit(self) -> None:
+        """読み取り専用query repositoryによるcommit操作を拒否する.
+
+        Returns:
+            None: 常に例外を送出するため返さない。
+
+        Raises:
+            AssertionError: 読み取り専用境界でcommitが行われた場合。
+        """
         raise AssertionError("query repository must not commit")
 
     async def rollback(self) -> None:
+        """読み取り専用query repositoryによるrollback操作を拒否する.
+
+        Returns:
+            None: 常に例外を送出するため返さない。
+
+        Raises:
+            AssertionError: 読み取り専用境界でrollbackが行われた場合。
+        """
         raise AssertionError("query repository must not rollback")
 
     async def refresh(self, instance: object) -> None:
+        """読み取り専用query repositoryによるrefresh操作を拒否する.
+
+        Args:
+            instance (object): refreshしようとしたインスタンス。
+
+        Returns:
+            None: 常に例外を送出するため返さない。
+
+        Raises:
+            AssertionError: 読み取り専用境界でrefreshが行われた場合。
+        """
         _ = instance
         raise AssertionError("query repository must not refresh")
 
     async def close(self) -> None:
+        """セッションをclose済みとして記録する.
+
+        Returns:
+            None: close状態だけを更新する。
+        """
         self.closed = True
 
 
 class FakeSessionFactory:
+    """同一のquery sessionを返して呼び出し回数を記録するfactory."""
+
     session: FakeQuerySession
     calls: int
 
     def __init__(self, session: FakeQuerySession) -> None:
+        """返却するsessionを設定する.
+
+        Args:
+            session (FakeQuerySession): 各呼び出しで返すsession。
+
+        Returns:
+            None: 初期化のみを行う。
+        """
         self.session = session
         self.calls = 0
 
     def __call__(self) -> FakeQuerySession:
+        """呼び出し回数を加算してsessionを返す.
+
+        Returns:
+            FakeQuerySession: repositoryへ渡すquery session。
+        """
         self.calls += 1
         return self.session
 
 
 async def test_top_rows_rank_user_bests_from_source_scores_and_map_rows() -> None:
+    """スコア原本からユーザー最高記録を順位付けして行へ変換することを検証する.
+
+    Returns:
+        None: 検証のみを行う。
+    """
     session = FakeQuerySession(
         [FakeResult([_row(score_id=10, user_id=20, score=2_000_000, pp=Decimal("123.456"))])]
     )
@@ -171,6 +298,11 @@ async def test_top_rows_rank_user_bests_from_source_scores_and_map_rows() -> Non
 
 
 async def test_personal_best_uses_same_filtered_window_ordering_as_top_rows() -> None:
+    """上位一覧と自己ベストが同じ絞り込み後順位を使うことを検証する.
+
+    Returns:
+        None: 検証のみを行う。
+    """
     session = FakeQuerySession(
         [
             FakeResult([_row(score_id=1, user_id=1, score=3_000_000, rank=1)]),
@@ -204,6 +336,11 @@ async def test_personal_best_uses_same_filtered_window_ordering_as_top_rows() ->
 
 
 async def test_only_selected_mods_category_applies_mod_filter_key() -> None:
+    """Selected Modsだけが正規化済みMod条件をSQLへ追加することを検証する.
+
+    Returns:
+        None: 検証のみを行う。
+    """
     country_session = FakeQuerySession()
     country_repository = _repository(country_session)
     _ = await country_repository.list_top_rows(
@@ -237,17 +374,24 @@ async def test_only_selected_mods_category_applies_mod_filter_key() -> None:
     country_sql = _compiled_sql(country_session.statements[0])
     friends_sql = _compiled_sql(friends_session.statements[0])
     selected_mods_sql = _compiled_sql(selected_mods_session.statements[0])
-    assert "scores.mods & 512" not in country_sql
+    nightcore_bit = int(Mod.NIGHTCORE)
+    double_time_bit = int(Mod.DOUBLE_TIME)
+    assert f"scores.mods & {nightcore_bit}" not in country_sql
     assert "users.country = " in country_sql
-    assert "scores.mods & 512" not in friends_sql
+    assert f"scores.mods & {nightcore_bit}" not in friends_sql
     assert "users.id IN " in friends_sql
-    assert "scores.mods & 512" in selected_mods_sql
+    assert f"scores.mods & {nightcore_bit}" in selected_mods_sql
     assert "leaderboard_mod_filter_keys" not in selected_mods_sql
-    assert " = 64" in selected_mods_sql
+    assert f" = {double_time_bit}" in selected_mods_sql
     assert "users.country = " not in selected_mods_sql
 
 
 async def test_nullable_pp_does_not_hide_rows_and_pp_sql_is_ranked_approved_only() -> None:
+    """PP未計算の行を残しつつ対象状態だけPP表示するSQLを検証する.
+
+    Returns:
+        None: 検証のみを行う。
+    """
     session = FakeQuerySession(
         [
             FakeResult(
