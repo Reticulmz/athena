@@ -1,4 +1,4 @@
-"""Enum 型と score 正本の leaderboard filter を導入する migration.
+"""CHECK付き文字列Enumとscore正本のleaderboard filterを導入するmigration.
 
 Revision ID: 20260710_0400
 Revises: 20260710_0300
@@ -7,7 +7,7 @@ Create Date: 2026-07-10 01:00:00.000000
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import sqlalchemy as sa
 from alembic import op
@@ -63,21 +63,38 @@ def _selected_mod_filter_keys_expression(
     )
 
 
-BEATMAP_FETCH_STATE_ENUM = postgresql.ENUM(
+def _checked_string_enum(
+    *values: str,
+    name: str,
+    length: int,
+) -> sa.Enum:
+    return sa.Enum(
+        *values,
+        name=name,
+        native_enum=False,
+        create_constraint=True,
+        validate_strings=True,
+        length=length,
+    )
+
+
+BEATMAP_FETCH_STATE_ENUM = _checked_string_enum(
     "fresh",
     "stale",
     "pending_fetch",
     "failed",
-    name="beatmap_fetch_state",
+    name="ck_beatmap_fetch_states_status_known",
+    length=32,
 )
-BEATMAP_FETCH_TARGET_KIND_ENUM = postgresql.ENUM(
+BEATMAP_FETCH_TARGET_KIND_ENUM = _checked_string_enum(
     "metadata:beatmap",
     "metadata:beatmapset",
     "metadata:checksum",
     "file:beatmap",
-    name="beatmap_fetch_target_kind",
+    name="ck_beatmap_fetch_states_target_type_known",
+    length=32,
 )
-BEATMAP_FILE_SOURCE_ENUM = postgresql.ENUM(
+BEATMAP_FILE_SOURCE_ENUM = _checked_string_enum(
     "official",
     "legacy_official",
     "mirror",
@@ -85,23 +102,26 @@ BEATMAP_FILE_SOURCE_ENUM = postgresql.ENUM(
     "osu_legacy",
     "community_mirror",
     "archive_extracted",
-    name="beatmap_file_source",
+    name="ck_beatmap_file_attachments_source_known",
+    length=32,
 )
-BEATMAP_METADATA_SOURCE_ENUM = postgresql.ENUM(
+BEATMAP_METADATA_SOURCE_ENUM = _checked_string_enum(
     "official",
     "legacy_official",
     "mirror",
-    name="beatmap_metadata_source",
+    name="ck_beatmap_metadata_source_known",
+    length=64,
 )
-BEATMAP_MODE_ENUM = postgresql.ENUM(
+BEATMAP_MODE_ENUM = _checked_string_enum(
     "osu",
     "taiko",
     "fruits",
     "mania",
     "unknown",
-    name="beatmap_mode",
+    name="ck_beatmaps_mode_known",
+    length=16,
 )
-BEATMAP_RANK_STATUS_ENUM = postgresql.ENUM(
+BEATMAP_RANK_STATUS_ENUM = _checked_string_enum(
     "ranked",
     "approved",
     "loved",
@@ -111,33 +131,38 @@ BEATMAP_RANK_STATUS_ENUM = postgresql.ENUM(
     "graveyard",
     "not_submitted",
     "unknown",
-    name="beatmap_rank_status",
+    name="ck_beatmap_rank_status_known",
+    length=32,
 )
-BLOB_STORAGE_BACKEND_ENUM = postgresql.ENUM(
+BLOB_STORAGE_BACKEND_ENUM = _checked_string_enum(
     "local",
     "s3",
-    name="blob_storage_backend",
+    name="ck_blobs_storage_backend_known",
+    length=32,
 )
-CHANNEL_TYPE_ENUM = postgresql.ENUM(
+CHANNEL_TYPE_ENUM = _checked_string_enum(
     "public",
     "multiplayer",
     "spectator",
     "temporary",
-    name="channel_type",
+    name="ck_channels_channel_type_known",
+    length=16,
 )
-FORMULA_PROFILE_ENUM = postgresql.ENUM(
+FORMULA_PROFILE_ENUM = _checked_string_enum(
     "vanilla_ranked_legacy",
     "vanilla_ranked_v1",
-    name="formula_profile",
+    name="ck_formula_profile_known",
+    length=64,
 )
-LEADERBOARD_CATEGORY_ENUM = postgresql.ENUM(
+LEADERBOARD_CATEGORY_ENUM = _checked_string_enum(
     "global",
     "country",
     "selected_mods",
     "friends",
-    name="leaderboard_category",
+    name="ck_personal_bests_category_known",
+    length=32,
 )
-LOCAL_BEATMAP_STATUS_ENUM = postgresql.ENUM(
+LOCAL_BEATMAP_STATUS_ENUM = _checked_string_enum(
     "ranked",
     "loved",
     "qualified",
@@ -146,72 +171,69 @@ LOCAL_BEATMAP_STATUS_ENUM = postgresql.ENUM(
     "graveyard",
     "not_submitted",
     "unknown",
-    name="local_beatmap_status",
+    name="ck_beatmaps_local_status_override_known",
+    length=32,
 )
-PERFORMANCE_CALCULATION_STATE_ENUM = postgresql.ENUM(
+PERFORMANCE_CALCULATION_STATE_ENUM = _checked_string_enum(
     "queued",
     "fetching_file",
     "calculating",
     "completed",
     "unavailable",
     "superseded",
-    name="performance_calculation_state",
+    name="ck_score_performance_state_known",
+    length=32,
 )
-PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM = postgresql.ENUM(
+PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM = _checked_string_enum(
     "pending",
     "running",
     "completed",
-    name="performance_recalculation_batch_status",
+    name="ck_performance_recalculation_batches_status_known",
+    length=32,
 )
-PERFORMANCE_RECALCULATION_REASON_ENUM = postgresql.ENUM(
+PERFORMANCE_RECALCULATION_REASON_ENUM = _checked_string_enum(
     "uncalculated",
     "stale",
     "calculator_version_mismatch",
     "formula_profile_mismatch",
     "unavailable",
-    name="performance_recalculation_reason",
+    name="ck_performance_recalculation_work_items_reason_known",
+    length=64,
 )
-PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM = postgresql.ENUM(
+PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM = _checked_string_enum(
     "pending",
     "claimed",
     "completed",
     "unavailable",
-    name="performance_recalculation_work_item_state",
+    name="ck_performance_recalculation_work_items_state_known",
+    length=32,
 )
-PLAY_TIME_SOURCE_ENUM = postgresql.ENUM(
+PLAY_TIME_SOURCE_ENUM = _checked_string_enum(
     "fail_time",
     "beatmap_total_length",
-    name="play_time_source",
+    name="ck_scores_play_time_source_known",
+    length=32,
 )
-SCORE_GRADE_ENUM = postgresql.ENUM("XH", "X", "SH", "S", "A", "B", "C", "D", name="score_grade")
-SCORE_SUBMISSION_STATE_ENUM = postgresql.ENUM(
+SCORE_GRADE_ENUM = _checked_string_enum(
+    "XH",
+    "X",
+    "SH",
+    "S",
+    "A",
+    "B",
+    "C",
+    "D",
+    name="ck_scores_grade_known",
+    length=2,
+)
+SCORE_SUBMISSION_STATE_ENUM = _checked_string_enum(
     "received",
     "processing",
     "completed",
     "terminal_rejected",
     "retryable",
-    name="score_submission_state",
-)
-
-_ENUM_TYPES = (
-    BEATMAP_FETCH_STATE_ENUM,
-    BEATMAP_FETCH_TARGET_KIND_ENUM,
-    BEATMAP_FILE_SOURCE_ENUM,
-    BEATMAP_METADATA_SOURCE_ENUM,
-    BEATMAP_MODE_ENUM,
-    BEATMAP_RANK_STATUS_ENUM,
-    BLOB_STORAGE_BACKEND_ENUM,
-    CHANNEL_TYPE_ENUM,
-    FORMULA_PROFILE_ENUM,
-    LEADERBOARD_CATEGORY_ENUM,
-    LOCAL_BEATMAP_STATUS_ENUM,
-    PERFORMANCE_CALCULATION_STATE_ENUM,
-    PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
-    PERFORMANCE_RECALCULATION_REASON_ENUM,
-    PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
-    PLAY_TIME_SOURCE_ENUM,
-    SCORE_GRADE_ENUM,
-    SCORE_SUBMISSION_STATE_ENUM,
+    name="ck_score_submissions_state_known",
+    length=32,
 )
 
 
@@ -224,10 +246,6 @@ def upgrade() -> None:
     Raises:
         RuntimeError: Enum の許容値外データまたは重複 score_id を検出した場合.
     """
-    bind = op.get_bind()
-    for enum_type in _ENUM_TYPES:
-        enum_type.create(bind, checkfirst=True)
-
     _upgrade_leaderboard_storage()
     _upgrade_score_enums()
     _upgrade_beatmap_enums()
@@ -253,10 +271,6 @@ def downgrade() -> None:
     _downgrade_beatmap_enums()
     _downgrade_score_enums()
     _downgrade_leaderboard_storage()
-
-    bind = op.get_bind()
-    for enum_type in reversed(_ENUM_TYPES):
-        enum_type.drop(bind, checkfirst=True)
 
 
 def _upgrade_leaderboard_storage() -> None:
@@ -611,75 +625,30 @@ def _restore_legacy_leaderboard_projection() -> None:
 
 
 def _upgrade_score_enums() -> None:
-    op.drop_constraint("ck_scores_play_time_source_known", "scores", type_="check")
-    _alter_enum_column(
-        "scores",
-        "grade",
-        sa.String(length=2),
-        SCORE_GRADE_ENUM,
-        "score_grade",
-    )
-    _alter_enum_column(
+    _create_enum_constraint("scores", "grade", SCORE_GRADE_ENUM)
+    _create_enum_constraint(
         "scores",
         "beatmap_status_at_submission",
-        sa.String(length=32),
         BEATMAP_RANK_STATUS_ENUM,
-        "beatmap_rank_status",
-        nullable=True,
     )
-    _alter_enum_column(
-        "scores",
-        "play_time_source",
-        sa.String(length=32),
-        PLAY_TIME_SOURCE_ENUM,
-        "play_time_source",
-        nullable=True,
-    )
-    _alter_enum_column(
+    _validate_enum_column("scores", "play_time_source", PLAY_TIME_SOURCE_ENUM)
+    _create_enum_constraint(
         "score_submissions",
         "state",
-        sa.String(length=32),
         SCORE_SUBMISSION_STATE_ENUM,
-        "score_submission_state",
     )
 
 
 def _downgrade_score_enums() -> None:
-    play_time_source = sa.column("play_time_source", sa.String(length=32))
-    _alter_string_column(
+    _drop_enum_constraint(
         "score_submissions",
-        "state",
         SCORE_SUBMISSION_STATE_ENUM,
-        length=32,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "scores",
-        "play_time_source",
-        PLAY_TIME_SOURCE_ENUM,
-        length=32,
-        nullable=True,
-    )
-    _alter_string_column(
-        "scores",
-        "beatmap_status_at_submission",
         BEATMAP_RANK_STATUS_ENUM,
-        length=32,
-        nullable=True,
     )
-    _alter_string_column(
-        "scores",
-        "grade",
-        SCORE_GRADE_ENUM,
-        length=2,
-    )
-    op.create_check_constraint(
-        "ck_scores_play_time_source_known",
-        "scores",
-        sa.or_(
-            play_time_source.is_(None),
-            play_time_source.in_(tuple(PLAY_TIME_SOURCE_ENUM.enums)),
-        ),
-    )
+    _drop_enum_constraint("scores", SCORE_GRADE_ENUM)
 
 
 def _upgrade_beatmap_enums() -> None:
@@ -704,84 +673,61 @@ def _upgrade_beatmap_enums() -> None:
             )
         )
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "beatmapsets",
         "official_status",
-        sa.String(length=32),
         BEATMAP_RANK_STATUS_ENUM,
-        "beatmap_rank_status",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "beatmapsets",
         "official_status_source",
-        sa.String(length=64),
         BEATMAP_METADATA_SOURCE_ENUM,
-        "beatmap_metadata_source",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "beatmaps",
         "mode",
-        sa.String(length=16),
         BEATMAP_MODE_ENUM,
-        "beatmap_mode",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "beatmaps",
         "official_status",
-        sa.String(length=32),
         BEATMAP_RANK_STATUS_ENUM,
-        "beatmap_rank_status",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "beatmaps",
         "official_status_source",
-        sa.String(length=64),
         BEATMAP_METADATA_SOURCE_ENUM,
-        "beatmap_metadata_source",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "beatmaps",
         "local_status_override",
-        sa.String(length=32),
         LOCAL_BEATMAP_STATUS_ENUM,
-        "local_beatmap_status",
-        nullable=True,
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "beatmap_file_attachments",
         "source",
-        sa.String(length=32),
         BEATMAP_FILE_SOURCE_ENUM,
-        "beatmap_file_source",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "beatmap_fetch_states",
         "target_type",
-        sa.String(length=32),
         BEATMAP_FETCH_TARGET_KIND_ENUM,
-        "beatmap_fetch_target_kind",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "beatmap_fetch_states",
         "status",
-        sa.String(length=32),
         BEATMAP_FETCH_STATE_ENUM,
-        "beatmap_fetch_state",
     )
 
 
 def _downgrade_beatmap_enums() -> None:
-    _alter_string_column(
+    _drop_enum_constraint(
         "beatmap_fetch_states",
-        "status",
         BEATMAP_FETCH_STATE_ENUM,
-        length=32,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "beatmap_fetch_states",
-        "target_type",
         BEATMAP_FETCH_TARGET_KIND_ENUM,
-        length=32,
     )
     fetch_states = sa.table(
         "beatmap_fetch_states",
@@ -798,142 +744,83 @@ def _downgrade_beatmap_enums() -> None:
             )
         )
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "beatmap_file_attachments",
-        "source",
         BEATMAP_FILE_SOURCE_ENUM,
-        length=32,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "beatmaps",
-        "local_status_override",
         LOCAL_BEATMAP_STATUS_ENUM,
-        length=32,
-        nullable=True,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "beatmaps",
-        "mode",
         BEATMAP_MODE_ENUM,
-        length=16,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "beatmaps",
-        "official_status_source",
         BEATMAP_METADATA_SOURCE_ENUM,
-        length=64,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "beatmaps",
-        "official_status",
         BEATMAP_RANK_STATUS_ENUM,
-        length=32,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "beatmapsets",
-        "official_status_source",
         BEATMAP_METADATA_SOURCE_ENUM,
-        length=64,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "beatmapsets",
-        "official_status",
         BEATMAP_RANK_STATUS_ENUM,
-        length=32,
     )
 
 
 def _upgrade_blob_enums() -> None:
-    _alter_enum_column(
+    _create_enum_constraint(
         "blobs",
         "storage_backend",
-        sa.String(length=32),
         BLOB_STORAGE_BACKEND_ENUM,
-        "blob_storage_backend",
     )
 
 
 def _downgrade_blob_enums() -> None:
-    _alter_string_column(
+    _drop_enum_constraint(
         "blobs",
-        "storage_backend",
         BLOB_STORAGE_BACKEND_ENUM,
-        length=32,
     )
 
 
 def _upgrade_channel_enums() -> None:
-    op.alter_column(
+    _create_enum_constraint(
         "channels",
         "channel_type",
-        existing_type=sa.String(length=16),
-        server_default=None,
-        existing_nullable=False,
-    )
-    _alter_enum_column(
-        "channels",
-        "channel_type",
-        sa.String(length=16),
         CHANNEL_TYPE_ENUM,
-        "channel_type",
-    )
-    op.alter_column(
-        "channels",
-        "channel_type",
-        existing_type=CHANNEL_TYPE_ENUM,
-        server_default=sa.cast(sa.literal("public"), CHANNEL_TYPE_ENUM),
-        existing_nullable=False,
     )
 
 
 def _downgrade_channel_enums() -> None:
-    op.alter_column(
+    _drop_enum_constraint(
         "channels",
-        "channel_type",
-        existing_type=CHANNEL_TYPE_ENUM,
-        server_default=None,
-        existing_nullable=False,
-    )
-    _alter_string_column(
-        "channels",
-        "channel_type",
         CHANNEL_TYPE_ENUM,
-        length=16,
-    )
-    op.alter_column(
-        "channels",
-        "channel_type",
-        existing_type=sa.String(length=16),
-        server_default="public",
-        existing_nullable=False,
     )
 
 
 def _upgrade_personal_best_enums() -> None:
-    _alter_enum_column(
+    _create_enum_constraint(
         "personal_bests",
         "category",
-        sa.String(length=32),
         LEADERBOARD_CATEGORY_ENUM,
-        "leaderboard_category",
     )
 
 
 def _downgrade_personal_best_enums() -> None:
-    _alter_string_column(
+    _drop_enum_constraint(
         "personal_bests",
-        "category",
         LEADERBOARD_CATEGORY_ENUM,
-        length=32,
     )
 
 
 def _upgrade_performance_enums() -> None:
-    state = sa.column("state", PERFORMANCE_CALCULATION_STATE_ENUM)
-    pp = sa.column("pp", sa.Numeric())
-    star_rating = sa.column("star_rating", sa.Numeric())
-    calculated_at = sa.column("calculated_at", sa.DateTime(timezone=True))
-    unavailable_reason = sa.column("unavailable_reason", sa.String())
+    state = sa.column("state", sa.String(length=32))
     claim_owner = sa.column("claim_owner", sa.String(length=128))
     claim_expires_at = sa.column("claim_expires_at", sa.DateTime(timezone=True))
     calculations = sa.table(
@@ -942,65 +829,27 @@ def _upgrade_performance_enums() -> None:
         claim_owner,
         claim_expires_at,
     )
-    work_item_state = sa.column(
-        "state",
-        PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
-    )
+    work_item_state = sa.column("state", sa.String(length=32))
     work_item_claim_owner = sa.column("claim_owner", sa.String(length=128))
     work_item_claim_expires_at = sa.column(
         "claim_expires_at",
         sa.DateTime(timezone=True),
     )
-    op.drop_constraint(
-        "ck_score_performance_unavailable_reason",
-        "score_performance_calculations",
-        type_="check",
-    )
-    op.drop_constraint(
-        "ck_score_performance_completed_values",
-        "score_performance_calculations",
-        type_="check",
-    )
-    op.drop_constraint(
-        "ck_score_performance_state_known",
-        "score_performance_calculations",
-        type_="check",
-    )
-    _alter_enum_column(
+
+    _validate_enum_column(
         "score_performance_calculations",
         "state",
-        sa.String(length=32),
         PERFORMANCE_CALCULATION_STATE_ENUM,
-        "performance_calculation_state",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "score_performance_calculations",
         "formula_profile",
-        sa.String(length=64),
         FORMULA_PROFILE_ENUM,
-        "formula_profile",
     )
     op.execute(
         sa.update(calculations)
         .where(state.not_in(("queued", "fetching_file", "calculating")))
         .values(claim_owner=None, claim_expires_at=None)
-    )
-    op.create_check_constraint(
-        "ck_score_performance_completed_values",
-        "score_performance_calculations",
-        sa.or_(
-            state != "completed",
-            sa.and_(
-                pp.is_not(None),
-                star_rating.is_not(None),
-                calculated_at.is_not(None),
-            ),
-        ),
-    )
-    op.create_check_constraint(
-        "ck_score_performance_unavailable_reason",
-        "score_performance_calculations",
-        sa.or_(state != "unavailable", unavailable_reason.is_not(None)),
     )
     op.create_check_constraint(
         "ck_score_performance_claim_metadata_pair",
@@ -1020,33 +869,25 @@ def _upgrade_performance_enums() -> None:
             ),
         ),
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "performance_recalculation_batches",
         "status",
-        sa.String(length=32),
         PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
-        "performance_recalculation_batch_status",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "performance_recalculation_batches",
         "target_formula_profile",
-        sa.String(length=64),
         FORMULA_PROFILE_ENUM,
-        "formula_profile",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "performance_recalculation_work_items",
         "reason",
-        sa.String(length=64),
         PERFORMANCE_RECALCULATION_REASON_ENUM,
-        "performance_recalculation_reason",
     )
-    _alter_enum_column(
+    _create_enum_constraint(
         "performance_recalculation_work_items",
         "state",
-        sa.String(length=32),
         PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
-        "performance_recalculation_work_item_state",
     )
     op.create_check_constraint(
         "ck_performance_recalculation_work_item_claim_metadata",
@@ -1067,50 +908,27 @@ def _upgrade_performance_enums() -> None:
 
 
 def _downgrade_performance_enums() -> None:
-    state = sa.column("state", sa.String(length=32))
-    pp = sa.column("pp", sa.Numeric())
-    star_rating = sa.column("star_rating", sa.Numeric())
-    calculated_at = sa.column("calculated_at", sa.DateTime(timezone=True))
-    unavailable_reason = sa.column("unavailable_reason", sa.String())
     op.drop_constraint(
         "ck_performance_recalculation_work_item_claim_metadata",
         "performance_recalculation_work_items",
         type_="check",
         if_exists=True,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "performance_recalculation_work_items",
-        "state",
         PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
-        length=32,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "performance_recalculation_work_items",
-        "reason",
         PERFORMANCE_RECALCULATION_REASON_ENUM,
-        length=64,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "performance_recalculation_batches",
-        "target_formula_profile",
         FORMULA_PROFILE_ENUM,
-        length=64,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "performance_recalculation_batches",
-        "status",
         PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
-        length=32,
-    )
-    op.drop_constraint(
-        "ck_score_performance_unavailable_reason",
-        "score_performance_calculations",
-        type_="check",
-    )
-    op.drop_constraint(
-        "ck_score_performance_completed_values",
-        "score_performance_calculations",
-        type_="check",
     )
     op.drop_constraint(
         "ck_score_performance_claim_metadata_pair",
@@ -1118,67 +936,49 @@ def _downgrade_performance_enums() -> None:
         type_="check",
         if_exists=True,
     )
-    _alter_string_column(
+    _drop_enum_constraint(
         "score_performance_calculations",
-        "formula_profile",
         FORMULA_PROFILE_ENUM,
-        length=64,
-    )
-    _alter_string_column(
-        "score_performance_calculations",
-        "state",
-        PERFORMANCE_CALCULATION_STATE_ENUM,
-        length=32,
-    )
-    op.create_check_constraint(
-        "ck_score_performance_state_known",
-        "score_performance_calculations",
-        state.in_(tuple(PERFORMANCE_CALCULATION_STATE_ENUM.enums)),
-    )
-    op.create_check_constraint(
-        "ck_score_performance_completed_values",
-        "score_performance_calculations",
-        sa.or_(
-            state != "completed",
-            sa.and_(
-                pp.is_not(None),
-                star_rating.is_not(None),
-                calculated_at.is_not(None),
-            ),
-        ),
-    )
-    op.create_check_constraint(
-        "ck_score_performance_unavailable_reason",
-        "score_performance_calculations",
-        sa.or_(state != "unavailable", unavailable_reason.is_not(None)),
     )
 
 
-def _alter_enum_column(
+def _create_enum_constraint(
     table_name: str,
     column_name: str,
-    existing_type: sa.TypeEngine[object],
-    enum_type: postgresql.ENUM,
-    enum_name: str,
-    *,
-    nullable: bool = False,
+    enum_type: sa.Enum,
 ) -> None:
     _validate_enum_column(table_name, column_name, enum_type)
-    op.alter_column(
-        table_name,
+    column = sa.column(
         column_name,
-        existing_type=existing_type,
-        type_=enum_type,
-        existing_nullable=nullable,
-        # Alembic の postgresql_using は PostgreSQL USING 句を文字列でのみ受け取る.
-        postgresql_using=f"{column_name}::text::{enum_name}",
+        sa.String(length=enum_type.length),
     )
+    op.create_check_constraint(
+        _enum_constraint_name(enum_type),
+        table_name,
+        column.in_(tuple(enum_type.enums)),
+    )
+
+
+def _drop_enum_constraint(table_name: str, enum_type: sa.Enum) -> None:
+    op.drop_constraint(
+        _enum_constraint_name(enum_type),
+        table_name,
+        type_="check",
+    )
+
+
+def _enum_constraint_name(enum_type: sa.Enum) -> str:
+    constraint_name = enum_type.name
+    if constraint_name is None:
+        msg = "checked string Enum requires an explicit constraint name"
+        raise RuntimeError(msg)
+    return constraint_name
 
 
 def _validate_enum_column(
     table_name: str,
     column_name: str,
-    enum_type: postgresql.ENUM,
+    enum_type: sa.Enum,
 ) -> None:
     column = sa.column(column_name, sa.String())
     table = sa.table(table_name, column)
@@ -1192,7 +992,11 @@ def _validate_enum_column(
         .distinct()
         .limit(10)
     )
-    invalid_values = tuple(str(row[0]) for row in op.get_bind().execute(statement))
+    invalid_rows = cast(
+        "Sequence[tuple[object]]",
+        op.get_bind().execute(statement).all(),
+    )
+    invalid_values = tuple(str(row[0]) for row in invalid_rows)
     if invalid_values:
         msg = (
             f"{table_name}.{column_name} contains values outside {enum_type.name}: "
@@ -1214,7 +1018,10 @@ def _validate_unique_projection_score_ids() -> None:
         .limit(10)
     )
     duplicate_score_ids = tuple(
-        int(score_id) for score_id in op.get_bind().execute(statement).scalars()
+        cast(
+            "Sequence[int]",
+            op.get_bind().execute(statement).scalars().all(),
+        )
     )
     if duplicate_score_ids:
         msg = (
@@ -1222,22 +1029,3 @@ def _validate_unique_projection_score_ids() -> None:
             f"{duplicate_score_ids!r}"
         )
         raise RuntimeError(msg)
-
-
-def _alter_string_column(
-    table_name: str,
-    column_name: str,
-    existing_type: postgresql.ENUM,
-    *,
-    length: int,
-    nullable: bool = False,
-) -> None:
-    op.alter_column(
-        table_name,
-        column_name,
-        existing_type=existing_type,
-        type_=sa.String(length=length),
-        existing_nullable=nullable,
-        # Alembic の postgresql_using は PostgreSQL USING 句を文字列でのみ受け取る.
-        postgresql_using=f"{column_name}::text",
-    )

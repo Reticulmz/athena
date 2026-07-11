@@ -167,6 +167,14 @@ composition -> runtime adapters -> command/query use-cases -> repositories -> in
   not-applicable data.
 - State, kind, category, source, lifecycle, and other finite semantic values must be represented by
   domain enums and constrained in persistence. Do not use free-form `VARCHAR` for closed value sets.
+- Persist code-owned finite values with SQLAlchemy
+  `Enum(native_enum=False, create_constraint=True, validate_strings=True)`, an explicit length, and
+  a named `CHECK` constraint by default. PostgreSQL native ENUM is allowed only for sets that are
+  intentionally immutable for the lifetime of the service; document that invariant where the type
+  is declared.
+- Use integer-backed enums only when the integer is itself a canonical external protocol value.
+  Alembic revisions must snapshot their accepted string values locally instead of importing mutable
+  domain enum definitions.
 - Projection tables must encode their semantic identity in non-null unique scope columns. Do not use
   nullable scope columns to carry business meaning such as "all" or "default".
 - Use EventBus (fire-and-forget) and JobQueue (delivery guaranteed) for their respective use cases.

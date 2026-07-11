@@ -14,6 +14,8 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
+from sqlalchemy.dialects.postgresql import ENUM
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, async_sessionmaker
 
 from osu_server.domain.beatmaps import (
@@ -76,6 +78,7 @@ _MIGRATION_PATH = Path(
     "alembic/versions/20260710_0400_use_enum_types_and_score_based_leaderboards.py"
 )
 _REVISION = "20260710_0400"
+_PREVIOUS_REVISION = "20260710_0300"
 _BEATMAPSET_ID = 1_970_100_001
 _BEATMAP_ID = 1_970_100_002
 _USER_1_ID = 1_970_000_001
@@ -96,6 +99,11 @@ _BLOB_ID = 1_970_200_001
 _ATTACHMENT_ID = 9_700_100_001
 _OLD_CALCULATION_ID = 9_700_200_001
 _REPLACEMENT_CALCULATION_ID = 9_700_200_002
+_INVALID_FETCH_TARGET_ID = 9_700_300_001
+_INVALID_FETCH_STATUS_ID = 9_700_300_002
+_INVALID_SUBMISSION_ID = 9_700_400_001
+_INVALID_CALCULATION_STATE_ID = 9_700_500_001
+_INVALID_CALCULATION_FORMULA_ID = 9_700_500_002
 _SCORE_IDS = (
     _NO_MOD_SCORE_ID,
     _NIGHTCORE_SCORE_ID,
@@ -104,6 +112,96 @@ _SCORE_IDS = (
     _SUDDEN_DEATH_SCORE_ID,
     _USER_2_NIGHTCORE_SCORE_ID,
     _STALE_SCORE_ID,
+)
+
+_CHECKED_ENUM_COLUMNS = (
+    ("channels", "channel_type", "ck_channels_channel_type_known", 16),
+    ("scores", "grade", "ck_scores_grade_known", 2),
+    (
+        "scores",
+        "beatmap_status_at_submission",
+        "ck_beatmap_rank_status_known",
+        32,
+    ),
+    ("scores", "play_time_source", "ck_scores_play_time_source_known", 32),
+    ("score_submissions", "state", "ck_score_submissions_state_known", 32),
+    ("beatmapsets", "official_status", "ck_beatmap_rank_status_known", 32),
+    (
+        "beatmapsets",
+        "official_status_source",
+        "ck_beatmap_metadata_source_known",
+        64,
+    ),
+    ("beatmaps", "mode", "ck_beatmaps_mode_known", 16),
+    ("beatmaps", "official_status", "ck_beatmap_rank_status_known", 32),
+    (
+        "beatmaps",
+        "official_status_source",
+        "ck_beatmap_metadata_source_known",
+        64,
+    ),
+    (
+        "beatmaps",
+        "local_status_override",
+        "ck_beatmaps_local_status_override_known",
+        32,
+    ),
+    (
+        "beatmap_file_attachments",
+        "source",
+        "ck_beatmap_file_attachments_source_known",
+        32,
+    ),
+    (
+        "beatmap_fetch_states",
+        "target_type",
+        "ck_beatmap_fetch_states_target_type_known",
+        32,
+    ),
+    (
+        "beatmap_fetch_states",
+        "status",
+        "ck_beatmap_fetch_states_status_known",
+        32,
+    ),
+    ("blobs", "storage_backend", "ck_blobs_storage_backend_known", 32),
+    ("personal_bests", "category", "ck_personal_bests_category_known", 32),
+    (
+        "score_performance_calculations",
+        "state",
+        "ck_score_performance_state_known",
+        32,
+    ),
+    (
+        "score_performance_calculations",
+        "formula_profile",
+        "ck_formula_profile_known",
+        64,
+    ),
+    (
+        "performance_recalculation_batches",
+        "status",
+        "ck_performance_recalculation_batches_status_known",
+        32,
+    ),
+    (
+        "performance_recalculation_batches",
+        "target_formula_profile",
+        "ck_formula_profile_known",
+        64,
+    ),
+    (
+        "performance_recalculation_work_items",
+        "reason",
+        "ck_performance_recalculation_work_items_reason_known",
+        64,
+    ),
+    (
+        "performance_recalculation_work_items",
+        "state",
+        "ck_performance_recalculation_work_items_state_known",
+        32,
+    ),
 )
 
 
@@ -187,6 +285,206 @@ async def postgres_connection(
         finally:
             if transaction.is_active:
                 await transaction.rollback()
+
+
+@pytest.fixture
+async def postgres_connection_before_enum_migration(
+    postgres_engine: AsyncEngine,
+) -> AsyncGenerator[AsyncConnection]:
+    """Enum migration直前の専用schema接続を提供する.
+
+    Args:
+        postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
+
+    Yields:
+        AsyncConnection: `20260710_0300`まで適用した専用schema接続.
+
+    Notes:
+        fixture終了時にtransactionをrollbackして専用schemaを破棄する.
+    """
+    async with postgres_engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
+            schema_name = f"athena_enum_scope_previous_{secrets.token_hex(8)}"
+            _ = await connection.execute(sa.schema.CreateSchema(schema_name))
+            _ = await connection.execute(
+                sa.select(sa.func.set_config("search_path", schema_name, True))
+            )
+            await connection.run_sync(
+                lambda sync_connection: _upgrade_schema_to_revision(
+                    sync_connection,
+                    _PREVIOUS_REVISION,
+                )
+            )
+            yield connection
+        finally:
+            if transaction.is_active:
+                await transaction.rollback()
+
+
+async def test_postgresql_enum_columns_use_checked_strings(
+    postgres_connection: AsyncConnection,
+) -> None:
+    """Enum列がVARCHARと名前付きCHECKで永続化されることを検証する.
+
+    Args:
+        postgres_connection (AsyncConnection): 専用schemaへ接続した非同期接続.
+
+    Returns:
+        None: 全対象列の文字列型、長さ、CHECK拒否を検証したことを示す.
+
+    Raises:
+        AssertionError: native Enum、CHECK欠落、長さ不一致、または不正値受理の場合.
+    """
+    await _seed_fixture(postgres_connection)
+    await postgres_connection.run_sync(_assert_checked_enum_storage)
+
+    scores = sa.table(
+        "scores",
+        sa.column("id", sa.BigInteger()),
+        sa.column("grade", sa.String(length=2)),
+        sa.column("play_time_source", sa.String(length=32)),
+    )
+    fetch_states = sa.table(
+        "beatmap_fetch_states",
+        sa.column("id", sa.BigInteger()),
+        sa.column("target_type", sa.String(length=32)),
+        sa.column("target_key", sa.String(length=255)),
+        sa.column("status", sa.String(length=32)),
+    )
+    submissions = sa.table(
+        "score_submissions",
+        sa.column("id", sa.BigInteger()),
+        sa.column("fingerprint", sa.String(length=64)),
+        sa.column("user_id", sa.Integer()),
+        sa.column("beatmap_checksum", sa.String(length=32)),
+        sa.column("state", sa.String(length=32)),
+    )
+    calculations = sa.table(
+        "score_performance_calculations",
+        sa.column("id", sa.BigInteger()),
+        sa.column("score_id", sa.BigInteger()),
+        sa.column("state", sa.String(length=32)),
+        sa.column("is_current", sa.Boolean()),
+        sa.column("calculator_name", sa.String(length=64)),
+        sa.column("calculator_version", sa.String(length=64)),
+        sa.column("formula_profile", sa.String(length=64)),
+    )
+    invalid_writes = (
+        (
+            sa.update(scores).where(scores.c.id == _NO_MOD_SCORE_ID).values(grade="ZZ"),
+            "ck_scores_grade_known",
+        ),
+        (
+            sa.update(scores)
+            .where(scores.c.id == _NO_MOD_SCORE_ID)
+            .values(play_time_source="unknown_source"),
+            "ck_scores_play_time_source_known",
+        ),
+        (
+            sa.insert(fetch_states).values(
+                id=_INVALID_FETCH_TARGET_ID,
+                target_type="unknown_target",
+                target_key="invalid-target",
+                status="fresh",
+            ),
+            "ck_beatmap_fetch_states_target_type_known",
+        ),
+        (
+            sa.insert(fetch_states).values(
+                id=_INVALID_FETCH_STATUS_ID,
+                target_type="metadata:beatmap",
+                target_key="invalid-status",
+                status="unknown_status",
+            ),
+            "ck_beatmap_fetch_states_status_known",
+        ),
+        (
+            sa.insert(submissions).values(
+                id=_INVALID_SUBMISSION_ID,
+                fingerprint="invalid-enum-state",
+                user_id=_USER_1_ID,
+                beatmap_checksum=_CURRENT_CHECKSUM,
+                state="unknown_state",
+            ),
+            "ck_score_submissions_state_known",
+        ),
+        (
+            sa.insert(calculations).values(
+                id=_INVALID_CALCULATION_STATE_ID,
+                score_id=_NO_MOD_SCORE_ID,
+                state="unknown_state",
+                is_current=False,
+                calculator_name="enum-check",
+                calculator_version="1",
+                formula_profile=FormulaProfile.VANILLA_RANKED.value,
+            ),
+            "ck_score_performance_state_known",
+        ),
+        (
+            sa.insert(calculations).values(
+                id=_INVALID_CALCULATION_FORMULA_ID,
+                score_id=_NO_MOD_SCORE_ID,
+                state=PerformanceCalculationState.QUEUED.value,
+                is_current=False,
+                calculator_name="enum-check",
+                calculator_version="1",
+                formula_profile="unknown_formula",
+            ),
+            "ck_formula_profile_known",
+        ),
+    )
+
+    for statement, constraint_name in invalid_writes:
+        savepoint = await postgres_connection.begin_nested()
+        try:
+            with pytest.raises(IntegrityError, match=constraint_name):
+                _ = await postgres_connection.execute(statement)
+        finally:
+            await savepoint.rollback()
+
+
+async def test_postgresql_migration_rejects_preexisting_unknown_enum_value(
+    postgres_connection_before_enum_migration: AsyncConnection,
+) -> None:
+    """Migration前の未定義値を黙って制約化しないことを検証する.
+
+    Args:
+        postgres_connection_before_enum_migration (AsyncConnection):
+            Enum migration直前の専用schema接続.
+
+    Returns:
+        None: upgradeが未定義値を検出して停止したことを示す.
+
+    Raises:
+        AssertionError: 未定義値を保持したままupgradeが成功した場合.
+    """
+    submissions = sa.table(
+        "score_submissions",
+        sa.column("id", sa.BigInteger()),
+        sa.column("fingerprint", sa.String(length=64)),
+        sa.column("user_id", sa.Integer()),
+        sa.column("beatmap_checksum", sa.String(length=32)),
+        sa.column("state", sa.String(length=32)),
+    )
+    _ = await postgres_connection_before_enum_migration.execute(
+        sa.insert(submissions).values(
+            id=_INVALID_SUBMISSION_ID,
+            fingerprint="pre-migration-invalid-enum-state",
+            user_id=_USER_1_ID,
+            beatmap_checksum=_CURRENT_CHECKSUM,
+            state="unknown_state",
+        )
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"score_submissions\.state contains values outside "
+            r"ck_score_submissions_state_known"
+        ),
+    ):
+        await postgres_connection_before_enum_migration.run_sync(_run_upgrade)
 
 
 async def test_postgresql_selected_mod_predicates_and_window_ranking(
@@ -425,9 +723,13 @@ async def test_postgresql_migration_round_trip_restores_legacy_projection(
 
 
 def _upgrade_schema_to_head(connection: Connection) -> None:
+    _upgrade_schema_to_revision(connection, _REVISION)
+
+
+def _upgrade_schema_to_revision(connection: Connection, revision_id: str) -> None:
     operations = Operations(MigrationContext.configure(connection))
     script_directory = ScriptDirectory.from_config(Config("alembic.ini"))
-    revisions = tuple(script_directory.walk_revisions(base="base", head=_REVISION))
+    revisions = tuple(script_directory.walk_revisions(base="base", head=revision_id))
     for revision in reversed(revisions):
         migration = cast("_MigrationModule", cast("object", revision.module))
         migration.op = operations
@@ -442,6 +744,24 @@ def _run_downgrade(connection: Connection) -> None:
 def _run_upgrade(connection: Connection) -> None:
     _MIGRATION.op = Operations(MigrationContext.configure(connection))
     _MIGRATION.upgrade()
+
+
+def _assert_checked_enum_storage(connection: Connection) -> None:
+    inspector = sa.inspect(connection)
+    for table_name, column_name, constraint_name, expected_length in _CHECKED_ENUM_COLUMNS:
+        reflected_column = next(
+            column for column in inspector.get_columns(table_name) if column["name"] == column_name
+        )
+        column_type = reflected_column["type"]
+        assert isinstance(column_type, sa.String)
+        assert not isinstance(column_type, ENUM)
+        assert column_type.length == expected_length
+        constraint_names = {
+            str(name)
+            for constraint in inspector.get_check_constraints(table_name)
+            if (name := constraint["name"]) is not None
+        }
+        assert constraint_name in constraint_names
 
 
 async def _seed_fixture(connection: AsyncConnection) -> None:

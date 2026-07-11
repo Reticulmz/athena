@@ -1,10 +1,10 @@
-"""SQLAlchemy ORM model で共有する PostgreSQL enum type を定義する."""
+"""SQLAlchemy ORM modelで共有するCHECK付き文字列Enumを定義する."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from sqlalchemy.dialects.postgresql import ENUM
+from sqlalchemy import Enum as SQLAlchemyEnum
 
 from osu_server.domain.beatmaps import (
     BeatmapFetchState,
@@ -27,7 +27,6 @@ from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, PlayTimeSource
 from osu_server.domain.scores.submission import ScoreSubmissionState
 from osu_server.domain.storage.blobs import BlobStorageBackendKind
-from osu_server.infrastructure.database.base import Base
 
 if TYPE_CHECKING:
     from enum import Enum
@@ -37,57 +36,109 @@ def _enum_values(enum_type: type[Enum]) -> tuple[str, ...]:
     return tuple(cast("str", member.value) for member in enum_type)
 
 
-def _postgres_enum(enum_type: type[Enum], *, name: str) -> ENUM:
-    return ENUM(
+def _checked_string_enum(
+    enum_type: type[Enum],
+    *,
+    constraint_name: str,
+    length: int,
+) -> SQLAlchemyEnum:
+    return SQLAlchemyEnum(
         *_enum_values(enum_type),
-        name=name,
-        metadata=Base.metadata,
+        name=constraint_name,
+        native_enum=False,
+        create_constraint=True,
         validate_strings=True,
+        length=length,
     )
 
 
-BEATMAP_FETCH_STATE_ENUM = _postgres_enum(BeatmapFetchState, name="beatmap_fetch_state")
-BEATMAP_FETCH_TARGET_KIND_ENUM = _postgres_enum(
+BEATMAP_FETCH_STATE_ENUM = _checked_string_enum(
+    BeatmapFetchState,
+    constraint_name="ck_beatmap_fetch_states_status_known",
+    length=32,
+)
+BEATMAP_FETCH_TARGET_KIND_ENUM = _checked_string_enum(
     BeatmapFetchTargetKind,
-    name="beatmap_fetch_target_kind",
+    constraint_name="ck_beatmap_fetch_states_target_type_known",
+    length=32,
 )
-BEATMAP_FILE_SOURCE_ENUM = _postgres_enum(BeatmapFileSource, name="beatmap_file_source")
-BEATMAP_METADATA_SOURCE_ENUM = _postgres_enum(
+BEATMAP_FILE_SOURCE_ENUM = _checked_string_enum(
+    BeatmapFileSource,
+    constraint_name="ck_beatmap_file_attachments_source_known",
+    length=32,
+)
+BEATMAP_METADATA_SOURCE_ENUM = _checked_string_enum(
     BeatmapMetadataSource,
-    name="beatmap_metadata_source",
+    constraint_name="ck_beatmap_metadata_source_known",
+    length=64,
 )
-BEATMAP_MODE_ENUM = _postgres_enum(BeatmapMode, name="beatmap_mode")
-BEATMAP_RANK_STATUS_ENUM = _postgres_enum(BeatmapRankStatus, name="beatmap_rank_status")
-BLOB_STORAGE_BACKEND_ENUM = _postgres_enum(
+BEATMAP_MODE_ENUM = _checked_string_enum(
+    BeatmapMode,
+    constraint_name="ck_beatmaps_mode_known",
+    length=16,
+)
+BEATMAP_RANK_STATUS_ENUM = _checked_string_enum(
+    BeatmapRankStatus,
+    constraint_name="ck_beatmap_rank_status_known",
+    length=32,
+)
+BLOB_STORAGE_BACKEND_ENUM = _checked_string_enum(
     BlobStorageBackendKind,
-    name="blob_storage_backend",
+    constraint_name="ck_blobs_storage_backend_known",
+    length=32,
 )
-CHANNEL_TYPE_ENUM = _postgres_enum(ChannelType, name="channel_type")
-FORMULA_PROFILE_ENUM = _postgres_enum(FormulaProfile, name="formula_profile")
-LEADERBOARD_CATEGORY_ENUM = _postgres_enum(LeaderboardCategory, name="leaderboard_category")
-LOCAL_BEATMAP_STATUS_ENUM = _postgres_enum(
+CHANNEL_TYPE_ENUM = _checked_string_enum(
+    ChannelType,
+    constraint_name="ck_channels_channel_type_known",
+    length=16,
+)
+FORMULA_PROFILE_ENUM = _checked_string_enum(
+    FormulaProfile,
+    constraint_name="ck_formula_profile_known",
+    length=64,
+)
+LEADERBOARD_CATEGORY_ENUM = _checked_string_enum(
+    LeaderboardCategory,
+    constraint_name="ck_personal_bests_category_known",
+    length=32,
+)
+LOCAL_BEATMAP_STATUS_ENUM = _checked_string_enum(
     LocalBeatmapStatus,
-    name="local_beatmap_status",
+    constraint_name="ck_beatmaps_local_status_override_known",
+    length=32,
 )
-PERFORMANCE_CALCULATION_STATE_ENUM = _postgres_enum(
+PERFORMANCE_CALCULATION_STATE_ENUM = _checked_string_enum(
     PerformanceCalculationState,
-    name="performance_calculation_state",
+    constraint_name="ck_score_performance_state_known",
+    length=32,
 )
-PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM = _postgres_enum(
+PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM = _checked_string_enum(
     PerformanceRecalculationBatchStatus,
-    name="performance_recalculation_batch_status",
+    constraint_name="ck_performance_recalculation_batches_status_known",
+    length=32,
 )
-PERFORMANCE_RECALCULATION_REASON_ENUM = _postgres_enum(
+PERFORMANCE_RECALCULATION_REASON_ENUM = _checked_string_enum(
     RecalculationCandidateReason,
-    name="performance_recalculation_reason",
+    constraint_name="ck_performance_recalculation_work_items_reason_known",
+    length=64,
 )
-PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM = _postgres_enum(
+PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM = _checked_string_enum(
     PerformanceRecalculationWorkItemState,
-    name="performance_recalculation_work_item_state",
+    constraint_name="ck_performance_recalculation_work_items_state_known",
+    length=32,
 )
-PLAY_TIME_SOURCE_ENUM = _postgres_enum(PlayTimeSource, name="play_time_source")
-SCORE_GRADE_ENUM = _postgres_enum(Grade, name="score_grade")
-SCORE_SUBMISSION_STATE_ENUM = _postgres_enum(
+PLAY_TIME_SOURCE_ENUM = _checked_string_enum(
+    PlayTimeSource,
+    constraint_name="ck_scores_play_time_source_known",
+    length=32,
+)
+SCORE_GRADE_ENUM = _checked_string_enum(
+    Grade,
+    constraint_name="ck_scores_grade_known",
+    length=2,
+)
+SCORE_SUBMISSION_STATE_ENUM = _checked_string_enum(
     ScoreSubmissionState,
-    name="score_submission_state",
+    constraint_name="ck_score_submissions_state_known",
+    length=32,
 )

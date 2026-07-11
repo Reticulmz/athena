@@ -133,7 +133,7 @@ async def test_postgresql_fetch_state_persists_enum_values(
         AssertionError: fetch state または保存された Enum 値が期待と異なる場合.
 
     Notes:
-        command/query両repositoryとPostgreSQL Enum bind validationを通過させる.
+        command/query両repository、SQLAlchemy Enum validation、DB CHECKを通過させる.
     """
     target = BeatmapFetchTarget.metadata_by_beatmap_id(_TEST_BEATMAP_IDS[0])
 

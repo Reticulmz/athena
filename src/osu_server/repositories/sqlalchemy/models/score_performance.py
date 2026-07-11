@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 -- SQLAlchemy Mapped requires runtime import
 from decimal import Decimal  # noqa: TC003 -- SQLAlchemy Mapped requires runtime import
-from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import (
     BigInteger,
@@ -32,13 +31,7 @@ from osu_server.repositories.sqlalchemy.models.enum_types import (
     PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
 )
 
-if TYPE_CHECKING:
-    from sqlalchemy.sql.elements import ColumnClause
-
-_CALCULATION_STATE_COLUMN = cast(
-    "ColumnClause[str]",
-    column("state", PERFORMANCE_CALCULATION_STATE_ENUM),
-)
+_CALCULATION_STATE_COLUMN = column("state", PERFORMANCE_CALCULATION_STATE_ENUM)
 _CALCULATION_PP_COLUMN = column("pp", Numeric(12, 6))
 _CALCULATION_STAR_RATING_COLUMN = column("star_rating", Numeric(8, 5))
 _CALCULATION_CALCULATED_AT_COLUMN = column("calculated_at", DateTime(timezone=True))
@@ -78,10 +71,7 @@ _CALCULATION_CLAIM_METADATA_CONSTRAINT = and_(
         ),
     ),
 )
-_WORK_ITEM_STATE_COLUMN = cast(
-    "ColumnClause[str]",
-    column("state", PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM),
-)
+_WORK_ITEM_STATE_COLUMN = column("state", PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM)
 _WORK_ITEM_CLAIM_OWNER_COLUMN = column("claim_owner", String(128))
 _WORK_ITEM_CLAIM_EXPIRES_AT_COLUMN = column("claim_expires_at", DateTime(timezone=True))
 _WORK_ITEM_CLAIM_METADATA_CONSTRAINT = or_(
