@@ -77,6 +77,9 @@ if TYPE_CHECKING:
 _MIGRATION_PATH = Path(
     "alembic/versions/20260710_0400_use_enum_types_and_score_based_leaderboards.py"
 )
+_LEADERBOARD_REPAIR_MIGRATION_PATH = Path(
+    "alembic/versions/20260712_0500_repair_legacy_leaderboard_projection.py"
+)
 _REVISION = "20260710_0400"
 _PREVIOUS_REVISION = "20260710_0300"
 _BEATMAPSET_ID = 1_970_100_001
@@ -224,6 +227,19 @@ def _load_migration() -> _MigrationModule:
 
 
 _MIGRATION = _load_migration()
+
+
+def _load_leaderboard_repair_migration() -> _MigrationModule:
+    spec = importlib.util.spec_from_file_location(
+        "leaderboard_projection_repair_migration",
+        _LEADERBOARD_REPAIR_MIGRATION_PATH,
+    )
+    if spec is None or spec.loader is None:
+        msg = f"could not load migration: {_LEADERBOARD_REPAIR_MIGRATION_PATH}"
+        raise RuntimeError(msg)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return cast("_MigrationModule", cast("object", module))
 
 
 def _get_database_url() -> str:
@@ -722,6 +738,99 @@ async def test_postgresql_migration_round_trip_restores_legacy_projection(
     }
 
 
+async def test_successor_migration_repairs_duplicate_legacy_projection_rows(
+    postgres_connection: AsyncConnection,
+) -> None:
+    """同一score_idの旧Global/Selected Mods行をGlobal 1行へ修復する.
+
+    Args:
+        postgres_connection (AsyncConnection): 0400適用済みの専用schema接続.
+
+    Returns:
+        None: 後続migrationが旧2行構造をcanonical projectionへ修復したことを示す.
+
+    Raises:
+        AssertionError: migration欠落, 重複残存, またはcanonical制約欠落の場合.
+    """
+    await _seed_fixture(postgres_connection)
+    await postgres_connection.run_sync(_replace_projection_with_legacy_duplicate_rows)
+
+    assert set(await _legacy_projection_rows(postgres_connection)) == {
+        (_USER_1_ID, None, _NO_MOD_SCORE_ID),
+        (_USER_1_ID, 0, _NO_MOD_SCORE_ID),
+    }
+    assert _LEADERBOARD_REPAIR_MIGRATION_PATH.exists()
+
+    repair_migration = _load_leaderboard_repair_migration()
+    await postgres_connection.run_sync(
+        lambda sync_connection: _run_migration_upgrade(
+            sync_connection,
+            repair_migration,
+        )
+    )
+
+    assert set(await _current_projection_rows(postgres_connection)) == {
+        (_USER_1_ID, _CURRENT_CHECKSUM, _NO_MOD_SCORE_ID),
+        (_USER_2_ID, _CURRENT_CHECKSUM, _USER_2_NIGHTCORE_SCORE_ID),
+    }
+    columns, unique_constraints = await postgres_connection.run_sync(_read_projection_schema)
+    assert "mod_filter_key" not in columns
+    assert "beatmap_checksum" in columns
+    assert "uq_beatmap_leaderboard_user_bests_scope" in unique_constraints
+    assert "uq_beatmap_leaderboard_user_bests_score_id" in unique_constraints
+
+
+async def test_successor_migration_preserves_canonical_projection(
+    postgres_connection: AsyncConnection,
+) -> None:
+    """Canonicalな0400 projectionを後続migrationが再作成しないことを確認する.
+
+    Args:
+        postgres_connection (AsyncConnection): 0400適用済みの専用schema接続.
+
+    Returns:
+        None: canonical rowのidentityが維持されたことを示す.
+
+    Raises:
+        AssertionError: migrationがcanonical tableを不要に再作成した場合.
+    """
+    await _seed_fixture(postgres_connection)
+    canonical_row_id = 9_700_900_001
+    _ = await postgres_connection.execute(
+        sa.insert(BeatmapLeaderboardUserBestModel),
+        [
+            {
+                "id": canonical_row_id,
+                "beatmap_id": _BEATMAP_ID,
+                "beatmap_checksum": _CURRENT_CHECKSUM,
+                "ruleset": Ruleset.OSU.value,
+                "playstyle": Playstyle.VANILLA.value,
+                "user_id": _USER_1_ID,
+                "score_id": _NO_MOD_SCORE_ID,
+                "score": 1_000_000,
+                "submitted_at": _NOW,
+            }
+        ],
+    )
+    identity_statement = sa.select(
+        BeatmapLeaderboardUserBestModel.id,
+        BeatmapLeaderboardUserBestModel.user_id,
+        BeatmapLeaderboardUserBestModel.score_id,
+    ).order_by(BeatmapLeaderboardUserBestModel.id)
+    before = tuple((await postgres_connection.execute(identity_statement)).tuples())
+
+    repair_migration = _load_leaderboard_repair_migration()
+    await postgres_connection.run_sync(
+        lambda sync_connection: _run_migration_upgrade(
+            sync_connection,
+            repair_migration,
+        )
+    )
+
+    after = tuple((await postgres_connection.execute(identity_statement)).tuples())
+    assert before == after == ((canonical_row_id, _USER_1_ID, _NO_MOD_SCORE_ID),)
+
+
 def _upgrade_schema_to_head(connection: Connection) -> None:
     _upgrade_schema_to_revision(connection, _REVISION)
 
@@ -744,6 +853,105 @@ def _run_downgrade(connection: Connection) -> None:
 def _run_upgrade(connection: Connection) -> None:
     _MIGRATION.op = Operations(MigrationContext.configure(connection))
     _MIGRATION.upgrade()
+
+
+def _run_migration_upgrade(
+    connection: Connection,
+    migration: _MigrationModule,
+) -> None:
+    migration.op = Operations(MigrationContext.configure(connection))
+    migration.upgrade()
+
+
+def _replace_projection_with_legacy_duplicate_rows(connection: Connection) -> None:
+    operations = Operations(MigrationContext.configure(connection))
+    operations.drop_table("beatmap_leaderboard_user_bests")
+    mod_filter_key = sa.Column("mod_filter_key", sa.Integer(), nullable=True)
+    _ = operations.create_table(
+        "beatmap_leaderboard_user_bests",
+        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("beatmap_id", sa.Integer(), nullable=False),
+        sa.Column("ruleset", sa.SmallInteger(), nullable=False),
+        sa.Column("playstyle", sa.SmallInteger(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        mod_filter_key,
+        sa.Column("score_id", sa.BigInteger(), nullable=False),
+        sa.Column("score", sa.Integer(), nullable=False),
+        sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            sa.or_(mod_filter_key.is_(None), mod_filter_key >= 0),
+            name="ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative",
+        ),
+        sa.ForeignKeyConstraint(
+            ["score_id"],
+            ["scores.id"],
+            name="fk_beatmap_leaderboard_user_bests_score_id",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    projection = sa.table(
+        "beatmap_leaderboard_user_bests",
+        sa.column("beatmap_id", sa.Integer()),
+        sa.column("ruleset", sa.SmallInteger()),
+        sa.column("playstyle", sa.SmallInteger()),
+        sa.column("user_id", sa.Integer()),
+        sa.column("mod_filter_key", sa.Integer()),
+        sa.column("score_id", sa.BigInteger()),
+        sa.column("score", sa.Integer()),
+        sa.column("submitted_at", sa.DateTime(timezone=True)),
+    )
+    _ = connection.execute(
+        sa.insert(projection),
+        [
+            {
+                "beatmap_id": _BEATMAP_ID,
+                "ruleset": Ruleset.OSU.value,
+                "playstyle": Playstyle.VANILLA.value,
+                "user_id": _USER_1_ID,
+                "mod_filter_key": None,
+                "score_id": _NO_MOD_SCORE_ID,
+                "score": 1_000_000,
+                "submitted_at": _NOW,
+            },
+            {
+                "beatmap_id": _BEATMAP_ID,
+                "ruleset": Ruleset.OSU.value,
+                "playstyle": Playstyle.VANILLA.value,
+                "user_id": _USER_1_ID,
+                "mod_filter_key": 0,
+                "score_id": _NO_MOD_SCORE_ID,
+                "score": 1_000_000,
+                "submitted_at": _NOW,
+            },
+        ],
+    )
+
+
+def _read_projection_schema(
+    connection: Connection,
+) -> tuple[frozenset[str], frozenset[str]]:
+    inspector = sa.inspect(connection)
+    columns = frozenset(
+        str(column["name"]) for column in inspector.get_columns("beatmap_leaderboard_user_bests")
+    )
+    unique_constraints = frozenset(
+        str(name)
+        for constraint in inspector.get_unique_constraints("beatmap_leaderboard_user_bests")
+        if (name := constraint["name"]) is not None
+    )
+    return columns, unique_constraints
 
 
 def _assert_checked_enum_storage(connection: Connection) -> None:
