@@ -17,6 +17,7 @@ from osu_server.domain.identity.friends import (
     FriendMutationStatus,
 )
 from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
@@ -471,6 +472,7 @@ def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=2,
+        mods=ModCombination.none(),
     )
 
 
@@ -500,6 +502,7 @@ def _leaderboard_model(
         ruleset=scope.ruleset.value,
         playstyle=scope.playstyle.value,
         user_id=scope.user_id,
+        mods=scope.mods.to_persistence_bitmask(),
         score_id=score_id,
         score=score,
         submitted_at=_NOW,

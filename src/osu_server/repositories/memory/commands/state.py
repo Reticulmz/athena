@@ -154,7 +154,7 @@ class InMemoryCommandRepositoryState:
         default_factory=dict
     )
     beatmap_leaderboard_user_best_id_by_scope: dict[
-        tuple[int, int, int, int],
+        tuple[int, int, int, int, int],
         int,
     ] = field(default_factory=dict)
     next_beatmap_leaderboard_user_best_id: int = 1

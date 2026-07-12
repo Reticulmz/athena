@@ -8,11 +8,13 @@ from sqlalchemy import Select, and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
     BeatmapLeaderboardUserBestScope,
     BeatmapLeaderboardUserProjectionSlice,
+    BeatmapLeaderboardUserScope,
 )
 from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
     BeatmapLeaderboardUserBestModel,
@@ -33,7 +35,7 @@ if TYPE_CHECKING:
 
 
 class SQLAlchemyBeatmapLeaderboardCommandRepository:
-    """UoW 所有 session で Global all-mods best を永続化する repository."""
+    """UoW 所有 session で raw Mod scope best を永続化する repository."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
@@ -45,12 +47,39 @@ class SQLAlchemyBeatmapLeaderboardCommandRepository:
         """指定 scope のユーザー最高 score を返す.
 
         Args:
-            scope (BeatmapLeaderboardUserBestScope): 検索する Global all-mods scope.
+            scope (BeatmapLeaderboardUserBestScope): 検索する raw Mod scope.
 
         Returns:
             BeatmapLeaderboardUserBest | None: 保存行. 未登録時は None.
         """
         model = (await self._session.execute(_select_by_scope(scope))).scalar_one_or_none()
+        return (
+            _model_to_domain(model) if isinstance(model, BeatmapLeaderboardUserBestModel) else None
+        )
+
+    async def get_global_user_best(
+        self,
+        scope: BeatmapLeaderboardUserScope,
+    ) -> BeatmapLeaderboardUserBest | None:
+        """全 raw Mod scope からユーザーの Global 最高 score を返す.
+
+        Args:
+            scope (BeatmapLeaderboardUserScope): Mod を含まない検索 scope.
+
+        Returns:
+            BeatmapLeaderboardUserBest | None: Global 最高 score. 未登録時は None.
+        """
+        statement = (
+            select(BeatmapLeaderboardUserBestModel)
+            .where(*_global_scope_conditions(scope))
+            .order_by(
+                BeatmapLeaderboardUserBestModel.score.desc(),
+                BeatmapLeaderboardUserBestModel.submitted_at.asc(),
+                BeatmapLeaderboardUserBestModel.score_id.asc(),
+            )
+            .limit(1)
+        )
+        model = (await self._session.execute(statement)).scalar_one_or_none()
         return (
             _model_to_domain(model) if isinstance(model, BeatmapLeaderboardUserBestModel) else None
         )
@@ -85,7 +114,7 @@ class SQLAlchemyBeatmapLeaderboardCommandRepository:
         slice_: BeatmapLeaderboardProjectionSlice,
         rows: Iterable[UpsertBeatmapLeaderboardUserBest],
     ) -> None:
-        """再構築対象 slice の Global best を置換する.
+        """再構築対象 slice の Mod別 best を置換する.
 
         Args:
             slice_ (BeatmapLeaderboardProjectionSlice): user または Beatmap の対象範囲.
@@ -123,6 +152,19 @@ def _scope_conditions(
         BeatmapLeaderboardUserBestModel.ruleset == scope.ruleset.value,
         BeatmapLeaderboardUserBestModel.playstyle == scope.playstyle.value,
         BeatmapLeaderboardUserBestModel.user_id == scope.user_id,
+        BeatmapLeaderboardUserBestModel.mods == scope.mods.to_persistence_bitmask(),
+    )
+
+
+def _global_scope_conditions(
+    scope: BeatmapLeaderboardUserScope,
+) -> tuple[ColumnElement[bool], ...]:
+    return (
+        BeatmapLeaderboardUserBestModel.beatmap_id == scope.beatmap_id,
+        BeatmapLeaderboardUserBestModel.beatmap_checksum == scope.beatmap_checksum,
+        BeatmapLeaderboardUserBestModel.ruleset == scope.ruleset.value,
+        BeatmapLeaderboardUserBestModel.playstyle == scope.playstyle.value,
+        BeatmapLeaderboardUserBestModel.user_id == scope.user_id,
     )
 
 
@@ -133,6 +175,7 @@ def _upsert_if_better_statement(command: UpsertBeatmapLeaderboardUserBest) -> In
         ruleset=command.scope.ruleset.value,
         playstyle=command.scope.playstyle.value,
         user_id=command.scope.user_id,
+        mods=command.scope.mods.to_persistence_bitmask(),
         score_id=command.score_id,
         score=command.rank_key.score,
         submitted_at=command.rank_key.submitted_at,
@@ -143,6 +186,7 @@ def _upsert_if_better_statement(command: UpsertBeatmapLeaderboardUserBest) -> In
             BeatmapLeaderboardUserBestModel.ruleset,
             BeatmapLeaderboardUserBestModel.playstyle,
             BeatmapLeaderboardUserBestModel.user_id,
+            BeatmapLeaderboardUserBestModel.mods,
         ],
         set_={
             "beatmap_checksum": command.scope.beatmap_checksum,
@@ -198,6 +242,7 @@ def _model_to_domain(model: BeatmapLeaderboardUserBestModel) -> BeatmapLeaderboa
             ruleset=Ruleset(model.ruleset),
             playstyle=Playstyle(model.playstyle),
             user_id=model.user_id,
+            mods=ModCombination.from_persistence_bitmask(model.mods),
         ),
         score_id=model.score_id,
         rank_key=ScoreRankKey(

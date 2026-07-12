@@ -165,6 +165,7 @@ def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
     assert not _column(table, "playstyle").nullable
     assert not _column(table, "user_id").nullable
     assert "mod_filter_key" not in table.c
+    assert not _column(table, "mods").nullable
     assert not _column(table, "score_id").nullable
     assert not _column(table, "score").nullable
     assert not _column(table, "submitted_at").nullable
@@ -174,9 +175,7 @@ def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
         "score_id",
         "scores.id",
     )
-    assert "ck_beatmap_leaderboard_user_bests_mod_filter_key_scope" not in _check_constraints(
-        table
-    )
+    assert "ck_beatmap_leaderboard_user_bests_mods_non_negative" in _check_constraints(table)
 
     unique_constraints = _unique_constraints(table)
     unique_scope = unique_constraints["uq_beatmap_leaderboard_user_bests_scope"]
@@ -185,6 +184,7 @@ def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
         "ruleset",
         "playstyle",
         "user_id",
+        "mods",
     )
     unique_score = unique_constraints["uq_beatmap_leaderboard_user_bests_score_id"]
     assert tuple(column.name for column in unique_score.columns) == ("score_id",)
@@ -198,4 +198,29 @@ def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
         "beatmap_id",
         "ruleset",
         "playstyle",
+    )
+    global_rank_index = indexes["idx_beatmap_leaderboard_user_bests_global_rank"]
+    assert global_rank_index.unique is False
+    assert _index_columns(global_rank_index) == (
+        "beatmap_id",
+        "ruleset",
+        "playstyle",
+        "beatmap_checksum",
+        "user_id",
+        "score",
+        "submitted_at",
+        "score_id",
+    )
+    mod_rank_index = indexes["idx_beatmap_leaderboard_user_bests_mod_rank"]
+    assert mod_rank_index.unique is False
+    assert _index_columns(mod_rank_index) == (
+        "beatmap_id",
+        "ruleset",
+        "playstyle",
+        "beatmap_checksum",
+        "mods",
+        "user_id",
+        "score",
+        "submitted_at",
+        "score_id",
     )

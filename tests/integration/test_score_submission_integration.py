@@ -31,7 +31,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
 )
 from osu_server.domain.scores.leaderboards import ScoreRankKey
-from osu_server.domain.scores.mods import Mod
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset
 from osu_server.domain.storage.blobs import BlobStorageBackendKind, BlobStored, NewBlob
 from osu_server.infrastructure.database.engine import create_engine
@@ -152,6 +152,7 @@ def _leaderboard_scope(
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=user_id,
+        mods=ModCombination.none(),
     )
 
 
@@ -160,7 +161,7 @@ async def _get_leaderboard_best(
     scope: BeatmapLeaderboardUserBestScope,
 ) -> BeatmapLeaderboardUserBest | None:
     async with uow_factory() as uow:
-        return await uow.beatmap_leaderboards.get_user_best(scope)
+        return await uow.beatmap_leaderboards.get_global_user_best(scope)
 
 
 async def _replace_user_projection_with_score(

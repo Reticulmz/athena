@@ -19,7 +19,7 @@ from osu_server.repositories.interfaces.queries.beatmap_leaderboards import Lead
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
     from osu_server.domain.identity.authorization import Privileges
-    from osu_server.domain.scores.leaderboards import LeaderboardModFilter
+    from osu_server.domain.scores.mods import ModCombination
     from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
         BeatmapLeaderboardQueryRepository,
         BeatmapLeaderboardRow,
@@ -78,7 +78,7 @@ class BeatmapLeaderboardRequest:
     ruleset: Ruleset | None
     playstyle: Playstyle
     category: LeaderboardCategory | None
-    selected_mod_filter: LeaderboardModFilter | None
+    selected_mods: ModCombination | None
     header_only: bool
 
 
@@ -108,7 +108,7 @@ class BeatmapPersonalBestRankQueryInput:
         ruleset (Ruleset): 対象 ruleset.
         playstyle (Playstyle): 対象 playstyle.
         category (LeaderboardCategory): 順位を評価する category.
-        mod_filter_key (int | None): Selected Mods の場合だけ使う非負 filter key.
+        selected_mods (ModCombination | None): Selected Mods の raw Mod bitflag.
     """
 
     user_id: int
@@ -117,7 +117,7 @@ class BeatmapPersonalBestRankQueryInput:
     ruleset: Ruleset
     playstyle: Playstyle
     category: LeaderboardCategory = LeaderboardCategory.GLOBAL
-    mod_filter_key: int | None = None
+    selected_mods: ModCombination | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -155,7 +155,7 @@ class BeatmapPersonalBestRankQuery:
             BeatmapPersonalBestRankQueryResult: score がない場合は rank=None の結果.
 
         Raises:
-            ValueError: category と mod_filter_key の組み合わせが不正な場合.
+            ValueError: category と selected_mods の組み合わせが不正な場合.
         """
         if input_data.user_id <= 0:
             return BeatmapPersonalBestRankQueryResult(rank=None)
@@ -167,7 +167,7 @@ class BeatmapPersonalBestRankQuery:
                 ruleset=input_data.ruleset,
                 playstyle=input_data.playstyle,
                 category=input_data.category,
-                mod_filter_key=input_data.mod_filter_key,
+                selected_mods=input_data.selected_mods,
             ),
             viewer_user_id=input_data.user_id,
         )
@@ -459,14 +459,11 @@ def _leaderboard_scope_from_request(
     ):
         return None
 
-    mod_filter_key = None
-    if category is LeaderboardCategory.SELECTED_MODS:
-        filter_result = request.selected_mod_filter
-        if filter_result is None or not filter_result.is_supported:
-            return None
-        mod_filter_key = filter_result.key
-        if mod_filter_key is None:
-            return None
+    selected_mods = (
+        request.selected_mods if category is LeaderboardCategory.SELECTED_MODS else None
+    )
+    if category is LeaderboardCategory.SELECTED_MODS and selected_mods is None:
+        return None
 
     return LeaderboardReadScope(
         beatmap_id=beatmap.id,
@@ -474,7 +471,7 @@ def _leaderboard_scope_from_request(
         ruleset=request.ruleset,
         playstyle=request.playstyle,
         category=category,
-        mod_filter_key=mod_filter_key,
+        selected_mods=selected_mods,
     )
 
 

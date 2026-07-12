@@ -9,12 +9,13 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from osu_server.domain.scores.leaderboards import ScoreRankKey
+    from osu_server.domain.scores.mods import ModCombination
     from osu_server.domain.scores.score import Playstyle, Ruleset
 
 
 @dataclass(frozen=True, slots=True)
-class BeatmapLeaderboardUserBestScope:
-    """Global all-mods のユーザー最高 score と current revision を識別する scope.
+class BeatmapLeaderboardUserScope:
+    """Mod を問わないユーザー leaderboard scope を表す.
 
     Attributes:
         beatmap_id (int): 対象 Beatmap ID. 正の値でなければならない.
@@ -43,8 +44,19 @@ class BeatmapLeaderboardUserBestScope:
 
 
 @dataclass(frozen=True, slots=True)
+class BeatmapLeaderboardUserBestScope(BeatmapLeaderboardUserScope):
+    """raw Mod bitflag ごとのユーザー最高 score scope を表す.
+
+    Attributes:
+        mods (ModCombination): score に保存された raw Mod bitflag.
+    """
+
+    mods: ModCombination
+
+
+@dataclass(frozen=True, slots=True)
 class BeatmapLeaderboardUserBest:
-    """Persisted score-priority projection row for one user and scope."""
+    """1ユーザーの raw Mod scope に対応する score-priority projection 行."""
 
     id: int | None
     scope: BeatmapLeaderboardUserBestScope
@@ -65,7 +77,7 @@ class BeatmapLeaderboardUserBest:
 
 @dataclass(frozen=True, slots=True)
 class UpsertBeatmapLeaderboardUserBest:
-    """Create or replace a projection row if the candidate ranks higher."""
+    """候補が上位の場合に raw Mod scope の projection 行を置換する command."""
 
     scope: BeatmapLeaderboardUserBestScope
     score_id: int
@@ -113,19 +125,33 @@ type BeatmapLeaderboardProjectionSlice = (
 
 
 class BeatmapLeaderboardCommandRepository(Protocol):
-    """Global all-mods のユーザー最高 score を更新する command port."""
+    """raw Mod scope ごとのユーザー最高 score を更新する command port."""
 
     async def get_user_best(
         self,
         scope: BeatmapLeaderboardUserBestScope,
     ) -> BeatmapLeaderboardUserBest | None:
-        """ユーザーの現在の最高 score を返す.
+        """指定 raw Mod scope の現在の最高 score を返す.
 
         Args:
-            scope (BeatmapLeaderboardUserBestScope): 検索する Global all-mods scope.
+            scope (BeatmapLeaderboardUserBestScope): 検索する raw Mod scope.
 
         Returns:
             BeatmapLeaderboardUserBest | None: 保存済みの最高 score. 未登録時は None.
+        """
+        ...
+
+    async def get_global_user_best(
+        self,
+        scope: BeatmapLeaderboardUserScope,
+    ) -> BeatmapLeaderboardUserBest | None:
+        """全 raw Mod scope からユーザーの Global 最高 score を返す.
+
+        Args:
+            scope (BeatmapLeaderboardUserScope): Mod を含まない検索 scope.
+
+        Returns:
+            BeatmapLeaderboardUserBest | None: Global 最高 score. 未登録時は None.
         """
         ...
 
@@ -148,7 +174,7 @@ class BeatmapLeaderboardCommandRepository(Protocol):
         slice_: BeatmapLeaderboardProjectionSlice,
         rows: Iterable[UpsertBeatmapLeaderboardUserBest],
     ) -> None:
-        """再構築対象 slice の行を指定された Global best で置換する.
+        """再構築対象 slice の行を指定された Mod別 best で置換する.
 
         Args:
             slice_ (BeatmapLeaderboardProjectionSlice): user または Beatmap の再構築範囲.

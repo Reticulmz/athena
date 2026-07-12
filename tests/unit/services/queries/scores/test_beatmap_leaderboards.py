@@ -22,7 +22,6 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.users import User
-from osu_server.domain.scores.leaderboards import filter_from_mod_combination
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Playstyle, Ruleset
@@ -436,7 +435,7 @@ class TestBeatmapLeaderboardQuery:
                     ruleset=Ruleset.OSU,
                     playstyle=Playstyle.VANILLA,
                     category=LeaderboardCategory.SELECTED_MODS,
-                    mod_filter_key=int(Mod.DOUBLE_TIME),
+                    selected_mods=ModCombination(Mod.DOUBLE_TIME),
                 ),
                 9,
             )
@@ -862,7 +861,7 @@ def _request(
     ruleset = _ruleset_from_mode(mode)
     category = _leaderboard_category_from_type(leaderboard_type)
     header_only = category is None or song_select is True
-    selected_mod_filter = None
+    selected_mods = None
 
     if mods is None:
         header_only = True
@@ -871,9 +870,7 @@ def _request(
         if mod_combination.has(Mod.RELAX) or mod_combination.has(Mod.AUTOPILOT):
             header_only = True
         if category is LeaderboardCategory.SELECTED_MODS:
-            selected_mod_filter = filter_from_mod_combination(mod_combination)
-            if not selected_mod_filter.is_supported:
-                header_only = True
+            selected_mods = mod_combination
 
     return BeatmapLeaderboardRequest(
         beatmap_checksum=checksum_md5,
@@ -883,7 +880,7 @@ def _request(
         ruleset=ruleset,
         playstyle=Playstyle.VANILLA,
         category=category,
-        selected_mod_filter=selected_mod_filter,
+        selected_mods=selected_mods,
         header_only=header_only,
     )
 

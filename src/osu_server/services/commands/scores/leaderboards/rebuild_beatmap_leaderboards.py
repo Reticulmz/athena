@@ -154,6 +154,7 @@ def _projection_rows_from_scores(
             ruleset=score.ruleset,
             playstyle=score.playstyle,
             user_id=score.user_id,
+            mods=score.mods,
         )
         current = best_by_scope.get(scope)
         if current is None or score_beats_current(rank_key, current.rank_key):

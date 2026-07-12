@@ -9,11 +9,13 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardBeatmapProjectionSlice,
     BeatmapLeaderboardUserBestScope,
     BeatmapLeaderboardUserProjectionSlice,
+    BeatmapLeaderboardUserScope,
     UpsertBeatmapLeaderboardUserBest,
 )
 from osu_server.repositories.sqlalchemy.commands.beatmap_leaderboards import (
@@ -73,7 +75,7 @@ async def test_upsert_targets_projection_unique_index_and_rank_key_guard() -> No
     assert result.score_id == 12
     assert result.rank_key.score == 1_100
     upsert_sql = _compiled_sql(session.statements[0])
-    assert "ON CONFLICT (beatmap_id, ruleset, playstyle, user_id) DO UPDATE" in upsert_sql
+    assert "ON CONFLICT (beatmap_id, ruleset, playstyle, user_id, mods) DO UPDATE" in upsert_sql
     assert "ON CONSTRAINT" not in upsert_sql
     assert "score_id = " in upsert_sql
     assert "score = " in upsert_sql
@@ -87,7 +89,7 @@ async def test_upsert_targets_projection_unique_index_and_rank_key_guard() -> No
     assert session.rollback_calls == 0
 
 
-async def test_get_user_best_uses_scope_without_mod_dimension() -> None:
+async def test_get_user_best_uses_exact_raw_mod_scope() -> None:
     model = _model(score_id=10, score=1_000, submitted_at=_NOW)
     session = FakeSession(execute_results=[model])
     repo = _repo(session)
@@ -96,7 +98,21 @@ async def test_get_user_best_uses_scope_without_mod_dimension() -> None:
 
     assert result is not None
     assert result.score_id == 10
-    assert "mod_filter_key" not in _compiled_sql(session.statements[0])
+    assert "beatmap_leaderboard_user_bests.mods = " in _compiled_sql(session.statements[0])
+
+
+async def test_get_global_user_best_ignores_mods_and_orders_all_mod_scopes() -> None:
+    model = _model(score_id=11, score=1_100, submitted_at=_NOW, mods=Mod.HIDDEN)
+    session = FakeSession(execute_results=[model])
+    repo = _repo(session)
+
+    result = await repo.get_global_user_best(_user_scope())
+
+    assert result is not None
+    assert result.score_id == 11
+    statement_sql = _compiled_sql(session.statements[0])
+    assert "beatmap_leaderboard_user_bests.mods = " not in statement_sql
+    assert "ORDER BY beatmap_leaderboard_user_bests.score DESC" in statement_sql
 
 
 async def test_upsert_returns_current_row_when_candidate_does_not_win() -> None:
@@ -173,8 +189,24 @@ def _scope(
     *,
     user_id: int = 1000,
     beatmap_id: int = 1,
+    mods: Mod = Mod.NONE,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
+        beatmap_id=beatmap_id,
+        beatmap_checksum=f"{beatmap_id:032x}",
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=user_id,
+        mods=ModCombination(mods),
+    )
+
+
+def _user_scope(
+    *,
+    user_id: int = 1000,
+    beatmap_id: int = 1,
+) -> BeatmapLeaderboardUserScope:
+    return BeatmapLeaderboardUserScope(
         beatmap_id=beatmap_id,
         beatmap_checksum=f"{beatmap_id:032x}",
         ruleset=Ruleset.OSU,
@@ -202,6 +234,7 @@ def _model(
     row_id: int = 1,
     beatmap_id: int = 1,
     user_id: int = 1000,
+    mods: Mod = Mod.NONE,
     score_id: int,
     score: int,
     submitted_at: datetime,
@@ -213,6 +246,7 @@ def _model(
         ruleset=Ruleset.OSU.value,
         playstyle=Playstyle.VANILLA.value,
         user_id=user_id,
+        mods=int(mods),
         score_id=score_id,
         score=score,
         submitted_at=submitted_at,

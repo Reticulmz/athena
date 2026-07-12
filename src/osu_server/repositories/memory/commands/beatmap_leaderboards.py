@@ -10,6 +10,7 @@ from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
     BeatmapLeaderboardUserBestScope,
     BeatmapLeaderboardUserProjectionSlice,
+    BeatmapLeaderboardUserScope,
 )
 
 if TYPE_CHECKING:
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
 
 
 class InMemoryBeatmapLeaderboardCommandRepository:
-    """active な in-memory UoW state で Global all-mods best を管理する repository."""
+    """active な in-memory UoW state で raw Mod scope best を管理する repository."""
 
     def __init__(self, state: InMemoryCommandRepositoryState) -> None:
         self._state: InMemoryCommandRepositoryState = state
@@ -35,7 +36,7 @@ class InMemoryBeatmapLeaderboardCommandRepository:
         """指定 scope のユーザー最高 score を返す.
 
         Args:
-            scope (BeatmapLeaderboardUserBestScope): 検索する Global all-mods scope.
+            scope (BeatmapLeaderboardUserBestScope): 検索する raw Mod scope.
 
         Returns:
             BeatmapLeaderboardUserBest | None: 保存行. 未登録時は None.
@@ -48,6 +49,25 @@ class InMemoryBeatmapLeaderboardCommandRepository:
             return None
         return row
 
+    async def get_global_user_best(
+        self,
+        scope: BeatmapLeaderboardUserScope,
+    ) -> BeatmapLeaderboardUserBest | None:
+        """全 raw Mod scope からユーザーの Global 最高 score を返す.
+
+        Args:
+            scope (BeatmapLeaderboardUserScope): Mod を含まない検索 scope.
+
+        Returns:
+            BeatmapLeaderboardUserBest | None: Global 最高 score. 未登録時は None.
+        """
+        candidates = (
+            row
+            for row in self._state.beatmap_leaderboard_user_bests_by_id.values()
+            if _matches_global_scope(row.scope, scope)
+        )
+        return min(candidates, key=lambda row: row.rank_key.ordering_key, default=None)
+
     async def upsert_if_better(
         self,
         command: UpsertBeatmapLeaderboardUserBest,
@@ -59,6 +79,9 @@ class InMemoryBeatmapLeaderboardCommandRepository:
 
         Returns:
             BeatmapLeaderboardUserBest: 更新後の保存行.
+
+        Raises:
+            ValueError: 同じ score_id が別 scope ですでに使用されている場合.
         """
         current_id = self._state.beatmap_leaderboard_user_best_id_by_scope.get(
             _scope_key(command.scope)
@@ -68,6 +91,7 @@ class InMemoryBeatmapLeaderboardCommandRepository:
             if current_id is not None
             else None
         )
+        _ensure_score_id_available(self._state, command.score_id, current_id=current_id)
         if current is None:
             created = BeatmapLeaderboardUserBest(
                 id=self._state.next_beatmap_leaderboard_user_best_id,
@@ -102,7 +126,7 @@ class InMemoryBeatmapLeaderboardCommandRepository:
         slice_: BeatmapLeaderboardProjectionSlice,
         rows: Iterable[UpsertBeatmapLeaderboardUserBest],
     ) -> None:
-        """再構築対象 slice の Global best を置換する.
+        """再構築対象 slice の Mod別 best を置換する.
 
         Args:
             slice_ (BeatmapLeaderboardProjectionSlice): user または Beatmap の対象範囲.
@@ -151,10 +175,43 @@ def _slice_contains(
     return scope.beatmap_id in slice_.beatmap_ids
 
 
-def _scope_key(scope: BeatmapLeaderboardUserBestScope) -> tuple[int, int, int, int]:
+def _matches_global_scope(
+    candidate: BeatmapLeaderboardUserBestScope,
+    scope: BeatmapLeaderboardUserScope,
+) -> bool:
+    return (
+        candidate.beatmap_id == scope.beatmap_id
+        and candidate.beatmap_checksum == scope.beatmap_checksum
+        and candidate.ruleset is scope.ruleset
+        and candidate.playstyle is scope.playstyle
+        and candidate.user_id == scope.user_id
+    )
+
+
+def _ensure_score_id_available(
+    state: InMemoryCommandRepositoryState,
+    score_id: int,
+    *,
+    current_id: int | None,
+) -> None:
+    duplicate = next(
+        (
+            row
+            for row in state.beatmap_leaderboard_user_bests_by_id.values()
+            if row.id != current_id and row.score_id == score_id
+        ),
+        None,
+    )
+    if duplicate is not None:
+        msg = "score_id is already used by another leaderboard projection row"
+        raise ValueError(msg)
+
+
+def _scope_key(scope: BeatmapLeaderboardUserBestScope) -> tuple[int, int, int, int, int]:
     return (
         scope.beatmap_id,
         scope.ruleset.value,
         scope.playstyle.value,
         scope.user_id,
+        scope.mods.to_persistence_bitmask(),
     )

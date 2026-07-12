@@ -8,11 +8,7 @@ from typing import TYPE_CHECKING
 from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.leaderboard_visibility import is_leaderboard_visible_user
-from osu_server.domain.scores.leaderboards import (
-    ScoreRankKey,
-    score_beats_current,
-    score_matches_selected_mod_filter,
-)
+from osu_server.domain.scores.leaderboards import ScoreRankKey, score_beats_current
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     BeatmapLeaderboardRow,
@@ -24,6 +20,9 @@ if TYPE_CHECKING:
 
     from osu_server.domain.identity.users import User
     from osu_server.domain.scores.score import Score
+    from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+        BeatmapLeaderboardUserBest,
+    )
     from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
         LeaderboardReadScope,
     )
@@ -55,7 +54,7 @@ class _LeaderboardCandidate:
 
 
 class InMemoryBeatmapLeaderboardQueryRepository:
-    """committed memory state の source scores から leaderboard を構築する adapter."""
+    """committed memory state の Mod別 projection から leaderboard を構築する adapter."""
 
     def __init__(self, uow_factory: InMemoryUnitOfWorkFactory) -> None:
         self._factory: InMemoryUnitOfWorkFactory = uow_factory
@@ -105,13 +104,13 @@ def _ranked_candidates(
         return ()
 
     best_by_user_id: dict[int, _LeaderboardCandidate] = {}
-    for score in state.scores_by_id.values():
-        candidate = _candidate_from_score(state, scope, score)
+    for projection in state.beatmap_leaderboard_user_bests_by_id.values():
+        candidate = _candidate_from_projection(state, scope, projection)
         if candidate is None:
             continue
-        current = best_by_user_id.get(score.user_id)
+        current = best_by_user_id.get(projection.scope.user_id)
         if current is None or score_beats_current(candidate.rank_key, current.rank_key):
-            best_by_user_id[score.user_id] = candidate
+            best_by_user_id[projection.scope.user_id] = candidate
 
     candidates = list(best_by_user_id.values())
     candidates.sort(key=lambda candidate: candidate.rank_key.ordering_key)
@@ -131,50 +130,55 @@ def _beatmap_is_currently_visible(
     )
 
 
-def _candidate_from_score(
+def _candidate_from_projection(
     state: InMemoryCommandRepositoryState,
     scope: LeaderboardReadScope,
-    score: Score,
+    projection: BeatmapLeaderboardUserBest,
 ) -> _LeaderboardCandidate | None:
-    if not _score_is_currently_eligible(state, scope, score) or not _score_matches_mod_scope(
-        score, scope
-    ):
+    if not _projection_matches_scope(projection, scope):
         return None
 
-    score_id = score.id
-    if score_id is None:
+    score = state.scores_by_id.get(projection.score_id)
+    if (
+        score is None
+        or score.id is None
+        or not _score_is_currently_eligible(state, scope, score)
+        or score.mods != projection.scope.mods
+    ):
         return None
     user = state.users_by_id.get(score.user_id)
-    if user is None:
-        return None
-    if not _user_is_visible(state, user.id) or not _passes_category_filter(
-        scope,
-        user.id,
-        user.country,
+    if (
+        user is None
+        or not _user_is_visible(state, user.id)
+        or not _passes_category_filter(scope, user.id, user.country)
     ):
         return None
     return _LeaderboardCandidate(
         score=score,
         user=user,
-        rank_key=ScoreRankKey(
-            score=score.score,
-            submitted_at=score.submitted_at,
-            score_id=score_id,
-        ),
+        rank_key=projection.rank_key,
     )
 
 
-def _score_matches_mod_scope(
-    score: Score,
+def _projection_matches_scope(
+    projection: BeatmapLeaderboardUserBest,
     scope: LeaderboardReadScope,
 ) -> bool:
+    projection_scope = projection.scope
+    if (
+        projection_scope.beatmap_id != scope.beatmap_id
+        or projection_scope.beatmap_checksum != scope.beatmap_checksum
+        or projection_scope.ruleset is not scope.ruleset
+        or projection_scope.playstyle is not scope.playstyle
+    ):
+        return False
     if scope.category is not LeaderboardCategory.SELECTED_MODS:
         return True
-    filter_key = scope.mod_filter_key
-    if filter_key is None:
-        msg = "selected-mods scope requires mod_filter_key"
+    selected_mods = scope.selected_mods
+    if selected_mods is None:
+        msg = "selected-mods scope requires selected_mods"
         raise ValueError(msg)
-    return score_matches_selected_mod_filter(score.mods, filter_key)
+    return projection_scope.mods == selected_mods
 
 
 def _score_is_currently_eligible(

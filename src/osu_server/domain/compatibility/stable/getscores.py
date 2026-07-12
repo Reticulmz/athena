@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
-    from osu_server.domain.scores.leaderboards import LeaderboardModFilter
+    from osu_server.domain.scores.mods import ModCombination
     from osu_server.domain.scores.personal_best import LeaderboardCategory
     from osu_server.domain.scores.score import Playstyle, Ruleset
 
@@ -43,7 +43,7 @@ class StableLeaderboardSelection:
     """stable client の leaderboard 選択状態。"""
 
     category: LeaderboardCategory | None
-    selected_mod_filter: LeaderboardModFilter | None
+    selected_mods: ModCombination | None
     header_only: bool
     unsupported: bool = False
 

@@ -59,7 +59,7 @@ class LeaderboardReadScope:
         ruleset (Ruleset): 対象 ruleset.
         playstyle (Playstyle): 対象 playstyle.
         category (LeaderboardCategory): 表示する category.
-        mod_filter_key (int | None): Selected Mods の場合だけ利用する非負キー.
+        selected_mods (ModCombination | None): Selected Mods の raw Mod bitflag.
         country (str | None): Country category の owner country filter.
         eligible_user_ids (tuple[int, ...] | None): Friends category の対象 User ID 群.
     """
@@ -69,7 +69,7 @@ class LeaderboardReadScope:
     ruleset: Ruleset
     playstyle: Playstyle
     category: LeaderboardCategory
-    mod_filter_key: int | None = None
+    selected_mods: ModCombination | None = None
     country: str | None = None
     eligible_user_ids: tuple[int, ...] | None = None
 
@@ -84,14 +84,11 @@ class LeaderboardReadScope:
             )
             raise ValueError(msg)
         is_selected_mods = self.category is LeaderboardCategory.SELECTED_MODS
-        if is_selected_mods and self.mod_filter_key is None:
-            msg = "selected-mods scope requires mod_filter_key"
+        if is_selected_mods and self.selected_mods is None:
+            msg = "selected-mods scope requires selected_mods"
             raise ValueError(msg)
-        if not is_selected_mods and self.mod_filter_key is not None:
-            msg = "mod_filter_key is only valid for selected-mods scope"
-            raise ValueError(msg)
-        if self.mod_filter_key is not None and self.mod_filter_key < 0:
-            msg = "mod_filter_key must be non-negative"
+        if not is_selected_mods and self.selected_mods is not None:
+            msg = "selected_mods is only valid for selected-mods scope"
             raise ValueError(msg)
 
 

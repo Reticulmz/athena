@@ -65,9 +65,19 @@ async def test_user_rebuild_recalculates_user_slice_from_source_scores() -> None
 
     assert result.target_found is True
     assert result.source_score_count == 3
-    assert result.projection_row_count == 1
+    assert result.projection_row_count == 2
     rows = _projection_rows(factory)
     assert rows[_scope(user_id=1000, beatmap_id=1)].score_id == 2
+    assert (
+        rows[
+            _scope(
+                user_id=1000,
+                beatmap_id=1,
+                mods=ModCombination(Mod.HIDDEN | Mod.NIGHTCORE),
+            )
+        ].score_id
+        == 3
+    )
     assert rows[_scope(user_id=2000, beatmap_id=1)].score_id == 4
     assert 1 in factory.snapshot().scores_by_id
 
@@ -227,7 +237,7 @@ def _projection_rows(
 
 def _public_projection_result(
     factory: InMemoryUnitOfWorkFactory,
-) -> tuple[tuple[tuple[int, int, int, int], int], ...]:
+) -> tuple[tuple[tuple[int, int, int, int, int], int], ...]:
     return tuple(
         sorted(
             (
@@ -236,6 +246,7 @@ def _public_projection_result(
                     row.scope.ruleset.value,
                     row.scope.playstyle.value,
                     row.scope.user_id,
+                    row.scope.mods.to_persistence_bitmask(),
                 ),
                 row.score_id,
             )
@@ -248,6 +259,7 @@ def _scope(
     *,
     user_id: int,
     beatmap_id: int,
+    mods: ModCombination | None = None,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=beatmap_id,
@@ -255,6 +267,7 @@ def _scope(
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=user_id,
+        mods=mods or ModCombination.none(),
     )
 
 
@@ -264,10 +277,11 @@ def _projection(
     beatmap_id: int,
     score_id: int,
     score: int = 9_000,
+    mods: ModCombination | None = None,
 ) -> UpsertBeatmapLeaderboardUserBest:
     submitted_at = _NOW + timedelta(seconds=score_id)
     return UpsertBeatmapLeaderboardUserBest(
-        scope=_scope(user_id=user_id, beatmap_id=beatmap_id),
+        scope=_scope(user_id=user_id, beatmap_id=beatmap_id, mods=mods),
         score_id=score_id,
         rank_key=ScoreRankKey(score=score, submitted_at=submitted_at, score_id=score_id),
     )

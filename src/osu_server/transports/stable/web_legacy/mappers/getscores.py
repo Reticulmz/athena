@@ -15,7 +15,6 @@ from osu_server.domain.compatibility.stable.getscores import (
     StableLeaderboardSelection,
 )
 from osu_server.domain.compatibility.stable.mods import stable_mod_bitmask_to_mod_combination
-from osu_server.domain.scores.leaderboards import filter_from_mod_combination
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 
@@ -139,7 +138,7 @@ class StableGetscoresLeaderboardMapper:
         if category is None:
             return StableLeaderboardSelection(
                 category=None,
-                selected_mod_filter=None,
+                selected_mods=None,
                 header_only=True,
                 unsupported=request.leaderboard_type is not None,
             )
@@ -148,7 +147,7 @@ class StableGetscoresLeaderboardMapper:
         if mods is None:
             return StableLeaderboardSelection(
                 category=category,
-                selected_mod_filter=None,
+                selected_mods=None,
                 header_only=True,
                 unsupported=True,
             )
@@ -156,21 +155,14 @@ class StableGetscoresLeaderboardMapper:
         if mods.has(Mod.RELAX) or mods.has(Mod.AUTOPILOT):
             return StableLeaderboardSelection(
                 category=category,
-                selected_mod_filter=None,
+                selected_mods=None,
                 header_only=True,
             )
 
-        selected_mod_filter = None
-        unsupported = False
-        if category is LeaderboardCategory.SELECTED_MODS:
-            selected_mod_filter = filter_from_mod_combination(mods)
-            unsupported = not selected_mod_filter.is_supported
-
         return StableLeaderboardSelection(
             category=category,
-            selected_mod_filter=selected_mod_filter,
-            header_only=request.song_select is True or unsupported,
-            unsupported=unsupported,
+            selected_mods=(mods if category is LeaderboardCategory.SELECTED_MODS else None),
+            header_only=request.song_select is True,
         )
 
 

@@ -123,7 +123,7 @@ class FakeSessionFactory:
         return self.session
 
 
-async def test_top_rows_rank_user_bests_from_source_scores_and_map_rows() -> None:
+async def test_top_rows_rank_mod_scoped_projection_and_map_source_rows() -> None:
     session = FakeQuerySession(
         [FakeResult([_row(score_id=10, user_id=20, score=2_000_000, pp=Decimal("123.456"))])]
     )
@@ -147,7 +147,7 @@ async def test_top_rows_rank_user_bests_from_source_scores_and_map_rows() -> Non
     assert session.closed is True
 
     sql = _compiled_sql(session.statements[0])
-    assert "FROM scores" in sql
+    assert "FROM beatmap_leaderboard_user_bests" in sql
     assert "JOIN scores" in sql
     assert "JOIN beatmaps" in sql
     assert "JOIN users" in sql
@@ -155,10 +155,10 @@ async def test_top_rows_rank_user_bests_from_source_scores_and_map_rows() -> Non
     assert "LEFT OUTER JOIN" in sql
     assert "role_permissions" in sql
     assert "row_number() OVER" in sql
-    assert "PARTITION BY scores.user_id" in sql
-    assert "ORDER BY scores.score DESC" in sql
-    assert "scores.submitted_at ASC" in sql
-    assert "scores.id ASC" in sql
+    assert "PARTITION BY beatmap_leaderboard_user_bests.user_id" in sql
+    assert "ORDER BY beatmap_leaderboard_user_bests.score DESC" in sql
+    assert "beatmap_leaderboard_user_bests.submitted_at ASC" in sql
+    assert "beatmap_leaderboard_user_bests.score_id ASC" in sql
     assert "beatmaps.checksum_md5" in sql
     assert "scores.beatmap_checksum" in sql
     assert "scores.passed IS true" in sql
@@ -192,18 +192,18 @@ async def test_personal_best_uses_same_filtered_window_ordering_as_top_rows() ->
     personal_best_sql = _compiled_sql(session.statements[1])
     for sql in (top_sql, personal_best_sql):
         assert "row_number() OVER" in sql
-        assert "FROM scores" in sql
+        assert "FROM beatmap_leaderboard_user_bests" in sql
         assert "scores.passed IS true" in sql
         assert "scores.leaderboard_eligible_at_submission IS true" in sql
-        assert "PARTITION BY scores.user_id" in sql
-        assert "ORDER BY scores.score DESC" in sql
-        assert "scores.submitted_at ASC" in sql
-        assert "scores.id ASC" in sql
+        assert "PARTITION BY beatmap_leaderboard_user_bests.user_id" in sql
+        assert "ORDER BY beatmap_leaderboard_user_bests.score DESC" in sql
+        assert "beatmap_leaderboard_user_bests.submitted_at ASC" in sql
+        assert "beatmap_leaderboard_user_bests.score_id ASC" in sql
     assert "ranked_candidates.rank <= " in top_sql
     assert "ranked_candidates.user_id = " in personal_best_sql
 
 
-async def test_only_selected_mods_category_applies_mod_filter_key() -> None:
+async def test_only_selected_mods_category_applies_exact_raw_mods() -> None:
     country_session = FakeQuerySession()
     country_repository = _repository(country_session)
     _ = await country_repository.list_top_rows(
@@ -229,7 +229,7 @@ async def test_only_selected_mods_category_applies_mod_filter_key() -> None:
     _ = await selected_mods_repository.list_top_rows(
         _scope(
             category=LeaderboardCategory.SELECTED_MODS,
-            mod_filter_key=int(Mod.DOUBLE_TIME),
+            selected_mods=ModCombination(Mod.DOUBLE_TIME),
         ),
         limit=50,
     )
@@ -237,15 +237,13 @@ async def test_only_selected_mods_category_applies_mod_filter_key() -> None:
     country_sql = _compiled_sql(country_session.statements[0])
     friends_sql = _compiled_sql(friends_session.statements[0])
     selected_mods_sql = _compiled_sql(selected_mods_session.statements[0])
-    nightcore_bit = int(Mod.NIGHTCORE)
     double_time_bit = int(Mod.DOUBLE_TIME)
-    assert f"scores.mods & {nightcore_bit}" not in country_sql
+    assert "beatmap_leaderboard_user_bests.mods = " not in country_sql
     assert "users.country = " in country_sql
-    assert f"scores.mods & {nightcore_bit}" not in friends_sql
+    assert "beatmap_leaderboard_user_bests.mods = " not in friends_sql
     assert "users.id IN " in friends_sql
-    assert f"scores.mods & {nightcore_bit}" in selected_mods_sql
-    assert "leaderboard_mod_filter_keys" not in selected_mods_sql
-    assert f" = {double_time_bit}" in selected_mods_sql
+    assert f"beatmap_leaderboard_user_bests.mods = {double_time_bit}" in selected_mods_sql
+    assert "&" not in selected_mods_sql.split("ranked_user_scores", maxsplit=1)[0]
     assert "users.country = " not in selected_mods_sql
 
 
@@ -286,7 +284,7 @@ def _repository(
 def _scope(
     *,
     category: LeaderboardCategory = LeaderboardCategory.GLOBAL,
-    mod_filter_key: int | None = None,
+    selected_mods: ModCombination | None = None,
     country: str | None = None,
     eligible_user_ids: tuple[int, ...] | None = None,
 ) -> LeaderboardReadScope:
@@ -296,7 +294,7 @@ def _scope(
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         category=category,
-        mod_filter_key=mod_filter_key,
+        selected_mods=selected_mods,
         country=country,
         eligible_user_ids=eligible_user_ids,
     )

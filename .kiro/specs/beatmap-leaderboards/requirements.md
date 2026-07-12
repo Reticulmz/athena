@@ -9,7 +9,7 @@ stable client player と将来の Web leaderboard viewer は、Beatmap ごとの
 ## Boundary Context
 
 - **In scope**: stable getscores と将来の Web 表示における Beatmap Leaderboard rows、score-priority Personal Best、Global / Country / Selected Mods / Friends category、stable score submit の Global / all-mods Personal Best delta、Beatmap status / checksum / user visibility 変更時の公開表示整合性。
-- **Out of scope**: non-vanilla playstyle、lazer API、PP-priority Performance Best の実装、User Stats / User Ranking の集計、operator が非公開 Score を調査する内部表示、explicit Mirror mod filter。
+- **Out of scope**: non-vanilla playstyle、lazer API、PP-priority Performance Best の実装、User Stats / User Ranking の集計、operator が非公開 Score を調査する内部表示。
 - **Adjacent expectations**: score-ingestion は Score、pass/fail、server submission acceptance time、Beatmap checksum、actual mods、同一 submission retry 用の保存済み結果を提供し、leaderboard 非対象の Score も score record として保持できる。score-pp-calculation は PP 表示に使える current Performance Calculation を提供する。friend-relationships は viewer の current friend targets を提供する。Beatmap metadata は current Beatmap status と current checksum を提供する。user-stats は PP-priority Performance Best と stats/ranking 表示を所有する。
 
 ## Requirements
@@ -62,17 +62,17 @@ stable client player と将来の Web leaderboard viewer は、Beatmap ごとの
 8. If the viewer is unknown or unauthenticated, the Athena Server shall return no Country rows, no Friends rows, and no Personal Best row for viewer-dependent categories.
 
 ### Requirement 5: Selected Mods Filtering
-**Objective:** As a player comparing a mod-specific leaderboard, I want mod filters to match osu! leaderboard semantics while preserving the mods actually used on each score.
+**Objective:** As a player comparing a mod-specific leaderboard, I want stable raw mod bitflags to select exactly the scores recorded with that combination.
 
 #### Acceptance Criteria
-1. When a viewer requests the Selected Mods Leaderboard Category, the Athena Server shall filter Beatmap Leaderboard rows and Personal Best by the selected Leaderboard Mod Filter.
-2. When a score contains Nightcore, the Athena Server shall match it with Double Time and Nightcore selected-mod filters while preserving Nightcore in the displayed score mods.
-3. When a score contains Perfect, the Athena Server shall match it with Sudden Death and Perfect selected-mod filters while preserving Perfect in the displayed score mods.
-4. When the NoMod filter is selected, the Athena Server shall include scores that have no gameplay-affecting mods even if they include Sudden Death, Perfect, or Mirror.
-5. When the NoMod filter is selected, the Athena Server shall exclude scores that include Nightcore.
-6. When multiple gameplay-affecting mods are selected, the Athena Server shall require all selected gameplay-affecting mods and shall exclude scores with unselected gameplay-affecting mods.
-7. When a score matches multiple Leaderboard Scopes, the Athena Server shall allow that score to appear in each matching scope without rewriting its displayed mods.
-8. If a viewer explicitly requests the Mirror selected-mod filter in the initial scope, the Athena Server shall return no Selected Mods rows and no Selected Mods Personal Best for that filter.
+1. When a viewer requests the Selected Mods Leaderboard Category, the Athena Server shall filter rows and Personal Best by exact equality between the request raw legacy mod bitflag and the projection `mods` value.
+2. When a Nightcore score is represented as the legacy composite `NC | DT`, the Athena Server shall return it only for the same `NC | DT` Selected Mods request and shall not return it for a `DT`-only request.
+3. When a Perfect score is represented as the legacy composite `PF | SD`, the Athena Server shall return it only for the same `PF | SD` Selected Mods request and shall not return it for an `SD`-only request.
+4. When the NoMod filter is selected, the Athena Server shall return only projection rows whose raw mod bitflag is `0`.
+5. When a `DT` or `SD` filter is selected, the Athena Server shall exclude `NC | DT` or `PF | SD` rows respectively.
+6. When multiple mods are selected, the Athena Server shall require the stored raw bitflag to equal the complete selected bitflag and shall not perform subset, superset, or implied-mod matching.
+7. The Athena Server shall preserve the source Score raw mods as the displayed mods and as the projection `mods` value.
+8. When a viewer requests the Mirror selected-mod filter, the Athena Server shall return Mirror rows and Personal Best that exactly match the Mirror bitflag.
 
 ### Requirement 6: Score Eligibility And User Visibility
 **Objective:** As a leaderboard viewer, I want only competitive and publicly visible scores to appear, so that leaderboard rows represent valid public competition.
@@ -131,13 +131,13 @@ stable client player と将来の Web leaderboard viewer は、Beatmap ごとの
 **Objective:** 運用者として、閉集合値とprojection identityをDBでも型安全に保ち、upgrade/downgradeを既存データを壊さず実行できるようにしたい。
 
 #### Acceptance Criteria
-1. Athena ServerはScore play time source、Beatmap fetch target/state、Score Submission state、Score Performance state/profile/reasonを含む閉集合値をdomain EnumとPostgreSQL Enumで表現しなければならない。
+1. Athena ServerはScore play time source、Beatmap fetch target/state、Score Submission state、Score Performance state/profile/reasonを含む閉集合値をdomain EnumとSQLAlchemyの非native Enumで表現し、DBでは文字列型と名前付きCHECK制約として保存しなければならない。
 2. Athena Serverはpersistence columnを原則`NOT NULL`とし、`NULL`を本当にunknown、unavailable、またはnot-applicableな値だけに使用しなければならない。
 3. `score_performance_calculations`では`queued`、`fetching_file`、`calculating`の処理中stateに限って`claim_owner`と`claim_expires_at`のpairを保持でき、未claim時および`completed`、`unavailable`、`superseded`では両方を`NULL`にしなければならない。`performance_recalculation_work_items`では`claimed`のときだけ両方を非`NULL`にし、`pending`およびterminal stateでは両方を`NULL`にしなければならない。
-4. Athena ServerはBeatmap、ruleset、playstyle、userのnatural identityごとにGlobal all-mods rowを`beatmap_leaderboard_user_bests`へ1行だけ保存し、current Beatmap checksumを非`NULL`の置換可能なfreshness属性として保持しなければならない。`score_id` uniquenessにより1 source Scoreから重複projection rowが作られてはならない。
-5. Athena ServerはSelected Mods互換性をsource Scoreのactual modsからread-time canonical predicateで導き、derived filter key columnや追加のSelected Mods projection rowを作成してはならない。
-6. Historically unconstrainedなstring columnをPostgreSQL Enumへ変換する前に、migrationは既存の非`NULL`値がdestination Enumに含まれることを検証しなければならない。
+4. Athena ServerはBeatmap、ruleset、playstyle、user、raw modsのnatural identityごとに`beatmap_leaderboard_user_bests`へ1行だけ保存し、current Beatmap checksumを非`NULL`の置換可能なfreshness属性として保持しなければならない。`score_id` uniquenessによりGlobal用とSelected Mods用の重複projection rowを作ってはならない。
+5. Athena ServerはGlobal、Country、Friendsではprojectionの`mods`をfilterせず各userの全Mod行から最高Scoreを選び、Selected Modsだけ`projection.mods == request.mods`の完全一致を適用しなければならない。canonical filter key columnやGlobal専用rowを作ってはならない。
+6. Historically unconstrainedなstring columnへ名前付きCHECK制約を追加する前に、migrationは既存の非`NULL`値がdomain Enumの許容値に含まれることを検証しなければならない。
 7. Repository queryとAlembic data migrationはSQLAlchemy Core/ORM式を使用し、textual SQLはPostgreSQL `USING`のようにtextual DDL fragmentを要求するAPIへ限定し、その理由をcall siteへ記録しなければならない。
-8. Upgrade時、migrationは有効なGlobal projection dataを保持し、重複するSelected Mods projection rowを削除し、stale-checksum Global rowをcurrent-checksum candidateへ置き換えなければならない。
-9. Downgrade時、migrationはcurrent-checksum eligible source Scoresからlegacy Global/Selected Mods projection rowを再構築し、NoMod、NC/DT、PF/SD互換性を復元しなければならない。
-10. PostgreSQL integration testsはread-time mod predicates、window ranking、stale-checksum replacement、Enum bind behavior、`upgrade -> downgrade -> upgrade` round tripを検証しなければならない。
+8. Upgrade時、migrationはcurrent-checksum eligible source Scoresからuserとraw modsごとの最高Scoreを再構築し、同一user・同一Modの複数Scoreを1行へ収束させ、stale-checksum rowを除外しなければならない。
+9. 0600 Downgrade時、migrationはcurrent-checksum eligible source ScoresからuserごとのGlobal all-mods最高Scoreを再構築し、再Upgrade時にraw Mod別projectionへ戻せなければならない。
+10. PostgreSQL integration testsはraw Mod完全一致、Globalのuser別全Mod最高Score、同一Mod winner、stale-checksum exclusion、Enum CHECK behavior、`upgrade -> downgrade -> upgrade` round tripを検証しなければならない。

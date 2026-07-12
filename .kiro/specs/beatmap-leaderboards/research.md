@@ -490,3 +490,70 @@ Use dedicated new domain/query/command contracts, but migrate incrementally:
 - `.kiro/specs/friend-relationships/design.md` — Friends leaderboard eligible user set boundary.
 - `.kiro/specs/score-pp-calculation/design.md` — Current PP source and stats boundary.
 - [`osuripple/lets handlers/getScoresHandler.pyx`](https://github.com/osuripple/lets/blob/98e9e07faa48398fbccf17251650011e36bdf6e4/handlers/getScoresHandler.pyx) — Legacy getscores category handling reference.
+---
+
+# External Primary Source Research 2026-07-13: getscores raw mods and Selected Mods
+
+## 結論
+
+- 公式 stable client が `/web/osu-osz2-getscores.php` の `mods` に NC を `512` / `576` のどちらで、PF を `16384` / `16416` のどちらで送るかは未確認。公式 stable client source は公開一次資料として確認できなかった。この未確認事項を公式 client の挙動として断定せず、Athena の compatibility contract は下記の設計確認で明示的に決定した。
+- Stable-like client `Lekuruu/osu.py` は `get_scores()` で `params["mods"] = mods.value` を送るため、呼び出し側が `Mods.Nightcore` / `Mods.Perfect` だけを渡す限り raw integer は NC=`512`、PF=`16384` になる。自動で DT/SD implied bit を足す処理は `get_scores()` には確認できない。
+- `osuAkatsuki/bancho.py` の stable leaderboard は Selected Mods のとき request mods の raw integer を `scores.mods == mods` で比較する。Akatsuki 互換を根拠にするなら Selected Mods は raw bitmask equality と言える。
+- `ppy/osu-web` と公式 `ppy/osu` は NC/PF の implied mod を明示的に扱う。`osu-web` は ids -> bitset 変換で implied bit を DB 保存用に含めるため NC は `512 | 64 = 576`、PF は `16384 | 32 = 16416` と読むのが妥当。`ppy/osu` の legacy 変換も NC を `Nightcore | DoubleTime`、PF を `Perfect | SuddenDeath` として書き出す。
+- Athena の projection を `(beatmap, ruleset, playstyle, user, raw mods)` 単位にすることは、Akatsuki 型の exact raw Selected Mods 互換や exact stored raw mods の user-best projection には妥当。ただし osu-web 型の Selected Mods 互換では raw equality だけでは不足する。NC/DT、PF/SD の implied matching と NoMod preference policy を query predicate か canonical filter key で別途表現する必要がある。
+
+## Stable-like client が getscores に送る raw integer
+
+- `Lekuruu/osu.py` の `WebAPI.get_scores()` は `rank_type` を `v`、`mode` を `m`、beatmap checksum を `c` として組み立て、`mods is not None` の場合に `params["mods"] = mods.value` を入れて `/web/osu-osz2-getscores.php` に GET する。固定 commit: [client.py#L209-L258](https://github.com/Lekuruu/osu.py/blob/31a51dc323ae151fe711bb0cb22bd266abdaa500/osu/api/client.py#L209-L258)。
+- 同 repo の `RankingType` は `SelectedMod = 2` としており、`get_scores()` の docstring も `mods` は `rank_type` が `SelectedMod` のとき使う filter と説明している。固定 commit: [constants.py#L6-L17](https://github.com/Lekuruu/osu.py/blob/31a51dc323ae151fe711bb0cb22bd266abdaa500/osu/api/constants.py#L6-L17)、[client.py#L221-L227](https://github.com/Lekuruu/osu.py/blob/31a51dc323ae151fe711bb0cb22bd266abdaa500/osu/api/client.py#L221-L227)。
+- `Lekuruu/osu.py` の legacy `Mods` は `DoubleTime = 1 << 6`、`Nightcore = 1 << 9`、`SuddenDeath = 1 << 5`、`Perfect = 1 << 14` を定義する。したがって `Mods.Nightcore.value` は `512`、`Mods.Perfect.value` は `16384`。固定 commit: [constants.py#L272-L288](https://github.com/Lekuruu/osu.py/blob/31a51dc323ae151fe711bb0cb22bd266abdaa500/osu/bancho/constants.py#L272-L288)。
+- 同 repo の multiplayer packet/status も `mods.value` を u32 として書くため、stable-like client 内では raw IntFlag 値を wire に出す方針が一貫している。固定 commit: [match.py#L154-L164](https://github.com/Lekuruu/osu.py/blob/31a51dc323ae151fe711bb0cb22bd266abdaa500/osu/objects/match.py#L154-L164)、[client.py#L312-L330](https://github.com/Lekuruu/osu.py/blob/31a51dc323ae151fe711bb0cb22bd266abdaa500/osu/bancho/client.py#L312-L330)。
+
+## bancho.py の Selected Mods と保存値
+
+- `osuAkatsuki/bancho.py` の `BeatmapLeaderboardRequest` は `mods_arg: int` を持ち、`fetch_leaderboard()` は `_resolve_score_query_mode_and_mods(mode_arg, mods_arg)` の結果を leaderboard query に渡す。固定 commit: [beatmap_leaderboards.py#L36-L45](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/services/beatmap_leaderboards.py#L36-L45)、[beatmap_leaderboards.py#L104-L135](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/services/beatmap_leaderboards.py#L104-L135)。
+- `_resolve_score_query_mode_and_mods()` は Relax/Autopilot で mode を変える以外、最後は `return GameMode(mode_arg), Mods(mods_arg)` として raw integer を `Mods` に包む。固定 commit: [beatmap_leaderboards.py#L171-L188](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/services/beatmap_leaderboards.py#L171-L188)。
+- `ScoreLeaderboardsService.fetch_leaderboard_scores()` は `leaderboard_type == LeaderboardType.Mods` のときだけ `mods_filter = mods.value` を使い、repository に渡す。固定 commit: [score_leaderboards.py#L41-L72](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/services/score_leaderboards.py#L41-L72)。
+- `ScoresRepository.fetch_beatmap_leaderboard_scores()` は `mods is not None` のとき `ScoresTable.mods == mods` を追加する。これは Selected Mods を raw bitmask equality として扱う直接根拠。固定 commit: [scores.py#L601-L653](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/repositories/scores.py#L601-L653)。
+- `scores` table は `mods` を integer column として保存し、`scores_mods_index` を持つ。固定 commit: [scores.py#L40-L76](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/repositories/scores.py#L40-L76)。
+- score submission parsing は payload field `data[11]` を `Mods(int(data[11]))` にし、online checksum 生成にも `int(self.mods)` を使う。固定 commit: [score.py#L191-L228](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/objects/score.py#L191-L228)、[score.py#L246-L267](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/objects/score.py#L246-L267)。
+- 保存時は `scores.create(..., mods=score.mods.value, ...)` なので、Akatsuki は score object の raw value をそのまま保存する。固定 commit: [score_submission.py#L380-L419](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/services/score_submission.py#L380-L419)。
+- Akatsuki の `Mods.filter_invalid_combos()` は `DTNC` なら DT を落とし、`PFSD` なら SD を落とす。ただし今回確認した score submission path ではこの正規化を保存前に呼ぶ根拠は確認できない。固定 commit: [mods.py#L61-L85](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/constants/mods.py#L61-L85)。
+- Akatsuki の performance 計算は `score.mods & Mods.NIGHTCORE` の場合に DT bit を追加して calculator に渡すため、NC stored value と performance calculator input は分けて扱われている。固定 commit: [performance.py#L89-L97](https://github.com/osuAkatsuki/bancho.py/blob/8990bf3ff80cf230abb41e97484f78f7aec2dabc/app/services/performance.py#L89-L97)。
+
+## osu-web / 公式 osu! source の NC/PF と Selected Mods
+
+- `ppy/osu-web` の `Mods::IMPLIED_MODS` は `NC => DT`、`PF => SD` を定義する。固定 commit: [Mods.php#L15-L20](https://github.com/ppy/osu-web/blob/5b148b8d65b39b693617e8f72bdfdd0cb101e486/app/Singletons/Mods.php#L15-L20)。
+- `ppy/osu-web` の legacy bitset は `SD = 1 << 5`、`DT = 1 << 6`、`NC = 1 << 9`、`PF = 1 << 14`。固定 commit: [Mods.php#L22-L40](https://github.com/ppy/osu-web/blob/5b148b8d65b39b693617e8f72bdfdd0cb101e486/app/Singletons/Mods.php#L22-L40)。
+- `idsToBitset()` は comment で DB 保存方法として implied mods を含めると説明し、実装も selected id の bit と implied id の bit を OR する。したがって osu-web 系の保存 bitset は NC=`512|64=576`、PF=`16384|32=16416` と読むのが妥当。固定 commit: [Mods.php#L135-L150](https://github.com/ppy/osu-web/blob/5b148b8d65b39b693617e8f72bdfdd0cb101e486/app/Singletons/Mods.php#L135-L150)。
+- `bitsetToIds()` は legacy bitset から id set を作った後、NC/PF があれば implied DT/SD を remove する。これは保存値に implied bit があっても表示/ID 表現では NC/PF を優先する根拠。固定 commit: [Mods.php#L186-L202](https://github.com/ppy/osu-web/blob/5b148b8d65b39b693617e8f72bdfdd0cb101e486/app/Singletons/Mods.php#L186-L202)。
+- `ScoreSearch::addModsFilter()` は selected mods を raw bitmask equality ではなく mod id terms と implied reverse lookup で組み立てる。たとえば `DT` filter では `array_search_null($mod, IMPLIED_MODS)` により `NC` も `searchMods` に入る。固定 commit: [ScoreSearch.php#L144-L198](https://github.com/ppy/osu-web/blob/5b148b8d65b39b693617e8f72bdfdd0cb101e486/app/Libraries/Search/ScoreSearch.php#L144-L198)。
+- 同じ `addModsFilter()` は NoMod 判定から `CL`, `PF`, `SD`, `MR` を除外対象として外す。つまり osu-web 型の NoMod / Selected Mods は raw equality ではなく preference/implied semantics を含む。固定 commit: [ScoreSearch.php#L151-L166](https://github.com/ppy/osu-web/blob/5b148b8d65b39b693617e8f72bdfdd0cb101e486/app/Libraries/Search/ScoreSearch.php#L151-L166)。
+- 公式 `ppy/osu` の `LegacyMods` も `DoubleTime = 1 << 6`、`Nightcore = 1 << 9`、`SuddenDeath = 1 << 5`、`Perfect = 1 << 14`。固定 commit: [LegacyMods.cs#L8-L27](https://github.com/ppy/osu/blob/1164870d12bd5b9714bbffa97e809bee33458799/osu.Game/Beatmaps/Legacy/LegacyMods.cs#L8-L27)。
+- 公式 `ppy/osu` の `Ruleset.ConvertToLegacyMods()` は `ModPerfect` を `Perfect | SuddenDeath`、`ModNightcore` を `Nightcore | DoubleTime` として legacy bitset へ書き出す。固定 commit: [Ruleset.cs#L140-L178](https://github.com/ppy/osu/blob/1164870d12bd5b9714bbffa97e809bee33458799/osu.Game/Rulesets/Ruleset.cs#L140-L178)。
+- 公式 `ppy/osu` の `OsuRuleset.ConvertFromLegacyMods()` は legacy bitset に NC があれば NC、なければ DT、PF があれば PF、なければ SD として読む。固定 commit: [OsuRuleset.cs#L77-L87](https://github.com/ppy/osu/blob/1164870d12bd5b9714bbffa97e809bee33458799/osu.Game.Rulesets.Osu/OsuRuleset.cs#L77-L87)。
+- 公式 test も `Nightcore` 単体と `Nightcore | DoubleTime` の読み戻しをどちらも `OsuModNightcore` とし、legacy 書き出しでは `Nightcore | DoubleTime`、`Perfect | SuddenDeath` を期待している。固定 commit: [OsuLegacyModConversionTest.cs#L36-L49](https://github.com/ppy/osu/blob/1164870d12bd5b9714bbffa97e809bee33458799/osu.Game.Rulesets.Osu.Tests/OsuLegacyModConversionTest.cs#L36-L49)。
+
+## Athena projection への反映
+
+- Akatsuki 型 compatibility を採るなら、Selected Mods は request raw integer と `scores.mods` raw integer の equality なので、`(beatmap, ruleset, playstyle, user, raw mods)` projection は自然な user-best identity になる。
+- ただし osu-web / 公式 source の implied semantics を採るなら、raw mods projection だけでは NC/DT と PF/SD の同一視、NoMod preference handling、表示 mods と検索 mods の分離を表現できない。raw mods projectionを持つ場合でも、Selected Mods read は source score の raw mods から canonical predicate を作るか、projection key を rawではなく compatibility filter key にする必要がある。
+- 今回の一次資料だけでは、公式 stable client が getscores request に NC=`512` か `576`、PF=`16384` か `16416` のどちらを送るかは未確認。Athena の設計判断では、client request raw integer、score stored raw integer、displayed mods、selected-mods matching key を別概念として保持するのが最も安全。
+
+## Open client request evidence
+
+- `neomodnet/neomod` は `/web/osu-osz2-getscores.php` の `mods` に Mod selector の `LegacyFlags` を整数化して送る。固定 commit: [BanchoLeaderboard.cpp#L152-L190](https://github.com/neomodnet/neomod/blob/0cece011cec27f07814a0631d27a47df00573d93/src/App/Neomod/BanchoLeaderboard.cpp#L152-L190)。
+- 同 client の `LegacyFlags` は `Nightcore = DoubleTime | (1U << 9)`、`Perfect = SuddenDeath | (1U << 14)` と定義するため、NC は `576`、PF は `16416` になる。固定 commit: [ModFlags.h#L74-L107](https://github.com/neomodnet/neomod/blob/0cece011cec27f07814a0631d27a47df00573d93/src/App/Neomod/ModFlags.h#L74-L107)。
+- Mod selector は semantic mods を `Mods::to_legacy()` へ変換してから `LegacyFlags` を返す。速度が 1.0 より大きい場合は DT を立て、Nightcore の場合は composite `LegacyFlags::Nightcore` を追加する。Perfect も composite flag を追加する。固定 commit: [ModSelector.cpp#L1254-L1258](https://github.com/neomodnet/neomod/blob/0cece011cec27f07814a0631d27a47df00573d93/src/App/Neomod/ModSelector.cpp#L1254-L1258)、[Replay.cpp#L91-L120](https://github.com/neomodnet/neomod/blob/0cece011cec27f07814a0631d27a47df00573d93/src/App/Neomod/Replay.cpp#L91-L120)。
+- Neomod は公式 stable client そのものではないため、公式 stable の送信値が `576` / `16416` である直接証拠にはしない。ただし、公式 `ppy/osu` の legacy 書き出しと同じ composite convention を使い、実際に getscores query を構築する公開 client 実装として、`576` / `16416` を Athena の non-stable adapter が生成すべき legacy 表現とする根拠になる。
+
+## Athena の設計判断
+
+- 2026-07-13 の設計確認で、Athena の stable compatibility contract は Selected Mods の raw equality を採用し、Athena が legacy bitflag を生成する client-family boundary では NC を `NC | DT`、PF を `PF | SD` とすることを決定した。これは未確認の公式 stable client 実装を推測した結論ではなく、上記の公開実装と公式 legacy 変換を根拠に選択した Athena 側の契約である。
+- Stable `/web/osu-osz2-getscores.php` の Selected Mods は、modern osu-web の検索 UI ではなく stable 互換実装の raw equality を優先する。request の `mods` と保存済み score の raw legacy bitflag を完全一致で比較し、NC/DT、PF/SD、NoMod/preference mods を同一 filter に正規化しない。
+- `beatmap_leaderboard_user_bests` は Global 専用 1 行ではなく、`beatmap_id, ruleset, playstyle, user_id, mods` ごとの score-priority user best projection とする。同じ user・譜面・ruleset・playstyle・raw mods で score を更新した場合は既存行を置換し、別 Mod combination の場合だけ別行を持つ。
+- Global / Local / Country / Friends は projection の `mods` を filter に使わず、対象行から user ごとの最高 score を 1 行選んで順位付けする。各 raw Mod scope の最大値の中から最大値を選ぶため、source Scores 全件を走査せず Global user best を正しく導ける。
+- Selected Mods は projection の `mods == request.mods` で絞って順位付けする。追加の canonical filter key、NC/DT・PF/SD 正規化式、NoMod preference predicate は持たない。
+- `score_id` は一意に保つ。Global 用の複製行を作らず、1 source Score は自身の raw Mod scope を表す最大 1 projection row だけに対応する。これにより、同じ `score_id` が Global sentinel と Mod key の 2 行に入る問題を構造的に防ぐ。
+- Stable score submission と getscores request では受信 raw bitflag を保持する。将来 Lazer や first-party API の semantic mod から legacy projection を作る場合は、公式 `ppy/osu` と同じく NC を `NC|DT`、PF を `PF|SD` に変換してから保存する。これは Selected Mods query 内の正規化ではなく、client-family boundary で wire/persistence representation を揃える処理として扱う。
+- 現行 Athena の `DT` filter が `NC` score も返す、`SD` filter が `PF` score も返す、NoMod filter が SD/PF/MR score を含む挙動は modern osu-web の検索 semantics を stable getscores へ流用したものなので、Stable compatibility contract から除外する。

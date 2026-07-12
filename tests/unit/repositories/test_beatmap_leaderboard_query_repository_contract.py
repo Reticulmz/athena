@@ -20,6 +20,7 @@ from osu_server.domain.beatmaps import (
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.users import User
+from osu_server.domain.scores.leaderboards import ScoreRankKey, score_beats_current
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.performance import (
     FormulaProfile,
@@ -32,6 +33,10 @@ from osu_server.domain.scores.personal_best import (
     PersonalBestScope,
 )
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+    BeatmapLeaderboardUserBest,
+    BeatmapLeaderboardUserBestScope,
+)
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     LeaderboardReadScope,
 )
@@ -211,24 +216,32 @@ async def test_country_and_friends_are_read_time_filters_over_all_mods_scope() -
     assert [row.user_id for row in country_rows_after_country_change] == [11, 12, 10]
 
 
-async def test_selected_mods_use_mod_filter_key_and_preserve_displayed_mods() -> None:
+async def test_selected_mods_use_exact_raw_bitflag_and_preserve_displayed_mods() -> None:
     factory = _factory()
     state = factory.snapshot()
     _seed_beatmap(state)
     _seed_visible_role(state)
+    nightcore_mods = ModCombination.from_bitmask(int(Mod.NIGHTCORE | Mod.DOUBLE_TIME))
     _seed_leaderboard_score(
         state,
         score_id=20,
         user_id=20,
         score=900_000,
-        mods=ModCombination.from_bitmask(int(Mod.NIGHTCORE)),
+        mods=nightcore_mods,
     )
     _seed_leaderboard_score(
         state,
         score_id=21,
         user_id=21,
         score=950_000,
-        mods=ModCombination.from_bitmask(int(Mod.NIGHTCORE)),
+        mods=nightcore_mods,
+    )
+    _seed_leaderboard_score(
+        state,
+        score_id=22,
+        user_id=22,
+        score=1_000_000,
+        mods=ModCombination(Mod.DOUBLE_TIME),
     )
     factory.commit_state(state)
     repository = InMemoryBeatmapLeaderboardQueryRepository(factory)
@@ -236,13 +249,13 @@ async def test_selected_mods_use_mod_filter_key_and_preserve_displayed_mods() ->
     selected_rows = await repository.list_top_rows(
         _scope(
             category=LeaderboardCategory.SELECTED_MODS,
-            mod_filter_key=int(Mod.DOUBLE_TIME),
+            selected_mods=nightcore_mods,
         ),
         limit=50,
     )
 
     assert [row.score_id for row in selected_rows] == [21, 20]
-    assert selected_rows[0].displayed_mods == ModCombination.from_bitmask(int(Mod.NIGHTCORE))
+    assert selected_rows[0].displayed_mods == nightcore_mods
 
 
 async def test_owner_visibility_filters_rows_and_personal_best_at_read_time() -> None:
@@ -465,7 +478,7 @@ def _scope(
     *,
     category: LeaderboardCategory = LeaderboardCategory.GLOBAL,
     beatmap_checksum: str = _CURRENT_CHECKSUM,
-    mod_filter_key: int | None = None,
+    selected_mods: ModCombination | None = None,
     country: str | None = None,
     eligible_user_ids: tuple[int, ...] | None = None,
 ) -> LeaderboardReadScope:
@@ -475,7 +488,7 @@ def _scope(
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         category=category,
-        mod_filter_key=mod_filter_key,
+        selected_mods=selected_mods,
         country=country,
         eligible_user_ids=eligible_user_ids,
     )
@@ -552,6 +565,69 @@ def _seed_leaderboard_score(
         passed=passed,
     )
     state.score_leaderboard_eligibility_by_id[score_id] = leaderboard_eligible_at_submission
+    _upsert_projection(
+        state,
+        score_id=score_id,
+        user_id=user_id,
+        score=score,
+        submitted_at=submitted_at,
+        mods=source_mods,
+        beatmap_checksum=beatmap_checksum,
+    )
+
+
+def _upsert_projection(
+    state: InMemoryCommandRepositoryState,
+    *,
+    score_id: int,
+    user_id: int,
+    score: int,
+    submitted_at: datetime,
+    mods: ModCombination,
+    beatmap_checksum: str,
+) -> None:
+    scope = BeatmapLeaderboardUserBestScope(
+        beatmap_id=_BEATMAP_ID,
+        beatmap_checksum=beatmap_checksum,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=user_id,
+        mods=mods,
+    )
+    scope_key = (
+        scope.beatmap_id,
+        scope.ruleset.value,
+        scope.playstyle.value,
+        scope.user_id,
+        scope.mods.to_persistence_bitmask(),
+    )
+    rank_key = ScoreRankKey(
+        score=score,
+        submitted_at=submitted_at,
+        score_id=score_id,
+    )
+    current_id = state.beatmap_leaderboard_user_best_id_by_scope.get(scope_key)
+    current = (
+        state.beatmap_leaderboard_user_bests_by_id.get(current_id)
+        if current_id is not None
+        else None
+    )
+    if current is not None and not score_beats_current(rank_key, current.rank_key):
+        return
+
+    projection_id = (
+        current.id if current is not None else state.next_beatmap_leaderboard_user_best_id
+    )
+    assert projection_id is not None
+    if current is None:
+        state.next_beatmap_leaderboard_user_best_id += 1
+    state.beatmap_leaderboard_user_bests_by_id[projection_id] = BeatmapLeaderboardUserBest(
+        id=projection_id,
+        scope=scope,
+        score_id=score_id,
+        rank_key=rank_key,
+    )
+    state.beatmap_leaderboard_user_best_id_by_scope[scope_key] = projection_id
 
 
 def _seed_current_performance_calculation(

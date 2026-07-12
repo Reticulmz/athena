@@ -28,7 +28,7 @@ from osu_server.domain.identity.leaderboard_visibility import (
     LEADERBOARD_VISIBLE_PERMISSION_MASK,
 )
 from osu_server.domain.scores.leaderboards import ScoreRankKey
-from osu_server.domain.scores.mods import Mod
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculationState
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
@@ -80,7 +80,11 @@ _MIGRATION_PATH = Path(
 _LEADERBOARD_REPAIR_MIGRATION_PATH = Path(
     "alembic/versions/20260712_0500_repair_legacy_leaderboard_projection.py"
 )
-_REVISION = "20260710_0400"
+_MOD_SCOPED_MIGRATION_PATH = Path(
+    "alembic/versions/20260713_0600_add_mod_scoped_leaderboard_projection.py"
+)
+_ENUM_REVISION = "20260710_0400"
+_HEAD_REVISION = "20260713_0600"
 _PREVIOUS_REVISION = "20260710_0300"
 _BEATMAPSET_ID = 1_970_100_001
 _BEATMAP_ID = 1_970_100_002
@@ -98,6 +102,8 @@ _PERFECT_SCORE_ID = 9_700_000_004
 _SUDDEN_DEATH_SCORE_ID = 9_700_000_005
 _USER_2_NIGHTCORE_SCORE_ID = 9_700_000_006
 _STALE_SCORE_ID = 9_700_000_007
+_DOUBLE_TIME_LOWER_SCORE_ID = 9_700_000_008
+_MIRROR_SCORE_ID = 9_700_000_009
 _BLOB_ID = 1_970_200_001
 _ATTACHMENT_ID = 9_700_100_001
 _OLD_CALCULATION_ID = 9_700_200_001
@@ -115,6 +121,8 @@ _SCORE_IDS = (
     _SUDDEN_DEATH_SCORE_ID,
     _USER_2_NIGHTCORE_SCORE_ID,
     _STALE_SCORE_ID,
+    _DOUBLE_TIME_LOWER_SCORE_ID,
+    _MIRROR_SCORE_ID,
 )
 
 _CHECKED_ENUM_COLUMNS = (
@@ -242,6 +250,22 @@ def _load_leaderboard_repair_migration() -> _MigrationModule:
     return cast("_MigrationModule", cast("object", module))
 
 
+def _load_mod_scoped_migration() -> _MigrationModule:
+    spec = importlib.util.spec_from_file_location(
+        "mod_scoped_leaderboard_projection_migration",
+        _MOD_SCOPED_MIGRATION_PATH,
+    )
+    if spec is None or spec.loader is None:
+        msg = f"could not load migration: {_MOD_SCOPED_MIGRATION_PATH}"
+        raise RuntimeError(msg)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return cast("_MigrationModule", cast("object", module))
+
+
+_MOD_SCOPED_MIGRATION = _load_mod_scoped_migration()
+
+
 def _get_database_url() -> str:
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -297,6 +321,41 @@ async def postgres_connection(
                 sa.select(sa.func.set_config("search_path", schema_name, True))
             )
             await connection.run_sync(_upgrade_schema_to_head)
+            yield connection
+        finally:
+            if transaction.is_active:
+                await transaction.rollback()
+
+
+@pytest.fixture
+async def postgres_connection_at_enum_revision(
+    postgres_engine: AsyncEngine,
+) -> AsyncGenerator[AsyncConnection]:
+    """0400 migration適用済みの専用schema接続を提供する.
+
+    Args:
+        postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
+
+    Yields:
+        AsyncConnection: `20260710_0400`まで適用した専用schema接続.
+
+    Notes:
+        fixture終了時にtransactionをrollbackして専用schemaを破棄する.
+    """
+    async with postgres_engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
+            schema_name = f"athena_enum_scope_revision_{secrets.token_hex(8)}"
+            _ = await connection.execute(sa.schema.CreateSchema(schema_name))
+            _ = await connection.execute(
+                sa.select(sa.func.set_config("search_path", schema_name, True))
+            )
+            await connection.run_sync(
+                lambda sync_connection: _upgrade_schema_to_revision(
+                    sync_connection,
+                    _ENUM_REVISION,
+                )
+            )
             yield connection
         finally:
             if transaction.is_active:
@@ -503,10 +562,10 @@ async def test_postgresql_migration_rejects_preexisting_unknown_enum_value(
         await postgres_connection_before_enum_migration.run_sync(_run_upgrade)
 
 
-async def test_postgresql_selected_mod_predicates_and_window_ranking(
+async def test_postgresql_exact_selected_mod_predicates_and_projection_ranking(
     postgres_connection: AsyncConnection,
 ) -> None:
-    """read-time Mod predicateとscore正本のwindow rankingを確認する.
+    """raw Mod完全一致とprojection起点のrankingを確認する.
 
     Args:
         postgres_connection (AsyncConnection): 専用schemaへ接続した非同期接続.
@@ -518,9 +577,11 @@ async def test_postgresql_selected_mod_predicates_and_window_ranking(
         AssertionError: filter, ranking, またはprojection更新結果が異なる場合.
 
     Notes:
-        GlobalはMod条件なし, Selected Modsだけsource Scoreのmodsで絞り込む.
+        Globalはmodsを無視し, Selected Modsだけprojectionのmodsで完全一致する.
     """
     await _seed_fixture(postgres_connection)
+    await postgres_connection.run_sync(_run_mod_scoped_downgrade)
+    await postgres_connection.run_sync(_run_mod_scoped_upgrade)
 
     session_factory = async_sessionmaker(
         postgres_connection,
@@ -536,19 +597,43 @@ async def test_postgresql_selected_mod_predicates_and_window_ranking(
     double_time_rows = await query_repository.list_top_rows(
         _read_scope(
             LeaderboardCategory.SELECTED_MODS,
-            mod_filter_key=int(Mod.DOUBLE_TIME),
+            selected_mods=ModCombination.from_bitmask(int(Mod.DOUBLE_TIME)),
+        ),
+        limit=50,
+    )
+    nightcore_rows = await query_repository.list_top_rows(
+        _read_scope(
+            LeaderboardCategory.SELECTED_MODS,
+            selected_mods=ModCombination.from_bitmask(int(Mod.NIGHTCORE | Mod.DOUBLE_TIME)),
         ),
         limit=50,
     )
     sudden_death_rows = await query_repository.list_top_rows(
         _read_scope(
             LeaderboardCategory.SELECTED_MODS,
-            mod_filter_key=int(Mod.SUDDEN_DEATH),
+            selected_mods=ModCombination.from_bitmask(int(Mod.SUDDEN_DEATH)),
+        ),
+        limit=50,
+    )
+    perfect_rows = await query_repository.list_top_rows(
+        _read_scope(
+            LeaderboardCategory.SELECTED_MODS,
+            selected_mods=ModCombination.from_bitmask(int(Mod.PERFECT | Mod.SUDDEN_DEATH)),
+        ),
+        limit=50,
+    )
+    mirror_rows = await query_repository.list_top_rows(
+        _read_scope(
+            LeaderboardCategory.SELECTED_MODS,
+            selected_mods=ModCombination.from_bitmask(int(Mod.MIRROR)),
         ),
         limit=50,
     )
     no_mod_rows = await query_repository.list_top_rows(
-        _read_scope(LeaderboardCategory.SELECTED_MODS, mod_filter_key=0),
+        _read_scope(
+            LeaderboardCategory.SELECTED_MODS,
+            selected_mods=ModCombination.none(),
+        ),
         limit=50,
     )
 
@@ -556,11 +641,14 @@ async def test_postgresql_selected_mod_predicates_and_window_ranking(
         (_USER_2_NIGHTCORE_SCORE_ID, 1),
         (_NO_MOD_SCORE_ID, 2),
     ]
-    assert [row.score_id for row in double_time_rows] == [
+    assert [row.score_id for row in double_time_rows] == [_DOUBLE_TIME_SCORE_ID]
+    assert [row.score_id for row in nightcore_rows] == [
         _USER_2_NIGHTCORE_SCORE_ID,
-        _DOUBLE_TIME_SCORE_ID,
+        _NIGHTCORE_SCORE_ID,
     ]
     assert [row.score_id for row in sudden_death_rows] == [_SUDDEN_DEATH_SCORE_ID]
+    assert [row.score_id for row in perfect_rows] == [_PERFECT_SCORE_ID]
+    assert [row.score_id for row in mirror_rows] == [_MIRROR_SCORE_ID]
     assert [row.score_id for row in no_mod_rows] == [_NO_MOD_SCORE_ID]
 
     async with session_factory() as session:
@@ -700,7 +788,7 @@ async def test_postgresql_claimed_replacement_completion_clears_claims_before_fl
 
 
 async def test_postgresql_migration_round_trip_restores_legacy_projection(
-    postgres_connection: AsyncConnection,
+    postgres_connection_at_enum_revision: AsyncConnection,
 ) -> None:
     """migration往復後にlegacy projectionと現行projectionを復元できるか確認する.
 
@@ -716,11 +804,12 @@ async def test_postgresql_migration_round_trip_restores_legacy_projection(
     Notes:
         stale checksumの旧Global行はcurrent checksumのsource scoreから再構築する.
     """
-    await _seed_fixture(postgres_connection)
+    connection = postgres_connection_at_enum_revision
+    await _seed_fixture(connection)
 
-    await postgres_connection.run_sync(_run_downgrade)
+    await connection.run_sync(_run_downgrade)
 
-    assert set(await _legacy_projection_rows(postgres_connection)) == {
+    assert set(await _legacy_projection_rows(connection)) == {
         (_USER_1_ID, None, _NO_MOD_SCORE_ID),
         (_USER_1_ID, 0, _NO_MOD_SCORE_ID),
         (_USER_1_ID, int(Mod.SUDDEN_DEATH), _SUDDEN_DEATH_SCORE_ID),
@@ -729,17 +818,85 @@ async def test_postgresql_migration_round_trip_restores_legacy_projection(
         (_USER_2_ID, int(Mod.DOUBLE_TIME), _USER_2_NIGHTCORE_SCORE_ID),
     }
 
-    await _replace_legacy_global_with_stale_score(postgres_connection)
-    await postgres_connection.run_sync(_run_upgrade)
+    await _replace_legacy_global_with_stale_score(connection)
+    await connection.run_sync(_run_upgrade)
 
-    assert set(await _current_projection_rows(postgres_connection)) == {
+    assert set(await _global_projection_rows(connection)) == {
         (_USER_1_ID, _CURRENT_CHECKSUM, _NO_MOD_SCORE_ID),
         (_USER_2_ID, _CURRENT_CHECKSUM, _USER_2_NIGHTCORE_SCORE_ID),
     }
 
 
-async def test_successor_migration_repairs_duplicate_legacy_projection_rows(
+async def test_postgresql_mod_scoped_migration_round_trip_rebuilds_projection(
     postgres_connection: AsyncConnection,
+) -> None:
+    """0600往復時にGlobalとraw Mod別projectionを再構築する.
+
+    Args:
+        postgres_connection (AsyncConnection): 0600適用済みの専用schema接続.
+
+    Returns:
+        None: downgrade後のGlobal行と再upgrade後のMod別行が一致したことを示す.
+
+    Raises:
+        AssertionError: schemaまたは再構築結果が期待値と異なる場合.
+    """
+    await _seed_fixture(postgres_connection)
+
+    await postgres_connection.run_sync(_run_mod_scoped_downgrade)
+
+    assert set(await _global_projection_rows(postgres_connection)) == {
+        (_USER_1_ID, _CURRENT_CHECKSUM, _NO_MOD_SCORE_ID),
+        (_USER_2_ID, _CURRENT_CHECKSUM, _USER_2_NIGHTCORE_SCORE_ID),
+    }
+
+    await postgres_connection.run_sync(_run_mod_scoped_upgrade)
+
+    assert set(await _mod_scoped_projection_rows(postgres_connection)) == {
+        (_USER_1_ID, _CURRENT_CHECKSUM, int(Mod.NONE), _NO_MOD_SCORE_ID),
+        (
+            _USER_1_ID,
+            _CURRENT_CHECKSUM,
+            int(Mod.NIGHTCORE | Mod.DOUBLE_TIME),
+            _NIGHTCORE_SCORE_ID,
+        ),
+        (_USER_1_ID, _CURRENT_CHECKSUM, int(Mod.DOUBLE_TIME), _DOUBLE_TIME_SCORE_ID),
+        (
+            _USER_1_ID,
+            _CURRENT_CHECKSUM,
+            int(Mod.PERFECT | Mod.SUDDEN_DEATH),
+            _PERFECT_SCORE_ID,
+        ),
+        (_USER_1_ID, _CURRENT_CHECKSUM, int(Mod.SUDDEN_DEATH), _SUDDEN_DEATH_SCORE_ID),
+        (_USER_1_ID, _CURRENT_CHECKSUM, int(Mod.MIRROR), _MIRROR_SCORE_ID),
+        (
+            _USER_2_ID,
+            _CURRENT_CHECKSUM,
+            int(Mod.NIGHTCORE | Mod.DOUBLE_TIME),
+            _USER_2_NIGHTCORE_SCORE_ID,
+        ),
+    }
+
+    columns, unique_constraints, check_constraints, indexes = await postgres_connection.run_sync(
+        _read_mod_scoped_projection_schema
+    )
+    assert "mod_filter_key" not in columns
+    assert "mods" in columns
+    assert unique_constraints["uq_beatmap_leaderboard_user_bests_scope"] == (
+        "beatmap_id",
+        "ruleset",
+        "playstyle",
+        "user_id",
+        "mods",
+    )
+    assert unique_constraints["uq_beatmap_leaderboard_user_bests_score_id"] == ("score_id",)
+    assert "ck_beatmap_leaderboard_user_bests_mods_non_negative" in check_constraints
+    assert "idx_beatmap_leaderboard_user_bests_global_rank" in indexes
+    assert "idx_beatmap_leaderboard_user_bests_mod_rank" in indexes
+
+
+async def test_successor_migration_repairs_duplicate_legacy_projection_rows(
+    postgres_connection_at_enum_revision: AsyncConnection,
 ) -> None:
     """同一score_idの旧Global/Selected Mods行をGlobal 1行へ修復する.
 
@@ -752,28 +909,29 @@ async def test_successor_migration_repairs_duplicate_legacy_projection_rows(
     Raises:
         AssertionError: migration欠落, 重複残存, またはcanonical制約欠落の場合.
     """
-    await _seed_fixture(postgres_connection)
-    await postgres_connection.run_sync(_replace_projection_with_legacy_duplicate_rows)
+    connection = postgres_connection_at_enum_revision
+    await _seed_fixture(connection)
+    await connection.run_sync(_replace_projection_with_legacy_duplicate_rows)
 
-    assert set(await _legacy_projection_rows(postgres_connection)) == {
+    assert set(await _legacy_projection_rows(connection)) == {
         (_USER_1_ID, None, _NO_MOD_SCORE_ID),
         (_USER_1_ID, 0, _NO_MOD_SCORE_ID),
     }
     assert _LEADERBOARD_REPAIR_MIGRATION_PATH.exists()
 
     repair_migration = _load_leaderboard_repair_migration()
-    await postgres_connection.run_sync(
+    await connection.run_sync(
         lambda sync_connection: _run_migration_upgrade(
             sync_connection,
             repair_migration,
         )
     )
 
-    assert set(await _current_projection_rows(postgres_connection)) == {
+    assert set(await _global_projection_rows(connection)) == {
         (_USER_1_ID, _CURRENT_CHECKSUM, _NO_MOD_SCORE_ID),
         (_USER_2_ID, _CURRENT_CHECKSUM, _USER_2_NIGHTCORE_SCORE_ID),
     }
-    columns, unique_constraints = await postgres_connection.run_sync(_read_projection_schema)
+    columns, unique_constraints = await connection.run_sync(_read_projection_schema)
     assert "mod_filter_key" not in columns
     assert "beatmap_checksum" in columns
     assert "uq_beatmap_leaderboard_user_bests_scope" in unique_constraints
@@ -781,7 +939,7 @@ async def test_successor_migration_repairs_duplicate_legacy_projection_rows(
 
 
 async def test_successor_migration_preserves_canonical_projection(
-    postgres_connection: AsyncConnection,
+    postgres_connection_at_enum_revision: AsyncConnection,
 ) -> None:
     """Canonicalな0400 projectionを後続migrationが再作成しないことを確認する.
 
@@ -794,9 +952,10 @@ async def test_successor_migration_preserves_canonical_projection(
     Raises:
         AssertionError: migrationがcanonical tableを不要に再作成した場合.
     """
-    await _seed_fixture(postgres_connection)
+    connection = postgres_connection_at_enum_revision
+    await _seed_fixture(connection)
     canonical_row_id = 9_700_900_001
-    _ = await postgres_connection.execute(
+    _ = await connection.execute(
         sa.insert(BeatmapLeaderboardUserBestModel),
         [
             {
@@ -817,22 +976,22 @@ async def test_successor_migration_preserves_canonical_projection(
         BeatmapLeaderboardUserBestModel.user_id,
         BeatmapLeaderboardUserBestModel.score_id,
     ).order_by(BeatmapLeaderboardUserBestModel.id)
-    before = tuple((await postgres_connection.execute(identity_statement)).tuples())
+    before = tuple((await connection.execute(identity_statement)).tuples())
 
     repair_migration = _load_leaderboard_repair_migration()
-    await postgres_connection.run_sync(
+    await connection.run_sync(
         lambda sync_connection: _run_migration_upgrade(
             sync_connection,
             repair_migration,
         )
     )
 
-    after = tuple((await postgres_connection.execute(identity_statement)).tuples())
+    after = tuple((await connection.execute(identity_statement)).tuples())
     assert before == after == ((canonical_row_id, _USER_1_ID, _NO_MOD_SCORE_ID),)
 
 
 def _upgrade_schema_to_head(connection: Connection) -> None:
-    _upgrade_schema_to_revision(connection, _REVISION)
+    _upgrade_schema_to_revision(connection, _HEAD_REVISION)
 
 
 def _upgrade_schema_to_revision(connection: Connection, revision_id: str) -> None:
@@ -853,6 +1012,16 @@ def _run_downgrade(connection: Connection) -> None:
 def _run_upgrade(connection: Connection) -> None:
     _MIGRATION.op = Operations(MigrationContext.configure(connection))
     _MIGRATION.upgrade()
+
+
+def _run_mod_scoped_downgrade(connection: Connection) -> None:
+    _MOD_SCOPED_MIGRATION.op = Operations(MigrationContext.configure(connection))
+    _MOD_SCOPED_MIGRATION.downgrade()
+
+
+def _run_mod_scoped_upgrade(connection: Connection) -> None:
+    _MOD_SCOPED_MIGRATION.op = Operations(MigrationContext.configure(connection))
+    _MOD_SCOPED_MIGRATION.upgrade()
 
 
 def _run_migration_upgrade(
@@ -952,6 +1121,36 @@ def _read_projection_schema(
         if (name := constraint["name"]) is not None
     )
     return columns, unique_constraints
+
+
+def _read_mod_scoped_projection_schema(
+    connection: Connection,
+) -> tuple[
+    frozenset[str],
+    dict[str, tuple[str, ...]],
+    frozenset[str],
+    frozenset[str],
+]:
+    inspector = sa.inspect(connection)
+    columns = frozenset(
+        str(column["name"]) for column in inspector.get_columns("beatmap_leaderboard_user_bests")
+    )
+    unique_constraints = {
+        str(name): tuple(str(column_name) for column_name in constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("beatmap_leaderboard_user_bests")
+        if (name := constraint["name"]) is not None
+    }
+    check_constraints = frozenset(
+        str(name)
+        for constraint in inspector.get_check_constraints("beatmap_leaderboard_user_bests")
+        if (name := constraint["name"]) is not None
+    )
+    indexes = frozenset(
+        str(name)
+        for index in inspector.get_indexes("beatmap_leaderboard_user_bests")
+        if (name := index["name"]) is not None
+    )
+    return columns, unique_constraints, check_constraints, indexes
 
 
 def _assert_checked_enum_storage(connection: Connection) -> None:
@@ -1080,7 +1279,7 @@ def _score_rows() -> list[dict[str, object]]:
         _score_values(
             score_id=_NIGHTCORE_SCORE_ID,
             user_id=_USER_1_ID,
-            mods=int(Mod.NIGHTCORE),
+            mods=int(Mod.NIGHTCORE | Mod.DOUBLE_TIME),
             score=900,
             submitted_at=_NOW + timedelta(seconds=1),
         ),
@@ -1094,7 +1293,7 @@ def _score_rows() -> list[dict[str, object]]:
         _score_values(
             score_id=_PERFECT_SCORE_ID,
             user_id=_USER_1_ID,
-            mods=int(Mod.PERFECT),
+            mods=int(Mod.PERFECT | Mod.SUDDEN_DEATH),
             score=800,
             submitted_at=_NOW + timedelta(seconds=3),
         ),
@@ -1108,7 +1307,7 @@ def _score_rows() -> list[dict[str, object]]:
         _score_values(
             score_id=_USER_2_NIGHTCORE_SCORE_ID,
             user_id=_USER_2_ID,
-            mods=int(Mod.NIGHTCORE),
+            mods=int(Mod.NIGHTCORE | Mod.DOUBLE_TIME),
             score=1_100,
             submitted_at=_NOW + timedelta(seconds=5),
         ),
@@ -1119,6 +1318,20 @@ def _score_rows() -> list[dict[str, object]]:
             score=9_999,
             submitted_at=_NOW + timedelta(seconds=6),
             beatmap_checksum=_STALE_CHECKSUM,
+        ),
+        _score_values(
+            score_id=_DOUBLE_TIME_LOWER_SCORE_ID,
+            user_id=_USER_1_ID,
+            mods=int(Mod.DOUBLE_TIME),
+            score=940,
+            submitted_at=_NOW + timedelta(seconds=7),
+        ),
+        _score_values(
+            score_id=_MIRROR_SCORE_ID,
+            user_id=_USER_1_ID,
+            mods=int(Mod.MIRROR),
+            score=700,
+            submitted_at=_NOW + timedelta(seconds=8),
         ),
     ]
 
@@ -1164,7 +1377,7 @@ def _score_values(
 def _read_scope(
     category: LeaderboardCategory,
     *,
-    mod_filter_key: int | None = None,
+    selected_mods: ModCombination | None = None,
 ) -> LeaderboardReadScope:
     return LeaderboardReadScope(
         beatmap_id=_BEATMAP_ID,
@@ -1172,7 +1385,7 @@ def _read_scope(
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         category=category,
-        mod_filter_key=mod_filter_key,
+        selected_mods=selected_mods,
     )
 
 
@@ -1190,6 +1403,7 @@ def _projection_upsert(
             ruleset=Ruleset.OSU,
             playstyle=Playstyle.VANILLA,
             user_id=_USER_1_ID,
+            mods=ModCombination.none(),
         ),
         score_id=score_id,
         rank_key=ScoreRankKey(
@@ -1257,7 +1471,7 @@ async def _replace_legacy_global_with_stale_score(
     )
 
 
-async def _current_projection_rows(
+async def _global_projection_rows(
     connection: AsyncConnection,
 ) -> Sequence[tuple[int, str, int]]:
     projection = sa.table(
@@ -1275,3 +1489,25 @@ async def _current_projection_rows(
         ).where(projection.c.beatmap_id == _BEATMAP_ID)
     )
     return cast("Sequence[tuple[int, str, int]]", result.tuples().all())
+
+
+async def _mod_scoped_projection_rows(
+    connection: AsyncConnection,
+) -> Sequence[tuple[int, str, int, int]]:
+    projection = sa.table(
+        "beatmap_leaderboard_user_bests",
+        sa.column("beatmap_id", sa.Integer()),
+        sa.column("user_id", sa.Integer()),
+        sa.column("beatmap_checksum", sa.String(length=32)),
+        sa.column("mods", sa.Integer()),
+        sa.column("score_id", sa.BigInteger()),
+    )
+    result = await connection.execute(
+        sa.select(
+            projection.c.user_id,
+            projection.c.beatmap_checksum,
+            projection.c.mods,
+            projection.c.score_id,
+        ).where(projection.c.beatmap_id == _BEATMAP_ID)
+    )
+    return cast("Sequence[tuple[int, str, int, int]]", result.tuples().all())

@@ -28,11 +28,12 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.leaderboards import ScoreRankKey
-from osu_server.domain.scores.mods import Mod
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
     BeatmapLeaderboardUserProjectionSlice,
+    BeatmapLeaderboardUserScope,
     UpsertBeatmapLeaderboardUserBest,
 )
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -235,6 +236,7 @@ def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=1000,
+        mods=ModCombination.none(),
     )
 
 
@@ -242,7 +244,15 @@ async def _get_leaderboard_best_score_id(
     uow_factory: InMemoryUnitOfWorkFactory,
 ) -> int | None:
     async with uow_factory() as uow:
-        best = await uow.beatmap_leaderboards.get_user_best(_leaderboard_scope())
+        best = await uow.beatmap_leaderboards.get_global_user_best(
+            BeatmapLeaderboardUserScope(
+                beatmap_id=1,
+                beatmap_checksum="0123456789abcdef0123456789abcdef",
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                user_id=1000,
+            )
+        )
         return best.score_id if best is not None else None
 
 

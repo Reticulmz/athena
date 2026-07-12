@@ -249,6 +249,7 @@ async def _seed_score_with_projection(
                     ruleset=Ruleset.OSU,
                     playstyle=Playstyle.VANILLA,
                     user_id=user_id,
+                    mods=score.mods,
                 ),
                 score_id=score.id,
                 rank_key=ScoreRankKey(

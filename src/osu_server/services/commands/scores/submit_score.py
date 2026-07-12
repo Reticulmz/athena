@@ -20,6 +20,7 @@ from osu_server.domain.scores.user_stats import UserStatsPolicy
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
     BeatmapLeaderboardUserBestScope,
+    BeatmapLeaderboardUserScope,
     UpsertBeatmapLeaderboardUserBest,
 )
 from osu_server.services.commands.scores.user_stats_projection import (
@@ -460,9 +461,9 @@ async def _submit_personal_best_delta(
     if not _can_use_score_for_personal_best(created_score):
         return None
 
-    scope = _global_leaderboard_scope(command, created_score)
+    scope = _leaderboard_user_scope(command, created_score)
     before_score = (
-        await _current_leaderboard_best_score(uow, scope)
+        await _current_global_leaderboard_best_score(uow, scope)
         if command.include_personal_best_delta
         else None
     )
@@ -470,13 +471,13 @@ async def _submit_personal_best_delta(
     updated = False
 
     if command.update_personal_best:
-        global_best = await _upsert_global_leaderboard_best(
+        _ = await _upsert_mod_leaderboard_best(
             uow,
             command=command,
             created_score=created_score,
         )
         if command.include_personal_best_delta:
-            after_score = await uow.scores.get_by_id(global_best.score_id)
+            after_score = await _current_global_leaderboard_best_score(uow, scope)
         updated = after_score is not None and after_score.id == created_score.id
 
     if not command.include_personal_best_delta:
@@ -489,7 +490,7 @@ async def _submit_personal_best_delta(
     )
 
 
-async def _upsert_global_leaderboard_best(
+async def _upsert_mod_leaderboard_best(
     uow: UnitOfWork,
     *,
     command: SubmitScoreCommand,
@@ -503,24 +504,37 @@ async def _upsert_global_leaderboard_best(
     )
     return await uow.beatmap_leaderboards.upsert_if_better(
         UpsertBeatmapLeaderboardUserBest(
-            scope=_global_leaderboard_scope(command, created_score),
+            scope=_leaderboard_mod_scope(command, created_score),
             score_id=created_score.id,
             rank_key=rank_key,
         )
     )
 
 
-async def _current_leaderboard_best_score(
+async def _current_global_leaderboard_best_score(
     uow: UnitOfWork,
-    scope: BeatmapLeaderboardUserBestScope,
+    scope: BeatmapLeaderboardUserScope,
 ) -> Score | None:
-    best = await uow.beatmap_leaderboards.get_user_best(scope)
+    best = await uow.beatmap_leaderboards.get_global_user_best(scope)
     if best is None:
         return None
     return await uow.scores.get_by_id(best.score_id)
 
 
-def _global_leaderboard_scope(
+def _leaderboard_user_scope(
+    command: SubmitScoreCommand,
+    score: Score,
+) -> BeatmapLeaderboardUserScope:
+    return BeatmapLeaderboardUserScope(
+        user_id=command.user_id,
+        beatmap_id=score.beatmap_id,
+        beatmap_checksum=score.beatmap_checksum,
+        ruleset=score.ruleset,
+        playstyle=score.playstyle,
+    )
+
+
+def _leaderboard_mod_scope(
     command: SubmitScoreCommand,
     score: Score,
 ) -> BeatmapLeaderboardUserBestScope:
@@ -530,6 +544,7 @@ def _global_leaderboard_scope(
         beatmap_checksum=score.beatmap_checksum,
         ruleset=score.ruleset,
         playstyle=score.playstyle,
+        mods=score.mods,
     )
 
 

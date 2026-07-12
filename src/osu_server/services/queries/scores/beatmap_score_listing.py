@@ -61,7 +61,7 @@ class BeatmapScoreListingQuery:
                 ruleset=None,
                 playstyle=Playstyle.VANILLA,
                 category=None,
-                selected_mod_filter=None,
+                selected_mods=None,
                 header_only=True,
             )
         )
@@ -82,7 +82,7 @@ class BeatmapScoreListingQuery:
                 ruleset=None,
                 playstyle=Playstyle.VANILLA,
                 category=None,
-                selected_mod_filter=None,
+                selected_mods=None,
                 header_only=True,
             )
         )
@@ -103,7 +103,7 @@ def _leaderboard_request_from_getscores(
         ruleset=_ruleset_from_request(request),
         playstyle=Playstyle.VANILLA,
         category=None if selection is None else selection.category,
-        selected_mod_filter=None if selection is None else selection.selected_mod_filter,
+        selected_mods=None if selection is None else selection.selected_mods,
         header_only=True if selection is None else selection.header_only,
     )
 

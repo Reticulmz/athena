@@ -37,9 +37,14 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
+from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory, PersonalBestScope
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
+from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
+    BeatmapLeaderboardUserBestScope,
+    UpsertBeatmapLeaderboardUserBest,
+)
 from osu_server.repositories.interfaces.commands.personal_bests import UpsertPersonalBest
 from osu_server.repositories.interfaces.session_store import SessionStore
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
@@ -230,7 +235,7 @@ async def _seed_known_beatmap(app: Starlette) -> None:
 
 
 async def _seed_leaderboard_best(app: Starlette, *, user_id: int) -> int:
-    """getscoresのPersonal Best確認に使用するsource scoreを作成する.
+    """getscoresのPersonal Best確認に使用するscoreとprojectionを作成する.
 
     Args:
         app (Starlette): Unit of Work dependencyを解決するtest application.
@@ -242,42 +247,14 @@ async def _seed_leaderboard_best(app: Starlette, *, user_id: int) -> int:
     Raises:
         AssertionError: repositoryが永続化済みScore IDを返さない場合.
 
-    Notes:
-        Beatmap Leaderboard projectionは作成せず、queryはsource scoresを参照する.
     """
-    uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
-    async with uow_factory() as uow:
-        score = await uow.scores.create(
-            Score(
-                id=None,
-                user_id=user_id,
-                beatmap_id=75,
-                beatmap_checksum=_KNOWN_CHECKSUM,
-                online_checksum="getscores-pb-online-checksum",
-                ruleset=Ruleset.OSU,
-                playstyle=Playstyle.VANILLA,
-                mods=ModCombination.from_bitmask(24),
-                n300=300,
-                n100=2,
-                n50=1,
-                geki=5,
-                katu=4,
-                miss=3,
-                score=987_654,
-                max_combo=1_234,
-                accuracy=98.76,
-                grade=Grade.S,
-                passed=True,
-                perfect=True,
-                client_version="b20260617",
-                submitted_at=_NOW,
-                beatmap_status_at_submission=BeatmapRankStatus.RANKED,
-                leaderboard_eligible_at_submission=True,
-            )
-        )
-        assert score.id is not None
-        await uow.commit()
-        return score.id
+    seeded = await _seed_leaderboard_score(
+        app,
+        user_id=user_id,
+        score_value=987_654,
+        mods=ModCombination.from_bitmask(24),
+    )
+    return seeded.score_id
 
 
 async def _seed_leaderboard_score(
@@ -338,6 +315,24 @@ async def _seed_leaderboard_score(
             )
         )
         assert score.id is not None
+        _ = await uow.beatmap_leaderboards.upsert_if_better(
+            UpsertBeatmapLeaderboardUserBest(
+                scope=BeatmapLeaderboardUserBestScope(
+                    beatmap_id=score.beatmap_id,
+                    beatmap_checksum=score.beatmap_checksum,
+                    ruleset=score.ruleset,
+                    playstyle=score.playstyle,
+                    user_id=score.user_id,
+                    mods=score.mods,
+                ),
+                score_id=score.id,
+                rank_key=ScoreRankKey(
+                    score=score.score,
+                    submitted_at=score.submitted_at,
+                    score_id=score.id,
+                ),
+            )
+        )
         await uow.commit()
         return _SeededLeaderboardScore(
             score_id=score.id,
@@ -381,7 +376,7 @@ async def _seed_selected_mod_scenario(app: Starlette) -> None:
         app,
         user_id=pf_user_id,
         score_value=900_000,
-        mods=ModCombination(Mod.PERFECT),
+        mods=ModCombination(Mod.PERFECT | Mod.SUDDEN_DEATH),
     )
     _ = await _seed_leaderboard_score(
         app,
@@ -393,7 +388,7 @@ async def _seed_selected_mod_scenario(app: Starlette) -> None:
         app,
         user_id=nc_user_id,
         score_value=1_200_000,
-        mods=ModCombination(Mod.NIGHTCORE),
+        mods=ModCombination(Mod.NIGHTCORE | Mod.DOUBLE_TIME),
     )
     _ = await _seed_leaderboard_score(
         app,
@@ -903,7 +898,15 @@ class TestStableResponse:
                 assert personal_best.username == _TEST_USERNAME
                 assert personal_best.rank == 2
 
-    def test_selected_mods_no_mod_and_mirror_behavior(self) -> None:
+    def test_selected_mods_no_mod_and_mirror_are_exact(self) -> None:
+        """NoModとMirrorがraw bitflag完全一致で分離されることを確認する.
+
+        Returns:
+            None: 各requestが同一bitflagのscoreだけを返したことを示す.
+
+        Raises:
+            AssertionError: response statusまたはscore行が期待値と異なる場合.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -922,17 +925,11 @@ class TestStableResponse:
                 no_mod_rows = _parse_score_rows(no_mod_header)
                 no_mod_pb = _parse_personal_best_row(no_mod_header)
 
-                assert no_mod_header.score_count == 4
-                assert [row.mods for row in no_mod_rows] == [
-                    int(Mod.SUDDEN_DEATH),
-                    int(Mod.NONE),
-                    int(Mod.PERFECT),
-                    int(Mod.MIRROR),
-                ]
-                assert int(Mod.NIGHTCORE) not in {row.mods for row in no_mod_rows}
+                assert no_mod_header.score_count == 1
+                assert [row.mods for row in no_mod_rows] == [int(Mod.NONE)]
                 assert no_mod_pb is not None
                 assert no_mod_pb.username == _TEST_USERNAME
-                assert no_mod_pb.rank == 2
+                assert no_mod_pb.rank == 1
 
                 mirror_response = client.get(
                     "/web/osu-osz2-getscores.php",
@@ -940,11 +937,19 @@ class TestStableResponse:
                 )
                 assert mirror_response.status_code == HTTPStatus.OK
                 mirror_header = _parse_header(mirror_response.content)
-                assert mirror_header.score_count == 0
+                assert mirror_header.score_count == 1
                 assert mirror_header.personal_best_row is None
-                assert mirror_header.score_rows == ()
+                assert [row.mods for row in _parse_score_rows(mirror_header)] == [int(Mod.MIRROR)]
 
-    def test_selected_mods_nc_dt_and_pf_sd_behavior(self) -> None:
+    def test_selected_mods_nc_dt_and_pf_sd_are_distinct(self) -> None:
+        """NC/DTとPF/SDがraw bitflag完全一致で別scopeになることを確認する.
+
+        Returns:
+            None: 各requestが同一bitflagのscoreだけを返したことを示す.
+
+        Raises:
+            AssertionError: response statusまたはscore行が期待値と異なる場合.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -960,23 +965,24 @@ class TestStableResponse:
                 )
                 assert dt_response.status_code == HTTPStatus.OK
                 dt_header = _parse_header(dt_response.content)
-                assert dt_header.score_count == 2
-                assert [row.mods for row in _parse_score_rows(dt_header)] == [
-                    int(Mod.NIGHTCORE),
-                    int(Mod.DOUBLE_TIME),
-                ]
+                assert dt_header.score_count == 1
+                assert [row.mods for row in _parse_score_rows(dt_header)] == [int(Mod.DOUBLE_TIME)]
                 assert dt_header.personal_best_row is None
 
                 nc_response = client.get(
                     "/web/osu-osz2-getscores.php",
-                    params=_query(extra={"v": "2", "mods": str(int(Mod.NIGHTCORE))}),
+                    params=_query(
+                        extra={
+                            "v": "2",
+                            "mods": str(int(Mod.NIGHTCORE | Mod.DOUBLE_TIME)),
+                        }
+                    ),
                 )
                 assert nc_response.status_code == HTTPStatus.OK
                 nc_header = _parse_header(nc_response.content)
-                assert nc_header.score_count == 2
+                assert nc_header.score_count == 1
                 assert [row.mods for row in _parse_score_rows(nc_header)] == [
-                    int(Mod.NIGHTCORE),
-                    int(Mod.DOUBLE_TIME),
+                    int(Mod.NIGHTCORE | Mod.DOUBLE_TIME),
                 ]
 
                 sd_response = client.get(
@@ -985,22 +991,25 @@ class TestStableResponse:
                 )
                 assert sd_response.status_code == HTTPStatus.OK
                 sd_header = _parse_header(sd_response.content)
-                assert sd_header.score_count == 2
+                assert sd_header.score_count == 1
                 assert [row.mods for row in _parse_score_rows(sd_header)] == [
-                    int(Mod.SUDDEN_DEATH),
-                    int(Mod.PERFECT),
+                    int(Mod.SUDDEN_DEATH)
                 ]
 
                 pf_response = client.get(
                     "/web/osu-osz2-getscores.php",
-                    params=_query(extra={"v": "2", "mods": str(int(Mod.PERFECT))}),
+                    params=_query(
+                        extra={
+                            "v": "2",
+                            "mods": str(int(Mod.PERFECT | Mod.SUDDEN_DEATH)),
+                        }
+                    ),
                 )
                 assert pf_response.status_code == HTTPStatus.OK
                 pf_header = _parse_header(pf_response.content)
-                assert pf_header.score_count == 2
+                assert pf_header.score_count == 1
                 assert [row.mods for row in _parse_score_rows(pf_header)] == [
-                    int(Mod.SUDDEN_DEATH),
-                    int(Mod.PERFECT),
+                    int(Mod.PERFECT | Mod.SUDDEN_DEATH),
                 ]
 
     def test_global_top_50_limit_keeps_personal_best_with_actual_rank(self) -> None:

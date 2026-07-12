@@ -4,6 +4,7 @@ from datetime import datetime  # noqa: TC003 -- SQLAlchemy Mapped requires runti
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     UniqueConstraint,
+    column,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,25 +21,30 @@ from osu_server.infrastructure.database.base import Base
 
 
 class BeatmapLeaderboardUserBestModel(Base):
-    """Global all-mods のユーザー最高 score を保持する ORM model.
+    """raw Mod bitflag ごとのユーザー最高 score を保持する ORM model.
 
     Notes:
-        1ユーザーにつき Beatmap/ruleset/playstyle ごとに1行だけ保持する. score_id も一意で、
-        Selected Mods 用の scope 行は保存しない.
+        1ユーザーにつき Beatmap/ruleset/playstyle/mods ごとに1行だけ保持する.
+        Global leaderboard は mods を無視して各ユーザーの最高行を選ぶ.
     """
 
     __tablename__: str = "beatmap_leaderboard_user_bests"
-    __table_args__: tuple[Index | UniqueConstraint, ...] = (
+    __table_args__: tuple[CheckConstraint | Index | UniqueConstraint, ...] = (
         UniqueConstraint(
             "beatmap_id",
             "ruleset",
             "playstyle",
             "user_id",
+            "mods",
             name="uq_beatmap_leaderboard_user_bests_scope",
         ),
         UniqueConstraint(
             "score_id",
             name="uq_beatmap_leaderboard_user_bests_score_id",
+        ),
+        CheckConstraint(
+            column("mods", Integer) >= 0,
+            name="ck_beatmap_leaderboard_user_bests_mods_non_negative",
         ),
         Index(
             "idx_beatmap_leaderboard_user_bests_user_rebuild",
@@ -45,6 +52,29 @@ class BeatmapLeaderboardUserBestModel(Base):
             "beatmap_id",
             "ruleset",
             "playstyle",
+        ),
+        Index(
+            "idx_beatmap_leaderboard_user_bests_global_rank",
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "beatmap_checksum",
+            "user_id",
+            column("score", Integer).desc(),
+            column("submitted_at", DateTime(timezone=True)).asc(),
+            column("score_id", BigInteger).asc(),
+        ),
+        Index(
+            "idx_beatmap_leaderboard_user_bests_mod_rank",
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "beatmap_checksum",
+            "mods",
+            "user_id",
+            column("score", Integer).desc(),
+            column("submitted_at", DateTime(timezone=True)).asc(),
+            column("score_id", BigInteger).asc(),
         ),
     )
 
@@ -54,6 +84,7 @@ class BeatmapLeaderboardUserBestModel(Base):
     ruleset: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     playstyle: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    mods: Mapped[int] = mapped_column(Integer, nullable=False)
     score_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("scores.id", name="fk_beatmap_leaderboard_user_bests_score_id"),

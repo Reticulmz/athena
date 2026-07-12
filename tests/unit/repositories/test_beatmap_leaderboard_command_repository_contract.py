@@ -5,12 +5,16 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+import pytest
+
 from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardBeatmapProjectionSlice,
     BeatmapLeaderboardUserBestScope,
     BeatmapLeaderboardUserProjectionSlice,
+    BeatmapLeaderboardUserScope,
     UpsertBeatmapLeaderboardUserBest,
 )
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -152,6 +156,44 @@ async def test_same_score_is_persisted_once_per_user_scope() -> None:
     assert persisted == first
 
 
+async def test_different_mod_scopes_keep_one_row_each_and_share_global_best() -> None:
+    factory = _memory_factory()
+    no_mod_scope = _scope(mods=Mod.NONE)
+    hidden_scope = _scope(mods=Mod.HIDDEN)
+
+    async with factory() as uow:
+        no_mod = await uow.beatmap_leaderboards.upsert_if_better(
+            _upsert(scope=no_mod_scope, score_id=41, score=1_000, submitted_at=_NOW)
+        )
+        hidden = await uow.beatmap_leaderboards.upsert_if_better(
+            _upsert(scope=hidden_scope, score_id=42, score=1_100, submitted_at=_NOW)
+        )
+        global_best = await uow.beatmap_leaderboards.get_global_user_best(_user_scope())
+        await uow.commit()
+
+    assert no_mod.score_id == 41
+    assert hidden.score_id == 42
+    assert global_best == hidden
+
+
+async def test_same_score_id_cannot_be_used_by_two_mod_scopes() -> None:
+    factory = _memory_factory()
+
+    async with factory() as uow:
+        _ = await uow.beatmap_leaderboards.upsert_if_better(
+            _upsert(scope=_scope(mods=Mod.NONE), score_id=43, score=1_000, submitted_at=_NOW)
+        )
+        with pytest.raises(ValueError, match="score_id is already used"):
+            _ = await uow.beatmap_leaderboards.upsert_if_better(
+                _upsert(
+                    scope=_scope(mods=Mod.HIDDEN),
+                    score_id=43,
+                    score=1_000,
+                    submitted_at=_NOW,
+                )
+            )
+
+
 async def test_replace_projection_slice_can_delete_stale_user_rows_with_empty_rows() -> None:
     factory = _memory_factory()
     user_scope = _scope(user_id=1000, beatmap_id=1)
@@ -236,8 +278,25 @@ def _scope(
     user_id: int = 1000,
     beatmap_id: int = 1,
     beatmap_checksum: str | None = None,
+    mods: Mod = Mod.NONE,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
+        beatmap_id=beatmap_id,
+        beatmap_checksum=beatmap_checksum or f"{beatmap_id:032x}",
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=user_id,
+        mods=ModCombination(mods),
+    )
+
+
+def _user_scope(
+    *,
+    user_id: int = 1000,
+    beatmap_id: int = 1,
+    beatmap_checksum: str | None = None,
+) -> BeatmapLeaderboardUserScope:
+    return BeatmapLeaderboardUserScope(
         beatmap_id=beatmap_id,
         beatmap_checksum=beatmap_checksum or f"{beatmap_id:032x}",
         ruleset=Ruleset.OSU,
