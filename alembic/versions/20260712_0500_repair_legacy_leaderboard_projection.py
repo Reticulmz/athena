@@ -56,9 +56,9 @@ def upgrade() -> None:
         source of truthであるscoresから再生成する.
     """
     inspector = sa.inspect(op.get_bind())
+    _ensure_score_candidate_index()
     if not _projection_is_canonical(inspector):
         _recreate_global_projection(inspector)
-    _ensure_score_candidate_index()
 
 
 def downgrade() -> None:
