@@ -23,8 +23,6 @@ depends_on: str | Sequence[str] | None = None
 _PROJECTION_TABLE = "beatmap_leaderboard_user_bests"
 _SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_scope"
 _MODS_CHECK_CONSTRAINT = "ck_beatmap_leaderboard_user_bests_mods_non_negative"
-_GLOBAL_RANK_INDEX = "idx_beatmap_leaderboard_user_bests_global_rank"
-_MOD_RANK_INDEX = "idx_beatmap_leaderboard_user_bests_mod_rank"
 
 
 def upgrade() -> None:
@@ -62,7 +60,6 @@ def upgrade() -> None:
         _PROJECTION_TABLE,
         ["beatmap_id", "ruleset", "playstyle", "user_id", "mods"],
     )
-    _create_rank_indexes()
 
 
 def downgrade() -> None:
@@ -71,8 +68,6 @@ def downgrade() -> None:
     Returns:
         None: 旧schemaとGlobal projectionの再構築が完了したことを示す.
     """
-    op.drop_index(_MOD_RANK_INDEX, table_name=_PROJECTION_TABLE)
-    op.drop_index(_GLOBAL_RANK_INDEX, table_name=_PROJECTION_TABLE)
     op.drop_constraint(
         _SCOPE_UNIQUE_CONSTRAINT,
         _PROJECTION_TABLE,
@@ -207,36 +202,4 @@ def _rebuild_projection(*, partition_by_mods: bool) -> None:
                 ranked.c.submitted_at,
             ).where(ranked.c.candidate_rank == 1),
         )
-    )
-
-
-def _create_rank_indexes() -> None:
-    op.create_index(
-        _GLOBAL_RANK_INDEX,
-        _PROJECTION_TABLE,
-        [
-            "beatmap_id",
-            "ruleset",
-            "playstyle",
-            "beatmap_checksum",
-            "user_id",
-            sa.column("score", sa.Integer()).desc(),
-            sa.column("submitted_at", sa.DateTime(timezone=True)).asc(),
-            sa.column("score_id", sa.BigInteger()).asc(),
-        ],
-    )
-    op.create_index(
-        _MOD_RANK_INDEX,
-        _PROJECTION_TABLE,
-        [
-            "beatmap_id",
-            "ruleset",
-            "playstyle",
-            "beatmap_checksum",
-            "mods",
-            "user_id",
-            sa.column("score", sa.Integer()).desc(),
-            sa.column("submitted_at", sa.DateTime(timezone=True)).asc(),
-            sa.column("score_id", sa.BigInteger()).asc(),
-        ],
     )

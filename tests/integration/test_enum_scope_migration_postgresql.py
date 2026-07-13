@@ -83,9 +83,24 @@ _LEADERBOARD_REPAIR_MIGRATION_PATH = Path(
 _MOD_SCOPED_MIGRATION_PATH = Path(
     "alembic/versions/20260713_0600_add_mod_scoped_leaderboard_projection.py"
 )
+_ONLINE_INDEX_MIGRATION_PATH = Path(
+    "alembic/versions/20260713_0700_create_leaderboard_indexes_concurrently.py"
+)
 _ENUM_REVISION = "20260710_0400"
-_HEAD_REVISION = "20260713_0600"
+_HEAD_REVISION = "20260713_0700"
 _PREVIOUS_REVISION = "20260710_0300"
+_SCORE_CANDIDATE_INDEX = "idx_scores_beatmap_leaderboard_candidates"
+_SCORE_CANDIDATE_COLUMNS = (
+    "beatmap_id",
+    "ruleset",
+    "playstyle",
+    "beatmap_checksum",
+    "user_id",
+    "score",
+    "submitted_at",
+    "id",
+)
+_SCORE_CANDIDATE_PREDICATE_COLUMNS = frozenset({"passed", "leaderboard_eligible_at_submission"})
 _BEATMAPSET_ID = 1_970_100_001
 _BEATMAP_ID = 1_970_100_002
 _USER_1_ID = 1_970_000_001
@@ -266,6 +281,22 @@ def _load_mod_scoped_migration() -> _MigrationModule:
 _MOD_SCOPED_MIGRATION = _load_mod_scoped_migration()
 
 
+def _load_online_index_migration() -> _MigrationModule:
+    spec = importlib.util.spec_from_file_location(
+        "online_leaderboard_index_migration",
+        _ONLINE_INDEX_MIGRATION_PATH,
+    )
+    if spec is None or spec.loader is None:
+        msg = f"could not load migration: {_ONLINE_INDEX_MIGRATION_PATH}"
+        raise RuntimeError(msg)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return cast("_MigrationModule", cast("object", module))
+
+
+_ONLINE_INDEX_MIGRATION = _load_online_index_migration()
+
+
 def _get_database_url() -> str:
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -301,7 +332,7 @@ async def postgres_engine() -> AsyncGenerator[AsyncEngine]:
 async def postgres_connection(
     postgres_engine: AsyncEngine,
 ) -> AsyncGenerator[AsyncConnection]:
-    """Migration test専用schemaへ接続するtransactional connectionを提供する.
+    """Migration test専用schemaへ接続するconnectionを提供する.
 
     Args:
         postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
@@ -309,22 +340,36 @@ async def postgres_connection(
     Yields:
         AsyncConnection: head migration適用済みの専用schema接続.
 
+    Raises:
+        SQLAlchemyError: schema作成, migration適用, またはcleanupに失敗した場合.
+
     Notes:
-        fixture終了時にtransactionをrollbackして専用schemaを破棄する.
+        Concurrent DDLがtransactionをcommitするため, fixture終了時に専用schemaを
+        明示的にdropしてtest dataを破棄する.
     """
     async with postgres_engine.connect() as connection:
-        transaction = await connection.begin()
+        schema_name = f"athena_enum_scope_{secrets.token_hex(8)}"
+        schema_created = False
         try:
-            schema_name = f"athena_enum_scope_{secrets.token_hex(8)}"
             _ = await connection.execute(sa.schema.CreateSchema(schema_name))
+            await connection.commit()
+            schema_created = True
             _ = await connection.execute(
-                sa.select(sa.func.set_config("search_path", schema_name, True))
+                sa.select(sa.func.set_config("search_path", schema_name, False))
             )
+            await connection.commit()
             await connection.run_sync(_upgrade_schema_to_head)
             yield connection
         finally:
-            if transaction.is_active:
-                await transaction.rollback()
+            if connection.in_transaction():
+                await connection.rollback()
+            if schema_created:
+                _ = await connection.execute(
+                    sa.select(sa.func.set_config("search_path", "public", False))
+                )
+                await connection.commit()
+                _ = await connection.execute(sa.schema.DropSchema(schema_name, cascade=True))
+                await connection.commit()
 
 
 @pytest.fixture
@@ -339,17 +384,24 @@ async def postgres_connection_at_enum_revision(
     Yields:
         AsyncConnection: `20260710_0400`まで適用した専用schema接続.
 
+    Raises:
+        SQLAlchemyError: schema作成, migration適用, またはcleanupに失敗した場合.
+
     Notes:
-        fixture終了時にtransactionをrollbackして専用schemaを破棄する.
+        0500のconcurrent DDLがtransactionをcommitするため, fixture終了時に
+        専用schemaを明示的にdropしてtest dataを破棄する.
     """
     async with postgres_engine.connect() as connection:
-        transaction = await connection.begin()
+        schema_name = f"athena_enum_scope_revision_{secrets.token_hex(8)}"
+        schema_created = False
         try:
-            schema_name = f"athena_enum_scope_revision_{secrets.token_hex(8)}"
             _ = await connection.execute(sa.schema.CreateSchema(schema_name))
+            await connection.commit()
+            schema_created = True
             _ = await connection.execute(
-                sa.select(sa.func.set_config("search_path", schema_name, True))
+                sa.select(sa.func.set_config("search_path", schema_name, False))
             )
+            await connection.commit()
             await connection.run_sync(
                 lambda sync_connection: _upgrade_schema_to_revision(
                     sync_connection,
@@ -358,8 +410,15 @@ async def postgres_connection_at_enum_revision(
             )
             yield connection
         finally:
-            if transaction.is_active:
-                await transaction.rollback()
+            if connection.in_transaction():
+                await connection.rollback()
+            if schema_created:
+                _ = await connection.execute(
+                    sa.select(sa.func.set_config("search_path", "public", False))
+                )
+                await connection.commit()
+                _ = await connection.execute(sa.schema.DropSchema(schema_name, cascade=True))
+                await connection.commit()
 
 
 @pytest.fixture
@@ -843,6 +902,7 @@ async def test_postgresql_mod_scoped_migration_round_trip_rebuilds_projection(
     """
     await _seed_fixture(postgres_connection)
 
+    await postgres_connection.run_sync(_run_online_index_downgrade)
     await postgres_connection.run_sync(_run_mod_scoped_downgrade)
 
     assert set(await _global_projection_rows(postgres_connection)) == {
@@ -851,6 +911,7 @@ async def test_postgresql_mod_scoped_migration_round_trip_rebuilds_projection(
     }
 
     await postgres_connection.run_sync(_run_mod_scoped_upgrade)
+    await postgres_connection.run_sync(_run_online_index_upgrade)
 
     assert set(await _mod_scoped_projection_rows(postgres_connection)) == {
         (_USER_1_ID, _CURRENT_CHECKSUM, int(Mod.NONE), _NO_MOD_SCORE_ID),
@@ -990,18 +1051,100 @@ async def test_successor_migration_preserves_canonical_projection(
     assert before == after == ((canonical_row_id, _USER_1_ID, _NO_MOD_SCORE_ID),)
 
 
+async def test_successor_migration_replaces_misdefined_score_candidate_index(
+    postgres_connection_at_enum_revision: AsyncConnection,
+) -> None:
+    """0500が同名の誤定義candidate indexをcanonical定義へ置換するか確認する.
+
+    Args:
+        postgres_connection_at_enum_revision (AsyncConnection): 0400適用済みの専用接続.
+
+    Returns:
+        None: 0500適用後のindex定義とPostgreSQL validityが一致したことを示す.
+
+    Raises:
+        AssertionError: index定義, predicate, sort, またはvalidityが期待値と異なる場合.
+        SQLAlchemyError: index置換またはmigration実行に失敗した場合.
+    """
+    connection = postgres_connection_at_enum_revision
+    await connection.run_sync(_replace_score_candidate_index_with_wrong_definition)
+
+    repair_migration = _load_leaderboard_repair_migration()
+    await connection.run_sync(
+        lambda sync_connection: _run_migration_upgrade(
+            sync_connection,
+            repair_migration,
+        )
+    )
+
+    await connection.run_sync(_assert_score_candidate_index_is_current)
+
+
+async def test_online_index_migration_repairs_invalid_score_candidate_index(
+    postgres_connection: AsyncConnection,
+) -> None:
+    """0700が失敗したconcurrent build由来のINVALID indexを修復するか確認する.
+
+    Args:
+        postgres_connection (AsyncConnection): 0700適用済みの専用接続.
+
+    Returns:
+        None: 0700再適用後のindex定義とPostgreSQL validityが一致したことを示す.
+
+    Raises:
+        AssertionError: INVALID indexを生成できない場合または修復結果が異なる場合.
+        SQLAlchemyError: index置換またはmigration実行に失敗した場合.
+    """
+    await _seed_fixture(postgres_connection)
+    await postgres_connection.run_sync(_run_online_index_downgrade)
+    await postgres_connection.run_sync(_replace_score_candidate_index_with_invalid_definition)
+    await postgres_connection.run_sync(_run_online_index_upgrade)
+
+    await postgres_connection.run_sync(_assert_score_candidate_index_is_current)
+
+
+async def test_online_index_migration_preserves_equivalent_score_candidate_index(
+    postgres_connection: AsyncConnection,
+) -> None:
+    """0700が意味的に同値なcandidate indexを再構築しないことを確認する.
+
+    Args:
+        postgres_connection (AsyncConnection): 0700適用済みの専用接続.
+
+    Returns:
+        None: predicate順序とNULL並びが異なる同値indexのOID維持を示す.
+
+    Raises:
+        AssertionError: 0700が同値indexを不要に再構築した場合.
+        SQLAlchemyError: index置換, catalog参照, またはmigration実行に失敗した場合.
+    """
+    await postgres_connection.run_sync(_run_online_index_downgrade)
+    await postgres_connection.run_sync(_replace_score_candidate_index_with_equivalent_definition)
+    before_oid = await postgres_connection.run_sync(_read_score_candidate_index_oid)
+
+    await postgres_connection.run_sync(_run_online_index_upgrade)
+
+    after_oid = await postgres_connection.run_sync(_read_score_candidate_index_oid)
+    assert after_oid == before_oid
+
+
 def _upgrade_schema_to_head(connection: Connection) -> None:
     _upgrade_schema_to_revision(connection, _HEAD_REVISION)
 
 
 def _upgrade_schema_to_revision(connection: Connection, revision_id: str) -> None:
-    operations = Operations(MigrationContext.configure(connection))
+    migration_context = MigrationContext.configure(
+        connection,
+        opts={"transaction_per_migration": True},
+    )
+    operations = Operations(migration_context)
     script_directory = ScriptDirectory.from_config(Config("alembic.ini"))
     revisions = tuple(script_directory.walk_revisions(base="base", head=revision_id))
     for revision in reversed(revisions):
         migration = cast("_MigrationModule", cast("object", revision.module))
         migration.op = operations
-        migration.upgrade()
+        with migration_context.begin_transaction(_per_migration=True):
+            migration.upgrade()
 
 
 def _run_downgrade(connection: Connection) -> None:
@@ -1024,12 +1167,223 @@ def _run_mod_scoped_upgrade(connection: Connection) -> None:
     _MOD_SCOPED_MIGRATION.upgrade()
 
 
+def _run_online_index_downgrade(connection: Connection) -> None:
+    if connection.in_transaction():
+        connection.commit()
+    migration_context = MigrationContext.configure(
+        connection,
+        opts={"transaction_per_migration": True},
+    )
+    _ONLINE_INDEX_MIGRATION.op = Operations(migration_context)
+    with migration_context.begin_transaction(_per_migration=True):
+        _ONLINE_INDEX_MIGRATION.downgrade()
+
+
+def _run_online_index_upgrade(connection: Connection) -> None:
+    if connection.in_transaction():
+        connection.commit()
+    migration_context = MigrationContext.configure(
+        connection,
+        opts={"transaction_per_migration": True},
+    )
+    _ONLINE_INDEX_MIGRATION.op = Operations(migration_context)
+    with migration_context.begin_transaction(_per_migration=True):
+        _ONLINE_INDEX_MIGRATION.upgrade()
+
+
 def _run_migration_upgrade(
     connection: Connection,
     migration: _MigrationModule,
 ) -> None:
-    migration.op = Operations(MigrationContext.configure(connection))
-    migration.upgrade()
+    if connection.in_transaction():
+        connection.commit()
+    migration_context = MigrationContext.configure(
+        connection,
+        opts={"transaction_per_migration": True},
+    )
+    migration.op = Operations(migration_context)
+    with migration_context.begin_transaction(_per_migration=True):
+        migration.upgrade()
+
+
+def _replace_score_candidate_index_with_wrong_definition(connection: Connection) -> None:
+    operations = Operations(MigrationContext.configure(connection))
+    operations.drop_index(
+        _SCORE_CANDIDATE_INDEX,
+        table_name="scores",
+        if_exists=True,
+    )
+    operations.create_index(
+        _SCORE_CANDIDATE_INDEX,
+        "scores",
+        ["beatmap_id"],
+    )
+
+
+def _replace_score_candidate_index_with_invalid_definition(connection: Connection) -> None:
+    if connection.in_transaction():
+        connection.commit()
+    migration_context = MigrationContext.configure(
+        connection,
+        opts={"transaction_per_migration": True},
+    )
+    operations = Operations(migration_context)
+    with (
+        migration_context.begin_transaction(_per_migration=True),
+        migration_context.autocommit_block(),
+    ):
+        operations.drop_index(
+            _SCORE_CANDIDATE_INDEX,
+            table_name="scores",
+            if_exists=True,
+            postgresql_concurrently=True,
+        )
+        with pytest.raises(IntegrityError):
+            operations.create_index(
+                _SCORE_CANDIDATE_INDEX,
+                "scores",
+                ["beatmap_id"],
+                unique=True,
+                postgresql_concurrently=True,
+            )
+
+    validity = _read_score_candidate_index_validity(connection)
+    assert validity is not None
+    assert validity[0] is False
+
+
+def _replace_score_candidate_index_with_equivalent_definition(connection: Connection) -> None:
+    operations = Operations(MigrationContext.configure(connection))
+    operations.drop_index(
+        _SCORE_CANDIDATE_INDEX,
+        table_name="scores",
+        if_exists=True,
+    )
+    operations.create_index(
+        _SCORE_CANDIDATE_INDEX,
+        "scores",
+        [
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "beatmap_checksum",
+            "user_id",
+            sa.column("score", sa.Integer()).desc().nulls_last(),
+            sa.column("submitted_at", sa.DateTime(timezone=True)).asc(),
+            sa.column("id", sa.BigInteger()).asc(),
+        ],
+        postgresql_where=sa.and_(
+            sa.column("leaderboard_eligible_at_submission", sa.Boolean()).is_(True),
+            sa.column("passed", sa.Boolean()).is_(True),
+        ),
+    )
+
+
+def _assert_score_candidate_index_is_current(connection: Connection) -> None:
+    inspector = sa.inspect(connection)
+    candidate_index = next(
+        (
+            index
+            for index in inspector.get_indexes("scores")
+            if index["name"] == _SCORE_CANDIDATE_INDEX
+        ),
+        None,
+    )
+    assert candidate_index is not None
+    assert candidate_index["unique"] is False
+    assert tuple(str(name) for name in candidate_index["column_names"]) == (
+        _SCORE_CANDIDATE_COLUMNS
+    )
+    column_sorting = {
+        str(name): tuple(str(option) for option in options)
+        for name, options in candidate_index.get("column_sorting", {}).items()
+    }
+    assert "desc" in column_sorting["score"]
+    assert all(
+        "desc" not in options
+        for column_name, options in column_sorting.items()
+        if column_name != "score"
+    )
+    dialect_options = cast(
+        "dict[str, object]",
+        candidate_index.get("dialect_options", {}),
+    )
+    predicate = str(dialect_options.get("postgresql_where", "")).casefold()
+    assert all(column_name in predicate for column_name in _SCORE_CANDIDATE_PREDICATE_COLUMNS)
+    assert " and " in predicate
+    assert " or " not in predicate
+
+    assert _read_score_candidate_index_validity(connection) == (True, True)
+
+
+def _read_score_candidate_index_oid(connection: Connection) -> int:
+    pg_class = sa.table(
+        "pg_class",
+        sa.column("oid", sa.BigInteger()),
+        sa.column("relname", sa.Text()),
+        sa.column("relnamespace", sa.BigInteger()),
+        schema="pg_catalog",
+    )
+    pg_namespace = sa.table(
+        "pg_namespace",
+        sa.column("oid", sa.BigInteger()),
+        sa.column("nspname", sa.Text()),
+        schema="pg_catalog",
+    )
+    statement = (
+        sa.select(pg_class.c.oid)
+        .select_from(
+            pg_class.join(
+                pg_namespace,
+                pg_namespace.c.oid == pg_class.c.relnamespace,
+            )
+        )
+        .where(
+            pg_class.c.relname == _SCORE_CANDIDATE_INDEX,
+            pg_namespace.c.nspname == sa.func.current_schema(),
+        )
+    )
+    return cast("int", connection.execute(statement).scalar_one())
+
+
+def _read_score_candidate_index_validity(connection: Connection) -> tuple[bool, bool] | None:
+    pg_index = sa.table(
+        "pg_index",
+        sa.column("indexrelid", sa.BigInteger()),
+        sa.column("indisvalid", sa.Boolean()),
+        sa.column("indisready", sa.Boolean()),
+        schema="pg_catalog",
+    )
+    pg_class = sa.table(
+        "pg_class",
+        sa.column("oid", sa.BigInteger()),
+        sa.column("relname", sa.Text()),
+        sa.column("relnamespace", sa.BigInteger()),
+        schema="pg_catalog",
+    )
+    pg_namespace = sa.table(
+        "pg_namespace",
+        sa.column("oid", sa.BigInteger()),
+        sa.column("nspname", sa.Text()),
+        schema="pg_catalog",
+    )
+    statement = (
+        sa.select(pg_index.c.indisvalid, pg_index.c.indisready)
+        .select_from(
+            pg_index.join(pg_class, pg_class.c.oid == pg_index.c.indexrelid).join(
+                pg_namespace,
+                pg_namespace.c.oid == pg_class.c.relnamespace,
+            )
+        )
+        .where(
+            pg_class.c.relname == _SCORE_CANDIDATE_INDEX,
+            pg_namespace.c.nspname == sa.func.current_schema(),
+        )
+    )
+    return cast(
+        "tuple[bool, bool] | None",
+        connection.execute(statement).tuples().one_or_none(),
+    )
 
 
 def _replace_projection_with_legacy_duplicate_rows(connection: Connection) -> None:

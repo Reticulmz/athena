@@ -23,8 +23,14 @@ from osu_server.repositories.sqlalchemy.models import (
 MIGRATION_PATH = Path(
     "alembic/versions/20260710_0400_use_enum_types_and_score_based_leaderboards.py"
 )
+LEADERBOARD_REPAIR_MIGRATION_PATH = Path(
+    "alembic/versions/20260712_0500_repair_legacy_leaderboard_projection.py"
+)
 MOD_SCOPED_MIGRATION_PATH = Path(
     "alembic/versions/20260713_0600_add_mod_scoped_leaderboard_projection.py"
+)
+ONLINE_INDEX_MIGRATION_PATH = Path(
+    "alembic/versions/20260713_0700_create_leaderboard_indexes_concurrently.py"
 )
 
 
@@ -115,12 +121,37 @@ def test_mod_scoped_projection_migration_uses_checked_raw_mod_bitflags() -> None
     assert "partition_columns.append(scores.c.mods)" in migration
     assert '"ck_beatmap_leaderboard_user_bests_mods_non_negative"' in migration
     assert '["beatmap_id", "ruleset", "playstyle", "user_id", "mods"]' in migration
-    assert '"idx_beatmap_leaderboard_user_bests_global_rank"' in migration
-    assert '"idx_beatmap_leaderboard_user_bests_mod_rank"' in migration
     assert 'op.alter_column(\n        _PROJECTION_TABLE,\n        "mods"' in migration
     assert "_rebuild_projection(partition_by_mods=False)" in migration
     assert 'op.drop_column(_PROJECTION_TABLE, "mods")' in migration
     assert "op.execute(sa.text(" not in migration
+
+
+def test_leaderboard_indexes_are_created_concurrently_without_raw_sql() -> None:
+    """Leaderboard index migrationがonline DDLだけを使用することを確認する.
+
+    Returns:
+        None: 0500 candidateと0700 read indexがconcurrent作成されることを示す.
+
+    Raises:
+        AssertionError: autocommit, concurrent指定, またはAlembic API利用が不足する場合.
+    """
+    enum_migration = MIGRATION_PATH.read_text()
+    repair_migration = LEADERBOARD_REPAIR_MIGRATION_PATH.read_text()
+    online_index_migration = ONLINE_INDEX_MIGRATION_PATH.read_text()
+
+    assert '"idx_scores_beatmap_leaderboard_candidates"' not in enum_migration
+    assert "with op.get_context().autocommit_block():" in repair_migration
+    assert repair_migration.count("postgresql_concurrently=True") >= 2
+    assert 'revision: str = "20260713_0700"' in online_index_migration
+    assert 'down_revision: str | None = "20260713_0600"' in online_index_migration
+    assert "with op.get_context().autocommit_block():" in online_index_migration
+    assert online_index_migration.count("postgresql_concurrently=True") >= 6
+    assert '"idx_scores_beatmap_leaderboard_candidates"' in online_index_migration
+    assert '"idx_beatmap_leaderboard_user_bests_global_rank"' in online_index_migration
+    assert '"idx_beatmap_leaderboard_user_bests_mod_rank"' in online_index_migration
+    assert "op.execute(sa.text(" not in repair_migration
+    assert "op.execute(sa.text(" not in online_index_migration
 
 
 def test_current_models_use_checked_string_enums_for_closed_value_columns() -> None:

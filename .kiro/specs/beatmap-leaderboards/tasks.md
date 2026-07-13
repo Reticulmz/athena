@@ -18,7 +18,7 @@
 - [x] 1.3 Leaderboard projection と score eligibility の schema migration を追加する
   - Score に submission-time leaderboard eligibility evidence を保存できるようにする
   - beatmap/ruleset/playstyle/user/raw modsのnatural identityごとに1行のscore-priority projectionを保存し、current checksumを置換可能なfreshness属性として保持する
-  - `score_id` uniquenessとGlobal/Selected Modsのranking access path用indexを用意する
+  - `score_id` uniquenessをschema migrationで保証し、Score candidate indexは0500でconcurrent作成して0700で定義とvalidityを再検証し、Global/Selected Mods ranking indexも0700でconcurrent作成する
   - 完了時には migration 適用後に projection table、score eligibility column、constraints、indexes が検証できる
   - _Requirements: 2.1, 2.2, 2.6, 5.7, 6.1, 6.2, 7.2, 10.5_
 
@@ -39,6 +39,7 @@
 - [x] 1.6 Raw Mod別projection migrationを追加する
   - `mods NOT NULL`と非負CHECKを追加し、natural keyをbeatmap/ruleset/playstyle/user/modsへ拡張する
   - current-checksum eligible source Scoresから同一user・同一Modのwinnerを再構築する
+  - schema/data移行とrank index DDLを分離し、後続migrationのautocommit blockでGlobal/Selected Mods indexをconcurrent作成する
   - downgradeではuserごとのGlobal all-mods winnerへ戻し、再upgradeでraw Mod別行へ復元する
   - 完了時には実PostgreSQL round-tripがNoMod、DT、NC|DT、SD、PF|SD、Mirrorと同一Mod重複の収束を確認できる
   - _Requirements: 5.1-5.8, 11.4, 11.5, 11.8, 11.9, 11.10_

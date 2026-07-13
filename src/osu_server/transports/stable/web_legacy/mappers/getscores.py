@@ -131,9 +131,22 @@ class GetscoresQueryParser:
 
 
 class StableGetscoresLeaderboardMapper:
-    """Map stable getscores category fields to leaderboard query selection."""
+    """stable getscoresのcategory fieldをleaderboard選択へ変換するmapper."""
 
     def map_request(self, request: GetscoresRequest) -> StableLeaderboardSelection:
+        """getscores requestからleaderboard選択結果を構築する.
+
+        Args:
+            request (GetscoresRequest): stable clientから解析したgetscores request.
+
+        Returns:
+            StableLeaderboardSelection: category, Selected Modsのraw bitflag,
+            header-only状態, および未対応状態を含む選択結果.
+
+        Notes:
+            Selected Mods以外では`selected_mods`をNoneにする. Relaxまたは
+            Autopilotを含む指定と不正なMod値はscore行を返さない.
+        """
         category = _leaderboard_category_from_request(request)
         if category is None:
             return StableLeaderboardSelection(

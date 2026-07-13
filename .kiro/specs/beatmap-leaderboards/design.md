@@ -918,16 +918,18 @@ graph TB
     AddChecks --> AddMods[Add nullable projection mods]
     AddMods --> RebuildProjection[Rebuild user plus raw Mod winners]
     RebuildProjection --> ConstrainMods[Set mods NOT NULL and add Mod-scoped uniqueness]
-    ConstrainMods --> AddIndexes[Add Global and Selected Mods rank indexes]
+    ConstrainMods --> CommitProjection[Commit 0600 schema and data migration]
+    CommitProjection --> AddIndexes[0700 validates candidate and creates rank indexes concurrently]
     AddIndexes --> Verify[Run PostgreSQL round-trip tests]
 ```
 
 Phase details:
 
 - Keep `scores.leaderboard_eligible_at_submission` as the submission-time eligibility snapshot.
-- 0400/0500 first repair the legacy duplicate Global/Selected Mods representation into a single Global-only transitional schema and remove `mod_filter_key`.
+- 0400/0500 first repair the legacy duplicate Global/Selected Mods representation into a single Global-only transitional schema and remove `mod_filter_key`; 0400 does not build the large Score candidate index inside its schema transaction, and 0500 concurrently drops and recreates that index before repairing projection data.
 - 0600 adds nullable `mods`, deletes transitional projection rows, and rebuilds one winner per Beatmap、ruleset、playstyle、user、raw mods from current-checksum eligible source Scores.
-- After backfill, set `mods` non-null, add `mods >= 0`, extend the natural unique key with `mods`, retain `score_id` uniqueness, and create separate Global and Selected Mods rank indexes.
+- After backfill, 0600 sets `mods` non-null, adds `mods >= 0`, extends the natural unique key with `mods`, and retains `score_id` uniqueness.
+- 0700 runs in an Alembic autocommit block, validates the Score candidate index by structural column order, semantic sort direction, order-independent boolean predicate terms, and PostgreSQL `indisvalid`/`indisready` state, then repairs drift when needed and creates separate Global and Selected Mods rank indexes with concurrent DDL. Equivalent Inspector renderings do not trigger a rebuild. Keeping final index validation and rank DDL in a successor revision makes a failed online build restartable from completed revision 0600.
 - Selected Mods uses `projection.mods == request.mods`; no canonical filter key, implied-mod predicate, or Global-only duplicate row is added.
 - Existing or future stored scores with `leaderboard_eligible_at_submission=false` remain durable Score records but are not migrated into `beatmap_leaderboard_user_bests`.
 - Store finite state/source/category columns as SQLAlchemy non-native Enum values backed by strings and named CHECK constraints, only after rejecting unknown existing values.
@@ -935,7 +937,9 @@ Phase details:
 
 Rollback considerations:
 
-- 0600 downgrade removes Mod rank indexes and `mods`, then reconstructs one Global all-mods winner per user from current-checksum eligible source Scores.
+- 0700 downgrade removes the Global and Selected Mods rank indexes concurrently before 0600 downgrade changes the projection schema.
+- 0600 downgrade removes `mods`, then reconstructs one Global all-mods winner per user from current-checksum eligible source Scores.
+- 0500 downgrade removes the Score candidate index concurrently while preserving the repaired Global projection schema.
 - Re-upgrade reconstructs raw Mod winners again; all data movement uses SQLAlchemy Core/Alembic operations without textual SQL.
 
 ## Testing Strategy

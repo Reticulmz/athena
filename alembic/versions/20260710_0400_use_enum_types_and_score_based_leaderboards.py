@@ -312,25 +312,6 @@ def _upgrade_leaderboard_storage() -> None:
         ["score_id"],
     )
 
-    op.create_index(
-        "idx_scores_beatmap_leaderboard_candidates",
-        "scores",
-        [
-            "beatmap_id",
-            "ruleset",
-            "playstyle",
-            "beatmap_checksum",
-            "user_id",
-            sa.column("score", sa.Integer()).desc(),
-            sa.column("submitted_at", sa.DateTime(timezone=True)).asc(),
-            sa.column("id", sa.BigInteger()).asc(),
-        ],
-        postgresql_where=sa.and_(
-            sa.column("passed", sa.Boolean()).is_(True),
-            sa.column("leaderboard_eligible_at_submission", sa.Boolean()).is_(True),
-        ),
-    )
-
 
 def _rebuild_current_global_projection() -> None:
     """Current checksumのsource ScoresからGlobal projectionを再構築する.
@@ -445,10 +426,6 @@ def _rebuild_current_global_projection() -> None:
 
 def _downgrade_leaderboard_storage() -> None:
     mod_filter_key = sa.column("mod_filter_key", sa.Integer())
-    op.drop_index(
-        "idx_scores_beatmap_leaderboard_candidates",
-        table_name="scores",
-    )
     op.drop_constraint(
         "uq_beatmap_leaderboard_user_bests_score_id",
         "beatmap_leaderboard_user_bests",

@@ -51,26 +51,35 @@ def upgrade() -> None:
     Returns:
         None: canonical schemaとGlobal winnerの再構築が完了したことを示す.
 
+    Raises:
+        SQLAlchemyError: candidate indexまたはprojectionの修復に失敗した場合.
+
     Notes:
-        現行0400のcanonical schemaには変更を加えない. 旧schemaだけを
-        source of truthであるscoresから再生成する.
+        Score candidate indexは同名の誤定義またはINVALID indexも含めてconcurrent
+        再作成する. 旧projectionだけをsource of truthであるscoresから再生成する.
     """
     inspector = sa.inspect(op.get_bind())
-    _ensure_score_candidate_index()
-    if not _projection_is_canonical(inspector):
+    projection_is_canonical = _projection_is_canonical(inspector)
+    _recreate_score_candidate_index()
+    if not projection_is_canonical:
         _recreate_global_projection(inspector)
 
 
 def downgrade() -> None:
-    """0400のcanonical schemaを維持したままrevisionだけ戻す.
+    """0400へ戻すためScore candidate indexをonline削除する.
 
     Returns:
-        None: schemaを変更せずdowngradeが完了したことを示す.
+        None: candidate indexを削除してdowngradeが完了したことを示す.
+
+    Raises:
+        SQLAlchemyError: candidate indexのconcurrent削除に失敗した場合.
 
     Notes:
         0500は適用済み0400の履歴ドリフトを修復するcompatibility migrationである.
-        現行0400も同じcanonical schemaを定義するため, 壊れた旧構造には戻さない.
+        Projectionは壊れた旧構造へ戻さず, 0500が所有するindexだけを削除する.
     """
+    with op.get_context().autocommit_block():
+        _drop_score_candidate_index()
 
 
 def _projection_is_canonical(inspector: Inspector) -> bool:
@@ -296,36 +305,47 @@ def _rebuild_current_global_projection() -> None:
     )
 
 
-def _ensure_score_candidate_index() -> None:
-    """Selected Mods read-time query用のscore indexを不足時だけ作成する.
+def _recreate_score_candidate_index() -> None:
+    """Selected Mods read-time query用のscore indexをonline再作成する.
 
     Returns:
-        None: candidate indexが存在することを示す.
-    """
-    inspector = sa.inspect(op.get_bind())
-    index_names = {
-        str(index["name"])
-        for index in inspector.get_indexes("scores")
-        if index["name"] is not None
-    }
-    if _SCORE_CANDIDATE_INDEX in index_names:
-        return
+        None: canonicalなcandidate indexが存在することを示す.
 
-    op.create_index(
+    Raises:
+        SQLAlchemyError: indexのconcurrent削除または作成に失敗した場合.
+
+    Notes:
+        PostgreSQLへの書き込みを継続できるようにtransaction外で実行する.
+        名前だけでは誤定義やINVALID状態を識別できないため, 同名indexを必ず
+        concurrent dropしてから再作成する.
+    """
+    with op.get_context().autocommit_block():
+        _drop_score_candidate_index()
+        op.create_index(
+            _SCORE_CANDIDATE_INDEX,
+            "scores",
+            [
+                "beatmap_id",
+                "ruleset",
+                "playstyle",
+                "beatmap_checksum",
+                "user_id",
+                sa.column("score", sa.Integer()).desc(),
+                sa.column("submitted_at", sa.DateTime(timezone=True)).asc(),
+                sa.column("id", sa.BigInteger()).asc(),
+            ],
+            postgresql_where=sa.and_(
+                sa.column("passed", sa.Boolean()).is_(True),
+                sa.column("leaderboard_eligible_at_submission", sa.Boolean()).is_(True),
+            ),
+            postgresql_concurrently=True,
+        )
+
+
+def _drop_score_candidate_index() -> None:
+    op.drop_index(
         _SCORE_CANDIDATE_INDEX,
-        "scores",
-        [
-            "beatmap_id",
-            "ruleset",
-            "playstyle",
-            "beatmap_checksum",
-            "user_id",
-            sa.column("score", sa.Integer()).desc(),
-            sa.column("submitted_at", sa.DateTime(timezone=True)).asc(),
-            sa.column("id", sa.BigInteger()).asc(),
-        ],
-        postgresql_where=sa.and_(
-            sa.column("passed", sa.Boolean()).is_(True),
-            sa.column("leaderboard_eligible_at_submission", sa.Boolean()).is_(True),
-        ),
+        table_name="scores",
+        if_exists=True,
+        postgresql_concurrently=True,
     )

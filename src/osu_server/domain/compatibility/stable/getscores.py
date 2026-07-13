@@ -40,7 +40,16 @@ class GetscoresParseWarning(Enum):
 
 @dataclass(slots=True, frozen=True)
 class StableLeaderboardSelection:
-    """stable client の leaderboard 選択状態。"""
+    """stable clientのleaderboard選択結果.
+
+    Attributes:
+        category (LeaderboardCategory | None): 選択されたleaderboard category.
+            未対応のcategoryではNone.
+        selected_mods (ModCombination | None): Selected Modsで完全一致に使う
+            raw legacy Mod bitflag. 他categoryではNone.
+        header_only (bool): score行を返さずheaderだけを返す場合はTrue.
+        unsupported (bool): 未対応のcategoryまたはMod指定を検出した場合はTrue.
+    """
 
     category: LeaderboardCategory | None
     selected_mods: ModCombination | None
