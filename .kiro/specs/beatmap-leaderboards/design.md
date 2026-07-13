@@ -940,6 +940,7 @@ Rollback considerations:
 - 0700 downgrade removes the Global and Selected Mods rank indexes concurrently before 0600 downgrade changes the projection schema.
 - 0600 downgrade removes `mods`, then reconstructs one Global all-mods winner per user from current-checksum eligible source Scores.
 - 0500 downgrade removes the Score candidate index concurrently while preserving the repaired Global projection schema.
+- 0400 downgradeだけはpre-0400 schema互換のため、historicalな`mod_filter_key`規則としてNC->DT、PF->SD、Mirror除外を適用し、旧Global/Selected Mods行を復元する。この変換はrollback専用であり、現行Selected Modsのraw bitmask完全一致semanticsを変更しない。
 - Re-upgrade reconstructs raw Mod winners again; all data movement uses SQLAlchemy Core/Alembic operations without textual SQL.
 
 ## Testing Strategy

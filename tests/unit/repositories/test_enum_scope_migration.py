@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 from typing import cast
 
@@ -92,7 +93,7 @@ def test_enum_migration_converts_closed_values_and_score_based_leaderboards() ->
     assert "op.execute(sa.delete(projection))" in migration
     assert 'op.drop_column("beatmap_leaderboard_user_bests", "mod_filter_key")' in migration
     assert '"leaderboard_mod_filter_keys"' not in migration
-    assert "_selected_mod_filter_keys_expression(scores.c.mods)" in migration
+    assert "_legacy_downgrade_mod_filter_keys_expression(scores.c.mods)" in migration
     assert "_validate_enum_column" in migration
     assert "_create_enum_constraint" in migration
     assert "_drop_enum_constraint" in migration
@@ -101,6 +102,32 @@ def test_enum_migration_converts_closed_values_and_score_based_leaderboards() ->
     assert "_ENUM_TYPES" not in migration
     assert "ck_scores_play_time_source_known" in migration
     assert "ck_score_performance_state_known" in migration
+
+
+def test_legacy_mod_filter_conversion_is_used_only_for_0400_downgrade() -> None:
+    """旧mod_filter_key変換が0400 downgrade復元だけに閉じることを確認する.
+
+    Returns:
+        None: legacy helperの唯一のcallerが旧projection復元関数であることを示す.
+
+    Raises:
+        AssertionError: helperが現行projection構築やread pathから参照される場合.
+    """
+    migration_tree = ast.parse(MIGRATION_PATH.read_text())
+    helper_name = "_legacy_downgrade_mod_filter_keys_expression"
+    callers_by_callee: dict[str, set[str]] = {}
+    for node in ast.walk(migration_tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for candidate in ast.walk(node):
+            if isinstance(candidate, ast.Call) and isinstance(candidate.func, ast.Name):
+                callers_by_callee.setdefault(candidate.func.id, set()).add(node.name)
+
+    assert callers_by_callee.get(helper_name, set()) == {"_restore_legacy_leaderboard_projection"}
+    assert callers_by_callee.get("_restore_legacy_leaderboard_projection", set()) == {
+        "_downgrade_leaderboard_storage"
+    }
+    assert callers_by_callee.get("_downgrade_leaderboard_storage", set()) == {"downgrade"}
 
 
 def test_mod_scoped_projection_migration_uses_checked_raw_mod_bitflags() -> None:

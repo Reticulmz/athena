@@ -31,35 +31,53 @@ _MIRROR_BIT = 1 << 30
 _PREFERENCE_ONLY_NO_MODS_BITS = _SUDDEN_DEATH_BIT | _PERFECT_BIT | _MIRROR_BIT
 
 
-def _selected_mod_filter_keys_expression(
+def _legacy_downgrade_mod_filter_keys_expression(
     mods: ColumnElement[int],
 ) -> ColumnElement[list[int]]:
-    nightcore_normalized = sa.case(
+    """0400 downgrade用に旧mod_filter_key候補を構築する.
+
+    Args:
+        mods (ColumnElement[int]): source Scoreのraw Mod bitmask.
+
+    Returns:
+        ColumnElement[list[int]]: 旧schemaのGlobalとSelected Mods行を復元する
+            mod_filter_key配列.
+
+    Notes:
+        旧schemaのhistorical semanticsを再現するためNC->DT, PF->SD,
+        Mirror除外を行う. 0600以降のSelected Modsはraw bitmask完全一致であり,
+        この式を現行projectionやread queryに使用してはならない.
+    """
+    legacy_filter_mods_without_nightcore = sa.case(
         (
             mods.bitwise_and(_NIGHTCORE_BIT) != 0,
             mods.bitwise_or(_DOUBLE_TIME_BIT).bitwise_and(~_NIGHTCORE_BIT),
         ),
         else_=mods,
     )
-    perfect_normalized = sa.case(
+    legacy_filter_mods_without_perfect = sa.case(
         (
-            nightcore_normalized.bitwise_and(_PERFECT_BIT) != 0,
-            nightcore_normalized.bitwise_or(_SUDDEN_DEATH_BIT).bitwise_and(~_PERFECT_BIT),
+            legacy_filter_mods_without_nightcore.bitwise_and(_PERFECT_BIT) != 0,
+            legacy_filter_mods_without_nightcore.bitwise_or(_SUDDEN_DEATH_BIT).bitwise_and(
+                ~_PERFECT_BIT
+            ),
         ),
-        else_=nightcore_normalized,
+        else_=legacy_filter_mods_without_nightcore,
     )
-    canonical_mods = perfect_normalized.bitwise_and(~_MIRROR_BIT)
-    is_no_mod_candidate = canonical_mods.bitwise_and(~_PREFERENCE_ONLY_NO_MODS_BITS) == 0
+    legacy_filter_mods = legacy_filter_mods_without_perfect.bitwise_and(~_MIRROR_BIT)
+    is_legacy_no_mod_candidate = (
+        legacy_filter_mods.bitwise_and(~_PREFERENCE_ONLY_NO_MODS_BITS) == 0
+    )
     return sa.case(
         (
-            sa.and_(is_no_mod_candidate, canonical_mods == 0),
+            sa.and_(is_legacy_no_mod_candidate, legacy_filter_mods == 0),
             postgresql.array([0]),
         ),
         (
-            is_no_mod_candidate,
-            postgresql.array([0, canonical_mods]),
+            is_legacy_no_mod_candidate,
+            postgresql.array([0, legacy_filter_mods]),
         ),
-        else_=postgresql.array([canonical_mods]),
+        else_=postgresql.array([legacy_filter_mods]),
     )
 
 
@@ -479,6 +497,15 @@ def _downgrade_leaderboard_storage() -> None:
 
 
 def _restore_legacy_leaderboard_projection() -> None:
+    """0400 downgradeで旧mod_filter_key projectionを再構築する.
+
+    Returns:
+        None: 旧schema向けのGlobalとSelected Mods代表行を保存したことを示す.
+
+    Notes:
+        この復元処理は0400 downgradeからのみ呼び出す. 0600以降の現行schemaは
+        Scoreのraw Mod bitmaskをprojection identityとして使用する.
+    """
     projection = sa.table(
         "beatmap_leaderboard_user_bests",
         sa.column("beatmap_id", sa.Integer()),
@@ -538,7 +565,7 @@ def _restore_legacy_leaderboard_projection() -> None:
         .where(common_filter)
     )
     mod_filter_key = sa.func.unnest(
-        _selected_mod_filter_keys_expression(scores.c.mods)
+        _legacy_downgrade_mod_filter_keys_expression(scores.c.mods)
     ).column_valued("mod_filter_key", joins_implicitly=True)
     selected_mod_candidates = (
         sa.select(
