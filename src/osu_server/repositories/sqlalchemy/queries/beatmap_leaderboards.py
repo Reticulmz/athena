@@ -138,6 +138,7 @@ def _user_best_score_ids_subquery(scope: LeaderboardReadScope) -> Subquery:
         if selected_mods is None:
             msg = "selected-mods scope requires selected_mods"
             raise ValueError(msg)
+        # raw bitmask自体がidentityであり, DT/NC, SD/PF, Mirrorを正規化しない.
         candidate_filters.append(
             BeatmapLeaderboardUserBestModel.mods == selected_mods.to_persistence_bitmask()
         )

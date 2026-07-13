@@ -178,6 +178,7 @@ def _projection_matches_scope(
     if selected_mods is None:
         msg = "selected-mods scope requires selected_mods"
         raise ValueError(msg)
+    # SQLAlchemy実装と同じくraw bitmaskを完全一致させ, implied Modへ正規化しない.
     return projection_scope.mods == selected_mods
 
 

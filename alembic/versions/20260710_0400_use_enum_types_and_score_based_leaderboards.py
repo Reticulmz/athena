@@ -16,69 +16,20 @@ from sqlalchemy.dialects import postgresql
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from sqlalchemy.sql.elements import ColumnElement
-
 revision: str = "20260710_0400"
 down_revision: str | None = "20260710_0300"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_NIGHTCORE_BIT = 1 << 9
-_DOUBLE_TIME_BIT = 1 << 6
-_PERFECT_BIT = 1 << 14
-_SUDDEN_DEATH_BIT = 1 << 5
-_MIRROR_BIT = 1 << 30
-_PREFERENCE_ONLY_NO_MODS_BITS = _SUDDEN_DEATH_BIT | _PERFECT_BIT | _MIRROR_BIT
-
-
-def _legacy_downgrade_mod_filter_keys_expression(
-    mods: ColumnElement[int],
-) -> ColumnElement[list[int]]:
-    """0400 downgrade用に旧mod_filter_key候補を構築する.
-
-    Args:
-        mods (ColumnElement[int]): source Scoreのraw Mod bitmask.
-
-    Returns:
-        ColumnElement[list[int]]: 旧schemaのGlobalとSelected Mods行を復元する
-            mod_filter_key配列.
-
-    Notes:
-        旧schemaのhistorical semanticsを再現するためNC->DT, PF->SD,
-        Mirror除外を行う. 0600以降のSelected Modsはraw bitmask完全一致であり,
-        この式を現行projectionやread queryに使用してはならない.
-    """
-    legacy_filter_mods_without_nightcore = sa.case(
-        (
-            mods.bitwise_and(_NIGHTCORE_BIT) != 0,
-            mods.bitwise_or(_DOUBLE_TIME_BIT).bitwise_and(~_NIGHTCORE_BIT),
-        ),
-        else_=mods,
-    )
-    legacy_filter_mods_without_perfect = sa.case(
-        (
-            legacy_filter_mods_without_nightcore.bitwise_and(_PERFECT_BIT) != 0,
-            legacy_filter_mods_without_nightcore.bitwise_or(_SUDDEN_DEATH_BIT).bitwise_and(
-                ~_PERFECT_BIT
-            ),
-        ),
-        else_=legacy_filter_mods_without_nightcore,
-    )
-    legacy_filter_mods = legacy_filter_mods_without_perfect.bitwise_and(~_MIRROR_BIT)
-    is_legacy_no_mod_candidate = (
-        legacy_filter_mods.bitwise_and(~_PREFERENCE_ONLY_NO_MODS_BITS) == 0
-    )
-    return sa.case(
-        (
-            sa.and_(is_legacy_no_mod_candidate, legacy_filter_mods == 0),
-            postgresql.array([0]),
-        ),
-        (
-            is_legacy_no_mod_candidate,
-            postgresql.array([0, legacy_filter_mods]),
-        ),
-        else_=postgresql.array([legacy_filter_mods]),
-    )
+# pre-0400 downgrade互換専用. 現行schemaはraw Mod bitmaskを変更せず保存する.
+_LEGACY_NIGHTCORE_BIT = 1 << 9
+_LEGACY_DOUBLE_TIME_BIT = 1 << 6
+_LEGACY_PERFECT_BIT = 1 << 14
+_LEGACY_SUDDEN_DEATH_BIT = 1 << 5
+_LEGACY_MIRROR_BIT = 1 << 30
+_LEGACY_PREFERENCE_ONLY_NO_MODS_BITS = (
+    _LEGACY_SUDDEN_DEATH_BIT | _LEGACY_PERFECT_BIT | _LEGACY_MIRROR_BIT
+)
 
 
 def _checked_string_enum(
@@ -503,8 +454,9 @@ def _restore_legacy_leaderboard_projection() -> None:
         None: 旧schema向けのGlobalとSelected Mods代表行を保存したことを示す.
 
     Notes:
-        この復元処理は0400 downgradeからのみ呼び出す. 0600以降の現行schemaは
-        Scoreのraw Mod bitmaskをprojection identityとして使用する.
+        pre-0400のhistorical filter key互換としてNC->DT, PF->SD, Mirror除外を
+        この関数内だけで適用する. 0600以降の現行schemaはScoreのraw Mod bitmaskを
+        projection identityとして使用する.
     """
     projection = sa.table(
         "beatmap_leaderboard_user_bests",
@@ -564,9 +516,40 @@ def _restore_legacy_leaderboard_projection() -> None:
         .select_from(current_scores)
         .where(common_filter)
     )
-    mod_filter_key = sa.func.unnest(
-        _legacy_downgrade_mod_filter_keys_expression(scores.c.mods)
-    ).column_valued("mod_filter_key", joins_implicitly=True)
+    legacy_filter_mods_without_nightcore = sa.case(
+        (
+            scores.c.mods.bitwise_and(_LEGACY_NIGHTCORE_BIT) != 0,
+            scores.c.mods.bitwise_or(_LEGACY_DOUBLE_TIME_BIT).bitwise_and(~_LEGACY_NIGHTCORE_BIT),
+        ),
+        else_=scores.c.mods,
+    )
+    legacy_filter_mods_without_perfect = sa.case(
+        (
+            legacy_filter_mods_without_nightcore.bitwise_and(_LEGACY_PERFECT_BIT) != 0,
+            legacy_filter_mods_without_nightcore.bitwise_or(_LEGACY_SUDDEN_DEATH_BIT).bitwise_and(
+                ~_LEGACY_PERFECT_BIT
+            ),
+        ),
+        else_=legacy_filter_mods_without_nightcore,
+    )
+    legacy_filter_mods = legacy_filter_mods_without_perfect.bitwise_and(~_LEGACY_MIRROR_BIT)
+    is_legacy_no_mod_candidate = (
+        legacy_filter_mods.bitwise_and(~_LEGACY_PREFERENCE_ONLY_NO_MODS_BITS) == 0
+    )
+    legacy_mod_filter_keys = sa.case(
+        (
+            sa.and_(is_legacy_no_mod_candidate, legacy_filter_mods == 0),
+            postgresql.array([0]),
+        ),
+        (
+            is_legacy_no_mod_candidate,
+            postgresql.array([0, legacy_filter_mods]),
+        ),
+        else_=postgresql.array([legacy_filter_mods]),
+    )
+    mod_filter_key = sa.func.unnest(legacy_mod_filter_keys).column_valued(
+        "mod_filter_key", joins_implicitly=True
+    )
     selected_mod_candidates = (
         sa.select(
             *common_columns,
