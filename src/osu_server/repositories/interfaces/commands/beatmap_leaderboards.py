@@ -132,14 +132,22 @@ type BeatmapLeaderboardProjectionSlice = (
 class BeatmapLeaderboardCommandRepository(Protocol):
     """raw Mod scope ごとのユーザー最高 score を更新する command port."""
 
+    async def lock_rebuild(self) -> None:
+        """projection rebuildをsubmit更新とtransaction内で直列化する.
+
+        Returns:
+            None: transaction終了までexclusive rebuild lockを保持したことを示す.
+        """
+        ...
+
     async def lock_scope(self, scope: BeatmapLeaderboardUserScope) -> None:
-        """同一user/Beatmap/ruleset/playstyleの更新をtransaction内で直列化する.
+        """submit更新をrebuildおよび同一scope更新とtransaction内で直列化する.
 
         Args:
             scope (BeatmapLeaderboardUserScope): Modを含まないserialization scope.
 
         Returns:
-            None: transaction終了までscope lockを保持したことを示す.
+            None: shared rebuild guardとexclusive scope lockを保持したことを示す.
         """
         ...
 

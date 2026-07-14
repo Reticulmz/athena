@@ -106,8 +106,33 @@ async def test_lock_scope_uses_transaction_advisory_lock() -> None:
 
     await repo.lock_scope(_user_scope())
 
+    assert len(session.statements) == 2
+    rebuild_guard_sql = _compiled_sql(session.statements[0])
+    scope_lock_sql = _compiled_sql(session.statements[1])
+    assert "pg_advisory_xact_lock_shared" in rebuild_guard_sql
+    assert "pg_advisory_xact_lock(" in scope_lock_sql
+    assert session.commit_calls == 0
+    assert session.rollback_calls == 0
+
+
+async def test_lock_rebuild_uses_exclusive_transaction_advisory_lock() -> None:
+    """projection rebuildがsubmit更新と共有するexclusive lockを取得する.
+
+    Returns:
+        None: rebuild lockがtransaction終了まで保持されることを示す.
+
+    Raises:
+        AssertionError: rebuild lockがsharedまたはrepository commitになる場合.
+    """
+    session = FakeSession()
+    repo = _repo(session)
+
+    await repo.lock_rebuild()
+
+    assert len(session.statements) == 1
     sql = _compiled_sql(session.statements[0])
-    assert "pg_advisory_xact_lock" in sql
+    assert "pg_advisory_xact_lock(" in sql
+    assert "pg_advisory_xact_lock_shared" not in sql
     assert session.commit_calls == 0
     assert session.rollback_calls == 0
 

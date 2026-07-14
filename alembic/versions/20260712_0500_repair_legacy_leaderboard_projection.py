@@ -25,10 +25,10 @@ depends_on: str | Sequence[str] | None = None
 
 _PROJECTION_TABLE = "beatmap_leaderboard_user_bests"
 _SCORE_CANDIDATE_INDEX = "idx_scores_beatmap_leaderboard_candidates"
-_USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_user_rebuild"
-_SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_scope"
-_SCORE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_score_id"
-_SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_score_id"
+_USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_global_user_rebuild_0400"
+_SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_scope_0400"
+_SCORE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_score_id_0400"
+_SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_global_score_id_0400"
 _CANONICAL_COLUMN_TYPE_SQL = {
     "id": "BIGINT",
     "beatmap_id": "INTEGER",

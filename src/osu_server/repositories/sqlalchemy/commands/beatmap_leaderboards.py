@@ -24,6 +24,7 @@ from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
 
 _SCORE_ID_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_score_id"
 _DUPLICATE_SCORE_ID_MESSAGE = "score_id is already used by another leaderboard projection row"
+_PROJECTION_REBUILD_LOCK_NAMESPACE = "beatmap_leaderboard_user_bests:rebuild"
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -45,17 +46,28 @@ class SQLAlchemyBeatmapLeaderboardCommandRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
 
+    async def lock_rebuild(self) -> None:
+        """projection rebuild用のexclusive transaction lockを取得する.
+
+        Returns:
+            None: transaction終了まで全submit projection更新を停止したことを示す.
+        """
+        statement = select(func.pg_advisory_xact_lock(_projection_rebuild_lock_key()))
+        _ = await self._session.execute(statement)
+
     async def lock_scope(self, scope: BeatmapLeaderboardUserScope) -> None:
-        """同一user/Beatmap/ruleset/playstyleの更新をtransaction内で直列化する.
+        """submit更新をrebuildおよび同一scope更新とtransaction内で直列化する.
 
         Args:
             scope (BeatmapLeaderboardUserScope): Modを含まないserialization scope.
 
         Returns:
-            None: PostgreSQL transaction advisory lockを取得したことを示す.
+            None: shared rebuild guardとexclusive scope lockを取得したことを示す.
         """
-        statement = select(func.pg_advisory_xact_lock(_scope_lock_key(scope)))
-        _ = await self._session.execute(statement)
+        rebuild_guard = select(func.pg_advisory_xact_lock_shared(_projection_rebuild_lock_key()))
+        scope_lock = select(func.pg_advisory_xact_lock(_scope_lock_key(scope)))
+        _ = await self._session.execute(rebuild_guard)
+        _ = await self._session.execute(scope_lock)
 
     async def get_user_best(
         self,
@@ -254,12 +266,33 @@ def _scope_lock_key(scope: BeatmapLeaderboardUserScope) -> int:
         同じscopeは同じkeyを返す. Modとchecksumはserialization identityに含めない.
         構築済みscopeを受け取る前提で、このhelper自体は独自の例外を送出しない.
     """
-    payload = (
+    namespace = (
         "beatmap_leaderboard_user_bests:"
         f"{scope.user_id}:{scope.beatmap_id}:{scope.ruleset.value}:{scope.playstyle.value}"
-    ).encode()
+    )
+    return _advisory_lock_key(namespace)
+
+
+def _projection_rebuild_lock_key() -> int:
+    """全projection rebuildで共有するPostgreSQL advisory lock keyを返す.
+
+    Returns:
+        int: submitがshared, rebuildがexclusiveで取得するsigned 64-bit key.
+    """
+    return _advisory_lock_key(_PROJECTION_REBUILD_LOCK_NAMESPACE)
+
+
+def _advisory_lock_key(namespace: str) -> int:
+    """advisory lock namespaceを安定したsigned 64-bit keyへ変換する.
+
+    Args:
+        namespace (str): repository内で一意なlock namespace.
+
+    Returns:
+        int: PostgreSQL bigint範囲のdeterministic advisory lock key.
+    """
     return int.from_bytes(
-        blake2b(payload, digest_size=8).digest(),
+        blake2b(namespace.encode(), digest_size=8).digest(),
         byteorder="big",
         signed=True,
     )

@@ -156,7 +156,7 @@ async def test_sqlalchemy_submission_repository_updates_state(
         await uow.commit()
 
     assert created.id is not None
-    assert created.state is ScoreSubmissionState.RECEIVED
+    assert created.state == ScoreSubmissionState.RECEIVED
 
     async with uow_factory() as uow:
         await uow.submissions.update_state(created.id, ScoreSubmissionState.COMPLETED)
@@ -165,7 +165,7 @@ async def test_sqlalchemy_submission_repository_updates_state(
     async with uow_factory() as uow:
         retrieved = await uow.submissions.get_by_fingerprint(created.fingerprint)
     assert retrieved is not None
-    assert retrieved.state is ScoreSubmissionState.COMPLETED
+    assert retrieved.state == ScoreSubmissionState.COMPLETED
 
 
 async def test_sqlalchemy_submission_repository_update_state_raises_for_nonexistent_id(

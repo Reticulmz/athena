@@ -30,6 +30,18 @@ _LEGACY_MIRROR_BIT = 1 << 30
 _LEGACY_PREFERENCE_ONLY_NO_MODS_BITS = (
     _LEGACY_SUDDEN_DEATH_BIT | _LEGACY_PERFECT_BIT | _LEGACY_MIRROR_BIT
 )
+_PROJECTION_TABLE = "beatmap_leaderboard_user_bests"
+_GLOBAL_PROJECTION_STAGING_TABLE = "_beatmap_leaderboard_user_bests_0400_global"
+_LEGACY_PROJECTION_STAGING_TABLE = "_beatmap_leaderboard_user_bests_0400_legacy"
+_GLOBAL_SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_scope_0400"
+_GLOBAL_SCORE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_score_id_0400"
+_GLOBAL_SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_global_score_id_0400"
+_GLOBAL_USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_global_user_rebuild_0400"
+_LEGACY_MODS_CHECK_CONSTRAINT = "ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative"
+_LEGACY_SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_score_id"
+_LEGACY_SCOPE_UNIQUE_INDEX = "idx_beatmap_leaderboard_user_bests_scope_unique"
+_LEGACY_ORDERING_INDEX = "idx_beatmap_leaderboard_user_bests_ordering"
+_LEGACY_USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_user_rebuild"
 
 
 def _checked_string_enum(
@@ -243,62 +255,110 @@ def downgrade() -> None:
 
 
 def _upgrade_leaderboard_storage() -> None:
-    op.add_column(
-        "beatmap_leaderboard_user_bests",
-        sa.Column("beatmap_checksum", sa.String(length=32), nullable=True),
-    )
-    _rebuild_current_global_projection()
-    op.alter_column(
-        "beatmap_leaderboard_user_bests",
-        "beatmap_checksum",
-        existing_type=sa.String(length=32),
-        existing_nullable=True,
-        nullable=False,
-    )
-    op.drop_index(
-        "idx_beatmap_leaderboard_user_bests_scope_unique",
-        table_name="beatmap_leaderboard_user_bests",
-    )
-    op.drop_index(
-        "idx_beatmap_leaderboard_user_bests_ordering",
-        table_name="beatmap_leaderboard_user_bests",
-    )
-    _validate_unique_projection_score_ids()
-    op.drop_constraint(
-        "ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative",
-        "beatmap_leaderboard_user_bests",
-        type_="check",
-    )
-    op.drop_column("beatmap_leaderboard_user_bests", "mod_filter_key")
+    """Global transitional projectionをstaging table経由で置き換える.
+
+    Returns:
+        None: backfill済みGlobal tableへのatomic swapが完了したことを示す.
+
+    Notes:
+        live projection tableをDELETEせず, source Score scanとindex構築をstaging側で行う.
+    """
+    _create_global_projection_table(_GLOBAL_PROJECTION_STAGING_TABLE)
+    _rebuild_current_global_projection(_GLOBAL_PROJECTION_STAGING_TABLE)
+    _validate_unique_projection_score_ids(_GLOBAL_PROJECTION_STAGING_TABLE)
     op.create_unique_constraint(
-        "uq_beatmap_leaderboard_user_bests_scope",
-        "beatmap_leaderboard_user_bests",
+        _GLOBAL_SCOPE_UNIQUE_CONSTRAINT,
+        _GLOBAL_PROJECTION_STAGING_TABLE,
         ["beatmap_id", "ruleset", "playstyle", "user_id"],
     )
     op.create_unique_constraint(
-        "uq_beatmap_leaderboard_user_bests_score_id",
-        "beatmap_leaderboard_user_bests",
+        _GLOBAL_SCORE_UNIQUE_CONSTRAINT,
+        _GLOBAL_PROJECTION_STAGING_TABLE,
         ["score_id"],
+    )
+    op.create_index(
+        _GLOBAL_USER_REBUILD_INDEX,
+        _GLOBAL_PROJECTION_STAGING_TABLE,
+        ["user_id", "beatmap_id", "ruleset", "playstyle"],
+    )
+    _replace_projection_table(_GLOBAL_PROJECTION_STAGING_TABLE)
+
+
+def _create_global_projection_table(table_name: str) -> None:
+    """Global transitional projection用の空staging tableを作成する.
+
+    Args:
+        table_name (str): live tableと競合しないstaging table名.
+
+    Returns:
+        None: constraint追加前の空projection tableを作成したことを示す.
+    """
+    op.create_table(
+        table_name,
+        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("beatmap_id", sa.Integer(), nullable=False),
+        sa.Column("beatmap_checksum", sa.String(length=32), nullable=False),
+        sa.Column("ruleset", sa.SmallInteger(), nullable=False),
+        sa.Column("playstyle", sa.SmallInteger(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("score_id", sa.BigInteger(), nullable=False),
+        sa.Column("score", sa.Integer(), nullable=False),
+        sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["score_id"],
+            ["scores.id"],
+            name=_GLOBAL_SCORE_FOREIGN_KEY,
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
 
 
-def _rebuild_current_global_projection() -> None:
-    """Current checksumのsource ScoresからGlobal projectionを再構築する.
+def _replace_projection_table(staging_table: str) -> None:
+    """完成済みstaging tableをlive projection tableへ置き換える.
+
+    Args:
+        staging_table (str): backfillとconstraint/index作成が完了したtable名.
 
     Returns:
-        None: Natural identityごとのGlobal winnerを旧projectionへ保存したことを示す.
+        None: 旧tableをdropしてstaging tableをcanonical名へrenameしたことを示す.
 
     Notes:
-        Migration upgrade中に全旧projection行を置き換え、Selected Mods行と
-        stale-checksum Global行を同時に除去する.
+        ACCESS EXCLUSIVE lockが必要な処理を最後のdrop/renameだけに限定する.
+    """
+    op.drop_table(_PROJECTION_TABLE)
+    op.rename_table(staging_table, _PROJECTION_TABLE)
+
+
+def _rebuild_current_global_projection(projection_table: str) -> None:
+    """Current checksumのsource ScoresからGlobal projectionを再構築する.
+
+    Args:
+        projection_table (str): source Scoreから再構築するstaging table名.
+
+    Returns:
+        None: Natural identityごとのGlobal winnerをstaging projectionへ保存したことを示す.
+
+    Notes:
+        Selected Mods行とstale-checksum Global行はsource Scoreから再生成しない.
     """
     projection = sa.table(
-        "beatmap_leaderboard_user_bests",
+        projection_table,
         sa.column("beatmap_id", sa.Integer()),
         sa.column("ruleset", sa.SmallInteger()),
         sa.column("playstyle", sa.SmallInteger()),
         sa.column("user_id", sa.Integer()),
-        sa.column("mod_filter_key", sa.Integer()),
         sa.column("score_id", sa.BigInteger()),
         sa.column("score", sa.Integer()),
         sa.column("submitted_at", sa.DateTime(timezone=True)),
@@ -335,7 +395,6 @@ def _rebuild_current_global_projection() -> None:
             scores.c.ruleset,
             scores.c.playstyle,
             scores.c.user_id,
-            sa.cast(sa.null(), sa.Integer()).label("mod_filter_key"),
             scores.c.id.label("score_id"),
             scores.c.score,
             scores.c.submitted_at,
@@ -364,7 +423,6 @@ def _rebuild_current_global_projection() -> None:
         .subquery("ranked_current_global_projection")
     )
 
-    op.execute(sa.delete(projection))
     op.execute(
         sa.insert(projection).from_select(
             (
@@ -372,7 +430,6 @@ def _rebuild_current_global_projection() -> None:
                 "ruleset",
                 "playstyle",
                 "user_id",
-                "mod_filter_key",
                 "score_id",
                 "score",
                 "submitted_at",
@@ -383,7 +440,6 @@ def _rebuild_current_global_projection() -> None:
                 ranked.c.ruleset,
                 ranked.c.playstyle,
                 ranked.c.user_id,
-                ranked.c.mod_filter_key,
                 ranked.c.score_id,
                 ranked.c.score,
                 ranked.c.submitted_at,
@@ -394,35 +450,17 @@ def _rebuild_current_global_projection() -> None:
 
 
 def _downgrade_leaderboard_storage() -> None:
+    """pre-0400 projectionをstaging table経由で復元する.
+
+    Returns:
+        None: Global/Selected Mods legacy tableへのatomic swapが完了したことを示す.
+    """
+    _create_legacy_projection_table(_LEGACY_PROJECTION_STAGING_TABLE)
+    _restore_legacy_leaderboard_projection(_LEGACY_PROJECTION_STAGING_TABLE)
     mod_filter_key = sa.column("mod_filter_key", sa.Integer())
-    op.drop_constraint(
-        "uq_beatmap_leaderboard_user_bests_score_id",
-        "beatmap_leaderboard_user_bests",
-        type_="unique",
-    )
-    op.drop_constraint(
-        "uq_beatmap_leaderboard_user_bests_scope",
-        "beatmap_leaderboard_user_bests",
-        type_="unique",
-    )
-    op.add_column(
-        "beatmap_leaderboard_user_bests",
-        sa.Column(
-            "mod_filter_key",
-            sa.Integer(),
-            nullable=True,
-        ),
-    )
-    op.drop_column("beatmap_leaderboard_user_bests", "beatmap_checksum")
-    _restore_legacy_leaderboard_projection()
-    op.create_check_constraint(
-        "ck_beatmap_leaderboard_user_bests_mod_filter_key_non_negative",
-        "beatmap_leaderboard_user_bests",
-        sa.or_(mod_filter_key.is_(None), mod_filter_key >= 0),
-    )
     op.create_index(
-        "idx_beatmap_leaderboard_user_bests_scope_unique",
-        "beatmap_leaderboard_user_bests",
+        _LEGACY_SCOPE_UNIQUE_INDEX,
+        _LEGACY_PROJECTION_STAGING_TABLE,
         [
             "beatmap_id",
             "ruleset",
@@ -433,8 +471,8 @@ def _downgrade_leaderboard_storage() -> None:
         unique=True,
     )
     op.create_index(
-        "idx_beatmap_leaderboard_user_bests_ordering",
-        "beatmap_leaderboard_user_bests",
+        _LEGACY_ORDERING_INDEX,
+        _LEGACY_PROJECTION_STAGING_TABLE,
         [
             "beatmap_id",
             "ruleset",
@@ -445,10 +483,64 @@ def _downgrade_leaderboard_storage() -> None:
             sa.column("score_id", sa.BigInteger()).asc(),
         ],
     )
+    op.create_index(
+        _LEGACY_USER_REBUILD_INDEX,
+        _LEGACY_PROJECTION_STAGING_TABLE,
+        ["user_id", "beatmap_id", "ruleset", "playstyle"],
+    )
+    _replace_projection_table(_LEGACY_PROJECTION_STAGING_TABLE)
 
 
-def _restore_legacy_leaderboard_projection() -> None:
+def _create_legacy_projection_table(table_name: str) -> None:
+    """pre-0400 projection用の空staging tableを作成する.
+
+    Args:
+        table_name (str): live tableと競合しないstaging table名.
+
+    Returns:
+        None: legacy column/constraintを持つ空tableを作成したことを示す.
+    """
+    op.create_table(
+        table_name,
+        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("beatmap_id", sa.Integer(), nullable=False),
+        sa.Column("ruleset", sa.SmallInteger(), nullable=False),
+        sa.Column("playstyle", sa.SmallInteger(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("mod_filter_key", sa.Integer(), nullable=True),
+        sa.Column("score_id", sa.BigInteger(), nullable=False),
+        sa.Column("score", sa.Integer(), nullable=False),
+        sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "mod_filter_key IS NULL OR mod_filter_key >= 0",
+            name=_LEGACY_MODS_CHECK_CONSTRAINT,
+        ),
+        sa.ForeignKeyConstraint(
+            ["score_id"],
+            ["scores.id"],
+            name=_LEGACY_SCORE_FOREIGN_KEY,
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+
+
+def _restore_legacy_leaderboard_projection(projection_table: str) -> None:
     """0400 downgradeで旧mod_filter_key projectionを再構築する.
+
+    Args:
+        projection_table (str): legacy rowsを書き込むstaging table名.
 
     Returns:
         None: 旧schema向けのGlobalとSelected Mods代表行を保存したことを示す.
@@ -459,7 +551,7 @@ def _restore_legacy_leaderboard_projection() -> None:
         projection identityとして使用する.
     """
     projection = sa.table(
-        "beatmap_leaderboard_user_bests",
+        projection_table,
         sa.column("beatmap_id", sa.Integer()),
         sa.column("ruleset", sa.SmallInteger()),
         sa.column("playstyle", sa.SmallInteger()),
@@ -584,7 +676,6 @@ def _restore_legacy_leaderboard_projection() -> None:
         .label("candidate_rank"),
     ).subquery("ranked_legacy_leaderboard_candidates")
 
-    op.execute(sa.delete(projection))
     op.execute(
         sa.insert(projection).from_select(
             (
@@ -992,9 +1083,20 @@ def _validate_enum_column(
         raise RuntimeError(msg)
 
 
-def _validate_unique_projection_score_ids() -> None:
+def _validate_unique_projection_score_ids(projection_table: str) -> None:
+    """staging projection内のscore_id重複を検出する.
+
+    Args:
+        projection_table (str): unique constraint追加前のstaging table名.
+
+    Returns:
+        None: score_idが全行で一意であることを示す.
+
+    Raises:
+        RuntimeError: 重複score_idを最大10件検出した場合.
+    """
     projection = sa.table(
-        "beatmap_leaderboard_user_bests",
+        projection_table,
         sa.column("score_id", sa.BigInteger()),
     )
     statement = (
@@ -1012,7 +1114,7 @@ def _validate_unique_projection_score_ids() -> None:
     )
     if duplicate_score_ids:
         msg = (
-            "beatmap_leaderboard_user_bests contains duplicate all-mods score_id values: "
+            f"{projection_table} contains duplicate all-mods score_id values: "
             f"{duplicate_score_ids!r}"
         )
         raise RuntimeError(msg)

@@ -81,6 +81,32 @@ def test_leaderboard_scope_rejects_invalid_beatmap_checksum(checksum: str) -> No
         _ = _scope(beatmap_checksum=checksum)
 
 
+def test_selected_mods_scope_requires_selected_mods() -> None:
+    """Selected Mods categoryがraw Mod filterを必須にすることを検証する.
+
+    Returns:
+        None: selected_mods未指定のscopeが拒否されたことを示す.
+
+    Raises:
+        AssertionError: selected_modsなしでSelected Mods scopeを構築できた場合.
+    """
+    with pytest.raises(ValueError, match="requires selected_mods"):
+        _ = _scope(category=LeaderboardCategory.SELECTED_MODS)
+
+
+def test_non_selected_mods_scope_rejects_selected_mods() -> None:
+    """Selected Mods以外のcategoryがraw Mod filterを拒否することを検証する.
+
+    Returns:
+        None: Global scopeへのselected_mods指定が拒否されたことを示す.
+
+    Raises:
+        AssertionError: non-Selected Mods scopeへselected_modsを設定できた場合.
+    """
+    with pytest.raises(ValueError, match="only valid for selected-mods"):
+        _ = _scope(selected_mods=ModCombination.none())
+
+
 async def test_top_rows_are_limited_to_50_and_use_score_ordering() -> None:
     factory = _factory()
     state = factory.snapshot()

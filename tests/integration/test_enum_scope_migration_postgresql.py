@@ -103,6 +103,10 @@ _SCORE_CANDIDATE_COLUMNS = (
     "id",
 )
 _SCORE_CANDIDATE_PREDICATE_COLUMNS = frozenset({"passed", "leaderboard_eligible_at_submission"})
+_GLOBAL_SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_scope_0400"
+_GLOBAL_SCORE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_score_id_0400"
+_GLOBAL_SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_global_score_id_0400"
+_GLOBAL_USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_global_user_rebuild_0400"
 _BEATMAPSET_ID = 1_970_100_001
 _BEATMAP_ID = 1_970_100_002
 _USER_1_ID = 1_970_000_001
@@ -241,62 +245,46 @@ class _MigrationModule(Protocol):
     def downgrade(self) -> None: ...
 
 
-def _load_migration() -> _MigrationModule:
-    spec = importlib.util.spec_from_file_location("enum_scope_migration", _MIGRATION_PATH)
+def _load_migration_module(module_name: str, path: Path) -> _MigrationModule:
+    """migration fileを独立moduleとして読み込む.
+
+    Args:
+        module_name (str): importlibへ渡す一意なmodule名.
+        path (Path): 読み込むAlembic migration file.
+
+    Returns:
+        _MigrationModule: upgrade/downgradeと差し替え可能なopを持つmodule.
+
+    Raises:
+        RuntimeError: module specまたはloaderを構築できない場合.
+    """
+    spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
-        msg = f"could not load migration: {_MIGRATION_PATH}"
+        msg = f"could not load migration: {path}"
         raise RuntimeError(msg)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return cast("_MigrationModule", cast("object", module))
 
 
-_MIGRATION = _load_migration()
+_MIGRATION = _load_migration_module("enum_scope_migration", _MIGRATION_PATH)
 
 
 def _load_leaderboard_repair_migration() -> _MigrationModule:
-    spec = importlib.util.spec_from_file_location(
+    return _load_migration_module(
         "leaderboard_projection_repair_migration",
         _LEADERBOARD_REPAIR_MIGRATION_PATH,
     )
-    if spec is None or spec.loader is None:
-        msg = f"could not load migration: {_LEADERBOARD_REPAIR_MIGRATION_PATH}"
-        raise RuntimeError(msg)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return cast("_MigrationModule", cast("object", module))
 
 
-def _load_mod_scoped_migration() -> _MigrationModule:
-    spec = importlib.util.spec_from_file_location(
-        "mod_scoped_leaderboard_projection_migration",
-        _MOD_SCOPED_MIGRATION_PATH,
-    )
-    if spec is None or spec.loader is None:
-        msg = f"could not load migration: {_MOD_SCOPED_MIGRATION_PATH}"
-        raise RuntimeError(msg)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return cast("_MigrationModule", cast("object", module))
-
-
-_MOD_SCOPED_MIGRATION = _load_mod_scoped_migration()
-
-
-def _load_online_index_migration() -> _MigrationModule:
-    spec = importlib.util.spec_from_file_location(
-        "online_leaderboard_index_migration",
-        _ONLINE_INDEX_MIGRATION_PATH,
-    )
-    if spec is None or spec.loader is None:
-        msg = f"could not load migration: {_ONLINE_INDEX_MIGRATION_PATH}"
-        raise RuntimeError(msg)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return cast("_MigrationModule", cast("object", module))
-
-
-_ONLINE_INDEX_MIGRATION = _load_online_index_migration()
+_MOD_SCOPED_MIGRATION = _load_migration_module(
+    "mod_scoped_leaderboard_projection_migration",
+    _MOD_SCOPED_MIGRATION_PATH,
+)
+_ONLINE_INDEX_MIGRATION = _load_migration_module(
+    "online_leaderboard_index_migration",
+    _ONLINE_INDEX_MIGRATION_PATH,
+)
 
 
 def _get_database_url() -> str:
@@ -913,6 +901,98 @@ async def test_postgresql_scope_lock_serializes_concurrent_personal_best_updates
                 await second_session.rollback()
 
 
+async def test_postgresql_rebuild_lock_blocks_concurrent_scope_update(
+    postgres_engine: AsyncEngine,
+) -> None:
+    """rebuildのexclusive lock中はsubmit scope更新が待機することを確認する.
+
+    Args:
+        postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
+
+    Returns:
+        None: rebuild完了後にscope lockを取得できたことを示す.
+
+    Raises:
+        AssertionError: rebuild中にscope lockを取得できた場合.
+        TimeoutError: rebuild完了後もscope lockを取得できない場合.
+    """
+    session_factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    scope = BeatmapLeaderboardUserScope(
+        beatmap_id=_BEATMAP_ID,
+        beatmap_checksum=_CURRENT_CHECKSUM,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=_USER_1_ID,
+    )
+    async with session_factory() as rebuild_session, session_factory() as submit_session:
+        rebuild_repository = SQLAlchemyBeatmapLeaderboardCommandRepository(rebuild_session)
+        submit_repository = SQLAlchemyBeatmapLeaderboardCommandRepository(submit_session)
+        _ = await rebuild_session.begin()
+        _ = await submit_session.begin()
+        await rebuild_repository.lock_rebuild()
+        waiting_task = asyncio.create_task(submit_repository.lock_scope(scope))
+        try:
+            done, _ = await asyncio.wait({waiting_task}, timeout=0.1)
+            assert not done
+
+            await rebuild_session.commit()
+            await asyncio.wait_for(waiting_task, timeout=1.0)
+        finally:
+            if not waiting_task.done():
+                _ = waiting_task.cancel()
+                _ = await asyncio.gather(waiting_task, return_exceptions=True)
+            if rebuild_session.in_transaction():
+                await rebuild_session.rollback()
+            if submit_session.in_transaction():
+                await submit_session.rollback()
+
+
+async def test_postgresql_scope_update_blocks_concurrent_rebuild(
+    postgres_engine: AsyncEngine,
+) -> None:
+    """submit scope更新中はprojection rebuildが待機することを確認する.
+
+    Args:
+        postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
+
+    Returns:
+        None: submit完了後にrebuild lockを取得できたことを示す.
+
+    Raises:
+        AssertionError: submit中にrebuild lockを取得できた場合.
+        TimeoutError: submit完了後もrebuild lockを取得できない場合.
+    """
+    session_factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    scope = BeatmapLeaderboardUserScope(
+        beatmap_id=_BEATMAP_ID,
+        beatmap_checksum=_CURRENT_CHECKSUM,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=_USER_1_ID,
+    )
+    async with session_factory() as submit_session, session_factory() as rebuild_session:
+        submit_repository = SQLAlchemyBeatmapLeaderboardCommandRepository(submit_session)
+        rebuild_repository = SQLAlchemyBeatmapLeaderboardCommandRepository(rebuild_session)
+        _ = await submit_session.begin()
+        _ = await rebuild_session.begin()
+        await submit_repository.lock_scope(scope)
+        waiting_task = asyncio.create_task(rebuild_repository.lock_rebuild())
+        try:
+            done, _ = await asyncio.wait({waiting_task}, timeout=0.1)
+            assert not done
+
+            await submit_session.commit()
+            await asyncio.wait_for(waiting_task, timeout=1.0)
+        finally:
+            if not waiting_task.done():
+                _ = waiting_task.cancel()
+                _ = await asyncio.gather(waiting_task, return_exceptions=True)
+            if submit_session.in_transaction():
+                await submit_session.rollback()
+            if rebuild_session.in_transaction():
+                await rebuild_session.rollback()
+
+
 async def test_postgresql_claimed_replacement_completion_clears_claims_before_flush(
     postgres_connection: AsyncConnection,
 ) -> None:
@@ -1175,8 +1255,8 @@ async def test_successor_migration_repairs_duplicate_legacy_projection_rows(
     columns, unique_constraints = await connection.run_sync(_read_projection_schema)
     assert "mod_filter_key" not in columns
     assert "beatmap_checksum" in columns
-    assert "uq_beatmap_leaderboard_user_bests_scope" in unique_constraints
-    assert "uq_beatmap_leaderboard_user_bests_score_id" in unique_constraints
+    assert _GLOBAL_SCOPE_UNIQUE_CONSTRAINT in unique_constraints
+    assert _GLOBAL_SCORE_UNIQUE_CONSTRAINT in unique_constraints
 
 
 async def test_successor_migration_preserves_canonical_projection(
@@ -1710,7 +1790,7 @@ def _replace_projection_with_structurally_incompatible_schema(connection: Connec
         sa.ForeignKeyConstraint(
             ["score_id"],
             ["scores.id"],
-            name="fk_beatmap_leaderboard_user_bests_score_id",
+            name=_GLOBAL_SCORE_FOREIGN_KEY,
         ),
         sa.PrimaryKeyConstraint("score_id"),
         sa.UniqueConstraint(
@@ -1718,15 +1798,15 @@ def _replace_projection_with_structurally_incompatible_schema(connection: Connec
             "ruleset",
             "playstyle",
             "user_id",
-            name="uq_beatmap_leaderboard_user_bests_scope",
+            name=_GLOBAL_SCOPE_UNIQUE_CONSTRAINT,
         ),
         sa.UniqueConstraint(
             "score_id",
-            name="uq_beatmap_leaderboard_user_bests_score_id",
+            name=_GLOBAL_SCORE_UNIQUE_CONSTRAINT,
         ),
     )
     operations.create_index(
-        "idx_beatmap_leaderboard_user_bests_user_rebuild",
+        _GLOBAL_USER_REBUILD_INDEX,
         "beatmap_leaderboard_user_bests",
         ["beatmap_id"],
     )
@@ -1800,13 +1880,13 @@ def _assert_global_projection_schema_is_canonical(connection: Connection) -> Non
         if constraint["name"] is not None
     }
     assert unique_constraints == {
-        "uq_beatmap_leaderboard_user_bests_scope": (
+        _GLOBAL_SCOPE_UNIQUE_CONSTRAINT: (
             "beatmap_id",
             "ruleset",
             "playstyle",
             "user_id",
         ),
-        "uq_beatmap_leaderboard_user_bests_score_id": ("score_id",),
+        _GLOBAL_SCORE_UNIQUE_CONSTRAINT: ("score_id",),
     }
 
     foreign_keys = {
@@ -1814,8 +1894,8 @@ def _assert_global_projection_schema_is_canonical(connection: Connection) -> Non
         for foreign_key in inspector.get_foreign_keys("beatmap_leaderboard_user_bests")
         if foreign_key["name"] is not None
     }
-    assert set(foreign_keys) == {"fk_beatmap_leaderboard_user_bests_score_id"}
-    score_foreign_key = foreign_keys["fk_beatmap_leaderboard_user_bests_score_id"]
+    assert set(foreign_keys) == {_GLOBAL_SCORE_FOREIGN_KEY}
+    score_foreign_key = foreign_keys[_GLOBAL_SCORE_FOREIGN_KEY]
     assert tuple(score_foreign_key["constrained_columns"]) == ("score_id",)
     assert score_foreign_key["referred_table"] == "scores"
     assert tuple(score_foreign_key["referred_columns"]) == ("id",)
@@ -1824,7 +1904,7 @@ def _assert_global_projection_schema_is_canonical(connection: Connection) -> Non
         (
             index
             for index in inspector.get_indexes("beatmap_leaderboard_user_bests")
-            if index["name"] == "idx_beatmap_leaderboard_user_bests_user_rebuild"
+            if index["name"] == _GLOBAL_USER_REBUILD_INDEX
         ),
         None,
     )

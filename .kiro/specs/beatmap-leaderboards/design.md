@@ -665,6 +665,8 @@ BeatmapLeaderboardProjectionSlice = (
 
 Replacement semantics:
 
+- Submit projection updates acquire a shared projection-maintenance advisory lock and then the existing exclusive user/Beatmap/ruleset/playstyle scope lock.
+- Rebuild commands acquire the matching exclusive projection-maintenance advisory lock before reading source Scores, so a stale rebuild snapshot cannot replace a newly submitted winner.
 - Delete all existing projection rows inside `slice_`.
 - Insert the supplied `rows`.
 - Accept empty `rows` as the correct result when no eligible source Score remains.
@@ -682,6 +684,7 @@ Responsibilities and constraints:
 - Job adapters accept primitive payloads only.
 - Command use-case selects source Score candidates and writes projection rows through Unit of Work.
 - Rebuild is idempotent and converges from source scores plus current Beatmap state.
+- Rebuild transactions are globally serialized against projection-updating submissions and other rebuilds; normal submissions retain shared access and still run concurrently across distinct scopes.
 - Rebuild always passes an explicit projection slice to the command repository, so stale rows are removed even when the rebuilt candidate set is empty.
 - Rebuild does not delete source Score rows.
 - Duplicate job enqueue is acceptable.
@@ -903,7 +906,7 @@ Metrics can be added later through the existing metrics surface; the design does
 - Stable getscores reads rank raw Mod-scoped projection rows, then joins source Scores for display fields and eligibility evidence.
 - Top rows are limited to 50.
 - PB rank and top rows use the same two-stage window query: first one best projection row per user, then overall scope rank.
-- Rebuild jobs are idempotent and can run on multiple workers.
+- Rebuild jobs are idempotent and can be consumed by multiple workers, while their projection replacement transactions are serialized by the maintenance advisory lock.
 - Country and Friends remain read-time user filters; Selected Mods is an equality predicate over the stored projection `mods` column.
 - Separate Global and Selected Mods rank indexes cover the two access paths without storing a duplicate Global row.
 
@@ -913,10 +916,13 @@ Metrics can be added later through the existing metrics surface; the design does
 graph TB
     Start[Start migration] --> ValidateClosedValues[Validate closed string values]
     ValidateClosedValues --> AddChecks[Add non-native Enum named CHECK constraints]
-    AddChecks --> AddMods[Add nullable projection mods]
-    AddMods --> RebuildProjection[Rebuild user plus raw Mod winners]
-    RebuildProjection --> ConstrainMods[Set mods NOT NULL and add Mod-scoped uniqueness]
-    ConstrainMods --> CommitProjection[Commit 0600 schema and data migration]
+    AddChecks --> BuildGlobalStaging[Build and backfill 0400 Global staging table]
+    BuildGlobalStaging --> SwapGlobal[Swap completed Global table into place]
+    SwapGlobal --> BuildModStaging[Build 0600 raw Mod staging table]
+    BuildModStaging --> RebuildProjection[Backfill user plus raw Mod winners]
+    RebuildProjection --> ConstrainMods[Build CHECK, unique constraints, and rebuild index on staging]
+    ConstrainMods --> SwapMod[Swap completed raw Mod table into place]
+    SwapMod --> CommitProjection[Commit 0600 schema and data migration]
     CommitProjection --> AddIndexes[0700 validates candidate and creates rank indexes concurrently]
     AddIndexes --> Verify[Run PostgreSQL round-trip tests]
 ```
@@ -924,9 +930,9 @@ graph TB
 Phase details:
 
 - Keep `scores.leaderboard_eligible_at_submission` as the submission-time eligibility snapshot.
-- 0400/0500 first repair the legacy duplicate Global/Selected Mods representation into a single Global-only transitional schema and remove `mod_filter_key`; 0400 does not build the large Score candidate index inside its schema transaction, and 0500 concurrently drops and recreates that index before repairing projection data.
-- 0600 adds nullable `mods`, deletes transitional projection rows, and rebuilds one winner per Beatmap、ruleset、playstyle、user、raw mods from current-checksum eligible source Scores.
-- After backfill, 0600 sets `mods` non-null, adds `mods >= 0`, extends the natural unique key with `mods`, and retains `score_id` uniqueness.
+- 0400 builds a complete Global-only transitional table under a non-live staging name, backfills current-checksum winners, creates its constraints/index, then limits live-table locking to the final drop/rename swap. `mod_filter_key` rows are not deleted in place. 0500 recognizes the transitional constraint names and concurrently repairs the large Score candidate index before fallback projection repair when needed.
+- 0600 builds the final non-null `mods` schema under a staging name and rebuilds one winner per Beatmap、ruleset、playstyle、user、raw mods from current-checksum eligible source Scores without wiping the live projection.
+- 0600 creates `mods >= 0`, Mod-scoped uniqueness, `score_id` uniqueness, and the rebuild index on the non-live staging table before the final swap. The live table therefore avoids full-table DELETE, validation scans, and unique-index builds.
 - 0700 runs in an Alembic autocommit block, validates the Score candidate index by structural column order, semantic sort direction, order-independent boolean predicate terms, and PostgreSQL `indisvalid`/`indisready` state, then repairs drift when needed and creates separate Global and Selected Mods rank indexes with concurrent DDL. Equivalent Inspector renderings do not trigger a rebuild. Keeping final index validation and rank DDL in a successor revision makes a failed online build restartable from completed revision 0600.
 - Selected Mods uses `projection.mods == request.mods`; no canonical filter key, implied-mod predicate, or Global-only duplicate row is added.
 - Existing or future stored scores with `leaderboard_eligible_at_submission=false` remain durable Score records but are not migrated into `beatmap_leaderboard_user_bests`.
@@ -936,7 +942,7 @@ Phase details:
 Rollback considerations:
 
 - 0700 downgrade removes the Global and Selected Mods rank indexes concurrently before 0600 downgrade changes the projection schema.
-- 0600 downgrade removes `mods`, then reconstructs one Global all-mods winner per user from current-checksum eligible source Scores.
+- 0600 downgrade constructs a complete Global staging table without `mods`, reconstructs one all-mods winner per user from current-checksum eligible source Scores, then swaps it into place.
 - 0500 downgrade removes the Score candidate index concurrently while preserving the repaired Global projection schema.
 - 0400 downgradeだけはpre-0400 schema互換のため、historicalな`mod_filter_key`規則としてNC->DT、PF->SD、Mirror除外を適用し、旧Global/Selected Mods行を復元する。この変換はrollback専用であり、現行Selected Modsのraw bitmask完全一致semanticsを変更しない。
 - Re-upgrade reconstructs raw Mod winners again; all data movement uses SQLAlchemy Core/Alembic operations without textual SQL.

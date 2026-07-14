@@ -88,10 +88,12 @@ def test_enum_migration_converts_closed_values_and_score_based_leaderboards() ->
     assert "create_constraint=True" in migration
     assert "sa.update(fetch_states).values(" in migration
     assert 'fetch_states.c.target_type == "beatmap"' in migration
-    assert "_rebuild_current_global_projection()" in migration
+    assert "_rebuild_current_global_projection(" in migration
     assert "beatmaps.c.checksum_md5 == scores.c.beatmap_checksum" in migration
-    assert "op.execute(sa.delete(projection))" in migration
-    assert 'op.drop_column("beatmap_leaderboard_user_bests", "mod_filter_key")' in migration
+    assert "op.execute(sa.delete(projection))" not in migration
+    assert "_replace_projection_table(" in migration
+    assert "_GLOBAL_PROJECTION_STAGING_TABLE" in migration
+    assert "_LEGACY_PROJECTION_STAGING_TABLE" in migration
     assert '"leaderboard_mod_filter_keys"' not in migration
     assert "_validate_enum_column" in migration
     assert "_create_enum_constraint" in migration
@@ -140,14 +142,16 @@ def test_mod_scoped_projection_migration_uses_checked_raw_mod_bitflags() -> None
 
     assert 'revision: str = "20260713_0600"' in migration
     assert 'down_revision: str | None = "20260712_0500"' in migration
-    assert 'sa.Column("mods", sa.Integer(), nullable=True)' in migration
-    assert "_rebuild_projection(partition_by_mods=True)" in migration
+    assert 'sa.Column("mods", sa.Integer(), nullable=False)' in migration
+    assert "partition_by_mods=True" in migration
     assert "partition_columns.append(scores.c.mods)" in migration
     assert '"ck_beatmap_leaderboard_user_bests_mods_non_negative"' in migration
     assert '["beatmap_id", "ruleset", "playstyle", "user_id", "mods"]' in migration
-    assert 'op.alter_column(\n        _PROJECTION_TABLE,\n        "mods"' in migration
-    assert "_rebuild_projection(partition_by_mods=False)" in migration
-    assert 'op.drop_column(_PROJECTION_TABLE, "mods")' in migration
+    assert "partition_by_mods=False" in migration
+    assert "_delete_projection_rows" not in migration
+    assert "_replace_projection_table(" in migration
+    assert "_MOD_SCOPED_PROJECTION_STAGING_TABLE" in migration
+    assert "_GLOBAL_PROJECTION_STAGING_TABLE" in migration
     assert "op.execute(sa.text(" not in migration
 
 

@@ -75,6 +75,7 @@ class RebuildBeatmapLeaderboardsForUserUseCase:
         command: RebuildBeatmapLeaderboardsForUserCommand,
     ) -> RebuildBeatmapLeaderboardsResult:
         async with self._unit_of_work_factory() as uow:
+            await uow.beatmap_leaderboards.lock_rebuild()
             scores = await uow.scores.list_leaderboard_rebuild_candidates_for_user(command.user_id)
             rows = _projection_rows_from_scores(scores)
             await uow.beatmap_leaderboards.replace_projection_slice(
@@ -116,6 +117,7 @@ class RebuildBeatmapLeaderboardsForBeatmapsetUseCase:
                     projection_row_count=0,
                 )
 
+            await uow.beatmap_leaderboards.lock_rebuild()
             scores = await uow.scores.list_leaderboard_rebuild_candidates_for_beatmap_ids(
                 beatmap_ids
             )
