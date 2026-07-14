@@ -806,7 +806,7 @@ async def test_postgresql_query_falls_back_from_ineligible_projection_scope(
 async def test_postgresql_duplicate_projection_score_id_is_value_error(
     postgres_connection: AsyncConnection,
 ) -> None:
-    """実PostgreSQLのscore_id一意制約をrepository境界でValueErrorへ変換する.
+    """実PostgreSQLで別scope所有のscore_idをDML前にValueErrorで拒否する.
 
     Args:
         postgres_connection (AsyncConnection): head適用済みの専用schema接続.
@@ -815,7 +815,7 @@ async def test_postgresql_duplicate_projection_score_id_is_value_error(
         None: SQL実装がmemory実装と同じexception contractを満たすことを示す.
 
     Raises:
-        AssertionError: raw IntegrityErrorがrepository境界から漏れる場合.
+        AssertionError: 重複拒否後に外側transactionが使用不能になる場合.
     """
     await _seed_fixture(postgres_connection)
     _ = await postgres_connection.execute(
@@ -862,6 +862,100 @@ async def test_postgresql_duplicate_projection_score_id_is_value_error(
             _ = await repository.upsert_if_better(command)
         result = await session.execute(sa.select(sa.literal(1)))
         assert result.scalar_one() == 1
+
+
+async def test_postgresql_score_id_lock_serializes_concurrent_projection_upserts(
+    postgres_connection: AsyncConnection,
+    postgres_engine: AsyncEngine,
+) -> None:
+    """同じscore_idの並行upsertを直列化して重複rowを防止する.
+
+    Args:
+        postgres_connection (AsyncConnection): head適用済みの専用schema接続.
+        postgres_engine (AsyncEngine): 独立transactionを作成するtest engine.
+
+    Returns:
+        None: 後続upsertが先行commitを待ち、ValueErrorで拒否されたことを示す.
+
+    Raises:
+        AssertionError: 後続upsertが待機せず重複rowを作成できる場合.
+        TimeoutError: 先行commit後も後続upsertが完了しない場合.
+    """
+    await _seed_fixture(postgres_connection)
+    schema_name = cast(
+        "str",
+        (await postgres_connection.execute(sa.select(sa.func.current_schema()))).scalar_one(),
+    )
+    await postgres_connection.commit()
+
+    first_command = UpsertBeatmapLeaderboardUserBest(
+        scope=BeatmapLeaderboardUserBestScope(
+            beatmap_id=_BEATMAP_ID,
+            beatmap_checksum=_CURRENT_CHECKSUM,
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+            user_id=_USER_1_ID,
+            mods=ModCombination.from_bitmask(int(Mod.NONE)),
+        ),
+        score_id=_NO_MOD_SCORE_ID,
+        rank_key=ScoreRankKey(
+            score=1_000,
+            submitted_at=_NOW,
+            score_id=_NO_MOD_SCORE_ID,
+        ),
+    )
+    second_command = UpsertBeatmapLeaderboardUserBest(
+        scope=BeatmapLeaderboardUserBestScope(
+            beatmap_id=_BEATMAP_ID,
+            beatmap_checksum=_CURRENT_CHECKSUM,
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+            user_id=_USER_1_ID,
+            mods=ModCombination.from_bitmask(int(Mod.HIDDEN)),
+        ),
+        score_id=_NO_MOD_SCORE_ID,
+        rank_key=ScoreRankKey(
+            score=1_000,
+            submitted_at=_NOW,
+            score_id=_NO_MOD_SCORE_ID,
+        ),
+    )
+    session_factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+
+    async with session_factory() as first_session, session_factory() as second_session:
+        _ = await first_session.execute(
+            sa.select(sa.func.set_config("search_path", schema_name, True))
+        )
+        _ = await second_session.execute(
+            sa.select(sa.func.set_config("search_path", schema_name, True))
+        )
+        first_repository = SQLAlchemyBeatmapLeaderboardCommandRepository(first_session)
+        second_repository = SQLAlchemyBeatmapLeaderboardCommandRepository(second_session)
+        _ = await first_repository.upsert_if_better(first_command)
+        waiting_task = asyncio.create_task(second_repository.upsert_if_better(second_command))
+        try:
+            done, _ = await asyncio.wait(
+                {waiting_task},
+                timeout=_LOCK_BLOCK_ASSERTION_TIMEOUT_SECONDS,
+            )
+            assert not done
+
+            await first_session.commit()
+            with pytest.raises(ValueError, match="score_id is already used"):
+                _ = await asyncio.wait_for(
+                    waiting_task,
+                    timeout=_LOCK_RELEASE_TIMEOUT_SECONDS,
+                )
+            result = await second_session.execute(sa.select(sa.literal(1)))
+            assert result.scalar_one() == 1
+        finally:
+            if not waiting_task.done():
+                _ = waiting_task.cancel()
+                _ = await asyncio.gather(waiting_task, return_exceptions=True)
+            if first_session.in_transaction():
+                await first_session.rollback()
+            if second_session.in_transaction():
+                await second_session.rollback()
 
 
 async def test_postgresql_scope_lock_serializes_concurrent_personal_best_updates(

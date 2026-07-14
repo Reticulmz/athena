@@ -666,6 +666,7 @@ BeatmapLeaderboardProjectionSlice = (
 Replacement semantics:
 
 - Submit projection updates acquire a shared projection-maintenance advisory lock and then the existing exclusive user/Beatmap/ruleset/playstyle scope lock.
+- Each upsert acquires a transaction advisory lock for its `score_id`, checks whether another natural-key row already owns that ID, and rejects duplicates before DML. This preserves the outer Unit of Work without repository-owned savepoints while the database unique constraint remains the final invariant backstop.
 - Rebuild commands acquire the matching exclusive projection-maintenance advisory lock before reading source Scores, so a stale rebuild snapshot cannot replace a newly submitted winner.
 - Projection-rebuilding migrations acquire the same exclusive maintenance lock before staging backfill and hold it through the table swap, so a submission cannot commit a live projection update that the swap discards.
 - Delete all existing projection rows inside `slice_`.

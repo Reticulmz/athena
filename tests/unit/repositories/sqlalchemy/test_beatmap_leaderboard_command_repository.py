@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
@@ -28,8 +27,6 @@ from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.sql.elements import ClauseElement
 
@@ -55,9 +52,6 @@ class FakeSession:
     Attributes:
         execute_results (list[object | None]): executeごとに返却または送出する値.
         statements (list[ClauseElement]): 実行されたSQLAlchemy statement.
-        begin_nested_calls (int): SAVEPOINT開始回数.
-        savepoint_commit_calls (int): 正常終了したSAVEPOINT回数.
-        savepoint_rollback_calls (int): 例外でrollbackしたSAVEPOINT回数.
         commit_calls (int): session commit呼び出し回数.
         rollback_calls (int): session rollback呼び出し回数.
     """
@@ -65,30 +59,8 @@ class FakeSession:
     def __init__(self, *, execute_results: list[object | None] | None = None) -> None:
         self.execute_results: list[object | None] = execute_results or []
         self.statements: list[ClauseElement] = []
-        self.begin_nested_calls: int = 0
-        self.savepoint_commit_calls: int = 0
-        self.savepoint_rollback_calls: int = 0
         self.commit_calls: int = 0
         self.rollback_calls: int = 0
-
-    @asynccontextmanager
-    async def begin_nested(self) -> AsyncGenerator[None]:
-        """Repository statement用のSAVEPOINT contextを提供する.
-
-        Yields:
-            None: SAVEPOINT内でstatementを実行できることを示す.
-
-        Raises:
-            BaseException: context内で発生した例外をrollback記録後に再送出する.
-        """
-        self.begin_nested_calls += 1
-        try:
-            yield
-        except BaseException:
-            self.savepoint_rollback_calls += 1
-            raise
-        else:
-            self.savepoint_commit_calls += 1
 
     async def execute(self, statement: ClauseElement) -> FakeResult:
         self.statements.append(statement)
@@ -105,8 +77,16 @@ class FakeSession:
 
 
 async def test_upsert_targets_projection_unique_index_and_rank_key_guard() -> None:
+    """upsertがscore_id lockとprojection rank guardを使用することを確認する.
+
+    Returns:
+        None: SQL構造と非commit契約が期待どおりであることを示す.
+
+    Raises:
+        AssertionError: lock, 所有確認, またはupsert SQLが契約と異なる場合.
+    """
     model = _model(score_id=12, score=1_100, submitted_at=_NOW + timedelta(seconds=1))
-    session = FakeSession(execute_results=[None, model])
+    session = FakeSession(execute_results=[None, None, None, model])
     repo = _repo(session)
 
     result = await repo.upsert_if_better(
@@ -115,7 +95,11 @@ async def test_upsert_targets_projection_unique_index_and_rank_key_guard() -> No
 
     assert result.score_id == 12
     assert result.rank_key.score == 1_100
-    upsert_sql = _compiled_sql(session.statements[0])
+    lock_sql = _compiled_sql(session.statements[0])
+    assert "pg_advisory_xact_lock(" in lock_sql
+    owner_sql = _compiled_sql(session.statements[1])
+    assert "WHERE beatmap_leaderboard_user_bests.score_id = " in owner_sql
+    upsert_sql = _compiled_sql(session.statements[2])
     assert "ON CONFLICT (beatmap_id, ruleset, playstyle, user_id, mods) DO UPDATE" in upsert_sql
     assert "ON CONSTRAINT" not in upsert_sql
     assert "score_id = " in upsert_sql
@@ -175,28 +159,34 @@ async def test_lock_rebuild_uses_exclusive_transaction_advisory_lock() -> None:
     assert session.rollback_calls == 0
 
 
-async def test_upsert_translates_duplicate_score_id_integrity_error() -> None:
-    """score_id一意制約違反をmemory実装と同じValueErrorへ変換する.
+async def test_upsert_rejects_score_id_owned_by_another_scope() -> None:
+    """別scopeが所有するscore_idをDML前にValueErrorで拒否する.
 
     Returns:
-        None: named score_id制約だけがValueErrorへ変換されたことを示す.
+        None: ownership checkが外側transactionを失敗状態にしないことを示す.
 
     Raises:
-        AssertionError: raw IntegrityErrorが境界外へ漏れる場合.
+        AssertionError: 重複score_idでINSERTまたはSAVEPOINTが使用された場合.
     """
-    error = IntegrityError(
-        "INSERT",
-        {},
-        Exception("uq_beatmap_leaderboard_user_bests_score_id"),
+    owner = _model(
+        mods=Mod.HIDDEN,
+        score_id=12,
+        score=1_000,
+        submitted_at=_NOW,
     )
-    session = FakeSession(execute_results=[error])
+    session = FakeSession(execute_results=[None, owner])
     repo = _repo(session)
 
     with pytest.raises(ValueError, match="score_id is already used"):
         _ = await repo.upsert_if_better(_upsert(score_id=12, score=1_000, submitted_at=_NOW))
 
-    assert session.begin_nested_calls == 1
-    assert session.savepoint_rollback_calls == 1
+    assert len(session.statements) == 2
+    assert "pg_advisory_xact_lock(" in _compiled_sql(session.statements[0])
+    assert "WHERE beatmap_leaderboard_user_bests.score_id = " in _compiled_sql(
+        session.statements[1]
+    )
+    assert session.commit_calls == 0
+    assert session.rollback_calls == 0
 
 
 async def test_upsert_preserves_unrelated_integrity_error() -> None:
@@ -209,7 +199,7 @@ async def test_upsert_preserves_unrelated_integrity_error() -> None:
         AssertionError: unrelated IntegrityErrorがValueErrorへ誤変換された場合.
     """
     error = IntegrityError("INSERT", {}, Exception("unrelated constraint"))
-    repo = _repo(FakeSession(execute_results=[error]))
+    repo = _repo(FakeSession(execute_results=[None, None, error]))
 
     with pytest.raises(IntegrityError) as raised:
         _ = await repo.upsert_if_better(_upsert(score_id=12, score=1_000, submitted_at=_NOW))
@@ -244,8 +234,16 @@ async def test_get_global_user_best_ignores_mods_and_orders_all_mod_scopes() -> 
 
 
 async def test_upsert_returns_current_row_when_candidate_does_not_win() -> None:
+    """rank条件を満たさない候補では現在のprojection rowを返す.
+
+    Returns:
+        None: DB側upsert guard後の現在行が返ることを示す.
+
+    Raises:
+        AssertionError: 劣後候補でprojection rowが置き換わる場合.
+    """
     existing = _model(score_id=20, score=1_000, submitted_at=_NOW)
-    session = FakeSession(execute_results=[None, existing])
+    session = FakeSession(execute_results=[None, None, None, existing])
     repo = _repo(session)
 
     result = await repo.upsert_if_better(
@@ -259,9 +257,17 @@ async def test_upsert_returns_current_row_when_candidate_does_not_win() -> None:
 
 
 async def test_replace_user_projection_slice_deletes_stale_rows_and_reinserts() -> None:
+    """user sliceの既存行を削除して新しいprojection rowを再挿入する.
+
+    Returns:
+        None: delete後のupsertがscore_id所有確認を含めて実行されたことを示す.
+
+    Raises:
+        AssertionError: statement順序またはtransaction所有境界が異なる場合.
+    """
     replacement = _upsert(score_id=30, score=1_200, submitted_at=_NOW)
     persisted = _model(score_id=30, score=1_200, submitted_at=_NOW)
-    session = FakeSession(execute_results=[None, None, persisted])
+    session = FakeSession(execute_results=[None, None, None, None, persisted])
     repo = _repo(session)
 
     await repo.replace_projection_slice(
@@ -272,7 +278,8 @@ async def test_replace_user_projection_slice_deletes_stale_rows_and_reinserts() 
     delete_sql = _compiled_sql(session.statements[0])
     assert "DELETE FROM beatmap_leaderboard_user_bests" in delete_sql
     assert "WHERE beatmap_leaderboard_user_bests.user_id = " in delete_sql
-    assert "INSERT INTO beatmap_leaderboard_user_bests" in _compiled_sql(session.statements[1])
+    assert "pg_advisory_xact_lock(" in _compiled_sql(session.statements[1])
+    assert "INSERT INTO beatmap_leaderboard_user_bests" in _compiled_sql(session.statements[3])
     assert session.commit_calls == 0
     assert session.rollback_calls == 0
 

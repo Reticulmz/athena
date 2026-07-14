@@ -300,9 +300,19 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
 
 
 async def test_beatmap_leaderboard_repository_commits_through_sqlalchemy_unit_of_work() -> None:
+    """leaderboard repositoryの変更をUoWだけがcommitすることを確認する.
+
+    Returns:
+        None: repository内ではcommitせず、UoW commitで1回だけ確定することを示す.
+
+    Raises:
+        AssertionError: repositoryがtransaction境界を所有する場合.
+    """
     scope = _leaderboard_scope()
     session = FakeSession(
         execute_results=[
+            FakeResult(),
+            FakeResult(),
             FakeResult(),
             FakeResult(value=_leaderboard_model(scope=scope, score_id=90, score=1_000)),
         ]
@@ -326,9 +336,19 @@ async def test_beatmap_leaderboard_repository_commits_through_sqlalchemy_unit_of
 
 
 async def test_beatmap_leaderboard_repository_rolls_back_with_sqlalchemy_unit_of_work() -> None:
+    """leaderboard command失敗時にUoWが全変更をrollbackすることを確認する.
+
+    Returns:
+        None: repository更新後の例外でUoW rollbackが1回実行されることを示す.
+
+    Raises:
+        AssertionError: repositoryがrollbackするか、UoW rollbackが実行されない場合.
+    """
     scope = _leaderboard_scope()
     session = FakeSession(
         execute_results=[
+            FakeResult(),
+            FakeResult(),
             FakeResult(),
             FakeResult(value=_leaderboard_model(scope=scope, score_id=91, score=1_100)),
         ]
