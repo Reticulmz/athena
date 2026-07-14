@@ -35,6 +35,164 @@ ONLINE_INDEX_MIGRATION_PATH = Path(
 )
 
 
+def _migration_tree(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
+
+
+def _top_level_function(tree: ast.Module, name: str) -> ast.FunctionDef:
+    function = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name),
+        None,
+    )
+    if function is None:
+        msg = f"missing top-level function: {name}"
+        raise AssertionError(msg)
+    return function
+
+
+def _top_level_assignment_value(tree: ast.Module, name: str) -> ast.expr:
+    for node in tree.body:
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+            and node.value is not None
+        ):
+            return node.value
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name for target in node.targets
+        ):
+            return node.value
+    msg = f"missing top-level assignment: {name}"
+    raise AssertionError(msg)
+
+
+def _top_level_assignment_names(tree: ast.Module) -> set[str]:
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Assign):
+            names.update(target.id for target in node.targets if isinstance(target, ast.Name))
+    return names
+
+
+def _string_assignment(tree: ast.Module, name: str) -> str:
+    value = _top_level_assignment_value(tree, name)
+    assert isinstance(value, ast.Constant)
+    assert isinstance(value.value, str)
+    return value.value
+
+
+def _assigned_call(tree: ast.Module, name: str) -> ast.Call:
+    value = _top_level_assignment_value(tree, name)
+    assert isinstance(value, ast.Call)
+    return value
+
+
+def _qualified_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Call):
+        return _qualified_name(node.func)
+    if isinstance(node, ast.Attribute):
+        parent = _qualified_name(node.value)
+        return node.attr if parent is None else f"{parent}.{node.attr}"
+    return None
+
+
+def _calls_named(node: ast.AST, name: str) -> tuple[ast.Call, ...]:
+    return tuple(
+        candidate
+        for candidate in ast.walk(node)
+        if isinstance(candidate, ast.Call) and _qualified_name(candidate.func) == name
+    )
+
+
+def _direct_call_names(function: ast.FunctionDef) -> tuple[str, ...]:
+    names: list[str] = []
+    for statement in function.body:
+        if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+            continue
+        name = _qualified_name(statement.value.func)
+        if name is not None:
+            names.append(name)
+    return tuple(names)
+
+
+def _keyword_expression(call: ast.Call, name: str) -> ast.expr:
+    value = next((keyword.value for keyword in call.keywords if keyword.arg == name), None)
+    if value is None:
+        msg = f"missing keyword {name} on {_qualified_name(call.func)}"
+        raise AssertionError(msg)
+    return value
+
+
+def _boolean_keyword(call: ast.Call, name: str) -> bool:
+    value = _keyword_expression(call, name)
+    assert isinstance(value, ast.Constant)
+    assert isinstance(value.value, bool)
+    return value.value
+
+
+def _string_keyword(call: ast.Call, name: str) -> str:
+    value = _keyword_expression(call, name)
+    assert isinstance(value, ast.Constant)
+    assert isinstance(value.value, str)
+    return value.value
+
+
+def _string_sequence_argument(call: ast.Call, index: int) -> tuple[str, ...]:
+    value = call.args[index]
+    assert isinstance(value, (ast.List, ast.Tuple))
+    items: list[str] = []
+    for item in value.elts:
+        assert isinstance(item, ast.Constant)
+        assert isinstance(item.value, str)
+        items.append(item.value)
+    return tuple(items)
+
+
+def _has_autocommit_block(function: ast.FunctionDef) -> bool:
+    return any(
+        isinstance(node, (ast.With, ast.AsyncWith))
+        and any(
+            _qualified_name(item.context_expr) == "op.get_context.autocommit_block"
+            for item in node.items
+        )
+        for node in ast.walk(function)
+    )
+
+
+def _concurrent_index_call_count(tree: ast.Module) -> int:
+    count = 0
+    for call_name in ("op.create_index", "op.drop_index"):
+        for call in _calls_named(tree, call_name):
+            keyword = next(
+                (
+                    candidate.value
+                    for candidate in call.keywords
+                    if candidate.arg == "postgresql_concurrently"
+                ),
+                None,
+            )
+            if isinstance(keyword, ast.Constant) and keyword.value is True:
+                count += 1
+    return count
+
+
+def _assert_no_calls(tree: ast.Module, *names: str) -> None:
+    for name in names:
+        assert _calls_named(tree, name) == ()
+
+
+def _assert_check_constraints_are_structural(tree: ast.Module) -> None:
+    for call in _calls_named(tree, "sa.CheckConstraint"):
+        assert call.args
+        predicate = call.args[0]
+        assert not (isinstance(predicate, ast.Constant) and isinstance(predicate.value, str))
+
+
 def _column(table: Table, name: str) -> Column[object]:
     return cast("Column[object]", table.c[name])
 
@@ -75,36 +233,61 @@ def test_enum_migration_converts_closed_values_and_score_based_leaderboards() ->
     Notes:
         PostgreSQLでの実動作はintegration migration testで別途検証する.
     """
-    migration = MIGRATION_PATH.read_text()
+    tree = _migration_tree(MIGRATION_PATH)
 
-    assert 'revision: str = "20260710_0400"' in migration
-    assert 'down_revision: str | None = "20260710_0300"' in migration
-    assert 'name="ck_scores_play_time_source_known"' in migration
-    assert 'name="ck_beatmaps_mode_known"' in migration
-    assert 'name="ck_beatmap_fetch_states_target_type_known"' in migration
-    assert 'name="ck_blobs_storage_backend_known"' in migration
-    assert 'name="ck_score_submissions_state_known"' in migration
-    assert "native_enum=False" in migration
-    assert "create_constraint=True" in migration
-    assert "sa.update(fetch_states).values(" in migration
-    assert 'fetch_states.c.target_type == "beatmap"' in migration
-    assert "_rebuild_current_global_projection(" in migration
-    assert "beatmaps.c.checksum_md5 == scores.c.beatmap_checksum" in migration
-    assert "op.execute(sa.delete(projection))" not in migration
-    assert "_replace_projection_table(" in migration
-    assert "lock_projection_updates()" in migration
-    assert "_GLOBAL_PROJECTION_STAGING_TABLE" in migration
-    assert "_LEGACY_PROJECTION_STAGING_TABLE" in migration
-    assert '"mod_filter_key IS NULL OR mod_filter_key >= 0"' not in migration
-    assert '"leaderboard_mod_filter_keys"' not in migration
-    assert "_validate_enum_column" in migration
-    assert "_create_enum_constraint" in migration
-    assert "_drop_enum_constraint" in migration
-    assert "postgresql.ENUM" not in migration
-    assert "postgresql_using" not in migration
-    assert "_ENUM_TYPES" not in migration
-    assert "ck_scores_play_time_source_known" in migration
-    assert "ck_score_performance_state_known" in migration
+    assert _string_assignment(tree, "revision") == "20260710_0400"
+    assert _string_assignment(tree, "down_revision") == "20260710_0300"
+    checked_enum_helper = _top_level_function(tree, "_checked_string_enum")
+    enum_call = _calls_named(checked_enum_helper, "sa.Enum")
+    assert len(enum_call) == 1
+    assert _boolean_keyword(enum_call[0], "native_enum") is False
+    assert _boolean_keyword(enum_call[0], "create_constraint") is True
+    assert _boolean_keyword(enum_call[0], "validate_strings") is True
+    assert _qualified_name(_keyword_expression(enum_call[0], "length")) == "length"
+
+    enum_constraints = {
+        "PLAY_TIME_SOURCE_ENUM": "ck_scores_play_time_source_known",
+        "BEATMAP_MODE_ENUM": "ck_beatmaps_mode_known",
+        "BEATMAP_FETCH_TARGET_KIND_ENUM": "ck_beatmap_fetch_states_target_type_known",
+        "BLOB_STORAGE_BACKEND_ENUM": "ck_blobs_storage_backend_known",
+        "SCORE_SUBMISSION_STATE_ENUM": "ck_score_submissions_state_known",
+        "PERFORMANCE_CALCULATION_STATE_ENUM": "ck_score_performance_state_known",
+    }
+    for assignment, constraint_name in enum_constraints.items():
+        call = _assigned_call(tree, assignment)
+        assert _qualified_name(call.func) == "_checked_string_enum"
+        assert _string_keyword(call, "name") == constraint_name
+
+    upgrade_calls = _direct_call_names(_top_level_function(tree, "upgrade"))
+    assert upgrade_calls[-1] == "_upgrade_leaderboard_storage"
+    upgrade_storage_calls = _direct_call_names(
+        _top_level_function(tree, "_upgrade_leaderboard_storage")
+    )
+    assert upgrade_storage_calls[0] == "lock_projection_updates"
+    assert upgrade_storage_calls[-1] == "_replace_projection_table"
+    downgrade_storage_calls = _direct_call_names(
+        _top_level_function(tree, "_downgrade_leaderboard_storage")
+    )
+    assert downgrade_storage_calls[0] == "lock_projection_updates"
+    assert downgrade_storage_calls[-1] == "_replace_projection_table"
+    assert _string_assignment(tree, "_GLOBAL_PROJECTION_STAGING_TABLE")
+    assert _string_assignment(tree, "_LEGACY_PROJECTION_STAGING_TABLE")
+
+    function_names = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+    assert {
+        "_validate_enum_column",
+        "_create_enum_constraint",
+        "_drop_enum_constraint",
+    } <= function_names
+    assert "_ENUM_TYPES" not in _top_level_assignment_names(tree)
+    assert not any(
+        keyword.arg == "postgresql_using"
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        for keyword in call.keywords
+    )
+    _assert_no_calls(tree, "sa.delete", "sa.text", "postgresql.ENUM")
+    _assert_check_constraints_are_structural(tree)
 
 
 def test_legacy_mod_filter_restoration_is_used_only_for_0400_downgrade() -> None:
@@ -116,7 +299,7 @@ def test_legacy_mod_filter_restoration_is_used_only_for_0400_downgrade() -> None
     Raises:
         AssertionError: 旧projection復元がupgrade pathから参照される場合.
     """
-    migration_tree = ast.parse(MIGRATION_PATH.read_text())
+    migration_tree = _migration_tree(MIGRATION_PATH)
     callers_by_callee: dict[str, set[str]] = {}
     for node in ast.walk(migration_tree):
         if not isinstance(node, ast.FunctionDef):
@@ -140,23 +323,62 @@ def test_mod_scoped_projection_migration_uses_checked_raw_mod_bitflags() -> None
     Raises:
         AssertionError: revisionまたはMod単位projectionの必須構造が不足する場合.
     """
-    migration = MOD_SCOPED_MIGRATION_PATH.read_text()
+    tree = _migration_tree(MOD_SCOPED_MIGRATION_PATH)
 
-    assert 'revision: str = "20260713_0600"' in migration
-    assert 'down_revision: str | None = "20260712_0500"' in migration
-    assert 'sa.Column("mods", sa.Integer(), nullable=False)' in migration
-    assert "partition_by_mods=True" in migration
-    assert "partition_columns.append(scores.c.mods)" in migration
-    assert '"ck_beatmap_leaderboard_user_bests_mods_non_negative"' in migration
-    assert '["beatmap_id", "ruleset", "playstyle", "user_id", "mods"]' in migration
-    assert "partition_by_mods=False" in migration
-    assert "_delete_projection_rows" not in migration
-    assert "_replace_projection_table(" in migration
-    assert "lock_projection_updates()" in migration
-    assert "_MOD_SCOPED_PROJECTION_STAGING_TABLE" in migration
-    assert "_GLOBAL_PROJECTION_STAGING_TABLE" in migration
-    assert 'sa.CheckConstraint("mods >= 0"' not in migration
-    assert "op.execute(sa.text(" not in migration
+    assert _string_assignment(tree, "revision") == "20260713_0600"
+    assert _string_assignment(tree, "down_revision") == "20260712_0500"
+    assert _string_assignment(tree, "_MODS_CHECK_CONSTRAINT") == (
+        "ck_beatmap_leaderboard_user_bests_mods_non_negative"
+    )
+    assert _string_assignment(tree, "_MOD_SCOPED_PROJECTION_STAGING_TABLE")
+    assert _string_assignment(tree, "_GLOBAL_PROJECTION_STAGING_TABLE")
+
+    upgrade = _top_level_function(tree, "upgrade")
+    upgrade_calls = _direct_call_names(upgrade)
+    assert upgrade_calls[0] == "lock_projection_updates"
+    assert upgrade_calls[-1] == "_replace_projection_table"
+    upgrade_rebuild = _calls_named(upgrade, "_rebuild_projection")
+    assert len(upgrade_rebuild) == 1
+    assert _boolean_keyword(upgrade_rebuild[0], "partition_by_mods") is True
+
+    downgrade = _top_level_function(tree, "downgrade")
+    downgrade_calls = _direct_call_names(downgrade)
+    assert downgrade_calls[0] == "lock_projection_updates"
+    assert downgrade_calls[-1] == "_replace_projection_table"
+    downgrade_rebuild = _calls_named(downgrade, "_rebuild_projection")
+    assert len(downgrade_rebuild) == 1
+    assert _boolean_keyword(downgrade_rebuild[0], "partition_by_mods") is False
+
+    create_table = _top_level_function(tree, "_create_mod_scoped_projection_table")
+    mods_column = next(
+        call
+        for call in _calls_named(create_table, "sa.Column")
+        if call.args and isinstance(call.args[0], ast.Constant) and call.args[0].value == "mods"
+    )
+    assert _qualified_name(mods_column.args[1]) == "sa.Integer"
+    assert _boolean_keyword(mods_column, "nullable") is False
+
+    unique_scope_columns = {
+        _string_sequence_argument(call, 2)
+        for call in _calls_named(upgrade, "op.create_unique_constraint")
+    }
+    assert (
+        "beatmap_id",
+        "ruleset",
+        "playstyle",
+        "user_id",
+        "mods",
+    ) in unique_scope_columns
+    rebuild = _top_level_function(tree, "_rebuild_projection")
+    assert any(
+        call.args and _qualified_name(call.args[0]) == "scores.c.mods"
+        for call in _calls_named(rebuild, "partition_columns.append")
+    )
+    assert "_delete_projection_rows" not in {
+        node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+    }
+    _assert_no_calls(tree, "sa.text")
+    _assert_check_constraints_are_structural(tree)
 
 
 def test_leaderboard_indexes_are_created_concurrently_without_raw_sql() -> None:
@@ -168,23 +390,35 @@ def test_leaderboard_indexes_are_created_concurrently_without_raw_sql() -> None:
     Raises:
         AssertionError: autocommit, concurrent指定, またはAlembic API利用が不足する場合.
     """
-    enum_migration = MIGRATION_PATH.read_text()
-    repair_migration = LEADERBOARD_REPAIR_MIGRATION_PATH.read_text()
-    online_index_migration = ONLINE_INDEX_MIGRATION_PATH.read_text()
+    enum_tree = _migration_tree(MIGRATION_PATH)
+    repair_tree = _migration_tree(LEADERBOARD_REPAIR_MIGRATION_PATH)
+    online_index_tree = _migration_tree(ONLINE_INDEX_MIGRATION_PATH)
 
-    assert '"idx_scores_beatmap_leaderboard_candidates"' not in enum_migration
-    assert "with op.get_context().autocommit_block():" in repair_migration
-    assert repair_migration.count("postgresql_concurrently=True") >= 2
-    assert "lock_projection_updates()" in repair_migration
-    assert 'revision: str = "20260713_0700"' in online_index_migration
-    assert 'down_revision: str | None = "20260713_0600"' in online_index_migration
-    assert "with op.get_context().autocommit_block():" in online_index_migration
-    assert online_index_migration.count("postgresql_concurrently=True") >= 6
-    assert '"idx_scores_beatmap_leaderboard_candidates"' in online_index_migration
-    assert '"idx_beatmap_leaderboard_user_bests_global_rank"' in online_index_migration
-    assert '"idx_beatmap_leaderboard_user_bests_mod_rank"' in online_index_migration
-    assert "op.execute(sa.text(" not in repair_migration
-    assert "op.execute(sa.text(" not in online_index_migration
+    assert "_SCORE_CANDIDATE_INDEX" not in _top_level_assignment_names(enum_tree)
+    repair_index = _top_level_function(repair_tree, "_recreate_score_candidate_index")
+    assert _has_autocommit_block(repair_index)
+    assert _concurrent_index_call_count(repair_tree) >= 2
+    repair_projection_calls = _direct_call_names(
+        _top_level_function(repair_tree, "_recreate_global_projection")
+    )
+    assert repair_projection_calls[0] == "lock_projection_updates"
+
+    assert _string_assignment(online_index_tree, "revision") == "20260713_0700"
+    assert _string_assignment(online_index_tree, "down_revision") == "20260713_0600"
+    assert _has_autocommit_block(_top_level_function(online_index_tree, "upgrade"))
+    assert _has_autocommit_block(_top_level_function(online_index_tree, "downgrade"))
+    assert _concurrent_index_call_count(online_index_tree) >= 6
+    assert _string_assignment(online_index_tree, "_SCORE_CANDIDATE_INDEX") == (
+        "idx_scores_beatmap_leaderboard_candidates"
+    )
+    assert _string_assignment(online_index_tree, "_GLOBAL_RANK_INDEX") == (
+        "idx_beatmap_leaderboard_user_bests_global_rank"
+    )
+    assert _string_assignment(online_index_tree, "_MOD_RANK_INDEX") == (
+        "idx_beatmap_leaderboard_user_bests_mod_rank"
+    )
+    _assert_no_calls(repair_tree, "sa.text")
+    _assert_no_calls(online_index_tree, "sa.text")
 
 
 def test_current_models_use_checked_string_enums_for_closed_value_columns() -> None:
