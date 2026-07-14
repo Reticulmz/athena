@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.elements import ClauseElement
 
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.repositories.sqlalchemy.commands.scores import SQLAlchemyScoreCommandRepository
@@ -241,7 +242,7 @@ def _score(*, leaderboard_eligible_at_submission: bool) -> Score:
         perfect=False,
         client_version="20240101",
         submitted_at=datetime.now(UTC),
-        beatmap_status_at_submission="pending",
+        beatmap_status_at_submission=BeatmapRankStatus.PENDING,
         leaderboard_eligible_at_submission=leaderboard_eligible_at_submission,
     )
 

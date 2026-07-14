@@ -10,9 +10,11 @@ from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFetchTarget,
+    BeatmapFetchTargetKind,
     BeatmapFileState,
     BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapResolveResult,
@@ -63,7 +65,7 @@ def _make_beatmap(
         id=beatmap_id,
         beatmapset_id=beatmapset_id,
         checksum_md5=checksum_md5,
-        mode=mode,
+        mode=BeatmapMode(mode),
         version=version,
         total_length=240,
         hit_length=220,
@@ -205,7 +207,9 @@ async def test_resolve_by_beatmap_id_returns_failed_when_fetch_failed(
     service: BeatmapMirrorService,
     repo: InMemoryBeatmapCommandRepository,
 ) -> None:
-    target = BeatmapFetchTarget(target_type="metadata:beatmap", target_key="999")
+    target = BeatmapFetchTarget(
+        target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID, target_key="999"
+    )
     now = _NOW
     await repo.mark_fetch_failed(target, "provider_timeout", now)
 
@@ -221,7 +225,9 @@ async def test_resolve_by_beatmap_id_returns_pending_for_pending_fetch(
     service: BeatmapMirrorService,
     repo: InMemoryBeatmapCommandRepository,
 ) -> None:
-    target = BeatmapFetchTarget(target_type="metadata:beatmap", target_key="999")
+    target = BeatmapFetchTarget(
+        target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID, target_key="999"
+    )
     now = _NOW
     _ = await repo.try_mark_fetch_pending(target, now)
 
@@ -375,8 +381,12 @@ async def test_resolve_by_beatmap_id_unknown_with_file_fetch_failed(
     service: BeatmapMirrorService,
     repo: InMemoryBeatmapCommandRepository,
 ) -> None:
-    metadata_target = BeatmapFetchTarget(target_type="metadata:beatmap", target_key="999")
-    file_target = BeatmapFetchTarget(target_type="file:beatmap", target_key="999")
+    metadata_target = BeatmapFetchTarget(
+        target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID, target_key="999"
+    )
+    file_target = BeatmapFetchTarget(
+        target_type=BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID, target_key="999"
+    )
     now = _NOW
     await repo.mark_fetch_failed(metadata_target, "provider_error", now)
     await repo.mark_fetch_failed(file_target, "file_download_failed", now)
@@ -435,7 +445,9 @@ async def test_resolve_by_beatmapset_id_failed_fetch_returns_failed(
     service: BeatmapMirrorService,
     repo: InMemoryBeatmapCommandRepository,
 ) -> None:
-    target = BeatmapFetchTarget(target_type="metadata:beatmapset", target_key="999")
+    target = BeatmapFetchTarget(
+        target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID, target_key="999"
+    )
     now = _NOW
     await repo.mark_fetch_failed(target, "api_unreachable", now)
 
@@ -491,7 +503,9 @@ async def test_resolve_by_checksum_failed_fetch_returns_failed(
     service: BeatmapMirrorService,
     repo: InMemoryBeatmapCommandRepository,
 ) -> None:
-    target = BeatmapFetchTarget(target_type="metadata:checksum", target_key=_ALT_CHECKSUM)
+    target = BeatmapFetchTarget(
+        target_type=BeatmapFetchTargetKind.METADATA_BY_CHECKSUM, target_key=_ALT_CHECKSUM
+    )
     now = _NOW
     await repo.mark_fetch_failed(target, "checksum_not_found", now)
 
@@ -586,7 +600,7 @@ async def test_unknown_beatmap_id_enqueues_metadata_fetch(
 
     assert len(enqueue_spy) == 1
     target = enqueue_spy[0]
-    assert target.target_type == "metadata:beatmap"
+    assert target.kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID
     assert target.target_key == "999"
 
 
@@ -599,7 +613,7 @@ async def test_unknown_beatmapset_id_enqueues_metadata_fetch(
 
     assert len(enqueue_spy) == 1
     target = enqueue_spy[0]
-    assert target.target_type == "metadata:beatmapset"
+    assert target.kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID
     assert target.target_key == "999"
 
 
@@ -612,7 +626,7 @@ async def test_unknown_checksum_enqueues_metadata_fetch(
 
     assert len(enqueue_spy) == 1
     target = enqueue_spy[0]
-    assert target.target_type == "metadata:checksum"
+    assert target.kind is BeatmapFetchTargetKind.METADATA_BY_CHECKSUM
     assert target.target_key == _ALT_CHECKSUM
 
 
@@ -633,7 +647,7 @@ async def test_stale_beatmap_enqueues_metadata_refresh(
 
     assert len(enqueue_spy) == 1
     target = enqueue_spy[0]
-    assert target.target_type == "metadata:beatmap"
+    assert target.kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID
     assert target.target_key == str(_BEATMAP_ID)
     assert target.force_refresh is False
 
@@ -658,7 +672,7 @@ async def test_force_refresh_enqueues_metadata_fetch(
 
     assert len(enqueue_spy) == 1
     target = enqueue_spy[0]
-    assert target.target_type == "metadata:beatmap"
+    assert target.kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID
     assert target.target_key == str(_BEATMAP_ID)
     assert target.force_refresh is True
 
@@ -700,7 +714,7 @@ async def test_require_osu_file_missing_enqueues_file_fetch(
         options=BeatmapResolveOptions(require_osu_file=True),
     )
 
-    file_targets = [t for t in enqueue_spy if t.target_type == "file:beatmap"]
+    file_targets = [t for t in enqueue_spy if t.is_file_fetch]
     assert len(file_targets) == 1
     assert file_targets[0].target_key == str(_BEATMAP_ID)
 
@@ -724,7 +738,7 @@ async def test_require_osu_file_available_does_not_enqueue(
         options=BeatmapResolveOptions(require_osu_file=True),
     )
 
-    file_targets = [t for t in enqueue_spy if t.target_type == "file:beatmap"]
+    file_targets = [t for t in enqueue_spy if t.is_file_fetch]
     assert len(file_targets) == 0
 
 
@@ -739,8 +753,11 @@ async def test_unknown_beatmap_with_require_osu_enqueues_both(
     )
 
     assert len(enqueue_spy) == 2
-    types = {t.target_type for t in enqueue_spy}
-    assert types == {"metadata:beatmap", "file:beatmap"}
+    types = {target.kind for target in enqueue_spy}
+    assert types == {
+        BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID,
+        BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID,
+    }
     for t in enqueue_spy:
         assert t.target_key == "999"
 

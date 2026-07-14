@@ -23,6 +23,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFileState,
     BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapsetSnapshot,
@@ -30,7 +31,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
     OsuFileFetchResult,
 )
-from osu_server.domain.storage.blobs import Blob
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind
 from osu_server.infrastructure.beatmaps.metadata_sources import (
     CompositeBeatmapMetadataProvider,
 )
@@ -92,7 +93,7 @@ def _make_snapshot(
         beatmap_id=beatmap_id,
         beatmapset_id=beatmapset_id,
         checksum_md5=checksum_md5,
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Another",
         official_status=BeatmapRankStatus.RANKED,
         official_status_source=BeatmapMetadataSource.OFFICIAL,
@@ -185,7 +186,7 @@ class StubBlobStorageService:
             sha256=hashlib.sha256(data).hexdigest(),
             byte_size=len(data),
             content_type=content_type,
-            storage_backend="stub",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key=f"stub/{self.next_blob_id}",
             created_at=_NOW,
         )
@@ -269,7 +270,7 @@ class TestFileResolutionE2E:
         assert result1.metadata_status is BeatmapFetchState.FRESH
         assert result1.file_status is BeatmapFileState.MISSING
         # A file fetch was enqueued
-        file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
+        file_enqueues = [t for t in enqueued if t.is_file_fetch]
         assert len(file_enqueues) == 1
         assert file_enqueues[0].target_key == str(_BEATMAP_ID)
 
@@ -302,7 +303,7 @@ class TestFileResolutionE2E:
         attachment = await repo.get_current_file_attachment(_BEATMAP_ID)
         assert attachment is not None
         assert attachment.checksum_md5 == _FILE_BODY_MD5
-        assert attachment.source == BeatmapFileSource.OSU_CURRENT.value
+        assert attachment.source is BeatmapFileSource.OSU_CURRENT
         assert attachment.original_filename == f"{_BEATMAP_ID}.osu"
 
     @pytest.mark.asyncio
@@ -320,7 +321,7 @@ class TestFileResolutionE2E:
         assert result.metadata_status is BeatmapFetchState.FRESH
         assert result.file_status is BeatmapFileState.MISSING
         # No file fetch was enqueued
-        file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
+        file_enqueues = [t for t in enqueued if t.is_file_fetch]
         assert len(file_enqueues) == 0
 
     @pytest.mark.asyncio
@@ -340,8 +341,8 @@ class TestFileResolutionE2E:
         assert result.file_status is BeatmapFileState.MISSING
         assert result.reason == "unsolicited"
 
-        file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
-        metadata_enqueues = [t for t in enqueued if t.target_type.startswith("metadata:")]
+        file_enqueues = [t for t in enqueued if t.is_file_fetch]
+        metadata_enqueues = [t for t in enqueued if not t.is_file_fetch]
         assert len(file_enqueues) == 1
         assert len(metadata_enqueues) == 1
 
@@ -366,7 +367,7 @@ class TestFileChecksumVerificationE2E:
             _BEATMAP_ID,
             options=BeatmapResolveOptions(require_osu_file=True),
         )
-        file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
+        file_enqueues = [t for t in enqueued if t.is_file_fetch]
 
         # Execute file job with mismatched body
         mismatched_body = b"osu file format v14\n\n[General]\nAudioFilename: wrong.mp3\n"
@@ -445,7 +446,7 @@ class TestFileMirrorFallbackE2E:
             _BEATMAP_ID,
             options=BeatmapResolveOptions(require_osu_file=True),
         )
-        file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
+        file_enqueues = [t for t in enqueued if t.is_file_fetch]
 
         # Simulate mirror fallback: file provider returns COMMUNITY_MIRROR source
         fetch_result = _make_osu_file_result(
@@ -469,7 +470,7 @@ class TestFileMirrorFallbackE2E:
         attachment = await repo.get_current_file_attachment(_BEATMAP_ID)
         assert attachment is not None
         assert attachment.checksum_md5 == _FILE_BODY_MD5
-        assert attachment.source == BeatmapFileSource.COMMUNITY_MIRROR.value
+        assert attachment.source is BeatmapFileSource.COMMUNITY_MIRROR
         # Mirror may not provide an original filename
         assert attachment.original_filename is None
 
@@ -486,7 +487,7 @@ class TestFileMirrorFallbackE2E:
             _BEATMAP_ID,
             options=BeatmapResolveOptions(require_osu_file=True),
         )
-        file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
+        file_enqueues = [t for t in enqueued if t.is_file_fetch]
 
         fetch_result = _make_osu_file_result(
             source=BeatmapFileSource.COMMUNITY_MIRROR,
@@ -530,7 +531,7 @@ class TestFileMirrorFallbackE2E:
             _BEATMAP_ID,
             options=BeatmapResolveOptions(require_osu_file=True),
         )
-        file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
+        file_enqueues = [t for t in enqueued if t.is_file_fetch]
 
         # First attempt: provider fails (simulating rate limit on all direct sources)
         failing_provider = StubFileProvider(exception=RuntimeError("429 Too Many Requests"))
@@ -567,7 +568,7 @@ class TestFileMirrorFallbackE2E:
         attachment = await repo.get_current_file_attachment(_BEATMAP_ID)
         assert attachment is not None
         # The source reflects the mirror, not the original rate-limited attempt
-        assert attachment.source == BeatmapFileSource.COMMUNITY_MIRROR.value
+        assert attachment.source is BeatmapFileSource.COMMUNITY_MIRROR
 
         result = await service.resolve_by_beatmap_id(
             _BEATMAP_ID,
@@ -595,7 +596,7 @@ class TestFileBlobStorageIntegrationE2E:
             _BEATMAP_ID,
             options=BeatmapResolveOptions(require_osu_file=True),
         )
-        file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
+        file_enqueues = [t for t in enqueued if t.is_file_fetch]
 
         fetch_result = _make_osu_file_result()
         blob_storage = StubBlobStorageService()
@@ -651,7 +652,7 @@ class TestFileSourceTrackingE2E:
 
         attachment = await repo.get_current_file_attachment(_BEATMAP_ID)
         assert attachment is not None
-        assert attachment.source == BeatmapFileSource.OSU_CURRENT.value
+        assert attachment.source is BeatmapFileSource.OSU_CURRENT
 
     @pytest.mark.asyncio
     async def test_osu_legacy_source_recorded_in_attachment(self) -> None:
@@ -672,7 +673,7 @@ class TestFileSourceTrackingE2E:
 
         attachment = await repo.get_current_file_attachment(_BEATMAP_ID)
         assert attachment is not None
-        assert attachment.source == BeatmapFileSource.OSU_LEGACY.value
+        assert attachment.source is BeatmapFileSource.OSU_LEGACY
 
     @pytest.mark.asyncio
     async def test_community_mirror_source_recorded_in_attachment(self) -> None:
@@ -693,7 +694,7 @@ class TestFileSourceTrackingE2E:
 
         attachment = await repo.get_current_file_attachment(_BEATMAP_ID)
         assert attachment is not None
-        assert attachment.source == BeatmapFileSource.COMMUNITY_MIRROR.value
+        assert attachment.source is BeatmapFileSource.COMMUNITY_MIRROR
 
 
 # ---------------------------------------------------------------------------
@@ -715,7 +716,7 @@ class TestFileProviderFailureE2E:
             _BEATMAP_ID,
             options=BeatmapResolveOptions(require_osu_file=True),
         )
-        file_enqueues = [t for t in enqueued if t.target_type == "file:beatmap"]
+        file_enqueues = [t for t in enqueued if t.is_file_fetch]
 
         failing_provider = StubFileProvider(exception=RuntimeError("network error"))
         file_job = FetchBeatmapFileUseCase(

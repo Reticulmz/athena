@@ -8,7 +8,16 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from osu_server.domain.beatmaps import BeatmapRankStatus
+from osu_server.domain.beatmaps import (
+    Beatmap,
+    BeatmapFetchState,
+    BeatmapFileState,
+    BeatmapMetadataSource,
+    BeatmapMode,
+    BeatmapRankStatus,
+    BeatmapSet,
+    BeatmapSourceVerification,
+)
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.performance import (
     FormulaProfile,
@@ -417,11 +426,56 @@ async def test_rebuild_beatmap_slice_replaces_each_user_scope_and_keeps_other_be
 
 async def _persist_score(factory: UnitOfWorkFactory, score: Score) -> int:
     async with factory() as uow:
+        await uow.beatmaps.save_beatmapset_snapshot(_beatmapset_for_score(score))
         created = await uow.scores.create(score)
         await uow.commit()
 
     assert created.id is not None
     return created.id
+
+
+def _beatmapset_for_score(score: Score) -> BeatmapSet:
+    official_status = score.beatmap_status_at_submission
+    assert official_status is not None
+    beatmap = Beatmap(
+        id=score.beatmap_id,
+        beatmapset_id=score.beatmap_id,
+        checksum_md5=score.beatmap_checksum,
+        mode=BeatmapMode.OSU,
+        version="Test",
+        total_length=None,
+        hit_length=None,
+        max_combo=None,
+        bpm=None,
+        cs=None,
+        od=None,
+        ar=None,
+        hp=None,
+        difficulty_rating=None,
+        official_status=official_status,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        local_status_override=None,
+        metadata_fetch_state=BeatmapFetchState.FRESH,
+        file_state=BeatmapFileState.MISSING,
+        file_attachment=None,
+        last_fetched_at=None,
+        next_refresh_at=None,
+    )
+    return BeatmapSet(
+        id=score.beatmap_id,
+        artist="artist",
+        title="title",
+        creator="creator",
+        artist_unicode=None,
+        title_unicode=None,
+        official_status=official_status,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        beatmaps=(beatmap,),
+        last_fetched_at=None,
+        next_refresh_at=None,
+    )
 
 
 async def _create_pending_performance(
@@ -569,7 +623,7 @@ def _score(
         id=None,
         user_id=user_id,
         beatmap_id=beatmap_id,
-        beatmap_checksum=f"checksum-{beatmap_id}",
+        beatmap_checksum=f"{beatmap_id:032x}",
         online_checksum=f"online-{user_id}-{beatmap_id}-{score}-{submitted_at.timestamp()}",
         ruleset=ruleset,
         playstyle=playstyle,
@@ -588,7 +642,7 @@ def _score(
         perfect=False,
         client_version="b20240201",
         submitted_at=submitted_at,
-        beatmap_status_at_submission=beatmap_status.value,
+        beatmap_status_at_submission=beatmap_status,
         leaderboard_eligible_at_submission=leaderboard_eligible,
     )
 

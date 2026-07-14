@@ -17,6 +17,7 @@ from osu_server.domain.scores.performance import (
     FormulaProfile,
     PerformanceRecalculationBatch,
     PerformanceRecalculationBatchStatus,
+    RecalculationCandidateReason,
 )
 from osu_server.domain.scores.score import Ruleset
 from osu_server.services.commands.scores.performance import (
@@ -54,7 +55,10 @@ def test_recalculate_defaults_to_dry_run_and_prints_candidate_breakdown(
         CreatePerformanceRecalculationBatchResult(
             outcome=CreatePerformanceRecalculationBatchOutcome.DRY_RUN,
             candidate_count=2,
-            reason_counts={"uncalculated": 1, "stale": 1},
+            reason_counts={
+                RecalculationCandidateReason.UNCALCULATED: 1,
+                RecalculationCandidateReason.STALE: 1,
+            },
             filters={
                 "score_id": 10,
                 "beatmap_id": None,
@@ -115,7 +119,7 @@ def test_recalculate_execute_prints_batch_id_and_candidate_breakdown(
         CreatePerformanceRecalculationBatchResult(
             outcome=CreatePerformanceRecalculationBatchOutcome.CREATED,
             candidate_count=1,
-            reason_counts={"calculator_version_mismatch": 1},
+            reason_counts={RecalculationCandidateReason.CALCULATOR_VERSION_MISMATCH: 1},
             filters={
                 "score_id": None,
                 "beatmap_id": None,
@@ -132,7 +136,7 @@ def test_recalculate_execute_prints_batch_id_and_candidate_breakdown(
                 id=42,
                 status=PerformanceRecalculationBatchStatus.PENDING,
                 filters={"user_id": 55},
-                reason_counts={"calculator_version_mismatch": 1},
+                reason_counts={RecalculationCandidateReason.CALCULATOR_VERSION_MISMATCH: 1},
                 target_calculator_version="4.0.2",
                 target_formula_profile=FormulaProfile.VANILLA_RANKED,
                 candidate_count=1,

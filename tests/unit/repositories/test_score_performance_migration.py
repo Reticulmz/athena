@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import CheckConstraint, Column, ForeignKeyConstraint, Numeric, String, Table
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ENUM, JSONB
 
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import (
@@ -23,6 +23,10 @@ def _column(table: Table, name: str) -> Column[object]:
 
 def _string_length(column: Column[object]) -> int | None:
     return cast("String", column.type).length
+
+
+def _enum_values(column: Column[object]) -> tuple[str, ...]:
+    return tuple(cast("ENUM", column.type).enums)
 
 
 def _numeric_precision_scale(column: Column[object]) -> tuple[int | None, int | None]:
@@ -112,7 +116,18 @@ def test_score_performance_calculation_metadata_matches_current_contract() -> No
     assert _numeric_precision_scale(_column(table, "star_rating")) == (8, 5)
     assert _string_length(_column(table, "calculator_name")) == 64
     assert _string_length(_column(table, "calculator_version")) == 64
-    assert _string_length(_column(table, "formula_profile")) == 64
+    assert _enum_values(_column(table, "state")) == (
+        "queued",
+        "fetching_file",
+        "calculating",
+        "completed",
+        "unavailable",
+        "superseded",
+    )
+    assert _enum_values(_column(table, "formula_profile")) == (
+        "vanilla_ranked_legacy",
+        "vanilla_ranked_v1",
+    )
     assert _string_length(_column(table, "beatmap_file_checksum_md5")) == 32
     assert not _column(table, "attempt_count").nullable
     assert _foreign_key_constraints(table)["fk_score_performance_calculations_score_id"] == (
@@ -123,7 +138,7 @@ def test_score_performance_calculation_metadata_matches_current_contract() -> No
         "fk_score_performance_calculations_beatmap_file_attachment_id"
     ] == ("beatmap_file_attachment_id", "beatmap_file_attachments.id")
     assert {
-        "ck_score_performance_state_known",
+        "ck_score_performance_claim_metadata_pair",
         "ck_score_performance_completed_values",
         "ck_score_performance_unavailable_reason",
     }.issubset(_check_constraints(table))
@@ -153,6 +168,11 @@ def test_recalculation_batch_and_work_item_metadata_match_durable_work_contract(
     assert not _column(batches, "status").nullable
     assert not _column(batches, "target_calculator_version").nullable
     assert not _column(batches, "target_formula_profile").nullable
+    assert _enum_values(_column(batches, "status")) == ("pending", "running", "completed")
+    assert _enum_values(_column(batches, "target_formula_profile")) == (
+        "vanilla_ranked_legacy",
+        "vanilla_ranked_v1",
+    )
     assert not _column(batches, "candidate_count").nullable
     assert not _column(batches, "completed_count").nullable
     assert not _column(batches, "unavailable_count").nullable
@@ -169,6 +189,19 @@ def test_recalculation_batch_and_work_item_metadata_match_durable_work_contract(
     assert not _column(work_items, "score_id").nullable
     assert not _column(work_items, "reason").nullable
     assert not _column(work_items, "state").nullable
+    assert _enum_values(_column(work_items, "reason")) == (
+        "uncalculated",
+        "stale",
+        "calculator_version_mismatch",
+        "formula_profile_mismatch",
+        "unavailable",
+    )
+    assert _enum_values(_column(work_items, "state")) == (
+        "pending",
+        "claimed",
+        "completed",
+        "unavailable",
+    )
     assert not _column(work_items, "attempt_count").nullable
     assert _foreign_key_constraints(work_items)[
         "fk_performance_recalculation_work_items_batch_id"
@@ -179,6 +212,9 @@ def test_recalculation_batch_and_work_item_metadata_match_durable_work_contract(
     assert _foreign_key_constraints(work_items)[
         "fk_performance_recalculation_work_items_calculation_id"
     ] == ("calculation_id", "score_performance_calculations.id")
+    assert "ck_performance_recalculation_work_item_claim_metadata" in _check_constraints(
+        work_items
+    )
     assert _indexes(work_items)["idx_performance_recalculation_work_items_batch_state"] == (
         ("batch_id", "state"),
         False,

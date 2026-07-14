@@ -7,6 +7,7 @@ from decimal import Decimal
 
 import pytest
 
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.domain.scores.user_stats import (
@@ -251,6 +252,6 @@ def _score(
         perfect=False,
         client_version="b20240201",
         submitted_at=datetime(2026, 6, 30, 0, 0, 0, tzinfo=UTC),
-        beatmap_status_at_submission="ranked",
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
         leaderboard_eligible_at_submission=leaderboard_eligible,
     )

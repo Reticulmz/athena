@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores import ScoreSubmission, ScoreSubmissionState
 
 
 def test_submission_creation_with_all_fields() -> None:
@@ -13,14 +13,14 @@ def test_submission_creation_with_all_fields() -> None:
         user_id=100,
         beatmap_checksum="xyz789",
         submitted_at=datetime(2026, 6, 11, 0, 0, 0, tzinfo=UTC),
-        state="received",
+        state=ScoreSubmissionState.RECEIVED,
         result_snapshot={"score_id": 42, "status": "completed"},
     )
 
     assert submission.id == 1
     assert submission.fingerprint == "abc123def456"
     assert submission.user_id == 100
-    assert submission.state == "received"
+    assert submission.state is ScoreSubmissionState.RECEIVED
     assert submission.result_snapshot == {"score_id": 42, "status": "completed"}
 
 
@@ -32,7 +32,7 @@ def test_submission_without_id() -> None:
         user_id=100,
         beatmap_checksum="abc",
         submitted_at=datetime.now(UTC),
-        state="received",
+        state=ScoreSubmissionState.RECEIVED,
         result_snapshot=None,
     )
 
@@ -48,12 +48,12 @@ def test_submission_state_transitions() -> None:
         user_id=100,
         beatmap_checksum="abc",
         submitted_at=datetime.now(UTC),
-        state="received",
+        state=ScoreSubmissionState.RECEIVED,
         result_snapshot=None,
     )
 
     # Initial state
-    assert submission.state == "received"
+    assert submission.state is ScoreSubmissionState.RECEIVED
 
     # Transition to processing
     submission = ScoreSubmission(
@@ -62,10 +62,10 @@ def test_submission_state_transitions() -> None:
         user_id=submission.user_id,
         beatmap_checksum=submission.beatmap_checksum,
         submitted_at=submission.submitted_at,
-        state="processing",
+        state=ScoreSubmissionState.PROCESSING,
         result_snapshot=None,
     )
-    assert submission.state == "processing"
+    assert submission.state is ScoreSubmissionState.PROCESSING
 
     # Transition to completed
     submission = ScoreSubmission(
@@ -74,10 +74,10 @@ def test_submission_state_transitions() -> None:
         user_id=submission.user_id,
         beatmap_checksum=submission.beatmap_checksum,
         submitted_at=submission.submitted_at,
-        state="completed",
+        state=ScoreSubmissionState.COMPLETED,
         result_snapshot={"score_id": 42},
     )
-    assert submission.state == "completed"
+    assert submission.state is ScoreSubmissionState.COMPLETED
     assert submission.result_snapshot is not None
 
 
@@ -89,9 +89,9 @@ def test_submission_terminal_rejected_state() -> None:
         user_id=100,
         beatmap_checksum="abc",
         submitted_at=datetime.now(UTC),
-        state="terminal_rejected",
+        state=ScoreSubmissionState.TERMINAL_REJECTED,
         result_snapshot={"error": "authorization_failure"},
     )
 
-    assert submission.state == "terminal_rejected"
+    assert submission.state is ScoreSubmissionState.TERMINAL_REJECTED
     assert submission.result_snapshot == {"error": "authorization_failure"}

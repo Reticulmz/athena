@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -17,6 +17,7 @@ from osu_server.domain.identity.friends import (
     FriendMutationStatus,
 )
 from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
@@ -58,7 +59,7 @@ from osu_server.repositories.sqlalchemy.unit_of_work import (
 from osu_server.services.commands.identity import AddFriendCommand, AddFriendUseCase
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import AsyncGenerator, Iterable
     from types import TracebackType
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,7 +91,15 @@ class FakeResult:
 
 
 class FakeSession(AbstractAsyncContextManager["FakeSession"]):
-    """AsyncSession-shaped fake that records transaction ownership."""
+    """Transaction ownershipを記録するAsyncSession test double.
+
+    Args:
+        get_results (dict[tuple[type[object], object], object] | None): get応答値.
+        execute_results (list[FakeResult] | None): execute応答値.
+
+    Notes:
+        Repository内SAVEPOINTは記録だけ行い, commit/rollbackはUoWだけが所有する.
+    """
 
     added: list[object]
     commits: int
@@ -103,6 +112,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     _next_personal_best_id: int
     _get_results: dict[tuple[type[object], object], object]
     _execute_results: list[FakeResult]
+    nested_transactions: int
 
     def __init__(
         self,
@@ -121,6 +131,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         self._next_personal_best_id = 30
         self._get_results = get_results or {}
         self._execute_results = execute_results or []
+        self.nested_transactions = 0
 
     @override
     async def __aenter__(self) -> FakeSession:
@@ -146,6 +157,16 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         if self._execute_results:
             return self._execute_results.pop(0)
         return FakeResult()
+
+    @asynccontextmanager
+    async def begin_nested(self) -> AsyncGenerator[None]:
+        """Repository statement用のSAVEPOINT contextを提供する.
+
+        Yields:
+            None: nested transaction内でstatementを実行できることを示す.
+        """
+        self.nested_transactions += 1
+        yield
 
     async def merge(self, instance: object) -> object:
         self.added.append(instance)
@@ -279,9 +300,19 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
 
 
 async def test_beatmap_leaderboard_repository_commits_through_sqlalchemy_unit_of_work() -> None:
+    """leaderboard repositoryの変更をUoWだけがcommitすることを確認する.
+
+    Returns:
+        None: repository内ではcommitせず、UoW commitで1回だけ確定することを示す.
+
+    Raises:
+        AssertionError: repositoryがtransaction境界を所有する場合.
+    """
     scope = _leaderboard_scope()
     session = FakeSession(
         execute_results=[
+            FakeResult(),
+            FakeResult(),
             FakeResult(),
             FakeResult(value=_leaderboard_model(scope=scope, score_id=90, score=1_000)),
         ]
@@ -305,9 +336,19 @@ async def test_beatmap_leaderboard_repository_commits_through_sqlalchemy_unit_of
 
 
 async def test_beatmap_leaderboard_repository_rolls_back_with_sqlalchemy_unit_of_work() -> None:
+    """leaderboard command失敗時にUoWが全変更をrollbackすることを確認する.
+
+    Returns:
+        None: repository更新後の例外でUoW rollbackが1回実行されることを示す.
+
+    Raises:
+        AssertionError: repositoryがrollbackするか、UoW rollbackが実行されない場合.
+    """
     scope = _leaderboard_scope()
     session = FakeSession(
         execute_results=[
+            FakeResult(),
+            FakeResult(),
             FakeResult(),
             FakeResult(value=_leaderboard_model(scope=scope, score_id=91, score=1_100)),
         ]
@@ -467,10 +508,11 @@ async def _raise_after_leaderboard_mutation(
 def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
+        beatmap_checksum="a" * 32,
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=2,
-        mod_filter_key=None,
+        mods=ModCombination.none(),
     )
 
 
@@ -496,10 +538,11 @@ def _leaderboard_model(
     return BeatmapLeaderboardUserBestModel(
         id=40,
         beatmap_id=scope.beatmap_id,
+        beatmap_checksum=scope.beatmap_checksum,
         ruleset=scope.ruleset.value,
         playstyle=scope.playstyle.value,
         user_id=scope.user_id,
-        mod_filter_key=scope.mod_filter_key,
+        mods=scope.mods.to_persistence_bitmask(),
         score_id=score_id,
         score=score,
         submitted_at=_NOW,

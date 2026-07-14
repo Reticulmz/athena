@@ -1,8 +1,9 @@
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
-from osu_server.domain.storage.blobs import Blob, InvalidBlobError
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind, InvalidBlobError
 from tests.support.runtime_assertions import assert_rejects_setattr
 
 VALID_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -18,7 +19,7 @@ def test_blob_creation_valid() -> None:
         sha256=VALID_SHA256,
         byte_size=0,
         content_type="application/octet-stream",
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
         storage_key=VALID_STORAGE_KEY,
         created_at=now,
     )
@@ -39,7 +40,7 @@ def test_blob_rejects_empty_content_type() -> None:
             sha256=VALID_SHA256,
             byte_size=0,
             content_type="",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -52,7 +53,7 @@ def test_blob_rejects_negative_byte_size() -> None:
             sha256=VALID_SHA256,
             byte_size=-1,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -68,7 +69,7 @@ def test_blob_rejects_invalid_sha256() -> None:
             sha256="short",
             byte_size=10,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -82,7 +83,7 @@ def test_blob_rejects_invalid_sha256() -> None:
             sha256=UPPERCASE_SHA256,
             byte_size=10,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -96,7 +97,7 @@ def test_blob_rejects_invalid_sha256() -> None:
             sha256=NON_HEX_SHA256,
             byte_size=10,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
         )
@@ -109,10 +110,27 @@ def test_blob_rejects_missing_storage_backend() -> None:
             sha256=VALID_SHA256,
             byte_size=10,
             content_type="text/plain",
-            storage_backend="",
+            storage_backend=cast("BlobStorageBackendKind", cast("object", "")),
             storage_key="key",
             created_at=datetime.now(UTC),
         )
+
+
+def test_blob_rejects_unknown_storage_backend() -> None:
+    with pytest.raises(InvalidBlobError, match="unknown storage_backend: memory"):
+        _ = Blob(
+            id=1,
+            sha256=VALID_SHA256,
+            byte_size=10,
+            content_type="text/plain",
+            storage_backend=cast("BlobStorageBackendKind", cast("object", "memory")),
+            storage_key="key",
+            created_at=datetime.now(UTC),
+        )
+
+
+def test_blob_storage_backend_kind_is_closed_value_set() -> None:
+    assert {backend.value for backend in BlobStorageBackendKind} == {"local", "s3"}
 
 
 def test_blob_rejects_missing_storage_key() -> None:
@@ -122,7 +140,7 @@ def test_blob_rejects_missing_storage_key() -> None:
             sha256=VALID_SHA256,
             byte_size=10,
             content_type="text/plain",
-            storage_backend="local",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="",
             created_at=datetime.now(UTC),
         )
@@ -165,7 +183,7 @@ def test_blob_is_immutable() -> None:
         sha256=VALID_SHA256,
         byte_size=0,
         content_type="application/octet-stream",
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
         storage_key="key",
         created_at=now,
     )

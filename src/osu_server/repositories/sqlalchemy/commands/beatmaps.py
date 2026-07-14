@@ -16,9 +16,12 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchRecord,
     BeatmapFetchState,
     BeatmapFetchTarget,
+    BeatmapFetchTargetKind,
     BeatmapFileAttachment,
+    BeatmapFileSource,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
@@ -298,7 +301,7 @@ class SQLAlchemyBeatmapCommandRepository:
         model = await self._get_fetch_state_model(target)
         if model is None:
             model = BeatmapFetchStateModel(
-                target_type=target.target_type,
+                target_type=target.kind.value,
                 target_key=target.target_key,
                 status=status.value,
                 attempt_count=0,
@@ -379,7 +382,7 @@ class SQLAlchemyBeatmapCommandRepository:
         model = (
             await self._session.execute(
                 select(BeatmapFetchStateModel).where(
-                    BeatmapFetchStateModel.target_type == target.target_type,
+                    BeatmapFetchStateModel.target_type == target.kind.value,
                     BeatmapFetchStateModel.target_key == target.target_key,
                 )
             )
@@ -392,7 +395,7 @@ def _mark_fetch_pending_statement(
     now: datetime,
 ) -> ReturningInsert[tuple[int]]:
     insert_statement = insert(BeatmapFetchStateModel).values(
-        target_type=target.target_type,
+        target_type=target.kind.value,
         target_key=target.target_key,
         status=BeatmapFetchState.PENDING_FETCH.value,
         attempt_count=1,
@@ -460,7 +463,7 @@ def _beatmap_to_model(
         id=beatmap.id,
         beatmapset_id=beatmap.beatmapset_id,
         checksum_md5=beatmap.checksum_md5,
-        mode=beatmap.mode,
+        mode=beatmap.mode.value,
         version=beatmap.version,
         total_length=beatmap.total_length,
         hit_length=beatmap.hit_length,
@@ -511,7 +514,7 @@ def _beatmap_to_domain(
         id=model.id,
         beatmapset_id=model.beatmapset_id,
         checksum_md5=model.checksum_md5 or "",
-        mode=model.mode,
+        mode=BeatmapMode(model.mode),
         version=model.version,
         total_length=model.total_length,
         hit_length=model.hit_length,
@@ -550,7 +553,7 @@ def _attachment_to_model(attachment: BeatmapFileAttachment) -> BeatmapFileAttach
         blob_id=attachment.blob_id,
         checksum_md5=attachment.checksum_md5,
         verified_md5=attachment.checksum_md5,
-        source=attachment.source,
+        source=attachment.source.value,
         original_filename=attachment.original_filename,
         fetched_at=attachment.fetched_at,
         verified_at=attachment.verified_at,
@@ -562,7 +565,7 @@ def _attachment_to_domain(model: BeatmapFileAttachmentModel) -> BeatmapFileAttac
         beatmap_id=model.beatmap_id,
         blob_id=model.blob_id,
         checksum_md5=model.checksum_md5,
-        source=model.source,
+        source=BeatmapFileSource(model.source),
         original_filename=model.original_filename,
         fetched_at=model.fetched_at,
         verified_at=model.verified_at,
@@ -572,7 +575,10 @@ def _attachment_to_domain(model: BeatmapFileAttachmentModel) -> BeatmapFileAttac
 
 def _fetch_state_to_domain(model: BeatmapFetchStateModel) -> BeatmapFetchRecord:
     return BeatmapFetchRecord(
-        target=BeatmapFetchTarget(target_type=model.target_type, target_key=model.target_key),
+        target=BeatmapFetchTarget(
+            target_type=BeatmapFetchTargetKind(model.target_type),
+            target_key=model.target_key,
+        ),
         status=BeatmapFetchState(model.status),
         attempt_count=model.attempt_count,
         last_error=model.last_error,

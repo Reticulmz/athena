@@ -7,6 +7,7 @@ from tests.factories.beatmap import (
     store_beatmap_file_body_blob,
 )
 
+from osu_server.domain.storage.blobs import BlobStorageBackendKind
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 from osu_server.repositories.memory.queries.blobs import InMemoryBlobQueryRepository
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -64,7 +65,7 @@ def _make_blob_service() -> tuple[BlobStorageService, RecordingBlobBackend]:
         blob_query_repo=InMemoryBlobQueryRepository(uow_factory),
         uow_factory=uow_factory,
         backend=backend,
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
     )
     return service, backend
 

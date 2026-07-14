@@ -31,6 +31,7 @@ from osu_server.shared.errors import DecryptionError
 
 if TYPE_CHECKING:
     from osu_server.domain.scores.decryption import DecryptedPayload
+    from osu_server.domain.scores.mods import ModCombination
     from osu_server.domain.scores.personal_best import PersonalBestDelta
     from osu_server.domain.scores.user_stats import UserCurrentStats
 
@@ -612,6 +613,32 @@ def _parse_bool(value: str) -> bool:
             raise ValueError(f"invalid boolean value: {value}")
 
 
+def _parse_stable_mods(value: str) -> ModCombination:
+    """stable Mods fieldをcanonical Mod combinationへ変換する.
+
+    Args:
+        value (str): stable payload内の10進bitmask文字列.
+
+    Returns:
+        ModCombination: stable対応済みbitだけを含むcanonical Mods.
+
+    Raises:
+        ParseError: integer変換に失敗した場合, または無効/未対応bitを含む場合.
+
+    Notes:
+        wire integerのsyntax errorとMod bitmaskのsemantic errorを別messageで報告する.
+    """
+    try:
+        bitmask = int(value)
+    except ValueError as exc:
+        raise ParseError(f"Failed to parse mods integer field: {exc}") from exc
+
+    try:
+        return stable_mod_bitmask_to_mod_combination(bitmask)
+    except ValueError as exc:
+        raise ParseError(f"Invalid stable mod bitmask: {exc}") from exc
+
+
 def _parse_legacy_payload(fields: list[str]) -> ParsedScore:
     try:
         return ParsedScore(
@@ -620,7 +647,7 @@ def _parse_legacy_payload(fields: list[str]) -> ParsedScore:
             beatmap_checksum=fields[2],
             online_checksum=fields[3],
             ruleset=int(fields[4]),
-            mods=stable_mod_bitmask_to_mod_combination(int(fields[5])),
+            mods=_parse_stable_mods(fields[5]),
             n300=int(fields[6]),
             n100=int(fields[7]),
             n50=int(fields[8]),
@@ -653,7 +680,7 @@ def _parse_stable_payload(fields: list[str]) -> ParsedScore:
             max_combo=int(fields[10]),
             perfect=_parse_bool(fields[11]),
             client_grade=fields[12],
-            mods=stable_mod_bitmask_to_mod_combination(int(fields[13])),
+            mods=_parse_stable_mods(fields[13]),
             passed=_parse_bool(fields[14]),
             ruleset=int(fields[15]),
             client_submitted_at=fields[_STABLE_SUBMITTED_AT_INDEX]

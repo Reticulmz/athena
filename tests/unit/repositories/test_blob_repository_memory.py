@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from osu_server.domain.storage.blobs import NewBlob
+from osu_server.domain.storage.blobs import BlobStorageBackendKind, NewBlob
 from osu_server.repositories.interfaces.commands.blobs import (
     BlobCommandRepository,
     DuplicateBlobError,
@@ -28,7 +28,7 @@ def _new_blob(
         sha256=sha256,
         byte_size=byte_size,
         content_type=content_type,
-        storage_backend=storage_backend,
+        storage_backend=BlobStorageBackendKind(storage_backend),
         storage_key=storage_key,
     )
 

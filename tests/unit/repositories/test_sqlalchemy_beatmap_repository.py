@@ -12,9 +12,12 @@ from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
     BeatmapFetchTarget,
+    BeatmapFetchTargetKind,
     BeatmapFileAttachment,
+    BeatmapFileSource,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
@@ -243,7 +246,7 @@ def _beatmap_domain(
         id=2_000,
         beatmapset_id=1_000,
         checksum_md5=_CHECKSUM,
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Another",
         total_length=240,
         hit_length=220,
@@ -290,7 +293,7 @@ def _attachment_domain() -> BeatmapFileAttachment:
         beatmap_id=2_000,
         blob_id=55,
         checksum_md5=_CHECKSUM,
-        source="official",
+        source=BeatmapFileSource.OFFICIAL,
         original_filename="2000.osu",
         fetched_at=_NOW,
         verified_at=_NOW,
@@ -412,6 +415,33 @@ async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
 
     assert await _repo(retry_session).try_mark_fetch_pending(target, now=_NOW) is True
     assert retry_session.flushes == 0
+
+
+async def test_string_fetch_target_kind_is_normalized_for_query_and_write() -> None:
+    """runtime string target_typeをqueryとwriteの両方でtyped kindへ正規化する.
+
+    Returns:
+        None: lookup, pending upsert, completed insertが正規化値を使用したことを示す.
+
+    Raises:
+        AssertionError: string target_typeでAttributeErrorまたは誤った保存値が生じる場合.
+    """
+    target = BeatmapFetchTarget(
+        target_type=cast("BeatmapFetchTargetKind", cast("object", "metadata:beatmap")),
+        target_key="2000",
+    )
+    lookup_session = FakeSession(execute_results=[FakeResult(_fetch_state_model())])
+
+    assert await _repo(lookup_session).get_fetch_state(target) is not None
+
+    pending_session = FakeSession(execute_results=[FakeResult(1)])
+    assert await _repo(pending_session).try_mark_fetch_pending(target, now=_NOW) is True
+
+    completed_session = FakeSession(execute_results=[FakeResult()])
+    await _repo(completed_session).mark_fetch_succeeded(target, now=_NOW)
+    created = completed_session.added[0]
+    assert isinstance(created, BeatmapFetchStateModel)
+    assert created.target_type == BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID.value
 
 
 async def test_fetch_pending_marker_uses_atomic_conflict_update() -> None:

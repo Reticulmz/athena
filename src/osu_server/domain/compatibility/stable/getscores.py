@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
-    from osu_server.domain.scores.leaderboards import LeaderboardModFilter
+    from osu_server.domain.scores.mods import ModCombination
     from osu_server.domain.scores.personal_best import LeaderboardCategory
     from osu_server.domain.scores.score import Playstyle, Ruleset
 
@@ -40,10 +40,19 @@ class GetscoresParseWarning(Enum):
 
 @dataclass(slots=True, frozen=True)
 class StableLeaderboardSelection:
-    """stable client の leaderboard 選択状態。"""
+    """stable clientのleaderboard選択結果.
+
+    Attributes:
+        category (LeaderboardCategory | None): 選択されたleaderboard category.
+            未対応のcategoryではNone.
+        selected_mods (ModCombination | None): Selected Modsで完全一致に使う
+            raw legacy Mod bitflag. 他categoryではNone.
+        header_only (bool): score行を返さずheaderだけを返す場合はTrue.
+        unsupported (bool): 未対応のcategoryまたはMod指定を検出した場合はTrue.
+    """
 
     category: LeaderboardCategory | None
-    selected_mod_filter: LeaderboardModFilter | None
+    selected_mods: ModCombination | None
     header_only: bool
     unsupported: bool = False
 

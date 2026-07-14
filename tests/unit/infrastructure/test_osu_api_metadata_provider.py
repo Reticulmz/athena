@@ -10,6 +10,7 @@ import pytest
 
 from osu_server.domain.beatmaps import (
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
@@ -377,7 +378,7 @@ class TestMirrorMetadataProviderService:
         assert len(result.beatmaps) == 1
         beatmap = result.beatmaps[0]
         assert beatmap.beatmap_id == 100
-        assert beatmap.mode == "osu"
+        assert beatmap.mode is BeatmapMode.OSU
         assert beatmap.checksum_md5 == "a" * 32
         assert beatmap.official_status_source is BeatmapMetadataSource.MIRROR
         assert beatmap.official_status_verified is BeatmapSourceVerification.UNVERIFIED

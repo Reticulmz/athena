@@ -15,6 +15,7 @@ from osu_server.domain.scores.performance import (
     PerformanceRecalculationBatchStatus,
     PerformanceRecalculationWorkItem,
     PerformanceRecalculationWorkItemState,
+    RecalculationCandidateReason,
 )
 from osu_server.repositories.interfaces.commands.score_performance import (
     ScorePerformanceCalculationClaimResult,
@@ -265,6 +266,20 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: CreateScorePerformanceRecalculationBatch,
     ) -> PerformanceRecalculationBatch:
+        """再計算batchとwork itemをUnit of Work sessionへ追加する.
+
+        Args:
+            command (CreateScorePerformanceRecalculationBatch): Batch metadataと型付き候補.
+
+        Returns:
+            PerformanceRecalculationBatch: IDが割り当てられた再計算batch.
+
+        Raises:
+            ScorePerformanceCommandConflictError: 一意制約へ競合した場合.
+
+        Notes:
+            commit/rollbackは呼び出し元のUnit of Workが所有する.
+        """
         status = (
             PerformanceRecalculationBatchStatus.COMPLETED
             if len(command.work_items) == 0
@@ -273,7 +288,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
         batch = PerformanceRecalculationBatchModel(
             status=status.value,
             filters=dict(command.filters),
-            reason_counts=dict(command.reason_counts),
+            reason_counts={reason.value: count for reason, count in command.reason_counts.items()},
             target_calculator_version=command.target_calculator_version,
             target_formula_profile=command.target_formula_profile.value,
             candidate_count=len(command.work_items),
@@ -290,7 +305,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
             work_item = PerformanceRecalculationWorkItemModel(
                 batch_id=batch.id,
                 score_id=work.score_id,
-                reason=work.reason,
+                reason=work.reason.value,
                 state=PerformanceRecalculationWorkItemState.PENDING.value,
                 calculation_id=None,
                 claim_owner=None,
@@ -566,16 +581,18 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         model: ScorePerformanceCalculationModel,
     ) -> PerformanceCalculation:
+        model.claim_owner = None
+        model.claim_expires_at = None
         if not model.is_current:
             old_current = await self._get_current_model_for_score(model.score_id)
             if old_current is not None and old_current.id != model.id:
                 old_current.state = PerformanceCalculationState.SUPERSEDED.value
                 old_current.is_current = False
+                old_current.claim_owner = None
+                old_current.claim_expires_at = None
                 await self._flush_or_raise_conflict()
             model.is_current = True
 
-        model.claim_owner = None
-        model.claim_expires_at = None
         await self._flush_or_raise_conflict()
         await self._session.refresh(model)
         return _model_to_domain(model)
@@ -697,14 +714,11 @@ def _batch_model_to_domain(
     *,
     last_error: str | None,
 ) -> PerformanceRecalculationBatch:
-    reason_counts = {
-        reason: count for reason, count in model.reason_counts.items() if isinstance(count, int)
-    }
     return PerformanceRecalculationBatch(
         id=model.id,
         status=PerformanceRecalculationBatchStatus(model.status),
         filters=model.filters,
-        reason_counts=reason_counts,
+        reason_counts=_reason_counts_to_domain(model),
         target_calculator_version=model.target_calculator_version,
         target_formula_profile=FormulaProfile(model.target_formula_profile),
         candidate_count=model.candidate_count,
@@ -716,6 +730,18 @@ def _batch_model_to_domain(
     )
 
 
+def _reason_counts_to_domain(
+    model: PerformanceRecalculationBatchModel,
+) -> dict[RecalculationCandidateReason, int]:
+    reason_counts: dict[RecalculationCandidateReason, int] = {}
+    for reason, count in model.reason_counts.items():
+        if isinstance(count, bool) or not isinstance(count, int):
+            msg = f"batch {model.id} has non-integer reason_counts value for {reason!r}: {count!r}"
+            raise TypeError(msg)
+        reason_counts[RecalculationCandidateReason(reason)] = count
+    return reason_counts
+
+
 def _work_item_model_to_domain(
     model: PerformanceRecalculationWorkItemModel,
 ) -> PerformanceRecalculationWorkItem:
@@ -723,7 +749,7 @@ def _work_item_model_to_domain(
         id=model.id,
         batch_id=model.batch_id,
         score_id=model.score_id,
-        reason=model.reason,
+        reason=RecalculationCandidateReason(model.reason),
         state=PerformanceRecalculationWorkItemState(model.state),
         calculation_id=model.calculation_id,
         claim_owner=model.claim_owner,

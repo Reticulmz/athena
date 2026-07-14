@@ -34,7 +34,6 @@ from osu_server.repositories.interfaces.queries.replay_download import (
 )
 from osu_server.repositories.interfaces.queries.roles import RoleQueryRepository
 from osu_server.repositories.interfaces.queries.score_performance import (
-    RecalculationCandidateReason,
     ScorePerformanceCandidateSelection,
     ScorePerformanceQueryRepository,
     ScorePerformanceRecalculationCandidate,
@@ -61,7 +60,6 @@ __all__ = [
     "FriendRelationshipQueryRepository",
     "LeaderboardReadScope",
     "PersonalBestQueryRepository",
-    "RecalculationCandidateReason",
     "ReplayDownloadAvailableReplayCandidate",
     "ReplayDownloadCandidate",
     "ReplayDownloadCandidateKind",

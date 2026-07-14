@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from osu_server.domain.storage.blobs import NewBlob
+from osu_server.domain.storage.blobs import BlobStorageBackendKind, NewBlob
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.interfaces.commands.blobs import DuplicateBlobError
@@ -77,7 +77,7 @@ def _new_blob(*, label: str = "blob repository integration one") -> NewBlob:
         sha256=digest,
         byte_size=len(label),
         content_type="text/plain",
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
         storage_key=f"{digest[:2]}/{digest[2:4]}/{digest}",
     )
 

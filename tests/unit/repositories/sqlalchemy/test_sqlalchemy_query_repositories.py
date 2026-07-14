@@ -13,16 +13,21 @@ from typing import TYPE_CHECKING, cast, override
 from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFetchTarget,
+    BeatmapFetchTargetKind,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSourceVerification,
 )
 from osu_server.domain.chat.channels import ChannelType
-from osu_server.domain.scores.performance import FormulaProfile, PerformanceCalculationState
+from osu_server.domain.scores.performance import (
+    FormulaProfile,
+    PerformanceCalculationState,
+    RecalculationCandidateReason,
+)
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset
 from osu_server.repositories.interfaces.queries.score_performance import (
-    RecalculationCandidateReason,
     ScorePerformanceCandidateSelection,
     ScorePerformanceQueryRepository,
 )
@@ -538,7 +543,9 @@ async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
     )
     file_attachment = await beatmaps.get_current_file_attachment(fixture.beatmap.id)
     fetch_state = await beatmaps.get_fetch_state(
-        BeatmapFetchTarget(target_type="beatmap", target_key="7")
+        BeatmapFetchTarget(
+            target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID, target_key="7"
+        )
     )
     legacy_by_checksum = await legacy_getscores.find_by_checksum("b" * 32)
     legacy_by_filename = await legacy_getscores.find_by_filename_in_beatmapset(
@@ -547,7 +554,9 @@ async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
     )
     legacy_beatmapset = await legacy_getscores.get_beatmapset(fixture.beatmapset.id)
     legacy_fetch_state = await legacy_getscores.get_fetch_state(
-        BeatmapFetchTarget(target_type="beatmap", target_key="7")
+        BeatmapFetchTarget(
+            target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID, target_key="7"
+        )
     )
 
     assert beatmap_by_id is not None
@@ -961,7 +970,7 @@ def _beatmap_model() -> BeatmapModel:
         id=7,
         beatmapset_id=6,
         checksum_md5="b" * 32,
-        mode=0,
+        mode=BeatmapMode.OSU.value,
         version="Insane",
         total_length=120,
         hit_length=110,
@@ -1003,7 +1012,7 @@ def _attachment_model(
 
 def _fetch_state_model() -> BeatmapFetchStateModel:
     return BeatmapFetchStateModel(
-        target_type="beatmap",
+        target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID.value,
         target_key="7",
         status=BeatmapFetchState.FRESH.value,
         attempt_count=1,

@@ -13,6 +13,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSourceVerification,
 )
@@ -27,6 +28,7 @@ from osu_server.domain.scores.user_stats import UserStatsScope
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBest,
     BeatmapLeaderboardUserBestScope,
+    BeatmapLeaderboardUserScope,
 )
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import LeaderboardReadScope
 from osu_server.repositories.memory.queries.beatmap_leaderboards import (
@@ -47,6 +49,8 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.commands.replays import ReplayCommandRepository
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWork
 
+_BEATMAP_CHECKSUM = "a" * 32
+
 
 def _score(
     *,
@@ -56,7 +60,7 @@ def _score(
     accuracy: float = 0.95,
     passed: bool = True,
     leaderboard_eligible_at_submission: bool = True,
-    beatmap_checksum: str = "abc123",
+    beatmap_checksum: str = _BEATMAP_CHECKSUM,
     mods: ModCombination | None = None,
 ) -> Score:
     return Score(
@@ -82,7 +86,7 @@ def _score(
         perfect=False,
         client_version="20240101",
         submitted_at=datetime.now(UTC),
-        beatmap_status_at_submission="ranked",
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
         leaderboard_eligible_at_submission=leaderboard_eligible_at_submission,
     )
 
@@ -141,7 +145,7 @@ async def test_replay_create_failure_rolls_back_submission_score_and_replay() ->
             SubmitScoreCommand(
                 fingerprint="fingerprint-1",
                 user_id=1000,
-                beatmap_checksum="abc123",
+                beatmap_checksum=_BEATMAP_CHECKSUM,
                 submitted_at=datetime.now(UTC),
                 outcome=SubmitScoreCommandOutcome.COMPLETED,
                 score=_score(),
@@ -169,7 +173,7 @@ async def test_completed_submission_commits_one_snapshot() -> None:
         SubmitScoreCommand(
             fingerprint="fingerprint-2",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(online_checksum="online-2"),
@@ -241,7 +245,7 @@ async def test_completed_submission_commits_one_snapshot() -> None:
         SubmitScoreCommand(
             fingerprint="fingerprint-2",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(online_checksum="online-2-retry"),
@@ -272,7 +276,7 @@ async def test_completed_submission_returns_cumulative_beatmap_play_and_pass_cou
         SubmitScoreCommand(
             fingerprint="fingerprint-count-1",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(online_checksum="online-count-1", passed=False),
@@ -284,7 +288,7 @@ async def test_completed_submission_returns_cumulative_beatmap_play_and_pass_cou
         SubmitScoreCommand(
             fingerprint="fingerprint-count-2",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(online_checksum="online-count-2", passed=True),
@@ -303,19 +307,19 @@ async def test_completed_submission_returns_cumulative_beatmap_play_and_pass_cou
 async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_delta() -> None:
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
-    selected_mod_filter_key = int(Mod.HIDDEN | Mod.DOUBLE_TIME)
+    first_mods = ModCombination(Mod.HIDDEN | Mod.NIGHTCORE)
 
     first = await use_case.execute(
         SubmitScoreCommand(
             fingerprint="fingerprint-pb-1",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(
                 online_checksum="online-pb-1",
                 score=500000,
-                mods=ModCombination(Mod.HIDDEN | Mod.NIGHTCORE),
+                mods=first_mods,
             ),
             beatmap_id=1,
             beatmapset_id=10,
@@ -331,35 +335,35 @@ async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_d
     assert first.personal_best_delta.updated is True
 
     async with factory() as uow:
-        all_mods_best = await uow.beatmap_leaderboards.get_user_best(
+        first_mod_best = await uow.beatmap_leaderboards.get_user_best(
             BeatmapLeaderboardUserBestScope(
                 beatmap_id=1,
+                beatmap_checksum=_BEATMAP_CHECKSUM,
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
                 user_id=1000,
-                mod_filter_key=None,
+                mods=first_mods,
             )
         )
-        selected_mods_best = await uow.beatmap_leaderboards.get_user_best(
-            BeatmapLeaderboardUserBestScope(
+        global_best = await uow.beatmap_leaderboards.get_global_user_best(
+            BeatmapLeaderboardUserScope(
                 beatmap_id=1,
+                beatmap_checksum=_BEATMAP_CHECKSUM,
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
                 user_id=1000,
-                mod_filter_key=selected_mod_filter_key,
             )
         )
 
-    assert all_mods_best is not None
-    assert all_mods_best.score_id == first.score_id
-    assert selected_mods_best is not None
-    assert selected_mods_best.score_id == first.score_id
+    assert first_mod_best is not None
+    assert first_mod_best.score_id == first.score_id
+    assert global_best == first_mod_best
 
     lower = await use_case.execute(
         SubmitScoreCommand(
             fingerprint="fingerprint-pb-2",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(
@@ -382,19 +386,31 @@ async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_d
     assert lower.personal_best_delta.updated is False
 
     async with factory() as uow:
-        all_mods_best_after_lower = await uow.beatmap_leaderboards.get_user_best(
+        no_mod_best_after_lower = await uow.beatmap_leaderboards.get_user_best(
             BeatmapLeaderboardUserBestScope(
                 beatmap_id=1,
+                beatmap_checksum=_BEATMAP_CHECKSUM,
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
                 user_id=1000,
-                mod_filter_key=None,
+                mods=ModCombination.none(),
+            )
+        )
+        global_best_after_lower = await uow.beatmap_leaderboards.get_global_user_best(
+            BeatmapLeaderboardUserScope(
+                beatmap_id=1,
+                beatmap_checksum=_BEATMAP_CHECKSUM,
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                user_id=1000,
             )
         )
         lower_submission = await uow.submissions.get_by_fingerprint("fingerprint-pb-2")
 
-    assert all_mods_best_after_lower is not None
-    assert all_mods_best_after_lower.score_id == first.score_id
+    assert no_mod_best_after_lower is not None
+    assert no_mod_best_after_lower.score_id == lower.score_id
+    assert global_best_after_lower is not None
+    assert global_best_after_lower.score_id == first.score_id
     assert lower_submission is not None
     assert lower_submission.result_snapshot is not None
     assert lower_submission.result_snapshot["personal_best_delta"] == {
@@ -413,7 +429,7 @@ async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_d
         SubmitScoreCommand(
             fingerprint="fingerprint-pb-2",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(online_checksum="online-pb-2-retry", score=900000),
@@ -426,20 +442,21 @@ async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_d
     )
 
     async with factory() as uow:
-        all_mods_best_after_retry = await uow.beatmap_leaderboards.get_user_best(
+        no_mod_best_after_retry = await uow.beatmap_leaderboards.get_user_best(
             BeatmapLeaderboardUserBestScope(
                 beatmap_id=1,
+                beatmap_checksum=_BEATMAP_CHECKSUM,
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
                 user_id=1000,
-                mod_filter_key=None,
+                mods=ModCombination.none(),
             )
         )
 
     assert retry.existing_submission is True
     assert retry.score_id == lower.score_id
     assert retry.personal_best_delta == lower.personal_best_delta
-    assert all_mods_best_after_retry == all_mods_best_after_lower
+    assert no_mod_best_after_retry == no_mod_best_after_lower
 
 
 @pytest.mark.asyncio
@@ -451,7 +468,7 @@ async def test_submission_persists_leaderboard_eligibility_snapshot() -> None:
         SubmitScoreCommand(
             fingerprint="fingerprint-ineligible-stored",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(
@@ -494,7 +511,7 @@ async def test_ineligible_submission_does_not_update_submit_personal_best_delta(
         SubmitScoreCommand(
             fingerprint="fingerprint-existing-pb",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(online_checksum="online-existing-pb", score=500000),
@@ -511,7 +528,7 @@ async def test_ineligible_submission_does_not_update_submit_personal_best_delta(
         SubmitScoreCommand(
             fingerprint=f"fingerprint-candidate-{candidate_passed}-{candidate_eligible}",
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum=_BEATMAP_CHECKSUM,
             submitted_at=datetime.now(UTC),
             outcome=SubmitScoreCommandOutcome.COMPLETED,
             score=_score(
@@ -532,10 +549,11 @@ async def test_ineligible_submission_does_not_update_submit_personal_best_delta(
         all_mods_best = await uow.beatmap_leaderboards.get_user_best(
             BeatmapLeaderboardUserBestScope(
                 beatmap_id=1,
+                beatmap_checksum=_BEATMAP_CHECKSUM,
                 ruleset=Ruleset.OSU,
                 playstyle=Playstyle.VANILLA,
                 user_id=1000,
-                mod_filter_key=None,
+                mods=ModCombination.none(),
             )
         )
 
@@ -591,7 +609,7 @@ async def test_stored_but_ineligible_submission_is_not_returned_from_leaderboard
         id=1,
         beatmapset_id=10,
         checksum_md5=beatmap_checksum,
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Insane",
         total_length=None,
         hit_length=None,
@@ -617,10 +635,11 @@ async def test_stored_but_ineligible_submission_is_not_returned_from_leaderboard
         id=result.score_id,
         scope=BeatmapLeaderboardUserBestScope(
             beatmap_id=1,
+            beatmap_checksum=beatmap_checksum,
             ruleset=Ruleset.OSU,
             playstyle=Playstyle.VANILLA,
             user_id=1000,
-            mod_filter_key=None,
+            mods=ModCombination.none(),
         ),
         score_id=result.score_id,
         rank_key=ScoreRankKey(
@@ -630,7 +649,7 @@ async def test_stored_but_ineligible_submission_is_not_returned_from_leaderboard
         ),
     )
     state.beatmap_leaderboard_user_best_id_by_scope[
-        (1, Ruleset.OSU.value, Playstyle.VANILLA.value, 1000, None)
+        (1, Ruleset.OSU.value, Playstyle.VANILLA.value, 1000, int(Mod.NONE))
     ] = result.score_id
     factory.commit_state(state)
 
@@ -642,7 +661,6 @@ async def test_stored_but_ineligible_submission_is_not_returned_from_leaderboard
             ruleset=Ruleset.OSU,
             playstyle=Playstyle.VANILLA,
             category=LeaderboardCategory.GLOBAL,
-            mod_filter_key=None,
             country=None,
             eligible_user_ids=None,
         ),

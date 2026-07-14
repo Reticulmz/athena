@@ -17,6 +17,7 @@ from osu_server.domain.scores.performance import (
     PerformanceCalculationState,
     PerformanceRecalculationBatchStatus,
     PerformanceRecalculationWorkItemState,
+    RecalculationCandidateReason,
 )
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.commands.score_performance import (
@@ -464,13 +465,13 @@ async def _create_batch(factory: UnitOfWorkFactory, *, score_ids: tuple[int, ...
         batch = await uow.score_performance.create_recalculation_batch(
             CreateScorePerformanceRecalculationBatch(
                 filters={"all": True},
-                reason_counts={"stale": len(score_ids)},
+                reason_counts={RecalculationCandidateReason.STALE: len(score_ids)},
                 target_calculator_version=_CALCULATOR_VERSION,
                 target_formula_profile=FormulaProfile.VANILLA_RANKED,
                 work_items=tuple(
                     CreateScorePerformanceRecalculationWorkItem(
                         score_id=score_id,
-                        reason="stale",
+                        reason=RecalculationCandidateReason.STALE,
                     )
                     for score_id in score_ids
                 ),
@@ -612,7 +613,7 @@ def _score() -> Score:
         perfect=False,
         client_version="b20250101",
         submitted_at=_NOW,
-        beatmap_status_at_submission=BeatmapRankStatus.RANKED.value,
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
     )
 
 

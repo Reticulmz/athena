@@ -10,6 +10,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFileState,
     BeatmapFreshnessPolicy,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSourceVerification,
 )
@@ -41,7 +42,7 @@ def _make_beatmap(
         id=2_000,
         beatmapset_id=1_000,
         checksum_md5=_CHECKSUM,
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Another",
         total_length=240,
         hit_length=220,

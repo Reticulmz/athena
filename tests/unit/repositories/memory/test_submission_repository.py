@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 from osu_server.repositories.memory.commands.submissions import (
     InMemoryScoreSubmissionCommandRepository,
@@ -28,7 +28,7 @@ def sample_submission() -> ScoreSubmission:
         user_id=1,
         beatmap_checksum="beatmap_md5",
         submitted_at=datetime.now(tz=UTC),
-        state="received",
+        state=ScoreSubmissionState.RECEIVED,
         result_snapshot=None,
     )
 
@@ -57,7 +57,7 @@ async def test_create_increments_id(
             user_id=2,
             beatmap_checksum="beatmap_md5_2",
             submitted_at=datetime.now(tz=UTC),
-            state="received",
+            state=ScoreSubmissionState.RECEIVED,
             result_snapshot=None,
         )
     )
@@ -77,7 +77,7 @@ async def test_create_rejects_duplicate_fingerprint(
         user_id=999,
         beatmap_checksum="different_checksum",
         submitted_at=datetime.now(tz=UTC),
-        state="received",
+        state=ScoreSubmissionState.RECEIVED,
         result_snapshot=None,
     )
     with pytest.raises(ValueError, match="fingerprint already exists"):
@@ -110,13 +110,13 @@ async def test_update_state_changes_state(
 ) -> None:
     """Test that update_state() changes the submission state."""
     created = await repository.create(sample_submission)
-    assert created.state == "received"
+    assert created.state is ScoreSubmissionState.RECEIVED
     assert created.id is not None
 
-    await repository.update_state(created.id, "processing")
+    await repository.update_state(created.id, ScoreSubmissionState.PROCESSING)
     retrieved = await repository.get_by_fingerprint(sample_submission.fingerprint)
     assert retrieved is not None
-    assert retrieved.state == "processing"
+    assert retrieved.state is ScoreSubmissionState.PROCESSING
 
 
 async def test_update_state_raises_when_id_not_found(
@@ -124,7 +124,7 @@ async def test_update_state_raises_when_id_not_found(
 ) -> None:
     """Test that update_state() raises ValueError when id not found."""
     with pytest.raises(ValueError, match="Submission not found"):
-        await repository.update_state(999, "processing")
+        await repository.update_state(999, ScoreSubmissionState.PROCESSING)
 
 
 async def test_idempotent_retrieval(

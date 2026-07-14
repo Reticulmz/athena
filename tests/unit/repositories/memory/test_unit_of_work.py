@@ -9,6 +9,7 @@ import pytest
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.scores.leaderboards import ScoreRankKey
+from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
@@ -196,10 +197,11 @@ async def _raise_after_command_mutation(factory: InMemoryUnitOfWorkFactory) -> N
 def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
+        beatmap_checksum="a" * 32,
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=2,
-        mod_filter_key=None,
+        mods=ModCombination.none(),
     )
 
 

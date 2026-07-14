@@ -12,9 +12,12 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchRecord,
     BeatmapFetchState,
     BeatmapFetchTarget,
+    BeatmapFetchTargetKind,
     BeatmapFileAttachment,
+    BeatmapFileSource,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
@@ -26,7 +29,7 @@ from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.users import User
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
-from osu_server.domain.storage.blobs import Blob
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,7 +122,11 @@ def score_to_domain(model: ScoreModel) -> Score:
         perfect=model.perfect,
         client_version=model.client_version,
         submitted_at=model.submitted_at,
-        beatmap_status_at_submission=model.beatmap_status_at_submission,
+        beatmap_status_at_submission=(
+            BeatmapRankStatus(model.beatmap_status_at_submission)
+            if model.beatmap_status_at_submission is not None
+            else None
+        ),
         leaderboard_eligible_at_submission=model.leaderboard_eligible_at_submission,
         fail_time_ms=model.fail_time_ms,
         play_time_seconds=model.play_time_seconds,
@@ -137,7 +144,7 @@ def blob_to_domain(model: BlobModel) -> Blob:
         sha256=model.sha256,
         byte_size=model.byte_size,
         content_type=model.content_type,
-        storage_backend=model.storage_backend,
+        storage_backend=BlobStorageBackendKind(model.storage_backend),
         storage_key=model.storage_key,
         created_at=model.created_at,
     )
@@ -168,7 +175,7 @@ def beatmap_to_domain(
         id=model.id,
         beatmapset_id=model.beatmapset_id,
         checksum_md5=model.checksum_md5 or "",
-        mode=model.mode,
+        mode=BeatmapMode(model.mode),
         version=model.version,
         total_length=model.total_length,
         hit_length=model.hit_length,
@@ -206,7 +213,7 @@ def attachment_to_domain(model: BeatmapFileAttachmentModel) -> BeatmapFileAttach
         beatmap_id=model.beatmap_id,
         blob_id=model.blob_id,
         checksum_md5=model.checksum_md5,
-        source=model.source,
+        source=BeatmapFileSource(model.source),
         original_filename=model.original_filename,
         fetched_at=model.fetched_at,
         verified_at=model.verified_at,
@@ -216,7 +223,10 @@ def attachment_to_domain(model: BeatmapFileAttachmentModel) -> BeatmapFileAttach
 
 def fetch_state_to_domain(model: BeatmapFetchStateModel) -> BeatmapFetchRecord:
     return BeatmapFetchRecord(
-        target=BeatmapFetchTarget(target_type=model.target_type, target_key=model.target_key),
+        target=BeatmapFetchTarget(
+            target_type=BeatmapFetchTargetKind(model.target_type),
+            target_key=model.target_key,
+        ),
         status=BeatmapFetchState(model.status),
         attempt_count=model.attempt_count,
         last_error=model.last_error,

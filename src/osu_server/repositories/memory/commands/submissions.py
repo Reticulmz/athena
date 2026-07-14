@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from osu_server.domain.scores.submission import ScoreSubmission
+    from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
     from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
 
 
@@ -37,7 +37,7 @@ class InMemoryScoreSubmissionCommandRepository:
     async def update_state(
         self,
         submission_id: int,
-        state: str,
+        state: ScoreSubmissionState,
         result_snapshot: dict[str, object] | None = None,
     ) -> None:
         existing = self._state.submissions_by_id.get(submission_id)

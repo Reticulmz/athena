@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         PerformanceCalculationState,
         PerformanceRecalculationBatch,
         PerformanceRecalculationWorkItem,
+        RecalculationCandidateReason,
     )
 
 
@@ -127,18 +128,38 @@ class MarkScorePerformanceCalculationUnavailable:
 
 @dataclass(frozen=True, slots=True)
 class CreateScorePerformanceRecalculationWorkItem:
-    """One score selected for durable recalculation work."""
+    """再計算batchへ永続化する1件の候補.
+
+    Attributes:
+        score_id (int): 再計算対象のScore ID.
+        reason (RecalculationCandidateReason): 候補へ選定された閉集合理由.
+
+    Notes:
+        reasonはdomainのRecalculationCandidateReasonで表現する.
+    """
 
     score_id: int
-    reason: str
+    reason: RecalculationCandidateReason
 
 
 @dataclass(frozen=True, slots=True)
 class CreateScorePerformanceRecalculationBatch:
-    """Create one durable recalculation batch and its work items."""
+    """再計算batchとwork itemを永続化するcommand.
+
+    Attributes:
+        filters (Mapping[str, object]): 候補選択に使用したfilter snapshot.
+        reason_counts (Mapping[RecalculationCandidateReason, int]): 理由別候補件数.
+        target_calculator_version (str): 再計算先のcalculator version.
+        target_formula_profile (FormulaProfile): 再計算先のformula profile.
+        work_items (tuple[CreateScorePerformanceRecalculationWorkItem, ...]): 永続化対象.
+        created_at (datetime): Batchとwork itemの作成日時.
+
+    Notes:
+        Reasonはdomain Enumのままrepositoryへ渡し、adapterが永続化値へ変換する.
+    """
 
     filters: Mapping[str, object]
-    reason_counts: Mapping[str, int]
+    reason_counts: Mapping[RecalculationCandidateReason, int]
     target_calculator_version: str
     target_formula_profile: FormulaProfile
     work_items: tuple[CreateScorePerformanceRecalculationWorkItem, ...]

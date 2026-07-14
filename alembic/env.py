@@ -37,10 +37,16 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
+    """DB接続なしでmigration SQLを生成する.
 
-    Configures the context with just a URL so that no DBAPI connection is
-    required.
+    Returns:
+        None: transaction単位をmigration fileごとに分けてSQL生成を完了したことを示す.
+
+    Raises:
+        Exception: Alembic contextの構成またはmigration SQL生成に失敗した場合.
+
+    Notes:
+        autocommit blockを含むmigrationと同じtransaction境界をoffline SQLにも適用する.
     """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
@@ -48,6 +54,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        transaction_per_migration=True,
     )
 
     with context.begin_transaction():
@@ -55,7 +62,26 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    """同期connection上でmigrationをfile単位のtransactionとして実行する.
+
+    Args:
+        connection (Connection): Alembicがmigrationに使用する同期DB connection.
+
+    Returns:
+        None: 対象revisionまでのmigration実行が完了したことを示す.
+
+    Raises:
+        SQLAlchemyError: migration DDLまたはtransaction操作に失敗した場合.
+
+    Notes:
+        autocommit blockは直前のtransactionをcommitするため, Alembic公式推奨に従い
+        `transaction_per_migration=True`でfile間のtransaction境界を維持する.
+    """
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        transaction_per_migration=True,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

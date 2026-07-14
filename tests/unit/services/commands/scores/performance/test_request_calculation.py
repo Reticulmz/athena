@@ -474,7 +474,9 @@ def _score(
         perfect=False,
         client_version="b20250101",
         submitted_at=_NOW,
-        beatmap_status_at_submission=status_value,
+        beatmap_status_at_submission=BeatmapRankStatus(status_value)
+        if status_value is not None
+        else None,
     )
 
 

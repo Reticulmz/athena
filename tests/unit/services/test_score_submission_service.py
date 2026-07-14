@@ -15,13 +15,14 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapResolveResult,
     BeatmapSourceVerification,
 )
 from osu_server.domain.scores.score import Playstyle, Ruleset
-from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
 from osu_server.domain.scores.user_stats import UserCurrentStats
 from osu_server.domain.storage.blobs import BlobStored
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -109,7 +110,7 @@ def _resolved_beatmap() -> Beatmap:
         id=1,
         beatmapset_id=10,
         checksum_md5="0123456789abcdef0123456789abcdef",
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Test",
         total_length=None,
         hit_length=None,
@@ -420,7 +421,7 @@ def valid_input() -> ParsedSubmissionInput:
 def _fingerprint_for(
     input_data: ParsedSubmissionInput,
     *,
-    beatmap_checksum: str = "abc123",
+    beatmap_checksum: str = "0123456789abcdef0123456789abcdef",
     user_id: int = 1000,
     submitted_timestamp: str | None = None,
 ) -> str:
@@ -472,7 +473,7 @@ async def test_happy_path_valid_submission_creates_score(
     assert score.passed is True
     assert score.ruleset == Ruleset.OSU
     assert score.playstyle == Playstyle.VANILLA
-    assert score.beatmap_status_at_submission == BeatmapRankStatus.RANKED.value
+    assert score.beatmap_status_at_submission is BeatmapRankStatus.RANKED
 
     submission = await submission_repo.get_by_fingerprint(_fingerprint_for(valid_input))
     assert submission is not None
@@ -521,7 +522,7 @@ async def test_completed_submission_requests_performance_calculation(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_perf_request:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_perf_request:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -585,7 +586,7 @@ async def test_completed_submission_waits_for_performance_response_after_request
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_perf_wait:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_perf_wait:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -640,13 +641,13 @@ async def test_performance_wait_response_preserves_cumulative_beatmap_counts(
     first_input = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_counts_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_counts_1:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
     second_input = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_counts_2:0:0:100:10:5:0:0:2:600000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_counts_2:0:0:100:10:5:0:0:2:600000:99:1:1"
         ),
         request_hash="different_hash",
         replay_data=b"second_replay_data",
@@ -727,7 +728,7 @@ async def test_completed_submission_returns_overall_stats_delta(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_overall_delta:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_overall_delta:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -802,7 +803,7 @@ async def test_completed_submission_returns_beatmap_rank_delta(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_rank_delta:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_rank_delta:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -814,14 +815,14 @@ async def test_completed_submission_returns_beatmap_rank_delta(
         BeatmapPersonalBestRankQueryInput(
             user_id=1000,
             beatmap_id=1,
-            beatmap_checksum="abc123",
+            beatmap_checksum="0123456789abcdef0123456789abcdef",
             ruleset=Ruleset.OSU,
             playstyle=Playstyle.VANILLA,
         ),
         BeatmapPersonalBestRankQueryInput(
             user_id=1000,
             beatmap_id=1,
-            beatmap_checksum="abc123",
+            beatmap_checksum="0123456789abcdef0123456789abcdef",
             ruleset=Ruleset.OSU,
             playstyle=Playstyle.VANILLA,
         ),
@@ -872,7 +873,7 @@ async def test_retryable_performance_response_keeps_score_accepted_without_rejec
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_perf_retryable:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_perf_retryable:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -930,7 +931,7 @@ async def test_completed_performance_pp_is_result_only_not_submission_snapshot(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_perf_snapshot:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_perf_snapshot:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -987,7 +988,7 @@ async def test_performance_calculation_request_failure_keeps_completed_response(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_perf_failure:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_perf_failure:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -1035,7 +1036,7 @@ async def test_client_server_grade_discrepancy_is_preserved(
         valid_input,
         parsed_score=make_test_parsed_score(
             _score_payload(
-                "abc123:test_user:online_grade_discrepancy:",
+                "0123456789abcdef0123456789abcdef:test_user:online_grade_discrepancy:",
                 "300:0:0:0:0:0:1000000:500:1:D:0:1:0:",
                 "20240101:b20240101:client_checksum",
             )
@@ -1089,7 +1090,7 @@ async def test_failed_play_handling(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_2:0:0:50:10:5:0:0:10:200000:40:0:0"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_2:0:0:50:10:5:0:0:10:200000:40:0:0"
         ),
     )
 
@@ -1131,7 +1132,7 @@ async def test_failed_play_without_replay_is_accepted_without_blob_write(
         valid_input,
         parsed_score=make_test_parsed_score(
             _score_payload(
-                "1000:test_user:abc123:online_checksum_failed_no_replay:",
+                "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_failed_no_replay:",
                 "0:0:50:10:5:0:0:10:200000:40:0:0",
             )
         ),
@@ -1178,7 +1179,7 @@ async def test_passed_play_without_replay_is_accepted_without_blob_write(
         valid_input,
         parsed_score=make_test_parsed_score(
             _score_payload(
-                "1000:test_user:abc123:online_checksum_passed_no_replay:",
+                "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_passed_no_replay:",
                 "0:0:100:10:5:0:0:2:500000:99:1:1",
             )
         ),
@@ -1222,7 +1223,7 @@ async def test_replay_attachment(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_3:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_3:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -1274,7 +1275,7 @@ async def test_score_submit_fallback_warmup_runs_before_replay_blob_storage(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
         beatmap_id=42,
     )
@@ -1288,7 +1289,7 @@ async def test_score_submit_fallback_warmup_runs_before_replay_blob_storage(
             entrance=BeatmapFileWarmupEntrance.STABLE_SCORE_SUBMIT_FALLBACK,
             user_id=1000,
             beatmap_id=42,
-            checksum_md5="abc123",
+            checksum_md5="0123456789abcdef0123456789abcdef",
         )
     ]
 
@@ -1332,7 +1333,7 @@ async def test_score_submit_accepts_file_pending_and_logs_fallback_warmup(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_warmup_pending:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_warmup_pending:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -1390,7 +1391,7 @@ async def test_score_submit_fallback_warmup_precedes_retryable_replay_storage_fa
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_warmup_retry:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_warmup_retry:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -1404,7 +1405,7 @@ async def test_score_submit_fallback_warmup_precedes_retryable_replay_storage_fa
             entrance=BeatmapFileWarmupEntrance.STABLE_SCORE_SUBMIT_FALLBACK,
             user_id=1000,
             beatmap_id=1,
-            checksum_md5="abc123",
+            checksum_md5="0123456789abcdef0123456789abcdef",
         )
     ]
 
@@ -1444,7 +1445,7 @@ async def test_score_submit_terminal_reject_does_not_request_fallback_warmup(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_warmup_reject:0:0:0:0:0:0:0:0:500000:0:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_warmup_reject:0:0:0:0:0:0:0:0:500000:0:1:1"
         ),
     )
 
@@ -1482,7 +1483,7 @@ async def test_online_checksum_duplicate_rejection(
     _score_repo, submission_repo, _ = repos
 
     parsed_score = make_test_parsed_score(
-        "1000:test_user:abc123:duplicate_checksum:0:0:100:10:5:0:0:2:500000:99:1:1"
+        "1000:test_user:0123456789abcdef0123456789abcdef:duplicate_checksum:0:0:100:10:5:0:0:2:500000:99:1:1"
     )
 
     # First submission
@@ -1557,7 +1558,7 @@ async def test_performance_integration_preserves_duplicate_terminal_rejects(
     )
 
     duplicate_online_score = make_test_parsed_score(
-        "1000:test_user:abc123:duplicate_perf_online:0:0:100:10:5:0:0:2:500000:99:1:1"
+        "1000:test_user:0123456789abcdef0123456789abcdef:duplicate_perf_online:0:0:100:10:5:0:0:2:500000:99:1:1"
     )
     online_first = replace(
         valid_input,
@@ -1574,7 +1575,7 @@ async def test_performance_integration_preserves_duplicate_terminal_rejects(
     replay_first = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:perf_replay_online_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:perf_replay_online_1:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
         request_hash="replay-hash-1",
         replay_data=b"same-performance-replay",
@@ -1582,7 +1583,7 @@ async def test_performance_integration_preserves_duplicate_terminal_rejects(
     replay_second = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:perf_replay_online_2:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:perf_replay_online_2:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
         request_hash="replay-hash-2",
         replay_data=b"same-performance-replay",
@@ -1660,7 +1661,7 @@ async def test_online_checksum_duplicate_rejection_ignores_fallback_warmup_failu
     )
 
     parsed_score = make_test_parsed_score(
-        "1000:test_user:abc123:duplicate_checksum_with_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
+        "1000:test_user:0123456789abcdef0123456789abcdef:duplicate_checksum_with_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
     )
     input1 = replace(
         valid_input,
@@ -1732,7 +1733,7 @@ async def test_online_checksum_duplicate_rejection_ignores_file_pending_warmup(
 
     parsed_score = make_test_parsed_score(
         _score_payload(
-            "1000:test_user:abc123:duplicate_checksum_pending_warmup:0:0:100:10:5:0:0:2:",
+            "1000:test_user:0123456789abcdef0123456789abcdef:duplicate_checksum_pending_warmup:0:0:100:10:5:0:0:2:",
             "500000:99:1:1",
         )
     )
@@ -1792,7 +1793,7 @@ async def test_replay_checksum_duplicate_rejection(
 
     # First submission
     input1 = make_test_submission_input(
-        payload="1000:test_user:abc123:online_1:0:0:100:10:5:0:0:2:500000:99:1:1",
+        payload="1000:test_user:0123456789abcdef0123456789abcdef:online_1:0:0:100:10:5:0:0:2:500000:99:1:1",
         request_hash="hash1",
         replay_data=b"same_replay_data",
     )
@@ -1801,7 +1802,7 @@ async def test_replay_checksum_duplicate_rejection(
 
     # Second submission (same replay)
     input2 = make_test_submission_input(
-        payload="1000:test_user:abc123:online_2:0:0:100:10:5:0:0:2:500000:99:1:1",
+        payload="1000:test_user:0123456789abcdef0123456789abcdef:online_2:0:0:100:10:5:0:0:2:500000:99:1:1",
         request_hash="hash2",
         replay_data=b"same_replay_data",
     )
@@ -1845,12 +1846,16 @@ async def test_replay_checksum_duplicate_rejection_ignores_fallback_warmup_failu
     )
 
     input1 = make_test_submission_input(
-        payload=("1000:test_user:abc123:online_warmup_replay_1:0:0:100:10:5:0:0:2:500000:99:1:1"),
+        payload=(
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_warmup_replay_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
         request_hash="hash1",
         replay_data=b"same_warmup_replay_data",
     )
     input2 = make_test_submission_input(
-        payload=("1000:test_user:abc123:online_warmup_replay_2:0:0:100:10:5:0:0:2:500000:99:1:1"),
+        payload=(
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_warmup_replay_2:0:0:100:10:5:0:0:2:500000:99:1:1"
+        ),
         request_hash="hash2",
         replay_data=b"same_warmup_replay_data",
     )
@@ -1894,7 +1899,7 @@ async def test_submission_fingerprint_idempotency(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_idem:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_idem:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -1955,7 +1960,7 @@ async def test_same_fingerprint_retry_rebuilds_response_from_existing_score_perf
     replayless_input = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_idem_pp:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_idem_pp:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
         replay_data=None,
     )
@@ -2021,7 +2026,7 @@ async def test_submission_fingerprint_idempotency_ignores_fallback_warmup_failur
     replayless_input = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_idem_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_idem_warmup:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
         replay_data=None,
     )
@@ -2065,7 +2070,7 @@ async def test_in_progress_retry_returns_accepted_pending(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_pending:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_pending:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
     fingerprint = _fingerprint_for(input_data)
@@ -2074,9 +2079,9 @@ async def test_in_progress_retry_returns_accepted_pending(
             id=None,
             fingerprint=fingerprint,
             user_id=1000,
-            beatmap_checksum="abc123",
+            beatmap_checksum="0123456789abcdef0123456789abcdef",
             submitted_at=input_data.submitted_at,
-            state="processing",
+            state=ScoreSubmissionState.PROCESSING,
             result_snapshot=None,
         )
     )
@@ -2111,7 +2116,7 @@ async def test_authorization_failure_terminal_reject(
     # Invalid password
     invalid_input = ParsedSubmissionInput(
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_auth:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_auth:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
         request_hash=valid_input.request_hash,
         opaque_field_hashes=valid_input.opaque_field_hashes,
@@ -2158,7 +2163,7 @@ async def test_beatmap_ineligibility_terminal_reject(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_elig:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_elig:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
     result = await service.execute(input_data)
@@ -2190,7 +2195,7 @@ async def test_validation_failure_terminal_reject(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_val:0:0:0:0:0:0:0:0:500000:0:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_val:0:0:0:0:0:0:0:0:500000:0:1:1"
         ),
     )
 
@@ -2223,7 +2228,7 @@ async def test_metrics_logged_on_success(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_checksum_metrics:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_checksum_metrics:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 

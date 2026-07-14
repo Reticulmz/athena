@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.scores.mods import ModCombination
@@ -194,7 +195,7 @@ def _seed_score(
         perfect=True,
         client_version="b20260618",
         submitted_at=_NOW,
-        beatmap_status_at_submission="ranked" if passed else None,
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED if passed else None,
         leaderboard_eligible_at_submission=leaderboard_eligible,
     )
     state.scores_by_id[score_id] = score

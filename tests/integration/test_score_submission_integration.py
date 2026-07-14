@@ -23,6 +23,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapResolveResult,
@@ -30,9 +31,9 @@ from osu_server.domain.beatmaps import (
     BeatmapSourceVerification,
 )
 from osu_server.domain.scores.leaderboards import ScoreRankKey
-from osu_server.domain.scores.mods import Mod
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset
-from osu_server.domain.storage.blobs import BlobStored, NewBlob
+from osu_server.domain.storage.blobs import BlobStorageBackendKind, BlobStored, NewBlob
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
@@ -86,7 +87,7 @@ def _resolved_beatmap(*, total_length: int | None = None) -> Beatmap:
         id=1,
         beatmapset_id=10,
         checksum_md5="0123456789abcdef0123456789abcdef",
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Integration",
         total_length=total_length,
         hit_length=None,
@@ -130,7 +131,7 @@ def _fingerprint_for(
     input_data: ParsedSubmissionInput,
     *,
     user_id: int = 1000,
-    beatmap_checksum: str = "abc123",
+    beatmap_checksum: str = "0123456789abcdef0123456789abcdef",
     submitted_timestamp: str | None = None,
 ) -> str:
     return generate_submission_fingerprint(
@@ -144,14 +145,14 @@ def _fingerprint_for(
 def _leaderboard_scope(
     *,
     user_id: int = 1000,
-    mod_filter_key: int | None = None,
 ) -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
+        beatmap_checksum="0123456789abcdef0123456789abcdef",
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=user_id,
-        mod_filter_key=mod_filter_key,
+        mods=ModCombination.none(),
     )
 
 
@@ -160,7 +161,7 @@ async def _get_leaderboard_best(
     scope: BeatmapLeaderboardUserBestScope,
 ) -> BeatmapLeaderboardUserBest | None:
     async with uow_factory() as uow:
-        return await uow.beatmap_leaderboards.get_user_best(scope)
+        return await uow.beatmap_leaderboards.get_global_user_best(scope)
 
 
 async def _replace_user_projection_with_score(
@@ -253,7 +254,7 @@ class SQLAlchemyBlobStorageStub:
                     sha256=digest,
                     byte_size=len(data),
                     content_type=content_type,
-                    storage_backend="test",
+                    storage_backend=BlobStorageBackendKind.LOCAL,
                     storage_key=f"test/replay/{digest}.osr",
                 )
             )
@@ -302,7 +303,7 @@ async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
         text(
             """
             DELETE FROM score_submissions
-            WHERE user_id = 1000 AND beatmap_checksum = 'abc123'
+            WHERE user_id = 1000 AND beatmap_checksum = '0123456789abcdef0123456789abcdef'
             """
         )
     )
@@ -453,7 +454,7 @@ async def test_e2e_valid_submission_persists_to_database(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:integration_test_checksum_001:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:integration_test_checksum_001:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -475,7 +476,7 @@ async def test_e2e_valid_submission_persists_to_database(
     assert score.passed is True
     assert score.ruleset == Ruleset.OSU
     assert score.playstyle == Playstyle.VANILLA
-    assert score.beatmap_status_at_submission == BeatmapRankStatus.RANKED.value
+    assert score.beatmap_status_at_submission is BeatmapRankStatus.RANKED
 
     assert input_data.replay_data is not None
     replay_checksum = hashlib.sha256(input_data.replay_data).hexdigest()
@@ -503,7 +504,7 @@ async def test_e2e_database_transaction_handling(
     """データベース transaction が正しく commit されることを検証する。"""
     input_data = make_test_submission_input(
         payload=(
-            "1000:test_user:abc123:integration_test_checksum_002:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:integration_test_checksum_002:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
         request_hash="tx_test_hash",
         replay_data=b"replay_data_tx_test",
@@ -532,7 +533,7 @@ async def test_e2e_concurrent_submission_handling(
     # Create 3 concurrent submissions with different fingerprints
     inputs = [
         make_test_submission_input(
-            payload=f"1000:test_user:abc123:int_test_cc_{i}:0:0:100:10:5:0:0:2:500000:99:1:1",
+            payload=f"1000:test_user:0123456789abcdef0123456789abcdef:int_test_cc_{i}:0:0:100:10:5:0:0:2:500000:99:1:1",
             request_hash=f"concurrent_hash_{i}",
             replay_data=f"replay_data_concurrent_{i}".encode(),
         )
@@ -563,7 +564,7 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
 ) -> None:
     """重複 online checksum が別 submission を terminal reject する。"""
     parsed_score = make_test_parsed_score(
-        "1000:test_user:abc123:int_test_dup:0:0:100:10:5:0:0:2:500000:99:1:1"
+        "1000:test_user:0123456789abcdef0123456789abcdef:int_test_dup:0:0:100:10:5:0:0:2:500000:99:1:1"
     )
 
     # First submission
@@ -604,7 +605,7 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
     """適格 submit が projection を更新し retry で保存済み PB delta を返す。"""
 
     previous_input = make_test_submission_input(
-        payload="1000:test_user:abc123:int_test_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1",
+        payload="1000:test_user:0123456789abcdef0123456789abcdef:int_test_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1",
         request_hash="leaderboard_previous_hash",
         replay_data=b"replay_data_previous_best",
         submitted_at=datetime.fromisoformat("2024-01-01T12:00:00+00:00"),
@@ -620,7 +621,7 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
 
     new_input = make_test_submission_input(
         payload=(
-            "1000:test_user:abc123:int_test_lb_retry:0:"
+            "1000:test_user:0123456789abcdef0123456789abcdef:int_test_lb_retry:0:"
             f"{int(Mod.DOUBLE_TIME)}:100:10:5:0:0:2:500000:99:1:1"
         ),
         request_hash="leaderboard_new_hash",
@@ -642,14 +643,8 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
         uow_factory,
         _leaderboard_scope(),
     )
-    selected_mods_best = await _get_leaderboard_best(
-        uow_factory,
-        _leaderboard_scope(mod_filter_key=int(Mod.DOUBLE_TIME)),
-    )
     assert all_mods_best is not None
     assert all_mods_best.score_id == new_result.score_id
-    assert selected_mods_best is not None
-    assert selected_mods_best.score_id == new_result.score_id
 
     await _replace_user_projection_with_score(
         uow_factory,
@@ -669,13 +664,8 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
         uow_factory,
         _leaderboard_scope(),
     )
-    selected_mods_best_after_retry = await _get_leaderboard_best(
-        uow_factory,
-        _leaderboard_scope(mod_filter_key=int(Mod.DOUBLE_TIME)),
-    )
     assert all_mods_best_after_retry is not None
     assert all_mods_best_after_retry.score_id == previous_result.score_id
-    assert selected_mods_best_after_retry is None
 
     async with session_factory() as session:
         query_result = await session.execute(
@@ -693,7 +683,7 @@ async def test_e2e_failed_play_persists_to_database(
 ) -> None:
     """失敗 play (passed=0) を database に保存する。"""
     input_data = make_test_submission_input(
-        payload="1000:test_user:abc123:int_test_failed:0:0:50:10:5:0:0:10:200000:40:0:0",
+        payload="1000:test_user:0123456789abcdef0123456789abcdef:int_test_failed:0:0:50:10:5:0:0:10:200000:40:0:0",
         request_hash="failed-play-hash",
         replay_data=b"replay_data_failed",
         fail_time_ms=30000,
@@ -732,7 +722,7 @@ async def test_e2e_passed_score_submission_uses_beatmap_length_for_play_time(
     )
 
     input_data = make_test_submission_input(
-        payload="1000:test_user:abc123:int_test_passed_timing:0:0:100:10:5:0:0:2:500000:99:1:1",
+        payload="1000:test_user:0123456789abcdef0123456789abcdef:int_test_passed_timing:0:0:100:10:5:0:0:2:500000:99:1:1",
         request_hash="passed-timing-hash",
         replay_data=b"replay_data_passed_timing",
         fail_time_ms=0,
@@ -761,7 +751,7 @@ async def test_e2e_idempotent_retry_returns_cached_result(
 ) -> None:
     """冪等 retry が database の cached result を返す。"""
     input_data = make_test_submission_input(
-        payload="1000:test_user:abc123:int_test_idem:0:0:100:10:5:0:0:2:500000:99:1:1",
+        payload="1000:test_user:0123456789abcdef0123456789abcdef:int_test_idem:0:0:100:10:5:0:0:2:500000:99:1:1",
         request_hash="idempotent_test_hash",
         replay_data=b"replay_data_idempotent",
         submitted_at=datetime.fromisoformat("2024-01-01T12:00:00+00:00"),

@@ -21,17 +21,19 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapResolveResult,
     BeatmapSourceVerification,
 )
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.leaderboards import ScoreRankKey
-from osu_server.domain.scores.mods import Mod
+from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
     BeatmapLeaderboardUserProjectionSlice,
+    BeatmapLeaderboardUserScope,
     UpsertBeatmapLeaderboardUserBest,
 )
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -56,7 +58,7 @@ def _resolved_beatmap() -> Beatmap:
         id=1,
         beatmapset_id=10,
         checksum_md5="0123456789abcdef0123456789abcdef",
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Test",
         total_length=None,
         hit_length=None,
@@ -227,23 +229,30 @@ def _make_process_score_submission_use_case(
     )
 
 
-def _leaderboard_scope(mod_filter_key: int | None = None) -> BeatmapLeaderboardUserBestScope:
+def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
+        beatmap_checksum="0123456789abcdef0123456789abcdef",
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         user_id=1000,
-        mod_filter_key=mod_filter_key,
+        mods=ModCombination.none(),
     )
 
 
 async def _get_leaderboard_best_score_id(
     uow_factory: InMemoryUnitOfWorkFactory,
-    *,
-    mod_filter_key: int | None = None,
 ) -> int | None:
     async with uow_factory() as uow:
-        best = await uow.beatmap_leaderboards.get_user_best(_leaderboard_scope(mod_filter_key))
+        best = await uow.beatmap_leaderboards.get_global_user_best(
+            BeatmapLeaderboardUserScope(
+                beatmap_id=1,
+                beatmap_checksum="0123456789abcdef0123456789abcdef",
+                ruleset=Ruleset.OSU,
+                playstyle=Playstyle.VANILLA,
+                user_id=1000,
+            )
+        )
         return best.score_id if best is not None else None
 
 
@@ -295,7 +304,7 @@ async def test_e2e_score_submit_completed_response() -> None:
     handler = ScoreSubmitHandler(
         service,
         decoder=make_stable_score_submit_decoder(
-            payload="1000:test_user:abc123:e2e_score_submit:0:0:100:10:5:0:0:2:500000:99:1:1"
+            payload="1000:test_user:0123456789abcdef0123456789abcdef:e2e_score_submit:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
         mapper=StableScoreSubmitMapper(stable_web_base_url="https://osu.athena.localhost"),
     )
@@ -344,10 +353,13 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
         _osu_version: str | None,
     ) -> DecryptedPayload:
         if encrypted == b"previous_best_payload":
-            payload = "1000:test_user:abc123:e2e_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1"
+            payload = (
+                "1000:test_user:0123456789abcdef0123456789abcdef:"
+                "e2e_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1"
+            )
         else:
             payload = (
-                "1000:test_user:abc123:e2e_lb_new:0:"
+                "1000:test_user:0123456789abcdef0123456789abcdef:e2e_lb_new:0:"
                 f"{int(Mod.DOUBLE_TIME)}:100:10:5:0:0:2:500000:99:1:1"
             )
         return DecryptedPayload(plaintext=payload, checksum_valid=True)
@@ -389,13 +401,8 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
     new_response_body = bytes(new_response.body)
     assert b"rankedScoreBefore:400000|rankedScoreAfter:500000|" in new_response_body
     new_best_score_id = await _get_leaderboard_best_score_id(uow_factory)
-    selected_mods_score_id = await _get_leaderboard_best_score_id(
-        uow_factory,
-        mod_filter_key=int(Mod.DOUBLE_TIME),
-    )
     assert new_best_score_id is not None
     assert new_best_score_id != previous_best_score_id
-    assert selected_mods_score_id == new_best_score_id
 
     await _replace_projection_with_score(uow_factory, score_id=previous_best_score_id)
 
@@ -404,13 +411,6 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
     assert retry_response.status_code == 200
     assert bytes(retry_response.body) == new_response_body
     assert await _get_leaderboard_best_score_id(uow_factory) == previous_best_score_id
-    assert (
-        await _get_leaderboard_best_score_id(
-            uow_factory,
-            mod_filter_key=int(Mod.DOUBLE_TIME),
-        )
-        is None
-    )
 
 
 @pytest.mark.asyncio
@@ -449,7 +449,7 @@ async def test_e2e_score_submit_terminal_reject_format() -> None:
     handler = ScoreSubmitHandler(
         service,
         decoder=make_stable_score_submit_decoder(
-            payload="1000:test_user:abc123:e2e_score_submit:0:0:100:10:5:0:0:2:500000:99:1:1"
+            payload="1000:test_user:0123456789abcdef0123456789abcdef:e2e_score_submit:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 

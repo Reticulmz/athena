@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
+from osu_server.domain.scores.personal_best import LeaderboardCategory
+from osu_server.shared.checksums import MD5_HEX_LENGTH, is_lowercase_md5_hexdigest
+
 if TYPE_CHECKING:
     from datetime import datetime
     from decimal import Decimal
 
     from osu_server.domain.scores.mods import ModCombination
-    from osu_server.domain.scores.personal_best import LeaderboardCategory
     from osu_server.domain.scores.score import Playstyle, Ruleset
 
 
@@ -49,14 +51,25 @@ class BeatmapLeaderboardRow:
 
 @dataclass(slots=True, frozen=True)
 class LeaderboardReadScope:
-    """Read-time filters for one Beatmap Leaderboard query."""
+    """Beatmap Leaderboard の read-time filter を表す.
+
+    Attributes:
+        beatmap_id (int): 対象 Beatmap ID. 正の値でなければならない.
+        beatmap_checksum (str): 現在の32文字小文字16進数Beatmap checksum.
+        ruleset (Ruleset): 対象 ruleset.
+        playstyle (Playstyle): 対象 playstyle.
+        category (LeaderboardCategory): 表示する category.
+        selected_mods (ModCombination | None): Selected Mods の raw Mod bitflag.
+        country (str | None): Country category の owner country filter.
+        eligible_user_ids (tuple[int, ...] | None): Friends category の対象 User ID 群.
+    """
 
     beatmap_id: int
     beatmap_checksum: str
     ruleset: Ruleset
     playstyle: Playstyle
     category: LeaderboardCategory
-    mod_filter_key: int | None
+    selected_mods: ModCombination | None = None
     country: str | None = None
     eligible_user_ids: tuple[int, ...] | None = None
 
@@ -64,8 +77,18 @@ class LeaderboardReadScope:
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
             raise ValueError(msg)
-        if self.mod_filter_key is not None and self.mod_filter_key < 0:
-            msg = "mod_filter_key must not be negative"
+        if not is_lowercase_md5_hexdigest(self.beatmap_checksum):
+            msg = (
+                f"beatmap_checksum must be a {MD5_HEX_LENGTH}-character "
+                "lowercase hexadecimal string"
+            )
+            raise ValueError(msg)
+        is_selected_mods = self.category is LeaderboardCategory.SELECTED_MODS
+        if is_selected_mods and self.selected_mods is None:
+            msg = "selected-mods scope requires selected_mods"
+            raise ValueError(msg)
+        if not is_selected_mods and self.selected_mods is not None:
+            msg = "selected_mods is only valid for selected-mods scope"
             raise ValueError(msg)
 
 

@@ -400,7 +400,7 @@ _Avoid_: every historical stable build, reference server behavior, private-serve
 Client からの score submit request を記録する entity。Network error や processing delay による retry を検出し、idempotent response を保証する。
 
 - **Fingerprint**: Submission の canonical identifier。User ID + beatmap checksum + submitted timestamp + request hash で構成。Global unique constraint。
-- **State**: `received` → `processing` → `completed` / `terminal_rejected`
+- **State**: `received` → `processing` → `completed` / `terminal_rejected` / `retryable`
 - **Result Snapshot**: Completed submission の response data。Retry 時に同じ response を再生成するために保存。
 
 **関係性**:

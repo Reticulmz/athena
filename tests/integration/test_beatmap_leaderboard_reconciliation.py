@@ -23,6 +23,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
@@ -31,7 +32,7 @@ from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.roles import Role
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
-from osu_server.domain.scores.leaderboards import ScoreRankKey, projection_keys_for_score
+from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
@@ -165,7 +166,7 @@ async def _seed_known_beatmap(
         id=75,
         beatmapset_id=1,
         checksum_md5=checksum,
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Insane",
         total_length=240,
         hit_length=220,
@@ -235,29 +236,29 @@ async def _seed_score_with_projection(
                 perfect=True,
                 client_version="b20260617",
                 submitted_at=_NOW,
-                beatmap_status_at_submission="ranked",
+                beatmap_status_at_submission=BeatmapRankStatus.RANKED,
                 leaderboard_eligible_at_submission=True,
             )
         )
         assert score.id is not None
-        for mod_filter_key in projection_keys_for_score(score.mods):
-            _ = await uow.beatmap_leaderboards.upsert_if_better(
-                UpsertBeatmapLeaderboardUserBest(
-                    scope=BeatmapLeaderboardUserBestScope(
-                        beatmap_id=75,
-                        ruleset=Ruleset.OSU,
-                        playstyle=Playstyle.VANILLA,
-                        user_id=user_id,
-                        mod_filter_key=mod_filter_key,
-                    ),
+        _ = await uow.beatmap_leaderboards.upsert_if_better(
+            UpsertBeatmapLeaderboardUserBest(
+                scope=BeatmapLeaderboardUserBestScope(
+                    beatmap_id=75,
+                    beatmap_checksum=checksum,
+                    ruleset=Ruleset.OSU,
+                    playstyle=Playstyle.VANILLA,
+                    user_id=user_id,
+                    mods=score.mods,
+                ),
+                score_id=score.id,
+                rank_key=ScoreRankKey(
+                    score=score.score,
+                    submitted_at=score.submitted_at,
                     score_id=score.id,
-                    rank_key=ScoreRankKey(
-                        score=score.score,
-                        submitted_at=score.submitted_at,
-                        score_id=score.id,
-                    ),
-                )
+                ),
             )
+        )
         await uow.commit()
         return score.id
 

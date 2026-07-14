@@ -3,9 +3,9 @@
 - [ ] 1. Beatmap Leaderboard の基盤語彙と永続 schema を作る
 - [x] 1.1 Leaderboard scope、rank、mod filter の domain policy を定義する
   - score 降順、submitted_at 昇順、score_id 昇順で candidate の優劣を判定できるようにする
-  - all-mods、NoMod、Selected Mods の filter key を区別し、NC/DT と PF/SD を canonical key に正規化する
-  - Mirror selected filter は unsupported として扱い、score 表示用 mods は source Score の値を保持する
-  - 完了時には rank ordering、tie-break、NoMod、NC/DT、PF/SD、Mirror unsupported の unit tests が通る
+  - Selected Modsはrequestと保存済みraw bitflagの完全一致とし、NC/DT、PF/SD、NoModをquery-time正規化しない
+  - Mirror selected filterを通常のraw bitflagとして扱い、score表示用modsはsource Scoreの値を保持する
+  - 完了時にはrank ordering、tie-break、NoMod、DT/NC分離、SD/PF分離、Mirror exact matchのunit testsが通る
   - _Requirements: 2.1, 2.2, 2.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 9.4_
 
 - [x] 1.2 Leaderboard visible user policy と Friends eligible user set を固める
@@ -17,51 +17,66 @@
 
 - [x] 1.3 Leaderboard projection と score eligibility の schema migration を追加する
   - Score に submission-time leaderboard eligibility evidence を保存できるようにする
-  - user/beatmap/ruleset/playstyle/mod filter scope ごとの score-priority projection を保存できるようにする
-  - all-mods と NoMod を区別できる uniqueness と ordering indexes を用意する
+  - beatmap/ruleset/playstyle/user/raw modsのnatural identityごとに1行のscore-priority projectionを保存し、current checksumを置換可能なfreshness属性として保持する
+  - `score_id` uniquenessをschema migrationで保証し、Score candidate indexは0500でconcurrent作成して0700で定義とvalidityを再検証し、Global/Selected Mods ranking indexも0700でconcurrent作成する
   - 完了時には migration 適用後に projection table、score eligibility column、constraints、indexes が検証できる
   - _Requirements: 2.1, 2.2, 2.6, 5.7, 6.1, 6.2, 7.2, 10.5_
 
 - [x] 1.4 Legacy Personal Best migration path を安全に置き換える
-  - 既存の valid Personal Best rows を all-mods projection へ移せるようにする
+  - 既存のvalid Personal Best rowsを初期Global projectionへ移し、後続migrationでraw Mod別projectionへ再構築できるようにする
   - source Score が存在しない legacy rows は移行せず、diagnostics として観測できるようにする
-  - Selected Mods projection は source Score から rebuild/backfill する前提にする
-  - 完了時には old projection から new projection への migration tests が source-missing skip を確認できる
+  - forward migrationではSelected Mods重複rowを削除し、downgradeではsource ScoreからGlobal/Selected Mods rowを再構築する
+  - 完了時にはold/new schemaのPostgreSQL round-trip testsがsource-missing skip、stale-checksum Global rowの置換、legacy projection復元を確認できる
   - _Requirements: 2.1, 3.1, 3.4, 6.2, 7.2, 10.5_
+
+- [x] 1.5 Closed-set persistence とclaim lifecycleをEnum migrationへ統合する
+  - Score、Beatmap fetch、Score Submission、Score Performance、Blobなどの閉集合値をdomain EnumとSQLAlchemy非native Enumで一致させ、文字列+名前付きCHECKとして保存する
+  - persistence columnは原則`NOT NULL`とし、calculation claimは処理中state、recalculation work item claimは`claimed` stateに限定し、それ以外ではpairを`NULL`へ戻す
+  - Alembic data migrationはSQLAlchemy式を使い、PostgreSQL `USING`だけ最小のtextual DDL fragmentとして理由を記録する
+  - 完了時にはout-of-set validation、Enum bind、read-time mod predicate、window rank、upgrade/downgrade round-tripの実PostgreSQL testsが通る
+  - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7, 11.8, 11.9, 11.10_
+
+- [x] 1.6 Raw Mod別projection migrationを追加する
+  - `mods NOT NULL`と非負CHECKを追加し、natural keyをbeatmap/ruleset/playstyle/user/modsへ拡張する
+  - current-checksum eligible source Scoresから同一user・同一Modのwinnerを再構築する
+  - schema/data移行とrank index DDLを分離し、後続migrationのautocommit blockでGlobal/Selected Mods indexをconcurrent作成する
+  - downgradeではuserごとのGlobal all-mods winnerへ戻し、再upgradeでraw Mod別行へ復元する
+  - 完了時には実PostgreSQL round-tripがNoMod、DT、NC|DT、SD、PF|SD、Mirrorと同一Mod重複の収束を確認できる
+  - _Requirements: 5.1-5.8, 11.4, 11.5, 11.8, 11.9, 11.10_
 
 - [ ] 2. Projection persistence を command/query 境界で実装する
 - [x] 2.1 Beatmap Leaderboard command repository contract と in-memory behavior を実装する
-  - candidate が current row より高 rank の場合だけ replacement する
+  - candidateが同一raw Mod scopeのcurrent rowより高rankの場合だけreplacementする
   - same score and submitted_at では lower score_id を上位として扱う
   - explicit projection slice replacement は empty rows でも stale rows を削除できるようにする
   - in-memory state が commit/rollback 付きで projection rows と slice replacement を保持できるようにする
-  - 完了時には command repository contract tests が upsert、tie-break、multi-key score、empty slice replacement を in-memory 実装で確認できる
+  - Global best readは全Mod scopeからuserの最高行を選び、完了時にはupsert、tie-break、score_id uniqueness、checksum replacement、empty slice replacementを確認できる
   - _Requirements: 2.1, 2.2, 2.6, 5.7, 8.1, 8.2, 8.3, 10.5_
   - _Boundary: Beatmap leaderboard command repo_
   - _Depends: 1.1, 1.3_
 
 - [x] 2.2 SQLAlchemy command persistence を projection schema に接続する
   - command repository は Unit of Work-owned session だけを使い、直接 commit/rollback しない
-  - projection natural key と rank key copy を使って concurrent upsert を DB constraint で収束させる
+  - raw Modを含むprojection natural keyとrank key copyを使ってconcurrent upsertをDB constraintで収束させる
   - explicit projection slice replacement は user slice と beatmap slice の両方で stale rows を削除する
   - 完了時には SQLAlchemy command repository tests が in-memory contract と同じ結果を確認できる
   - _Requirements: 2.1, 2.2, 2.6, 5.7, 8.1, 8.2, 8.3, 10.5_
   - _Depends: 2.1_
 
 - [x] 2.3 (P) Beatmap Leaderboard query repository contract と in-memory behavior を実装する
-  - top rows は projection から current Beatmap、checksum、passed、submission eligibility、owner visibility を適用して読む
+  - top rowsはMod別projectionを起点にsource Score表示情報、current Beatmap、checksum、owner visibilityを適用して読む
   - PB rank は rows と同じ filtered candidate ordering から actual rank を計算する
-  - Country と Friends は read-time filter とし、Selected Mods は mod filter key を使う
+  - CountryとFriendsはread-time user filterとし、Selected Modsだけprojection modsへのraw bitflag完全一致を使う
   - 完了時には top 50、PB outside top 50、Country/Friends filter、visibility、checksum の in-memory repository contract tests が通る
   - _Requirements: 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.1, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 7.1, 7.3, 7.4, 7.6, 8.5, 10.4_
   - _Boundary: Beatmap leaderboard query repo_
   - _Depends: 1.1, 1.2, 1.3_
 
 - [x] 2.4 SQLAlchemy query persistence と PP enrichment を実装する
-  - query repository は projection、Score、Beatmap、User/Role、Replay、current Performance Calculation を read-only に join する
+  - query repositoryはMod別projectionを起点にScore、Beatmap、User/Role、Replay、current Performance Calculationをread-onlyにjoinする
   - rows と PB rank は同じ filtered candidate ordering を使い、rank と display order が diverge しない
   - PP は current Ranked / Approved row の enrichment として返し、missing PP や Loved / Qualified で row を隠さない
-  - 完了時には SQLAlchemy query repository tests が window rank、current filters、nullable PP、projection-based SQL を確認できる
+  - 完了時にはSQLAlchemy query repository testsがwindow rank、current filters、nullable PP、projection起点SQL、Selected Mods exact mods filterを確認できる
   - _Requirements: 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.1, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 7.1, 7.3, 7.4, 7.6, 8.5, 9.1, 9.2, 9.3, 9.4, 10.4_
   - _Depends: 2.3_
 
@@ -84,14 +99,15 @@
 
 - [x] 3.2 Submit leaderboard updater を score submission transaction に統合する
   - accepted eligible score は previous Global all-mods best と比較して submit PB delta を作る
-  - score の actual mods から all matching projection scopes を更新する
+  - accepted scoreは同一raw Mod scopeのprojection rowをupsertし、その後全Mod行からGlobal all-mods bestを再選択する
+  - Global専用rowは作らず、1つのscore_idをGlobal用とSelected Mods用に重複保存しない
   - idempotency retry は保存済み submit result を返し、projection や PB delta を再計算しない
   - 完了時には eligible submit、lower score submit、ineligible submit、same fingerprint retry の command tests が通る
   - _Requirements: 2.1, 2.2, 2.6, 5.7, 8.1, 8.2, 8.3, 8.4_
   - _Depends: 2.2, 3.1_
 
 - [x] 3.3 Rebuild command workflow を実装する
-  - user slice と beatmapset slice を source Score から再計算できるようにする
+  - user sliceとbeatmapset sliceのraw Mod別projectionをcurrent-checksum source Scoreから再計算できるようにする
   - explicit projection slice replacement により eligible source がない場合も stale projection rows を消す
   - repeated rebuild は同じ public leaderboard result に収束する
   - 完了時には user rebuild、beatmapset rebuild、empty candidate rebuild、duplicate rebuild の service tests が通る
@@ -108,7 +124,7 @@
   - _Depends: 2.4_
 
 - [x] 4.2 Viewer-dependent scopes と Personal Best resolution を実装する
-  - Global/Country/Friends PB は all-mods scope、Selected Mods PB は selected mod filter scope で解決する
+  - Global/Country/Friends PBはmods predicateなし、Selected Mods PBだけprojection mods完全一致で解決する
   - authenticated visible viewer の PB は top rows と別枠で返し、top 50 内なら重複表示を許可する
   - non-visible viewer は PB だけ suppress し、public rows は返せるようにする
   - 完了時には PB outside top 50、PB duplicated in rows、Country/Friends viewer guards、non-visible viewer behavior の query tests が通る
@@ -119,7 +135,7 @@
   - current Beatmap status、current checksum、score owner visibility、score eligibility を rows と PB rank の両方に適用する
   - current PP がある Ranked / Approved rows だけ PP を expose し、PP availability は rank や visibility に影響させない
   - Loved / Qualified rows は PP がなくても表示できる
-  - 完了時には pending rebuild 中の stale projection が public response から隠れる tests が通る
+  - current checksumやvisibilityでstale projection rowを公開せず、rebuild後にprojectionがsource Scoreへ収束するtestsが通る
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 7.1, 7.3, 7.4, 7.6, 9.1, 9.2, 9.3, 9.4, 10.4_
   - _Depends: 4.2_
 
@@ -127,8 +143,8 @@
 - [x] 5.1 Stable getscores request mapping を leaderboard category に変換する
   - `v=1` は Global、`v=2` は Selected Mods、`v=3` は Friends、`v=4` は Country として扱う
   - unsupported `v` は Global fallback せず header-only empty listing にする
-  - selected `mods` は stable bitmask から domain mod combination へ変換して filter policy に渡す
-  - 完了時には category mapper tests と stable verification fixture が Local、Selected Mods、Friends、Country、unsupported、Mirror selected を確認できる
+  - selected `mods`はstable raw bitmaskを正規化せずdomain ModCombinationへ変換する
+  - 完了時にはcategory mapper testsとstable verification fixtureがLocal、Selected Mods、Friends、Country、unsupported、Mirror exact matchを確認できる
   - _Requirements: 1.3, 1.4, 1.6, 5.1, 5.8_
   - _Depends: 1.1, 4.1_
 
@@ -166,10 +182,10 @@
   - _Depends: 3.3_
 
 - [x] 6.3 Submission、visibility、Beatmap change integration points から rebuild/update を呼び出す
-  - score submission は accepted score path の中で projection update と submit snapshot を同じ durable boundary に収める
+  - score submissionはaccepted score pathの中でraw Mod別projection update、Global PB delta、submit snapshotを同じdurable boundaryに収める
   - user visibility、Beatmap status、Beatmap checksum change は public reads を block せず rebuild job を enqueue できる
-  - pending rebuild 中でも read-time filters が public correctness を保つ
-  - 完了時には submit integration と reconciliation integration tests が stale projection hidden and later corrected を確認できる
+  - pending rebuild中でもcurrent status、checksum、visibility filterでstale rowを公開しない
+  - 完了時にはsubmit integrationとreconciliation integration testsがMod別projection更新と後続収束を確認できる
   - _Requirements: 7.3, 7.4, 7.6, 8.1, 8.2, 8.3, 8.4, 10.1, 10.2, 10.3, 10.4, 10.5_
   - _Depends: 3.2, 3.3, 6.1, 6.2_
 
@@ -177,13 +193,13 @@
 - [x] 7.1 Stable getscores category scenarios を end-to-end で検証する
   - Global/Local、Country、Friends、Selected Mods が expected rows、PB、rank、count を返す
   - Friends は viewer 自身を含み、reverse-only relationship を含めない
-  - NoMod、NC/DT、PF/SD、Mirror selected の stable-visible behavior が確認できる
+  - NoMod exact、DTとNC|DTの分離、SDとPF|SDの分離、Mirror exactのstable-visible behaviorが確認できる
   - 完了時には stable endpoint tests が top 50 limit、PB outside top 50、category-specific empty results を通す
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 4.5, 4.8, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.8_
   - _Depends: 6.3_
 
 - [x] 7.2 Submit and reconciliation scenarios を end-to-end で検証する
-  - accepted eligible score は Global all-mods submit PB delta と projection rows を更新する
+  - accepted eligible scoreはGlobal all-mods submit PB deltaと同一raw Mod scopeのprojection 1行を更新する
   - same fingerprint retry は saved snapshot を返し、PB delta と projection を再計算しない
   - Beatmap status、checksum、user visibility の変更後、pending rebuild 中も public output が current filters に従う
   - 完了時には submit/retry/rebuild integration tests が repeated rebuild convergence を確認できる

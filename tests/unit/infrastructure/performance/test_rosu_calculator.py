@@ -166,7 +166,7 @@ def _score(*, accuracy: float = 1.0) -> Score:
         perfect=True,
         client_version="b20250101",
         submitted_at=_NOW,
-        beatmap_status_at_submission=BeatmapRankStatus.RANKED.value,
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
     )
 
 

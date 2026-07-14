@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast, override
 import pytest
 from structlog.testing import capture_logs
 
-from osu_server.domain.storage.blobs import BlobDeduplicated, BlobStored
+from osu_server.domain.storage.blobs import BlobDeduplicated, BlobStorageBackendKind, BlobStored
 from osu_server.infrastructure.storage.errors import BackendWriteError, BlobContentMissingError
 from osu_server.repositories.memory.commands.blobs import InMemoryBlobCommandRepository
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
@@ -179,7 +179,7 @@ def _make_service(
         blob_query_repo=selected_query_repo,
         uow_factory=selected_uow_factory,
         backend=selected_backend,
-        storage_backend="local",
+        storage_backend=BlobStorageBackendKind.LOCAL,
     )
     return service, selected_query_repo, selected_backend
 

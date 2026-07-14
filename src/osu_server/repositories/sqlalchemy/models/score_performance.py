@@ -14,49 +14,106 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    and_,
+    column,
     func,
-    text,
+    or_,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
-
-_KNOWN_STATE_VALUES = (
-    "queued",
-    "fetching_file",
-    "calculating",
-    "completed",
-    "unavailable",
-    "superseded",
+from osu_server.repositories.sqlalchemy.models.enum_types import (
+    FORMULA_PROFILE_ENUM,
+    PERFORMANCE_CALCULATION_STATE_ENUM,
+    PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
+    PERFORMANCE_RECALCULATION_REASON_ENUM,
+    PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
 )
-_KNOWN_STATES_SQL = ", ".join(f"'{state}'" for state in _KNOWN_STATE_VALUES)
-_KNOWN_STATE_SQL = f"state IN ({_KNOWN_STATES_SQL})"
-_COMPLETED_VALUES_SQL = "state != 'completed' OR {completed_values}".format(
-    completed_values="(pp IS NOT NULL AND star_rating IS NOT NULL AND calculated_at IS NOT NULL)"
+
+_CALCULATION_STATE_COLUMN = column("state", PERFORMANCE_CALCULATION_STATE_ENUM)
+_CALCULATION_PP_COLUMN = column("pp", Numeric(12, 6))
+_CALCULATION_STAR_RATING_COLUMN = column("star_rating", Numeric(8, 5))
+_CALCULATION_CALCULATED_AT_COLUMN = column("calculated_at", DateTime(timezone=True))
+_CALCULATION_UNAVAILABLE_REASON_COLUMN = column("unavailable_reason", String(128))
+_CALCULATION_CLAIM_OWNER_COLUMN = column("claim_owner", String(128))
+_CALCULATION_CLAIM_EXPIRES_AT_COLUMN = column("claim_expires_at", DateTime(timezone=True))
+_CALCULATION_IS_CURRENT_COLUMN = column("is_current", Boolean)
+_COMPLETED_VALUES_CONSTRAINT = or_(
+    _CALCULATION_STATE_COLUMN != "completed",
+    and_(
+        _CALCULATION_PP_COLUMN.is_not(None),
+        _CALCULATION_STAR_RATING_COLUMN.is_not(None),
+        _CALCULATION_CALCULATED_AT_COLUMN.is_not(None),
+    ),
+)
+_UNAVAILABLE_REASON_CONSTRAINT = or_(
+    _CALCULATION_STATE_COLUMN != "unavailable",
+    _CALCULATION_UNAVAILABLE_REASON_COLUMN.is_not(None),
+)
+_CALCULATION_CLAIM_METADATA_PAIR = or_(
+    and_(
+        _CALCULATION_CLAIM_OWNER_COLUMN.is_(None),
+        _CALCULATION_CLAIM_EXPIRES_AT_COLUMN.is_(None),
+    ),
+    and_(
+        _CALCULATION_CLAIM_OWNER_COLUMN.is_not(None),
+        _CALCULATION_CLAIM_EXPIRES_AT_COLUMN.is_not(None),
+    ),
+)
+_CALCULATION_CLAIM_METADATA_CONSTRAINT = and_(
+    _CALCULATION_CLAIM_METADATA_PAIR,
+    or_(
+        _CALCULATION_STATE_COLUMN.in_(("queued", "fetching_file", "calculating")),
+        and_(
+            _CALCULATION_CLAIM_OWNER_COLUMN.is_(None),
+            _CALCULATION_CLAIM_EXPIRES_AT_COLUMN.is_(None),
+        ),
+    ),
+)
+_WORK_ITEM_STATE_COLUMN = column("state", PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM)
+_WORK_ITEM_CLAIM_OWNER_COLUMN = column("claim_owner", String(128))
+_WORK_ITEM_CLAIM_EXPIRES_AT_COLUMN = column("claim_expires_at", DateTime(timezone=True))
+_WORK_ITEM_CLAIM_METADATA_CONSTRAINT = or_(
+    and_(
+        _WORK_ITEM_STATE_COLUMN == "claimed",
+        _WORK_ITEM_CLAIM_OWNER_COLUMN.is_not(None),
+        _WORK_ITEM_CLAIM_EXPIRES_AT_COLUMN.is_not(None),
+    ),
+    and_(
+        _WORK_ITEM_STATE_COLUMN != "claimed",
+        _WORK_ITEM_CLAIM_OWNER_COLUMN.is_(None),
+        _WORK_ITEM_CLAIM_EXPIRES_AT_COLUMN.is_(None),
+    ),
 )
 
 
 class ScorePerformanceCalculationModel(Base):
+    """1回の PP 計算と処理中の lease を保持する ORM model.
+
+    `claim_owner` は処理中 worker の識別子、`claim_expires_at` は lease 有効期限を表す.
+    未 claim または terminal state では両方を `NULL` にし、片方だけの保存を禁止する.
+    """
+
     __tablename__: str = "score_performance_calculations"
     __table_args__: tuple[CheckConstraint | Index, ...] = (
         CheckConstraint(
-            _KNOWN_STATE_SQL,
-            name="ck_score_performance_state_known",
-        ),
-        CheckConstraint(
-            _COMPLETED_VALUES_SQL,
+            _COMPLETED_VALUES_CONSTRAINT,
             name="ck_score_performance_completed_values",
         ),
         CheckConstraint(
-            "state != 'unavailable' OR unavailable_reason IS NOT NULL",
+            _UNAVAILABLE_REASON_CONSTRAINT,
             name="ck_score_performance_unavailable_reason",
+        ),
+        CheckConstraint(
+            _CALCULATION_CLAIM_METADATA_CONSTRAINT,
+            name="ck_score_performance_claim_metadata_pair",
         ),
         Index(
             "idx_score_performance_current_unique",
             "score_id",
             unique=True,
-            postgresql_where=text("is_current = true"),
+            postgresql_where=_CALCULATION_IS_CURRENT_COLUMN.is_(True),
         ),
         Index("idx_score_performance_score_current", "score_id", "is_current"),
         Index("idx_score_performance_state_claim", "state", "claim_expires_at"),
@@ -70,13 +127,13 @@ class ScorePerformanceCalculationModel(Base):
         ForeignKey("scores.id", name="fk_score_performance_calculations_score_id"),
         nullable=False,
     )
-    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(PERFORMANCE_CALCULATION_STATE_ENUM, nullable=False)
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False)
     pp: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     star_rating: Mapped[Decimal | None] = mapped_column(Numeric(8, 5), nullable=True)
     calculator_name: Mapped[str] = mapped_column(String(64), nullable=False)
     calculator_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    formula_profile: Mapped[str] = mapped_column(String(64), nullable=False)
+    formula_profile: Mapped[str] = mapped_column(FORMULA_PROFILE_ENUM, nullable=False)
     beatmap_file_attachment_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey(
@@ -112,11 +169,14 @@ class PerformanceRecalculationBatchModel(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        PERFORMANCE_RECALCULATION_BATCH_STATUS_ENUM,
+        nullable=False,
+    )
     filters: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     reason_counts: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     target_calculator_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    target_formula_profile: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_formula_profile: Mapped[str] = mapped_column(FORMULA_PROFILE_ENUM, nullable=False)
     candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     completed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     unavailable_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
@@ -132,8 +192,18 @@ class PerformanceRecalculationBatchModel(Base):
 
 
 class PerformanceRecalculationWorkItemModel(Base):
+    """再計算 batch 内の1 score と worker claim を保持する ORM model.
+
+    `CLAIMED` state だけが `claim_owner` と `claim_expires_at` を持つ. `PENDING` と
+    terminal state では両方を `NULL` にする.
+    """
+
     __tablename__: str = "performance_recalculation_work_items"
-    __table_args__: tuple[Index, ...] = (
+    __table_args__: tuple[CheckConstraint | Index, ...] = (
+        CheckConstraint(
+            _WORK_ITEM_CLAIM_METADATA_CONSTRAINT,
+            name="ck_performance_recalculation_work_item_claim_metadata",
+        ),
         Index("idx_performance_recalculation_work_items_batch_state", "batch_id", "state"),
         Index(
             "idx_performance_recalculation_work_items_state_claim",
@@ -157,8 +227,11 @@ class PerformanceRecalculationWorkItemModel(Base):
         ForeignKey("scores.id", name="fk_performance_recalculation_work_items_score_id"),
         nullable=False,
     )
-    reason: Mapped[str] = mapped_column(String(64), nullable=False)
-    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str] = mapped_column(PERFORMANCE_RECALCULATION_REASON_ENUM, nullable=False)
+    state: Mapped[str] = mapped_column(
+        PERFORMANCE_RECALCULATION_WORK_ITEM_STATE_ENUM,
+        nullable=False,
+    )
     calculation_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey(

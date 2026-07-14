@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
 from osu_server.infrastructure.database.engine import create_engine
@@ -98,7 +99,7 @@ def _make_score(
         perfect=False,
         client_version="b20240101",
         submitted_at=datetime.now(UTC),
-        beatmap_status_at_submission="ranked",
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
     )
 
 
@@ -119,7 +120,7 @@ async def test_sqlalchemy_score_repository_creates_and_retrieves_score(
     assert retrieved is not None
     assert retrieved.id == created.id
     assert retrieved.online_checksum == created.online_checksum
-    assert retrieved.beatmap_status_at_submission == "ranked"
+    assert retrieved.beatmap_status_at_submission is BeatmapRankStatus.RANKED
 
 
 async def test_sqlalchemy_score_repository_exists_by_online_checksum(
@@ -214,7 +215,7 @@ async def test_sqlalchemy_score_repository_preserves_all_fields(
     assert retrieved.geki == score.geki
     assert retrieved.katu == score.katu
     assert retrieved.miss == score.miss
-    assert retrieved.beatmap_status_at_submission == "ranked"
+    assert retrieved.beatmap_status_at_submission is BeatmapRankStatus.RANKED
 
 
 async def test_sqlalchemy_score_repository_preserves_timing_fields(

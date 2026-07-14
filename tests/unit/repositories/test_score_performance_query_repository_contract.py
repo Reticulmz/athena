@@ -5,16 +5,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from osu_server.domain.beatmaps import BeatmapFileAttachment
+from osu_server.domain.beatmaps import BeatmapFileAttachment, BeatmapFileSource, BeatmapRankStatus
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.performance import (
     FormulaProfile,
     PerformanceCalculation,
     PerformanceCalculationState,
+    RecalculationCandidateReason,
 )
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.queries.score_performance import (
-    RecalculationCandidateReason,
     ScorePerformanceCandidateSelection,
 )
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
@@ -229,7 +229,7 @@ def _score(
         perfect=False,
         client_version="b20250101",
         submitted_at=_NOW,
-        beatmap_status_at_submission=beatmap_status,
+        beatmap_status_at_submission=BeatmapRankStatus(beatmap_status),
     )
 
 
@@ -276,7 +276,7 @@ def _attachment(
         beatmap_id=beatmap_id,
         blob_id=blob_id,
         checksum_md5=checksum_md5,
-        source="official",
+        source=BeatmapFileSource.OFFICIAL,
         original_filename=f"{beatmap_id}.osu",
         fetched_at=_NOW,
         verified_at=_NOW,

@@ -12,7 +12,7 @@ from osu_server.domain.identity.users import User
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
-from osu_server.domain.storage.blobs import Blob, BlobStored
+from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind, BlobStored
 from osu_server.services.commands.scores import ParsedSubmissionInput, SubmitScoreUseCase
 from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from osu_server.services.queries.identity.password_service import PasswordService
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from osu_server.domain.identity.system_users import SystemUserIdentity
     from osu_server.domain.scores.replay import Replay
     from osu_server.domain.scores.score import Score
-    from osu_server.domain.scores.submission import ScoreSubmission
+    from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
     from osu_server.infrastructure.security.hibp import HIBPClient
     from osu_server.repositories.interfaces.queries.users import UserQueryRepository
     from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
@@ -278,7 +278,7 @@ class UowScoreSubmissionRepositoryView:
     async def update_state(
         self,
         submission_id: int,
-        state: str,
+        state: ScoreSubmissionState,
         result_snapshot: dict[str, object] | None = None,
     ) -> None:
         async with self._unit_of_work_factory() as uow:
@@ -344,7 +344,7 @@ class StubBlobStorageService:
             sha256=digest,
             byte_size=len(data),
             content_type=content_type,
-            storage_backend="test",
+            storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key=f"sha256/{digest[:2]}/{digest[2:4]}/{digest}",
             created_at=datetime.now(UTC),
         )
@@ -356,8 +356,9 @@ class StubBlobStorageService:
 type ScorePayloadDecryptFactory = Callable[[bytes, bytes, str | None], DecryptedPayload]
 type ScorePayloadParseFactory = Callable[[str], ParsedScore]
 
+_TEST_BEATMAP_CHECKSUM = "0123456789abcdef0123456789abcdef"
 _DEFAULT_TEST_SCORE_PAYLOAD = (
-    "1000:test_user:abc123:online_checksum_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+    f"1000:test_user:{_TEST_BEATMAP_CHECKSUM}:online_checksum_1:0:0:100:10:5:0:0:2:500000:99:1:1"
 )
 
 
@@ -435,7 +436,9 @@ def make_test_submission_input(
 
 
 def make_stable_score_submit_decoder(
-    payload: str = "1000:test_user:abc123:online_checksum:0:0:100:10:5:0:0:2:500000:99:1:1",
+    payload: str = (
+        f"1000:test_user:{_TEST_BEATMAP_CHECKSUM}:online_checksum:0:0:100:10:5:0:0:2:500000:99:1:1"
+    ),
     *,
     checksum_valid: bool = True,
     payload_decryptor: StableScorePayloadDecryptor | None = None,

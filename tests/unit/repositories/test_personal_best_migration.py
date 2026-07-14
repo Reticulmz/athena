@@ -1,10 +1,13 @@
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import Column, ForeignKeyConstraint, String, Table
+from sqlalchemy import Column, ForeignKeyConstraint, Table
 
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import PersonalBestModel
+
+if TYPE_CHECKING:
+    from sqlalchemy.dialects.postgresql import ENUM
 
 MIGRATION_PATH = Path("alembic/versions/20260617_0101_add_personal_bests.py")
 
@@ -13,8 +16,8 @@ def _column(table: Table, name: str) -> Column[object]:
     return cast("Column[object]", table.c[name])
 
 
-def _string_length(column: Column[object]) -> int | None:
-    return cast("String", column.type).length
+def _enum_values(column: Column[object]) -> tuple[str, ...]:
+    return tuple(cast("ENUM", column.type).enums)
 
 
 def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
@@ -64,7 +67,12 @@ def test_personal_best_metadata_matches_projection_contract() -> None:
     assert not _column(table, "category").nullable
     assert not _column(table, "score_id").nullable
     assert not _column(table, "ranking_value").nullable
-    assert _string_length(_column(table, "category")) == 32
+    assert _enum_values(_column(table, "category")) == (
+        "global",
+        "country",
+        "selected_mods",
+        "friends",
+    )
     assert _foreign_key_constraints(table)["fk_personal_bests_score_id"] == (
         "score_id",
         "scores.id",

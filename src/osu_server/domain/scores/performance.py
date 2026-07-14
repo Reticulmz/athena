@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -12,14 +11,13 @@ from typing import TYPE_CHECKING
 from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.scores.mods import Mod
 from osu_server.domain.scores.score import Playstyle
+from osu_server.shared.checksums import MD5_HEX_LENGTH, is_lowercase_md5_hexdigest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from datetime import datetime
 
     from osu_server.domain.scores.score import Score
-
-_MD5_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 
 class PerformanceCalculationState(Enum):
@@ -78,6 +76,27 @@ class PerformanceRecalculationWorkItemState(Enum):
         return self in self.terminal_states()
 
 
+class RecalculationCandidateReason(Enum):
+    """PP再計算候補になったoperator-visible reasonを表す閉集合.
+
+    Attributes:
+        UNCALCULATED (str): Current Performance Calculationが存在しない理由.
+        STALE (str): Beatmap fileまたは計算結果が最新条件を満たさない理由.
+        CALCULATOR_VERSION_MISMATCH (str): Calculator versionが対象と異なる理由.
+        FORMULA_PROFILE_MISMATCH (str): Formula profileが対象と異なる理由.
+        UNAVAILABLE (str): 既存計算がunavailableで再試行対象になった理由.
+
+    Notes:
+        Domain/use-case境界ではEnum memberを使い、永続化境界だけで文字列値へ変換する.
+    """
+
+    UNCALCULATED = "uncalculated"
+    STALE = "stale"
+    CALCULATOR_VERSION_MISMATCH = "calculator_version_mismatch"
+    FORMULA_PROFILE_MISMATCH = "formula_profile_mismatch"
+    UNAVAILABLE = "unavailable"
+
+
 class FormulaProfile(Enum):
     """Playstyle-scoped formula profile key."""
 
@@ -116,12 +135,30 @@ class PerformanceCalculation:
 
 @dataclass(slots=True, frozen=True)
 class PerformanceRecalculationBatch:
-    """Durable operator-created recalculation work set."""
+    """Operatorが作成した永続的な再計算work set.
+
+    Attributes:
+        id (int | None): 永続化後のbatch ID. 未永続化時はNone.
+        status (PerformanceRecalculationBatchStatus): Batch全体のlifecycle state.
+        filters (Mapping[str, object]): 候補選択に使用したfilter snapshot.
+        reason_counts (Mapping[RecalculationCandidateReason, int]): 理由別候補件数.
+        target_calculator_version (str): 再計算先のcalculator version.
+        target_formula_profile (FormulaProfile): 再計算先のformula profile.
+        candidate_count (int): Batchへ登録した候補総数.
+        completed_count (int): 正常完了したwork item数.
+        unavailable_count (int): Unavailableで完了したwork item数.
+        last_error (str | None): 最新のbatch error. 未発生時はNone.
+        created_at (datetime): Batch作成日時.
+        updated_at (datetime): Batch最終更新日時.
+
+    Raises:
+        ValueError: ID、件数、進捗、version、errorがdomain invariantを満たさない場合.
+    """
 
     id: int | None
     status: PerformanceRecalculationBatchStatus
     filters: Mapping[str, object]
-    reason_counts: Mapping[str, int]
+    reason_counts: Mapping[RecalculationCandidateReason, int]
     target_calculator_version: str
     target_formula_profile: FormulaProfile
     candidate_count: int
@@ -137,12 +174,31 @@ class PerformanceRecalculationBatch:
 
 @dataclass(slots=True, frozen=True)
 class PerformanceRecalculationWorkItem:
-    """One score target inside a durable recalculation batch."""
+    """durableな再計算batchに含まれる1件のScore処理状態を表す.
+
+    Attributes:
+        id (int | None): 永続化前はNoneとなるwork item ID.
+        batch_id (int): 所属する再計算batch ID.
+        score_id (int): 再計算対象のScore ID.
+        reason (RecalculationCandidateReason): 候補へ選定された理由.
+        state (PerformanceRecalculationWorkItemState): 処理lifecycle state.
+        calculation_id (int | None): 起動または完了した計算ID.
+        claim_owner (str | None): 処理権を保持するworker識別子.
+        claim_expires_at (datetime | None): claimの有効期限.
+        attempt_count (int): claimされた処理回数.
+        last_error (str | None): 直近のoperator-visible error.
+        created_at (datetime): work itemを作成した日時.
+        updated_at (datetime): work itemを最後に更新した日時.
+
+    Notes:
+        CLAIMEDではclaim_ownerとclaim_expires_atを同時に設定する. Terminal stateでは
+        calculation_idが必須となり、active claimは保持しない.
+    """
 
     id: int | None
     batch_id: int
     score_id: int
-    reason: str
+    reason: RecalculationCandidateReason
     state: PerformanceRecalculationWorkItemState
     calculation_id: int | None
     claim_owner: str | None
@@ -227,10 +283,7 @@ def _score_status(score: Score) -> BeatmapRankStatus | None:
     raw_status = score.beatmap_status_at_submission
     if raw_status is None:
         return None
-    try:
-        return BeatmapRankStatus(raw_status)
-    except ValueError:
-        return BeatmapRankStatus.UNKNOWN
+    return BeatmapRankStatus(raw_status)
 
 
 def _validate_identity(calculation: PerformanceCalculation) -> None:
@@ -254,8 +307,11 @@ def _validate_provenance(calculation: PerformanceCalculation) -> None:
         msg = "beatmap_file_attachment_id must be positive"
         raise ValueError(msg)
     checksum = calculation.beatmap_file_checksum_md5
-    if checksum is not None and _MD5_PATTERN.fullmatch(checksum) is None:
-        msg = "beatmap_file_checksum_md5 must be a 32-character lowercase hexadecimal string"
+    if checksum is not None and not is_lowercase_md5_hexdigest(checksum):
+        msg = (
+            f"beatmap_file_checksum_md5 must be a {MD5_HEX_LENGTH}-character "
+            "lowercase hexadecimal string"
+        )
         raise ValueError(msg)
 
 
@@ -337,10 +393,7 @@ def _validate_recalculation_batch(batch: PerformanceRecalculationBatch) -> None:
     if batch.last_error == "":
         msg = "last_error cannot be empty"
         raise ValueError(msg)
-    for reason, count in batch.reason_counts.items():
-        if reason == "":
-            msg = "recalculation reason cannot be empty"
-            raise ValueError(msg)
+    for count in batch.reason_counts.values():
         if count < 0:
             msg = "recalculation reason counts must be non-negative"
             raise ValueError(msg)
@@ -355,9 +408,6 @@ def _validate_recalculation_work_item(item: PerformanceRecalculationWorkItem) ->
         raise ValueError(msg)
     if item.score_id <= 0:
         msg = "recalculation work item score_id must be positive"
-        raise ValueError(msg)
-    if item.reason == "":
-        msg = "recalculation work item reason is required"
         raise ValueError(msg)
     if item.calculation_id is not None and item.calculation_id <= 0:
         msg = "recalculation work item calculation_id must be positive"
@@ -413,4 +463,5 @@ __all__ = [
     "PerformanceRecalculationBatchStatus",
     "PerformanceRecalculationWorkItem",
     "PerformanceRecalculationWorkItemState",
+    "RecalculationCandidateReason",
 ]

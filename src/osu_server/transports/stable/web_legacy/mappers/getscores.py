@@ -15,7 +15,6 @@ from osu_server.domain.compatibility.stable.getscores import (
     StableLeaderboardSelection,
 )
 from osu_server.domain.compatibility.stable.mods import stable_mod_bitmask_to_mod_combination
-from osu_server.domain.scores.leaderboards import filter_from_mod_combination
 from osu_server.domain.scores.mods import Mod, ModCombination
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 
@@ -132,14 +131,27 @@ class GetscoresQueryParser:
 
 
 class StableGetscoresLeaderboardMapper:
-    """Map stable getscores category fields to leaderboard query selection."""
+    """stable getscoresのcategory fieldをleaderboard選択へ変換するmapper."""
 
     def map_request(self, request: GetscoresRequest) -> StableLeaderboardSelection:
+        """getscores requestからleaderboard選択結果を構築する.
+
+        Args:
+            request (GetscoresRequest): stable clientから解析したgetscores request.
+
+        Returns:
+            StableLeaderboardSelection: category, Selected Modsのraw bitflag,
+            header-only状態, および未対応状態を含む選択結果.
+
+        Notes:
+            Selected Mods以外では`selected_mods`をNoneにする. Relaxまたは
+            Autopilotを含む指定と不正なMod値はscore行を返さない.
+        """
         category = _leaderboard_category_from_request(request)
         if category is None:
             return StableLeaderboardSelection(
                 category=None,
-                selected_mod_filter=None,
+                selected_mods=None,
                 header_only=True,
                 unsupported=request.leaderboard_type is not None,
             )
@@ -148,7 +160,7 @@ class StableGetscoresLeaderboardMapper:
         if mods is None:
             return StableLeaderboardSelection(
                 category=category,
-                selected_mod_filter=None,
+                selected_mods=None,
                 header_only=True,
                 unsupported=True,
             )
@@ -156,21 +168,14 @@ class StableGetscoresLeaderboardMapper:
         if mods.has(Mod.RELAX) or mods.has(Mod.AUTOPILOT):
             return StableLeaderboardSelection(
                 category=category,
-                selected_mod_filter=None,
+                selected_mods=None,
                 header_only=True,
             )
 
-        selected_mod_filter = None
-        unsupported = False
-        if category is LeaderboardCategory.SELECTED_MODS:
-            selected_mod_filter = filter_from_mod_combination(mods)
-            unsupported = not selected_mod_filter.is_supported
-
         return StableLeaderboardSelection(
             category=category,
-            selected_mod_filter=selected_mod_filter,
-            header_only=request.song_select is True or unsupported,
-            unsupported=unsupported,
+            selected_mods=(mods if category is LeaderboardCategory.SELECTED_MODS else None),
+            header_only=request.song_select is True,
         )
 
 

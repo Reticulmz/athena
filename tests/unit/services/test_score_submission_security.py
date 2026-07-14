@@ -17,6 +17,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFileState,
     BeatmapMetadataSource,
+    BeatmapMode,
     BeatmapRankStatus,
     BeatmapResolveOptions,
     BeatmapResolveResult,
@@ -41,13 +42,15 @@ from tests.support.fakes import (
     make_test_submission_input,
 )
 
+_BEATMAP_CHECKSUM = "0123456789abcdef0123456789abcdef"
+
 
 def _resolved_beatmap() -> Beatmap:
     return Beatmap(
         id=123,
         beatmapset_id=456,
         checksum_md5="0123456789abcdef0123456789abcdef",
-        mode="osu",
+        mode=BeatmapMode.OSU,
         version="Test",
         total_length=None,
         hit_length=None,
@@ -74,7 +77,7 @@ def _fingerprint_for(
     input_data: ParsedSubmissionInput,
     *,
     user_id: int = 1000,
-    beatmap_checksum: str = "valid_checksum",
+    beatmap_checksum: str = _BEATMAP_CHECKSUM,
     submitted_timestamp: str | None = None,
 ) -> str:
     return generate_submission_fingerprint(
@@ -87,7 +90,7 @@ def _fingerprint_for(
 
 def _valid_parsed_score(
     *,
-    beatmap_checksum: str = "valid_checksum",
+    beatmap_checksum: str = _BEATMAP_CHECKSUM,
     online_checksum: str = "12345678",
 ) -> ParsedScore:
     return ParsedScore(

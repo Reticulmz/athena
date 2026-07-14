@@ -12,10 +12,10 @@ from osu_server.domain.scores.performance import (
     FormulaProfile,
     PerformanceRecalculationBatch,
     PerformanceRecalculationBatchStatus,
+    RecalculationCandidateReason,
 )
 from osu_server.domain.scores.score import Ruleset
 from osu_server.repositories.interfaces.queries.score_performance import (
-    RecalculationCandidateReason,
     ScorePerformanceCandidateSelection,
     ScorePerformanceRecalculationCandidate,
     ScorePerformanceRecalculationCandidateResult,
@@ -233,7 +233,10 @@ async def test_dry_run_returns_candidate_count_and_reason_breakdown_without_uow_
 
     assert result.outcome is CreatePerformanceRecalculationBatchOutcome.DRY_RUN
     assert result.candidate_count == 2
-    assert result.reason_counts == {"uncalculated": 1, "stale": 1}
+    assert result.reason_counts == {
+        RecalculationCandidateReason.UNCALCULATED: 1,
+        RecalculationCandidateReason.STALE: 1,
+    }
     assert result.batch is None
     assert factory.open_count == 0
     assert factory.created_batches == []
@@ -269,8 +272,8 @@ async def test_execute_saves_filters_provenance_reason_counts_work_items_and_com
     assert result.batch.id == 1
     assert result.candidate_count == 2
     assert result.reason_counts == {
-        "uncalculated": 1,
-        "calculator_version_mismatch": 1,
+        RecalculationCandidateReason.UNCALCULATED: 1,
+        RecalculationCandidateReason.CALCULATOR_VERSION_MISMATCH: 1,
     }
     assert result.filters == {
         "score_id": None,
@@ -290,8 +293,8 @@ async def test_execute_saves_filters_provenance_reason_counts_work_items_and_com
     assert batch_command.target_formula_profile is FormulaProfile.VANILLA_RANKED
     assert [work.score_id for work in batch_command.work_items] == [101, 102]
     assert [work.reason for work in batch_command.work_items] == [
-        "uncalculated",
-        "calculator_version_mismatch",
+        RecalculationCandidateReason.UNCALCULATED,
+        RecalculationCandidateReason.CALCULATOR_VERSION_MISMATCH,
     ]
     assert batch_command.created_at == _NOW
     assert wake.calls == [_WakeCall(batch_id=1, commit_count_at_call=1)]

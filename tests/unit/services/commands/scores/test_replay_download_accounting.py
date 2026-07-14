@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 import structlog.testing
 
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.identity.users import User
 from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
@@ -558,7 +559,7 @@ def _score(*, owner_user_id: int) -> Score:
         perfect=False,
         client_version="20240101",
         submitted_at=_NOW,
-        beatmap_status_at_submission="ranked",
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
         leaderboard_eligible_at_submission=True,
     )
 

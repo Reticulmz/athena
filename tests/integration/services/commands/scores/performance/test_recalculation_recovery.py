@@ -18,6 +18,7 @@ from osu_server.domain.scores.performance import (
     PerformanceRecalculationBatch,
     PerformanceRecalculationBatchStatus,
     PerformanceRecalculationWorkItemState,
+    RecalculationCandidateReason,
 )
 from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 from osu_server.repositories.interfaces.commands.score_performance import (
@@ -193,8 +194,8 @@ async def _create_profile_migration_batch(
     assert created.outcome is CreatePerformanceRecalculationBatchOutcome.CREATED
     assert created.candidate_count == 2
     assert created.reason_counts == {
-        "calculator_version_mismatch": 1,
-        "formula_profile_mismatch": 1,
+        RecalculationCandidateReason.CALCULATOR_VERSION_MISMATCH: 1,
+        RecalculationCandidateReason.FORMULA_PROFILE_MISMATCH: 1,
     }
     batch_id = _require_batch_id(created.batch)
     assert wake.calls == [_WakeCall(batch_id=batch_id)]
@@ -218,11 +219,11 @@ async def _assert_initial_batch(
     assert batch.target_formula_profile is FormulaProfile.VANILLA_RANKED
     assert first_work is not None
     assert first_work.score_id == seeded.version_mismatch_score_id
-    assert first_work.reason == "calculator_version_mismatch"
+    assert first_work.reason is RecalculationCandidateReason.CALCULATOR_VERSION_MISMATCH
     assert first_work.state is PerformanceRecalculationWorkItemState.PENDING
     assert second_work is not None
     assert second_work.score_id == seeded.profile_mismatch_score_id
-    assert second_work.reason == "formula_profile_mismatch"
+    assert second_work.reason is RecalculationCandidateReason.FORMULA_PROFILE_MISMATCH
     assert second_work.state is PerformanceRecalculationWorkItemState.PENDING
 
 
@@ -451,7 +452,7 @@ def _score(*, online_checksum: str) -> Score:
         perfect=False,
         client_version="b20250101",
         submitted_at=_NOW,
-        beatmap_status_at_submission=BeatmapRankStatus.RANKED.value,
+        beatmap_status_at_submission=BeatmapRankStatus.RANKED,
     )
 
 

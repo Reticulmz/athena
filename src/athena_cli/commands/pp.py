@@ -249,8 +249,9 @@ def _print_candidate_breakdown(
     typer.echo(f"Candidates: {result.candidate_count}")
     if result.reason_counts:
         typer.echo("Reasons:")
-        for reason, count in sorted(result.reason_counts.items()):
-            typer.echo(f"  {reason}: {count}")
+        ordered_reasons = sorted(result.reason_counts.items(), key=lambda item: item[0].value)
+        for reason, count in ordered_reasons:
+            typer.echo(f"  {reason.value}: {count}")
     else:
         typer.echo("Reasons: none")
     target = (

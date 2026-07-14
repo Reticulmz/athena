@@ -1,9 +1,13 @@
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import CheckConstraint, Column, String, Table, UniqueConstraint
+from sqlalchemy import Enum as SQLAlchemyEnum
 
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import BlobModel
+
+if TYPE_CHECKING:
+    from sqlalchemy.sql.elements import ColumnElement
 
 
 def _table() -> Table:
@@ -16,6 +20,12 @@ def _column(table: Table, name: str) -> Column[object]:
 
 def _string_length(column: Column[object]) -> int | None:
     return cast("String", column.type).length
+
+
+def _enum_type(column: Column[object]) -> SQLAlchemyEnum:
+    enum_type = column.type
+    assert isinstance(enum_type, SQLAlchemyEnum)
+    return enum_type
 
 
 def test_blob_model_is_registered_for_migration_discovery() -> None:
@@ -41,7 +51,16 @@ def test_blob_model_defines_immutable_metadata_columns() -> None:
     assert not _column(table, "content_type").nullable
     assert _string_length(_column(table, "content_type")) == 255
     assert not _column(table, "storage_backend").nullable
-    assert _string_length(_column(table, "storage_backend")) == 32
+    storage_backend_type = _enum_type(_column(table, "storage_backend"))
+    assert cast("bool", storage_backend_type.native_enum) is False
+    assert cast("bool", storage_backend_type.create_constraint) is True
+    assert cast("bool", storage_backend_type.validate_strings) is True
+    assert storage_backend_type.name == "ck_blobs_storage_backend_known"
+    assert any(
+        isinstance(constraint, CheckConstraint)
+        and constraint.name == "ck_blobs_storage_backend_known"
+        for constraint in table.constraints
+    )
     assert not _column(table, "storage_key").nullable
     assert _string_length(_column(table, "storage_key")) == 512
     assert not _column(table, "created_at").nullable
@@ -67,7 +86,11 @@ def test_blob_model_enforces_unique_sha256_and_non_negative_size() -> None:
         if isinstance(constraint, UniqueConstraint)
     }
     check_constraints = {
-        constraint.name: str(cast("object", constraint.sqltext))
+        constraint.name: str(
+            cast("ColumnElement[bool]", constraint.sqltext).compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
         for constraint in table.constraints
         if isinstance(constraint, CheckConstraint)
     }

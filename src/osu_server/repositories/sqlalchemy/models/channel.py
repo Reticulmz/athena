@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
+from osu_server.repositories.sqlalchemy.models.enum_types import CHANNEL_TYPE_ENUM
 
 
 class ChannelModel(Base):
@@ -24,7 +25,11 @@ class ChannelModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     topic: Mapped[str] = mapped_column(String(256), nullable=False, server_default="")
-    channel_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="public")
+    channel_type: Mapped[str] = mapped_column(
+        CHANNEL_TYPE_ENUM,
+        nullable=False,
+        server_default="public",
+    )
     auto_join: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     rate_limit_messages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rate_limit_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
