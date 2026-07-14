@@ -6,6 +6,8 @@ from osu_server.domain.scores.mods import ModCombination
 from osu_server.domain.scores.payload_parser import ParsedScore, ParseError
 from osu_server.transports.stable.web_legacy.mappers import StableScorePayloadParser
 
+_UNSUPPORTED_STABLE_MOD_BITMASK = 1 << 31
+
 
 def _parse(payload: str) -> ParsedScore:
     return StableScorePayloadParser().parse(payload)
@@ -95,6 +97,31 @@ def test_parse_with_mods() -> None:
     result = _parse(payload)
 
     assert result.mods == ModCombination.from_bitmask(72)  # HD+DT
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        (f"100:user:abc:xyz:0:{_UNSUPPORTED_STABLE_MOD_BITMASK}:300:0:0:0:0:0:500000:300:0:1"),
+        (f"abc:user:xyz:300:0:0:0:0:0:500000:300:0:S:{_UNSUPPORTED_STABLE_MOD_BITMASK}:1:0"),
+    ],
+)
+def test_unsupported_mod_bitmask_reports_mod_validation_error(payload: str) -> None:
+    """unsupported stable Mod bitをinteger parse失敗と区別する.
+
+    Args:
+        payload (str): unsupported bitを含むlegacyまたはstable payload.
+
+    Returns:
+        None: Mod validation専用のParseErrorになることを示す.
+
+    Raises:
+        AssertionError: unsupported Modがinteger field失敗へ誤分類された場合.
+    """
+    with pytest.raises(ParseError, match="Invalid stable mod bitmask") as exc_info:
+        _ = _parse(payload)
+
+    assert "integer field" not in str(exc_info.value).casefold()
 
 
 def test_parse_different_rulesets() -> None:

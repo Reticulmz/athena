@@ -258,10 +258,11 @@ def _scope_lock_key(scope: BeatmapLeaderboardUserScope) -> int:
         "beatmap_leaderboard_user_bests:"
         f"{scope.user_id}:{scope.beatmap_id}:{scope.ruleset.value}:{scope.playstyle.value}"
     ).encode()
-    value = int.from_bytes(blake2b(payload, digest_size=8).digest(), byteorder="big")
-    if value >= 2**63:
-        return value - 2**64
-    return value
+    return int.from_bytes(
+        blake2b(payload, digest_size=8).digest(),
+        byteorder="big",
+        signed=True,
+    )
 
 
 def _is_score_id_uniqueness_error(exc: IntegrityError) -> bool:
