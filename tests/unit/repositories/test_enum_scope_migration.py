@@ -92,8 +92,10 @@ def test_enum_migration_converts_closed_values_and_score_based_leaderboards() ->
     assert "beatmaps.c.checksum_md5 == scores.c.beatmap_checksum" in migration
     assert "op.execute(sa.delete(projection))" not in migration
     assert "_replace_projection_table(" in migration
+    assert "lock_projection_updates()" in migration
     assert "_GLOBAL_PROJECTION_STAGING_TABLE" in migration
     assert "_LEGACY_PROJECTION_STAGING_TABLE" in migration
+    assert '"mod_filter_key IS NULL OR mod_filter_key >= 0"' not in migration
     assert '"leaderboard_mod_filter_keys"' not in migration
     assert "_validate_enum_column" in migration
     assert "_create_enum_constraint" in migration
@@ -150,8 +152,10 @@ def test_mod_scoped_projection_migration_uses_checked_raw_mod_bitflags() -> None
     assert "partition_by_mods=False" in migration
     assert "_delete_projection_rows" not in migration
     assert "_replace_projection_table(" in migration
+    assert "lock_projection_updates()" in migration
     assert "_MOD_SCOPED_PROJECTION_STAGING_TABLE" in migration
     assert "_GLOBAL_PROJECTION_STAGING_TABLE" in migration
+    assert 'sa.CheckConstraint("mods >= 0"' not in migration
     assert "op.execute(sa.text(" not in migration
 
 
@@ -171,6 +175,7 @@ def test_leaderboard_indexes_are_created_concurrently_without_raw_sql() -> None:
     assert '"idx_scores_beatmap_leaderboard_candidates"' not in enum_migration
     assert "with op.get_context().autocommit_block():" in repair_migration
     assert repair_migration.count("postgresql_concurrently=True") >= 2
+    assert "lock_projection_updates()" in repair_migration
     assert 'revision: str = "20260713_0700"' in online_index_migration
     assert 'down_revision: str | None = "20260713_0600"' in online_index_migration
     assert "with op.get_context().autocommit_block():" in online_index_migration

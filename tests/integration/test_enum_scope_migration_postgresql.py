@@ -107,6 +107,8 @@ _GLOBAL_SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_scop
 _GLOBAL_SCORE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_score_id_0400"
 _GLOBAL_SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_global_score_id_0400"
 _GLOBAL_USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_global_user_rebuild_0400"
+_LOCK_BLOCK_ASSERTION_TIMEOUT_SECONDS = 0.1
+_LOCK_RELEASE_TIMEOUT_SECONDS = 1.0
 _BEATMAPSET_ID = 1_970_100_001
 _BEATMAP_ID = 1_970_100_002
 _USER_1_ID = 1_970_000_001
@@ -243,6 +245,8 @@ class _MigrationModule(Protocol):
     def upgrade(self) -> None: ...
 
     def downgrade(self) -> None: ...
+
+    def lock_projection_updates(self) -> None: ...
 
 
 def _load_migration_module(module_name: str, path: Path) -> _MigrationModule:
@@ -886,11 +890,17 @@ async def test_postgresql_scope_lock_serializes_concurrent_personal_best_updates
         await first_repository.lock_scope(scope)
         waiting_task = asyncio.create_task(second_repository.lock_scope(scope))
         try:
-            done, _ = await asyncio.wait({waiting_task}, timeout=0.1)
+            done, _ = await asyncio.wait(
+                {waiting_task},
+                timeout=_LOCK_BLOCK_ASSERTION_TIMEOUT_SECONDS,
+            )
             assert not done
 
             await first_session.commit()
-            await asyncio.wait_for(waiting_task, timeout=1.0)
+            await asyncio.wait_for(
+                waiting_task,
+                timeout=_LOCK_RELEASE_TIMEOUT_SECONDS,
+            )
         finally:
             if not waiting_task.done():
                 _ = waiting_task.cancel()
@@ -932,11 +942,17 @@ async def test_postgresql_rebuild_lock_blocks_concurrent_scope_update(
         await rebuild_repository.lock_rebuild()
         waiting_task = asyncio.create_task(submit_repository.lock_scope(scope))
         try:
-            done, _ = await asyncio.wait({waiting_task}, timeout=0.1)
+            done, _ = await asyncio.wait(
+                {waiting_task},
+                timeout=_LOCK_BLOCK_ASSERTION_TIMEOUT_SECONDS,
+            )
             assert not done
 
             await rebuild_session.commit()
-            await asyncio.wait_for(waiting_task, timeout=1.0)
+            await asyncio.wait_for(
+                waiting_task,
+                timeout=_LOCK_RELEASE_TIMEOUT_SECONDS,
+            )
         finally:
             if not waiting_task.done():
                 _ = waiting_task.cancel()
@@ -978,11 +994,17 @@ async def test_postgresql_scope_update_blocks_concurrent_rebuild(
         await submit_repository.lock_scope(scope)
         waiting_task = asyncio.create_task(rebuild_repository.lock_rebuild())
         try:
-            done, _ = await asyncio.wait({waiting_task}, timeout=0.1)
+            done, _ = await asyncio.wait(
+                {waiting_task},
+                timeout=_LOCK_BLOCK_ASSERTION_TIMEOUT_SECONDS,
+            )
             assert not done
 
             await submit_session.commit()
-            await asyncio.wait_for(waiting_task, timeout=1.0)
+            await asyncio.wait_for(
+                waiting_task,
+                timeout=_LOCK_RELEASE_TIMEOUT_SECONDS,
+            )
         finally:
             if not waiting_task.done():
                 _ = waiting_task.cancel()
@@ -991,6 +1013,79 @@ async def test_postgresql_scope_update_blocks_concurrent_rebuild(
                 await submit_session.rollback()
             if rebuild_session.in_transaction():
                 await rebuild_session.rollback()
+
+
+@pytest.mark.parametrize(
+    ("module_name", "migration_path"),
+    [
+        pytest.param("enum_scope_migration_lock", _MIGRATION_PATH, id="0400"),
+        pytest.param(
+            "leaderboard_projection_repair_migration_lock",
+            _LEADERBOARD_REPAIR_MIGRATION_PATH,
+            id="0500",
+        ),
+        pytest.param("mod_scoped_migration_lock", _MOD_SCOPED_MIGRATION_PATH, id="0600"),
+    ],
+)
+async def test_postgresql_migration_lock_blocks_concurrent_scope_update(
+    postgres_engine: AsyncEngine,
+    module_name: str,
+    migration_path: Path,
+) -> None:
+    """migration rebuild lockがruntime submit更新をswap完了まで待機させる.
+
+    Args:
+        postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
+        module_name (str): lock検証用に読み込む一意なmodule名.
+        migration_path (Path): runtimeとlock契約を共有するmigration file.
+
+    Returns:
+        None: migration transaction完了後にscope lockを取得できたことを示す.
+
+    Raises:
+        AssertionError: migration中にscope lockを取得できた場合.
+        TimeoutError: migration完了後もscope lockを取得できない場合.
+    """
+    migration = _load_migration_module(module_name, migration_path)
+    session_factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    scope = BeatmapLeaderboardUserScope(
+        beatmap_id=_BEATMAP_ID,
+        beatmap_checksum=_CURRENT_CHECKSUM,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=_USER_1_ID,
+    )
+    async with (
+        postgres_engine.connect() as migration_connection,
+        session_factory() as submit_session,
+    ):
+        migration_transaction = await migration_connection.begin()
+        _ = await submit_session.begin()
+        await migration_connection.run_sync(
+            lambda connection: _acquire_migration_projection_lock(connection, migration)
+        )
+        submit_repository = SQLAlchemyBeatmapLeaderboardCommandRepository(submit_session)
+        waiting_task = asyncio.create_task(submit_repository.lock_scope(scope))
+        try:
+            done, _ = await asyncio.wait(
+                {waiting_task},
+                timeout=_LOCK_BLOCK_ASSERTION_TIMEOUT_SECONDS,
+            )
+            assert not done
+
+            await migration_transaction.commit()
+            await asyncio.wait_for(
+                waiting_task,
+                timeout=_LOCK_RELEASE_TIMEOUT_SECONDS,
+            )
+        finally:
+            if not waiting_task.done():
+                _ = waiting_task.cancel()
+                _ = await asyncio.gather(waiting_task, return_exceptions=True)
+            if migration_transaction.is_active:
+                await migration_transaction.rollback()
+            if submit_session.in_transaction():
+                await submit_session.rollback()
 
 
 async def test_postgresql_claimed_replacement_completion_clears_claims_before_flush(
@@ -1459,6 +1554,14 @@ def _run_mod_scoped_downgrade(connection: Connection) -> None:
 def _run_mod_scoped_upgrade(connection: Connection) -> None:
     _MOD_SCOPED_MIGRATION.op = Operations(MigrationContext.configure(connection))
     _MOD_SCOPED_MIGRATION.upgrade()
+
+
+def _acquire_migration_projection_lock(
+    connection: Connection,
+    migration: _MigrationModule,
+) -> None:
+    migration.op = Operations(MigrationContext.configure(connection))
+    migration.lock_projection_updates()
 
 
 def _run_online_index_downgrade(connection: Connection) -> None:

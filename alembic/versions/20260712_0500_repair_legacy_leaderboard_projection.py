@@ -7,6 +7,7 @@ Create Date: 2026-07-12 05:00:00.000000
 
 from __future__ import annotations
 
+from hashlib import blake2b
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
@@ -29,6 +30,7 @@ _USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_global_user_rebuild_04
 _SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_scope_0400"
 _SCORE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_score_id_0400"
 _SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_global_score_id_0400"
+_PROJECTION_REBUILD_LOCK_NAMESPACE = "beatmap_leaderboard_user_bests:rebuild"
 _CANONICAL_COLUMN_TYPE_SQL = {
     "id": "BIGINT",
     "beatmap_id": "INTEGER",
@@ -212,6 +214,7 @@ def _recreate_global_projection(inspector: Inspector) -> None:
     Notes:
         Projectionはderived dataであり, 旧行は保持せずscoresから再導出する.
     """
+    lock_projection_updates()
     if inspector.has_table(_PROJECTION_TABLE):
         op.drop_table(_PROJECTION_TABLE)
 
@@ -259,6 +262,35 @@ def _recreate_global_projection(inspector: Inspector) -> None:
         ["user_id", "beatmap_id", "ruleset", "playstyle"],
     )
     _rebuild_current_global_projection()
+
+
+def lock_projection_updates() -> None:
+    """fallback repairをruntime submitとtransaction内で直列化する.
+
+    Returns:
+        None: transaction終了までexclusive maintenance lockを保持したことを示す.
+
+    Raises:
+        SQLAlchemyError: PostgreSQL advisory lockを取得できない場合.
+
+    Notes:
+        Runtime repositoryとnamespaceおよびBlake2b変換契約を共有する.
+    """
+    statement = sa.select(sa.func.pg_advisory_xact_lock(_projection_rebuild_lock_key()))
+    _ = op.get_bind().execute(statement)
+
+
+def _projection_rebuild_lock_key() -> int:
+    """projection maintenance用のsigned 64-bit advisory lock keyを返す.
+
+    Returns:
+        int: runtime submit/rebuildと共有するPostgreSQL advisory lock key.
+    """
+    return int.from_bytes(
+        blake2b(_PROJECTION_REBUILD_LOCK_NAMESPACE.encode(), digest_size=8).digest(),
+        byteorder="big",
+        signed=True,
+    )
 
 
 def _rebuild_current_global_projection() -> None:

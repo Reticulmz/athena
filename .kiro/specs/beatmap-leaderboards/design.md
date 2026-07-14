@@ -667,6 +667,7 @@ Replacement semantics:
 
 - Submit projection updates acquire a shared projection-maintenance advisory lock and then the existing exclusive user/Beatmap/ruleset/playstyle scope lock.
 - Rebuild commands acquire the matching exclusive projection-maintenance advisory lock before reading source Scores, so a stale rebuild snapshot cannot replace a newly submitted winner.
+- Projection-rebuilding migrations acquire the same exclusive maintenance lock before staging backfill and hold it through the table swap, so a submission cannot commit a live projection update that the swap discards.
 - Delete all existing projection rows inside `slice_`.
 - Insert the supplied `rows`.
 - Accept empty `rows` as the correct result when no eligible source Score remains.
@@ -916,9 +917,11 @@ Metrics can be added later through the existing metrics surface; the design does
 graph TB
     Start[Start migration] --> ValidateClosedValues[Validate closed string values]
     ValidateClosedValues --> AddChecks[Add non-native Enum named CHECK constraints]
-    AddChecks --> BuildGlobalStaging[Build and backfill 0400 Global staging table]
+    AddChecks --> LockGlobalWrites[Acquire exclusive projection maintenance lock]
+    LockGlobalWrites --> BuildGlobalStaging[Build and backfill 0400 Global staging table]
     BuildGlobalStaging --> SwapGlobal[Swap completed Global table into place]
-    SwapGlobal --> BuildModStaging[Build 0600 raw Mod staging table]
+    SwapGlobal --> LockModWrites[Acquire exclusive projection maintenance lock]
+    LockModWrites --> BuildModStaging[Build 0600 raw Mod staging table]
     BuildModStaging --> RebuildProjection[Backfill user plus raw Mod winners]
     RebuildProjection --> ConstrainMods[Build CHECK, unique constraints, and rebuild index on staging]
     ConstrainMods --> SwapMod[Swap completed raw Mod table into place]
@@ -930,8 +933,8 @@ graph TB
 Phase details:
 
 - Keep `scores.leaderboard_eligible_at_submission` as the submission-time eligibility snapshot.
-- 0400 builds a complete Global-only transitional table under a non-live staging name, backfills current-checksum winners, creates its constraints/index, then limits live-table locking to the final drop/rename swap. `mod_filter_key` rows are not deleted in place. 0500 recognizes the transitional constraint names and concurrently repairs the large Score candidate index before fallback projection repair when needed.
-- 0600 builds the final non-null `mods` schema under a staging name and rebuilds one winner per Beatmap、ruleset、playstyle、user、raw mods from current-checksum eligible source Scores without wiping the live projection.
+- 0400 acquires the runtime-compatible exclusive projection-maintenance advisory lock before backfill, builds a complete Global-only transitional table under a non-live staging name, creates its constraints/index, and holds the lock through the final drop/rename swap. `mod_filter_key` rows are not deleted in place. 0500 recognizes the transitional constraint names, concurrently repairs the large Score candidate index, and takes the same lock before fallback projection repair when needed.
+- 0600 reacquires the exclusive maintenance lock before building the final non-null `mods` schema under a staging name and holds it while rebuilding one winner per Beatmap、ruleset、playstyle、user、raw mods and swapping the table. Projection-changing submissions wait and resume against the new table after migration commit.
 - 0600 creates `mods >= 0`, Mod-scoped uniqueness, `score_id` uniqueness, and the rebuild index on the non-live staging table before the final swap. The live table therefore avoids full-table DELETE, validation scans, and unique-index builds.
 - 0700 runs in an Alembic autocommit block, validates the Score candidate index by structural column order, semantic sort direction, order-independent boolean predicate terms, and PostgreSQL `indisvalid`/`indisready` state, then repairs drift when needed and creates separate Global and Selected Mods rank indexes with concurrent DDL. Equivalent Inspector renderings do not trigger a rebuild. Keeping final index validation and rank DDL in a successor revision makes a failed online build restartable from completed revision 0600.
 - Selected Mods uses `projection.mods == request.mods`; no canonical filter key, implied-mod predicate, or Global-only duplicate row is added.

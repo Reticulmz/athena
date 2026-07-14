@@ -7,6 +7,7 @@ Create Date: 2026-07-10 01:00:00.000000
 
 from __future__ import annotations
 
+from hashlib import blake2b
 from typing import TYPE_CHECKING, cast
 
 import sqlalchemy as sa
@@ -42,6 +43,7 @@ _LEGACY_SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_score_id"
 _LEGACY_SCOPE_UNIQUE_INDEX = "idx_beatmap_leaderboard_user_bests_scope_unique"
 _LEGACY_ORDERING_INDEX = "idx_beatmap_leaderboard_user_bests_ordering"
 _LEGACY_USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_user_rebuild"
+_PROJECTION_REBUILD_LOCK_NAMESPACE = "beatmap_leaderboard_user_bests:rebuild"
 
 
 def _checked_string_enum(
@@ -227,13 +229,13 @@ def upgrade() -> None:
     Raises:
         RuntimeError: Enum の許容値外データまたは重複 score_id を検出した場合.
     """
-    _upgrade_leaderboard_storage()
     _upgrade_score_enums()
     _upgrade_beatmap_enums()
     _upgrade_blob_enums()
     _upgrade_channel_enums()
     _upgrade_personal_best_enums()
     _upgrade_performance_enums()
+    _upgrade_leaderboard_storage()
 
 
 def downgrade() -> None:
@@ -263,6 +265,7 @@ def _upgrade_leaderboard_storage() -> None:
     Notes:
         live projection tableをDELETEせず, source Score scanとindex構築をstaging側で行う.
     """
+    lock_projection_updates()
     _create_global_projection_table(_GLOBAL_PROJECTION_STAGING_TABLE)
     _rebuild_current_global_projection(_GLOBAL_PROJECTION_STAGING_TABLE)
     _validate_unique_projection_score_ids(_GLOBAL_PROJECTION_STAGING_TABLE)
@@ -339,6 +342,35 @@ def _replace_projection_table(staging_table: str) -> None:
     """
     op.drop_table(_PROJECTION_TABLE)
     op.rename_table(staging_table, _PROJECTION_TABLE)
+
+
+def lock_projection_updates() -> None:
+    """migration rebuildをruntime submitとtransaction内で直列化する.
+
+    Returns:
+        None: transaction終了までexclusive maintenance lockを保持したことを示す.
+
+    Raises:
+        SQLAlchemyError: PostgreSQL advisory lockを取得できない場合.
+
+    Notes:
+        Runtime repositoryとnamespaceおよびBlake2b変換契約を共有する.
+    """
+    statement = sa.select(sa.func.pg_advisory_xact_lock(_projection_rebuild_lock_key()))
+    _ = op.get_bind().execute(statement)
+
+
+def _projection_rebuild_lock_key() -> int:
+    """projection maintenance用のsigned 64-bit advisory lock keyを返す.
+
+    Returns:
+        int: runtime submit/rebuildと共有するPostgreSQL advisory lock key.
+    """
+    return int.from_bytes(
+        blake2b(_PROJECTION_REBUILD_LOCK_NAMESPACE.encode(), digest_size=8).digest(),
+        byteorder="big",
+        signed=True,
+    )
 
 
 def _rebuild_current_global_projection(projection_table: str) -> None:
@@ -455,6 +487,7 @@ def _downgrade_leaderboard_storage() -> None:
     Returns:
         None: Global/Selected Mods legacy tableへのatomic swapが完了したことを示す.
     """
+    lock_projection_updates()
     _create_legacy_projection_table(_LEGACY_PROJECTION_STAGING_TABLE)
     _restore_legacy_leaderboard_projection(_LEGACY_PROJECTION_STAGING_TABLE)
     mod_filter_key = sa.column("mod_filter_key", sa.Integer())
@@ -500,6 +533,7 @@ def _create_legacy_projection_table(table_name: str) -> None:
     Returns:
         None: legacy column/constraintを持つ空tableを作成したことを示す.
     """
+    mod_filter_key = sa.column("mod_filter_key", sa.Integer())
     op.create_table(
         table_name,
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
@@ -524,7 +558,7 @@ def _create_legacy_projection_table(table_name: str) -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "mod_filter_key IS NULL OR mod_filter_key >= 0",
+            sa.or_(mod_filter_key.is_(None), mod_filter_key >= 0),
             name=_LEGACY_MODS_CHECK_CONSTRAINT,
         ),
         sa.ForeignKeyConstraint(
