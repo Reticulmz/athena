@@ -423,6 +423,52 @@ def test_enum_migration_converts_closed_values_and_score_based_leaderboards() ->
     _assert_check_constraints_are_structural(tree)
 
 
+def test_enum_constraints_are_added_not_valid_before_explicit_scan() -> None:
+    """Enum CHECK追加時の長時間table scanがwriteを遮断しないことを確認する.
+
+    Returns:
+        None: NOT VALID追加後に既存値を明示検証する構造であることを示す.
+
+    Raises:
+        AssertionError: CHECK追加が既存値scanを伴う場合, または検証順が逆の場合.
+    """
+    tree = _migration_tree(MIGRATION_PATH)
+    helper = _top_level_function(tree, "_create_enum_constraint")
+    constraint_calls = _calls_resolved_as(
+        tree,
+        helper,
+        "alembic.op.create_check_constraint",
+    )
+    validation_calls = _calls_named(helper, "_validate_enum_column")
+
+    assert len(constraint_calls) == 1
+    assert len(validation_calls) == 1
+    assert _boolean_keyword(constraint_calls[0], "postgresql_not_valid") is True
+    assert constraint_calls[0].lineno < validation_calls[0].lineno
+
+
+def test_legacy_projection_repair_builds_staging_before_swap() -> None:
+    """0500 fallbackがlive tableを保持したままbackfillすることを確認する.
+
+    Returns:
+        None: staging作成, backfill, 最終swapの順序を満たすことを示す.
+
+    Raises:
+        AssertionError: live tableをbackfill前にdropする修復構造の場合.
+    """
+    tree = _migration_tree(LEADERBOARD_REPAIR_MIGRATION_PATH)
+    repair = _top_level_function(tree, "_recreate_global_projection")
+    calls = _direct_call_names(repair)
+
+    assert _string_assignment(tree, "_PROJECTION_STAGING_TABLE")
+    assert calls[0] == "lock_projection_updates"
+    assert "_create_global_projection_table" in calls
+    assert calls.index("_rebuild_current_global_projection") < calls.index(
+        "_replace_projection_table"
+    )
+    assert calls[-1] == "_replace_projection_table"
+
+
 def test_legacy_mod_filter_restoration_is_used_only_for_0400_downgrade() -> None:
     """旧mod_filter_key復元が0400 downgradeだけに閉じることを確認する.
 

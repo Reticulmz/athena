@@ -1059,16 +1059,18 @@ def _create_enum_constraint(
     column_name: str,
     enum_type: sa.Enum,
 ) -> None:
-    _validate_enum_column(table_name, column_name, enum_type)
     column = sa.column(
         column_name,
         sa.String(length=enum_type.length),
     )
+    # Enforce concurrent writes before scanning legacy rows without a long exclusive lock.
     op.create_check_constraint(
         _enum_constraint_name(enum_type),
         table_name,
         column.in_(tuple(enum_type.enums)),
+        postgresql_not_valid=True,
     )
+    _validate_enum_column(table_name, column_name, enum_type)
 
 
 def _drop_enum_constraint(table_name: str, enum_type: sa.Enum) -> None:

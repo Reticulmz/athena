@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
@@ -27,6 +28,8 @@ from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.sql.elements import ClauseElement
 
@@ -44,13 +47,48 @@ class FakeResult:
 
 
 class FakeSession:
-    """AsyncSession-shaped fake that records statement and transaction usage."""
+    """Statementとtransaction利用を記録するAsyncSession test double.
+
+    Args:
+        execute_results (list[object | None] | None): executeごとに返却または送出する値.
+
+    Attributes:
+        execute_results (list[object | None]): executeごとに返却または送出する値.
+        statements (list[ClauseElement]): 実行されたSQLAlchemy statement.
+        begin_nested_calls (int): SAVEPOINT開始回数.
+        savepoint_commit_calls (int): 正常終了したSAVEPOINT回数.
+        savepoint_rollback_calls (int): 例外でrollbackしたSAVEPOINT回数.
+        commit_calls (int): session commit呼び出し回数.
+        rollback_calls (int): session rollback呼び出し回数.
+    """
 
     def __init__(self, *, execute_results: list[object | None] | None = None) -> None:
         self.execute_results: list[object | None] = execute_results or []
         self.statements: list[ClauseElement] = []
+        self.begin_nested_calls: int = 0
+        self.savepoint_commit_calls: int = 0
+        self.savepoint_rollback_calls: int = 0
         self.commit_calls: int = 0
         self.rollback_calls: int = 0
+
+    @asynccontextmanager
+    async def begin_nested(self) -> AsyncGenerator[None]:
+        """Repository statement用のSAVEPOINT contextを提供する.
+
+        Yields:
+            None: SAVEPOINT内でstatementを実行できることを示す.
+
+        Raises:
+            BaseException: context内で発生した例外をrollback記録後に再送出する.
+        """
+        self.begin_nested_calls += 1
+        try:
+            yield
+        except BaseException:
+            self.savepoint_rollback_calls += 1
+            raise
+        else:
+            self.savepoint_commit_calls += 1
 
     async def execute(self, statement: ClauseElement) -> FakeResult:
         self.statements.append(statement)
@@ -151,10 +189,14 @@ async def test_upsert_translates_duplicate_score_id_integrity_error() -> None:
         {},
         Exception("uq_beatmap_leaderboard_user_bests_score_id"),
     )
-    repo = _repo(FakeSession(execute_results=[error]))
+    session = FakeSession(execute_results=[error])
+    repo = _repo(session)
 
     with pytest.raises(ValueError, match="score_id is already used"):
         _ = await repo.upsert_if_better(_upsert(score_id=12, score=1_000, submitted_at=_NOW))
+
+    assert session.begin_nested_calls == 1
+    assert session.savepoint_rollback_calls == 1
 
 
 async def test_upsert_preserves_unrelated_integrity_error() -> None:

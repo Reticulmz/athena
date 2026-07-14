@@ -915,9 +915,9 @@ Metrics can be added later through the existing metrics surface; the design does
 
 ```mermaid
 graph TB
-    Start[Start migration] --> ValidateClosedValues[Validate closed string values]
-    ValidateClosedValues --> AddChecks[Add non-native Enum named CHECK constraints]
-    AddChecks --> LockGlobalWrites[Acquire exclusive projection maintenance lock]
+    Start[Start migration] --> AddChecks[Add non-native Enum named CHECK constraints as NOT VALID]
+    AddChecks --> ValidateClosedValues[Validate closed string values with constraints enforcing new writes]
+    ValidateClosedValues --> LockGlobalWrites[Acquire exclusive projection maintenance lock]
     LockGlobalWrites --> BuildGlobalStaging[Build and backfill 0400 Global staging table]
     BuildGlobalStaging --> SwapGlobal[Swap completed Global table into place]
     SwapGlobal --> LockModWrites[Acquire exclusive projection maintenance lock]
@@ -933,7 +933,7 @@ graph TB
 Phase details:
 
 - Keep `scores.leaderboard_eligible_at_submission` as the submission-time eligibility snapshot.
-- 0400 acquires the runtime-compatible exclusive projection-maintenance advisory lock before backfill, builds a complete Global-only transitional table under a non-live staging name, creates its constraints/index, and holds the lock through the final drop/rename swap. `mod_filter_key` rows are not deleted in place. 0500 recognizes the transitional constraint names, concurrently repairs the large Score candidate index, and takes the same lock before fallback projection repair when needed.
+- 0400 adds each named Enum CHECK as `NOT VALID`, then scans existing values while the constraint already rejects concurrent invalid writes. This avoids holding `ACCESS EXCLUSIVE` for the full validation scan. It then acquires the runtime-compatible exclusive projection-maintenance advisory lock before backfill, builds a complete Global-only transitional table under a non-live staging name, creates its constraints/index, and holds the lock through the final drop/rename swap. `mod_filter_key` rows are not deleted in place. 0500 recognizes both 0400 and repaired 0500 constraint names, concurrently repairs the large Score candidate index, and builds any fallback projection repair under a non-live staging name before the final drop/rename swap.
 - 0600 reacquires the exclusive maintenance lock before building the final non-null `mods` schema under a staging name and holds it while rebuilding one winner per Beatmap、ruleset、playstyle、user、raw mods and swapping the table. Projection-changing submissions wait and resume against the new table after migration commit.
 - 0600 creates `mods >= 0`, Mod-scoped uniqueness, `score_id` uniqueness, and the rebuild index on the non-live staging table before the final swap. The live table therefore avoids full-table DELETE, validation scans, and unique-index builds.
 - 0700 runs in an Alembic autocommit block, validates the Score candidate index by structural column order, semantic sort direction, order-independent boolean predicate terms, and PostgreSQL `indisvalid`/`indisready` state, then repairs drift when needed and creates separate Global and Selected Mods rank indexes with concurrent DDL. Equivalent Inspector renderings do not trigger a rebuild. Keeping final index validation and rank DDL in a successor revision makes a failed online build restartable from completed revision 0600.

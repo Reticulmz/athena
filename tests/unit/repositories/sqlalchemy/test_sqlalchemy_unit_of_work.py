@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -59,7 +59,7 @@ from osu_server.repositories.sqlalchemy.unit_of_work import (
 from osu_server.services.commands.identity import AddFriendCommand, AddFriendUseCase
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import AsyncGenerator, Iterable
     from types import TracebackType
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,7 +91,15 @@ class FakeResult:
 
 
 class FakeSession(AbstractAsyncContextManager["FakeSession"]):
-    """AsyncSession-shaped fake that records transaction ownership."""
+    """Transaction ownershipを記録するAsyncSession test double.
+
+    Args:
+        get_results (dict[tuple[type[object], object], object] | None): get応答値.
+        execute_results (list[FakeResult] | None): execute応答値.
+
+    Notes:
+        Repository内SAVEPOINTは記録だけ行い, commit/rollbackはUoWだけが所有する.
+    """
 
     added: list[object]
     commits: int
@@ -104,6 +112,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
     _next_personal_best_id: int
     _get_results: dict[tuple[type[object], object], object]
     _execute_results: list[FakeResult]
+    nested_transactions: int
 
     def __init__(
         self,
@@ -122,6 +131,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         self._next_personal_best_id = 30
         self._get_results = get_results or {}
         self._execute_results = execute_results or []
+        self.nested_transactions = 0
 
     @override
     async def __aenter__(self) -> FakeSession:
@@ -147,6 +157,16 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         if self._execute_results:
             return self._execute_results.pop(0)
         return FakeResult()
+
+    @asynccontextmanager
+    async def begin_nested(self) -> AsyncGenerator[None]:
+        """Repository statement用のSAVEPOINT contextを提供する.
+
+        Yields:
+            None: nested transaction内でstatementを実行できることを示す.
+        """
+        self.nested_transactions += 1
+        yield
 
     async def merge(self, instance: object) -> object:
         self.added.append(instance)

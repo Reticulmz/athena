@@ -131,7 +131,8 @@ class SQLAlchemyBeatmapLeaderboardCommandRepository:
             RuntimeError: upsert 後の保存行を取得できない場合.
         """
         try:
-            _ = await self._session.execute(_upsert_if_better_statement(command))
+            async with self._session.begin_nested():
+                _ = await self._session.execute(_upsert_if_better_statement(command))
         except IntegrityError as exc:
             if not _is_score_id_uniqueness_error(exc):
                 raise

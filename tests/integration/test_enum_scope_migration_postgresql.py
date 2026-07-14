@@ -107,6 +107,10 @@ _GLOBAL_SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_scop
 _GLOBAL_SCORE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_score_id_0400"
 _GLOBAL_SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_global_score_id_0400"
 _GLOBAL_USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_global_user_rebuild_0400"
+_REPAIRED_GLOBAL_SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_scope_0500"
+_REPAIRED_GLOBAL_SCORE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_global_score_id_0500"
+_REPAIRED_GLOBAL_SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_global_score_id_0500"
+_REPAIRED_GLOBAL_USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_global_user_rebuild_0500"
 _LOCK_BLOCK_ASSERTION_TIMEOUT_SECONDS = 0.1
 _LOCK_RELEASE_TIMEOUT_SECONDS = 1.0
 _BEATMAPSET_ID = 1_970_100_001
@@ -856,6 +860,8 @@ async def test_postgresql_duplicate_projection_score_id_is_value_error(
         repository = SQLAlchemyBeatmapLeaderboardCommandRepository(session)
         with pytest.raises(ValueError, match="score_id is already used"):
             _ = await repository.upsert_if_better(command)
+        result = await session.execute(sa.select(sa.literal(1)))
+        assert result.scalar_one() == 1
 
 
 async def test_postgresql_scope_lock_serializes_concurrent_personal_best_updates(
@@ -1350,8 +1356,8 @@ async def test_successor_migration_repairs_duplicate_legacy_projection_rows(
     columns, unique_constraints = await connection.run_sync(_read_projection_schema)
     assert "mod_filter_key" not in columns
     assert "beatmap_checksum" in columns
-    assert _GLOBAL_SCOPE_UNIQUE_CONSTRAINT in unique_constraints
-    assert _GLOBAL_SCORE_UNIQUE_CONSTRAINT in unique_constraints
+    assert _REPAIRED_GLOBAL_SCOPE_UNIQUE_CONSTRAINT in unique_constraints
+    assert _REPAIRED_GLOBAL_SCORE_UNIQUE_CONSTRAINT in unique_constraints
 
 
 async def test_successor_migration_preserves_canonical_projection(
@@ -1983,13 +1989,13 @@ def _assert_global_projection_schema_is_canonical(connection: Connection) -> Non
         if constraint["name"] is not None
     }
     assert unique_constraints == {
-        _GLOBAL_SCOPE_UNIQUE_CONSTRAINT: (
+        _REPAIRED_GLOBAL_SCOPE_UNIQUE_CONSTRAINT: (
             "beatmap_id",
             "ruleset",
             "playstyle",
             "user_id",
         ),
-        _GLOBAL_SCORE_UNIQUE_CONSTRAINT: ("score_id",),
+        _REPAIRED_GLOBAL_SCORE_UNIQUE_CONSTRAINT: ("score_id",),
     }
 
     foreign_keys = {
@@ -1997,8 +2003,8 @@ def _assert_global_projection_schema_is_canonical(connection: Connection) -> Non
         for foreign_key in inspector.get_foreign_keys("beatmap_leaderboard_user_bests")
         if foreign_key["name"] is not None
     }
-    assert set(foreign_keys) == {_GLOBAL_SCORE_FOREIGN_KEY}
-    score_foreign_key = foreign_keys[_GLOBAL_SCORE_FOREIGN_KEY]
+    assert set(foreign_keys) == {_REPAIRED_GLOBAL_SCORE_FOREIGN_KEY}
+    score_foreign_key = foreign_keys[_REPAIRED_GLOBAL_SCORE_FOREIGN_KEY]
     assert tuple(score_foreign_key["constrained_columns"]) == ("score_id",)
     assert score_foreign_key["referred_table"] == "scores"
     assert tuple(score_foreign_key["referred_columns"]) == ("id",)
@@ -2007,7 +2013,7 @@ def _assert_global_projection_schema_is_canonical(connection: Connection) -> Non
         (
             index
             for index in inspector.get_indexes("beatmap_leaderboard_user_bests")
-            if index["name"] == _GLOBAL_USER_REBUILD_INDEX
+            if index["name"] == _REPAIRED_GLOBAL_USER_REBUILD_INDEX
         ),
         None,
     )
