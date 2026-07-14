@@ -301,7 +301,7 @@ class SQLAlchemyBeatmapCommandRepository:
         model = await self._get_fetch_state_model(target)
         if model is None:
             model = BeatmapFetchStateModel(
-                target_type=target.target_type.value,
+                target_type=target.kind.value,
                 target_key=target.target_key,
                 status=status.value,
                 attempt_count=0,
@@ -382,7 +382,7 @@ class SQLAlchemyBeatmapCommandRepository:
         model = (
             await self._session.execute(
                 select(BeatmapFetchStateModel).where(
-                    BeatmapFetchStateModel.target_type == target.target_type.value,
+                    BeatmapFetchStateModel.target_type == target.kind.value,
                     BeatmapFetchStateModel.target_key == target.target_key,
                 )
             )
@@ -395,7 +395,7 @@ def _mark_fetch_pending_statement(
     now: datetime,
 ) -> ReturningInsert[tuple[int]]:
     insert_statement = insert(BeatmapFetchStateModel).values(
-        target_type=target.target_type.value,
+        target_type=target.kind.value,
         target_key=target.target_key,
         status=BeatmapFetchState.PENDING_FETCH.value,
         attempt_count=1,

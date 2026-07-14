@@ -29,6 +29,32 @@ def _memory_factory() -> UnitOfWorkFactory:
     return InMemoryUnitOfWorkFactory()
 
 
+@pytest.mark.parametrize(
+    "checksum",
+    ["", "a" * 31, "a" * 33, "A" * 32, "g" * 32],
+)
+def test_user_scope_rejects_malformed_beatmap_checksum(checksum: str) -> None:
+    """Command scopeがMD5 checksum形式を境界で検証することを確認する.
+
+    Args:
+        checksum (str): 空, 長さ違い, 大文字, または非16進数の入力.
+
+    Returns:
+        None: malformed checksumがValueErrorになることを示す.
+
+    Raises:
+        AssertionError: malformed checksumがscopeとして受理された場合.
+    """
+    with pytest.raises(ValueError, match="beatmap_checksum"):
+        _ = BeatmapLeaderboardUserScope(
+            beatmap_id=1,
+            beatmap_checksum=checksum,
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+            user_id=1,
+        )
+
+
 async def test_upsert_replaces_existing_user_best_only_when_candidate_ranks_higher() -> None:
     factory = _memory_factory()
     scope = _scope()

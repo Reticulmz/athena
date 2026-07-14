@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from osu_server.domain.compatibility.stable.mods import (
     StableModMappingStatus,
     mod_combination_to_stable_bitmask,
@@ -37,3 +39,16 @@ def test_unsupported_canonical_mod_bits_are_explicit_at_stable_boundary() -> Non
     assert result.status == StableModMappingStatus.UNSUPPORTED
     assert result.bitmask is None
     assert result.unsupported_bits == unsupported_lazer_bit
+
+
+def test_stable_input_rejects_unsupported_positive_bits() -> None:
+    """signed Integer範囲外へ到達するstable未対応bitを拒否する.
+
+    Returns:
+        None: bit 31がValueErrorになることを示す.
+
+    Raises:
+        AssertionError: stable未対応bitがModCombinationとして受理された場合.
+    """
+    with pytest.raises(ValueError, match="unsupported bits"):
+        _ = stable_mod_bitmask_to_mod_combination(1 << 31)

@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.sql.base import Executable
     from sqlalchemy.sql.elements import ColumnElement
-    from sqlalchemy.sql.selectable import Subquery
+    from sqlalchemy.sql.selectable import Select, Subquery
 
     from osu_server.repositories.sqlalchemy.queries._shared import SQLAlchemyQuerySessionFactory
 
@@ -132,6 +132,14 @@ def _user_best_score_ids_subquery(scope: LeaderboardReadScope) -> Subquery:
         BeatmapLeaderboardUserBestModel.beatmap_checksum == scope.beatmap_checksum,
         BeatmapLeaderboardUserBestModel.ruleset == scope.ruleset.value,
         BeatmapLeaderboardUserBestModel.playstyle == scope.playstyle.value,
+        ScoreModel.beatmap_id == BeatmapLeaderboardUserBestModel.beatmap_id,
+        ScoreModel.beatmap_checksum == BeatmapLeaderboardUserBestModel.beatmap_checksum,
+        ScoreModel.ruleset == BeatmapLeaderboardUserBestModel.ruleset,
+        ScoreModel.playstyle == BeatmapLeaderboardUserBestModel.playstyle,
+        ScoreModel.user_id == BeatmapLeaderboardUserBestModel.user_id,
+        ScoreModel.mods == BeatmapLeaderboardUserBestModel.mods,
+        ScoreModel.passed.is_(True),
+        ScoreModel.leaderboard_eligible_at_submission.is_(True),
     ]
     if scope.category is LeaderboardCategory.SELECTED_MODS:
         selected_mods = scope.selected_mods
@@ -146,9 +154,9 @@ def _user_best_score_ids_subquery(scope: LeaderboardReadScope) -> Subquery:
     user_rank = func.row_number().over(
         partition_by=BeatmapLeaderboardUserBestModel.user_id,
         order_by=(
-            BeatmapLeaderboardUserBestModel.score.desc(),
-            BeatmapLeaderboardUserBestModel.submitted_at.asc(),
-            BeatmapLeaderboardUserBestModel.score_id.asc(),
+            ScoreModel.score.desc(),
+            ScoreModel.submitted_at.asc(),
+            ScoreModel.id.asc(),
         ),
     )
     ranked_user_scores = (
@@ -156,6 +164,7 @@ def _user_best_score_ids_subquery(scope: LeaderboardReadScope) -> Subquery:
             BeatmapLeaderboardUserBestModel.score_id.label("score_id"),
             user_rank.label("user_rank"),
         )
+        .join(ScoreModel, ScoreModel.id == BeatmapLeaderboardUserBestModel.score_id)
         .where(*candidate_filters)
         .subquery("ranked_user_scores")
     )
@@ -244,7 +253,32 @@ def _ranked_candidates_subquery(scope: LeaderboardReadScope) -> Subquery:
     )
 
 
-def _select_ranked_candidate_rows(ranked_candidates: Subquery):
+def _select_ranked_candidate_rows(
+    ranked_candidates: Subquery,
+) -> Select[
+    tuple[
+        int,
+        int,
+        str,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        int,
+        bool,
+        int,
+        int,
+        datetime,
+        bool,
+        Decimal | None,
+    ]
+]:
     return select(
         ranked_candidates.c.score_id,
         ranked_candidates.c.user_id,

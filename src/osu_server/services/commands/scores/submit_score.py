@@ -462,6 +462,8 @@ async def _submit_personal_best_delta(
         return None
 
     scope = _leaderboard_user_scope(command, created_score)
+    if command.update_personal_best:
+        await uow.beatmap_leaderboards.lock_scope(scope)
     before_score = (
         await _current_global_leaderboard_best_score(uow, scope)
         if command.include_personal_best_delta

@@ -74,6 +74,23 @@ def test_mirror_selected_mods_filter_uses_exact_raw_bitflag() -> None:
     assert selection.unsupported is False
 
 
+def test_selected_mods_rejects_unsupported_positive_bitmask() -> None:
+    """stable未対応の正数bitmaskをheader-onlyとして扱う.
+
+    Returns:
+        None: bit 31がquery scopeへ渡らないことを示す.
+
+    Raises:
+        AssertionError: unsupported bitmaskがSelected Modsとして受理された場合.
+    """
+    selection = _map(leaderboard_type=2, mods=1 << 31)
+
+    assert selection.category is LeaderboardCategory.SELECTED_MODS
+    assert selection.selected_mods is None
+    assert selection.header_only is True
+    assert selection.unsupported is True
+
+
 def _map(
     *,
     leaderboard_type: int | None,

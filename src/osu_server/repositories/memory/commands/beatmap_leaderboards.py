@@ -29,6 +29,17 @@ class InMemoryBeatmapLeaderboardCommandRepository:
     def __init__(self, state: InMemoryCommandRepositoryState) -> None:
         self._state: InMemoryCommandRepositoryState = state
 
+    async def lock_scope(self, scope: BeatmapLeaderboardUserScope) -> None:
+        """In-memory実装ではtransaction-local snapshotのためlockを持たない.
+
+        Args:
+            scope (BeatmapLeaderboardUserScope): Modを含まないserialization scope.
+
+        Returns:
+            None: no-opが完了したことを示す.
+        """
+        _ = scope
+
     async def get_user_best(
         self,
         scope: BeatmapLeaderboardUserBestScope,

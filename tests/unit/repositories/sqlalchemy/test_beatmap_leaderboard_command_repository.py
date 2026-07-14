@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 
 from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import Mod, ModCombination
@@ -54,6 +55,8 @@ class FakeSession:
     async def execute(self, statement: ClauseElement) -> FakeResult:
         self.statements.append(statement)
         value = self.execute_results.pop(0) if self.execute_results else None
+        if isinstance(value, BaseException):
+            raise value
         return FakeResult(value)
 
     async def commit(self) -> None:
@@ -87,6 +90,64 @@ async def test_upsert_targets_projection_unique_index_and_rank_key_guard() -> No
     assert "beatmap_leaderboard_user_bests.score_id > " in upsert_sql
     assert session.commit_calls == 0
     assert session.rollback_calls == 0
+
+
+async def test_lock_scope_uses_transaction_advisory_lock() -> None:
+    """Global PB read-modify-write用scope lockがtransaction lockであることを確認する.
+
+    Returns:
+        None: repositoryがcommitせずPostgreSQL advisory lockを取得したことを示す.
+
+    Raises:
+        AssertionError: lock statementまたはtransaction ownershipが異なる場合.
+    """
+    session = FakeSession()
+    repo = _repo(session)
+
+    await repo.lock_scope(_user_scope())
+
+    sql = _compiled_sql(session.statements[0])
+    assert "pg_advisory_xact_lock" in sql
+    assert session.commit_calls == 0
+    assert session.rollback_calls == 0
+
+
+async def test_upsert_translates_duplicate_score_id_integrity_error() -> None:
+    """score_id一意制約違反をmemory実装と同じValueErrorへ変換する.
+
+    Returns:
+        None: named score_id制約だけがValueErrorへ変換されたことを示す.
+
+    Raises:
+        AssertionError: raw IntegrityErrorが境界外へ漏れる場合.
+    """
+    error = IntegrityError(
+        "INSERT",
+        {},
+        Exception("uq_beatmap_leaderboard_user_bests_score_id"),
+    )
+    repo = _repo(FakeSession(execute_results=[error]))
+
+    with pytest.raises(ValueError, match="score_id is already used"):
+        _ = await repo.upsert_if_better(_upsert(score_id=12, score=1_000, submitted_at=_NOW))
+
+
+async def test_upsert_preserves_unrelated_integrity_error() -> None:
+    """score_id以外のDB整合性違反を変換せず再送出する.
+
+    Returns:
+        None: unrelated IntegrityErrorのidentityが維持されたことを示す.
+
+    Raises:
+        AssertionError: unrelated IntegrityErrorがValueErrorへ誤変換された場合.
+    """
+    error = IntegrityError("INSERT", {}, Exception("unrelated constraint"))
+    repo = _repo(FakeSession(execute_results=[error]))
+
+    with pytest.raises(IntegrityError) as raised:
+        _ = await repo.upsert_if_better(_upsert(score_id=12, score=1_000, submitted_at=_NOW))
+
+    assert raised.value is error
 
 
 async def test_get_user_best_uses_exact_raw_mod_scope() -> None:

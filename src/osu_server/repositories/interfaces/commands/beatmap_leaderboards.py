@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
+from osu_server.shared.checksums import MD5_HEX_LENGTH, is_lowercase_md5_hexdigest
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -19,7 +21,7 @@ class BeatmapLeaderboardUserScope:
 
     Attributes:
         beatmap_id (int): 対象 Beatmap ID. 正の値でなければならない.
-        beatmap_checksum (str): projection が表す current Beatmap checksum.
+        beatmap_checksum (str): projectionが表す32文字小文字16進数のcurrent checksum.
         ruleset (Ruleset): 対象 ruleset.
         playstyle (Playstyle): 対象 playstyle.
         user_id (int): score owner の User ID. 正の値でなければならない.
@@ -35,8 +37,11 @@ class BeatmapLeaderboardUserScope:
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
             raise ValueError(msg)
-        if not self.beatmap_checksum:
-            msg = "beatmap_checksum must not be empty"
+        if not is_lowercase_md5_hexdigest(self.beatmap_checksum):
+            msg = (
+                f"beatmap_checksum must be a {MD5_HEX_LENGTH}-character "
+                "lowercase hexadecimal string"
+            )
             raise ValueError(msg)
         if self.user_id <= 0:
             msg = "user_id must be positive"
@@ -126,6 +131,17 @@ type BeatmapLeaderboardProjectionSlice = (
 
 class BeatmapLeaderboardCommandRepository(Protocol):
     """raw Mod scope ごとのユーザー最高 score を更新する command port."""
+
+    async def lock_scope(self, scope: BeatmapLeaderboardUserScope) -> None:
+        """同一user/Beatmap/ruleset/playstyleの更新をtransaction内で直列化する.
+
+        Args:
+            scope (BeatmapLeaderboardUserScope): Modを含まないserialization scope.
+
+        Returns:
+            None: transaction終了までscope lockを保持したことを示す.
+        """
+        ...
 
     async def get_user_best(
         self,

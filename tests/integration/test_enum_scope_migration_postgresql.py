@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import os
 import secrets
@@ -36,6 +37,7 @@ from osu_server.domain.storage.blobs import BlobStorageBackendKind
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardUserBestScope,
+    BeatmapLeaderboardUserScope,
     UpsertBeatmapLeaderboardUserBest,
 )
 from osu_server.repositories.interfaces.commands.score_performance import (
@@ -733,6 +735,184 @@ async def test_postgresql_exact_selected_mod_predicates_and_projection_ranking(
     assert current.scope.beatmap_checksum == _CURRENT_CHECKSUM
 
 
+async def test_postgresql_query_falls_back_from_ineligible_projection_scope(
+    postgres_connection: AsyncConnection,
+) -> None:
+    """別Mod scopeのineligible winnerを除外してeligible scoreへfallbackする.
+
+    Args:
+        postgres_connection (AsyncConnection): head適用済みの専用schema接続.
+
+    Returns:
+        None: Global rowsとPBがeligibleな別Mod scopeを選んだことを示す.
+
+    Raises:
+        AssertionError: partition前のsource eligibility検証が不足する場合.
+    """
+    await _seed_fixture(postgres_connection)
+    ineligible_score_id = 9_700_000_010
+    ineligible_score = _score_values(
+        score_id=ineligible_score_id,
+        user_id=_USER_1_ID,
+        mods=int(Mod.HIDDEN),
+        score=10_000,
+        submitted_at=_NOW + timedelta(seconds=10),
+    )
+    ineligible_score["leaderboard_eligible_at_submission"] = False
+    _ = await postgres_connection.execute(sa.insert(ScoreModel), [ineligible_score])
+    _ = await postgres_connection.execute(
+        sa.insert(BeatmapLeaderboardUserBestModel),
+        [
+            {
+                "beatmap_id": _BEATMAP_ID,
+                "beatmap_checksum": _CURRENT_CHECKSUM,
+                "ruleset": Ruleset.OSU.value,
+                "playstyle": Playstyle.VANILLA.value,
+                "user_id": _USER_1_ID,
+                "mods": int(Mod.NONE),
+                "score_id": _NO_MOD_SCORE_ID,
+                "score": 1_000,
+                "submitted_at": _NOW,
+            },
+            {
+                "beatmap_id": _BEATMAP_ID,
+                "beatmap_checksum": _CURRENT_CHECKSUM,
+                "ruleset": Ruleset.OSU.value,
+                "playstyle": Playstyle.VANILLA.value,
+                "user_id": _USER_1_ID,
+                "mods": int(Mod.HIDDEN),
+                "score_id": ineligible_score_id,
+                "score": 10_000,
+                "submitted_at": _NOW + timedelta(seconds=10),
+            },
+        ],
+    )
+    session_factory = async_sessionmaker(
+        postgres_connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    repository = SQLAlchemyBeatmapLeaderboardQueryRepository(session_factory)
+    scope = _read_scope(LeaderboardCategory.GLOBAL)
+
+    rows = await repository.list_top_rows(scope, limit=50)
+    personal_best = await repository.get_personal_best(
+        scope,
+        viewer_user_id=_USER_1_ID,
+    )
+
+    assert [row.score_id for row in rows] == [_NO_MOD_SCORE_ID]
+    assert personal_best is not None
+    assert personal_best.score_id == _NO_MOD_SCORE_ID
+    assert personal_best.rank == 1
+
+
+async def test_postgresql_duplicate_projection_score_id_is_value_error(
+    postgres_connection: AsyncConnection,
+) -> None:
+    """実PostgreSQLのscore_id一意制約をrepository境界でValueErrorへ変換する.
+
+    Args:
+        postgres_connection (AsyncConnection): head適用済みの専用schema接続.
+
+    Returns:
+        None: SQL実装がmemory実装と同じexception contractを満たすことを示す.
+
+    Raises:
+        AssertionError: raw IntegrityErrorがrepository境界から漏れる場合.
+    """
+    await _seed_fixture(postgres_connection)
+    _ = await postgres_connection.execute(
+        sa.insert(BeatmapLeaderboardUserBestModel),
+        [
+            {
+                "beatmap_id": _BEATMAP_ID,
+                "beatmap_checksum": _CURRENT_CHECKSUM,
+                "ruleset": Ruleset.OSU.value,
+                "playstyle": Playstyle.VANILLA.value,
+                "user_id": _USER_1_ID,
+                "mods": int(Mod.NONE),
+                "score_id": _NO_MOD_SCORE_ID,
+                "score": 1_000,
+                "submitted_at": _NOW,
+            }
+        ],
+    )
+    session_factory = async_sessionmaker(
+        postgres_connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    command = UpsertBeatmapLeaderboardUserBest(
+        scope=BeatmapLeaderboardUserBestScope(
+            beatmap_id=_BEATMAP_ID,
+            beatmap_checksum=_CURRENT_CHECKSUM,
+            ruleset=Ruleset.OSU,
+            playstyle=Playstyle.VANILLA,
+            user_id=_USER_1_ID,
+            mods=ModCombination.from_bitmask(int(Mod.HIDDEN)),
+        ),
+        score_id=_NO_MOD_SCORE_ID,
+        rank_key=ScoreRankKey(
+            score=1_000,
+            submitted_at=_NOW,
+            score_id=_NO_MOD_SCORE_ID,
+        ),
+    )
+
+    async with session_factory() as session:
+        repository = SQLAlchemyBeatmapLeaderboardCommandRepository(session)
+        with pytest.raises(ValueError, match="score_id is already used"):
+            _ = await repository.upsert_if_better(command)
+
+
+async def test_postgresql_scope_lock_serializes_concurrent_personal_best_updates(
+    postgres_engine: AsyncEngine,
+) -> None:
+    """同一Global PB scopeの並行transactionが直列化されることを確認する.
+
+    Args:
+        postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
+
+    Returns:
+        None: 先行transaction完了まで後続lock取得が待機したことを示す.
+
+    Raises:
+        AssertionError: 後続transactionが同一scope lockを待機しない場合.
+        TimeoutError: 先行transaction完了後も後続lockを取得できない場合.
+    """
+    session_factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    scope = BeatmapLeaderboardUserScope(
+        beatmap_id=_BEATMAP_ID,
+        beatmap_checksum=_CURRENT_CHECKSUM,
+        ruleset=Ruleset.OSU,
+        playstyle=Playstyle.VANILLA,
+        user_id=_USER_1_ID,
+    )
+    async with session_factory() as first_session, session_factory() as second_session:
+        first_repository = SQLAlchemyBeatmapLeaderboardCommandRepository(first_session)
+        second_repository = SQLAlchemyBeatmapLeaderboardCommandRepository(second_session)
+        _ = await first_session.begin()
+        _ = await second_session.begin()
+        _ = await second_session.execute(sa.select(sa.literal(1)))
+        await first_repository.lock_scope(scope)
+        waiting_task = asyncio.create_task(second_repository.lock_scope(scope))
+        try:
+            done, _ = await asyncio.wait({waiting_task}, timeout=0.1)
+            assert not done
+
+            await first_session.commit()
+            await asyncio.wait_for(waiting_task, timeout=1.0)
+        finally:
+            if not waiting_task.done():
+                _ = waiting_task.cancel()
+                _ = await asyncio.gather(waiting_task, return_exceptions=True)
+            if first_session.in_transaction():
+                await first_session.rollback()
+            if second_session.in_transaction():
+                await second_session.rollback()
+
+
 async def test_postgresql_claimed_replacement_completion_clears_claims_before_flush(
     postgres_connection: AsyncConnection,
 ) -> None:
@@ -1049,6 +1229,40 @@ async def test_successor_migration_preserves_canonical_projection(
 
     after = tuple((await connection.execute(identity_statement)).tuples())
     assert before == after == ((canonical_row_id, _USER_1_ID, _NO_MOD_SCORE_ID),)
+
+
+async def test_successor_migration_rebuilds_structurally_incompatible_projection(
+    postgres_connection_at_enum_revision: AsyncConnection,
+) -> None:
+    """0500が同名column/constraintだけの非互換tableを再構築するか確認する.
+
+    Args:
+        postgres_connection_at_enum_revision (AsyncConnection): 0400適用済みの専用接続.
+
+    Returns:
+        None: PK, 型, default, index列がcanonical schemaへ修復されたことを示す.
+
+    Raises:
+        AssertionError: 非互換schemaをcanonicalとして誤認する場合.
+        SQLAlchemyError: table再作成またはprojection再構築に失敗した場合.
+    """
+    connection = postgres_connection_at_enum_revision
+    await _seed_fixture(connection)
+    await connection.run_sync(_replace_projection_with_structurally_incompatible_schema)
+
+    repair_migration = _load_leaderboard_repair_migration()
+    await connection.run_sync(
+        lambda sync_connection: _run_migration_upgrade(
+            sync_connection,
+            repair_migration,
+        )
+    )
+
+    await connection.run_sync(_assert_global_projection_schema_is_canonical)
+    assert set(await _global_projection_rows(connection)) == {
+        (_USER_1_ID, _CURRENT_CHECKSUM, _NO_MOD_SCORE_ID),
+        (_USER_2_ID, _CURRENT_CHECKSUM, _USER_2_NIGHTCORE_SCORE_ID),
+    }
 
 
 async def test_successor_migration_replaces_misdefined_score_candidate_index(
@@ -1460,6 +1674,137 @@ def _replace_projection_with_legacy_duplicate_rows(connection: Connection) -> No
             },
         ],
     )
+
+
+def _replace_projection_with_structurally_incompatible_schema(connection: Connection) -> None:
+    operations = Operations(MigrationContext.configure(connection))
+    operations.drop_table("beatmap_leaderboard_user_bests")
+    _ = operations.create_table(
+        "beatmap_leaderboard_user_bests",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("beatmap_id", sa.BigInteger(), nullable=False),
+        sa.Column("beatmap_checksum", sa.String(length=64), nullable=False),
+        sa.Column("ruleset", sa.Integer(), nullable=False),
+        sa.Column("playstyle", sa.SmallInteger(), nullable=False),
+        sa.Column("user_id", sa.BigInteger(), nullable=False),
+        sa.Column("score_id", sa.BigInteger(), nullable=False),
+        sa.Column("score", sa.BigInteger(), nullable=False),
+        sa.Column("submitted_at", sa.DateTime(timezone=False), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["score_id"],
+            ["scores.id"],
+            name="fk_beatmap_leaderboard_user_bests_score_id",
+        ),
+        sa.PrimaryKeyConstraint("score_id"),
+        sa.UniqueConstraint(
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "user_id",
+            name="uq_beatmap_leaderboard_user_bests_scope",
+        ),
+        sa.UniqueConstraint(
+            "score_id",
+            name="uq_beatmap_leaderboard_user_bests_score_id",
+        ),
+    )
+    operations.create_index(
+        "idx_beatmap_leaderboard_user_bests_user_rebuild",
+        "beatmap_leaderboard_user_bests",
+        ["beatmap_id"],
+    )
+
+
+def _assert_global_projection_schema_is_canonical(connection: Connection) -> None:
+    inspector = sa.inspect(connection)
+    columns = {
+        str(column["name"]): column
+        for column in inspector.get_columns("beatmap_leaderboard_user_bests")
+    }
+    expected_types = {
+        "id": "BIGINT",
+        "beatmap_id": "INTEGER",
+        "beatmap_checksum": "VARCHAR(32)",
+        "ruleset": "SMALLINT",
+        "playstyle": "SMALLINT",
+        "user_id": "INTEGER",
+        "score_id": "BIGINT",
+        "score": "INTEGER",
+        "submitted_at": "TIMESTAMP WITH TIME ZONE",
+        "created_at": "TIMESTAMP WITH TIME ZONE",
+        "updated_at": "TIMESTAMP WITH TIME ZONE",
+    }
+    assert set(columns) == set(expected_types)
+    assert all(column["nullable"] is False for column in columns.values())
+    assert {
+        name: column["type"].compile(dialect=connection.dialect)
+        for name, column in columns.items()
+    } == expected_types
+
+    primary_key = inspector.get_pk_constraint("beatmap_leaderboard_user_bests")
+    assert tuple(primary_key["constrained_columns"]) == ("id",)
+
+    id_default = columns["id"].get("default")
+    assert columns["id"].get("identity") is not None or (
+        isinstance(id_default, str) and id_default.casefold().startswith("nextval(")
+    )
+    for timestamp_name in ("created_at", "updated_at"):
+        default = columns[timestamp_name].get("default")
+        assert isinstance(default, str)
+        assert "".join(default.casefold().split()) in {
+            "now()",
+            "(now())",
+            "current_timestamp",
+            "(current_timestamp)",
+        }
+    for column_name in set(columns) - {"id", "created_at", "updated_at"}:
+        assert columns[column_name].get("default") is None
+        assert columns[column_name].get("identity") is None
+
+    unique_constraints = {
+        str(constraint["name"]): tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("beatmap_leaderboard_user_bests")
+        if constraint["name"] is not None
+    }
+    assert unique_constraints == {
+        "uq_beatmap_leaderboard_user_bests_scope": (
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "user_id",
+        ),
+        "uq_beatmap_leaderboard_user_bests_score_id": ("score_id",),
+    }
+
+    foreign_keys = {
+        str(foreign_key["name"]): foreign_key
+        for foreign_key in inspector.get_foreign_keys("beatmap_leaderboard_user_bests")
+        if foreign_key["name"] is not None
+    }
+    assert set(foreign_keys) == {"fk_beatmap_leaderboard_user_bests_score_id"}
+    score_foreign_key = foreign_keys["fk_beatmap_leaderboard_user_bests_score_id"]
+    assert tuple(score_foreign_key["constrained_columns"]) == ("score_id",)
+    assert score_foreign_key["referred_table"] == "scores"
+    assert tuple(score_foreign_key["referred_columns"]) == ("id",)
+
+    user_rebuild_index = next(
+        (
+            index
+            for index in inspector.get_indexes("beatmap_leaderboard_user_bests")
+            if index["name"] == "idx_beatmap_leaderboard_user_bests_user_rebuild"
+        ),
+        None,
+    )
+    assert user_rebuild_index is not None
+    assert tuple(user_rebuild_index["column_names"]) == (
+        "user_id",
+        "beatmap_id",
+        "ruleset",
+        "playstyle",
+    )
+    assert user_rebuild_index["unique"] is False
 
 
 def _read_projection_schema(

@@ -79,11 +79,11 @@ Forbidden dependencies:
 
 ## Architecture
 
-### Existing Architecture Analysis
+### Current And Target Architecture
 
-Athena already uses a layered modular monolith with stable transport adapters, command/query use-cases, Unit of Work command persistence, query repositories, SQLAlchemy adapters, taskiq jobs, and Dishka composition. GetscoresはBeatmap header stateを解決した後、query repositoryがraw Mod別projectionから対象Score IDを選び、source Scoreと表示用metadataをjoinしてrankを返す。
+Athena already uses a layered modular monolith with stable transport adapters, command/query use-cases, Unit of Work command persistence, query repositories, SQLAlchemy adapters, taskiq jobs, and Dishka composition. このspec着手前のgetscoresはBeatmap header stateと任意のGlobal Personal Bestだけを解決し、score rows、category semantics、raw Mod別projection readを実装していなかった。
 
-Score submissionはScore、Replay、同一raw Mod scopeのbest projection、idempotency snapshotを同一Unit of Workで保存する。Global専用rowは持たず、Global/Country/Friendsは各userの全Mod行から最高Scoreをread-timeに選ぶ。Score PP Calculationはcurrent Performance Calculationを保持し、表示enrichmentのPP sourceであり続ける。
+Target architectureでは、getscores query repositoryがraw Mod別projectionをsource Scoreのidentity/eligibilityと照合してからuserごとの代表Score IDを選び、表示用metadataをjoinしてrankを返す。Score submissionはScore、Replay、同一raw Mod scopeのbest projection、idempotency snapshotを同一Unit of Workで保存する。Global専用rowは持たず、Global/Country/Friendsは各userの全Mod行から最高Scoreをread-timeに選ぶ。Score PP Calculationはcurrent Performance Calculationを保持し、表示enrichmentのPP sourceであり続ける。
 
 ### Architecture Pattern & Boundary Map
 
@@ -291,7 +291,7 @@ Read correctness does not wait for `Done` to hide stale checksum、status、or v
 | 1.4 | Unsupported category returns header with empty rows | Stable mapper, query | `UnsupportedLeaderboardCategory` result | Stable Getscores Read |
 | 1.5 | Non-vanilla returns empty leaderboard | Query request validation | `playstyle` guard | Stable Getscores Read |
 | 1.6 | Song select/editor suppresses rows and PB | Stable mapper, formatter | `song_select` flag | Stable Getscores Read |
-| 2.1 | One representative score per user per read scope | Source-score window query | partition by `user_id` | Stable Getscores Read |
+| 2.1 | One representative score per user per read scope | Beatmap leaderboard query repo | source-validated projection partition by `user_id` | Stable Getscores Read |
 | 2.2 | Rank order is score desc, submitted_at asc, score_id asc | `ScoreRankKey`, query repo | shared ordering policy | Stable Getscores Read |
 | 2.3 | At most 50 rows | Query repo | `limit=50` contract | Stable Getscores Read |
 | 2.4 | Row ranks are 1 through returned rows | Query repo, formatter | `rank` field | Stable Getscores Read |
@@ -313,8 +313,8 @@ Read correctness does not wait for `Done` to hide stale checksum、status、or v
 | 4.7 | Country changes reflected on read | Query repo | current user country | Stable Getscores Read |
 | 4.8 | Unauthenticated viewer-dependent categories empty | Query use-case | viewer guard | Stable Getscores Read |
 | 5.1 | Selected Mods filters rows and PB | Raw mods scope policy, query repo | projection mods equality | Stable Getscores Read |
-| 5.2 | NC composite is distinct from DT | Raw legacy bitflag policy | `NC | DT` exact equality | Stable Getscores Read |
-| 5.3 | PF composite is distinct from SD | Raw legacy bitflag policy | `PF | SD` exact equality | Stable Getscores Read |
+| 5.2 | NC composite is distinct from DT | Raw legacy bitflag policy | `NC \| DT` exact equality | Stable Getscores Read |
+| 5.3 | PF composite is distinct from SD | Raw legacy bitflag policy | `PF \| SD` exact equality | Stable Getscores Read |
 | 5.4 | NoMod matches only zero | Raw legacy bitflag policy | `mods == 0` | Stable Getscores Read |
 | 5.5 | DT/SD exclude composite variants | Raw legacy bitflag policy | exact equality | Stable Getscores Read |
 | 5.6 | Multiple mods require complete mask equality | Raw legacy bitflag policy | no subset/superset matching | Stable Getscores Read |
@@ -387,7 +387,7 @@ Responsibilities and constraints:
 - `LeaderboardCategory` includes `GLOBAL`, `COUNTRY`, `SELECTED_MODS`, `FRIENDS` only.
 - `LeaderboardScope` identity is Beatmap, ruleset, and playstyle.
 - `ScoreRankKey` orders by `score desc`, `submitted_at asc`, `score_id asc`.
-- `LeaderboardReadScope.selected_mods` is present only for Selected Mods. Other categories must not provide it.
+- Category、current checksum、selected mods、country、eligible user IDsはquery repositoryの`LeaderboardReadScope`に置き、domain base scopeと混同しない。
 - Raw score mods are never overwritten for display.
 
 Service interface:
@@ -402,20 +402,17 @@ class ScoreRankKey:
 def score_beats_current(candidate: ScoreRankKey, current: ScoreRankKey | None) -> bool: ...
 
 @dataclass(slots=True, frozen=True)
-class LeaderboardReadScope:
+class LeaderboardScope:
     beatmap_id: int
-    beatmap_checksum: str
     ruleset: Ruleset
     playstyle: Playstyle
-    category: LeaderboardCategory
-    selected_mods: ModCombination | None = None
 ```
 
 Preconditions:
 
 - `score_id` and Beatmap/user identifiers are positive.
 - `submitted_at` is server submission acceptance time.
-- Selected Mods raw bitflagはnon-negativeでなければならない.
+- Persistenceへ変換するraw Mod bitflagはnon-negativeでなければならない.
 
 Postconditions:
 
@@ -535,7 +532,8 @@ class BeatmapLeaderboardQuery:
 
 Responsibilities and constraints:
 
-- Reads candidates from `beatmap_leaderboard_user_bests`, then joins Score, Beatmap, User, Role, Replay, and current Performance Calculation for display and current filters.
+- Joins `beatmap_leaderboard_user_bests` to source Score before per-user partitioning and rejects source/projection identity mismatch, failed Score, and submission-time ineligible Score at that stage.
+- After source validation, joins Beatmap, User, Role, Replay, and current Performance Calculation for display and current filters.
 - Applies `projection.mods == selected_mods` only when `category=SELECTED_MODS`; Global、Country、Friends have no mod predicate.
 - Selects one best projection row per user with `row_number() over (partition by user_id ...)`, then ranks that candidate set with a second window.
 - Applies current public filters in every row and PB query.
@@ -554,7 +552,7 @@ class LeaderboardReadScope:
     ruleset: Ruleset
     playstyle: Playstyle
     category: LeaderboardCategory
-    selected_mods: ModCombination | None
+    selected_mods: ModCombination | None = None
     country: str | None = None
     eligible_user_ids: tuple[int, ...] | None = None
 
@@ -721,8 +719,8 @@ API contract:
 
 | Response kind | Content |
 | --- | --- |
-| Unavailable | `-1|false` |
-| Update available | `1|false` |
+| Unavailable | `-1\|false` |
+| Update available | `1\|false` |
 | Header listing | status header, metadata lines, PB line, then score rows |
 
 ## Data Models

@@ -166,7 +166,7 @@ async def test_relax_mod_terminal_reject(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            f"1000:test_user:abc123:online_rx:0:{RELAX}:100:10:5:0:0:2:500000:99:1:1"
+            f"1000:test_user:0123456789abcdef0123456789abcdef:online_rx:0:{RELAX}:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -187,7 +187,7 @@ async def test_autopilot_mod_terminal_reject(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            f"1000:test_user:abc123:online_ap:0:{AUTOPILOT}:100:10:5:0:0:2:500000:99:1:1"
+            f"1000:test_user:0123456789abcdef0123456789abcdef:online_ap:0:{AUTOPILOT}:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -209,7 +209,7 @@ async def test_relax_and_autopilot_combined_terminal_reject(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            f"1000:test_user:abc123:online_both:0:{combined_mods}:100:10:5:0:0:2:500000:99:1:1"
+            f"1000:test_user:0123456789abcdef0123456789abcdef:online_both:0:{combined_mods}:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -230,7 +230,7 @@ async def test_vanilla_mod_accepted(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            "1000:test_user:abc123:online_vanilla:0:0:100:10:5:0:0:2:500000:99:1:1"
+            "1000:test_user:0123456789abcdef0123456789abcdef:online_vanilla:0:0:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 
@@ -252,7 +252,7 @@ async def test_other_mods_accepted(
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
-            f"1000:test_user:abc123:online_other:0:{other_mods}:100:10:5:0:0:2:500000:99:1:1"
+            f"1000:test_user:0123456789abcdef0123456789abcdef:online_other:0:{other_mods}:100:10:5:0:0:2:500000:99:1:1"
         ),
     )
 

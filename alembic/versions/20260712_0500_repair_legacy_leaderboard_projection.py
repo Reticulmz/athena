@@ -15,6 +15,7 @@ from alembic import op
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from sqlalchemy.engine.interfaces import ReflectedColumn
     from sqlalchemy.engine.reflection import Inspector
 
 revision: str = "20260712_0500"
@@ -28,21 +29,27 @@ _USER_REBUILD_INDEX = "idx_beatmap_leaderboard_user_bests_user_rebuild"
 _SCOPE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_scope"
 _SCORE_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_score_id"
 _SCORE_FOREIGN_KEY = "fk_beatmap_leaderboard_user_bests_score_id"
-_CANONICAL_COLUMNS = frozenset(
-    {
-        "id",
-        "beatmap_id",
-        "beatmap_checksum",
-        "ruleset",
-        "playstyle",
-        "user_id",
-        "score_id",
-        "score",
-        "submitted_at",
-        "created_at",
-        "updated_at",
-    }
+_CANONICAL_COLUMN_TYPE_SQL = {
+    "id": "BIGINT",
+    "beatmap_id": "INTEGER",
+    "beatmap_checksum": "VARCHAR(32)",
+    "ruleset": "SMALLINT",
+    "playstyle": "SMALLINT",
+    "user_id": "INTEGER",
+    "score_id": "BIGINT",
+    "score": "INTEGER",
+    "submitted_at": "TIMESTAMP WITH TIME ZONE",
+    "created_at": "TIMESTAMP WITH TIME ZONE",
+    "updated_at": "TIMESTAMP WITH TIME ZONE",
+}
+_CANONICAL_COLUMNS = frozenset(_CANONICAL_COLUMN_TYPE_SQL)
+_CANONICAL_USER_REBUILD_INDEX_COLUMNS = (
+    "user_id",
+    "beatmap_id",
+    "ruleset",
+    "playstyle",
 )
+_COLUMNS_WITHOUT_DEFAULTS = _CANONICAL_COLUMNS - {"id", "created_at", "updated_at"}
 
 
 def upgrade() -> None:
@@ -89,27 +96,40 @@ def _projection_is_canonical(inspector: Inspector) -> bool:
         inspector (Inspector): 現在のPostgreSQL schemaを参照するinspector.
 
     Returns:
-        bool: columns, constraints, indexがcanonicalならTrue.
+        bool: PK, column型/default, constraints, indexがcanonicalならTrue.
     """
     if not inspector.has_table(_PROJECTION_TABLE):
         return False
 
     columns = {str(column["name"]): column for column in inspector.get_columns(_PROJECTION_TABLE)}
-    columns_are_canonical = columns.keys() == _CANONICAL_COLUMNS and not any(
-        bool(column["nullable"]) for column in columns.values()
+    columns_are_canonical = (
+        columns.keys() == _CANONICAL_COLUMNS
+        and not any(bool(column["nullable"]) for column in columns.values())
+        and all(
+            column["type"].compile(dialect=inspector.bind.dialect) == expected_type
+            for name, expected_type in _CANONICAL_COLUMN_TYPE_SQL.items()
+            if (column := columns.get(name)) is not None
+        )
+        and _column_defaults_are_canonical(columns)
     )
+
+    primary_key = inspector.get_pk_constraint(_PROJECTION_TABLE)
+    primary_key_is_canonical = tuple(primary_key["constrained_columns"]) == ("id",)
 
     unique_constraints = {
         str(constraint["name"]): tuple(constraint["column_names"])
         for constraint in inspector.get_unique_constraints(_PROJECTION_TABLE)
         if constraint["name"] is not None
     }
-    unique_constraints_are_canonical = unique_constraints.get(_SCOPE_UNIQUE_CONSTRAINT) == (
-        "beatmap_id",
-        "ruleset",
-        "playstyle",
-        "user_id",
-    ) and unique_constraints.get(_SCORE_UNIQUE_CONSTRAINT) == ("score_id",)
+    unique_constraints_are_canonical = unique_constraints == {
+        _SCOPE_UNIQUE_CONSTRAINT: (
+            "beatmap_id",
+            "ruleset",
+            "playstyle",
+            "user_id",
+        ),
+        _SCORE_UNIQUE_CONSTRAINT: ("score_id",),
+    }
 
     foreign_keys = {
         str(foreign_key["name"]): foreign_key
@@ -117,25 +137,67 @@ def _projection_is_canonical(inspector: Inspector) -> bool:
         if foreign_key["name"] is not None
     }
     score_foreign_key = foreign_keys.get(_SCORE_FOREIGN_KEY)
-    foreign_key_is_canonical = score_foreign_key is not None and (
-        tuple(score_foreign_key["constrained_columns"]) == ("score_id",)
+    foreign_key_is_canonical = set(foreign_keys) == {_SCORE_FOREIGN_KEY} and (
+        score_foreign_key is not None
+        and tuple(score_foreign_key["constrained_columns"]) == ("score_id",)
         and score_foreign_key["referred_table"] == "scores"
         and tuple(score_foreign_key["referred_columns"]) == ("id",)
     )
 
-    index_names = {
-        str(index["name"])
+    indexes = {
+        str(index["name"]): index
         for index in inspector.get_indexes(_PROJECTION_TABLE)
         if index["name"] is not None
     }
+    user_rebuild_index = indexes.get(_USER_REBUILD_INDEX)
+    user_rebuild_index_is_canonical = user_rebuild_index is not None and (
+        tuple(user_rebuild_index["column_names"]) == _CANONICAL_USER_REBUILD_INDEX_COLUMNS
+        and not bool(user_rebuild_index["unique"])
+    )
     return all(
         (
             columns_are_canonical,
+            primary_key_is_canonical,
             unique_constraints_are_canonical,
             foreign_key_is_canonical,
-            _USER_REBUILD_INDEX in index_names,
+            user_rebuild_index_is_canonical,
         )
     )
+
+
+def _column_defaults_are_canonical(columns: dict[str, ReflectedColumn]) -> bool:
+    id_column = columns.get("id")
+    created_at_column = columns.get("created_at")
+    updated_at_column = columns.get("updated_at")
+    if id_column is None or created_at_column is None or updated_at_column is None:
+        return False
+
+    id_is_generated = id_column.get("identity") is not None or _is_nextval_default(id_column)
+    timestamps_have_defaults = _is_current_timestamp_default(
+        created_at_column
+    ) and _is_current_timestamp_default(updated_at_column)
+    other_columns_have_no_defaults = all(
+        columns[name].get("default") is None and columns[name].get("identity") is None
+        for name in _COLUMNS_WITHOUT_DEFAULTS
+    )
+    return id_is_generated and timestamps_have_defaults and other_columns_have_no_defaults
+
+
+def _is_nextval_default(column: ReflectedColumn) -> bool:
+    normalized = _normalized_default(column)
+    return normalized is not None and normalized.startswith("nextval(")
+
+
+def _is_current_timestamp_default(column: ReflectedColumn) -> bool:
+    normalized = _normalized_default(column)
+    return normalized in {"now()", "(now())", "current_timestamp", "(current_timestamp)"}
+
+
+def _normalized_default(column: ReflectedColumn) -> str | None:
+    default = column.get("default")
+    if default is None:
+        return None
+    return "".join(str(default).casefold().split())
 
 
 def _recreate_global_projection(inspector: Inspector) -> None:

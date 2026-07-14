@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from hashlib import blake2b
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Select, and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 
 from osu_server.domain.scores.leaderboards import ScoreRankKey
 from osu_server.domain.scores.mods import ModCombination
@@ -19,6 +21,9 @@ from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
 from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
     BeatmapLeaderboardUserBestModel,
 )
+
+_SCORE_ID_UNIQUE_CONSTRAINT = "uq_beatmap_leaderboard_user_bests_score_id"
+_DUPLICATE_SCORE_ID_MESSAGE = "score_id is already used by another leaderboard projection row"
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -39,6 +44,18 @@ class SQLAlchemyBeatmapLeaderboardCommandRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session: AsyncSession = session
+
+    async def lock_scope(self, scope: BeatmapLeaderboardUserScope) -> None:
+        """同一user/Beatmap/ruleset/playstyleの更新をtransaction内で直列化する.
+
+        Args:
+            scope (BeatmapLeaderboardUserScope): Modを含まないserialization scope.
+
+        Returns:
+            None: PostgreSQL transaction advisory lockを取得したことを示す.
+        """
+        statement = select(func.pg_advisory_xact_lock(_scope_lock_key(scope)))
+        _ = await self._session.execute(statement)
 
     async def get_user_best(
         self,
@@ -97,9 +114,16 @@ class SQLAlchemyBeatmapLeaderboardCommandRepository:
             BeatmapLeaderboardUserBest: upsert 後の保存行.
 
         Raises:
+            ValueError: 同じscore_idが別projection rowで使用済みの場合.
+            IntegrityError: score_id一意制約以外のDB整合性違反が発生した場合.
             RuntimeError: upsert 後の保存行を取得できない場合.
         """
-        _ = await self._session.execute(_upsert_if_better_statement(command))
+        try:
+            _ = await self._session.execute(_upsert_if_better_statement(command))
+        except IntegrityError as exc:
+            if not _is_score_id_uniqueness_error(exc):
+                raise
+            raise ValueError(_DUPLICATE_SCORE_ID_MESSAGE) from exc
         model = (
             await self._session.execute(_select_by_scope(command.scope).with_for_update())
         ).scalar_one_or_none()
@@ -215,6 +239,34 @@ def _candidate_beats_current(rank_key: ScoreRankKey) -> ColumnElement[bool]:
             BeatmapLeaderboardUserBestModel.score_id > rank_key.score_id,
         ),
     )
+
+
+def _scope_lock_key(scope: BeatmapLeaderboardUserScope) -> int:
+    payload = (
+        "beatmap_leaderboard_user_bests:"
+        f"{scope.user_id}:{scope.beatmap_id}:{scope.ruleset.value}:{scope.playstyle.value}"
+    ).encode()
+    value = int.from_bytes(blake2b(payload, digest_size=8).digest(), byteorder="big")
+    if value >= 2**63:
+        return value - 2**64
+    return value
+
+
+def _is_score_id_uniqueness_error(exc: IntegrityError) -> bool:
+    constraint_name = _constraint_name(exc)
+    if constraint_name is not None:
+        return constraint_name == _SCORE_ID_UNIQUE_CONSTRAINT
+    return _SCORE_ID_UNIQUE_CONSTRAINT in str(getattr(exc, "orig", exc))
+
+
+def _constraint_name(exc: IntegrityError) -> str | None:
+    orig = exc.orig
+    direct = getattr(orig, "constraint_name", None)
+    if isinstance(direct, str):
+        return direct
+    diag = getattr(orig, "diag", None)
+    from_diag = getattr(diag, "constraint_name", None)
+    return from_diag if isinstance(from_diag, str) else None
 
 
 def _delete_slice_statement(slice_: BeatmapLeaderboardProjectionSlice) -> Delete:

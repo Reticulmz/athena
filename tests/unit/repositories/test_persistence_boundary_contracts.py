@@ -225,6 +225,7 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
     assert _public_async_methods(BeatmapLeaderboardCommandRepository) == {
         "get_global_user_best",
         "get_user_best",
+        "lock_scope",
         "replace_projection_slice",
         "upsert_if_better",
     }

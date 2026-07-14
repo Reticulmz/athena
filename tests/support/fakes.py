@@ -356,8 +356,9 @@ class StubBlobStorageService:
 type ScorePayloadDecryptFactory = Callable[[bytes, bytes, str | None], DecryptedPayload]
 type ScorePayloadParseFactory = Callable[[str], ParsedScore]
 
+_TEST_BEATMAP_CHECKSUM = "0123456789abcdef0123456789abcdef"
 _DEFAULT_TEST_SCORE_PAYLOAD = (
-    "1000:test_user:abc123:online_checksum_1:0:0:100:10:5:0:0:2:500000:99:1:1"
+    f"1000:test_user:{_TEST_BEATMAP_CHECKSUM}:online_checksum_1:0:0:100:10:5:0:0:2:500000:99:1:1"
 )
 
 
@@ -435,7 +436,9 @@ def make_test_submission_input(
 
 
 def make_stable_score_submit_decoder(
-    payload: str = "1000:test_user:abc123:online_checksum:0:0:100:10:5:0:0:2:500000:99:1:1",
+    payload: str = (
+        f"1000:test_user:{_TEST_BEATMAP_CHECKSUM}:online_checksum:0:0:100:10:5:0:0:2:500000:99:1:1"
+    ),
     *,
     checksum_valid: bool = True,
     payload_decryptor: StableScorePayloadDecryptor | None = None,

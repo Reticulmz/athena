@@ -71,8 +71,23 @@ class StableModMappingResult:
 
 
 def stable_mod_bitmask_to_mod_combination(bitmask: int) -> ModCombination:
-    """Convert a stable client bitmask into canonical mods."""
-    return ModCombination.from_bitmask(bitmask)
+    """stable client bitmaskを対応済みMod combinationへ変換する.
+
+    Args:
+        bitmask (int): stable wireから受信した非負のlegacy Mod bitmask.
+
+    Returns:
+        ModCombination: stableで対応済みのMod combination.
+
+    Raises:
+        ValueError: bitmaskが負数またはstable未対応bitを含む場合.
+    """
+    mods = ModCombination.from_bitmask(bitmask)
+    unsupported_bits = mods.unsupported_bits(_STABLE_SUPPORTED_MODS)
+    if unsupported_bits:
+        msg = f"stable mod bitmask contains unsupported bits: {unsupported_bits}"
+        raise ValueError(msg)
+    return mods
 
 
 def mod_combination_to_stable_bitmask(mods: ModCombination) -> StableModMappingResult:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 from datetime import UTC, datetime, timedelta
 
 from osu_server.domain.scores.leaderboards import (
@@ -46,6 +47,14 @@ def test_score_beats_current_uses_lower_score_id_as_final_tie_break() -> None:
 
 
 def test_leaderboard_scope_has_no_mod_filter_dimension() -> None:
+    """LeaderboardScopeがread filter用Mod fieldを持たないことを確認する.
+
+    Returns:
+        None: scope fieldがBeatmap/ruleset/playstyleだけであることを示す.
+
+    Raises:
+        AssertionError: Mod filter dimensionまたは想定外fieldが追加された場合.
+    """
     scope = LeaderboardScope(
         beatmap_id=1,
         ruleset=Ruleset.OSU,
@@ -53,3 +62,8 @@ def test_leaderboard_scope_has_no_mod_filter_dimension() -> None:
     )
 
     assert scope.beatmap_id == 1
+    assert {field.name for field in fields(LeaderboardScope)} == {
+        "beatmap_id",
+        "ruleset",
+        "playstyle",
+    }

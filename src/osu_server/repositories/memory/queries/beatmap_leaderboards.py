@@ -143,6 +143,7 @@ def _candidate_from_projection(
         score is None
         or score.id is None
         or not _score_is_currently_eligible(state, scope, score)
+        or score.user_id != projection.scope.user_id
         or score.mods != projection.scope.mods
     ):
         return None
@@ -156,7 +157,11 @@ def _candidate_from_projection(
     return _LeaderboardCandidate(
         score=score,
         user=user,
-        rank_key=projection.rank_key,
+        rank_key=ScoreRankKey(
+            score=score.score,
+            submitted_at=score.submitted_at,
+            score_id=score.id,
+        ),
     )
 
 

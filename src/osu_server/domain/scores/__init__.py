@@ -31,7 +31,7 @@ from osu_server.domain.scores.personal_best import (
 )
 from osu_server.domain.scores.replay import Replay
 from osu_server.domain.scores.score import Grade, Playstyle, PlayTimeSource, Ruleset, Score
-from osu_server.domain.scores.submission import ScoreSubmission
+from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
 from osu_server.domain.scores.user_stats import (
     UserCurrentStats,
     UserPerformanceBest,
@@ -76,6 +76,7 @@ __all__ = [
     "Score",
     "ScoreRankKey",
     "ScoreSubmission",
+    "ScoreSubmissionState",
     "UserCurrentStats",
     "UserPerformanceBest",
     "UserStatsHitTotals",

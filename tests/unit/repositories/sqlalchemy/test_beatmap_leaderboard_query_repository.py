@@ -156,9 +156,12 @@ async def test_top_rows_rank_mod_scoped_projection_and_map_source_rows() -> None
     assert "role_permissions" in sql
     assert "row_number() OVER" in sql
     assert "PARTITION BY beatmap_leaderboard_user_bests.user_id" in sql
-    assert "ORDER BY beatmap_leaderboard_user_bests.score DESC" in sql
-    assert "beatmap_leaderboard_user_bests.submitted_at ASC" in sql
-    assert "beatmap_leaderboard_user_bests.score_id ASC" in sql
+    assert "ORDER BY scores.score DESC" in sql
+    assert "scores.submitted_at ASC" in sql
+    assert "scores.id ASC" in sql
+    assert "scores.user_id = beatmap_leaderboard_user_bests.user_id" in sql
+    assert "scores.mods = beatmap_leaderboard_user_bests.mods" in sql
+    assert "scores.beatmap_checksum = beatmap_leaderboard_user_bests.beatmap_checksum" in sql
     assert "beatmaps.checksum_md5" in sql
     assert "scores.beatmap_checksum" in sql
     assert "scores.passed IS true" in sql
@@ -196,9 +199,11 @@ async def test_personal_best_uses_same_filtered_window_ordering_as_top_rows() ->
         assert "scores.passed IS true" in sql
         assert "scores.leaderboard_eligible_at_submission IS true" in sql
         assert "PARTITION BY beatmap_leaderboard_user_bests.user_id" in sql
-        assert "ORDER BY beatmap_leaderboard_user_bests.score DESC" in sql
-        assert "beatmap_leaderboard_user_bests.submitted_at ASC" in sql
-        assert "beatmap_leaderboard_user_bests.score_id ASC" in sql
+        assert "ORDER BY scores.score DESC" in sql
+        assert "scores.submitted_at ASC" in sql
+        assert "scores.id ASC" in sql
+        assert "scores.user_id = beatmap_leaderboard_user_bests.user_id" in sql
+        assert "scores.mods = beatmap_leaderboard_user_bests.mods" in sql
     assert "ranked_candidates.rank <= " in top_sql
     assert "ranked_candidates.user_id = " in personal_best_sql
 
