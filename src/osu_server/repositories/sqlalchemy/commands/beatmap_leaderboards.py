@@ -242,6 +242,18 @@ def _candidate_beats_current(rank_key: ScoreRankKey) -> ColumnElement[bool]:
 
 
 def _scope_lock_key(scope: BeatmapLeaderboardUserScope) -> int:
+    """leaderboard更新scopeをPostgreSQL advisory lock keyへ変換する.
+
+    Args:
+        scope (BeatmapLeaderboardUserScope): user/Beatmap/ruleset/playstyleを含むlock scope.
+
+    Returns:
+        int: `pg_advisory_xact_lock`へ渡すsigned 64-bit key.
+
+    Notes:
+        同じscopeは同じkeyを返す. Modとchecksumはserialization identityに含めない.
+        構築済みscopeを受け取る前提で、このhelper自体は独自の例外を送出しない.
+    """
     payload = (
         "beatmap_leaderboard_user_bests:"
         f"{scope.user_id}:{scope.beatmap_id}:{scope.ruleset.value}:{scope.playstyle.value}"
@@ -253,6 +265,18 @@ def _scope_lock_key(scope: BeatmapLeaderboardUserScope) -> int:
 
 
 def _is_score_id_uniqueness_error(exc: IntegrityError) -> bool:
+    """IntegrityErrorがprojectionのscore_id一意制約違反か判定する.
+
+    Args:
+        exc (IntegrityError): SQLAlchemyが捕捉したDB整合性例外.
+
+    Returns:
+        bool: 対象のnamed constraint違反ならTrue、それ以外ならFalse.
+
+    Notes:
+        driverがconstraint名を公開しない場合だけ元例外の文字列表現をfallbackに使う.
+        判定処理は例外を再送出せず、他の整合性違反を誤変換しない.
+    """
     constraint_name = _constraint_name(exc)
     if constraint_name is not None:
         return constraint_name == _SCORE_ID_UNIQUE_CONSTRAINT
@@ -260,6 +284,17 @@ def _is_score_id_uniqueness_error(exc: IntegrityError) -> bool:
 
 
 def _constraint_name(exc: IntegrityError) -> str | None:
+    """driver固有のIntegrityErrorからconstraint名を取得する.
+
+    Args:
+        exc (IntegrityError): SQLAlchemyがwrapしたdriver例外.
+
+    Returns:
+        str | None: direct属性またはdiagnostics内のconstraint名. 取得不能ならNone.
+
+    Notes:
+        asyncpg系とpsycopg系の属性差を吸収する境界helperであり、例外を送出しない.
+    """
     orig = exc.orig
     direct = getattr(orig, "constraint_name", None)
     if isinstance(direct, str):

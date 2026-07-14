@@ -1677,6 +1677,21 @@ def _replace_projection_with_legacy_duplicate_rows(connection: Connection) -> No
 
 
 def _replace_projection_with_structurally_incompatible_schema(connection: Connection) -> None:
+    """projection tableを同名だが構造非互換なschemaへ置き換える.
+
+    Args:
+        connection (Connection): migration transaction内の同期PostgreSQL接続.
+
+    Returns:
+        None: 非互換tableと誤ったrebuild indexを作成したことを示す.
+
+    Raises:
+        SQLAlchemyError: tableのdrop/createまたはindex作成に失敗した場合.
+
+    Notes:
+        `scores` tableと参照対象score fixtureが作成済みであることを前提とする.
+        canonical判定がcolumn名だけで通過しないことを検証するためのtest helperである.
+    """
     operations = Operations(MigrationContext.configure(connection))
     operations.drop_table("beatmap_leaderboard_user_bests")
     _ = operations.create_table(
@@ -1718,6 +1733,22 @@ def _replace_projection_with_structurally_incompatible_schema(connection: Connec
 
 
 def _assert_global_projection_schema_is_canonical(connection: Connection) -> None:
+    """再構築後のGlobal projection schemaがcanonical定義と一致するか検証する.
+
+    Args:
+        connection (Connection): 検証対象schemaへ接続した同期PostgreSQL接続.
+
+    Returns:
+        None: column, PK, default, unique/FK, indexが全てcanonicalであることを示す.
+
+    Raises:
+        AssertionError: いずれかのschema metadataがcanonical定義と異なる場合.
+        SQLAlchemyError: PostgreSQL schema introspectionに失敗した場合.
+
+    Notes:
+        `beatmap_leaderboard_user_bests`が存在し、0500 migration適用後であることを
+        前提とする.
+    """
     inspector = sa.inspect(connection)
     columns = {
         str(column["name"]): column
