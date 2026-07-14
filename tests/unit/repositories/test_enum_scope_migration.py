@@ -2,6 +2,7 @@ import ast
 from pathlib import Path
 from typing import cast
 
+import pytest
 from sqlalchemy import CheckConstraint, Column, Table, UniqueConstraint
 from sqlalchemy import Enum as SQLAlchemyEnum
 
@@ -21,6 +22,16 @@ from osu_server.repositories.sqlalchemy.models import (
     ScoreSubmissionModel,
 )
 
+
+def _find_repository_root(start: Path) -> Path:
+    for candidate in (start, *start.parents):
+        if (candidate / "pyproject.toml").is_file() and (candidate / "alembic.ini").is_file():
+            return candidate
+    msg = f"repository root not found from {start}"
+    raise RuntimeError(msg)
+
+
+_REPOSITORY_ROOT = _find_repository_root(Path(__file__).resolve().parent)
 MIGRATION_PATH = Path(
     "alembic/versions/20260710_0400_use_enum_types_and_score_based_leaderboards.py"
 )
@@ -36,7 +47,11 @@ ONLINE_INDEX_MIGRATION_PATH = Path(
 
 
 def _migration_tree(path: Path) -> ast.Module:
-    return ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
+    resolved_path = path if path.is_absolute() else _REPOSITORY_ROOT / path
+    return ast.parse(
+        resolved_path.read_text(encoding="utf-8"),
+        filename=resolved_path.as_posix(),
+    )
 
 
 def _top_level_function(tree: ast.Module, name: str) -> ast.FunctionDef:
@@ -101,11 +116,51 @@ def _qualified_name(node: ast.expr) -> str | None:
     return None
 
 
+def _import_aliases(tree: ast.Module) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for imported in node.names:
+                if imported.asname is not None:
+                    aliases[imported.asname] = imported.name
+                    continue
+                root_name = imported.name.split(".", maxsplit=1)[0]
+                aliases[root_name] = root_name
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module is not None:
+            for imported in node.names:
+                if imported.name == "*":
+                    continue
+                local_name = imported.asname or imported.name
+                aliases[local_name] = f"{node.module}.{imported.name}"
+    return aliases
+
+
+def _resolved_name(name: str, aliases: dict[str, str]) -> str:
+    root_name, separator, remainder = name.partition(".")
+    resolved_root = aliases.get(root_name, root_name)
+    return resolved_root if not separator else f"{resolved_root}.{remainder}"
+
+
 def _calls_named(node: ast.AST, name: str) -> tuple[ast.Call, ...]:
     return tuple(
         candidate
         for candidate in ast.walk(node)
         if isinstance(candidate, ast.Call) and _qualified_name(candidate.func) == name
+    )
+
+
+def _calls_resolved_as(
+    tree: ast.Module,
+    node: ast.AST,
+    canonical_name: str,
+) -> tuple[ast.Call, ...]:
+    aliases = _import_aliases(tree)
+    return tuple(
+        candidate
+        for candidate in ast.walk(node)
+        if isinstance(candidate, ast.Call)
+        and (qualified_name := _qualified_name(candidate.func)) is not None
+        and _resolved_name(qualified_name, aliases) == canonical_name
     )
 
 
@@ -153,44 +208,117 @@ def _string_sequence_argument(call: ast.Call, index: int) -> tuple[str, ...]:
     return tuple(items)
 
 
-def _has_autocommit_block(function: ast.FunctionDef) -> bool:
+def _has_autocommit_block(tree: ast.Module, function: ast.FunctionDef) -> bool:
+    aliases = _import_aliases(tree)
     return any(
         isinstance(node, (ast.With, ast.AsyncWith))
         and any(
-            _qualified_name(item.context_expr) == "op.get_context.autocommit_block"
+            (qualified_name := _qualified_name(item.context_expr)) is not None
+            and _resolved_name(qualified_name, aliases)
+            == "alembic.op.get_context.autocommit_block"
             for item in node.items
         )
         for node in ast.walk(function)
     )
 
 
-def _concurrent_index_call_count(tree: ast.Module) -> int:
-    count = 0
-    for call_name in ("op.create_index", "op.drop_index"):
-        for call in _calls_named(tree, call_name):
-            keyword = next(
-                (
-                    candidate.value
-                    for candidate in call.keywords
-                    if candidate.arg == "postgresql_concurrently"
-                ),
-                None,
-            )
-            if isinstance(keyword, ast.Constant) and keyword.value is True:
-                count += 1
-    return count
+def _assert_index_operations_are_concurrent(
+    tree: ast.Module,
+    function: ast.FunctionDef,
+) -> None:
+    index_calls = (
+        *_calls_resolved_as(tree, function, "alembic.op.create_index"),
+        *_calls_resolved_as(tree, function, "alembic.op.drop_index"),
+    )
+    assert index_calls
+    assert all(_boolean_keyword(call, "postgresql_concurrently") for call in index_calls)
 
 
-def _assert_no_calls(tree: ast.Module, *names: str) -> None:
-    for name in names:
-        assert _calls_named(tree, name) == ()
+def _assert_no_calls(tree: ast.Module, *canonical_names: str) -> None:
+    for canonical_name in canonical_names:
+        assert _calls_resolved_as(tree, tree, canonical_name) == ()
 
 
 def _assert_check_constraints_are_structural(tree: ast.Module) -> None:
-    for call in _calls_named(tree, "sa.CheckConstraint"):
+    for call in _calls_resolved_as(tree, tree, "sqlalchemy.CheckConstraint"):
         assert call.args
         predicate = call.args[0]
         assert not (isinstance(predicate, ast.Constant) and isinstance(predicate.value, str))
+
+
+def test_migration_tree_resolves_relative_path_from_repository_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """migration pathがpytest起動時のCWDに依存しないことを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): test processのCWDを一時変更するfixture.
+        tmp_path (Path): repository外の一時working directory.
+
+    Returns:
+        None: repository外からrelative migration pathを解析できたことを示す.
+
+    Raises:
+        AssertionError: repository root解決またはrevision解析が失敗した場合.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    tree = _migration_tree(MIGRATION_PATH)
+
+    assert _string_assignment(tree, "revision") == "20260710_0400"
+
+
+@pytest.mark.parametrize(
+    ("source", "canonical_name"),
+    [
+        pytest.param(
+            "from sqlalchemy import text\ntext('select current_date')",
+            "sqlalchemy.text",
+            id="direct-import",
+        ),
+        pytest.param(
+            "from sqlalchemy import text as sql_text\nsql_text('select current_date')",
+            "sqlalchemy.text",
+            id="aliased-direct-import",
+        ),
+        pytest.param(
+            "import sqlalchemy as database\ndatabase.text('select current_date')",
+            "sqlalchemy.text",
+            id="aliased-module-import",
+        ),
+        pytest.param(
+            "from sqlalchemy import delete as remove\nremove('scores')",
+            "sqlalchemy.delete",
+            id="delete-alias",
+        ),
+        pytest.param(
+            "from sqlalchemy.dialects.postgresql import ENUM as PgEnum\nPgEnum('state')",
+            "sqlalchemy.dialects.postgresql.ENUM",
+            id="postgresql-enum-alias",
+        ),
+    ],
+)
+def test_banned_call_detection_resolves_import_aliases(
+    source: str,
+    canonical_name: str,
+) -> None:
+    """禁止SQLAlchemy APIがdirect importとalias経由でも検出されることを検証する.
+
+    Args:
+        source (str): 禁止API呼び出しを含むsynthetic Python source.
+        canonical_name (str): import解決後に拒否する完全修飾API名.
+
+    Returns:
+        None: alias解決後の禁止callがassertion failureになったことを示す.
+
+    Raises:
+        AssertionError: 禁止callを検出できない場合.
+    """
+    tree = ast.parse(source)
+
+    with pytest.raises(AssertionError):
+        _assert_no_calls(tree, canonical_name)
 
 
 def _column(table: Table, name: str) -> Column[object]:
@@ -238,7 +366,7 @@ def test_enum_migration_converts_closed_values_and_score_based_leaderboards() ->
     assert _string_assignment(tree, "revision") == "20260710_0400"
     assert _string_assignment(tree, "down_revision") == "20260710_0300"
     checked_enum_helper = _top_level_function(tree, "_checked_string_enum")
-    enum_call = _calls_named(checked_enum_helper, "sa.Enum")
+    enum_call = _calls_resolved_as(tree, checked_enum_helper, "sqlalchemy.Enum")
     assert len(enum_call) == 1
     assert _boolean_keyword(enum_call[0], "native_enum") is False
     assert _boolean_keyword(enum_call[0], "create_constraint") is True
@@ -286,7 +414,12 @@ def test_enum_migration_converts_closed_values_and_score_based_leaderboards() ->
         if isinstance(call, ast.Call)
         for keyword in call.keywords
     )
-    _assert_no_calls(tree, "sa.delete", "sa.text", "postgresql.ENUM")
+    _assert_no_calls(
+        tree,
+        "sqlalchemy.delete",
+        "sqlalchemy.text",
+        "sqlalchemy.dialects.postgresql.ENUM",
+    )
     _assert_check_constraints_are_structural(tree)
 
 
@@ -352,15 +485,17 @@ def test_mod_scoped_projection_migration_uses_checked_raw_mod_bitflags() -> None
     create_table = _top_level_function(tree, "_create_mod_scoped_projection_table")
     mods_column = next(
         call
-        for call in _calls_named(create_table, "sa.Column")
+        for call in _calls_resolved_as(tree, create_table, "sqlalchemy.Column")
         if call.args and isinstance(call.args[0], ast.Constant) and call.args[0].value == "mods"
     )
-    assert _qualified_name(mods_column.args[1]) == "sa.Integer"
+    mods_type_name = _qualified_name(mods_column.args[1])
+    assert mods_type_name is not None
+    assert _resolved_name(mods_type_name, _import_aliases(tree)) == "sqlalchemy.Integer"
     assert _boolean_keyword(mods_column, "nullable") is False
 
     unique_scope_columns = {
         _string_sequence_argument(call, 2)
-        for call in _calls_named(upgrade, "op.create_unique_constraint")
+        for call in _calls_resolved_as(tree, upgrade, "alembic.op.create_unique_constraint")
     }
     assert (
         "beatmap_id",
@@ -377,7 +512,7 @@ def test_mod_scoped_projection_migration_uses_checked_raw_mod_bitflags() -> None
     assert "_delete_projection_rows" not in {
         node.name for node in tree.body if isinstance(node, ast.FunctionDef)
     }
-    _assert_no_calls(tree, "sa.text")
+    _assert_no_calls(tree, "sqlalchemy.text")
     _assert_check_constraints_are_structural(tree)
 
 
@@ -396,8 +531,8 @@ def test_leaderboard_indexes_are_created_concurrently_without_raw_sql() -> None:
 
     assert "_SCORE_CANDIDATE_INDEX" not in _top_level_assignment_names(enum_tree)
     repair_index = _top_level_function(repair_tree, "_recreate_score_candidate_index")
-    assert _has_autocommit_block(repair_index)
-    assert _concurrent_index_call_count(repair_tree) >= 2
+    assert _has_autocommit_block(repair_tree, repair_index)
+    _assert_index_operations_are_concurrent(repair_tree, repair_index)
     repair_projection_calls = _direct_call_names(
         _top_level_function(repair_tree, "_recreate_global_projection")
     )
@@ -405,9 +540,23 @@ def test_leaderboard_indexes_are_created_concurrently_without_raw_sql() -> None:
 
     assert _string_assignment(online_index_tree, "revision") == "20260713_0700"
     assert _string_assignment(online_index_tree, "down_revision") == "20260713_0600"
-    assert _has_autocommit_block(_top_level_function(online_index_tree, "upgrade"))
-    assert _has_autocommit_block(_top_level_function(online_index_tree, "downgrade"))
-    assert _concurrent_index_call_count(online_index_tree) >= 6
+    assert _has_autocommit_block(
+        online_index_tree,
+        _top_level_function(online_index_tree, "upgrade"),
+    )
+    assert _has_autocommit_block(
+        online_index_tree,
+        _top_level_function(online_index_tree, "downgrade"),
+    )
+    for function_name in (
+        "_repair_score_candidate_index",
+        "_drop_rank_indexes",
+        "_create_rank_indexes",
+    ):
+        _assert_index_operations_are_concurrent(
+            online_index_tree,
+            _top_level_function(online_index_tree, function_name),
+        )
     assert _string_assignment(online_index_tree, "_SCORE_CANDIDATE_INDEX") == (
         "idx_scores_beatmap_leaderboard_candidates"
     )
@@ -417,8 +566,8 @@ def test_leaderboard_indexes_are_created_concurrently_without_raw_sql() -> None:
     assert _string_assignment(online_index_tree, "_MOD_RANK_INDEX") == (
         "idx_beatmap_leaderboard_user_bests_mod_rank"
     )
-    _assert_no_calls(repair_tree, "sa.text")
-    _assert_no_calls(online_index_tree, "sa.text")
+    _assert_no_calls(repair_tree, "sqlalchemy.text")
+    _assert_no_calls(online_index_tree, "sqlalchemy.text")
 
 
 def test_current_models_use_checked_string_enums_for_closed_value_columns() -> None:
