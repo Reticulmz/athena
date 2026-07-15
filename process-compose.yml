@@ -49,9 +49,12 @@ processes:
       signal: 15
       timeout_seconds: 10
 
+  # 完了済み postgres-init は停止順に使えないため、app/worker は postgres にも直接依存する
   app:
     command: uv run python -m osu_server
     depends_on:
+      postgres:
+        condition: process_healthy
       postgres-init:
         condition: process_completed_successfully
       valkey:
@@ -61,6 +64,8 @@ processes:
     # uv の wrapper を置き換え、Taskiq が停止 signal を直接受け取る
     command: exec uv run taskiq worker osu_server.worker:broker
     depends_on:
+      postgres:
+        condition: process_healthy
       postgres-init:
         condition: process_completed_successfully
       valkey:
