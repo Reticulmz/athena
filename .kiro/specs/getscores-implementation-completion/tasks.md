@@ -2,7 +2,7 @@
 
 - [ ] 1. Typed completion evidence基盤を構築する
 
-- [ ] 1.1 Versioned manifest契約と安全なtyped loadingを実装する
+- [x] 1.1 Versioned manifest契約と安全なtyped loadingを実装する
   - 先にschema id、top-level collection、unknown field、duplicate id、fixture root escape、safe error redactionを検証する失敗テストを追加する。
   - response shape、branch case、status crosswalkを共通のimmutable typed bundleへ変換するloaderとvalidation resultを実装する。
   - `Any`、raw credential、raw username、captured raw query、internal provenanceを型契約へ持ち込まない。
@@ -151,3 +151,7 @@
   - _Depends: 4.2_
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 8.5_
   - _Boundary: Compatibility Documentation Sync, Stable Verification Completion Projection_
+
+## Implementation Notes
+
+- 1.1: Manifest validationはevidence sourceのtraversal、deep JSON、非UTF-8、valid-but-unregistered foreign keyをsafe failureとして扱い、productionとtestの両方をstrict type-checkする。
