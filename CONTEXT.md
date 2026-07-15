@@ -454,6 +454,30 @@ _Avoid_: Beatmap metadata lookup, synchronous file fetch, PP calculation
 Stable client または stable client emulator から観測できる request / response contract。Athena の stable transport 互換性を判断する根拠であり、内部実装の都合より優先する。
 _Avoid_: Implementation preference, guessed compatibility, test-only assumption
 
+### Modern Getscores Implementation Completion
+Modern getscores route の Athena-owned behavior が実装と focused fixture / test で固定され、未取得の Target Stable Client traffic が別の Stable Fixture Requirement として明示された状態。Stable Compatibility Evidence による最終互換確認とは区別する。
+_Avoid_: Full stable compatibility, target-confirmed getscores, real-client evidence completion
+
+### Getscores Provisional Malformed Request Behavior
+Target Stable Client traffic が未取得の malformed request branch について、Modern getscores route の現在の deterministic response と warning policy を focused fixture / test に固定した Athena-owned behavior。Stable Compatibility Evidence で確認されるまでは target-confirmed contract と呼ばない。
+_Avoid_: Target-confirmed malformed contract, guessed compatibility, untested parser fallback
+
+### Stable Beatmap Status Crosswalk
+Canonical な BeatmapRankStatus と、stable endpoint family ごとの wire status または unsupported を対応付ける compatibility table。Getscores と beatmap info は同じ domain meaning を入力にするが、endpoint 固有の wire value と mapper は共有しない。
+_Avoid_: Shared wire status enum, identical numeric mapping assumption, cross-endpoint transport mapper reuse
+
+### Getscores Evidence-Limited Correction
+Modern Getscores Implementation Completion のため、現在の Athena behavior が確認済みの Stable Compatibility Evidence または Stable Beatmap Status Crosswalk と矛盾するときだけ行う最小の production correction。Athena 内部の期待値だけでは target 未確認の wire behavior を変更しない。
+_Avoid_: Speculative compatibility fix, broad leaderboard refactor, legacy alias expansion
+
+### Getscores Wire Shape Fixture
+Modern getscores route の distinct な HTTP status、headers、body grammar を exact response として固定する fixture。同じ wire shape を返す Leaderboard Category ごとには複製せず、client-observable shape が異なる場合だけ分ける。
+_Avoid_: Category-by-category duplicate body, query case catalog, internal object snapshot
+
+### Getscores Branch Case Catalog
+Modern getscores request の category、song select、malformed optional field などの入力条件と、期待する Getscores Wire Shape Fixture を対応付ける sanitized case catalog。Exact response body や Target Stable Client traffic capture の代わりにはしない。
+_Avoid_: Exact body fixture, raw credential capture, target-confirmed traffic evidence
+
 ### Replay Download Contract Evidence Gate
 Replay download contract を実装可能と判断するための evidence threshold。Route path と auth behavior は Target Stable Client traffic で確認し、response bytes、status、headers、missing / hidden / storage-missing branch は target traffic または reference implementation fixture で確認する。
 _Avoid_: route path from reference only, guessed auth behavior, success-only fixture
