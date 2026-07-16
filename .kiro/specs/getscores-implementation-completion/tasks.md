@@ -10,7 +10,7 @@
   - _Requirements: 2.2, 3.7, 5.5_
   - _Boundary: Getscores Completion Evidence_
 
-- [ ] 1.2 5種類のexact response shape fixtureと不変条件を整備する
+- [x] 1.2 5種類のexact response shape fixtureと不変条件を整備する
   - 先にauth failure、unavailable、update available、header-only、header with rowsのstatus、header、body bytes、末尾LF数を検証するテストを追加する。
   - 5種類のbody bytesを作成し、short bodyの末尾LFなし、header-onlyの空section、rows responseの末尾LFを固定する。
   - Personal Bestをleaderboard row countへ含めないこと、score rowの全wire field、syntheticなpipe / CR / LFのsanitized outputを検証する。
@@ -155,3 +155,4 @@
 ## Implementation Notes
 
 - 1.1: Manifest validationはevidence sourceのtraversal、deep JSON、非UTF-8、valid-but-unregistered foreign keyをsafe failureとして扱い、productionとtestの両方をstrict type-checkする。
+- 1.2: Exact response fixtureは既存status fixtureを変更せず、5つのshape専用bodyとmanifest mutation testでheaders、LF、PB / row grammarを固定する。

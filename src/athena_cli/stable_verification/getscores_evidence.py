@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 from collections.abc import Mapping, Sequence
@@ -40,6 +42,7 @@ _SHAPE_FIELDS = frozenset(
         "required_headers",
         "absent_headers",
         "body_file",
+        "body_encoding",
         "terminal_lf_count",
         "personal_best_present",
         "leaderboard_row_count",
@@ -117,6 +120,9 @@ _EVIDENCE_SOURCE_PREFIXES = frozenset(
 _EVIDENCE_SOURCE_PAYLOAD_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./#-]{0,191}$")
 _MAX_EVIDENCE_SOURCE_LENGTH = 256
 _MAX_MANIFEST_NESTING = 64
+_HEADER_FIELD_COUNT = 7
+_SCORE_ROW_FIELD_COUNT = 16
+_SCORE_ROW_NUMERIC_FIELD_INDICES = (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
 
 
 class GetscoresEvidenceValidationError(ValueError):
@@ -161,6 +167,19 @@ class GetscoresWireShapeId(StrEnum):
     UPDATE_AVAILABLE = "update_available"
     HEADER_ONLY = "header_only"
     HEADER_WITH_ROWS = "header_with_rows"
+
+
+class GetscoresBodyEncoding(StrEnum):
+    """Exact response body fixtureの保存encodingを表す。
+
+    Attributes:
+        BASE64 (str): Repository hookのtext normalizationからdecoded bytesを分離するBase64。
+
+    Notes:
+        Manifestはcanonical Base64以外の保存形式を受け付けない。
+    """
+
+    BASE64 = "base64"
 
 
 class GetscoresEvidenceStatus(StrEnum):
@@ -366,7 +385,8 @@ class GetscoresWireShapeFixture:
         http_status (int): Shapeが返すHTTP status。
         required_headers (Mapping[str, str]): Deterministicに検証するheader subset。
         absent_headers (tuple[str, ...]): 存在してはならないheader名。
-        body_file (Path): Exact body bytesを格納するfixture path。
+        body_file (Path): Base64 encoded body fixture path。
+        body_encoding (GetscoresBodyEncoding): Body fixtureの保存encoding。
         terminal_lf_count (int): Body末尾の連続LF数。
         personal_best_present (bool): Personal Best欄を含むか。
         leaderboard_row_count (int): Personal Bestを除いたleaderboard row数。
@@ -386,6 +406,7 @@ class GetscoresWireShapeFixture:
     required_headers: Mapping[str, str]
     absent_headers: tuple[str, ...]
     body_file: Path
+    body_encoding: GetscoresBodyEncoding
     terminal_lf_count: int
     personal_best_present: bool
     leaderboard_row_count: int
@@ -393,6 +414,34 @@ class GetscoresWireShapeFixture:
     def __post_init__(self) -> None:
         object.__setattr__(self, "required_headers", MappingProxyType(dict(self.required_headers)))
         object.__setattr__(self, "absent_headers", tuple(self.absent_headers))
+
+    def read_body_bytes(self) -> bytes:
+        """Canonical Base64 fixtureからexact client body bytesを復元する。
+
+        Returns:
+            bytes: Repository上のencoding metadataを含まないdecoded response body。
+
+        Raises:
+            GetscoresEvidenceValidationError: Terminal LF, ASCII, whitespace, Base64 canonicality,
+                またはfile readの検証に失敗した場合。
+
+        Notes:
+            Errorにはshape idとerror codeだけを含め, encoded payloadを出力しない。
+        """
+
+        body, error_code = _decode_body_fixture(self.body_file, self.body_encoding)
+        if body is None:
+            raise GetscoresEvidenceValidationError(
+                (
+                    _error(
+                        _RESPONSE_SHAPES_FILE,
+                        self.shape_id.value,
+                        "body_file",
+                        error_code,
+                    ),
+                )
+            )
+        return body
 
 
 @dataclass(frozen=True, slots=True)
@@ -700,6 +749,7 @@ def _parse_shapes(
         headers = _string_mapping(entry.get("required_headers"))
         absent_headers = _string_tuple_value(entry.get("absent_headers"))
         body_file, body_path_error = _safe_body_path(entry.get("body_file"), body_root)
+        body_encoding = _enum_member(GetscoresBodyEncoding, entry.get("body_encoding"))
         terminal_lf_count = _non_negative_int(entry.get("terminal_lf_count"))
         personal_best_present = _strict_bool(entry.get("personal_best_present"))
         leaderboard_row_count = _non_negative_int(entry.get("leaderboard_row_count"))
@@ -717,6 +767,8 @@ def _parse_shapes(
             )
         if body_file is None:
             errors.append(_error(_RESPONSE_SHAPES_FILE, location, "body_file", body_path_error))
+        if body_encoding is None:
+            errors.append(_error(_RESPONSE_SHAPES_FILE, location, "body_encoding", "invalid_enum"))
         if terminal_lf_count is None:
             errors.append(
                 _error(_RESPONSE_SHAPES_FILE, location, "terminal_lf_count", "invalid_integer")
@@ -734,6 +786,7 @@ def _parse_shapes(
             or headers is None
             or absent_headers is None
             or body_file is None
+            or body_encoding is None
             or terminal_lf_count is None
             or personal_best_present is None
             or leaderboard_row_count is None
@@ -746,6 +799,7 @@ def _parse_shapes(
                 required_headers=headers,
                 absent_headers=absent_headers,
                 body_file=body_file,
+                body_encoding=body_encoding,
                 terminal_lf_count=terminal_lf_count,
                 personal_best_present=personal_best_present,
                 leaderboard_row_count=leaderboard_row_count,
@@ -939,13 +993,309 @@ def _parse_endpoint_status(
 def _validate_bundle_shapes(evidence: GetscoresCompletionEvidence) -> tuple[str, ...]:
     errors: list[str] = []
     seen: set[GetscoresWireShapeId] = set()
+    seen_body_files: set[Path] = set()
     for index, shape in enumerate(evidence.response_shapes):
         if shape.shape_id in seen:
             errors.append(_error(_RESPONSE_SHAPES_FILE, index, "shape_id", "duplicate_id"))
         seen.add(shape.shape_id)
+
+        if shape.body_file in seen_body_files:
+            errors.append(
+                _error(_RESPONSE_SHAPES_FILE, index, "body_file", "duplicate_body_owner")
+            )
+        seen_body_files.add(shape.body_file)
+        if shape.body_file.name != f"{shape.shape_id.value}.body.b64":
+            errors.append(
+                _error(_RESPONSE_SHAPES_FILE, index, "body_file", "unexpected_body_owner")
+            )
+
         if not shape.body_file.is_file():
             errors.append(_error(_RESPONSE_SHAPES_FILE, index, "body_file", "missing_body_file"))
+            continue
+
+        try:
+            body = shape.read_body_bytes()
+        except GetscoresEvidenceValidationError as error:
+            errors.extend(error.errors)
+            continue
+
+        errors.extend(_wire_shape_metadata_errors(shape, index, body))
+        errors.extend(_wire_shape_body_errors(shape, index, body))
+
+    if seen != set(GetscoresWireShapeId):
+        errors.append(
+            _error(_RESPONSE_SHAPES_FILE, "root", "shape_id", "required_shape_set_mismatch")
+        )
     return tuple(_sorted_errors(errors))
+
+
+def _decode_body_fixture(
+    body_file: Path,
+    body_encoding: object,
+) -> tuple[bytes | None, str]:
+    if body_encoding is not GetscoresBodyEncoding.BASE64:
+        return None, "unsupported_body_encoding"
+    try:
+        encoded = body_file.read_bytes()
+    except OSError:
+        return None, "unreadable_body_file"
+    return _decode_canonical_base64_text(encoded)
+
+
+def _decode_canonical_base64_text(encoded: bytes) -> tuple[bytes | None, str]:
+    if not encoded:
+        return b"", ""
+    if encoded == b"\n":
+        return None, "non_canonical_base64"
+
+    format_error = _canonical_base64_format_error(encoded)
+    if format_error is not None:
+        return None, format_error
+    payload = encoded[:-1]
+    try:
+        decoded = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        return None, "invalid_base64_payload"
+    if base64.b64encode(decoded) != payload:
+        return None, "non_canonical_base64"
+    return decoded, ""
+
+
+def _canonical_base64_format_error(encoded: bytes) -> str | None:
+    if not encoded.endswith(b"\n") or encoded.endswith(b"\n\n"):
+        return "invalid_base64_terminal_lf"
+
+    payload = encoded[:-1]
+    if not payload.isascii():
+        return "invalid_base64_non_ascii"
+    if any(character in b" \t\r\n\v\f" for character in payload):
+        return "invalid_base64_whitespace"
+    return None
+
+
+def _wire_shape_metadata_errors(
+    shape: GetscoresWireShapeFixture,
+    index: int,
+    body: bytes,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    expected_status = 401 if shape.shape_id is GetscoresWireShapeId.AUTH_FAILURE else 200
+    if shape.http_status != expected_status:
+        errors.append(
+            _error(_RESPONSE_SHAPES_FILE, index, "http_status", "unexpected_http_status")
+        )
+
+    expected_headers = {"content-length": str(len(body))}
+    if shape.shape_id is not GetscoresWireShapeId.AUTH_FAILURE:
+        expected_headers["content-type"] = "text/plain; charset=utf-8"
+    if dict(shape.required_headers) != expected_headers:
+        errors.append(
+            _error(_RESPONSE_SHAPES_FILE, index, "required_headers", "header_contract_mismatch")
+        )
+
+    expected_absent_headers = (
+        ("content-type", "content-encoding", "transfer-encoding")
+        if shape.shape_id is GetscoresWireShapeId.AUTH_FAILURE
+        else ("content-encoding", "transfer-encoding")
+    )
+    if shape.absent_headers != expected_absent_headers:
+        errors.append(
+            _error(_RESPONSE_SHAPES_FILE, index, "absent_headers", "header_contract_mismatch")
+        )
+
+    expected_terminal_lf_count = 0
+    if shape.shape_id is GetscoresWireShapeId.HEADER_ONLY:
+        expected_terminal_lf_count = 3
+    elif shape.shape_id is GetscoresWireShapeId.HEADER_WITH_ROWS:
+        expected_terminal_lf_count = 1
+    if shape.terminal_lf_count != expected_terminal_lf_count:
+        errors.append(
+            _error(
+                _RESPONSE_SHAPES_FILE,
+                index,
+                "terminal_lf_count",
+                "newline_contract_mismatch",
+            )
+        )
+
+    expected_personal_best = shape.shape_id is GetscoresWireShapeId.HEADER_WITH_ROWS
+    if shape.personal_best_present is not expected_personal_best:
+        errors.append(
+            _error(
+                _RESPONSE_SHAPES_FILE,
+                index,
+                "personal_best_present",
+                "personal_best_contract_mismatch",
+            )
+        )
+
+    expected_row_count = 2 if shape.shape_id is GetscoresWireShapeId.HEADER_WITH_ROWS else 0
+    if shape.leaderboard_row_count != expected_row_count:
+        errors.append(
+            _error(
+                _RESPONSE_SHAPES_FILE,
+                index,
+                "leaderboard_row_count",
+                "leaderboard_count_contract_mismatch",
+            )
+        )
+    return tuple(errors)
+
+
+def _wire_shape_body_errors(
+    shape: GetscoresWireShapeFixture,
+    index: int,
+    body: bytes,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    actual_terminal_lf_count = len(body) - len(body.rstrip(b"\n"))
+    if actual_terminal_lf_count != shape.terminal_lf_count:
+        errors.append(
+            _error(
+                _RESPONSE_SHAPES_FILE,
+                index,
+                "body_file",
+                "terminal_newline_mismatch",
+            )
+        )
+
+    expected_short_body: bytes | None = None
+    if shape.shape_id is GetscoresWireShapeId.AUTH_FAILURE:
+        expected_short_body = b""
+    elif shape.shape_id is GetscoresWireShapeId.UNAVAILABLE:
+        expected_short_body = b"-1|false"
+    elif shape.shape_id is GetscoresWireShapeId.UPDATE_AVAILABLE:
+        expected_short_body = b"1|false"
+    if expected_short_body is not None:
+        if body != expected_short_body:
+            errors.append(_error(_RESPONSE_SHAPES_FILE, index, "body_file", "short_body_mismatch"))
+        return tuple(errors)
+
+    errors.extend(_header_shape_body_errors(shape, index, body))
+    return tuple(errors)
+
+
+def _header_shape_body_errors(
+    shape: GetscoresWireShapeFixture,
+    index: int,
+    body: bytes,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    try:
+        _ = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return (_error(_RESPONSE_SHAPES_FILE, index, "body_file", "invalid_body_utf8"),)
+
+    if b"\r" in body:
+        errors.append(_error(_RESPONSE_SHAPES_FILE, index, "body_file", "unsanitized_line_break"))
+    lowered_body = body.lower()
+    if any(
+        forbidden in lowered_body
+        for forbidden in (
+            b"credential",
+            b"fetch_source",
+            b"internal_provenance",
+            b"password",
+            b"verification_state",
+        )
+    ):
+        errors.append(
+            _error(_RESPONSE_SHAPES_FILE, index, "body_file", "forbidden_internal_content")
+        )
+
+    lines = body.split(b"\n")
+    expected_line_count = (
+        7
+        if shape.shape_id is GetscoresWireShapeId.HEADER_ONLY
+        else 6 + shape.leaderboard_row_count
+    )
+    if len(lines) != expected_line_count:
+        errors.append(
+            _error(_RESPONSE_SHAPES_FILE, index, "body_file", "header_line_count_mismatch")
+        )
+        return tuple(errors)
+
+    errors.extend(_header_prelude_errors(shape, index, lines))
+    errors.extend(_header_score_section_errors(shape, index, lines))
+    return tuple(errors)
+
+
+def _header_prelude_errors(
+    shape: GetscoresWireShapeFixture,
+    index: int,
+    lines: list[bytes],
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    header_fields = lines[0].split(b"|")
+    if (
+        len(header_fields) != _HEADER_FIELD_COUNT
+        or header_fields[1] != b"false"
+        or header_fields[5:] != [b"", b""]
+        or any(
+            not _is_ascii_non_negative_integer(header_fields[field_index])
+            for field_index in (0, 2, 3, 4)
+        )
+    ):
+        errors.append(_error(_RESPONSE_SHAPES_FILE, index, "body_file", "invalid_header_row"))
+    elif int(header_fields[4]) != shape.leaderboard_row_count:
+        errors.append(
+            _error(_RESPONSE_SHAPES_FILE, index, "body_file", "header_row_count_mismatch")
+        )
+
+    if lines[1] != b"0" or lines[3] != b"0":
+        errors.append(_error(_RESPONSE_SHAPES_FILE, index, "body_file", "invalid_header_metadata"))
+    display_prefix = b"[bold:0,size:20]"
+    if not lines[2].startswith(display_prefix) or lines[2].count(b"|") != 1:
+        errors.append(_error(_RESPONSE_SHAPES_FILE, index, "body_file", "invalid_display_title"))
+    return tuple(errors)
+
+
+def _header_score_section_errors(
+    shape: GetscoresWireShapeFixture,
+    index: int,
+    lines: list[bytes],
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    personal_best_row = lines[4]
+    if shape.personal_best_present:
+        if not _is_valid_score_row(personal_best_row):
+            errors.append(
+                _error(_RESPONSE_SHAPES_FILE, index, "body_file", "invalid_personal_best_row")
+            )
+    elif personal_best_row:
+        errors.append(
+            _error(_RESPONSE_SHAPES_FILE, index, "body_file", "unexpected_personal_best_row")
+        )
+
+    leaderboard_rows = lines[5:-1]
+    if shape.shape_id is GetscoresWireShapeId.HEADER_ONLY:
+        if leaderboard_rows != [b""]:
+            errors.append(
+                _error(_RESPONSE_SHAPES_FILE, index, "body_file", "unexpected_leaderboard_rows")
+            )
+    elif len(leaderboard_rows) != shape.leaderboard_row_count or any(
+        not _is_valid_score_row(row) for row in leaderboard_rows
+    ):
+        errors.append(
+            _error(_RESPONSE_SHAPES_FILE, index, "body_file", "invalid_leaderboard_rows")
+        )
+    return tuple(errors)
+
+
+def _is_valid_score_row(row: bytes) -> bool:
+    fields = row.split(b"|")
+    if len(fields) != _SCORE_ROW_FIELD_COUNT or not fields[1]:
+        return False
+    if any(
+        not _is_ascii_non_negative_integer(fields[field_index])
+        for field_index in _SCORE_ROW_NUMERIC_FIELD_INDICES
+    ):
+        return False
+    return fields[10] in {b"0", b"1"} and fields[15] in {b"0", b"1"}
+
+
+def _is_ascii_non_negative_integer(value: bytes) -> bool:
+    return bool(value) and value.isascii() and value.isdigit()
 
 
 def _validate_bundle_branches(evidence: GetscoresCompletionEvidence) -> tuple[str, ...]:
@@ -1259,6 +1609,7 @@ def _sorted_errors(errors: Sequence[str]) -> tuple[str, ...]:
 __all__ = [
     "EndpointEvidenceState",
     "EndpointStatusEvidence",
+    "GetscoresBodyEncoding",
     "GetscoresBranchCase",
     "GetscoresCompletionEvidence",
     "GetscoresEvidenceSource",

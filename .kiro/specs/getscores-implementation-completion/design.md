@@ -111,7 +111,7 @@ graph LR
     ShapeManifest[response_shapes.json] --> EvidenceLoader[Typed Getscores Evidence Loader]
     BranchCatalog[branch_cases.json] --> EvidenceLoader
     StatusCrosswalk[beatmap_status_crosswalk.json] --> EvidenceLoader
-    BodyFixtures[Exact body files] --> EvidenceLoader
+    BodyFixtures[Canonical Base64 body files] --> EvidenceLoader
     EvidenceLoader --> EvidenceValidation[Schema and safety validation]
     RuntimeEndpoint[Modern getscores endpoint] --> RuntimeTests[Integration comparison]
     EvidenceLoader --> RuntimeTests
@@ -126,6 +126,7 @@ graph LR
 Key rules:
 
 - Exact body fixtures are authored from confirmed evidence and reviewed, not generated from runtime snapshots。
+- Repository上ではcanonical Base64 textとして保存し、decoded bytesだけをclient compatibility contractとして扱う。
 - Branch catalog references shape ids; it does not duplicate bodies。
 - Target probe cases remain separate and may contain query-construction fields not allowed in completion catalog。
 - Crosswalk records endpoint-specific representations and never becomes a shared numeric mapper。
@@ -136,7 +137,7 @@ Key rules:
 | Layer | Choice | Role | Notes |
 | --- | --- | --- | --- |
 | Evidence schema | JSON | Shape、branch、status crosswalk manifests | Existing repository format |
-| Exact body | Byte fixture files | Response body contract | Read with `Path.read_bytes()` |
+| Exact body | Canonical Base64 text fixture | Response body contract | Strict decode後のbytesを比較 |
 | Typed model | Python `StrEnum` + `@dataclass(frozen=True, slots=True)` | No-`Any` parsed contracts | Japanese Google Style docstrings |
 | Validation | Existing `SurfaceResult` / pytest | Schema、secret、cross-reference、runtime equality | No new dependency |
 | Runtime | Existing Starlette response path | Contract under test | No default production change |
@@ -166,11 +167,11 @@ tests/fixtures/stable_compatibility/getscores/
 tests/fixtures/web_legacy/getscores/
 ├── existing status fixtures...
 └── completion/
-    ├── auth_failure.body
-    ├── unavailable.body
-    ├── update_available.body
-    ├── header_only.body
-    └── header_with_rows.body
+    ├── auth_failure.body.b64
+    ├── unavailable.body.b64
+    ├── update_available.body.b64
+    ├── header_only.body.b64
+    └── header_with_rows.body.b64
 tests/support/
 └── getscores_contract.py
 tests/unit/athena_cli/stable_verification/
@@ -192,7 +193,7 @@ docs/
 - `tests/fixtures/stable_compatibility/getscores/response_shapes.json` - 5 distinct wire shapeのmetadata contract。
 - `tests/fixtures/stable_compatibility/getscores/branch_cases.json` - symbolic request / seed scenarioからshape idへのcatalog。
 - `tests/fixtures/stable_compatibility/getscores/beatmap_status_crosswalk.json` - canonical statusとendpoint-specific representation。
-- `tests/fixtures/web_legacy/getscores/completion/*.body` - runtime exact body bytes。Existing status fixturesは変更しない。
+- `tests/fixtures/web_legacy/getscores/completion/*.body.b64` - runtime exact body bytesのcanonical Base64表現。Existing status fixturesは変更しない。
 - `tests/support/getscores_contract.py` - symbolic branch profileからsafe synthetic query / expected fixtureを解決するtyped test helper。
 - `tests/unit/athena_cli/stable_verification/test_getscores_completion_evidence.py` - schema、foreign key、secret policy、crosswalk completeness validation。
 
@@ -301,11 +302,11 @@ sequenceDiagram
 
 | Requirement | Summary | Components | Interfaces / Files | Flow |
 | --- | --- | --- | --- | --- |
-| 1.1 | Auth failure 401 + empty body | Wire Shape Fixture、Runtime Comparison | `auth_failure.body`、endpoint integration | Runtime comparison |
-| 1.2 | Invalid identity/checksum/unavailable | Branch Catalog、Wire Shape Fixture | `unavailable.body`、unavailable integration | Runtime comparison |
-| 1.3 | Filename match checksum update | Branch Catalog、Wire Shape Fixture | `update_available.body` | Runtime comparison |
-| 1.4 | Header + PB + rows | Wire Shape Fixture、Runtime Comparison | `header_with_rows.body` | Runtime comparison |
-| 1.5 | Header-only selections | Branch Catalog、Wire Shape Fixture | `header_only.body` | Runtime comparison |
+| 1.1 | Auth failure 401 + empty body | Wire Shape Fixture、Runtime Comparison | `auth_failure.body.b64`、endpoint integration | Runtime comparison |
+| 1.2 | Invalid identity/checksum/unavailable | Branch Catalog、Wire Shape Fixture | `unavailable.body.b64`、unavailable integration | Runtime comparison |
+| 1.3 | Filename match checksum update | Branch Catalog、Wire Shape Fixture | `update_available.body.b64` | Runtime comparison |
+| 1.4 | Header + PB + rows | Wire Shape Fixture、Runtime Comparison | `header_with_rows.body.b64` | Runtime comparison |
+| 1.5 | Header-only selections | Branch Catalog、Wire Shape Fixture | `header_only.body.b64` | Runtime comparison |
 | 1.6 | Preparation/warmup failure invariance | Runtime Comparison | unavailable/endpoint integration tests | Runtime comparison |
 | 1.7 | No credentials/provenance in body | Evidence Validator、Security Tests | forbidden content policy | Evidence validation |
 | 2.1 | Five distinct exact fixtures | Wire Shape Fixture | `response_shapes.json` + 5 bodies | Evidence validation |
@@ -418,6 +419,9 @@ class GetscoresWireShapeId(StrEnum):
     HEADER_ONLY = "header_only"
     HEADER_WITH_ROWS = "header_with_rows"
 
+class GetscoresBodyEncoding(StrEnum):
+    BASE64 = "base64"
+
 @dataclass(frozen=True, slots=True)
 class GetscoresWireShapeFixture:
     shape_id: GetscoresWireShapeId
@@ -425,14 +429,20 @@ class GetscoresWireShapeFixture:
     required_headers: Mapping[str, str]
     absent_headers: tuple[str, ...]
     body_file: Path
+    body_encoding: GetscoresBodyEncoding
     terminal_lf_count: int
     personal_best_present: bool
     leaderboard_row_count: int
+
+    def read_body_bytes(self) -> bytes: ...
 ```
 
 Validation rules:
 
 - Body pathはcompletion body root内のrelative pathだけを許可する。
+- Non-empty body fileはASCII Base64 payload 1つとrepository terminal LF 1つだけを許可し、empty body fixtureはcanonical empty Base64としてzero-byte fileを保存する。
+- Non-empty payloadのmissing terminal LF、extra / interior whitespace、non-ASCII、invalid / non-canonical Base64、unsupported encodingをsafe errorとして拒否する。
+- Repository hookがtext EOFをnormalizeしてもdecoded bytesは変化しない。Validationとruntime comparisonはdecoded bytesに対して行う。
 - `auth_failure`はempty body、401、`content-length: 0`、no text content-typeを要求する。
 - `unavailable`は`content-length: 8`、`update_available`は`content-length: 7`、両方に`text/plain; charset=utf-8`と末尾LFなしを要求する。
 - `header_only`は末尾連続LF数`3`、`header_with_rows`は`1`としてUTF-8 stable grammarを検証する。

@@ -9,6 +9,7 @@
   - Global、Local、Selected Mods、Friends、Country、song select、unsupported selection、malformed optional fieldも既存testで広く検証されている。
   - 現在のevidenceはstatus別body fixture、integration test、live probe caseへ分散しており、HTTP status、headers、body bytes、末尾newlineを一体で表すcompletion contractがない。
   - 既存status別text fixtureの末尾newlineはruntime short bodyと一致しない。completion fixtureは既存fixtureを無条件に再利用せず、distinct wire shapeごとのexact bytesとして新設する必要がある。
+  - Repository text hookはEOF newlineをnormalizeするため、raw body fileではshort bodyのno-LFとheader-onlyの複数terminal LFを保存できない。Canonical Base64 textから復元したbytesをcompatibility contractにする必要がある。
   - Getscores status mappingは確定している一方、beatmap info側はofficial fixtureでRanked=`1`のみ確認済みで、他statusの数値は未確認である。
   - Target Stable Client trafficによる最終確認はIssue #27 / #28が所有する。Issue #12はAthena-owned behaviorのimplementation completionを扱う。
 
@@ -54,7 +55,7 @@
   - Existing status fixtureはstatus mapping検証には有効だが、一部short body fixtureが末尾LFを持つためruntime exact fixtureとしては使えない。
 - **Implications**:
   - `response_shapes.json` はauth failure、unavailable、update available、header-only、Personal Best + leaderboard rowsの5 shapeを定義する。
-  - Body bytesはshape専用fixture fileで保持し、manifestはHTTP status、relevant header subset、newline contract、row/PB semanticsを持つ。
+  - Body bytesはshape専用のcanonical Base64 fixtureから復元し、manifestはencoding、HTTP status、relevant header subset、newline contract、row/PB semanticsを持つ。
   - Approved status `3`はcrosswalkとexisting mapper testで固定する。Distinct wire shapeではないため専用body fixtureは追加しない。
 
 ### Branch catalog versus live probe cases
@@ -172,6 +173,17 @@ Official fixtureとreference implementationが矛盾する場合はofficial fixt
 - **Rationale**: Client-observable differenceを直接表し、category duplicationとfixture driftを防げる。
 - **Trade-offs**: Scenario-specific field valuesはcase catalogとruntime seedから追跡する必要がある。
 
+### Decision: Store exact body contracts as canonical Base64 text
+
+- **Context**: Repository text hookがterminal newlineをnormalizeし、raw fixtureではshort bodyのno-LFとheader-onlyの3 terminal LFを保持できない。
+- **Alternatives Considered**:
+  1. Hook configurationを変更してraw `.body` fileを除外する。
+  2. Body bytesをJSON string escapeへ埋め込む。
+  3. Shapeごとのcanonical Base64 textを保存し、strict decoderでexact bytesへ戻す。
+- **Selected Approach**: Non-empty `.body.b64`はASCII Base64 payload 1つとrepository terminal LF 1つだけを持ち、empty bodyはcanonical empty Base64としてzero-byte fileを持つ。Validationとruntime comparisonはdecoded bytesをcontractとして扱う。
+- **Rationale**: Existing hookとproject-wide configを変更せず、no-LF、複数terminal LF、empty bodyをlosslessに表現できる。Strict decoderはnon-empty payloadのmissing terminal LF、extra / interior whitespace、non-ASCII、invalid / non-canonical Base64、unsupported encodingをsafe diagnosticで拒否する。
+- **Trade-offs**: Fixtureを目視するときdecodeが必要だが、typed public methodとtestが唯一のdecode boundaryを提供する。
+
 ### Decision: Add typed manifest loading to stable verification
 
 - **Context**: JSONだけではrequired field、enum、foreign key、secret policyをmechanically enforceできない。
@@ -224,7 +236,7 @@ Official fixtureとreference implementationが矛盾する場合はofficial fixt
 
 ## Risks & Mitigations
 
-- Fixture bodyの末尾newlineがeditorで変わる: Body bytesをruntime responseと直接比較し、manifestの末尾連続LF数も検証する。
+- Fixture bodyの末尾newlineがrepository hookで変わる: Empty Base64はzero-byte file、non-empty Base64 textはrepository terminal LFを1つだけ許可し、decoded bytesをruntime responseと直接比較してmanifestの末尾連続LF数も検証する。
 - Branch catalogがlive probe inputと重複する: Completion catalogはsymbolic profileだけを持ち、raw request valuesを保存しない。
 - New manifestがruntimeからdriftする: Relevant integration testsをshape manifestへ接続し、CLI validationも同じfixtureを読む。
 - Beatmap info未確認値が推測される: `unconfirmed` + `null`をschemaで許可し、numeric valueとの同時指定を禁止する。
