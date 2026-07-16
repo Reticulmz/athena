@@ -675,7 +675,7 @@ def test_branch_case_catalog_marks_malformed_identity_and_optional_fields_provis
             GetscoresParseWarning.INVALID_MODE,
             GetscoresRequestSelector.LOCAL,
             LeaderboardCategory.GLOBAL,
-            GetscoresWireShapeId.HEADER_WITH_ROWS,
+            GetscoresWireShapeId.HEADER_ONLY,
         ),
         "malformed-mods": (
             GetscoresMutationProfile.INVALID_MODS,

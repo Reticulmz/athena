@@ -173,7 +173,7 @@
       "expected_domain_category": "global",
       "seed_profile": "ranked_with_rows",
       "mutation_profiles": ["invalid_mode"],
-      "expected_shape_id": "header_with_rows",
+      "expected_shape_id": "header_only",
       "expected_warning_categories": ["invalid_mode"],
       "evidence_status": "provisional_athena_behavior"
     },
