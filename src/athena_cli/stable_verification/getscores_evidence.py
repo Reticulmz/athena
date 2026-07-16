@@ -376,6 +376,50 @@ class EndpointEvidenceState(StrEnum):
     UNCONFIRMED = "unconfirmed"
 
 
+_CANONICAL_GETSCORES_STATUS: Mapping[
+    BeatmapRankStatus, tuple[StatusRepresentation, int | None]
+] = MappingProxyType(
+    {
+        BeatmapRankStatus.RANKED: (StatusRepresentation.WIRE, 2),
+        BeatmapRankStatus.APPROVED: (StatusRepresentation.WIRE, 3),
+        BeatmapRankStatus.LOVED: (StatusRepresentation.WIRE, 5),
+        BeatmapRankStatus.QUALIFIED: (StatusRepresentation.WIRE, 4),
+        BeatmapRankStatus.PENDING: (StatusRepresentation.WIRE, 0),
+        BeatmapRankStatus.WIP: (StatusRepresentation.WIRE, 0),
+        BeatmapRankStatus.GRAVEYARD: (StatusRepresentation.WIRE, 0),
+        BeatmapRankStatus.NOT_SUBMITTED: (StatusRepresentation.UNAVAILABLE, None),
+        BeatmapRankStatus.UNKNOWN: (StatusRepresentation.UNAVAILABLE, None),
+    }
+)
+_OFFICIAL_GETSCORES_FIXTURE_STEM: Mapping[BeatmapRankStatus, str] = MappingProxyType(
+    {
+        BeatmapRankStatus.RANKED: "ranked",
+        BeatmapRankStatus.LOVED: "loved",
+        BeatmapRankStatus.QUALIFIED: "qualified",
+        BeatmapRankStatus.PENDING: "pending",
+        BeatmapRankStatus.WIP: "wip",
+        BeatmapRankStatus.GRAVEYARD: "graveyard",
+        BeatmapRankStatus.NOT_SUBMITTED: "not_submitted",
+    }
+)
+_DETERMINISTIC_GETSCORES_TEST_ANCHOR: Mapping[BeatmapRankStatus, str] = MappingProxyType(
+    {
+        BeatmapRankStatus.APPROVED: "test_approved_maps_to_3",
+        BeatmapRankStatus.UNKNOWN: "test_unknown_maps_to_none",
+    }
+)
+_ATHENA_GETSCORES_MAPPER_SOURCE = (
+    "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py"
+)
+_GETSCORES_STATUS_TEST_SOURCE_PREFIX = (
+    "automated_test:tests/unit/transports/web_legacy/test_getscores_status_mapper.py#"
+)
+_BEATMAP_INFO_RANKED_SOURCE = (
+    ".kiro:specs/beatmap-info-endpoint/research.md"
+    "#observed-official-response-fixture-osu-getbeatmapinfophp"
+)
+
+
 @final
 class GetscoresEvidenceSource(str):
     """Getscores evidenceのsafeなsymbolic source reference。
@@ -1393,6 +1437,7 @@ def _validate_bundle_crosswalk(evidence: GetscoresCompletionEvidence) -> tuple[s
             )
         seen.add(entry.canonical_status)
     errors.extend(_crosswalk_semantic_errors(evidence.status_crosswalk))
+    errors.extend(_canonical_crosswalk_errors(evidence.status_crosswalk))
     return tuple(_sorted_errors(errors))
 
 
@@ -1409,12 +1454,142 @@ def _crosswalk_semantic_errors(
     return tuple(_sorted_errors(errors))
 
 
+def _canonical_crosswalk_errors(
+    entries: Sequence[StableBeatmapStatusCrosswalkEntry],
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    if {entry.canonical_status for entry in entries} != set(BeatmapRankStatus):
+        errors.append(
+            _error(
+                _STATUS_CROSSWALK_FILE,
+                "document",
+                "canonical_status",
+                "missing_canonical_status",
+            )
+        )
+    for index, entry in enumerate(entries):
+        actual_getscores = (
+            entry.getscores.representation,
+            entry.getscores.wire_status,
+            entry.getscores.evidence_status,
+            tuple(str(source) for source in entry.getscores.evidence_sources),
+        )
+        if actual_getscores != _canonical_getscores_contract(entry.canonical_status):
+            errors.append(
+                _error(
+                    _STATUS_CROSSWALK_FILE,
+                    index,
+                    "getscores",
+                    "unexpected_getscores_contract",
+                )
+            )
+        errors.extend(_canonical_beatmap_info_errors(index, entry))
+    return tuple(_sorted_errors(errors))
+
+
+def _canonical_getscores_contract(
+    status: BeatmapRankStatus,
+) -> tuple[StatusRepresentation, int | None, EndpointEvidenceState, tuple[str, ...]]:
+    representation, wire_status = _CANONICAL_GETSCORES_STATUS[status]
+    fixture_stem = _OFFICIAL_GETSCORES_FIXTURE_STEM.get(status)
+    if fixture_stem is not None:
+        return (
+            representation,
+            wire_status,
+            EndpointEvidenceState.OFFICIAL_FIXTURE,
+            (f"official_fixture:tests/fixtures/web_legacy/getscores/{fixture_stem}_response.txt",),
+        )
+    test_anchor = _DETERMINISTIC_GETSCORES_TEST_ANCHOR[status]
+    return (
+        representation,
+        wire_status,
+        EndpointEvidenceState.ATHENA_DETERMINISTIC,
+        (
+            _ATHENA_GETSCORES_MAPPER_SOURCE,
+            f"{_GETSCORES_STATUS_TEST_SOURCE_PREFIX}{test_anchor}",
+        ),
+    )
+
+
+def _canonical_beatmap_info_errors(
+    index: int,
+    entry: StableBeatmapStatusCrosswalkEntry,
+) -> tuple[str, ...]:
+    if entry.canonical_status is BeatmapRankStatus.RANKED:
+        expected_contract = (
+            StatusRepresentation.WIRE,
+            1,
+            EndpointEvidenceState.OFFICIAL_FIXTURE,
+            (_BEATMAP_INFO_RANKED_SOURCE,),
+        )
+    else:
+        expected_contract = (
+            StatusRepresentation.UNCONFIRMED,
+            None,
+            EndpointEvidenceState.UNCONFIRMED,
+            (),
+        )
+
+    actual_contract = (
+        entry.beatmap_info.representation,
+        entry.beatmap_info.wire_status,
+        entry.beatmap_info.evidence_status,
+        tuple(str(source) for source in entry.beatmap_info.evidence_sources),
+    )
+    if actual_contract == expected_contract:
+        return ()
+    return (
+        _error(
+            _STATUS_CROSSWALK_FILE,
+            index,
+            "beatmap_info",
+            "unexpected_beatmap_info_contract",
+        ),
+    )
+
+
 def _endpoint_semantic_errors(
     index: int,
     endpoint_name: str,
     endpoint: EndpointStatusEvidence,
 ) -> tuple[str, ...]:
     errors: list[str] = []
+    if (
+        endpoint.evidence_status is not EndpointEvidenceState.UNCONFIRMED
+        and not endpoint.evidence_sources
+    ):
+        errors.append(
+            _error(
+                _STATUS_CROSSWALK_FILE,
+                index,
+                f"{endpoint_name}.evidence_sources",
+                "evidence_source_required",
+            )
+        )
+    if (
+        endpoint.representation is StatusRepresentation.UNCONFIRMED
+        and endpoint.evidence_status is not EndpointEvidenceState.UNCONFIRMED
+    ):
+        errors.append(
+            _error(
+                _STATUS_CROSSWALK_FILE,
+                index,
+                f"{endpoint_name}.evidence_status",
+                "unconfirmed_representation_requires_unconfirmed_evidence",
+            )
+        )
+    if (
+        endpoint.evidence_status is EndpointEvidenceState.UNCONFIRMED
+        and endpoint.representation is not StatusRepresentation.UNCONFIRMED
+    ):
+        errors.append(
+            _error(
+                _STATUS_CROSSWALK_FILE,
+                index,
+                f"{endpoint_name}.representation",
+                "unconfirmed_evidence_requires_unconfirmed_representation",
+            )
+        )
     if endpoint.representation is StatusRepresentation.WIRE and endpoint.wire_status is None:
         errors.append(
             _error(

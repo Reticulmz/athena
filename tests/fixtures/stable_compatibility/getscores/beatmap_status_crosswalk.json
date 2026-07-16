@@ -1,0 +1,162 @@
+{
+  "schema": "athena.stable_compatibility.getscores.beatmap_status_crosswalk.v1",
+  "entries": [
+    {
+      "canonical_status": "ranked",
+      "getscores": {
+        "representation": "wire",
+        "wire_status": 2,
+        "evidence_status": "official_fixture",
+        "evidence_sources": [
+          "official_fixture:tests/fixtures/web_legacy/getscores/ranked_response.txt"
+        ]
+      },
+      "beatmap_info": {
+        "representation": "wire",
+        "wire_status": 1,
+        "evidence_status": "official_fixture",
+        "evidence_sources": [
+          ".kiro:specs/beatmap-info-endpoint/research.md#observed-official-response-fixture-osu-getbeatmapinfophp"
+        ]
+      }
+    },
+    {
+      "canonical_status": "approved",
+      "getscores": {
+        "representation": "wire",
+        "wire_status": 3,
+        "evidence_status": "athena_deterministic",
+        "evidence_sources": [
+          "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py",
+          "automated_test:tests/unit/transports/web_legacy/test_getscores_status_mapper.py#test_approved_maps_to_3"
+        ]
+      },
+      "beatmap_info": {
+        "representation": "unconfirmed",
+        "wire_status": null,
+        "evidence_status": "unconfirmed",
+        "evidence_sources": []
+      }
+    },
+    {
+      "canonical_status": "loved",
+      "getscores": {
+        "representation": "wire",
+        "wire_status": 5,
+        "evidence_status": "official_fixture",
+        "evidence_sources": [
+          "official_fixture:tests/fixtures/web_legacy/getscores/loved_response.txt"
+        ]
+      },
+      "beatmap_info": {
+        "representation": "unconfirmed",
+        "wire_status": null,
+        "evidence_status": "unconfirmed",
+        "evidence_sources": []
+      }
+    },
+    {
+      "canonical_status": "qualified",
+      "getscores": {
+        "representation": "wire",
+        "wire_status": 4,
+        "evidence_status": "official_fixture",
+        "evidence_sources": [
+          "official_fixture:tests/fixtures/web_legacy/getscores/qualified_response.txt"
+        ]
+      },
+      "beatmap_info": {
+        "representation": "unconfirmed",
+        "wire_status": null,
+        "evidence_status": "unconfirmed",
+        "evidence_sources": []
+      }
+    },
+    {
+      "canonical_status": "pending",
+      "getscores": {
+        "representation": "wire",
+        "wire_status": 0,
+        "evidence_status": "official_fixture",
+        "evidence_sources": [
+          "official_fixture:tests/fixtures/web_legacy/getscores/pending_response.txt"
+        ]
+      },
+      "beatmap_info": {
+        "representation": "unconfirmed",
+        "wire_status": null,
+        "evidence_status": "unconfirmed",
+        "evidence_sources": []
+      }
+    },
+    {
+      "canonical_status": "wip",
+      "getscores": {
+        "representation": "wire",
+        "wire_status": 0,
+        "evidence_status": "official_fixture",
+        "evidence_sources": [
+          "official_fixture:tests/fixtures/web_legacy/getscores/wip_response.txt"
+        ]
+      },
+      "beatmap_info": {
+        "representation": "unconfirmed",
+        "wire_status": null,
+        "evidence_status": "unconfirmed",
+        "evidence_sources": []
+      }
+    },
+    {
+      "canonical_status": "graveyard",
+      "getscores": {
+        "representation": "wire",
+        "wire_status": 0,
+        "evidence_status": "official_fixture",
+        "evidence_sources": [
+          "official_fixture:tests/fixtures/web_legacy/getscores/graveyard_response.txt"
+        ]
+      },
+      "beatmap_info": {
+        "representation": "unconfirmed",
+        "wire_status": null,
+        "evidence_status": "unconfirmed",
+        "evidence_sources": []
+      }
+    },
+    {
+      "canonical_status": "not_submitted",
+      "getscores": {
+        "representation": "unavailable",
+        "wire_status": null,
+        "evidence_status": "official_fixture",
+        "evidence_sources": [
+          "official_fixture:tests/fixtures/web_legacy/getscores/not_submitted_response.txt"
+        ]
+      },
+      "beatmap_info": {
+        "representation": "unconfirmed",
+        "wire_status": null,
+        "evidence_status": "unconfirmed",
+        "evidence_sources": []
+      }
+    },
+    {
+      "canonical_status": "unknown",
+      "getscores": {
+        "representation": "unavailable",
+        "wire_status": null,
+        "evidence_status": "athena_deterministic",
+        "evidence_sources": [
+          "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py",
+          "automated_test:tests/unit/transports/web_legacy/test_getscores_status_mapper.py#test_unknown_maps_to_none"
+        ]
+      },
+      "beatmap_info": {
+        "representation": "unconfirmed",
+        "wire_status": null,
+        "evidence_status": "unconfirmed",
+        "evidence_sources": []
+      }
+    }
+  ]
+}

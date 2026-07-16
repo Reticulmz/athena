@@ -25,6 +25,7 @@ from athena_cli.stable_verification.getscores_evidence import (
     validate_getscores_completion_evidence,
 )
 from athena_cli.stable_verification.models import StableSurface, VerificationStatus
+from osu_server.domain.beatmaps import BeatmapRankStatus
 from osu_server.domain.compatibility.stable.getscores import GetscoresParseWarning
 from osu_server.domain.scores.personal_best import LeaderboardCategory
 
@@ -33,7 +34,21 @@ _RESPONSE_SHAPES_MANIFEST = (
     _FIXTURE_ROOT / "stable_compatibility" / "getscores" / "response_shapes.json"
 )
 _BRANCH_CASES_MANIFEST = _FIXTURE_ROOT / "stable_compatibility" / "getscores" / "branch_cases.json"
+_STATUS_CROSSWALK_MANIFEST = (
+    _FIXTURE_ROOT / "stable_compatibility" / "getscores" / "beatmap_status_crosswalk.json"
+)
 _COMPLETION_BODY_ROOT = _FIXTURE_ROOT / "web_legacy" / "getscores" / "completion"
+_OFFICIAL_GETSCORES_SOURCE_PREFIX = "official_fixture:tests/fixtures/web_legacy/getscores/"
+_ATHENA_GETSCORES_MAPPER_SOURCE = (
+    "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py"
+)
+_GETSCORES_STATUS_TEST_SOURCE_PREFIX = (
+    "automated_test:tests/unit/transports/web_legacy/test_getscores_status_mapper.py#"
+)
+_BEATMAP_INFO_RANKED_SOURCE = (
+    ".kiro:specs/beatmap-info-endpoint/research.md"
+    "#observed-official-response-fixture-osu-getbeatmapinfophp"
+)
 
 _HEADER_ONLY_BODY = (
     b"2|false|75|1|0||\n"
@@ -339,23 +354,10 @@ def test_evidence_source_is_typed_and_rejects_raw_query_like_reference(
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
     document = _read_document(crosswalk_path)
-    entries = cast("list[object]", document["entries"])
-    entries.append(
-        {
-            "canonical_status": "ranked",
-            "getscores": {
-                "representation": "wire",
-                "wire_status": 2,
-                "evidence_status": "confirmed",
-                "evidence_sources": ["official_fixture:ranked"],
-            },
-            "beatmap_info": {
-                "representation": "unconfirmed",
-                "wire_status": None,
-                "evidence_status": "unconfirmed",
-                "evidence_sources": [],
-            },
-        }
+    entry = next(
+        entry
+        for entry in _entries(document, "entries")
+        if entry.get("canonical_status") == "ranked"
     )
     _write_document(crosswalk_path, document)
 
@@ -363,13 +365,12 @@ def test_evidence_source_is_typed_and_rejects_raw_query_like_reference(
 
     source = evidence.status_crosswalk[0].getscores.evidence_sources[0]
     assert isinstance(source, GetscoresEvidenceSource)
-    assert source == "official_fixture:ranked"
+    assert source == ("official_fixture:tests/fixtures/web_legacy/getscores/ranked_response.txt")
 
-    entry = cast("dict[str, object]", entries[0])
     entry["getscores"] = {
         "representation": "wire",
         "wire_status": 2,
-        "evidence_status": "confirmed",
+        "evidence_status": "official_fixture",
         "evidence_sources": ["u=raw-secret"],
     }
     _write_document(crosswalk_path, document)
@@ -419,6 +420,254 @@ def test_evidence_source_rejects_parent_path_segments(tmp_path: Path) -> None:
     message = str(raised.value)
     assert "invalid_evidence_source" in message
     assert "private" not in message
+
+
+def test_status_crosswalk_fixture_records_every_canonical_endpoint_contract(
+    tmp_path: Path,
+) -> None:
+    assert _STATUS_CROSSWALK_MANIFEST.is_file()
+    manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+
+    by_status = {entry.canonical_status: entry for entry in evidence.status_crosswalk}
+    assert set(by_status) == set(BeatmapRankStatus)
+    assert {
+        status: (
+            entry.getscores.representation.value,
+            entry.getscores.wire_status,
+            entry.getscores.evidence_status.value,
+            tuple(str(source) for source in entry.getscores.evidence_sources),
+        )
+        for status, entry in by_status.items()
+    } == {
+        BeatmapRankStatus.RANKED: _official_getscores_contract("ranked", "wire", 2),
+        BeatmapRankStatus.APPROVED: _deterministic_getscores_contract(
+            "test_approved_maps_to_3", "wire", 3
+        ),
+        BeatmapRankStatus.LOVED: _official_getscores_contract("loved", "wire", 5),
+        BeatmapRankStatus.QUALIFIED: _official_getscores_contract("qualified", "wire", 4),
+        BeatmapRankStatus.PENDING: _official_getscores_contract("pending", "wire", 0),
+        BeatmapRankStatus.WIP: _official_getscores_contract("wip", "wire", 0),
+        BeatmapRankStatus.GRAVEYARD: _official_getscores_contract("graveyard", "wire", 0),
+        BeatmapRankStatus.NOT_SUBMITTED: _official_getscores_contract(
+            "not_submitted", "unavailable", None
+        ),
+        BeatmapRankStatus.UNKNOWN: _deterministic_getscores_contract(
+            "test_unknown_maps_to_none", "unavailable", None
+        ),
+    }
+    assert {
+        status: (
+            entry.beatmap_info.representation.value,
+            entry.beatmap_info.wire_status,
+            entry.beatmap_info.evidence_status.value,
+            tuple(str(source) for source in entry.beatmap_info.evidence_sources),
+        )
+        for status, entry in by_status.items()
+    } == {
+        **{
+            status: ("unconfirmed", None, "unconfirmed", ())
+            for status in BeatmapRankStatus
+            if status is not BeatmapRankStatus.RANKED
+        },
+        BeatmapRankStatus.RANKED: (
+            "wire",
+            1,
+            "official_fixture",
+            (_BEATMAP_INFO_RANKED_SOURCE,),
+        ),
+    }
+
+
+def test_status_crosswalk_markdown_source_resolves_to_canonical_heading_anchor() -> None:
+    evidence = load_getscores_completion_evidence(
+        _STATUS_CROSSWALK_MANIFEST.parent,
+        _COMPLETION_BODY_ROOT,
+    )
+    ranked = next(
+        entry
+        for entry in evidence.status_crosswalk
+        if entry.canonical_status is BeatmapRankStatus.RANKED
+    )
+    source = str(ranked.beatmap_info.evidence_sources[0])
+    source_prefix, separator, reference = source.partition(":")
+    relative_path, fragment_separator, fragment = reference.partition("#")
+
+    assert separator == ":"
+    assert fragment_separator == "#"
+    source_path = _FIXTURE_ROOT.parents[1] / source_prefix / relative_path
+    assert source_path.is_file()
+    anchors = {
+        _github_markdown_anchor(line)
+        for line in source_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("#")
+    }
+    assert fragment in anchors
+
+
+def test_status_crosswalk_rejects_missing_canonical_status_without_echoing_value(
+    tmp_path: Path,
+) -> None:
+    manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
+    crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
+    document = _read_document(crosswalk_path)
+    document["entries"] = [
+        entry
+        for entry in _entries(document, "entries")
+        if entry.get("canonical_status") != "ranked"
+    ]
+    _write_document(crosswalk_path, document)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    result = validate_getscores_completion_evidence(evidence)[2]
+
+    assert result.status is VerificationStatus.FAIL
+    message = result.diagnostic_summary.message
+    assert "ranked" not in message
+
+
+def test_status_crosswalk_rejects_duplicate_canonical_status_without_echoing_value(
+    tmp_path: Path,
+) -> None:
+    manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    ranked = evidence.status_crosswalk[0]
+    duplicated = replace(
+        evidence,
+        status_crosswalk=(*evidence.status_crosswalk, ranked),
+    )
+
+    result = validate_getscores_completion_evidence(duplicated)[2]
+
+    assert result.status is VerificationStatus.FAIL
+    message = result.diagnostic_summary.message
+    assert "ranked" not in message
+
+
+@pytest.mark.parametrize(
+    ("canonical_status", "endpoint_name", "updates", "forbidden_value"),
+    [
+        ("approved", "getscores", {"wire_status": 99}, "99"),
+        (
+            "ranked",
+            "getscores",
+            {"representation": "unavailable", "wire_status": None},
+            "unavailable",
+        ),
+        (
+            "approved",
+            "getscores",
+            {
+                "evidence_status": "official_fixture",
+                "evidence_sources": [f"{_OFFICIAL_GETSCORES_SOURCE_PREFIX}ranked_response.txt"],
+            },
+            "approved",
+        ),
+        (
+            "ranked",
+            "getscores",
+            {"evidence_sources": [f"{_OFFICIAL_GETSCORES_SOURCE_PREFIX}loved_response.txt"]},
+            "loved_response.txt",
+        ),
+        (
+            "approved",
+            "beatmap_info",
+            {
+                "representation": "wire",
+                "wire_status": 1,
+                "evidence_status": "official_fixture",
+                "evidence_sources": [_BEATMAP_INFO_RANKED_SOURCE],
+            },
+            "approved",
+        ),
+        ("ranked", "beatmap_info", {"wire_status": 2}, "2"),
+        ("ranked", "beatmap_info", {"evidence_status": "confirmed"}, "confirmed"),
+        (
+            "ranked",
+            "beatmap_info",
+            {"evidence_sources": [f"{_OFFICIAL_GETSCORES_SOURCE_PREFIX}ranked_response.txt"]},
+            "ranked_response.txt",
+        ),
+    ],
+)
+def test_status_crosswalk_validator_rejects_noncanonical_endpoint_contract(
+    tmp_path: Path,
+    canonical_status: str,
+    endpoint_name: str,
+    updates: Mapping[str, object],
+    forbidden_value: str,
+) -> None:
+    manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
+    crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
+    document = _read_document(crosswalk_path)
+    _status_endpoint(document, canonical_status, endpoint_name).update(updates)
+    _write_document(crosswalk_path, document)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    result = validate_getscores_completion_evidence(evidence)[2]
+
+    assert result.status is VerificationStatus.FAIL
+    assert forbidden_value not in result.diagnostic_summary.message
+
+
+@pytest.mark.parametrize(
+    ("canonical_status", "endpoint_name", "updates", "error_code", "forbidden_value"),
+    [
+        (
+            "ranked",
+            "getscores",
+            {"evidence_sources": []},
+            "evidence_source_required",
+            None,
+        ),
+        (
+            "approved",
+            "beatmap_info",
+            {"wire_status": 3},
+            "unconfirmed_wire_status",
+            "3",
+        ),
+        (
+            "approved",
+            "beatmap_info",
+            {
+                "evidence_status": "official_fixture",
+                "evidence_sources": [_BEATMAP_INFO_RANKED_SOURCE],
+            },
+            "unconfirmed_representation_requires_unconfirmed_evidence",
+            "official_fixture",
+        ),
+        (
+            "approved",
+            "beatmap_info",
+            {"representation": "unsupported"},
+            "unconfirmed_evidence_requires_unconfirmed_representation",
+            "unsupported",
+        ),
+    ],
+)
+def test_status_crosswalk_loader_rejects_invalid_endpoint_semantics(
+    tmp_path: Path,
+    canonical_status: str,
+    endpoint_name: str,
+    updates: Mapping[str, object],
+    error_code: str,
+    forbidden_value: str | None,
+) -> None:
+    manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
+    crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
+    document = _read_document(crosswalk_path)
+    _status_endpoint(document, canonical_status, endpoint_name).update(updates)
+    _write_document(crosswalk_path, document)
+
+    with pytest.raises(GetscoresEvidenceValidationError) as raised:
+        _ = load_getscores_completion_evidence(manifest_root, body_root)
+
+    message = str(raised.value)
+    assert error_code in message
+    if forbidden_value is not None:
+        assert forbidden_value not in message
 
 
 def test_manifest_rejects_excessive_nesting_deterministically(tmp_path: Path) -> None:
@@ -1183,13 +1432,8 @@ def _write_valid_manifests(tmp_path: Path) -> tuple[Path, Path]:
         ],
     }
     _write_document(manifest_root / "branch_cases.json", branch_document)
-    crosswalk_document: dict[str, object] = {
-        "schema": "athena.stable_compatibility.getscores.beatmap_status_crosswalk.v1",
-        "entries": [],
-    }
-    _write_document(
-        manifest_root / "beatmap_status_crosswalk.json",
-        crosswalk_document,
+    _ = (manifest_root / "beatmap_status_crosswalk.json").write_bytes(
+        _STATUS_CROSSWALK_MANIFEST.read_bytes()
     )
     return manifest_root, body_root
 
@@ -1226,6 +1470,64 @@ def _write_branch_case_manifest_bundle(tmp_path: Path) -> tuple[Path, Path]:
     manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
     _ = (manifest_root / "branch_cases.json").write_bytes(_BRANCH_CASES_MANIFEST.read_bytes())
     return manifest_root, body_root
+
+
+def _write_status_crosswalk_manifest_bundle(tmp_path: Path) -> tuple[Path, Path]:
+    manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
+    _ = (manifest_root / "beatmap_status_crosswalk.json").write_bytes(
+        _STATUS_CROSSWALK_MANIFEST.read_bytes()
+    )
+    return manifest_root, body_root
+
+
+def _official_getscores_contract(
+    fixture_stem: str,
+    representation: str,
+    wire_status: int | None,
+) -> tuple[str, int | None, str, tuple[str, ...]]:
+    return (
+        representation,
+        wire_status,
+        "official_fixture",
+        (f"{_OFFICIAL_GETSCORES_SOURCE_PREFIX}{fixture_stem}_response.txt",),
+    )
+
+
+def _deterministic_getscores_contract(
+    test_anchor: str,
+    representation: str,
+    wire_status: int | None,
+) -> tuple[str, int | None, str, tuple[str, ...]]:
+    return (
+        representation,
+        wire_status,
+        "athena_deterministic",
+        (
+            _ATHENA_GETSCORES_MAPPER_SOURCE,
+            f"{_GETSCORES_STATUS_TEST_SOURCE_PREFIX}{test_anchor}",
+        ),
+    )
+
+
+def _status_endpoint(
+    document: Mapping[str, object],
+    canonical_status: str,
+    endpoint_name: str,
+) -> dict[str, object]:
+    entry = next(
+        entry
+        for entry in _entries(document, "entries")
+        if entry.get("canonical_status") == canonical_status
+    )
+    return cast("dict[str, object]", entry[endpoint_name])
+
+
+def _github_markdown_anchor(heading_line: str) -> str:
+    heading = heading_line.lstrip("#").strip().lower()
+    safe_characters = "".join(
+        character for character in heading if character.isalnum() or character in {" ", "-", "_"}
+    )
+    return "-".join(safe_characters.split())
 
 
 def _encode_body_fixture(body: bytes) -> bytes:
