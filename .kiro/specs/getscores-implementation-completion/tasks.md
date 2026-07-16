@@ -28,7 +28,7 @@
   - _Requirements: 1.2, 1.3, 1.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 5.1, 5.2, 5.3, 5.4, 5.5_
   - _Boundary: Getscores Branch Case Catalog_
 
-- [ ] 1.4 Safe symbolic scenario builderを実装する
+- [x] 1.4 Safe symbolic scenario builderを実装する
   - 先にsymbolic profileからsafe synthetic queryを生成するテストと、unknown profile / root escapeを拒否するテストを追加する。
   - Catalogのprofileをruntime test用のquery mutationとexpected body fixtureへ変換し、raw credentialやraw query valueを保存しない。
   - Database seedの責務は既存のcategory、short response、diagnostics integration testへ残し、helperへ永続化責務を移さない。
@@ -157,3 +157,4 @@
 - 1.1: Manifest validationはevidence sourceのtraversal、deep JSON、非UTF-8、valid-but-unregistered foreign keyをsafe failureとして扱い、productionとtestの両方をstrict type-checkする。
 - 1.2: Exact response fixtureは既存status fixtureを変更せず、5つのshape専用bodyとmanifest mutation testでheaders、LF、PB / row grammarを固定する。
 - 1.3: Branch catalogは28件のsymbolic caseとcase-local coherence validationを持つ。`INVALID_ANTI_CHEAT_SIGNAL`はruntime未対応のため、Task 2.4開始前にcredentialを除いた実requestの`a` field contractを確認する。
+- 1.4: Scenario builderはcaller-owned `c/f/i/us/ha`を保持し、identity -> selector -> mutationの順でsafe queryを生成する。Body resolverはcanonical rootをstrict resolveし、public `read_body_bytes()`境界だけを使用する。
