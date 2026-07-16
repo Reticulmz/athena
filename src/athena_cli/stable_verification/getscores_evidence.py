@@ -313,6 +313,31 @@ class GetscoresMutationProfile(StrEnum):
     REQUEST_VERSION_VARIANT = "request_version_variant"
 
 
+_WARNING_BY_INVALID_MUTATION: Mapping[GetscoresMutationProfile, GetscoresParseWarning] = (
+    MappingProxyType(
+        {
+            GetscoresMutationProfile.INVALID_MODE: GetscoresParseWarning.INVALID_MODE,
+            GetscoresMutationProfile.INVALID_MODS: GetscoresParseWarning.INVALID_MODS,
+            GetscoresMutationProfile.INVALID_LEADERBOARD_TYPE: (
+                GetscoresParseWarning.INVALID_LEADERBOARD_TYPE
+            ),
+            GetscoresMutationProfile.INVALID_LEADERBOARD_VERSION: (
+                GetscoresParseWarning.INVALID_LEADERBOARD_VERSION
+            ),
+            GetscoresMutationProfile.INVALID_SONG_SELECT_FLAG: (
+                GetscoresParseWarning.INVALID_SONG_SELECT_FLAG
+            ),
+            GetscoresMutationProfile.INVALID_ANTI_CHEAT_SIGNAL: (
+                GetscoresParseWarning.INVALID_ANTI_CHEAT_SIGNAL
+            ),
+            GetscoresMutationProfile.INVALID_BEATMAPSET_ID_HINT: (
+                GetscoresParseWarning.INVALID_BEATMAPSET_ID_HINT
+            ),
+        }
+    )
+)
+
+
 class StatusRepresentation(StrEnum):
     """Endpoint statusのwire表現種別を表す。
 
@@ -1309,6 +1334,51 @@ def _validate_bundle_branches(evidence: GetscoresCompletionEvidence) -> tuple[st
         if case.expected_shape_id not in shape_ids:
             errors.append(
                 _error(_BRANCH_CASES_FILE, index, "expected_shape_id", "unknown_shape_id")
+            )
+        if len(set(case.mutation_profiles)) != len(case.mutation_profiles):
+            errors.append(
+                _error(_BRANCH_CASES_FILE, index, "mutation_profiles", "duplicate_member")
+            )
+        if len(set(case.expected_warning_categories)) != len(case.expected_warning_categories):
+            errors.append(
+                _error(
+                    _BRANCH_CASES_FILE,
+                    index,
+                    "expected_warning_categories",
+                    "duplicate_member",
+                )
+            )
+        expected_warnings = {
+            warning
+            for mutation in case.mutation_profiles
+            if (warning := _WARNING_BY_INVALID_MUTATION.get(mutation)) is not None
+        }
+        if set(case.expected_warning_categories) != expected_warnings:
+            errors.append(
+                _error(
+                    _BRANCH_CASES_FILE,
+                    index,
+                    "expected_warning_categories",
+                    "mutation_warning_mismatch",
+                )
+            )
+        malformed_identity = case.identity_profile in {
+            GetscoresIdentityProfile.MISSING_BEATMAP_IDENTITY,
+            GetscoresIdentityProfile.INVALID_CHECKSUM,
+        }
+        malformed_optional = any(
+            mutation in _WARNING_BY_INVALID_MUTATION for mutation in case.mutation_profiles
+        )
+        if (
+            malformed_identity or malformed_optional
+        ) and case.evidence_status is not GetscoresEvidenceStatus.PROVISIONAL_ATHENA_BEHAVIOR:
+            errors.append(
+                _error(
+                    _BRANCH_CASES_FILE,
+                    index,
+                    "evidence_status",
+                    "malformed_case_must_be_provisional",
+                )
             )
     return tuple(_sorted_errors(errors))
 

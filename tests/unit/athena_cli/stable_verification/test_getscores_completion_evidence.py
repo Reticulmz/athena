@@ -25,11 +25,14 @@ from athena_cli.stable_verification.getscores_evidence import (
     validate_getscores_completion_evidence,
 )
 from athena_cli.stable_verification.models import StableSurface, VerificationStatus
+from osu_server.domain.compatibility.stable.getscores import GetscoresParseWarning
+from osu_server.domain.scores.personal_best import LeaderboardCategory
 
 _FIXTURE_ROOT = Path(__file__).resolve().parents[3] / "fixtures"
 _RESPONSE_SHAPES_MANIFEST = (
     _FIXTURE_ROOT / "stable_compatibility" / "getscores" / "response_shapes.json"
 )
+_BRANCH_CASES_MANIFEST = _FIXTURE_ROOT / "stable_compatibility" / "getscores" / "branch_cases.json"
 _COMPLETION_BODY_ROOT = _FIXTURE_ROOT / "web_legacy" / "getscores" / "completion"
 
 _HEADER_ONLY_BODY = (
@@ -434,6 +437,417 @@ def test_manifest_rejects_excessive_nesting_deterministically(tmp_path: Path) ->
     assert "nested_content_too_deep" in str(raised.value)
 
 
+def test_branch_case_catalog_uses_closed_vocabularies_and_known_shape_references(
+    tmp_path: Path,
+) -> None:
+    assert _BRANCH_CASES_MANIFEST.is_file()
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+
+    assert {profile.value for profile in GetscoresIdentityProfile} == {
+        "auth_missing",
+        "auth_invalid",
+        "known_beatmap",
+        "missing_beatmap_identity",
+        "invalid_checksum",
+        "unavailable_beatmap",
+        "update_candidate",
+    }
+    assert {selector.value for selector in GetscoresRequestSelector} == {
+        "global_domain",
+        "local",
+        "selected_mods",
+        "friends",
+        "country",
+        "song_select",
+        "unsupported_leaderboard",
+        "unsupported_playstyle",
+    }
+    assert {profile.value for profile in GetscoresSeedProfile} == {
+        "none",
+        "ranked_no_scores",
+        "ranked_with_rows",
+        "selected_mods_supported",
+        "selected_mods_unsupported",
+        "friends_directional",
+        "country_match",
+        "country_missing",
+        "country_xx",
+        "update_candidate",
+    }
+    assert {profile.value for profile in GetscoresMutationProfile} == {
+        "invalid_mode",
+        "invalid_mods",
+        "invalid_leaderboard_type",
+        "invalid_leaderboard_version",
+        "invalid_song_select_flag",
+        "invalid_anti_cheat_signal",
+        "invalid_beatmapset_id_hint",
+        "valid_anti_cheat_signal",
+        "request_version_variant",
+    }
+    assert {warning.value for warning in GetscoresParseWarning} == {
+        "invalid_mode",
+        "invalid_mods",
+        "invalid_leaderboard_type",
+        "invalid_leaderboard_version",
+        "invalid_song_select_flag",
+        "invalid_anti_cheat_signal",
+        "invalid_beatmapset_id_hint",
+    }
+
+    shape_ids = {shape.shape_id for shape in evidence.response_shapes}
+    assert evidence.branch_cases
+    assert all(case.expected_shape_id in shape_ids for case in evidence.branch_cases)
+    assert all(
+        case.expected_domain_category is None
+        or isinstance(case.expected_domain_category, LeaderboardCategory)
+        for case in evidence.branch_cases
+    )
+    assert all(
+        all(
+            isinstance(warning, GetscoresParseWarning)
+            for warning in case.expected_warning_categories
+        )
+        for case in evidence.branch_cases
+    )
+
+
+def test_branch_case_catalog_maps_every_selection_profile_deterministically(
+    tmp_path: Path,
+) -> None:
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    cases = {case.case_id: case for case in evidence.branch_cases}
+    expected: dict[
+        str,
+        tuple[
+            GetscoresIdentityProfile,
+            GetscoresRequestSelector,
+            LeaderboardCategory | None,
+            GetscoresSeedProfile,
+            GetscoresWireShapeId,
+        ],
+    ] = {
+        "global-with-rows": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.GLOBAL_DOMAIN,
+            LeaderboardCategory.GLOBAL,
+            GetscoresSeedProfile.RANKED_WITH_ROWS,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "local-maps-global": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.LOCAL,
+            LeaderboardCategory.GLOBAL,
+            GetscoresSeedProfile.RANKED_WITH_ROWS,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "selected-mods-supported": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.SELECTED_MODS,
+            LeaderboardCategory.SELECTED_MODS,
+            GetscoresSeedProfile.SELECTED_MODS_SUPPORTED,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "selected-mods-unsupported": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.SELECTED_MODS,
+            LeaderboardCategory.SELECTED_MODS,
+            GetscoresSeedProfile.SELECTED_MODS_UNSUPPORTED,
+            GetscoresWireShapeId.HEADER_ONLY,
+        ),
+        "friends-outbound-only": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.FRIENDS,
+            LeaderboardCategory.FRIENDS,
+            GetscoresSeedProfile.FRIENDS_DIRECTIONAL,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "country-match": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.COUNTRY,
+            LeaderboardCategory.COUNTRY,
+            GetscoresSeedProfile.COUNTRY_MATCH,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "country-missing": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.COUNTRY,
+            LeaderboardCategory.COUNTRY,
+            GetscoresSeedProfile.COUNTRY_MISSING,
+            GetscoresWireShapeId.HEADER_ONLY,
+        ),
+        "country-xx": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.COUNTRY,
+            LeaderboardCategory.COUNTRY,
+            GetscoresSeedProfile.COUNTRY_XX,
+            GetscoresWireShapeId.HEADER_ONLY,
+        ),
+        "song-select-header-only": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.SONG_SELECT,
+            LeaderboardCategory.GLOBAL,
+            GetscoresSeedProfile.RANKED_WITH_ROWS,
+            GetscoresWireShapeId.HEADER_ONLY,
+        ),
+        "unsupported-leaderboard-header-only": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.UNSUPPORTED_LEADERBOARD,
+            None,
+            GetscoresSeedProfile.RANKED_WITH_ROWS,
+            GetscoresWireShapeId.HEADER_ONLY,
+        ),
+        "unsupported-playstyle-header-only": (
+            GetscoresIdentityProfile.KNOWN_BEATMAP,
+            GetscoresRequestSelector.UNSUPPORTED_PLAYSTYLE,
+            LeaderboardCategory.GLOBAL,
+            GetscoresSeedProfile.RANKED_WITH_ROWS,
+            GetscoresWireShapeId.HEADER_ONLY,
+        ),
+        "unavailable-beatmap": (
+            GetscoresIdentityProfile.UNAVAILABLE_BEATMAP,
+            GetscoresRequestSelector.GLOBAL_DOMAIN,
+            LeaderboardCategory.GLOBAL,
+            GetscoresSeedProfile.NONE,
+            GetscoresWireShapeId.UNAVAILABLE,
+        ),
+        "update-candidate": (
+            GetscoresIdentityProfile.UPDATE_CANDIDATE,
+            GetscoresRequestSelector.GLOBAL_DOMAIN,
+            LeaderboardCategory.GLOBAL,
+            GetscoresSeedProfile.UPDATE_CANDIDATE,
+            GetscoresWireShapeId.UPDATE_AVAILABLE,
+        ),
+    }
+
+    assert set(expected) <= set(cases)
+    for case_id, expected_signature in expected.items():
+        case = cases[case_id]
+        assert (
+            case.identity_profile,
+            case.request_selector,
+            case.expected_domain_category,
+            case.seed_profile,
+            case.expected_shape_id,
+        ) == expected_signature
+        assert case.mutation_profiles == ()
+        assert case.expected_warning_categories == ()
+        assert case.evidence_status is GetscoresEvidenceStatus.ATHENA_DETERMINISTIC
+
+
+def test_branch_case_catalog_marks_malformed_identity_and_optional_fields_provisional(
+    tmp_path: Path,
+) -> None:
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    cases = {case.case_id: case for case in evidence.branch_cases}
+
+    identity_cases = {
+        "missing-beatmap-identity": GetscoresIdentityProfile.MISSING_BEATMAP_IDENTITY,
+        "invalid-checksum": GetscoresIdentityProfile.INVALID_CHECKSUM,
+    }
+    for case_id, identity_profile in identity_cases.items():
+        case = cases[case_id]
+        assert case.identity_profile is identity_profile
+        assert case.request_selector is GetscoresRequestSelector.GLOBAL_DOMAIN
+        assert case.expected_domain_category is None
+        assert case.seed_profile is GetscoresSeedProfile.NONE
+        assert case.mutation_profiles == ()
+        assert case.expected_shape_id is GetscoresWireShapeId.UNAVAILABLE
+        assert case.expected_warning_categories == ()
+        assert case.evidence_status is GetscoresEvidenceStatus.PROVISIONAL_ATHENA_BEHAVIOR
+
+    optional_cases: dict[
+        str,
+        tuple[
+            GetscoresMutationProfile,
+            GetscoresParseWarning,
+            GetscoresRequestSelector,
+            LeaderboardCategory | None,
+            GetscoresWireShapeId,
+        ],
+    ] = {
+        "malformed-mode": (
+            GetscoresMutationProfile.INVALID_MODE,
+            GetscoresParseWarning.INVALID_MODE,
+            GetscoresRequestSelector.LOCAL,
+            LeaderboardCategory.GLOBAL,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "malformed-mods": (
+            GetscoresMutationProfile.INVALID_MODS,
+            GetscoresParseWarning.INVALID_MODS,
+            GetscoresRequestSelector.LOCAL,
+            LeaderboardCategory.GLOBAL,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "malformed-leaderboard-type": (
+            GetscoresMutationProfile.INVALID_LEADERBOARD_TYPE,
+            GetscoresParseWarning.INVALID_LEADERBOARD_TYPE,
+            GetscoresRequestSelector.UNSUPPORTED_LEADERBOARD,
+            None,
+            GetscoresWireShapeId.HEADER_ONLY,
+        ),
+        "malformed-leaderboard-version": (
+            GetscoresMutationProfile.INVALID_LEADERBOARD_VERSION,
+            GetscoresParseWarning.INVALID_LEADERBOARD_VERSION,
+            GetscoresRequestSelector.LOCAL,
+            LeaderboardCategory.GLOBAL,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "malformed-song-select-flag": (
+            GetscoresMutationProfile.INVALID_SONG_SELECT_FLAG,
+            GetscoresParseWarning.INVALID_SONG_SELECT_FLAG,
+            GetscoresRequestSelector.LOCAL,
+            LeaderboardCategory.GLOBAL,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "malformed-anti-cheat-signal": (
+            GetscoresMutationProfile.INVALID_ANTI_CHEAT_SIGNAL,
+            GetscoresParseWarning.INVALID_ANTI_CHEAT_SIGNAL,
+            GetscoresRequestSelector.LOCAL,
+            LeaderboardCategory.GLOBAL,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+        "malformed-beatmapset-hint": (
+            GetscoresMutationProfile.INVALID_BEATMAPSET_ID_HINT,
+            GetscoresParseWarning.INVALID_BEATMAPSET_ID_HINT,
+            GetscoresRequestSelector.LOCAL,
+            LeaderboardCategory.GLOBAL,
+            GetscoresWireShapeId.HEADER_WITH_ROWS,
+        ),
+    }
+    for case_id, expected in optional_cases.items():
+        mutation, warning, selector, category, shape_id = expected
+        case = cases[case_id]
+        assert case.identity_profile is GetscoresIdentityProfile.KNOWN_BEATMAP
+        assert case.request_selector is selector
+        assert case.expected_domain_category is category
+        assert case.seed_profile is GetscoresSeedProfile.RANKED_WITH_ROWS
+        assert case.mutation_profiles == (mutation,)
+        assert case.expected_shape_id is shape_id
+        assert case.expected_warning_categories == (warning,)
+        assert case.evidence_status is GetscoresEvidenceStatus.PROVISIONAL_ATHENA_BEHAVIOR
+
+    multiple = cases["malformed-multiple-optional-fields"]
+    assert multiple.mutation_profiles == tuple(profile for profile, *_ in optional_cases.values())
+    assert multiple.expected_warning_categories == tuple(
+        warning for _, warning, *_ in optional_cases.values()
+    )
+    assert multiple.request_selector is GetscoresRequestSelector.UNSUPPORTED_LEADERBOARD
+    assert multiple.expected_domain_category is None
+    assert multiple.expected_shape_id is GetscoresWireShapeId.HEADER_ONLY
+    assert multiple.evidence_status is GetscoresEvidenceStatus.PROVISIONAL_ATHENA_BEHAVIOR
+
+
+def test_branch_case_catalog_exercises_every_symbolic_profile_and_invariant_mutation(
+    tmp_path: Path,
+) -> None:
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    cases = {case.case_id: case for case in evidence.branch_cases}
+
+    assert {case.identity_profile for case in evidence.branch_cases} == set(
+        GetscoresIdentityProfile
+    )
+    assert {case.request_selector for case in evidence.branch_cases} == set(
+        GetscoresRequestSelector
+    )
+    assert {case.seed_profile for case in evidence.branch_cases} == set(GetscoresSeedProfile)
+    assert {
+        mutation for case in evidence.branch_cases for mutation in case.mutation_profiles
+    } == set(GetscoresMutationProfile)
+    assert {
+        warning for case in evidence.branch_cases for warning in case.expected_warning_categories
+    } == set(GetscoresParseWarning)
+
+    for case_id, identity_profile in (
+        ("auth-missing", GetscoresIdentityProfile.AUTH_MISSING),
+        ("auth-invalid", GetscoresIdentityProfile.AUTH_INVALID),
+    ):
+        case = cases[case_id]
+        assert case.identity_profile is identity_profile
+        assert case.expected_domain_category is None
+        assert case.seed_profile is GetscoresSeedProfile.NONE
+        assert case.expected_shape_id is GetscoresWireShapeId.AUTH_FAILURE
+        assert case.expected_warning_categories == ()
+        assert case.evidence_status is GetscoresEvidenceStatus.ATHENA_DETERMINISTIC
+
+    no_scores = cases["global-no-scores"]
+    assert no_scores.request_selector is GetscoresRequestSelector.GLOBAL_DOMAIN
+    assert no_scores.expected_domain_category is LeaderboardCategory.GLOBAL
+    assert no_scores.seed_profile is GetscoresSeedProfile.RANKED_NO_SCORES
+    assert no_scores.expected_shape_id is GetscoresWireShapeId.HEADER_ONLY
+
+    invariant_cases = {
+        "valid-anti-cheat-signal-invariant": GetscoresMutationProfile.VALID_ANTI_CHEAT_SIGNAL,
+        "request-version-variant-invariant": GetscoresMutationProfile.REQUEST_VERSION_VARIANT,
+    }
+    for case_id, mutation in invariant_cases.items():
+        case = cases[case_id]
+        assert case.request_selector is GetscoresRequestSelector.LOCAL
+        assert case.expected_domain_category is LeaderboardCategory.GLOBAL
+        assert case.seed_profile is GetscoresSeedProfile.RANKED_WITH_ROWS
+        assert case.mutation_profiles == (mutation,)
+        assert case.expected_shape_id is GetscoresWireShapeId.HEADER_WITH_ROWS
+        assert case.expected_warning_categories == ()
+        assert case.evidence_status is GetscoresEvidenceStatus.ATHENA_DETERMINISTIC
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    [
+        ("expected_warning_categories", []),
+        ("mutation_profiles", ["invalid_mode", "invalid_mode"]),
+        ("expected_warning_categories", ["invalid_mode", "invalid_mode"]),
+    ],
+)
+def test_branch_case_validation_rejects_non_set_mutation_warning_contract(
+    tmp_path: Path,
+    field: str,
+    invalid_value: object,
+) -> None:
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    branch_path = manifest_root / "branch_cases.json"
+    document = _read_document(branch_path)
+    malformed_mode = next(
+        case for case in _entries(document, "cases") if case.get("case_id") == "malformed-mode"
+    )
+    malformed_mode[field] = invalid_value
+    _write_document(branch_path, document)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    branch_result = validate_getscores_completion_evidence(evidence)[1]
+
+    assert branch_result.status is VerificationStatus.FAIL
+
+
+@pytest.mark.parametrize(
+    "case_id",
+    ["missing-beatmap-identity", "invalid-checksum", "malformed-mode"],
+)
+def test_branch_case_validation_rejects_non_provisional_malformed_contract(
+    tmp_path: Path,
+    case_id: str,
+) -> None:
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    branch_path = manifest_root / "branch_cases.json"
+    document = _read_document(branch_path)
+    malformed_case = next(
+        case for case in _entries(document, "cases") if case.get("case_id") == case_id
+    )
+    malformed_case["evidence_status"] = "athena_deterministic"
+    _write_document(branch_path, document)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    branch_result = validate_getscores_completion_evidence(evidence)[1]
+
+    assert branch_result.status is VerificationStatus.FAIL
+
+
 def test_versioned_response_shape_fixture_defines_five_exact_wire_contracts(
     tmp_path: Path,
 ) -> None:
@@ -805,6 +1219,12 @@ def _write_response_shape_manifest_bundle(tmp_path: Path) -> tuple[Path, Path]:
             "entries": [],
         },
     )
+    return manifest_root, body_root
+
+
+def _write_branch_case_manifest_bundle(tmp_path: Path) -> tuple[Path, Path]:
+    manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
+    _ = (manifest_root / "branch_cases.json").write_bytes(_BRANCH_CASES_MANIFEST.read_bytes())
     return manifest_root, body_root
 
 

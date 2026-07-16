@@ -19,7 +19,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.7, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
   - _Boundary: Getscores Wire Shape Fixture_
 
-- [ ] 1.3 Symbolic branch-case catalogを定義する
+- [x] 1.3 Symbolic branch-case catalogを定義する
   - 先にclosed identity、request selector、seed、mutation、warning vocabularyとshape foreign keyを検証するテストを追加する。
   - Global、Local、Selected Mods、Friends、Country、song select、unsupported leaderboard / playstyle、missing identity、invalid checksum、malformed optional fieldをcatalogへ登録する。
   - Local selectorとexpected domain categoryを分離し、Selected Modsのunsupported bitmask、Friendsのreverse-only除外、Countryのmissing / `XX`を明示する。
@@ -156,3 +156,4 @@
 
 - 1.1: Manifest validationはevidence sourceのtraversal、deep JSON、非UTF-8、valid-but-unregistered foreign keyをsafe failureとして扱い、productionとtestの両方をstrict type-checkする。
 - 1.2: Exact response fixtureは既存status fixtureを変更せず、5つのshape専用bodyとmanifest mutation testでheaders、LF、PB / row grammarを固定する。
+- 1.3: Branch catalogは28件のsymbolic caseとcase-local coherence validationを持つ。`INVALID_ANTI_CHEAT_SIGNAL`はruntime未対応のため、Task 2.4開始前にcredentialを除いた実requestの`a` field contractを確認する。
