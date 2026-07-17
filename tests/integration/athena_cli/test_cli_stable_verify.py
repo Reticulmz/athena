@@ -20,13 +20,12 @@ from athena_cli.stable_verification.models import (
     VerificationRunResult,
     VerificationStatus,
 )
+from athena_cli.stable_verification.runner import VerificationRunRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     import pytest
-
-    from athena_cli.stable_verification.runner import VerificationRunRequest
 
 
 runner = CliRunner()
@@ -211,6 +210,55 @@ def test_stable_verify_reports_unavailable_local_target(
     assert result.exit_code == 0
     assert "getscores unavailable headless_probe optional" in result.output
     assert "GET /web/osu-osz2-getscores.php unavailable" in result.output
+
+
+def test_getscores_executor_checks_completion_evidence_without_target() -> None:
+    """Target未設定でもmandatory completion evidenceを検証する。
+
+    Returns:
+        None: Completion fixture結果とoptional probe skipを検証する。
+
+    Raises:
+        AssertionError: Mandatory evidenceが欠落する, またはoptional probeの扱いが変わる場合。
+    """
+
+    verification_runner = dev_command.create_stable_verification_runner(None)
+    result = verification_runner.run(
+        VerificationRunRequest(
+            target=None,
+            surfaces=(StableSurface.GETSCORES,),
+            require_target=False,
+        )
+    )
+    results = result.results
+
+    completion_results = tuple(
+        result
+        for result in results
+        if result.reference is not None and result.reference.startswith("getscores completion ")
+    )
+    assert [(result.reference, result.status, result.scope) for result in completion_results] == [
+        (
+            "getscores completion response shapes",
+            VerificationStatus.PASS,
+            EvidenceScope.MANDATORY,
+        ),
+        (
+            "getscores completion branch cases",
+            VerificationStatus.PASS,
+            EvidenceScope.MANDATORY,
+        ),
+        (
+            "getscores completion status crosswalk",
+            VerificationStatus.PASS,
+            EvidenceScope.MANDATORY,
+        ),
+    ]
+    assert results[-1].status is VerificationStatus.SKIP
+    assert results[-1].scope is EvidenceScope.OPTIONAL
+    assert results[-1].diagnostic_summary.message == (
+        "getscores local probe skipped: target not configured"
+    )
 
 
 def test_stable_verify_enumerates_completion_evidence_before_optional_target_probe(

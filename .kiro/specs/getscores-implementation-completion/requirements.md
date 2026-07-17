@@ -46,12 +46,12 @@ Issue #12のModern Getscores Implementation Completionとして、modern `/web/o
 
 #### Acceptance Criteria
 
-1. The Getscores Branch Case Catalog shall Global、Local、Selected Mods、Friends、Country、song select、unsupported leaderboard typeを網羅する。
+1. The Getscores Branch Case Catalog shall Global、Local、Selected Mods、Friends、Country、song select、unsupported leaderboard type、unsupported playstyleを網羅する。
 2. When Local selectionが指定される, the Getscores Branch Case Catalog shall Globalと同じcandidate scopeおよびwire shapeを期待する。
 3. When Selected Mods selectionが指定される, the Getscores Branch Case Catalog shall raw Stable mod bitmaskに基づくexact selectionを期待し、unsupported bitmaskではheader-only shapeを期待する。
 4. When Friends selectionが指定される, the Getscores Branch Case Catalog shall viewer自身とviewerが追加したfriendを候補とし、reverse-only relationshipを候補へ含めないbehaviorを期待する。
 5. When Country selectionが指定される, the Getscores Branch Case Catalog shall viewer countryで候補を限定し、countryが未設定または`XX`ならheader-only shapeを期待する。
-6. When song selectまたはunsupported leaderboard typeが指定される, the Getscores Branch Case Catalog shall Global rowsへのfallbackではなくheader-only shapeを期待する。
+6. When song select、unsupported leaderboard type、またはunsupported playstyleが指定される, the Getscores Branch Case Catalog shall Global rowsへのfallbackではなくheader-only shapeを期待する。
 7. The Getscores Branch Case Catalog shall 各caseを一つのGetscores Wire Shape Fixtureへ対応付ける。
 8. When parse-onlyまたはdiagnostic fieldがresponse selectionを変更しない, the Getscores Branch Case Catalog shall 同じwire shapeが維持されることを期待する。
 
@@ -61,9 +61,9 @@ Issue #12のModern Getscores Implementation Completionとして、modern `/web/o
 
 #### Acceptance Criteria
 
-1. The Stable Beatmap Status Crosswalk shall canonicalなBeatmapRankStatusごとにgetscores wire statusまたはunsupportedを示す。
+1. The Stable Beatmap Status Crosswalk shall canonicalなBeatmapRankStatusごとにgetscores wire statusまたはunavailable representationを示す。
 2. The Stable Beatmap Status Crosswalk shall Pending、WIP、Graveyardを`0`、Rankedを`2`、Approvedを`3`、Qualifiedを`4`、Lovedを`5`として固定する。
-3. The Stable Beatmap Status Crosswalk shall NotSubmittedとUnknownをgetscores headerではunsupportedとして扱い、unavailable responseへ対応付ける。
+3. The Stable Beatmap Status Crosswalk shall NotSubmittedとUnknownをgetscoresではunavailable representationとして扱い、unavailable responseへ対応付ける。
 4. When local status overrideが存在する, the Modern Getscores Endpoint shall override適用後のcanonical statusをcrosswalkへ入力する。
 5. The Stable Beatmap Status Crosswalk shall beatmap info側について確認済みwire representation、unsupported、または`未確認`を明示する。
 6. If beatmap info側のwire representationを確認できるevidenceが存在しない, the Stable Beatmap Status Crosswalk shall 数値を推測しない。
@@ -76,8 +76,8 @@ Issue #12のModern Getscores Implementation Completionとして、modern `/web/o
 #### Acceptance Criteria
 
 1. When checksum形式が不正またはbeatmap identityが不足する, the Modern Getscores Endpoint shall provisional unavailable shapeを返す。
-2. When optionalなmode、mods、leaderboard type、leaderboard version、song select flag、またはbeatmapset hintがmalformedであり有効なidentityが残る, the Modern Getscores Endpoint shall warningをoperatorへ観測可能にし、deterministicなfallbackで処理を継続する。
-3. When複数のoptional fieldがmalformedである, the Modern Getscores Endpoint shall 各warning categoryを区別可能にする。
+2. When optionalなmode、mods、leaderboard type、leaderboard version、song select flag、anti-cheat signal `a`、またはbeatmapset hintがmalformedであり有効なidentityが残る, the Modern Getscores Endpoint shall warningをoperatorへ観測可能にし、deterministicなfallbackで処理を継続する。
+3. When複数のoptional fieldがmalformedである, the Modern Getscores Endpoint shall anti-cheat signal `a`を含む各warning categoryを区別可能にする。
 4. The Getscores Completion Evidence shall malformed branchをGetscores Provisional Malformed Request Behaviorとして明示し、target-confirmed contractと表現しない。
 5. The Getscores Completion Evidence shall raw credential、raw username、raw query valueをfixtureまたはoperator diagnosticsへ保存しない。
 6. If将来のStable Compatibility Evidenceがprovisional behaviorと矛盾する, the Modern Getscores Endpoint shall 確認済みevidenceを優先する。

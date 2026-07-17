@@ -226,6 +226,8 @@ def read_getscores_expected_body(
 
     Raises:
         ValueError: Unknown/missing/duplicate shapeまたはcanonical root外のpathの場合。
+        GetscoresEvidenceValidationError: Canonical Base64 fixtureのdecodeまたは内容検証に
+            失敗した場合。
     """
     known_shape_id = _closed_profile(
         GetscoresWireShapeId,

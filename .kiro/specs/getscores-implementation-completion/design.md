@@ -559,6 +559,7 @@ class StatusRepresentation(StrEnum):
 class EndpointEvidenceState(StrEnum):
     CONFIRMED = "confirmed"
     OFFICIAL_FIXTURE = "official_fixture"
+    REFERENCE_IMPLEMENTATION = "reference_implementation"
     ATHENA_DETERMINISTIC = "athena_deterministic"
     UNCONFIRMED = "unconfirmed"
 

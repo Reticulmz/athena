@@ -410,7 +410,8 @@ _DETERMINISTIC_GETSCORES_TEST_ANCHOR: Mapping[BeatmapRankStatus, str] = MappingP
     }
 )
 _REFERENCE_IMPLEMENTATION_APPROVED_SOURCE = (
-    "reference_implementation:osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py"
+    "reference_implementation:osuAkatsuki/bancho.py/blob/"
+    "0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py"
 )
 _ATHENA_GETSCORES_MAPPER_SOURCE = (
     "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py"
@@ -1428,6 +1429,34 @@ def _validate_bundle_branches(evidence: GetscoresCompletionEvidence) -> tuple[st
                     "malformed_case_must_be_provisional",
                 )
             )
+
+    if {case.identity_profile for case in evidence.branch_cases} != set(GetscoresIdentityProfile):
+        errors.append(
+            _error(_BRANCH_CASES_FILE, "cases", "identity_profile", "incomplete_coverage")
+        )
+    if {case.request_selector for case in evidence.branch_cases} != set(GetscoresRequestSelector):
+        errors.append(
+            _error(_BRANCH_CASES_FILE, "cases", "request_selector", "incomplete_coverage")
+        )
+    if {case.seed_profile for case in evidence.branch_cases} != set(GetscoresSeedProfile):
+        errors.append(_error(_BRANCH_CASES_FILE, "cases", "seed_profile", "incomplete_coverage"))
+    if {mutation for case in evidence.branch_cases for mutation in case.mutation_profiles} != set(
+        GetscoresMutationProfile
+    ):
+        errors.append(
+            _error(_BRANCH_CASES_FILE, "cases", "mutation_profiles", "incomplete_coverage")
+        )
+    if {
+        warning for case in evidence.branch_cases for warning in case.expected_warning_categories
+    } != set(GetscoresParseWarning):
+        errors.append(
+            _error(
+                _BRANCH_CASES_FILE,
+                "cases",
+                "expected_warning_categories",
+                "incomplete_coverage",
+            )
+        )
     return tuple(_sorted_errors(errors))
 
 

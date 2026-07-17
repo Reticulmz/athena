@@ -903,8 +903,8 @@ All listed commands passed. The Task 4.2 scope audit also found no legacy alias,
 beatmap-info implementation, RX/AP, osu!direct, dependency, configuration, or
 schema change. This is evidence that Issue #12 is implementation-complete and
 eligible for closure under this spec; it does not state that the GitHub issue
-has been closed. Target Stable Client traffic confirmation remains with Issue
-#27 / #28.
+has been closed. Target Stable Client traffic confirmation remains with Issues
+`#27` and `#28`.
 
 ### Legacy getscores aliases
 

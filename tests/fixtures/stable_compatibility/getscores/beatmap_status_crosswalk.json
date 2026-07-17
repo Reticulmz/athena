@@ -27,7 +27,7 @@
         "wire_status": 3,
         "evidence_status": "reference_implementation",
         "evidence_sources": [
-          "reference_implementation:osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py",
+          "reference_implementation:osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py",
           "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py",
           "automated_test:tests/unit/transports/web_legacy/test_getscores_status_mapper.py#test_approved_maps_to_3"
         ]

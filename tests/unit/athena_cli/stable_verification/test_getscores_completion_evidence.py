@@ -47,7 +47,8 @@ _GETSCORES_STATUS_TEST_SOURCE_PREFIX = (
     "automated_test:tests/unit/transports/web_legacy/test_getscores_status_mapper.py#"
 )
 _REFERENCE_IMPLEMENTATION_APPROVED_SOURCE = (
-    "reference_implementation:osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py"
+    "reference_implementation:osuAkatsuki/bancho.py/blob/"
+    "0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py"
 )
 _BEATMAP_INFO_RANKED_SOURCE = (
     ".kiro:specs/beatmap-info-endpoint/research.md"
@@ -85,6 +86,7 @@ def test_load_getscores_completion_evidence_returns_immutable_typed_bundle(
     tmp_path: Path,
 ) -> None:
     manifest_root, body_root = _write_valid_manifests(tmp_path)
+    _ = (manifest_root / "branch_cases.json").write_bytes(_BRANCH_CASES_MANIFEST.read_bytes())
 
     evidence = load_getscores_completion_evidence(manifest_root, body_root)
 
@@ -93,11 +95,9 @@ def test_load_getscores_completion_evidence_returns_immutable_typed_bundle(
     assert isinstance(evidence.branch_cases, tuple)
     assert isinstance(evidence.status_crosswalk, tuple)
     assert evidence.response_shapes[0].shape_id is GetscoresWireShapeId.AUTH_FAILURE
-    assert evidence.branch_cases[0].expected_shape_id is GetscoresWireShapeId.AUTH_FAILURE
-    assert evidence.branch_cases[0].evidence_status is GetscoresEvidenceStatus.CONFIRMED
-    assert evidence.branch_cases[0].mutation_profiles == (
-        GetscoresMutationProfile.REQUEST_VERSION_VARIANT,
-    )
+    assert evidence.branch_cases[0].expected_shape_id is GetscoresWireShapeId.HEADER_WITH_ROWS
+    assert evidence.branch_cases[0].evidence_status is GetscoresEvidenceStatus.ATHENA_DETERMINISTIC
+    assert evidence.branch_cases[0].mutation_profiles == ()
     results = validate_getscores_completion_evidence(evidence)
     assert len(results) == 3
     assert {result.surface for result in results} == {StableSurface.GETSCORES}
@@ -1088,6 +1088,96 @@ def test_branch_case_catalog_exercises_every_symbolic_profile_and_invariant_muta
         assert case.expected_shape_id is GetscoresWireShapeId.HEADER_WITH_ROWS
         assert case.expected_warning_categories == ()
         assert case.evidence_status is GetscoresEvidenceStatus.ATHENA_DETERMINISTIC
+
+
+def test_branch_case_validation_rejects_empty_catalog(tmp_path: Path) -> None:
+    """空のbranch catalogをmandatory evidence failureとして扱う。
+
+    Args:
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+
+    Returns:
+        None: 空のcatalogがPASSにならないことを検証する。
+
+    Raises:
+        AssertionError: Branch evidenceがFAILにならない場合。
+    """
+
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    branch_path = manifest_root / "branch_cases.json"
+    document = _read_document(branch_path)
+    document["cases"] = []
+    _write_document(branch_path, document)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    branch_result = validate_getscores_completion_evidence(evidence)[1]
+
+    assert branch_result.status is VerificationStatus.FAIL
+
+
+def test_branch_case_manifest_rejects_missing_cases_collection(tmp_path: Path) -> None:
+    """`cases` collectionを持たないbranch manifestを安全に拒否する。
+
+    Args:
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+
+    Returns:
+        None: Loaderがmissing collectionをvalidation errorへ変換することを検証する。
+
+    Raises:
+        AssertionError: Loaderが不正manifestを受理する, または安全なerror codeを返さない場合。
+    """
+
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    branch_path = manifest_root / "branch_cases.json"
+    document = _read_document(branch_path)
+    _ = document.pop("cases")
+    _write_document(branch_path, document)
+
+    with pytest.raises(GetscoresEvidenceValidationError) as raised:
+        _ = load_getscores_completion_evidence(manifest_root, body_root)
+
+    assert "branch_cases.json" in str(raised.value)
+    assert "collection_must_be_list" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "missing_case_id",
+    [
+        "auth-missing",
+        "unsupported-playstyle-header-only",
+        "valid-anti-cheat-signal-invariant",
+    ],
+)
+def test_branch_case_validation_rejects_missing_required_profile(
+    tmp_path: Path,
+    missing_case_id: str,
+) -> None:
+    """必須profileを失ったbranch catalogを拒否する。
+
+    Args:
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+        missing_case_id (str): 一意のidentity, selector, またはmutationを持つ削除対象case ID。
+
+    Returns:
+        None: 不完全なprofile coverageがPASSにならないことを検証する。
+
+    Raises:
+        AssertionError: Branch evidenceがFAILにならない場合。
+    """
+
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    branch_path = manifest_root / "branch_cases.json"
+    document = _read_document(branch_path)
+    document["cases"] = [
+        case for case in _entries(document, "cases") if case.get("case_id") != missing_case_id
+    ]
+    _write_document(branch_path, document)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    branch_result = validate_getscores_completion_evidence(evidence)[1]
+
+    assert branch_result.status is VerificationStatus.FAIL
 
 
 @pytest.mark.parametrize(
