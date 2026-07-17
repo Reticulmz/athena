@@ -60,7 +60,7 @@
 
 - **Context**: User pointed to `osuAkatsuki/bancho.py` `getScores`.
 - **Sources Consulted**:
-  - https://github.com/osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py
+  - https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py
 - **Findings**:
   - `authenticate_player_session(Query, "us", "ha")` confirms credential names.
   - `LeaderboardType` maps `Local=0`, `Top=1`, `Mods=2`, `Friends=3`, `Country=4`.
@@ -124,6 +124,6 @@
 
 ## References
 
-- https://github.com/osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py — reference for `getScores`, credential names, leaderboard type values, and getscores status constants.
+- https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py — immutable reference for `getScores`, credential names, leaderboard type values, and getscores status constants.
 - `.kiro/specs/beatmap-info-endpoint/research.md` — adjacent stable request evidence and lookup priority discussion.
 - `.kiro/specs/beatmap-mirror/requirements.md` — source metadata, effective status, and fetch-state expectations consumed by this endpoint.

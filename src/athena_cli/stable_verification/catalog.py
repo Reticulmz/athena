@@ -101,6 +101,27 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
     ),
     EvidenceEntry(
         surface=StableSurface.GETSCORES,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        reference=("tests/fixtures/stable_compatibility/getscores/response_shapes.json"),
+        purpose="getscores completion response shape contract",
+    ),
+    EvidenceEntry(
+        surface=StableSurface.GETSCORES,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        reference="tests/fixtures/stable_compatibility/getscores/branch_cases.json",
+        purpose="getscores completion branch selection catalog",
+    ),
+    EvidenceEntry(
+        surface=StableSurface.GETSCORES,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        reference=("tests/fixtures/stable_compatibility/getscores/beatmap_status_crosswalk.json"),
+        purpose="getscores completion beatmap status crosswalk",
+    ),
+    EvidenceEntry(
+        surface=StableSurface.GETSCORES,
         evidence_type=EvidenceType.HEADLESS_PROBE,
         scope=EvidenceScope.OPTIONAL,
         reference="optional:osu.py getscores probe",
@@ -176,8 +197,11 @@ _GAPS: tuple[EvidenceGap, ...] = (
     EvidenceGap(
         surface=StableSurface.GETSCORES,
         status=VerificationStatus.KNOWN_GAP,
-        summary="leaderboard score rows depend on beatmap-leaderboards",
-        owner="beatmap-leaderboards",
+        summary=(
+            "required modern getscores route is implementation-complete but lacks "
+            "Target Stable Client traffic confirmation; hand off to Issue #27 / #28"
+        ),
+        owner="Issue #27 / #28 Target Stable Client traffic verification",
     ),
     EvidenceGap(
         surface=StableSurface.SCORE_SUBMIT,

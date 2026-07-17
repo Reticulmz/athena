@@ -73,6 +73,23 @@ class GetscoresQueryParser:
     """Map stable legacy getscores query parameters to a query input value."""
 
     def parse(self, query: Mapping[str, str]) -> GetscoresParseResult:
+        """stable getscores queryをtyped parse resultへ変換する.
+
+        Args:
+            query (Mapping[str, str]): Stable clientから受け取ったquery fieldのmapping.
+
+        Returns:
+            GetscoresParseResult: 正常時は正規化済みrequestを持つresult. Checksumが
+            不正な場合またはbeatmap identityが不足する場合はerrorを持つ.
+            Optional fieldがmalformedな場合はwarningとdeterministic fallbackを
+            requestへ保持する.
+
+        Notes:
+            Malformedなoptional fieldは例外を送出せずwarningへ変換する. `a`は
+            integer-backed booleanとして解析し, `0`はFalse, nonzero integerは
+            True, non-integerは`INVALID_ANTI_CHEAT_SIGNAL` warningとFalse fallbackに
+            する. External contractが許容するinteger rangeは制限または断定しない.
+        """
         warnings: list[GetscoresParseWarning] = []
 
         checksum_raw = query.get("c")
@@ -107,6 +124,11 @@ class GetscoresQueryParser:
             warnings,
             GetscoresParseWarning.INVALID_SONG_SELECT_FLAG,
         )
+        anti_cheat_signal = _parse_bool(
+            query.get("a"),
+            warnings,
+            GetscoresParseWarning.INVALID_ANTI_CHEAT_SIGNAL,
+        )
 
         has_checksum = checksum_md5 is not None
         has_fallback = filename is not None and beatmapset_id_hint is not None
@@ -122,7 +144,7 @@ class GetscoresQueryParser:
             leaderboard_type=leaderboard_type,
             leaderboard_version=leaderboard_version,
             song_select=song_select,
-            anti_cheat_signal="a" in query,
+            anti_cheat_signal=anti_cheat_signal is True,
             parse_warnings=tuple(warnings),
         )
         selection = StableGetscoresLeaderboardMapper().map_request(request)

@@ -1,29 +1,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, override
 
 from typer.testing import CliRunner
 
 from athena_cli.commands import dev as dev_command
 from athena_cli.main import app
+from athena_cli.stable_verification.client import ProbeResponse
+from athena_cli.stable_verification.getscores import GetscoresVerifier
 from athena_cli.stable_verification.models import (
     DiagnosticSummary,
     EvidenceScope,
     EvidenceType,
+    GetscoresProbeCase,
     StableSurface,
     StableTarget,
     SurfaceResult,
     VerificationRunResult,
     VerificationStatus,
 )
+from athena_cli.stable_verification.runner import VerificationRunRequest
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     import pytest
-
-    from athena_cli.stable_verification.runner import VerificationRunRequest
 
 
 runner = CliRunner()
@@ -210,6 +212,115 @@ def test_stable_verify_reports_unavailable_local_target(
     assert "GET /web/osu-osz2-getscores.php unavailable" in result.output
 
 
+def test_getscores_executor_checks_completion_evidence_without_target() -> None:
+    """Target未設定でもmandatory completion evidenceを検証する。
+
+    Returns:
+        None: Completion fixture結果とoptional probe skipを検証する。
+
+    Raises:
+        AssertionError: Mandatory evidenceが欠落する, またはoptional probeの扱いが変わる場合。
+    """
+
+    verification_runner = dev_command.create_stable_verification_runner(None)
+    result = verification_runner.run(
+        VerificationRunRequest(
+            target=None,
+            surfaces=(StableSurface.GETSCORES,),
+            require_target=False,
+        )
+    )
+    results = result.results
+
+    completion_results = tuple(
+        result
+        for result in results
+        if result.reference is not None and result.reference.startswith("getscores completion ")
+    )
+    assert [(result.reference, result.status, result.scope) for result in completion_results] == [
+        (
+            "getscores completion response shapes",
+            VerificationStatus.PASS,
+            EvidenceScope.MANDATORY,
+        ),
+        (
+            "getscores completion branch cases",
+            VerificationStatus.PASS,
+            EvidenceScope.MANDATORY,
+        ),
+        (
+            "getscores completion status crosswalk",
+            VerificationStatus.PASS,
+            EvidenceScope.MANDATORY,
+        ),
+    ]
+    assert results[-1].status is VerificationStatus.SKIP
+    assert results[-1].scope is EvidenceScope.OPTIONAL
+    assert results[-1].diagnostic_summary.message == (
+        "getscores local probe skipped: target not configured"
+    )
+
+
+def test_stable_verify_enumerates_completion_evidence_before_optional_target_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CLIがcompletion evidenceと既存optional target probeを順に列挙することを検証する。
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Getscores verifierをrecording test doubleへ
+            差し替えるfixture。
+
+    Returns:
+        None: Assertionだけを実行する。
+
+    Raises:
+        AssertionError: CLI outputに3つのcompletion resultがない, またはtarget probe条件が
+            変わる場合。
+
+    Notes:
+        Target probeはfixture結果の後も一度だけoptional evidenceとして実行される。
+    """
+
+    _RecordingGetscoresVerifier.target_probe_calls = 0
+    monkeypatch.setattr(
+        dev_command,
+        "GetscoresVerifier",
+        _RecordingGetscoresVerifier,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "dev",
+            "stable-verify",
+            "--env",
+            "test",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--host",
+            "athena.localhost",
+            "--surface",
+            "getscores",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert _RecordingGetscoresVerifier.target_probe_calls == 1
+    assert (
+        "getscores pass golden_fixture mandatory getscores response shapes validation passed"
+    ) in result.output
+    assert (
+        "getscores pass golden_fixture mandatory getscores branch cases validation passed"
+    ) in result.output
+    assert (
+        "getscores pass golden_fixture mandatory getscores status crosswalk validation passed"
+    ) in result.output
+    assert (
+        "getscores pass headless_probe optional "
+        "getscores response parsed as header empty leaderboard"
+    ) in result.output
+
+
 def test_stable_verify_replay_download_surface_is_known_gap() -> None:
     result = runner.invoke(
         app,
@@ -301,3 +412,40 @@ def _runner_factory(
         return recording_runner
 
     return create_runner
+
+
+@dataclass(frozen=True, slots=True)
+class _FixtureProbeClient:
+    target: StableTarget
+
+    def get_web_legacy(
+        self,
+        path: str,
+        *,
+        query: Mapping[str, str],
+        host_prefix: str = "osu",
+    ) -> ProbeResponse:
+        _ = (path, query, host_prefix)
+        return ProbeResponse(
+            status=VerificationStatus.PASS,
+            body=(b"2|false|75|1|0||\n0\n[bold:0,size:20]Artist|Title\n10\n"),
+            diagnostic_summary=DiagnosticSummary(
+                message="fixture target response",
+                method="GET",
+                path="/web/osu-osz2-getscores.php",
+                status_code=200,
+                response_byte_size=51,
+            ),
+        )
+
+
+class _RecordingGetscoresVerifier(GetscoresVerifier[object]):
+    target_probe_calls: ClassVar[int] = 0
+
+    def __init__(self, *, target: StableTarget) -> None:
+        super().__init__(target=target, client=_FixtureProbeClient(target))
+
+    @override
+    def probe_target(self, case: GetscoresProbeCase) -> SurfaceResult:
+        _RecordingGetscoresVerifier.target_probe_calls += 1
+        return super().probe_target(case)

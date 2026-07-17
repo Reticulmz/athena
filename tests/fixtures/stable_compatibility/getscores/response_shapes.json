@@ -1,0 +1,90 @@
+{
+  "schema": "athena.stable_compatibility.getscores.response_shapes.v1",
+  "shapes": [
+    {
+      "shape_id": "auth_failure",
+      "http_status": 401,
+      "required_headers": {
+        "content-length": "0"
+      },
+      "absent_headers": [
+        "content-type",
+        "content-encoding",
+        "transfer-encoding"
+      ],
+      "body_file": "auth_failure.body.b64",
+      "body_encoding": "base64",
+      "terminal_lf_count": 0,
+      "personal_best_present": false,
+      "leaderboard_row_count": 0
+    },
+    {
+      "shape_id": "unavailable",
+      "http_status": 200,
+      "required_headers": {
+        "content-length": "8",
+        "content-type": "text/plain; charset=utf-8"
+      },
+      "absent_headers": [
+        "content-encoding",
+        "transfer-encoding"
+      ],
+      "body_file": "unavailable.body.b64",
+      "body_encoding": "base64",
+      "terminal_lf_count": 0,
+      "personal_best_present": false,
+      "leaderboard_row_count": 0
+    },
+    {
+      "shape_id": "update_available",
+      "http_status": 200,
+      "required_headers": {
+        "content-length": "7",
+        "content-type": "text/plain; charset=utf-8"
+      },
+      "absent_headers": [
+        "content-encoding",
+        "transfer-encoding"
+      ],
+      "body_file": "update_available.body.b64",
+      "body_encoding": "base64",
+      "terminal_lf_count": 0,
+      "personal_best_present": false,
+      "leaderboard_row_count": 0
+    },
+    {
+      "shape_id": "header_only",
+      "http_status": 200,
+      "required_headers": {
+        "content-length": "88",
+        "content-type": "text/plain; charset=utf-8"
+      },
+      "absent_headers": [
+        "content-encoding",
+        "transfer-encoding"
+      ],
+      "body_file": "header_only.body.b64",
+      "body_encoding": "base64",
+      "terminal_lf_count": 3,
+      "personal_best_present": false,
+      "leaderboard_row_count": 0
+    },
+    {
+      "shape_id": "header_with_rows",
+      "http_status": 200,
+      "required_headers": {
+        "content-length": "296",
+        "content-type": "text/plain; charset=utf-8"
+      },
+      "absent_headers": [
+        "content-encoding",
+        "transfer-encoding"
+      ],
+      "body_file": "header_with_rows.body.b64",
+      "body_encoding": "base64",
+      "terminal_lf_count": 1,
+      "personal_best_present": true,
+      "leaderboard_row_count": 2
+    }
+  ]
+}

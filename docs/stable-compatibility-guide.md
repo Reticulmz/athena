@@ -769,18 +769,25 @@ Common query parameters parsed by Athena:
 | `v` | Leaderboard type: local/global, selected mods, friends, country. |
 | `vv` | Leaderboard protocol/version value. |
 | `s` | Song select/header-only flag. |
-| `a` | Anti-cheat signal presence. |
+| `a` | Athena-owned anti-cheat signal. Its malformed parsing behavior is provisional as described below. |
 
-Current Athena response bodies:
+#### Validated Athena response shapes
 
-| Outcome | Body |
+| Response shape | HTTP/body contract | Completion fixture |
 | --- | --- |
-| Authentication failure | HTTP 401, empty body |
-| Unavailable | `-1\|false` |
-| Update available | `1\|false` |
-| Header/rows | Stable text response with header, title line, personal best row, and score rows |
+| Authentication failure | HTTP 401 with an empty body. | `auth_failure` |
+| Unavailable | HTTP 200 with `-1\|false` and no terminal LF. | `unavailable` |
+| Update available | HTTP 200 with `1\|false` and no terminal LF. | `update_available` |
+| Header-only | HTTP 200 with the header/title body, no personal-best or leaderboard rows, and three terminal LFs. | `header_only` |
+| Header with rows | HTTP 200 with the header/title body, one personal-best row, two leaderboard rows, and one terminal LF. | `header_with_rows` |
 
-Current header response shape:
+The manifest in
+`tests/fixtures/stable_compatibility/getscores/response_shapes.json` references
+five Base64 body fixtures in `tests/fixtures/web_legacy/getscores/completion/`
+and fixes their HTTP status, required/absent headers, body bytes, terminal
+newline count, and personal-best/leaderboard-row semantics.
+
+Current header-with-rows response shape:
 
 ```text
 <status>|false|<beatmap_id>|<beatmapset_id>|<score_count>||
@@ -798,6 +805,30 @@ Score row shape:
 <score_id>|<username>|<score>|<max_combo>|<n50>|<n100>|<n300>|<miss>|<katu>|<geki>|<perfect>|<mods>|<user_id>|<rank>|<submitted_at_epoch>|<has_replay>
 ```
 
+#### Validated getscores status mapping
+
+| Canonical status | Getscores representation |
+| --- | --- |
+| `Pending`, `WIP`, `Graveyard` | Wire status `0`. |
+| `Ranked` | Wire status `2`. |
+| `Approved` | Wire status `3`. |
+| `Qualified` | Wire status `4`. |
+| `Loved` | Wire status `5`. |
+| `NotSubmitted`, `Unknown` | Unavailable, with no getscores wire status. |
+
+This mapping is endpoint-specific to getscores. Beatmap-info wire values are
+outside this completion scope; unconfirmed values remain unconfirmed and are
+not inferred from getscores.
+
+#### Provisional Athena-owned malformed request behavior
+
+Malformed optional fields produce a parse warning and use a deterministic
+fallback. In particular, `a` is parsed as an integer-backed boolean: `0` is
+false and a nonzero integer is true. A non-integer `a` produces the
+`INVALID_ANTI_CHEAT_SIGNAL` warning and falls back to false. This is a
+provisional Athena-owned regression contract, not a Target Stable Client
+traffic contract.
+
 Required processing:
 
 1. Authenticate by stable credentials and active session.
@@ -808,16 +839,21 @@ Required processing:
 6. Query personal best and leaderboard rows.
 7. Format text response exactly and avoid leaking internal provenance fields.
 
-Known gaps:
+#### Completion state and remaining traffic evidence
 
-- Full leaderboard rows depend on beatmap leaderboard projections.
-- Friends and country leaderboards need domain/query support.
-- Real-client fixtures should cover every response branch.
-- Older `/web/osu-getscores.php` through `/web/osu-getscores6.php` aliases have
-  per-version response differences in `deck`: some omit the osz2 update flag,
-  some omit rating/difficulty fields, and the oldest route returns only legacy
-  score rows separated by `:`. Do not point those aliases at the modern formatter
-  without fixtures for each version.
+- Athena-owned implementation: `Implemented`. The validated runtime covers the
+  five response shapes, selection behavior, personal-best handling, leaderboard
+  rows, and the getscores status mapping above.
+- Completion evidence: exact response-shape fixtures, the symbolic branch-case
+  catalog, the status crosswalk, focused runtime tests, and the stable verifier
+  agree on that implementation state.
+- Target Stable Client traffic confirmation: not captured. Issue #27 / #28 own
+  this remaining traffic-evidence handoff, including confirmation of the
+  request/response behavior on target builds.
+
+`Implemented` in this section describes Athena-owned implementation and its
+completion evidence only. It does not record Target Stable Client traffic
+confirmation.
 
 Akatsuki-compatible extension requirement:
 
@@ -832,16 +868,44 @@ Akatsuki-compatible extension requirement:
   mod combinations are filtered, and how these modes appear in stable
   getscores, first-party API responses, and future profile/ranking pages.
 
-Task 2.2 evidence note:
+Getscores implementation-completion evidence note:
 
 | Evidence field | Evidence state | Evidence note |
 | --- | --- | --- |
-| Auth method | `confirmed` | Athena parses stable credentials from `us` and `ha`; current failure behavior is documented as HTTP 401 with an empty body. |
-| Required request params | `confirmed` | Athena-handled params are documented above: `us`, `ha`, `c`, `f`, `i`, `m`, `mods`, `v`, `vv`, `s`, and `a`. |
-| Success response | `confirmed` | The modern osz2 header/row text shape is documented above and implemented through `getscores.py` and `mappers/getscores.py`. |
-| Auth failure response | `confirmed` | Current Athena auth failure response is HTTP 401 with an empty body; target-client fixture coverage is still missing. |
-| Domain/data-not-found response | `confirmed` | Current Athena documents unavailable as `-1\|false` and update available as `1\|false`. |
-| Malformed request response | `unconfirmed` | Malformed identity, checksum, mode/mod, friends leaderboard, and country leaderboard branches still need fixtures and traffic evidence. |
+| Auth method | `Athena-owned validated` | Athena parses stable credentials from `us` and `ha`; the completion fixture fixes the current HTTP 401 empty-body response. |
+| Required request params | `Athena-owned validated` | Athena-handled params are documented above: `us`, `ha`, `c`, `f`, `i`, `m`, `mods`, `v`, `vv`, `s`, and `a`. |
+| Success response | `Athena-owned validated` | The five exact response shapes, including header-only and header-with-rows, are fixture- and runtime-validated. |
+| Auth failure response | `Athena-owned validated` | The exact 401 empty-body shape is fixture- and runtime-validated. |
+| Domain/data-not-found response | `Athena-owned validated` | The exact unavailable `-1\|false` and update-available `1\|false` shapes are fixture- and runtime-validated. |
+| Malformed request response | `provisional_athena_behavior` | Optional-field warnings and deterministic fallbacks are validated for Athena; the malformed `a` behavior above remains pending Target Stable Client traffic confirmation. |
+
+#### Issue #12 implementation-completion evidence
+
+Task 4.2 recorded the following passing gates:
+
+```bash
+nix develop --command uv run pytest \
+  tests/unit/athena_cli/stable_verification/test_getscores.py \
+  tests/unit/athena_cli/stable_verification/test_getscores_completion_evidence.py \
+  tests/unit/transports/web_legacy/test_getscores_formatter.py \
+  tests/unit/transports/web_legacy/test_getscores_category_mapper.py \
+  tests/unit/transports/web_legacy/test_getscores_status_mapper.py \
+  tests/integration/test_getscores_endpoint.py \
+  tests/integration/test_getscores_unavailable_paths.py \
+  tests/integration/test_getscores_status_fixtures.py \
+  tests/integration/test_getscores_diagnostics.py
+nix develop --command ./scripts/ci.sh quality
+nix develop --command ./scripts/ci.sh test
+nix develop --command prek run --all-files
+git diff --check main...HEAD
+```
+
+All listed commands passed. The Task 4.2 scope audit also found no legacy alias,
+beatmap-info implementation, RX/AP, osu!direct, dependency, configuration, or
+schema change. This is evidence that Issue #12 is implementation-complete and
+eligible for closure under this spec; it does not state that the GitHub issue
+has been closed. Target Stable Client traffic confirmation remains with Issues
+`#27` and `#28`.
 
 ### Legacy getscores aliases
 
@@ -1613,7 +1677,7 @@ separate issue.
 | Endpoint family | Missing implementation follow-up | Missing fixture / reference-evidence follow-up | Missing current-client traffic follow-up |
 | --- | --- | --- | --- |
 | Bancho reachability | No new route work for the current empty-body route unless traffic proves pre-login validation is required. | Empty-body compatibility, country-code/IP response, and malformed-query fixtures. | Pre-login validation, country-code, and client retry behavior probes. |
-| Modern getscores | Complete leaderboard row projections and remaining branch behavior. | Auth failure, unavailable, update-required, row/header, malformed identity, friends, and country fixtures. | Real-client probes for target leaderboard modes and selection branches. |
+| Modern getscores | None for the validated Athena-owned modern route. | Completion fixtures, branch catalog, status crosswalk, focused tests, and verifier are validated. | Target Stable Client traffic confirmation for target builds and selection branches remains with Issue #27 / #28. |
 | Modern score submit selector | Complete rank/stat/achievement projection and post-submit durability gaps. | Auth sentinel, multipart variant, malformed encrypted payload, duplicate, and storage failure fixtures. | Real-client probes for submit success, failure, and retry interpretation. |
 | Replay download PHP route | `/web/osu-getreplay.php` exists for the confirmed target path, query keys `c`/`h`/`m`/`u`, and auth fields `h`/`u`; success uses `download_body_strategy=direct_blob_bytes`. | Missing-replay conflict resolution and malformed `c`/`m`/unknown-field branch fixtures. Existing fixture-backed branches: success 200, auth failure 401, hidden 404, storage-missing 404. | Primary path choice is confirmed; optional probes may capture target build/`osuver` and verify that `/web/replays/<id>` remains `candidate_only_reference_backed`. |
 | Session candidate | Add a route only if exact reference row or traffic proves the surface is still called; preserve the `bancho.py` unhandled-route trace as a reference lead. | Auth, params, success body, failure sentinel, and malformed request evidence. | Current target-client call confirmation for `/web/osu-session.php`. |

@@ -7,22 +7,62 @@ parse warnings, and error outcomes.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
+
+import pytest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+from athena_cli.stable_verification.getscores_evidence import (
+    GetscoresEvidenceStatus,
+    load_getscores_completion_evidence,
+)
 from osu_server.domain.compatibility.stable.getscores import (
     GetscoresParseError,
     GetscoresParseResult,
-    GetscoresParseWarning,
 )
 from osu_server.transports.stable.web_legacy.mappers import GetscoresQueryParser
+from tests.support.getscores_contract import build_getscores_contract_query
+
+_FIXTURE_ROOT = Path(__file__).resolve().parents[3] / "fixtures"
+_MANIFEST_ROOT = _FIXTURE_ROOT / "stable_compatibility" / "getscores"
+_BODY_ROOT = _FIXTURE_ROOT / "web_legacy" / "getscores" / "completion"
+_GETSCORES_EVIDENCE = load_getscores_completion_evidence(_MANIFEST_ROOT, _BODY_ROOT)
+_GETSCORES_CASES = {case.case_id: case for case in _GETSCORES_EVIDENCE.branch_cases}
+_MALFORMED_CASE_IDS = (
+    "malformed-mode",
+    "malformed-mods",
+    "malformed-leaderboard-type",
+    "malformed-leaderboard-version",
+    "malformed-song-select-flag",
+    "malformed-anti-cheat-signal",
+    "malformed-beatmapset-hint",
+    "malformed-multiple-optional-fields",
+)
+_INVARIANCE_CONTROL_CASE_IDS = (
+    "valid-anti-cheat-signal-invariant",
+    "request-version-variant-invariant",
+)
 
 
 def _parse(query: dict[str, str]) -> GetscoresParseResult:
     parser = GetscoresQueryParser()
     return parser.parse(cast("Mapping[str, str]", query))
+
+
+def _contract_base_query() -> dict[str, str]:
+    """Catalog comparison用のsynthetic queryを返す。
+
+    Returns:
+        dict[str, str]: Valid identityとsynthetic credentialを持つ新規query。
+    """
+    return {
+        "c": "0123456789abcdef0123456789abcdef",
+        "us": "SyntheticViewer",
+        "ha": "b" * 32,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -118,8 +158,12 @@ def test_song_select_is_true_only_when_s_is_1() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_anti_cheat_signal_is_true_when_a_present() -> None:
-    """Anti-cheat signal is True when a query param is present (requirement 3.7)."""
+def test_anti_cheat_signal_is_true_for_one_without_warning() -> None:
+    """`a=1`をwarningなしのanti-cheat signalとして解析する。
+
+    Returns:
+        None: SignalがTrueでwarningが空であることを示す。
+    """
     result = _parse(
         {
             "c": "0123456789abcdef0123456789abcdef",
@@ -129,6 +173,25 @@ def test_anti_cheat_signal_is_true_when_a_present() -> None:
 
     assert result.request is not None
     assert result.request.anti_cheat_signal is True
+    assert result.request.parse_warnings == ()
+
+
+def test_anti_cheat_signal_is_false_for_zero_without_warning() -> None:
+    """`a=0`をwarningなしのfalse signalとして解析する。
+
+    Returns:
+        None: SignalがFalseでwarningが空であることを示す。
+    """
+    result = _parse(
+        {
+            "c": "0123456789abcdef0123456789abcdef",
+            "a": "0",
+        }
+    )
+
+    assert result.request is not None
+    assert result.request.anti_cheat_signal is False
+    assert result.request.parse_warnings == ()
 
 
 def test_anti_cheat_signal_is_false_when_a_absent() -> None:
@@ -213,100 +276,65 @@ def test_short_checksum_returns_invalid_checksum_error() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_malformed_mode_produces_warning_with_valid_identity() -> None:
-    """Non-integer m produces invalid_mode warning, still returns request."""
-    result = _parse(
-        {
-            "c": "0123456789abcdef0123456789abcdef",
-            "m": "not_an_int",
-        }
-    )
+@pytest.mark.parametrize("case_id", _MALFORMED_CASE_IDS)
+def test_malformed_catalog_case_produces_exact_provisional_warning_set(
+    case_id: str,
+) -> None:
+    """Malformed catalog caseをparserのexact warning集合へ照合する。
 
+    Args:
+        case_id (str): Canonical malformed branch case ID。
+
+    Returns:
+        None: Warning集合とprovisional evidence stateが一致したことを示す。
+
+    Raises:
+        KeyError: Canonical branch caseがtyped evidence bundleに存在しない場合。
+        AssertionError: Runtime warning集合がcatalog contractと異なる場合。
+    """
+    case = _GETSCORES_CASES[case_id]
+    query = build_getscores_contract_query(case, _contract_base_query())
+
+    result = _parse(query)
+
+    assert case.evidence_status is GetscoresEvidenceStatus.PROVISIONAL_ATHENA_BEHAVIOR
     assert result.error is None
     assert result.request is not None
-    assert GetscoresParseWarning.INVALID_MODE in result.request.parse_warnings
+    actual_warnings = result.request.parse_warnings
+    assert len(actual_warnings) == len(case.expected_warning_categories)
+    assert frozenset(actual_warnings) == frozenset(case.expected_warning_categories)
+    if case_id == "malformed-anti-cheat-signal":
+        assert result.request.anti_cheat_signal is False
 
 
-def test_malformed_mods_produces_warning() -> None:
-    """Non-integer mods produces invalid_mods warning."""
-    result = _parse(
-        {
-            "c": "0123456789abcdef0123456789abcdef",
-            "mods": "abc",
-        }
-    )
+@pytest.mark.parametrize("case_id", _INVARIANCE_CONTROL_CASE_IDS)
+def test_diagnostic_control_case_preserves_empty_warning_contract(case_id: str) -> None:
+    """Valid diagnostic variantがwarningを追加しないことを確認する。
 
-    assert result.request is not None
-    assert GetscoresParseWarning.INVALID_MODS in result.request.parse_warnings
+    Args:
+        case_id (str): Canonical invariance control case ID。
 
+    Returns:
+        None: Empty warningとAthena deterministic stateが一致したことを示す。
 
-def test_malformed_leaderboard_type_produces_warning() -> None:
-    """Non-integer v produces invalid_leaderboard_type warning."""
-    result = _parse(
-        {
-            "c": "0123456789abcdef0123456789abcdef",
-            "v": "xxx",
-        }
-    )
+    Raises:
+        KeyError: Canonical branch caseがtyped evidence bundleに存在しない場合。
+        AssertionError: Runtime parse resultがcatalog contractと異なる場合。
+    """
+    case = _GETSCORES_CASES[case_id]
+    query = build_getscores_contract_query(case, _contract_base_query())
 
-    assert result.request is not None
-    assert GetscoresParseWarning.INVALID_LEADERBOARD_TYPE in result.request.parse_warnings
+    result = _parse(query)
 
-
-def test_malformed_leaderboard_version_produces_warning() -> None:
-    """Non-integer vv produces invalid_leaderboard_version warning."""
-    result = _parse(
-        {
-            "c": "0123456789abcdef0123456789abcdef",
-            "vv": "abc",
-        }
-    )
-
-    assert result.request is not None
-    assert GetscoresParseWarning.INVALID_LEADERBOARD_VERSION in result.request.parse_warnings
-
-
-def test_malformed_song_select_produces_warning() -> None:
-    """Non-integer s produces invalid_song_select_flag warning."""
-    result = _parse(
-        {
-            "c": "0123456789abcdef0123456789abcdef",
-            "s": "yes",
-        }
-    )
-
-    assert result.request is not None
-    assert GetscoresParseWarning.INVALID_SONG_SELECT_FLAG in result.request.parse_warnings
-
-
-def test_malformed_beatmapset_id_hint_produces_warning_with_other_identity() -> None:
-    """Non-integer i with valid checksum produces warning, not error."""
-    result = _parse(
-        {
-            "c": "0123456789abcdef0123456789abcdef",
-            "i": "abc",
-        }
-    )
-
+    assert case.evidence_status is GetscoresEvidenceStatus.ATHENA_DETERMINISTIC
+    assert case.expected_warning_categories == ()
     assert result.error is None
     assert result.request is not None
-    assert GetscoresParseWarning.INVALID_BEATMAPSET_ID_HINT in result.request.parse_warnings
-
-
-def test_multiple_malformed_fields_produce_multiple_warnings() -> None:
-    """Multiple non-identity parse failures each produce a warning."""
-    result = _parse(
-        {
-            "c": "0123456789abcdef0123456789abcdef",
-            "m": "bad",
-            "mods": "also_bad",
-        }
-    )
-
-    assert result.request is not None
-    warnings = result.request.parse_warnings
-    assert GetscoresParseWarning.INVALID_MODE in warnings
-    assert GetscoresParseWarning.INVALID_MODS in warnings
+    assert result.request.parse_warnings == ()
+    if case_id == "valid-anti-cheat-signal-invariant":
+        assert result.request.anti_cheat_signal is True
+    else:
+        assert result.request.leaderboard_version == 5
 
 
 # ---------------------------------------------------------------------------

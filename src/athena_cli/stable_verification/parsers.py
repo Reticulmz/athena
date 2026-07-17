@@ -13,6 +13,9 @@ _SCORE_SUBMIT_COMPLETED_LINE_COUNT = 3
 _GETSCORES_MIN_HEADER_LINES = 4
 _GETSCORES_MIN_HEADER_FIELDS = 5
 _GETSCORES_PERSONAL_BEST_LINE_INDEX = 4
+_GETSCORES_SCORE_ROW_FIELD_COUNT = 16
+_GETSCORES_SCORE_ROW_NUMERIC_FIELD_INDICES = (0, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14)
+_GETSCORES_SCORE_ROW_BOOLEAN_FIELD_INDICES = (10, 15)
 
 
 class GetscoresResponseKind(StrEnum):
@@ -124,6 +127,21 @@ def _parse_score_submit_lines(lines: list[str]) -> ScoreSubmitResponseParseResul
 
 
 def parse_getscores_response(body: bytes) -> GetscoresResponseParseResult:
+    """Getscores response bodyをwire grammarまで検証して構造化する。
+
+    Args:
+        body (bytes): Stable getscores endpointから受け取ったresponse body。
+
+    Returns:
+        GetscoresResponseParseResult: Short responseまたはheader / score rowを検証した結果。
+
+    Raises:
+        None: Decodeまたはwire grammarの不正はresult.errorへ変換する。
+
+    Notes:
+        Headerのscore_countはPersonal Bestを含めず、leaderboard row数と一致する必要がある。
+    """
+
     text_result = _decode_body(body)
     if isinstance(text_result, _ParseError):
         return GetscoresResponseParseResult(error=text_result.message)
@@ -260,6 +278,16 @@ def _parse_getscores_header(lines: list[str]) -> GetscoresHeader | _ParseError:
     if error is not None:
         return error
 
+    personal_best_row = _personal_best_row(lines)
+    score_rows = tuple(line for line in lines[5:] if line)
+    score_rows_error = _score_rows_error(
+        score_count=cast("int", score_count),
+        personal_best_row=personal_best_row,
+        score_rows=score_rows,
+    )
+    if score_rows_error is not None:
+        return score_rows_error
+
     return GetscoresHeader(
         status=cast("int", status),
         failed=cast("bool", failed),
@@ -269,8 +297,8 @@ def _parse_getscores_header(lines: list[str]) -> GetscoresHeader | _ParseError:
         offset=cast("int", offset),
         display_line=lines[2],
         rating=cast("int", rating),
-        personal_best_row=_personal_best_row(lines),
-        score_rows=tuple(line for line in lines[5:] if line),
+        personal_best_row=personal_best_row,
+        score_rows=score_rows,
     )
 
 
@@ -281,6 +309,37 @@ def _personal_best_row(lines: list[str]) -> str | None:
     ):
         return None
     return lines[_GETSCORES_PERSONAL_BEST_LINE_INDEX]
+
+
+def _score_rows_error(
+    *,
+    score_count: int,
+    personal_best_row: str | None,
+    score_rows: tuple[str, ...],
+) -> _ParseError | None:
+    if score_count != len(score_rows):
+        return _ParseError("getscores header score_count does not match score rows")
+    if personal_best_row is not None and not _is_valid_getscores_score_row(personal_best_row):
+        return _ParseError("getscores personal best row has invalid field grammar")
+    if any(not _is_valid_getscores_score_row(row) for row in score_rows):
+        return _ParseError("getscores score row has invalid field grammar")
+    return None
+
+
+def _is_valid_getscores_score_row(row: str) -> bool:
+    fields = row.split("|")
+    if len(fields) != _GETSCORES_SCORE_ROW_FIELD_COUNT or not fields[1]:
+        return False
+    if any(
+        not _is_ascii_decimal_integer(fields[index])
+        for index in _GETSCORES_SCORE_ROW_NUMERIC_FIELD_INDICES
+    ):
+        return False
+    return all(fields[index] in {"0", "1"} for index in _GETSCORES_SCORE_ROW_BOOLEAN_FIELD_INDICES)
+
+
+def _is_ascii_decimal_integer(value: str) -> bool:
+    return bool(value) and value.isascii() and value.isdecimal()
 
 
 def _first_parse_error(*values: int | bool | _ParseError) -> _ParseError | None:

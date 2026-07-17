@@ -52,7 +52,16 @@ def create_prompt_adapter() -> PromptAdapter:
     return PromptAdapter()
 
 
-def create_stable_verification_runner(target: StableTarget) -> StableVerificationRunner:
+def create_stable_verification_runner(target: StableTarget | None) -> StableVerificationRunner:
+    """Stable互換性検証のsurface executorを束ねたrunnerを生成する。
+
+    Args:
+        target (StableTarget | None): optionalなlocal target。未設定時もmandatory
+            completion evidenceを検証し、target probeだけをskipとして扱う。
+
+    Returns:
+        StableVerificationRunner: 各Stable surfaceに対応するexecutorを持つrunner。
+    """
     _ = target
     return StableVerificationRunner(
         surface_executors={
@@ -270,16 +279,18 @@ def _execute_score_submit_verification(
 def _execute_getscores_verification(
     request: VerificationRunRequest,
 ) -> tuple[SurfaceResult, ...]:
+    verifier: GetscoresVerifier[object] = GetscoresVerifier(target=request.target)
+    results = list(verifier.verify_fixtures())
+
     if request.target is None:
-        return (
+        results.append(
             _optional_probe_result(
                 StableSurface.GETSCORES,
                 "getscores local probe skipped: target not configured",
-            ),
+            )
         )
+        return tuple(results)
 
-    verifier: GetscoresVerifier[object] = GetscoresVerifier(target=request.target)
-    results = list(verifier.verify_fixtures())
     try:
         cases = verifier.load_probe_cases()
     except (OSError, ValueError, TypeError) as exc:

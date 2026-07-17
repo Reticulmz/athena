@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from athena_cli.stable_verification.client import ProbeResponse, StableProbeClient
+from athena_cli.stable_verification.getscores_evidence import (
+    GetscoresEvidenceValidationError,
+    load_getscores_completion_evidence,
+    validate_getscores_completion_evidence,
+)
 from athena_cli.stable_verification.models import (
     DiagnosticSummary,
     EvidenceScope,
@@ -27,6 +32,10 @@ GETSCORES_WEB_LEGACY_PATH = "/web/osu-osz2-getscores.php"
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_WEB_LEGACY_FIXTURE_DIR = _PROJECT_ROOT / "tests" / "fixtures" / "web_legacy" / "getscores"
+_DEFAULT_COMPLETION_MANIFEST_ROOT = (
+    _PROJECT_ROOT / "tests" / "fixtures" / "stable_compatibility" / "getscores"
+)
+_DEFAULT_COMPLETION_BODY_ROOT = _DEFAULT_WEB_LEGACY_FIXTURE_DIR / "completion"
 _DEFAULT_PROBE_CASES_PATH = (
     _PROJECT_ROOT
     / "tests"
@@ -42,6 +51,11 @@ _LEADERBOARD_TYPE_QUERY_VALUES = {
     "friends": "3",
     "country": "4",
 }
+_COMPLETION_EVIDENCE_LABELS = (
+    "response shapes",
+    "branch cases",
+    "status crosswalk",
+)
 
 
 class GetscoresProbeClient(Protocol):
@@ -72,7 +86,32 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         optional_probe_prerequisites: ProbePrerequisitesT | None = None,
         fixture_dir: Path | None = None,
         probe_cases_path: Path | None = None,
+        completion_manifest_root: Path | None = None,
+        completion_body_root: Path | None = None,
     ) -> None:
+        """Getscores fixture検証とoptional target probeを束ねるverifierを初期化する。
+
+        Args:
+            target (StableTarget | None): Optionalなlocal target。未設定時はtarget probeを
+                skipする。
+            client (GetscoresProbeClient | None): Target requestに使うclient。未指定時はtargetから
+                生成する。
+            optional_probe (GetscoresOptionalProbe[ProbePrerequisitesT] | None): Optionalなclient
+                probe adapter。
+            optional_probe_prerequisites (ProbePrerequisitesT | None): Optional probe実行の
+                前提条件。
+            fixture_dir (Path | None): Legacy getscores response fixture directory。
+            probe_cases_path (Path | None): Optional target probe case JSON path。
+            completion_manifest_root (Path | None): Completion evidence manifest directory。
+            completion_body_root (Path | None): Completion evidence body fixture directory。
+
+        Returns:
+            None: Verifierの状態を初期化する。
+
+        Raises:
+            None: Fixture pathの安全性はverification実行時に結果へ変換する。
+        """
+
         self._target: StableTarget | None = target
         self._client: GetscoresProbeClient | None = client or (
             StableProbeClient(target=target) if target is not None else None
@@ -83,11 +122,37 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         )
         self._fixture_dir: Path = fixture_dir or _DEFAULT_WEB_LEGACY_FIXTURE_DIR
         self._probe_cases_path: Path = probe_cases_path or _DEFAULT_PROBE_CASES_PATH
+        self._completion_manifest_root: Path = (
+            completion_manifest_root or _DEFAULT_COMPLETION_MANIFEST_ROOT
+        )
+        self._completion_body_root: Path = completion_body_root or _DEFAULT_COMPLETION_BODY_ROOT
 
     def verify_fixtures(self) -> tuple[SurfaceResult, ...]:
-        return tuple(
+        """Legacy fixtureとcompletion evidenceを必須evidenceとして検証する。
+
+        Args:
+            なし.
+
+        Returns:
+            tuple[SurfaceResult, ...]: Legacy response fixtureとcompletion manifestの検証結果。
+
+        Raises:
+            なし: Manifestの読込失敗は安全な必須失敗結果へ変換する。
+
+        Notes:
+            Completion evidenceの診断とreferenceへraw valueやfilesystem pathを含めない。
+        """
+
+        legacy_results = tuple(
             self._verify_fixture(fixture_path)
             for fixture_path in sorted(self._fixture_dir.glob("*.txt"))
+        )
+        return (
+            *legacy_results,
+            *_verify_completion_evidence(
+                self._completion_manifest_root,
+                self._completion_body_root,
+            ),
         )
 
     def load_probe_cases(self) -> tuple[GetscoresProbeCase, ...]:
@@ -249,14 +314,6 @@ def _target_status(response: GetscoresResponse) -> VerificationStatus:
     if response.kind is GetscoresResponseKind.NOT_SUBMITTED:
         return VerificationStatus.UNAVAILABLE
 
-    header = response.header
-    if (
-        header is not None
-        and header.score_rows
-        and not _has_only_personal_best_fallback_score_row(header)
-    ):
-        return VerificationStatus.KNOWN_GAP
-
     return VerificationStatus.PASS
 
 
@@ -280,7 +337,7 @@ def _response_case(response: GetscoresResponse) -> str:
     elif _has_only_personal_best_fallback_score_row(header):
         response_case = "header personal best fallback row"
     elif header.score_rows:
-        response_case = "score row known gap"
+        response_case = "header score rows"
     elif header.personal_best_row is not None:
         response_case = "header personal best"
     elif header.empty_leaderboard:
@@ -310,6 +367,68 @@ def _optional_osu_py_result(status: VerificationStatus, message: str) -> Surface
         scope=EvidenceScope.OPTIONAL,
         diagnostic_summary=DiagnosticSummary(message=message),
         reference="optional:osu.py getscores probe",
+    )
+
+
+def _verify_completion_evidence(
+    manifest_root: Path,
+    body_root: Path,
+) -> tuple[SurfaceResult, ...]:
+    """Completion evidenceを読み込み, 検証結果へ変換する。
+
+    Args:
+        manifest_root (Path): Completion evidence manifest directory。
+        body_root (Path): Completion evidence body fixture directory。
+
+    Returns:
+        tuple[SurfaceResult, ...]: 3種類のcompletion evidenceの必須検証結果。
+
+    Raises:
+        なし: Loaderの安全な検証失敗は固定された失敗結果へ変換する。
+
+    Notes:
+        Loader由来の診断内容を出力せず, raw value, path, internal provenanceを隠す。
+    """
+
+    try:
+        evidence = load_getscores_completion_evidence(
+            manifest_root,
+            body_root,
+        )
+    except GetscoresEvidenceValidationError:
+        return _completion_evidence_failure_results()
+
+    return validate_getscores_completion_evidence(evidence)
+
+
+def _completion_evidence_failure_results() -> tuple[SurfaceResult, ...]:
+    """Completion evidenceのloader失敗を安全な必須結果として投影する。
+
+    Args:
+        なし.
+
+    Returns:
+        tuple[SurfaceResult, ...]: 各completion evidence種類へ対応する固定の失敗結果。
+
+    Raises:
+        なし.
+
+    Notes:
+        入力値, path, loader内部のprovenanceやerror detailを診断へ露出しない。
+    """
+
+    return tuple(
+        SurfaceResult(
+            surface=StableSurface.GETSCORES,
+            status=VerificationStatus.FAIL,
+            evidence_type=EvidenceType.GOLDEN_FIXTURE,
+            scope=EvidenceScope.MANDATORY,
+            diagnostic_summary=DiagnosticSummary(
+                message="getscores completion evidence validation failed"
+            ),
+            reference=f"getscores completion {label}",
+        )
+        for label in _COMPLETION_EVIDENCE_LABELS
     )
 
 

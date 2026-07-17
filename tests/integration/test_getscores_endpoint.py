@@ -14,10 +14,17 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
 from starlette.testclient import TestClient
 
+from athena_cli.stable_verification.getscores_evidence import (
+    GetscoresSeedProfile,
+    GetscoresWireShapeId,
+    load_getscores_completion_evidence,
+)
 from athena_cli.stable_verification.parsers import (
     GetscoresHeader,
     GetscoresResponseKind,
@@ -51,12 +58,16 @@ from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.queries.identity.password_service import PasswordService
 from tests.support.app import create_in_memory_app as create_app
 from tests.support.app import resolve_dependency
+from tests.support.getscores_contract import build_getscores_contract_query
 from tests.support.persistence import seed_beatmapset, seed_role, seed_user
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
+    import httpx2
     from starlette.applications import Starlette
+
+    from athena_cli.stable_verification.getscores_evidence import GetscoresBranchCase
 
 
 _TEST_USERNAME = "StableUser"
@@ -70,6 +81,29 @@ _LEADERBOARD_VISIBLE_ROLE = Role(
     name="Leaderboard Visible",
     permissions=Privileges.NORMAL | Privileges.UNRESTRICTED,
     position=0,
+)
+_FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures"
+_GETSCORES_MANIFEST_ROOT = _FIXTURE_ROOT / "stable_compatibility" / "getscores"
+_GETSCORES_BODY_ROOT = _FIXTURE_ROOT / "web_legacy" / "getscores" / "completion"
+_GETSCORES_EVIDENCE = load_getscores_completion_evidence(
+    _GETSCORES_MANIFEST_ROOT,
+    _GETSCORES_BODY_ROOT,
+)
+_GETSCORES_CASES = {case.case_id: case for case in _GETSCORES_EVIDENCE.branch_cases}
+_GETSCORES_SHAPES = {shape.shape_id: shape for shape in _GETSCORES_EVIDENCE.response_shapes}
+_SELECTION_CASE_IDS = (
+    "global-with-rows",
+    "local-maps-global",
+    "selected-mods-supported",
+    "selected-mods-unsupported",
+    "friends-outbound-only",
+    "country-match",
+    "country-missing",
+    "country-xx",
+    "song-select-header-only",
+    "unsupported-leaderboard-header-only",
+    "unsupported-playstyle-header-only",
+    "global-no-scores",
 )
 
 
@@ -89,6 +123,19 @@ class _StableScoreRow:
     mods: int
     user_id: int
     rank: int
+
+
+@dataclass(frozen=True, slots=True)
+class _SelectionExpectation:
+    row_usernames: tuple[str, ...]
+    personal_best_username: str | None
+    selected_mods: int | None = None
+
+
+_HEADER_ONLY_EXPECTATION = _SelectionExpectation(
+    row_usernames=(),
+    personal_best_username=None,
+)
 
 
 @contextmanager
@@ -398,6 +445,138 @@ async def _seed_selected_mod_scenario(app: Starlette) -> None:
     )
 
 
+async def _seed_selection_contract_case(
+    app: Starlette,
+    branch_case: GetscoresBranchCase,
+) -> _SelectionExpectation:
+    match branch_case.seed_profile:
+        case GetscoresSeedProfile.RANKED_NO_SCORES:
+            _ = await _seed_user_with_session(app)
+            await _seed_known_beatmap(app)
+            expectation = _HEADER_ONLY_EXPECTATION
+        case (
+            GetscoresSeedProfile.RANKED_WITH_ROWS | GetscoresSeedProfile.SELECTED_MODS_UNSUPPORTED
+        ):
+            expectation = await _seed_global_contract_rows(app)
+            if branch_case.expected_shape_id is not GetscoresWireShapeId.HEADER_WITH_ROWS:
+                expectation = _HEADER_ONLY_EXPECTATION
+        case GetscoresSeedProfile.SELECTED_MODS_SUPPORTED:
+            viewer_id = await _seed_user_with_session(app)
+            await _seed_known_beatmap(app)
+            mirror_rival_id = await _seed_visible_user(app, username="MirrorRival")
+            no_mod_decoy_id = await _seed_visible_user(app, username="NoModDecoy")
+            _ = await _seed_leaderboard_score(
+                app,
+                user_id=viewer_id,
+                score_value=1_100_000,
+                mods=ModCombination(Mod.MIRROR),
+            )
+            _ = await _seed_leaderboard_score(
+                app,
+                user_id=mirror_rival_id,
+                score_value=1_200_000,
+                mods=ModCombination(Mod.MIRROR),
+            )
+            _ = await _seed_leaderboard_score(
+                app,
+                user_id=no_mod_decoy_id,
+                score_value=1_300_000,
+            )
+            expectation = _SelectionExpectation(
+                row_usernames=("MirrorRival", _TEST_USERNAME),
+                personal_best_username=_TEST_USERNAME,
+                selected_mods=int(Mod.MIRROR),
+            )
+        case GetscoresSeedProfile.FRIENDS_DIRECTIONAL:
+            viewer_id = await _seed_user_with_session(app)
+            await _seed_known_beatmap(app)
+            friend_id = await _seed_visible_user(app, username="FriendTarget")
+            reverse_only_id = await _seed_visible_user(app, username="ReverseOnly")
+            unrelated_id = await _seed_visible_user(app, username="Unrelated")
+            await _add_friend_relationships(
+                app,
+                (
+                    (viewer_id, friend_id),
+                    (reverse_only_id, viewer_id),
+                ),
+            )
+            _ = await _seed_leaderboard_score(
+                app,
+                user_id=viewer_id,
+                score_value=1_100_000,
+            )
+            _ = await _seed_leaderboard_score(
+                app,
+                user_id=friend_id,
+                score_value=1_200_000,
+            )
+            _ = await _seed_leaderboard_score(
+                app,
+                user_id=reverse_only_id,
+                score_value=1_300_000,
+            )
+            _ = await _seed_leaderboard_score(
+                app,
+                user_id=unrelated_id,
+                score_value=1_400_000,
+            )
+            expectation = _SelectionExpectation(
+                row_usernames=("FriendTarget", _TEST_USERNAME),
+                personal_best_username=_TEST_USERNAME,
+            )
+        case GetscoresSeedProfile.COUNTRY_MATCH:
+            expectation = await _seed_global_contract_rows(app)
+            us_rival_id = await _seed_visible_user(
+                app,
+                username="UnitedStatesRival",
+                country="US",
+            )
+            _ = await _seed_leaderboard_score(
+                app,
+                user_id=us_rival_id,
+                score_value=1_300_000,
+            )
+        case GetscoresSeedProfile.COUNTRY_MISSING | GetscoresSeedProfile.COUNTRY_XX:
+            viewer_country = (
+                "" if branch_case.seed_profile is GetscoresSeedProfile.COUNTRY_MISSING else "XX"
+            )
+            _ = await _seed_global_contract_rows(app, viewer_country=viewer_country)
+            expectation = _HEADER_ONLY_EXPECTATION
+        case _:
+            raise AssertionError(
+                f"selection case has unsupported seed profile: {branch_case.seed_profile.value}"
+            )
+    return expectation
+
+
+async def _seed_global_contract_rows(
+    app: Starlette,
+    *,
+    viewer_country: str = "JP",
+) -> _SelectionExpectation:
+    viewer_id = await _seed_user_with_session(app, country=viewer_country)
+    await _seed_known_beatmap(app)
+    rival_id = await _seed_visible_user(
+        app,
+        username="GlobalRival",
+        country="JP",
+    )
+    _ = await _seed_leaderboard_score(
+        app,
+        user_id=viewer_id,
+        score_value=1_100_000,
+    )
+    _ = await _seed_leaderboard_score(
+        app,
+        user_id=rival_id,
+        score_value=1_200_000,
+    )
+    return _SelectionExpectation(
+        row_usernames=("GlobalRival", _TEST_USERNAME),
+        personal_best_username=_TEST_USERNAME,
+    )
+
+
 async def _seed_legacy_personal_best(app: Starlette, *, user_id: int) -> int:
     """retired Personal Best projectionだけをfallback回帰確認用に作成する.
 
@@ -517,6 +696,41 @@ def _parse_score_row(row: str) -> _StableScoreRow:
         user_id=int(fields[12]),
         rank=int(fields[13]),
     )
+
+
+def _assert_selection_contract_response(
+    response: httpx2.Response,
+    branch_case: GetscoresBranchCase,
+    expectation: _SelectionExpectation,
+) -> None:
+    fixture = _GETSCORES_SHAPES[branch_case.expected_shape_id]
+    assert fixture.shape_id in {
+        GetscoresWireShapeId.HEADER_ONLY,
+        GetscoresWireShapeId.HEADER_WITH_ROWS,
+    }
+    assert response.status_code == fixture.http_status
+    assert response.headers["content-type"] == fixture.required_headers["content-type"]
+    assert response.headers["content-length"] == str(len(response.content))
+    assert all(header not in response.headers for header in fixture.absent_headers)
+    terminal_lf_count = len(response.content) - len(response.content.rstrip(b"\n"))
+    assert terminal_lf_count == fixture.terminal_lf_count
+
+    header = _parse_header(response.content)
+    personal_best = _parse_personal_best_row(header)
+    score_rows = _parse_score_rows(header)
+    assert len(expectation.row_usernames) == fixture.leaderboard_row_count
+    assert (expectation.personal_best_username is not None) is fixture.personal_best_present
+    assert header.score_count == fixture.leaderboard_row_count
+    assert len(score_rows) == fixture.leaderboard_row_count
+    assert (personal_best is not None) is fixture.personal_best_present
+    assert tuple(row.username for row in score_rows) == expectation.row_usernames
+
+    if personal_best is not None:
+        assert personal_best.username == expectation.personal_best_username
+    if expectation.selected_mods is not None:
+        assert personal_best is not None
+        assert personal_best.mods == expectation.selected_mods
+        assert all(row.mods == expectation.selected_mods for row in score_rows)
 
 
 # ---------------------------------------------------------------------------
@@ -739,6 +953,40 @@ class TestStableResponse:
                 assert parsed.response.header is not None
                 assert parsed.response.header.personal_best_row is None
                 assert parsed.response.header.score_rows == ()
+
+    @pytest.mark.parametrize("case_id", _SELECTION_CASE_IDS)
+    def test_selection_catalog_case_matches_expected_shape_and_scope(
+        self,
+        case_id: str,
+    ) -> None:
+        """Catalog selectionをruntime header shapeとcandidate scopeへ照合する.
+
+        Args:
+            case_id (str): Canonical selection branch case ID.
+
+        Returns:
+            None: HTTP shape, PB, rows, candidate setがfixture contractへ一致する.
+
+        Raises:
+            KeyError: Canonical caseまたはshapeがtyped evidence bundleに存在しない場合.
+            AssertionError: Runtime selection behaviorがcatalogまたはshapeと異なる場合.
+        """
+        branch_case = _GETSCORES_CASES[case_id]
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+                expectation = asyncio.run(_seed_selection_contract_case(app, branch_case))
+                query = build_getscores_contract_query(branch_case, _query())
+                response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=query,
+                )
+
+                _assert_selection_contract_response(response, branch_case, expectation)
 
     def test_global_local_and_country_categories_return_expected_scope_rows(self) -> None:
         with _test_env():
