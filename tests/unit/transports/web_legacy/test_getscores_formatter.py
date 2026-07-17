@@ -8,8 +8,13 @@ delimiter sanitization, and fixture compatibility.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from athena_cli.stable_verification.getscores_evidence import (
+    GetscoresWireShapeId,
+    load_getscores_completion_evidence,
+)
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
@@ -27,6 +32,7 @@ from osu_server.transports.stable.web_legacy.getscores import (
     format_getscores_unavailable_response,
     format_getscores_update_available_response,
 )
+from tests.support.getscores_contract import read_getscores_expected_body
 
 if TYPE_CHECKING:
     from starlette.responses import Response
@@ -34,6 +40,9 @@ if TYPE_CHECKING:
 _NOW = datetime(2026, 6, 7, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
 _CHECKSUM = "0123456789abcdef0123456789abcdef"
+_FIXTURE_ROOT = Path(__file__).resolve().parents[3] / "fixtures"
+_MANIFEST_ROOT = _FIXTURE_ROOT / "stable_compatibility" / "getscores"
+_BODY_ROOT = _FIXTURE_ROOT / "web_legacy" / "getscores" / "completion"
 
 
 def _response_body(response: Response) -> bytes:
@@ -101,8 +110,18 @@ def _make_personal_best(
     user_id: int = 7,
     username: str = "Player",
     score: int = 987_654,
+    max_combo: int = 1_234,
+    n50: int = 1,
+    n100: int = 2,
+    n300: int = 300,
+    miss: int = 3,
+    katu: int = 4,
+    geki: int = 5,
+    perfect: bool = True,
+    mods: int = 24,
     has_replay: bool = True,
     rank: int = 3,
+    submitted_at: datetime = _NOW,
 ) -> GetscoresPersonalBest:
     return GetscoresPersonalBest(
         score_id=score_id,
@@ -112,17 +131,17 @@ def _make_personal_best(
         ruleset=Ruleset.OSU,
         playstyle=Playstyle.VANILLA,
         score=score,
-        max_combo=1_234,
-        n50=1,
-        n100=2,
-        n300=300,
-        miss=3,
-        katu=4,
-        geki=5,
-        perfect=True,
-        mods=24,
+        max_combo=max_combo,
+        n50=n50,
+        n100=n100,
+        n300=n300,
+        miss=miss,
+        katu=katu,
+        geki=geki,
+        perfect=perfect,
+        mods=mods,
         rank=rank,
-        submitted_at=_NOW,
+        submitted_at=submitted_at,
         has_replay=has_replay,
     )
 
@@ -208,6 +227,79 @@ def test_header_score_count_uses_returned_rows_not_personal_best() -> None:
     first_line = body.split(b"\n")[0]
     parts = first_line.split(b"|")
     assert parts[4] == b"2"
+
+
+def test_header_with_rows_matches_exact_fixture_after_sanitization() -> None:
+    """Sanitize済みheader, PB, rowsをcanonical bodyへexact照合する.
+
+    Returns:
+        None: Formatter bodyがfixtureと一致し, wire grammarを維持した状態.
+
+    Raises:
+        AssertionError: Body bytes, row count, delimiter grammarが異なる場合.
+    """
+    personal_best = _make_personal_best(username="PB|Player\rSafe\nText")
+    score_rows = (
+        _make_personal_best(
+            score_id=43,
+            user_id=8,
+            username="Row|One\rSafe\nText",
+            score=876_543,
+            max_combo=999,
+            n50=4,
+            n100=5,
+            n300=250,
+            miss=6,
+            katu=7,
+            geki=8,
+            perfect=False,
+            mods=0,
+            rank=1,
+            submitted_at=_NOW + timedelta(minutes=1),
+        ),
+        _make_personal_best(
+            score_id=44,
+            user_id=9,
+            username="Row|Two\rSafe\nText",
+            score=765_432,
+            max_combo=888,
+            n50=9,
+            n100=10,
+            n300=200,
+            miss=11,
+            katu=12,
+            geki=13,
+            perfect=True,
+            mods=64,
+            rank=2,
+            submitted_at=_NOW + timedelta(minutes=2),
+            has_replay=False,
+        ),
+    )
+    evidence = load_getscores_completion_evidence(_MANIFEST_ROOT, _BODY_ROOT)
+    expected_body = read_getscores_expected_body(
+        evidence,
+        GetscoresWireShapeId.HEADER_WITH_ROWS,
+    )
+
+    body = _response_body(
+        format_getscores_header_response(
+            status=2,
+            beatmap=_make_beatmap(),
+            beatmapset=_make_beatmapset(
+                artist="Fixture|Artist\rSafe\nText",
+                title="Fixture|Title\rSafe\nText",
+            ),
+            personal_best=personal_best,
+            score_rows=score_rows,
+        )
+    )
+
+    lines = body.splitlines()
+    assert body == expected_body
+    assert lines[0].split(b"|")[4] == str(len(score_rows)).encode()
+    assert lines[2].count(b"|") == 1
+    assert all(line.count(b"|") == 15 for line in lines[4:])
 
 
 def test_header_failed_flag_is_false() -> None:

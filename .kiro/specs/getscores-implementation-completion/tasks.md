@@ -48,7 +48,7 @@
 
 - [ ] 2. Runtime contractをevidenceへ照合する
 
-- [ ] 2.1 (P) Formatterのexact row / sanitization contractを検証する
+- [x] 2.1 (P) Formatterのexact row / sanitization contractを検証する
   - 先にartist、title、usernameへpipe / CR / LFを含むsynthetic dataを投入するformatter testを追加する。
   - Header、Personal Best、leaderboard rowsのbody bytesをshape fixtureと比較し、PBをrow countへ混ぜないことを検証する。
   - score id、username、score、combo、hit counts、miss、perfect、mods、user id、rank、submitted timestamp、replay availabilityの全fieldを固定する。
@@ -159,3 +159,4 @@
 - 1.3: Branch catalogは28件のsymbolic caseとcase-local coherence validationを持つ。`INVALID_ANTI_CHEAT_SIGNAL`はruntime未対応のため、Task 2.4開始前にcredentialを除いた実requestの`a` field contractを確認する。
 - 1.4: Scenario builderはcaller-owned `c/f/i/us/ha`を保持し、identity -> selector -> mutationの順でsafe queryを生成する。Body resolverはcanonical rootをstrict resolveし、public `read_body_bytes()`境界だけを使用する。
 - 1.5: Getscoresは7 statusをofficial fixture、Approved / UnknownをAthena deterministic evidenceで固定する。Beatmap infoはRanked=`1`のみofficial fixtureとし、他8 statusは`unconfirmed/null/[]`を維持する。Markdown sourceは実在pathと正規化anchorまで検証する。
+- 2.1: Formatterはcanonical `header_with_rows` fixtureとbyte-for-byte一致した。PBをrow countへ含めず、artist / title / 全usernameのpipe / CR / LF sanitationと全score wire fieldを同じtestで固定し、production correctionは不要だった。
