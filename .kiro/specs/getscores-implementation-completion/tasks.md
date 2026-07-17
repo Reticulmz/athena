@@ -78,7 +78,7 @@
   - _Requirements: 1.4, 1.5, 2.3, 2.6, 2.7, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 8.3_
   - _Boundary: Runtime Contract Comparison: Leaderboard Selection_
 
-- [ ] 2.4 (P) Malformed diagnosticsとprovisional fallbackを検証する
+- [x] 2.4 (P) Malformed diagnosticsとprovisional fallbackを検証する
   - 先に各optional fieldのinvalid warningと複数warning集合を検証するdiagnostics testを追加する。
   - mode、mods、leaderboard type、leaderboard version、song select flag、anti-cheat signal、beatmapset hintのmalformed inputごとにwarning categoryを区別する。
   - Warning後のdeterministic fallback shape、provisional evidence state、operator diagnosticのredactionを検証する。
@@ -162,3 +162,4 @@
 - 2.1: Formatterはcanonical `header_with_rows` fixtureとbyte-for-byte一致した。PBをrow countへ含めず、artist / title / 全usernameのpipe / CR / LF sanitationと全score wire fieldを同じtestで固定し、production correctionは不要だった。
 - 2.2: Auth / unavailable / updateのshort responseはscenario builderからcanonical status / headers / body / terminal LFへ一致した。Metadata preparationとfile warmupの例外seam到達を各1回assertし、選択済みupdate / unavailable bodyが維持されるためproduction correctionは不要だった。
 - 2.3: 12 selection casesをcatalog / scenario builderからparser、category mapper、endpointへ接続した。Global / Local / Selected Mods / Friends / Country / song select / unsupported selection / no-scoreがexpected category、PB、2 rowsまたはheader-onlyへ一致し、詳細な既存rank / mod coverageも保持した。
+- 2.4: 8 malformed caseと2 invariance controlをcatalogからparser / endpointへ接続し、warning集合、provisional state、fallback shape、PB / rows、diagnostic redactionを固定した。`a`はinteger-backed booleanとして解析し、non-integerを`INVALID_ANTI_CHEAT_SIGNAL` + false fallbackへ限定修正した判断をTask 4.1のDecision Logへ引き継ぐ。
