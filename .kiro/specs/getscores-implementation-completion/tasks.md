@@ -100,7 +100,7 @@
 
 - [ ] 3. Stable verificationへcompletion evidenceを統合する
 
-- [ ] 3.1 Completion evidenceをstable verifierへ統合する
+- [x] 3.1 Completion evidenceをstable verifierへ統合する
   - 先にmanifest validation result、safe failure、normal score row statusを検証するunit testを追加する。
   - 3つのmanifestとbody fixtureをmandatory evidenceとして検証し、既存のoptional target probe実行条件を変えない。
   - 正常なPersonal Best / leaderboard rowsをstaleな`KNOWN_GAP`ではなく`PASS`へ更新し、diagnosticにraw valueを出さない。
@@ -164,3 +164,4 @@
 - 2.3: 12 selection casesをcatalog / scenario builderからparser、category mapper、endpointへ接続した。Global / Local / Selected Mods / Friends / Country / song select / unsupported selection / no-scoreがexpected category、PB、2 rowsまたはheader-onlyへ一致し、詳細な既存rank / mod coverageも保持した。
 - 2.4: 8 malformed caseと2 invariance controlをcatalogからparser / endpointへ接続し、warning集合、provisional state、fallback shape、PB / rows、diagnostic redactionを固定した。`a`はinteger-backed booleanとして解析し、non-integerを`INVALID_ANTI_CHEAT_SIGNAL` + false fallbackへ限定修正した判断をTask 4.1のDecision Logへ引き継ぐ。
 - 2.5: Typed crosswalkの全9 statusをruntime mapperとendpointへ照合し、Approved header、NotSubmitted / Unknownのexact unavailable、persisted local overrideを固定した。ASTでmodule-local `_STATUS_TO_WIRE`のdirect lookupを検証し、Approved=`3`のprovenance再分類はTask 4.1へ残した。
+- 3.1: Stable verifierはlegacy fixtureに加えて3種類のcompletion evidenceをmandatory golden fixtureとして投影する。loader failureは固定3件のsafe FAIL、body grammar failureは該当surfaceだけのFAILとして扱い、正常なscore rowはPASSへ更新した。
