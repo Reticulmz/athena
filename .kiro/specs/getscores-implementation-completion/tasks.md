@@ -58,7 +58,7 @@
   - _Requirements: 1.4, 1.7, 2.3, 2.4, 2.5, 2.7_
   - _Boundary: Runtime Contract Comparison: Formatter_
 
-- [ ] 2.2 (P) Auth、unavailable、update、failure-invariance contractを検証する
+- [x] 2.2 (P) Auth、unavailable、update、failure-invariance contractを検証する
   - 先にHTTP status、content headers、empty body、short body bytes、terminal LFを検証するintegration testを追加する。
   - Invalid credentialの401 empty body、missing identity / invalid checksum / unavailable beatmapのunavailable body、same-set filename checksum mismatchのupdate bodyを照合する。
   - Metadata preparationまたはbeatmap file warmupの例外が選択済みresponse bodyを置き換えないことを検証する。
@@ -160,3 +160,4 @@
 - 1.4: Scenario builderはcaller-owned `c/f/i/us/ha`を保持し、identity -> selector -> mutationの順でsafe queryを生成する。Body resolverはcanonical rootをstrict resolveし、public `read_body_bytes()`境界だけを使用する。
 - 1.5: Getscoresは7 statusをofficial fixture、Approved / UnknownをAthena deterministic evidenceで固定する。Beatmap infoはRanked=`1`のみofficial fixtureとし、他8 statusは`unconfirmed/null/[]`を維持する。Markdown sourceは実在pathと正規化anchorまで検証する。
 - 2.1: Formatterはcanonical `header_with_rows` fixtureとbyte-for-byte一致した。PBをrow countへ含めず、artist / title / 全usernameのpipe / CR / LF sanitationと全score wire fieldを同じtestで固定し、production correctionは不要だった。
+- 2.2: Auth / unavailable / updateのshort responseはscenario builderからcanonical status / headers / body / terminal LFへ一致した。Metadata preparationとfile warmupの例外seam到達を各1回assertし、選択済みupdate / unavailable bodyが維持されるためproduction correctionは不要だった。
