@@ -25,8 +25,9 @@
       "getscores": {
         "representation": "wire",
         "wire_status": 3,
-        "evidence_status": "athena_deterministic",
+        "evidence_status": "reference_implementation",
         "evidence_sources": [
+          "reference_implementation:osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py",
           "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py",
           "automated_test:tests/unit/transports/web_legacy/test_getscores_status_mapper.py#test_approved_maps_to_3"
         ]

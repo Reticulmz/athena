@@ -10,6 +10,7 @@ from typing import cast
 import pytest
 
 from athena_cli.stable_verification.getscores_evidence import (
+    EndpointEvidenceState,
     GetscoresBodyEncoding,
     GetscoresBranchCase,
     GetscoresCompletionEvidence,
@@ -44,6 +45,9 @@ _ATHENA_GETSCORES_MAPPER_SOURCE = (
 )
 _GETSCORES_STATUS_TEST_SOURCE_PREFIX = (
     "automated_test:tests/unit/transports/web_legacy/test_getscores_status_mapper.py#"
+)
+_REFERENCE_IMPLEMENTATION_APPROVED_SOURCE = (
+    "reference_implementation:osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py"
 )
 _BEATMAP_INFO_RANKED_SOURCE = (
     ".kiro:specs/beatmap-info-endpoint/research.md"
@@ -442,7 +446,7 @@ def test_status_crosswalk_fixture_records_every_canonical_endpoint_contract(
         for status, entry in by_status.items()
     } == {
         BeatmapRankStatus.RANKED: _official_getscores_contract("ranked", "wire", 2),
-        BeatmapRankStatus.APPROVED: _deterministic_getscores_contract(
+        BeatmapRankStatus.APPROVED: _reference_implementation_getscores_contract(
             "test_approved_maps_to_3", "wire", 3
         ),
         BeatmapRankStatus.LOVED: _official_getscores_contract("loved", "wire", 5),
@@ -478,6 +482,25 @@ def test_status_crosswalk_fixture_records_every_canonical_endpoint_contract(
             (_BEATMAP_INFO_RANKED_SOURCE,),
         ),
     }
+
+
+def test_approved_getscores_crosswalk_uses_single_reference_before_athena_corroboration() -> None:
+    evidence = load_getscores_completion_evidence(
+        _STATUS_CROSSWALK_MANIFEST.parent,
+        _COMPLETION_BODY_ROOT,
+    )
+    approved = next(
+        entry
+        for entry in evidence.status_crosswalk
+        if entry.canonical_status is BeatmapRankStatus.APPROVED
+    )
+
+    assert approved.getscores.evidence_status is EndpointEvidenceState.REFERENCE_IMPLEMENTATION
+    assert tuple(str(source) for source in approved.getscores.evidence_sources) == (
+        _REFERENCE_IMPLEMENTATION_APPROVED_SOURCE,
+        _ATHENA_GETSCORES_MAPPER_SOURCE,
+        f"{_GETSCORES_STATUS_TEST_SOURCE_PREFIX}test_approved_maps_to_3",
+    )
 
 
 def test_status_crosswalk_markdown_source_resolves_to_canonical_heading_anchor() -> None:
@@ -543,6 +566,27 @@ def test_status_crosswalk_rejects_duplicate_canonical_status_without_echoing_val
     assert result.status is VerificationStatus.FAIL
     message = result.diagnostic_summary.message
     assert "ranked" not in message
+
+
+def test_status_crosswalk_validator_rejects_approved_downgrade_to_athena_deterministic(
+    tmp_path: Path,
+) -> None:
+    manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
+    crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
+    document = _read_document(crosswalk_path)
+    approved = _status_endpoint(document, "approved", "getscores")
+    approved["evidence_status"] = "athena_deterministic"
+    approved["evidence_sources"] = [
+        _ATHENA_GETSCORES_MAPPER_SOURCE,
+        f"{_GETSCORES_STATUS_TEST_SOURCE_PREFIX}test_approved_maps_to_3",
+    ]
+    _write_document(crosswalk_path, document)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    result = validate_getscores_completion_evidence(evidence)[2]
+
+    assert result.status is VerificationStatus.FAIL
+    assert "athena_deterministic" not in result.diagnostic_summary.message
 
 
 @pytest.mark.parametrize(
@@ -1503,6 +1547,23 @@ def _deterministic_getscores_contract(
         wire_status,
         "athena_deterministic",
         (
+            _ATHENA_GETSCORES_MAPPER_SOURCE,
+            f"{_GETSCORES_STATUS_TEST_SOURCE_PREFIX}{test_anchor}",
+        ),
+    )
+
+
+def _reference_implementation_getscores_contract(
+    test_anchor: str,
+    representation: str,
+    wire_status: int | None,
+) -> tuple[str, int | None, str, tuple[str, ...]]:
+    return (
+        representation,
+        wire_status,
+        "reference_implementation",
+        (
+            _REFERENCE_IMPLEMENTATION_APPROVED_SOURCE,
             _ATHENA_GETSCORES_MAPPER_SOURCE,
             f"{_GETSCORES_STATUS_TEST_SOURCE_PREFIX}{test_anchor}",
         ),

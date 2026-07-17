@@ -151,6 +151,29 @@
 
 Official fixtureとreference implementationが矛盾する場合はofficial fixtureを優先する。Athena deterministic behaviorだけを根拠にtarget未確認のwire contractを変更しない。
 
+## Evidence Authority Decision Log
+
+### 判定基準と記録範囲
+
+- Task 4.1ではTarget Stable Client trafficを新規取得していない。未解決のtraffic evidenceはIssue #27 / #28が所有する。
+- 判定順はTarget Stable Client traffic、official client-observable fixture、protocol documentation、複数reference implementationの一致、単一reference implementation、Athena deterministic behaviorの順とする。
+- ここでのAthena fixture、focused test、verifier結果は実装regressionを検出するための証跡であり、Target Stable Client trafficの代替またはtarget-confirmed contractではない。
+
+| 対象 | sourceと優先度 | precedence decision | correction / no-correction | 未解決gap |
+| --- | --- | --- | --- | --- |
+| Formatterのexact row / sanitization | `tests/unit/transports/web_legacy/test_getscores_formatter.py`、completion response fixture、Task 2.1のruntime comparison。Athena deterministic behavior (優先度6)。 | 上位のtraffic、official fixture、protocol documentation、reference consensus、single referenceとの矛盾は今回の証跡内で確認されなかった。 | **no-correction**。formatter出力はcanonical `header_with_rows` fixtureにbyte-for-byteで一致し、Task 4.1でruntimeは変更しない。 | Target Stable Client trafficによる最終確認は未取得で、Issue #27 / #28へ残る。 |
+| Auth / unavailable / update / failure-invariance | `tests/integration/test_getscores_unavailable_paths.py`、completion short-response fixture、Task 2.2のruntime comparison。Athena deterministic behavior (優先度6)。 | 上位根拠とのconfirmed contradictionは見つからず、選択済みshort responseがwarmup / metadata failureで変化しないことだけをAthena-owned contractとして確認した。 | **no-correction**。Task 4.1でshort response branchを変更しない。 | Target Stable Client trafficによるstatus、header、bodyの最終確認は未取得で、Issue #27 / #28へ残る。 |
+| Leaderboard selection | `tests/integration/test_getscores_endpoint.py`、`branch_cases.json`、Task 2.3のcatalog-driven comparison。Athena deterministic behavior (優先度6)。 | Global / Local / Selected Mods / Friends / Country / song select / unsupported selectionについて、上位根拠とのconfirmed contradictionは見つからなかった。 | **no-correction**。selection、projection、RX / APを変更しない。 | Target Stable Client trafficによるselectionの最終確認は未取得で、Issue #27 / #28へ残る。 |
+| Malformed `a` | Task 2.4のImplementation Notes、commit `bdbfb8f3`、`src/osu_server/transports/stable/web_legacy/mappers/getscores.py`、`tests/unit/transports/web_legacy/test_getscores_query_parser.py`、`tests/integration/test_getscores_diagnostics.py`。Athena deterministic behavior (優先度6)。 | `a`はinteger-backed booleanとして解析し、non-integerは`INVALID_ANTI_CHEAT_SIGNAL`とfalse fallbackにする既存のone-branch correctionを記録する。これはtarget confirmationではなく、将来の上位evidenceが矛盾した場合はそちらを優先するprovisional behaviorである。 | **existing correction, no new correction**。Task 4.1はparserやruntimeを変更しない。 | Target Stable Client trafficによるmalformed `a` contractは未確認で、Issue #27 / #28へ残る。 |
+| Status crosswalkとApproved provenance | Approved=`3`について、単一reference implementation `reference_implementation:osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py` (優先度5) と、Athena mapper / focused test (優先度6)。Ranked beatmap infoは`.kiro:specs/beatmap-info-endpoint/research.md#observed-official-response-fixture-osu-getbeatmapinfophp` (優先度2)。 | 単一reference implementationはAthena deterministic behaviorより優先する。Approved=`3`は両者で一致し、wire/runtime mismatchではなくevidence provenanceの矛盾だけがあった。Ranked beatmap infoのofficial fixture anchorは既にcanonicalであり、変更しない。 | **evidence metadata correction**。Approved getscoresのstateを`reference_implementation`へ昇格し、reference sourceを先頭、Athena mapper / testをlower-priority corroborationとして保持する。`src/osu_server/`は変更しない。 | Approved getscoresのTarget Stable Client trafficまたはofficial fixtureは未取得で、beatmap infoのRanked以外のwire valueも未確認のまま保持する。 |
+| Stable verifier / catalog projection | `src/athena_cli/stable_verification/getscores.py`、`src/athena_cli/stable_verification/catalog.py`、対応unit test、Task 3.1 / 3.2。Athena verification projection (優先度6)。 | これはwire sourceではなく、Athena-owned implementation completionとmissing traffic evidenceを分離する投影である。上位wire evidenceとの矛盾を示さない。 | **no-correction**。verifier / catalogのruntime behaviorをTask 4.1で変更しない。 | `KNOWN_GAP`はIssue #27 / #28所有のTarget Stable Client traffic confirmationだけを表す。 |
+
+### Production symbol correction gate
+
+- Task 2.1-2.5およびTask 3.1-3.2の結果を再確認したところ、Task 4.1で新たに修正すべき`src/osu_server/`のruntime mismatchはない。Approved=`3`はwire値が一致しており、修正対象はevidence provenanceだけである。
+- このためTask 4.1はproduction symbolを編集せず、GitNexus impact analysisは実行しない。これはimpact analysisを省略してproduction editを行う判断ではない。
+- 将来、優先度1-5のevidenceがcurrent runtimeまたはcrosswalkと矛盾した場合だけ、対象をone response branchまたはone mapper ruleへ限定する。その編集前にGitNexus impact analysisを実行し、HIGH / CRITICALなら編集を停止してユーザーへwarningとdirection requestを行う。承認なしにproduction correctionを行わない。
+
 ## Design Decisions
 
 ### Decision: Keep completion evidence separate from target probe inputs

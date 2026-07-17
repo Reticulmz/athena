@@ -121,7 +121,7 @@
 
 - [ ] 4. Evidence-limited integrationと最終handoffを完了する
 
-- [ ] 4.1 Evidence authorityとbounded correction gateを適用する
+- [x] 4.1 Evidence authorityとbounded correction gateを適用する
   - 先行taskのmismatch結果をTarget Stable Client traffic、official fixture、protocol documentation、reference consensus、single reference、Athena deterministic behaviorの順で判定する。
   - Evidence Authority Decision Logへsource、precedence decision、correction / no-correction result、未解決gapを記録し、結果がresearch artifactから観測できるようにする。
   - Athena内部の期待だけであればruntimeを変更せず、confirmed evidenceとの矛盾だけをone-branch correctionへ限定する。
@@ -166,3 +166,4 @@
 - 2.5: Typed crosswalkの全9 statusをruntime mapperとendpointへ照合し、Approved header、NotSubmitted / Unknownのexact unavailable、persisted local overrideを固定した。ASTでmodule-local `_STATUS_TO_WIRE`のdirect lookupを検証し、Approved=`3`のprovenance再分類はTask 4.1へ残した。
 - 3.1: Stable verifierはlegacy fixtureに加えて3種類のcompletion evidenceをmandatory golden fixtureとして投影する。loader failureは固定3件のsafe FAIL、body grammar failureは該当surfaceだけのFAILとして扱い、正常なscore rowはPASSへ更新した。
 - 3.2: Catalogはgetscoresを実装済みとして維持し、3つのcompletion manifestをmandatory evidenceへ登録した。残る`KNOWN_GAP`はIssue #27 / #28が所有するTarget Stable Client traffic confirmationだけを表す。
+- 4.1: Evidence Authority Decision Logをresearch artifactへ追加した。Approved=`3`は単一reference implementationをAthena corroborationより優先するmetadataへ訂正し、production runtime mismatchは確認されなかったため`src/osu_server/`を変更していない。

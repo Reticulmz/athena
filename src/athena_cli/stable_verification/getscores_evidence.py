@@ -363,6 +363,7 @@ class EndpointEvidenceState(StrEnum):
     Attributes:
         CONFIRMED (str): Confirmed evidenceに基づく状態。
         OFFICIAL_FIXTURE (str): Official fixtureに基づく状態。
+        REFERENCE_IMPLEMENTATION (str): 単一reference implementationに基づく状態。
         ATHENA_DETERMINISTIC (str): Athena deterministic behaviorに基づく状態。
         UNCONFIRMED (str): Evidence未確認の状態。
 
@@ -372,6 +373,7 @@ class EndpointEvidenceState(StrEnum):
 
     CONFIRMED = "confirmed"
     OFFICIAL_FIXTURE = "official_fixture"
+    REFERENCE_IMPLEMENTATION = "reference_implementation"
     ATHENA_DETERMINISTIC = "athena_deterministic"
     UNCONFIRMED = "unconfirmed"
 
@@ -404,9 +406,11 @@ _OFFICIAL_GETSCORES_FIXTURE_STEM: Mapping[BeatmapRankStatus, str] = MappingProxy
 )
 _DETERMINISTIC_GETSCORES_TEST_ANCHOR: Mapping[BeatmapRankStatus, str] = MappingProxyType(
     {
-        BeatmapRankStatus.APPROVED: "test_approved_maps_to_3",
         BeatmapRankStatus.UNKNOWN: "test_unknown_maps_to_none",
     }
+)
+_REFERENCE_IMPLEMENTATION_APPROVED_SOURCE = (
+    "reference_implementation:osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py"
 )
 _ATHENA_GETSCORES_MAPPER_SOURCE = (
     "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py"
@@ -1498,6 +1502,17 @@ def _canonical_getscores_contract(
             wire_status,
             EndpointEvidenceState.OFFICIAL_FIXTURE,
             (f"official_fixture:tests/fixtures/web_legacy/getscores/{fixture_stem}_response.txt",),
+        )
+    if status is BeatmapRankStatus.APPROVED:
+        return (
+            representation,
+            wire_status,
+            EndpointEvidenceState.REFERENCE_IMPLEMENTATION,
+            (
+                _REFERENCE_IMPLEMENTATION_APPROVED_SOURCE,
+                _ATHENA_GETSCORES_MAPPER_SOURCE,
+                f"{_GETSCORES_STATUS_TEST_SOURCE_PREFIX}test_approved_maps_to_3",
+            ),
         )
     test_anchor = _DETERMINISTIC_GETSCORES_TEST_ANCHOR[status]
     return (
