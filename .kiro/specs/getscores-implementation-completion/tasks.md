@@ -110,7 +110,7 @@
   - _Requirements: 2.7, 5.4, 5.5, 6.4, 7.8_
   - _Boundary: Getscores Completion Evidence, Stable Verification Completion Projection_
 
-- [ ] 3.2 Stale implementation gapを明示的なtarget traffic gapへ置換する
+- [x] 3.2 Stale implementation gapを明示的なtarget traffic gapへ置換する
   - 先にverification catalogとreportのstatus分類を検証するテストを追加する。
   - Leaderboard projectionが未実装というstale gapを削除し、Implementation completion、missing evidence、missing Target Stable Client trafficを別状態として投影する。
   - Modern getscoresの`required` route classificationを維持し、Issue #27 / #28のtraffic handoffをreportへ残す。
@@ -165,3 +165,4 @@
 - 2.4: 8 malformed caseと2 invariance controlをcatalogからparser / endpointへ接続し、warning集合、provisional state、fallback shape、PB / rows、diagnostic redactionを固定した。`a`はinteger-backed booleanとして解析し、non-integerを`INVALID_ANTI_CHEAT_SIGNAL` + false fallbackへ限定修正した判断をTask 4.1のDecision Logへ引き継ぐ。
 - 2.5: Typed crosswalkの全9 statusをruntime mapperとendpointへ照合し、Approved header、NotSubmitted / Unknownのexact unavailable、persisted local overrideを固定した。ASTでmodule-local `_STATUS_TO_WIRE`のdirect lookupを検証し、Approved=`3`のprovenance再分類はTask 4.1へ残した。
 - 3.1: Stable verifierはlegacy fixtureに加えて3種類のcompletion evidenceをmandatory golden fixtureとして投影する。loader failureは固定3件のsafe FAIL、body grammar failureは該当surfaceだけのFAILとして扱い、正常なscore rowはPASSへ更新した。
+- 3.2: Catalogはgetscoresを実装済みとして維持し、3つのcompletion manifestをmandatory evidenceへ登録した。残る`KNOWN_GAP`はIssue #27 / #28が所有するTarget Stable Client traffic confirmationだけを表す。
