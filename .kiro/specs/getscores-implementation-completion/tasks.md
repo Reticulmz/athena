@@ -132,7 +132,7 @@
   - _Requirements: 5.6, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
   - _Boundary: Evidence-Limited Correction Gate_
 
-- [ ] 4.2 全quality、scope、regression gateを実行する
+- [x] 4.2 全quality、scope、regression gateを実行する
   - 先にtargeted getscores tests、category mapper test、quality gate、full test gate、all-files hooksの実行結果を収集する。
   - Failure時はimplementationを疑い、root causeを修正して同じgateを再実行する。Testやconfigを無効化して通過させない。
   - GitNexusのmain比較change detectionでexpected symbols / flowsだけが変更されていることを確認する。
@@ -167,3 +167,4 @@
 - 3.1: Stable verifierはlegacy fixtureに加えて3種類のcompletion evidenceをmandatory golden fixtureとして投影する。loader failureは固定3件のsafe FAIL、body grammar failureは該当surfaceだけのFAILとして扱い、正常なscore rowはPASSへ更新した。
 - 3.2: Catalogはgetscoresを実装済みとして維持し、3つのcompletion manifestをmandatory evidenceへ登録した。残る`KNOWN_GAP`はIssue #27 / #28が所有するTarget Stable Client traffic confirmationだけを表す。
 - 4.1: Evidence Authority Decision Logをresearch artifactへ追加した。Approved=`3`は単一reference implementationをAthena corroborationより優先するmetadataへ訂正し、production runtime mismatchは確認されなかったため`src/osu_server/`を変更していない。
+- 4.2: Required focused getscores suite、`./scripts/ci.sh quality`、`./scripts/ci.sh test`、`prek run --all-files`、`git diff --check main...HEAD`を通過した。GitNexus compareはindexが715 commits古いため補助証跡に限定し、actual `main...HEAD` path/source auditでlegacy alias、beatmap info、RX/AP、osu!direct、config/dependency/schema変更がないことを確認した。
