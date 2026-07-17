@@ -781,10 +781,11 @@ Common query parameters parsed by Athena:
 | Header-only | HTTP 200 with the header/title body, no personal-best or leaderboard rows, and three terminal LFs. | `header_only` |
 | Header with rows | HTTP 200 with the header/title body, one personal-best row, two leaderboard rows, and one terminal LF. | `header_with_rows` |
 
-The five fixtures in
-`tests/fixtures/stable_compatibility/getscores/response_shapes.json` fix the
-HTTP status, required/absent headers, body bytes, terminal newline count, and
-personal-best/leaderboard-row semantics for these Athena-owned response shapes.
+The manifest in
+`tests/fixtures/stable_compatibility/getscores/response_shapes.json` references
+five Base64 body fixtures in `tests/fixtures/web_legacy/getscores/completion/`
+and fixes their HTTP status, required/absent headers, body bytes, terminal
+newline count, and personal-best/leaderboard-row semantics.
 
 Current header-with-rows response shape:
 

@@ -21,6 +21,11 @@ from athena_cli.stable_verification.models import (
     SurfaceResult,
     VerificationStatus,
 )
+from athena_cli.stable_verification.parsers import (
+    GetscoresResponse,
+    GetscoresResponseKind,
+    parse_getscores_response,
+)
 from osu_server.domain.beatmaps.models import BeatmapRankStatus
 from osu_server.domain.compatibility.stable.getscores import GetscoresParseWarning
 from osu_server.domain.scores.personal_best import LeaderboardCategory
@@ -32,6 +37,7 @@ _STATUS_CROSSWALK_FILE = "beatmap_status_crosswalk.json"
 _RESPONSE_SHAPES_SCHEMA = "athena.stable_compatibility.getscores.response_shapes.v1"
 _BRANCH_CASES_SCHEMA = "athena.stable_compatibility.getscores.branch_cases.v1"
 _STATUS_CROSSWALK_SCHEMA = "athena.stable_compatibility.getscores.beatmap_status_crosswalk.v1"
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 _SAFE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
 
@@ -335,6 +341,28 @@ _WARNING_BY_INVALID_MUTATION: Mapping[GetscoresMutationProfile, GetscoresParseWa
             ),
         }
     )
+)
+_EXPECTED_CATEGORY_BY_SELECTOR: Mapping[GetscoresRequestSelector, LeaderboardCategory | None] = (
+    MappingProxyType(
+        {
+            GetscoresRequestSelector.GLOBAL_DOMAIN: LeaderboardCategory.GLOBAL,
+            GetscoresRequestSelector.LOCAL: LeaderboardCategory.GLOBAL,
+            GetscoresRequestSelector.SELECTED_MODS: LeaderboardCategory.SELECTED_MODS,
+            GetscoresRequestSelector.FRIENDS: LeaderboardCategory.FRIENDS,
+            GetscoresRequestSelector.COUNTRY: LeaderboardCategory.COUNTRY,
+            GetscoresRequestSelector.SONG_SELECT: LeaderboardCategory.GLOBAL,
+            GetscoresRequestSelector.UNSUPPORTED_LEADERBOARD: None,
+            GetscoresRequestSelector.UNSUPPORTED_PLAYSTYLE: LeaderboardCategory.GLOBAL,
+        }
+    )
+)
+_CATEGORY_UNAVAILABLE_IDENTITY_PROFILES = frozenset(
+    {
+        GetscoresIdentityProfile.AUTH_MISSING,
+        GetscoresIdentityProfile.AUTH_INVALID,
+        GetscoresIdentityProfile.MISSING_BEATMAP_IDENTITY,
+        GetscoresIdentityProfile.INVALID_CHECKSUM,
+    }
 )
 
 
@@ -807,10 +835,17 @@ def _parse_shapes(
     )
     shapes: list[GetscoresWireShapeFixture] = []
     seen: set[GetscoresWireShapeId] = set()
-    for index, entry in enumerate(entries):
-        location = index
+    for location, entry in entries:
         errors.extend(_forbidden_errors(entry, _RESPONSE_SHAPES_FILE, location))
         errors.extend(_unknown_entry_fields(entry, _SHAPE_FIELDS, _RESPONSE_SHAPES_FILE, location))
+        errors.extend(
+            _missing_required_field_errors(
+                entry,
+                _SHAPE_FIELDS,
+                _RESPONSE_SHAPES_FILE,
+                location,
+            )
+        )
         shape_id = _enum_member(GetscoresWireShapeId, entry.get("shape_id"))
         if shape_id is None:
             errors.append(_error(_RESPONSE_SHAPES_FILE, location, "shape_id", "invalid_enum"))
@@ -889,10 +924,17 @@ def _parse_branches(
     entries = _entry_mappings(document.get("cases"), _BRANCH_CASES_FILE, errors)
     branches: list[GetscoresBranchCase] = []
     seen: set[str] = set()
-    for index, entry in enumerate(entries):
-        location = index
+    for location, entry in entries:
         errors.extend(_forbidden_errors(entry, _BRANCH_CASES_FILE, location))
         errors.extend(_unknown_entry_fields(entry, _BRANCH_FIELDS, _BRANCH_CASES_FILE, location))
+        errors.extend(
+            _missing_required_field_errors(
+                entry,
+                _BRANCH_FIELDS,
+                _BRANCH_CASES_FILE,
+                location,
+            )
+        )
         case_id = entry.get("case_id")
         if not isinstance(case_id, str) or not _SAFE_IDENTIFIER.fullmatch(case_id):
             errors.append(_error(_BRANCH_CASES_FILE, location, "case_id", "invalid_identifier"))
@@ -982,11 +1024,18 @@ def _parse_crosswalk(
     entries = _entry_mappings(document.get("entries"), _STATUS_CROSSWALK_FILE, errors)
     crosswalk: list[StableBeatmapStatusCrosswalkEntry] = []
     seen: set[BeatmapRankStatus] = set()
-    for index, entry in enumerate(entries):
-        location = index
+    for location, entry in entries:
         errors.extend(_forbidden_errors(entry, _STATUS_CROSSWALK_FILE, location))
         errors.extend(
             _unknown_entry_fields(entry, _STATUS_FIELDS, _STATUS_CROSSWALK_FILE, location)
+        )
+        errors.extend(
+            _missing_required_field_errors(
+                entry,
+                _STATUS_FIELDS,
+                _STATUS_CROSSWALK_FILE,
+                location,
+            )
         )
         canonical_status = _enum_member(BeatmapRankStatus, entry.get("canonical_status"))
         if canonical_status is None:
@@ -1035,6 +1084,14 @@ def _parse_endpoint_status(
     entry = cast("Mapping[str, object]", value)
     errors.extend(_forbidden_errors(entry, filename, location))
     errors.extend(_unknown_entry_fields(entry, _ENDPOINT_STATUS_FIELDS, filename, location))
+    errors.extend(
+        _missing_required_field_errors(
+            entry,
+            _ENDPOINT_STATUS_FIELDS,
+            filename,
+            location,
+        )
+    )
     representation = _enum_member(StatusRepresentation, entry.get("representation"))
     evidence_status = _enum_member(EndpointEvidenceState, entry.get("evidence_status"))
     wire_status = entry.get("wire_status")
@@ -1380,55 +1437,7 @@ def _validate_bundle_branches(evidence: GetscoresCompletionEvidence) -> tuple[st
         if case.case_id in seen:
             errors.append(_error(_BRANCH_CASES_FILE, index, "case_id", "duplicate_id"))
         seen.add(case.case_id)
-        if case.expected_shape_id not in shape_ids:
-            errors.append(
-                _error(_BRANCH_CASES_FILE, index, "expected_shape_id", "unknown_shape_id")
-            )
-        if len(set(case.mutation_profiles)) != len(case.mutation_profiles):
-            errors.append(
-                _error(_BRANCH_CASES_FILE, index, "mutation_profiles", "duplicate_member")
-            )
-        if len(set(case.expected_warning_categories)) != len(case.expected_warning_categories):
-            errors.append(
-                _error(
-                    _BRANCH_CASES_FILE,
-                    index,
-                    "expected_warning_categories",
-                    "duplicate_member",
-                )
-            )
-        expected_warnings = {
-            warning
-            for mutation in case.mutation_profiles
-            if (warning := _WARNING_BY_INVALID_MUTATION.get(mutation)) is not None
-        }
-        if set(case.expected_warning_categories) != expected_warnings:
-            errors.append(
-                _error(
-                    _BRANCH_CASES_FILE,
-                    index,
-                    "expected_warning_categories",
-                    "mutation_warning_mismatch",
-                )
-            )
-        malformed_identity = case.identity_profile in {
-            GetscoresIdentityProfile.MISSING_BEATMAP_IDENTITY,
-            GetscoresIdentityProfile.INVALID_CHECKSUM,
-        }
-        malformed_optional = any(
-            mutation in _WARNING_BY_INVALID_MUTATION for mutation in case.mutation_profiles
-        )
-        if (
-            malformed_identity or malformed_optional
-        ) and case.evidence_status is not GetscoresEvidenceStatus.PROVISIONAL_ATHENA_BEHAVIOR:
-            errors.append(
-                _error(
-                    _BRANCH_CASES_FILE,
-                    index,
-                    "evidence_status",
-                    "malformed_case_must_be_provisional",
-                )
-            )
+        errors.extend(_branch_case_semantic_errors(case, index, shape_ids))
 
     if {case.identity_profile for case in evidence.branch_cases} != set(GetscoresIdentityProfile):
         errors.append(
@@ -1460,6 +1469,80 @@ def _validate_bundle_branches(evidence: GetscoresCompletionEvidence) -> tuple[st
     return tuple(_sorted_errors(errors))
 
 
+def _branch_case_semantic_errors(
+    case: GetscoresBranchCase,
+    index: int,
+    shape_ids: set[GetscoresWireShapeId],
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    if case.expected_shape_id not in shape_ids:
+        errors.append(_error(_BRANCH_CASES_FILE, index, "expected_shape_id", "unknown_shape_id"))
+
+    expected_category = _expected_domain_category(case)
+    if case.expected_domain_category is not expected_category:
+        errors.append(
+            _error(
+                _BRANCH_CASES_FILE,
+                index,
+                "expected_domain_category",
+                "selector_category_mismatch",
+            )
+        )
+
+    if len(set(case.mutation_profiles)) != len(case.mutation_profiles):
+        errors.append(_error(_BRANCH_CASES_FILE, index, "mutation_profiles", "duplicate_member"))
+    if len(set(case.expected_warning_categories)) != len(case.expected_warning_categories):
+        errors.append(
+            _error(
+                _BRANCH_CASES_FILE,
+                index,
+                "expected_warning_categories",
+                "duplicate_member",
+            )
+        )
+
+    expected_warnings = {
+        warning
+        for mutation in case.mutation_profiles
+        if (warning := _WARNING_BY_INVALID_MUTATION.get(mutation)) is not None
+    }
+    if set(case.expected_warning_categories) != expected_warnings:
+        errors.append(
+            _error(
+                _BRANCH_CASES_FILE,
+                index,
+                "expected_warning_categories",
+                "mutation_warning_mismatch",
+            )
+        )
+
+    malformed_identity = case.identity_profile in {
+        GetscoresIdentityProfile.MISSING_BEATMAP_IDENTITY,
+        GetscoresIdentityProfile.INVALID_CHECKSUM,
+    }
+    malformed_optional = any(
+        mutation in _WARNING_BY_INVALID_MUTATION for mutation in case.mutation_profiles
+    )
+    if (
+        malformed_identity or malformed_optional
+    ) and case.evidence_status is not GetscoresEvidenceStatus.PROVISIONAL_ATHENA_BEHAVIOR:
+        errors.append(
+            _error(
+                _BRANCH_CASES_FILE,
+                index,
+                "evidence_status",
+                "malformed_case_must_be_provisional",
+            )
+        )
+    return tuple(errors)
+
+
+def _expected_domain_category(case: GetscoresBranchCase) -> LeaderboardCategory | None:
+    if case.identity_profile in _CATEGORY_UNAVAILABLE_IDENTITY_PROFILES:
+        return None
+    return _EXPECTED_CATEGORY_BY_SELECTOR[case.request_selector]
+
+
 def _validate_bundle_crosswalk(evidence: GetscoresCompletionEvidence) -> tuple[str, ...]:
     errors: list[str] = []
     seen: set[BeatmapRankStatus] = set()
@@ -1469,6 +1552,7 @@ def _validate_bundle_crosswalk(evidence: GetscoresCompletionEvidence) -> tuple[s
                 _error(_STATUS_CROSSWALK_FILE, index, "canonical_status", "duplicate_id")
             )
         seen.add(entry.canonical_status)
+        errors.extend(_official_getscores_fixture_errors(index, "getscores", entry.getscores))
     errors.extend(_crosswalk_semantic_errors(evidence.status_crosswalk))
     errors.extend(_canonical_crosswalk_errors(evidence.status_crosswalk))
     return tuple(_sorted_errors(errors))
@@ -1507,7 +1591,17 @@ def _canonical_crosswalk_errors(
             entry.getscores.evidence_status,
             tuple(str(source) for source in entry.getscores.evidence_sources),
         )
-        if actual_getscores != _canonical_getscores_contract(entry.canonical_status):
+        expected_getscores = _canonical_getscores_contract(entry.canonical_status)
+        if expected_getscores is None:
+            errors.append(
+                _error(
+                    _STATUS_CROSSWALK_FILE,
+                    index,
+                    "getscores",
+                    "missing_canonical_getscores_contract",
+                )
+            )
+        elif actual_getscores != expected_getscores:
             errors.append(
                 _error(
                     _STATUS_CROSSWALK_FILE,
@@ -1522,8 +1616,11 @@ def _canonical_crosswalk_errors(
 
 def _canonical_getscores_contract(
     status: BeatmapRankStatus,
-) -> tuple[StatusRepresentation, int | None, EndpointEvidenceState, tuple[str, ...]]:
-    representation, wire_status = _CANONICAL_GETSCORES_STATUS[status]
+) -> tuple[StatusRepresentation, int | None, EndpointEvidenceState, tuple[str, ...]] | None:
+    status_contract = _CANONICAL_GETSCORES_STATUS.get(status)
+    if status_contract is None:
+        return None
+    representation, wire_status = status_contract
     fixture_stem = _OFFICIAL_GETSCORES_FIXTURE_STEM.get(status)
     if fixture_stem is not None:
         return (
@@ -1543,7 +1640,9 @@ def _canonical_getscores_contract(
                 f"{_GETSCORES_STATUS_TEST_SOURCE_PREFIX}test_approved_maps_to_3",
             ),
         )
-    test_anchor = _DETERMINISTIC_GETSCORES_TEST_ANCHOR[status]
+    test_anchor = _DETERMINISTIC_GETSCORES_TEST_ANCHOR.get(status)
+    if test_anchor is None:
+        return None
     return (
         representation,
         wire_status,
@@ -1670,6 +1769,79 @@ def _endpoint_semantic_errors(
     return tuple(errors)
 
 
+def _official_getscores_fixture_errors(
+    index: int,
+    endpoint_name: str,
+    endpoint: EndpointStatusEvidence,
+) -> tuple[str, ...]:
+    if (
+        endpoint_name != "getscores"
+        or endpoint.evidence_status is not EndpointEvidenceState.OFFICIAL_FIXTURE
+    ):
+        return ()
+
+    errors: list[str] = []
+    for source in endpoint.evidence_sources:
+        source_prefix, _, relative_path = str(source).partition(":")
+        if source_prefix != "official_fixture":
+            continue
+        fixture_path = _REPOSITORY_ROOT.joinpath(*relative_path.split("/"))
+        try:
+            fixture_body = fixture_path.read_bytes()
+        except OSError:
+            errors.append(
+                _error(
+                    _STATUS_CROSSWALK_FILE,
+                    index,
+                    f"{endpoint_name}.evidence_sources",
+                    "unreadable_official_fixture",
+                )
+            )
+            continue
+
+        parsed = parse_getscores_response(fixture_body)
+        if parsed.error is not None or parsed.response is None:
+            errors.append(
+                _error(
+                    _STATUS_CROSSWALK_FILE,
+                    index,
+                    f"{endpoint_name}.evidence_sources",
+                    "invalid_official_fixture_response",
+                )
+            )
+            continue
+
+        observed_contract = _official_getscores_fixture_contract(
+            parsed.response.kind,
+            parsed.response,
+        )
+        expected_contract = (endpoint.representation, endpoint.wire_status)
+        if observed_contract != expected_contract:
+            errors.append(
+                _error(
+                    _STATUS_CROSSWALK_FILE,
+                    index,
+                    f"{endpoint_name}.evidence_sources",
+                    "official_fixture_contract_mismatch",
+                )
+            )
+    return tuple(errors)
+
+
+def _official_getscores_fixture_contract(
+    response_kind: GetscoresResponseKind,
+    response: GetscoresResponse,
+) -> tuple[StatusRepresentation, int | None] | None:
+    if response_kind is GetscoresResponseKind.NOT_SUBMITTED:
+        return (StatusRepresentation.UNAVAILABLE, None)
+    if response_kind is not GetscoresResponseKind.HEADER:
+        return None
+
+    if response.header is None:
+        return None
+    return (StatusRepresentation.WIRE, response.header.status)
+
+
 def _surface_result(label: str, errors: Sequence[str]) -> SurfaceResult:
     if errors:
         message = f"getscores {label} validation failed: {len(errors)} error(s)"
@@ -1691,15 +1863,15 @@ def _entry_mappings(
     value: object,
     filename: str,
     errors: list[str],
-) -> tuple[Mapping[str, object], ...]:
+) -> tuple[tuple[int, Mapping[str, object]], ...]:
     if not _is_sequence(value):
         return ()
-    entries: list[Mapping[str, object]] = []
+    entries: list[tuple[int, Mapping[str, object]]] = []
     for index, item in enumerate(cast("Sequence[object]", value)):
         if not isinstance(item, Mapping):
             errors.append(_error(filename, index, "entry", "entry_must_be_object"))
             continue
-        entries.append(cast("Mapping[str, object]", item))
+        entries.append((index, cast("Mapping[str, object]", item)))
     return tuple(entries)
 
 
@@ -1713,6 +1885,19 @@ def _unknown_entry_fields(
         _error(filename, location, key if _safe_key(key) else "field", "unknown_entry_field")
         for key in entry
         if key not in allowed
+    )
+
+
+def _missing_required_field_errors(
+    entry: Mapping[str, object],
+    required: frozenset[str],
+    filename: str,
+    location: int,
+) -> tuple[str, ...]:
+    return tuple(
+        _error(filename, location, field_name, "missing_required_field")
+        for field_name in sorted(required)
+        if field_name not in entry
     )
 
 

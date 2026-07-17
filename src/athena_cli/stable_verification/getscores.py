@@ -86,7 +86,32 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         optional_probe_prerequisites: ProbePrerequisitesT | None = None,
         fixture_dir: Path | None = None,
         probe_cases_path: Path | None = None,
+        completion_manifest_root: Path | None = None,
+        completion_body_root: Path | None = None,
     ) -> None:
+        """Getscores fixture検証とoptional target probeを束ねるverifierを初期化する。
+
+        Args:
+            target (StableTarget | None): Optionalなlocal target。未設定時はtarget probeを
+                skipする。
+            client (GetscoresProbeClient | None): Target requestに使うclient。未指定時はtargetから
+                生成する。
+            optional_probe (GetscoresOptionalProbe[ProbePrerequisitesT] | None): Optionalなclient
+                probe adapter。
+            optional_probe_prerequisites (ProbePrerequisitesT | None): Optional probe実行の
+                前提条件。
+            fixture_dir (Path | None): Legacy getscores response fixture directory。
+            probe_cases_path (Path | None): Optional target probe case JSON path。
+            completion_manifest_root (Path | None): Completion evidence manifest directory。
+            completion_body_root (Path | None): Completion evidence body fixture directory。
+
+        Returns:
+            None: Verifierの状態を初期化する。
+
+        Raises:
+            None: Fixture pathの安全性はverification実行時に結果へ変換する。
+        """
+
         self._target: StableTarget | None = target
         self._client: GetscoresProbeClient | None = client or (
             StableProbeClient(target=target) if target is not None else None
@@ -97,6 +122,10 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         )
         self._fixture_dir: Path = fixture_dir or _DEFAULT_WEB_LEGACY_FIXTURE_DIR
         self._probe_cases_path: Path = probe_cases_path or _DEFAULT_PROBE_CASES_PATH
+        self._completion_manifest_root: Path = (
+            completion_manifest_root or _DEFAULT_COMPLETION_MANIFEST_ROOT
+        )
+        self._completion_body_root: Path = completion_body_root or _DEFAULT_COMPLETION_BODY_ROOT
 
     def verify_fixtures(self) -> tuple[SurfaceResult, ...]:
         """Legacy fixtureとcompletion evidenceを必須evidenceとして検証する。
@@ -118,7 +147,13 @@ class GetscoresVerifier[ProbePrerequisitesT]:
             self._verify_fixture(fixture_path)
             for fixture_path in sorted(self._fixture_dir.glob("*.txt"))
         )
-        return (*legacy_results, *_verify_completion_evidence())
+        return (
+            *legacy_results,
+            *_verify_completion_evidence(
+                self._completion_manifest_root,
+                self._completion_body_root,
+            ),
+        )
 
     def load_probe_cases(self) -> tuple[GetscoresProbeCase, ...]:
         raw_cases = cast(
@@ -335,11 +370,15 @@ def _optional_osu_py_result(status: VerificationStatus, message: str) -> Surface
     )
 
 
-def _verify_completion_evidence() -> tuple[SurfaceResult, ...]:
+def _verify_completion_evidence(
+    manifest_root: Path,
+    body_root: Path,
+) -> tuple[SurfaceResult, ...]:
     """Completion evidenceを読み込み, 検証結果へ変換する。
 
     Args:
-        なし.
+        manifest_root (Path): Completion evidence manifest directory。
+        body_root (Path): Completion evidence body fixture directory。
 
     Returns:
         tuple[SurfaceResult, ...]: 3種類のcompletion evidenceの必須検証結果。
@@ -353,8 +392,8 @@ def _verify_completion_evidence() -> tuple[SurfaceResult, ...]:
 
     try:
         evidence = load_getscores_completion_evidence(
-            _DEFAULT_COMPLETION_MANIFEST_ROOT,
-            _DEFAULT_COMPLETION_BODY_ROOT,
+            manifest_root,
+            body_root,
         )
     except GetscoresEvidenceValidationError:
         return _completion_evidence_failure_results()

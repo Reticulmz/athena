@@ -9,6 +9,7 @@ from typing import cast
 
 import pytest
 
+import athena_cli.stable_verification.getscores_evidence as getscores_evidence_module
 from athena_cli.stable_verification.getscores_evidence import (
     EndpointEvidenceState,
     GetscoresBodyEncoding,
@@ -529,6 +530,49 @@ def test_status_crosswalk_markdown_source_resolves_to_canonical_heading_anchor()
     assert fragment in anchors
 
 
+def test_status_crosswalk_validator_rejects_official_fixture_wire_status_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Official fixtureの実体がcrosswalk wire statusと矛盾した場合に拒否する。
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Repository rootを一時fixture sourceへ差し替えるfixture。
+        tmp_path (Path): Fixture sourceを隔離して作成する一時directory。
+
+    Returns:
+        None: Assertionだけを実行する。
+
+    Raises:
+        AssertionError: Official fixtureとcrosswalkのwire status不一致をPASSにする場合。
+    """
+
+    source_root = tmp_path / "fixture-source"
+    source_path = source_root / "tests" / "fixtures" / "web_legacy" / "getscores"
+    source_path.mkdir(parents=True)
+    canonical_fixture_root = _FIXTURE_ROOT / "web_legacy" / "getscores"
+    for canonical_fixture_path in canonical_fixture_root.glob("*_response.txt"):
+        _ = (source_path / canonical_fixture_path.name).write_bytes(
+            canonical_fixture_path.read_bytes()
+        )
+    _ = (source_path / "ranked_response.txt").write_bytes(
+        b"5|false|75|1|0||\n0\n[bold:0,size:20]Artist|Title\n0\n\n\n"
+    )
+    monkeypatch.setattr(getscores_evidence_module, "_REPOSITORY_ROOT", source_root, raising=False)
+
+    evidence = load_getscores_completion_evidence(
+        _STATUS_CROSSWALK_MANIFEST.parent,
+        _COMPLETION_BODY_ROOT,
+    )
+    result = validate_getscores_completion_evidence(evidence)[2]
+
+    assert result.status is VerificationStatus.FAIL
+    assert result.diagnostic_summary.message == (
+        "getscores status crosswalk validation failed: 1 error(s)"
+    )
+    assert str(source_root) not in result.diagnostic_summary.message
+
+
 def test_status_crosswalk_rejects_missing_canonical_status_without_echoing_value(
     tmp_path: Path,
 ) -> None:
@@ -548,6 +592,41 @@ def test_status_crosswalk_rejects_missing_canonical_status_without_echoing_value
     assert result.status is VerificationStatus.FAIL
     message = result.diagnostic_summary.message
     assert "ranked" not in message
+
+
+def test_status_crosswalk_validator_reports_missing_canonical_mapping_without_key_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Canonical status mappingが欠けてもverifierを安全なFAILとして完了する。
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Canonical mappingを不完全な状態へ差し替えるfixture。
+
+    Returns:
+        None: Assertionだけを実行する。
+
+    Raises:
+        AssertionError: Mapping欠落でKeyErrorが送出される, またはcrosswalkがPASSになる場合。
+    """
+
+    evidence = load_getscores_completion_evidence(
+        _STATUS_CROSSWALK_MANIFEST.parent,
+        _COMPLETION_BODY_ROOT,
+    )
+    incomplete_mapping = {
+        entry.canonical_status: (entry.getscores.representation, entry.getscores.wire_status)
+        for entry in evidence.status_crosswalk
+        if entry.canonical_status is not BeatmapRankStatus.RANKED
+    }
+    monkeypatch.setattr(
+        getscores_evidence_module,
+        "_CANONICAL_GETSCORES_STATUS",
+        incomplete_mapping,
+    )
+
+    result = validate_getscores_completion_evidence(evidence)[2]
+
+    assert result.status is VerificationStatus.FAIL
 
 
 def test_status_crosswalk_rejects_duplicate_canonical_status_without_echoing_value(
@@ -1178,6 +1257,99 @@ def test_branch_case_validation_rejects_missing_required_profile(
     branch_result = validate_getscores_completion_evidence(evidence)[1]
 
     assert branch_result.status is VerificationStatus.FAIL
+
+
+def test_branch_case_validation_rejects_local_selector_with_non_global_category(
+    tmp_path: Path,
+) -> None:
+    """Local selectorがGlobal以外のdomain categoryを宣言した場合に拒否する。
+
+    Args:
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+
+    Returns:
+        None: Assertionだけを実行する。
+
+    Raises:
+        AssertionError: Local selectorのcategory driftがmandatory evidence failureにならない場合。
+    """
+
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    branch_path = manifest_root / "branch_cases.json"
+    document = _read_document(branch_path)
+    local_case = next(
+        case for case in _entries(document, "cases") if case.get("case_id") == "local-maps-global"
+    )
+    local_case["expected_domain_category"] = "country"
+    _write_document(branch_path, document)
+
+    evidence = load_getscores_completion_evidence(manifest_root, body_root)
+    branch_result = validate_getscores_completion_evidence(evidence)[1]
+
+    assert branch_result.status is VerificationStatus.FAIL
+
+
+def test_branch_case_loader_rejects_missing_nullable_expected_domain_category(
+    tmp_path: Path,
+) -> None:
+    """Nullableなexpected domain categoryのfield欠落を拒否する。
+
+    Args:
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+
+    Returns:
+        None: Assertionだけを実行する。
+
+    Raises:
+        AssertionError: Field欠落をexplicitなnullと同一視してloaderが受理する場合。
+    """
+
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    branch_path = manifest_root / "branch_cases.json"
+    document = _read_document(branch_path)
+    local_case = next(
+        case for case in _entries(document, "cases") if case.get("case_id") == "local-maps-global"
+    )
+    _ = local_case.pop("expected_domain_category")
+    _write_document(branch_path, document)
+
+    with pytest.raises(GetscoresEvidenceValidationError) as raised:
+        _ = load_getscores_completion_evidence(manifest_root, body_root)
+
+    assert "expected_domain_category" in str(raised.value)
+    assert "missing_required_field" in str(raised.value)
+
+
+def test_branch_case_loader_preserves_original_entry_position_after_non_mapping(
+    tmp_path: Path,
+) -> None:
+    """Non-object entryの後ろでもdiagnosticが元のmanifest indexを示す。
+
+    Args:
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+
+    Returns:
+        None: Assertionだけを実行する。
+
+    Raises:
+        AssertionError: Compaction後のindexがdiagnosticへ出力される場合。
+    """
+
+    manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
+    branch_path = manifest_root / "branch_cases.json"
+    document = _read_document(branch_path)
+    cases = _entries(document, "cases")
+    local_case = next(case for case in cases if case.get("case_id") == "local-maps-global")
+    _ = local_case.pop("expected_domain_category")
+    document["cases"] = [None, *cases]
+    _write_document(branch_path, document)
+
+    with pytest.raises(GetscoresEvidenceValidationError) as raised:
+        _ = load_getscores_completion_evidence(manifest_root, body_root)
+
+    assert "branch_cases.json:entry[2]:expected_domain_category:missing_required_field" in str(
+        raised.value
+    )
 
 
 @pytest.mark.parametrize(

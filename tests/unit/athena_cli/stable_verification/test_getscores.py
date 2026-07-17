@@ -231,6 +231,35 @@ def test_verify_fixtures_projects_body_validation_failure_by_completion_surface(
     assert all(marker not in rendered_values for marker in raw_markers)
 
 
+def test_verify_fixtures_uses_injected_completion_fixture_roots(tmp_path: Path) -> None:
+    """Custom completion fixture rootを一貫して検証に使用する。
+
+    Args:
+        tmp_path (Path): Completion fixtureの一時copyを作成するdirectory。
+
+    Returns:
+        None: Assertionだけを実行する。
+
+    Raises:
+        AssertionError: Injected rootの不正fixtureを既定fixtureへすり替えてPASSにする場合。
+    """
+
+    manifest_root, body_root = _copy_completion_evidence(tmp_path)
+    _ = (body_root / "header_with_rows.body.b64").write_bytes(b"invalid base64\n")
+    verifier: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier(
+        completion_manifest_root=manifest_root,
+        completion_body_root=body_root,
+    )
+
+    results_by_reference = {
+        result.reference: result for result in _completion_results(verifier.verify_fixtures())
+    }
+
+    assert results_by_reference["getscores completion response shapes"].status is (
+        VerificationStatus.FAIL
+    )
+
+
 def test_load_probe_cases_preserves_stable_query_shape_fields() -> None:
     verifier: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier()
 
@@ -335,7 +364,7 @@ def test_probe_target_accepts_normal_score_rows_as_implementation_completion() -
             b"[bold:0,size:20]Artist|Title\n"
             b"10\n"
             b"\n"
-            b"1|Player|123456|999|300|100|50|0|0|321|true|A|1\n"
+            b"1|Player|123456|999|300|100|50|0|0|321|1|0|1|1|1780790400|1\n"
         )
     )
     verifier: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier(
@@ -349,6 +378,37 @@ def test_probe_target_accepts_normal_score_rows_as_implementation_completion() -
     assert result.fails_run is False
     assert "score row" in result.diagnostic_summary.message
     assert "known gap" not in result.diagnostic_summary.message
+
+
+def test_probe_target_rejects_malformed_score_row_before_reporting_pass() -> None:
+    """不正なscore rowを含むtarget responseをPASSとして扱わない。
+
+    Returns:
+        None: Assertionだけを実行する。
+
+    Raises:
+        AssertionError: Row grammarが壊れたresponseをtarget probeがPASSとして報告する場合。
+    """
+
+    client = _RecordingGetClient(
+        body=(
+            b"2|false|75|1|1||\n"
+            b"0\n"
+            b"[bold:0,size:20]Artist|Title\n"
+            b"10\n"
+            b"\n"
+            b"1|Player|123456|999|300|100|50|0|0|321|true|A|1\n"
+        )
+    )
+    verifier: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier(
+        target=_target(),
+        client=client,
+    )
+
+    result = verifier.probe_target(_probe_case())
+
+    assert result.status is VerificationStatus.FAIL
+    assert "score row" in result.diagnostic_summary.message
 
 
 def test_probe_target_accepts_personal_best_fallback_score_row() -> None:
