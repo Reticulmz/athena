@@ -68,7 +68,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.6, 1.7, 2.1, 2.2, 2.7, 5.1_
   - _Boundary: Runtime Contract Comparison: Short Responses_
 
-- [ ] 2.3 (P) Leaderboard selection branch contractを検証する
+- [x] 2.3 (P) Leaderboard selection branch contractを検証する
   - 先にcategory mapper contractとcatalog-driven integration testを追加し、Stable Localとexpected Global categoryの対応を固定する。
   - Global、Local、Selected Mods supported / unsupported、Friendsのdirectionality、Country match / missing / `XX`、song select、unsupported leaderboard / playstyleを実行する。
   - Personal Bestとleaderboard rowsの有無、unsupported selectionのheader-only、Global fallback禁止、selection-changing fieldの扱いを検証する。
@@ -161,3 +161,4 @@
 - 1.5: Getscoresは7 statusをofficial fixture、Approved / UnknownをAthena deterministic evidenceで固定する。Beatmap infoはRanked=`1`のみofficial fixtureとし、他8 statusは`unconfirmed/null/[]`を維持する。Markdown sourceは実在pathと正規化anchorまで検証する。
 - 2.1: Formatterはcanonical `header_with_rows` fixtureとbyte-for-byte一致した。PBをrow countへ含めず、artist / title / 全usernameのpipe / CR / LF sanitationと全score wire fieldを同じtestで固定し、production correctionは不要だった。
 - 2.2: Auth / unavailable / updateのshort responseはscenario builderからcanonical status / headers / body / terminal LFへ一致した。Metadata preparationとfile warmupの例外seam到達を各1回assertし、選択済みupdate / unavailable bodyが維持されるためproduction correctionは不要だった。
+- 2.3: 12 selection casesをcatalog / scenario builderからparser、category mapper、endpointへ接続した。Global / Local / Selected Mods / Friends / Country / song select / unsupported selection / no-scoreがexpected category、PB、2 rowsまたはheader-onlyへ一致し、詳細な既存rank / mod coverageも保持した。
