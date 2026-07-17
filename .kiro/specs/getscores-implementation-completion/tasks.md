@@ -142,7 +142,7 @@
   - _Requirements: 2.7, 6.6, 7.8, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
   - _Boundary: Runtime Contract Comparison, Stable Verification Completion Projection, Evidence-Limited Correction Gate_
 
-- [ ] 4.3 Validated completion stateをCompatibility Guide / Matrixへ同期する
+- [x] 4.3 Validated completion stateをCompatibility Guide / Matrixへ同期する
   - 4.2で取得したvalidation結果を先に確認し、GuideとMatrixが同じimplementation / evidence / traffic stateを示すよう更新する。
   - Modern getscoresを`Implemented` / `required`へ反映し、response branches、status mapping、provisional malformed behavior、remaining Issue #27 / #28 gapを記録する。
   - `Implemented`をFull Stable Compatibilityまたはtarget-confirmed getscoresと表現せず、Issue #12をclose可能にする根拠と実行結果を明示する。
@@ -168,3 +168,4 @@
 - 3.2: Catalogはgetscoresを実装済みとして維持し、3つのcompletion manifestをmandatory evidenceへ登録した。残る`KNOWN_GAP`はIssue #27 / #28が所有するTarget Stable Client traffic confirmationだけを表す。
 - 4.1: Evidence Authority Decision Logをresearch artifactへ追加した。Approved=`3`は単一reference implementationをAthena corroborationより優先するmetadataへ訂正し、production runtime mismatchは確認されなかったため`src/osu_server/`を変更していない。
 - 4.2: Required focused getscores suite、`./scripts/ci.sh quality`、`./scripts/ci.sh test`、`prek run --all-files`、`git diff --check main...HEAD`を通過した。GitNexus compareはindexが715 commits古いため補助証跡に限定し、actual `main...HEAD` path/source auditでlegacy alias、beatmap info、RX/AP、osu!direct、config/dependency/schema変更がないことを確認した。
+- 4.3: Compatibility Guide / Matrixのmodern getscores行を`Implemented` / `required`へ同期し、Athena-owned completion evidenceとIssue #27 / #28所有の未取得Target Stable Client trafficを分離した。5 response shape、status crosswalk、provisional malformed behavior、Task 4.2 validation結果をGuideへ記録し、legacy aliasは`needs reference evidence`のまま維持した。
