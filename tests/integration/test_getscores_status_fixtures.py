@@ -1,18 +1,8 @@
-"""End-to-end status-fixture validation for the legacy getscores endpoint.
+"""Legacy getscores endpointのstatus crosswalkをend-to-endで検証する.
 
-Drives the endpoint through ``osu.$DOMAIN`` with seeded users, sessions, and
-beatmaps for each submitted ``BeatmapRankStatus`` (Ranked, Loved, Qualified,
-Pending, WIP, Graveyard) and asserts the wire response satisfies:
-
-- status wire value mapping (Ranked=2, Loved=5, Qualified=4,
-  Pending/WIP/Graveyard=0)
-- ``beatmap_id`` and ``beatmapset_id`` are surfaced verbatim
-- ``score_count`` is ``0`` and ``failed`` flag is ``false``
-- display title formatted as ``[bold:0,size:20]<artist>|<title>``
-- rating line is ``0`` (no rating in MVP)
-- no score rows or personal-best rows
-- official behavior precedence: Pending / WIP / Graveyard return header bodies
-  (not short ``<status>|false`` bodies as bancho.py does)
+全canonical ``BeatmapRankStatus``をsubmitted headerまたはexact unavailable
+responseへ対応付ける. Approvedを含むwire status, persisted local override後の
+effective status, header field, display title, rating, empty score sectionを検証する.
 """
 
 from __future__ import annotations
@@ -24,11 +14,17 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 from starlette.testclient import TestClient
 
+from athena_cli.stable_verification.getscores_evidence import (
+    GetscoresWireShapeId,
+    StatusRepresentation,
+    load_getscores_completion_evidence,
+)
 from osu_server.domain.beatmaps import (
     Beatmap,
     BeatmapFetchState,
@@ -38,6 +34,7 @@ from osu_server.domain.beatmaps import (
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
+    LocalBeatmapStatus,
 )
 from osu_server.domain.identity.sessions import SessionData
 from osu_server.domain.identity.users import User
@@ -58,6 +55,15 @@ _TEST_PASSWORD_PLAIN = "ExamplePass1234"  # gitleaks:allow
 _TEST_PASSWORD_MD5 = hashlib.md5(_TEST_PASSWORD_PLAIN.encode()).hexdigest()
 _NOW = datetime(2026, 6, 7, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
+_FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures"
+_MANIFEST_ROOT = _FIXTURE_ROOT / "stable_compatibility" / "getscores"
+_BODY_ROOT = _FIXTURE_ROOT / "web_legacy" / "getscores" / "completion"
+_GETSCORES_EVIDENCE = load_getscores_completion_evidence(_MANIFEST_ROOT, _BODY_ROOT)
+_STATUS_CROSSWALK_BY_STATUS = {
+    entry.canonical_status: entry for entry in _GETSCORES_EVIDENCE.status_crosswalk
+}
+_WIRE_SHAPES_BY_ID = {shape.shape_id: shape for shape in _GETSCORES_EVIDENCE.response_shapes}
+_UNAVAILABLE_SHAPE = _WIRE_SHAPES_BY_ID[GetscoresWireShapeId.UNAVAILABLE]
 
 
 @contextmanager
@@ -83,23 +89,42 @@ def _test_env() -> Generator[None]:
 
 @dataclass(frozen=True)
 class _StatusFixture:
-    """Per-status seed data and expected wire output."""
+    """Canonical statusごとのsynthetic seedと期待wire valueを保持する.
+
+    Attributes:
+        name (str): Pytest parameter IDに使うsafeなfixture名.
+        rank_status (BeatmapRankStatus): Persistするofficial canonical status.
+        expected_wire_status (int | None): Crosswalk由来のgetscores wire value.
+        beatmap_id (int): Synthetic beatmap ID.
+        beatmapset_id (int): Synthetic beatmapset ID.
+        checksum (str): Synthetic lowercase MD5 checksum.
+        artist (str): Header display title用のartist.
+        title (str): Header display title用のtitle.
+        local_status_override (LocalBeatmapStatus | None): Persistするlocal override.
+
+    Notes:
+        expected_wire_statusはtyped crosswalkから取得する. Noneはunavailable
+        representationだけを表し, numeric statusを推測しない.
+    """
 
     name: str
     rank_status: BeatmapRankStatus
-    expected_wire_status: int
+    expected_wire_status: int | None
     beatmap_id: int
     beatmapset_id: int
     checksum: str
     artist: str
     title: str
+    local_status_override: LocalBeatmapStatus | None = None
 
 
 _FIXTURES = (
     _StatusFixture(
         name="ranked",
         rank_status=BeatmapRankStatus.RANKED,
-        expected_wire_status=2,
+        expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+            BeatmapRankStatus.RANKED
+        ].getscores.wire_status,
         beatmap_id=75,
         beatmapset_id=1,
         checksum="0123456789abcdef0123456789abcdef",
@@ -107,9 +132,23 @@ _FIXTURES = (
         title="Anisakis -sakuya-",
     ),
     _StatusFixture(
+        name="approved",
+        rank_status=BeatmapRankStatus.APPROVED,
+        expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+            BeatmapRankStatus.APPROVED
+        ].getscores.wire_status,
+        beatmap_id=350,
+        beatmapset_id=35,
+        checksum="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        artist="Ryu*",
+        title="Sakura Reflection",
+    ),
+    _StatusFixture(
         name="loved",
         rank_status=BeatmapRankStatus.LOVED,
-        expected_wire_status=5,
+        expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+            BeatmapRankStatus.LOVED
+        ].getscores.wire_status,
         beatmap_id=500,
         beatmapset_id=50,
         checksum="11111111111111111111111111111111",
@@ -119,7 +158,9 @@ _FIXTURES = (
     _StatusFixture(
         name="qualified",
         rank_status=BeatmapRankStatus.QUALIFIED,
-        expected_wire_status=4,
+        expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+            BeatmapRankStatus.QUALIFIED
+        ].getscores.wire_status,
         beatmap_id=1200,
         beatmapset_id=100,
         checksum="22222222222222222222222222222222",
@@ -129,7 +170,9 @@ _FIXTURES = (
     _StatusFixture(
         name="pending",
         rank_status=BeatmapRankStatus.PENDING,
-        expected_wire_status=0,
+        expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+            BeatmapRankStatus.PENDING
+        ].getscores.wire_status,
         beatmap_id=2500,
         beatmapset_id=200,
         checksum="33333333333333333333333333333333",
@@ -139,7 +182,9 @@ _FIXTURES = (
     _StatusFixture(
         name="wip",
         rank_status=BeatmapRankStatus.WIP,
-        expected_wire_status=0,
+        expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+            BeatmapRankStatus.WIP
+        ].getscores.wire_status,
         beatmap_id=3000,
         beatmapset_id=250,
         checksum="44444444444444444444444444444444",
@@ -149,7 +194,9 @@ _FIXTURES = (
     _StatusFixture(
         name="graveyard",
         rank_status=BeatmapRankStatus.GRAVEYARD,
-        expected_wire_status=0,
+        expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+            BeatmapRankStatus.GRAVEYARD
+        ].getscores.wire_status,
         beatmap_id=4500,
         beatmapset_id=400,
         checksum="55555555555555555555555555555555",
@@ -157,7 +204,48 @@ _FIXTURES = (
         title="Freedom Dive",
     ),
 )
+_UNAVAILABLE_FIXTURES = (
+    _StatusFixture(
+        name="not-submitted",
+        rank_status=BeatmapRankStatus.NOT_SUBMITTED,
+        expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+            BeatmapRankStatus.NOT_SUBMITTED
+        ].getscores.wire_status,
+        beatmap_id=5_000,
+        beatmapset_id=450,
+        checksum="66666666666666666666666666666666",
+        artist="Synthetic Artist",
+        title="Not Submitted",
+    ),
+    _StatusFixture(
+        name="unknown",
+        rank_status=BeatmapRankStatus.UNKNOWN,
+        expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+            BeatmapRankStatus.UNKNOWN
+        ].getscores.wire_status,
+        beatmap_id=5_500,
+        beatmapset_id=500,
+        checksum="77777777777777777777777777777777",
+        artist="Synthetic Artist",
+        title="Unknown Status",
+    ),
+)
+_LOCAL_OVERRIDE_FIXTURE = _StatusFixture(
+    name="pending-overridden-ranked",
+    rank_status=BeatmapRankStatus.PENDING,
+    expected_wire_status=_STATUS_CROSSWALK_BY_STATUS[
+        BeatmapRankStatus.RANKED
+    ].getscores.wire_status,
+    beatmap_id=6_000,
+    beatmapset_id=550,
+    checksum="88888888888888888888888888888888",
+    artist="Synthetic Artist",
+    title="Effective Ranked Override",
+    local_status_override=LocalBeatmapStatus.RANKED,
+)
 _FIXTURE_IDS = tuple(f.name for f in _FIXTURES)
+_UNAVAILABLE_FIXTURE_IDS = tuple(f.name for f in _UNAVAILABLE_FIXTURES)
+_ALL_STATUS_FIXTURES = (*_FIXTURES, *_UNAVAILABLE_FIXTURES)
 _BELOW_RANKED_FIXTURES = tuple(f for f in _FIXTURES if f.expected_wire_status == 0)
 _BELOW_RANKED_IDS = tuple(f.name for f in _BELOW_RANKED_FIXTURES)
 
@@ -199,6 +287,18 @@ async def _seed_user_with_session(app: Starlette) -> int:
 
 
 async def _seed_beatmap_for_fixture(app: Starlette, fixture: _StatusFixture) -> None:
+    """Status fixtureのbeatmapsetをin-memory persistenceへ保存する.
+
+    Args:
+        app (Starlette): Dependency graphを持つtest application.
+        fixture (_StatusFixture): 保存するstatusとsynthetic metadata.
+
+    Returns:
+        None: Beatmapsetを保存して処理を終了する.
+
+    Notes:
+        Dependency resolutionまたはUnit of Work commitの例外はそのまま伝播する.
+    """
     beatmap = Beatmap(
         id=fixture.beatmap_id,
         beatmapset_id=fixture.beatmapset_id,
@@ -217,12 +317,15 @@ async def _seed_beatmap_for_fixture(app: Starlette, fixture: _StatusFixture) -> 
         official_status=fixture.rank_status,
         official_status_source=BeatmapMetadataSource.OFFICIAL,
         official_status_verified=BeatmapSourceVerification.VERIFIED,
-        local_status_override=None,
+        local_status_override=fixture.local_status_override,
         metadata_fetch_state=BeatmapFetchState.FRESH,
         file_state=BeatmapFileState.MISSING,
         file_attachment=None,
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
+        local_status_override_changed_at=(
+            _NOW if fixture.local_status_override is not None else None
+        ),
     )
     beatmapset = BeatmapSet(
         id=fixture.beatmapset_id,
@@ -254,8 +357,21 @@ def _query_for_fixture(fixture: _StatusFixture) -> dict[str, str]:
     }
 
 
-def _exercise_endpoint(fixture: _StatusFixture) -> bytes:
-    """Boot the app, seed dependencies for a fixture, and return the body."""
+def _exercise_endpoint_response(
+    fixture: _StatusFixture,
+) -> tuple[int, dict[str, str], bytes]:
+    """Status fixtureをseedしてendpointのclient-visible responseを取得する.
+
+    Args:
+        fixture (_StatusFixture): Canonical statusとsynthetic beatmap seed.
+
+    Returns:
+        tuple[int, dict[str, str], bytes]: HTTP status, header mapping, exact body bytes.
+
+    Notes:
+        TestClientは`raise_server_exceptions=False`で起動するため, endpoint exceptionは
+        Python exceptionとして再送出せずHTTP responseとして返す.
+    """
     with _test_env():
         app = create_app()
         with TestClient(
@@ -273,9 +389,25 @@ def _exercise_endpoint(fixture: _StatusFixture) -> bytes:
                 "/web/osu-osz2-getscores.php",
                 params=_query_for_fixture(fixture),
             )
-            assert response.status_code == HTTPStatus.OK
-            assert response.headers["content-type"].startswith("text/plain")
-            return response.content
+            return response.status_code, dict(response.headers.items()), response.content
+
+
+def _exercise_endpoint(fixture: _StatusFixture) -> bytes:
+    """Status fixtureのsuccessful text response bodyを取得する.
+
+    Args:
+        fixture (_StatusFixture): Canonical statusとsynthetic beatmap seed.
+
+    Returns:
+        bytes: Getscores endpointのexact response body.
+
+    Raises:
+        AssertionError: HTTP statusまたはcontent typeがheader contractと異なる場合.
+    """
+    status_code, headers, body = _exercise_endpoint_response(fixture)
+    assert status_code == HTTPStatus.OK
+    assert headers["content-type"].startswith("text/plain")
+    return body
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +420,21 @@ class TestSubmittedStatusFixtures:
 
     @pytest.mark.parametrize("fixture", _FIXTURES, ids=_FIXTURE_IDS)
     def test_status_line_fields(self, fixture: _StatusFixture) -> None:
+        """Submitted statusのheader lineをtyped crosswalkへ照合する.
+
+        Args:
+            fixture (_StatusFixture): Wire representationを持つsubmitted status fixture.
+
+        Returns:
+            None: Statusとbeatmap identity fieldが期待値へ一致したことを示す.
+
+        Raises:
+            AssertionError: Crosswalk representationまたはheader fieldが異なる場合.
+        """
+        crosswalk_entry = _STATUS_CROSSWALK_BY_STATUS[fixture.rank_status]
+        assert crosswalk_entry.getscores.representation is StatusRepresentation.WIRE
+        assert fixture.expected_wire_status is not None
+        assert fixture.expected_wire_status == crosswalk_entry.getscores.wire_status
         body = _exercise_endpoint(fixture)
         first_line = body.split(b"\n")[0]
         parts = first_line.split(b"|")
@@ -336,6 +483,95 @@ class TestSubmittedStatusFixtures:
         assert lines[-3:] == [b"", b"", b""], (
             f"Expected two trailing blank section placeholders, got tail {lines[-3:]!r}"
         )
+
+
+def test_endpoint_status_fixtures_cover_crosswalk_once() -> None:
+    """Integration fixtureがcrosswalkのcanonical statusを重複なく網羅する.
+
+    Returns:
+        None: 全statusがsubmittedまたはunavailable fixtureへ一度だけ対応することを示す.
+
+    Raises:
+        AssertionError: Fixture statusの欠落, 重複, 余分なentryが存在する場合.
+    """
+    fixture_statuses = tuple(fixture.rank_status for fixture in _ALL_STATUS_FIXTURES)
+    crosswalk_statuses = tuple(_STATUS_CROSSWALK_BY_STATUS)
+
+    assert len(fixture_statuses) == len(crosswalk_statuses)
+    assert len(set(fixture_statuses)) == len(fixture_statuses)
+    assert set(fixture_statuses) == set(crosswalk_statuses)
+
+
+class TestUnavailableStatusFixtures:
+    """Unsupported canonical statusをexact unavailable responseへ対応付ける.
+
+    Notes:
+        Crosswalkのunavailable representationをnumeric headerへ変換しない.
+    """
+
+    @pytest.mark.parametrize(
+        "fixture",
+        _UNAVAILABLE_FIXTURES,
+        ids=_UNAVAILABLE_FIXTURE_IDS,
+    )
+    def test_status_returns_exact_unavailable_response(
+        self,
+        fixture: _StatusFixture,
+    ) -> None:
+        """NotSubmittedとUnknownのstatus, header, bodyをexact fixtureへ照合する.
+
+        Args:
+            fixture (_StatusFixture): Unavailable representationを持つstatus fixture.
+
+        Returns:
+            None: Runtime responseがcanonical unavailable shapeと一致したことを示す.
+
+        Raises:
+            AssertionError: Crosswalk representationまたはresponse shapeが異なる場合.
+        """
+        crosswalk_entry = _STATUS_CROSSWALK_BY_STATUS[fixture.rank_status]
+        assert crosswalk_entry.getscores.representation is StatusRepresentation.UNAVAILABLE
+        assert crosswalk_entry.getscores.wire_status is None
+        assert fixture.expected_wire_status is None
+
+        status_code, headers, body = _exercise_endpoint_response(fixture)
+
+        assert status_code == _UNAVAILABLE_SHAPE.http_status
+        for header_name, expected_value in _UNAVAILABLE_SHAPE.required_headers.items():
+            assert headers[header_name] == expected_value
+        for header_name in _UNAVAILABLE_SHAPE.absent_headers:
+            assert header_name not in headers
+        assert body == _UNAVAILABLE_SHAPE.read_body_bytes()
+        assert body == b"-1|false"
+
+
+class TestEffectiveLocalStatusOverride:
+    """Persisted local override適用後のeffective statusをwireへ変換する.
+
+    Notes:
+        Official statusではなくpersistenceから復元したeffective statusを入力にする.
+    """
+
+    def test_persisted_override_selects_effective_wire_status(self) -> None:
+        """Pending beatmapのRanked overrideがRanked wire valueを返すことを検証する.
+
+        Returns:
+            None: Persistence経由のeffective statusがheader statusへ反映されたことを示す.
+
+        Raises:
+            AssertionError: Official statusが選択された場合, またはeffective wire
+                valueがRankedの値と異なる場合.
+        """
+        official_entry = _STATUS_CROSSWALK_BY_STATUS[BeatmapRankStatus.PENDING]
+        effective_entry = _STATUS_CROSSWALK_BY_STATUS[BeatmapRankStatus.RANKED]
+        assert official_entry.getscores.wire_status == 0
+        assert effective_entry.getscores.wire_status == 2
+        assert _LOCAL_OVERRIDE_FIXTURE.expected_wire_status == 2
+
+        body = _exercise_endpoint(_LOCAL_OVERRIDE_FIXTURE)
+        first_line = body.split(b"\n", maxsplit=1)[0]
+
+        assert int(first_line.split(b"|", maxsplit=1)[0]) == 2
 
 
 # ---------------------------------------------------------------------------

@@ -88,7 +88,7 @@
   - _Requirements: 1.7, 3.8, 5.1, 5.2, 5.3, 5.4, 5.5_
   - _Boundary: Runtime Contract Comparison: Malformed Diagnostics_
 
-- [ ] 2.5 (P) Status mapperとcrosswalkのruntime contractを検証する
+- [x] 2.5 (P) Status mapperとcrosswalkのruntime contractを検証する
   - 先にcrosswalkをinputとしてgetscores mapperのwire valueとunsupported representationを検証するunit / integration testを追加する。
   - Effective local override後のstatus、NotSubmitted / Unknownのunavailable、全confirmed getscores valueを照合する。
   - Beatmap info側はevidence-onlyとして扱い、endpoint-specific mapper ownershipとshared numeric mapper禁止を検証する。
@@ -163,3 +163,4 @@
 - 2.2: Auth / unavailable / updateのshort responseはscenario builderからcanonical status / headers / body / terminal LFへ一致した。Metadata preparationとfile warmupの例外seam到達を各1回assertし、選択済みupdate / unavailable bodyが維持されるためproduction correctionは不要だった。
 - 2.3: 12 selection casesをcatalog / scenario builderからparser、category mapper、endpointへ接続した。Global / Local / Selected Mods / Friends / Country / song select / unsupported selection / no-scoreがexpected category、PB、2 rowsまたはheader-onlyへ一致し、詳細な既存rank / mod coverageも保持した。
 - 2.4: 8 malformed caseと2 invariance controlをcatalogからparser / endpointへ接続し、warning集合、provisional state、fallback shape、PB / rows、diagnostic redactionを固定した。`a`はinteger-backed booleanとして解析し、non-integerを`INVALID_ANTI_CHEAT_SIGNAL` + false fallbackへ限定修正した判断をTask 4.1のDecision Logへ引き継ぐ。
+- 2.5: Typed crosswalkの全9 statusをruntime mapperとendpointへ照合し、Approved header、NotSubmitted / Unknownのexact unavailable、persisted local overrideを固定した。ASTでmodule-local `_STATUS_TO_WIRE`のdirect lookupを検証し、Approved=`3`のprovenance再分類はTask 4.1へ残した。
