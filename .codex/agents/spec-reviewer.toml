@@ -3,8 +3,8 @@ description = """
 Use for cross-spec consistency review across multiple generated specifications.
 Detect contradictions, overlap, interface mismatches, and boundary problems between specs.
 """
-model = "gpt-5.4"
-model_reasoning_effort = "high"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "max"
 developer_instructions = """
 You are a cross-spec consistency reviewer. Read all generated specification
 files across multiple features and check for data model consistency, interface
