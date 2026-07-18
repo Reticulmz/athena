@@ -58,7 +58,7 @@
   - _Boundary: BeatmapInfoGoldenFixtureVerification_
 
 - [ ] 5. Fixture evidenceをcompatibility inventoryへ統合して検証する
-- [ ] 5.1 Fixture-backed structとMissing runtimeの状態を同期する
+- [x] 5.1 Fixture-backed structとMissing runtimeの状態を同期する
   - StableGrade、BeatmapInfoRequest、BeatmapInfo、BeatmapInfoReplyをFixture-backedとし、production contractとfocused testをexact evidenceとして記録する
   - C2S 68とS2C 69はMissingのまま保持し、handler / builder / runtime gapを残したうえでfixture blockerだけをnoneへ変更する
   - #17 blocker rollupからC2S 68、S2C 69、StableGrade、BeatmapInfo familyの解消済みfixture entriesを除去する
