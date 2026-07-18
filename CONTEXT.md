@@ -471,7 +471,7 @@ Stable client の `BeatmapInfo` などで使う wire 固有の grade classificat
 _Avoid_: Canonical Score Grade, raw grade byte, grade projection
 
 ### Beatmap Info Struct Fixture
-C2S `BEATMAP_INFO` と S2C `BEATMAP_INFO_REPLY` が使う現行Target Stable Clientの4-Grade binary struct layoutをexact payload bytesで固定するStable Compatibility Evidence。Target captureがない場合は確認済みprotocol layoutと複数の固定revisionの互換実装からAthena encoderとは独立に導出し、旧client layout、packet handler、reply builder、metadata lookup、HTTP beatmap info rowとは分ける。
+C2S `BEATMAP_INFO` と S2C `BEATMAP_INFO_REPLY` が使う現行Target Stable Clientの4-Grade binary struct layoutをexact payload bytesで固定するStable Compatibility Evidence。Target captureがない場合は確認済みprotocol layoutと複数の固定revisionの互換実装からAthena encoderとは独立に導出し、旧client layout、packet handler、reply builder、metadata lookup、HTTP beatmap info rowとは分ける。固定revisionごとのpositive / supplemental / non-evidence区分とfield単位の導出先は`.kiro/specs/beatmap-info-struct-fixtures/research.md`を参照する。Target captureを入手した場合はfixtureと比較して一致または差異を記録してからevidence statusを更新し、差異があればfixtureまたは対象client範囲を再評価する。
 _Avoid_: HTTP beatmap info fixture, runtime beatmap info flow, generated round-trip bytes
 
 ### Getscores Evidence-Limited Correction

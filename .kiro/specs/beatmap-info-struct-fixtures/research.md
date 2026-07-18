@@ -80,6 +80,29 @@
   - negative countやtruncated payloadのruntime policyはIssue #15へ残す
   - sourceを確認できなかった実装名をprovenanceの肯定材料として列挙しない
 
+### Fixture source classificationとcanonical field trace
+
+次表は、固定revisionをfixture authorityへ使える範囲で分類する。`positive`は現行4-Grade binary layoutのfield順序またはindex semanticsを実装で確認できた根拠、`supplemental`は限定された意味だけを補強する根拠、`non-evidence`はBeatmapInfo binary layoutを確認できなかったため肯定根拠にしないsourceである。
+
+| Source | Fixed revision | Classification | Fixture authorityへの利用範囲 |
+| --- | --- | --- | --- |
+| Lekuruu `bancho-documentation` wiki | `7c177543497beacf443b6fecd3f52045c6cf1c5c` | primary | 現行4-Grade layout、signed field型、grade順序、request index semanticsのauthority |
+| Lekuruu/chio.py | `9d2391a5b2d3610d72e2e794d0749a00329286c1` | positive | request / reply binary flowとrow field順序のcross-check |
+| osuTitanic/titanic | `215bb180bcb00d6345639f88a283b041c314d938` | provenance | `anchor` / `deck` submodule revisionを固定する親revision。binary layoutの単独authorityにはしない |
+| osuTitanic/anchor | `b19d14ccdcdf157026c257586faf49bf4542971e` | positive | request / reply binary flow、ID request rowの`request_index=-1`のcross-check |
+| osuAkatsuki/bancho.py | `0651b54c66daa839c1bb3998e4f9a8d1173e144d` | supplemental | 廃止済み現行flowに残る旧serializerのrow field順序だけをcross-check。現行runtimeの根拠にはしない |
+| osuTitanic/deck | `a81d697cbc2d65524829f2e9a903bf0f55684322` | supplemental | HTTP側のindex semanticsだけを補強。HTTP grade順序をbinary serializerの根拠にはしない |
+| osuRipple/lets | `98e9e07faa48398fbccf17251650011e36bdf6e4` | non-evidence | BeatmapInfo binary実装を確認できなかったため、layout authorityに使わない |
+| osuRipple/pep.py | `9754e583ca1688ad33d2eaf695f128c3d3d31068` | non-evidence | BeatmapInfo binary実装を確認できなかったため、layout authorityに使わない |
+
+canonical fixtureの`alpha.osu`、`beta.osu`、ID、MD5、grade値はfield swapとcount境界を検出するためAthenaが選ぶsynthetic test dataであり、Target captureやreference implementationの実値を主張しない。各payload segmentのlayoutは次の固定revision evidenceへ追跡する。
+
+- requestの`filename_count`、filename list、`id_count`、ID list: primary wikiをauthorityとし、`chio.py`と`anchor`のbinary flowでcross-checkする。
+- replyのcount、row field順序、`osu` / `fruits` / `taiko` / `mania` grade順: primary wikiをauthorityとし、`chio.py`と`anchor`でcross-checkし、Akatsuki旧serializerはrow順序の補助確認に限定する。
+- filename由来rowの0以上indexとID由来rowの`-1`: primary wikiと`anchor`でcross-checkする。
+- countのsignedness: primary wikiの`sInt`を採用する。`chio.py`のunsigned readは非負canonical countのbytesと同一であるため、型semanticのauthorityにはしない。
+- golden bytesは上記layoutをfield単位で手動導出する。Athena production serializer、pack output、fixture generation scriptは生成元にしない。
+
 ### Target packet captureの扱い
 
 - **Context**: 実client captureがない状態でfixtureを確定できるか判断する必要がある
@@ -92,7 +115,8 @@
   - Athena自身のencoder outputをgolden生成元にしなければ、reference-backed fixtureとして自己一致を避けられる
 - **Implications**:
   - capture未取得を明示したうえで実装を進める
-  - capture入手時はfixtureと比較し、矛盾があればfixtureまたはTarget client範囲を再評価する
+  - capture入手時はfixtureと比較し、一致または差異を記録してからevidence statusを更新する
+  - 差異があれば黙って受理せず、fixtureまたはTarget client範囲を再評価する
 
 ## Architecture Pattern Evaluation
 

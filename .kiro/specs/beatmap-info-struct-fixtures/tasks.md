@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. Golden fixtureのauthorityとTarget client境界を実装前提として固定する
-- [ ] 1.1 Fixed revision evidenceとTarget client境界を検証する
+- [x] 1.1 Fixed revision evidenceとTarget client境界を検証する
   - Lekuruu wikiと調査対象repositoryについてrepository名、固定revision、確認したlayout / semanticsを照合する
   - Binary implementationを確認できたpositive evidenceと、BeatmapInfo実装を確認できなかったsourceを区別して記録する
   - 現行4-Grade layoutだけを対象とし、旧client layout、HTTP grade order、runtime behaviorをfixture authorityへ混在させない
