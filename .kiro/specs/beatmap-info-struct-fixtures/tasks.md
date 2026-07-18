@@ -22,7 +22,7 @@
   - _Boundary: StableGradeCompatibilityEnum_
 
 - [ ] 3. 現行4-Grade beatmap info wire contractを方向別に定義する
-- [ ] 3.1 (P) Filenameとbeatmap IDを混在できるC2S request contractを追加する
+- [x] 3.1 (P) Filenameとbeatmap IDを混在できるC2S request contractを追加する
   - signed 32-bit filename count、BanchoString filename list、signed 32-bit ID count、signed 32-bit ID listの順序をlittle-endian contractとして表す
   - 各listの入力順序を保持し、countが0の場合も後続fieldの境界またはpayload終端を正しく表せるようにする
   - request contractを既存C2S package interfaceから利用可能にする
