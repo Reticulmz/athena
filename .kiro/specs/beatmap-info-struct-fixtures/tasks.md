@@ -70,7 +70,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 7.1, 7.2, 7.3, 7.4, 7.5, 8.1, 8.2, 8.3_
   - _Boundary: BeatmapInfoCompatibilityEvidenceDocs_
 
-- [ ] 5.2 全boundaryを横断してimplementation readinessを検証する
+- [x] 5.2 全boundaryを横断してimplementation readinessを検証する
   - StableGrade value testsとbeatmap info fixture testsを実行し、canonical / empty casesが成功することを確認する
   - Worktreeのproject toolchainはNix development environment経由で実行し、Ruff format / lint、basedpyright strict、import-linterでdocstring、型安全性、domainからtransportへの依存方向を確認する
   - 全file対象のpre-commit hook suiteを実行し、自動formatが入った場合は差分を再確認する

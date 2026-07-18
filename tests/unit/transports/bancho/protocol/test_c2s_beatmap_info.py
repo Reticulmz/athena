@@ -10,6 +10,23 @@ from osu_server.transports.stable.bancho.protocol.types import BanchoString
 
 
 def test_beatmap_info_request_round_trips_mixed_collections_in_wire_order() -> None:
+    """mixed filename / beatmap ID request の wire 順序を構造的に検証する.
+
+    Returns:
+        None: pytest assertion による検証結果を表す.
+
+    Raises:
+        AssertionError: filename / beatmap ID collection の count, input order, または
+            field layout が contract と一致しない場合.
+
+    Notes:
+        独立 golden payload との比較ではなく, struct が collection order と field
+        boundary を保持することを検証する.
+
+    Constraints:
+        filename 2件と beatmap ID 2件の mixed-order case だけを対象とし, malformed
+        payload や runtime policy は検証しない.
+    """
     request = BeatmapInfoRequest(
         filename_count=2,
         filenames=["artist - title [normal].osu", "artist - title [hard].osu"],
@@ -36,6 +53,23 @@ def test_beatmap_info_request_round_trips_mixed_collections_in_wire_order() -> N
 
 
 def test_beatmap_info_request_round_trips_empty_collections() -> None:
+    """empty collection request の count field 境界を構造的に検証する.
+
+    Returns:
+        None: pytest assertion による検証結果を表す.
+
+    Raises:
+        AssertionError: empty collection の count field または復元結果が contract と
+            一致しない場合.
+
+    Notes:
+        独立 golden payload との比較ではなく, struct の empty collection boundary を
+        検証する.
+
+    Constraints:
+        filename_count と id_count がともに 0 の case だけを対象とし, malformed
+        payload や runtime policy は検証しない.
+    """
     request = BeatmapInfoRequest(
         filename_count=0,
         filenames=[],
