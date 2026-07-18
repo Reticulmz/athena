@@ -20,6 +20,18 @@
 | import 規則 | import-linter | レイヤー違反検出 |
 | 環境構築 | Nix flake + process-compose | 設定済み |
 
+## Docstring品質
+
+Python docstringの意味規約は[AGENTS.md](../../AGENTS.md)だけを正本とする。
+`./scripts/ci.sh docstrings`はRuff `D`でGoogle Styleの存在と形式を、interrogateでdefinitionの
+coverageを、pydoclintでsectionとsignatureの整合を検査する。3 toolは同じ検査を重複して
+実行するものではなく、別々の品質信号を担当する。
+
+Sphinxのdependency、config、theme、generated artifact、公開workflowはAthenaでは所有せず、
+external documentation repositoryの責務とする。Sphinx autodocはmoduleをimportするため、その
+repositoryがAthenaと必要dependencyをinstallし、runtime environmentと対象moduleを選択する。
+private、`__init__`、dunderを生成する場合のinclude optionもexternal repositoryが設定する。
+
 ## 追加決定事項
 
 | 項目 | 選定 | 理由 |

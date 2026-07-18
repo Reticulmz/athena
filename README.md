@@ -72,7 +72,8 @@ See [docs/architecture.md](docs/architecture.md) for the full boundary contract.
 - Valkey with `valkey-glide` for cache, state, queue, and pub/sub infrastructure
 - taskiq and taskiq-redis for background jobs
 - Dishka for dependency composition
-- ruff, basedpyright strict mode, pytest, and import-linter for quality gates
+- ruff, interrogate, pydoclint, basedpyright strict mode, pytest, and import-linter
+  for quality gates
 
 ## Local Development
 
@@ -122,6 +123,23 @@ Run the local quality gate:
 ```bash
 ./scripts/ci.sh quality
 ```
+
+Run only the docstring quality gate:
+
+```bash
+./scripts/ci.sh docstrings
+```
+
+The canonical docstring standard is [AGENTS.md](AGENTS.md). Ruff `D` checks Google
+Style presence and format, interrogate checks definition coverage, and pydoclint
+checks section and signature consistency. These tools complement one another; the
+standard itself is not duplicated here.
+
+Sphinx configuration, themes, generated output, and publishing belong to an
+external documentation repository. Because Sphinx autodoc imports modules, that
+repository owns Athena dependency installation, runtime environment, and module
+selection. It can opt in to private, `__init__`, and dunder members when generating
+their API reference.
 
 Run the test gate:
 
@@ -224,4 +242,5 @@ performed by the user on GitHub Web UI.
   packet and endpoint compatibility inventory.
 - [docs/stable-compatibility-guide.md](docs/stable-compatibility-guide.md): stable
   request, response, processing, and persistence guide.
-- [AGENTS.md](AGENTS.md): coding-agent instructions, conventions, and workflow rules.
+- [AGENTS.md](AGENTS.md): coding-agent instructions, workflow rules, and the
+  canonical Python docstring standard.

@@ -121,3 +121,17 @@ Do not add compatibility facades for deprecated service, repository, domain, or 
 Architecture documentation and mechanical validation must describe the same boundaries. `import-linter` contracts in `pyproject.toml` enforce dependency direction and forbidden imports. Tests cover provider replacement, startup failure, Unit of Work commit/rollback behavior, command/query separation, transport-family isolation, job adapter thinness, and deprecated path detection for finalized packages.
 
 The local quality gate is `./scripts/ci.sh quality`, which runs ruff formatting checks, ruff linting, basedpyright, and import-linter. The test gate is `./scripts/ci.sh test`. A refactor phase is incomplete if the guide, validation rules, and package layout disagree.
+
+### Docstring Quality Contract
+
+[AGENTS.md](../AGENTS.md) is the sole canonical standard for Python docstrings.
+`./scripts/ci.sh docstrings` runs Ruff `D` for Google Style presence and format,
+interrogate for definition coverage, and pydoclint for section and signature
+consistency. The architecture guide records the gate boundary only and does not
+restate the authoring rules.
+
+Sphinx configuration, themes, generated output, and publishing are owned by an
+external documentation repository. Sphinx autodoc imports Athena modules, so that
+repository must install Athena and its required dependencies, supply the runtime
+environment, and select import-safe modules. It may enable private, `__init__`, and
+dunder member inclusion when its generated API reference needs them.
