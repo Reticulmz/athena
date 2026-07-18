@@ -1,5 +1,8 @@
 """C2S (client-to-server) packet payload definitions."""
 
+from osu_server.transports.stable.bancho.protocol.c2s.beatmap_info import (
+    BeatmapInfoRequest,
+)
 from osu_server.transports.stable.bancho.protocol.c2s.chat import (
     ChannelNamePayload,
     ChatMessagePayload,
@@ -35,6 +38,7 @@ from osu_server.transports.stable.bancho.protocol.c2s.status import (
 )
 
 __all__ = (
+    "BeatmapInfoRequest",
     "ChannelNamePayload",
     "ChatMessagePayload",
     "FriendOnlyDmsPayload",

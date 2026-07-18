@@ -1,5 +1,6 @@
 """Stable client compatibility domain package."""
 
+from osu_server.domain.compatibility.stable.grade import StableGrade
 from osu_server.domain.compatibility.stable.mode import StableMode
 from osu_server.domain.compatibility.stable.presence_filter import StablePresenceFilter
 from osu_server.domain.compatibility.stable.replay_download import (
@@ -22,6 +23,7 @@ __all__ = [
     "ReplayDownloadBranch",
     "ReplayDownloadResponseBody",
     "ReplayDownloadStoredBlobObject",
+    "StableGrade",
     "StableMode",
     "StablePresenceFilter",
     "StableStatus",
