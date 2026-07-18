@@ -45,7 +45,7 @@
   - _Boundary: BeatmapInfoRowReplyWireStruct_
 
 - [ ] 4. 独立golden payloadでrequestとreplyの双方向contractを固定する
-- [ ] 4.1 独立golden payloadでrequestとreplyの双方向contractを固定する
+- [x] 4.1 独立golden payloadでrequestとreplyの双方向contractを固定する
   - Fixed revision evidenceからfield単位で導出したrequest / reply bytesをtest内の固定literalとして記述し、production pack outputやgeneration scriptを生成元にしない
   - alpha.osuとbeta.osu、ID 12345と67890を含むmixed requestについて、encodeのbyte-for-byte一致とdecode後のcount / 順序を検証する
   - filename index 1のrowとID index -1のrowを含む2-row replyについて、non-zero identifiers / ranked status / 32文字MD5を検証する
