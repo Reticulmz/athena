@@ -1,0 +1,83 @@
+# Implementation Plan
+
+- [ ] 1. Golden fixtureのauthorityとTarget client境界を実装前提として固定する
+- [ ] 1.1 Fixed revision evidenceとTarget client境界を検証する
+  - Lekuruu wikiと調査対象repositoryについてrepository名、固定revision、確認したlayout / semanticsを照合する
+  - Binary implementationを確認できたpositive evidenceと、BeatmapInfo実装を確認できなかったsourceを区別して記録する
+  - 現行4-Grade layoutだけを対象とし、旧client layout、HTTP grade order、runtime behaviorをfixture authorityへ混在させない
+  - Target capture未取得を明示し、capture入手時のcomparison、差異記録、fixtureまたはTarget範囲の再評価条件を維持する
+  - Canonical request / reply valuesがproduction serializerではなくfixed revision evidenceからfield単位で追跡できることを確認する
+  - 完了条件: repositoryとrevision、positive / non-evidence区分、current-only policy、capture revalidation policy、canonical valuesの由来を実装者がresearch evidenceから検証できる
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 6.1, 7.1, 7.2, 7.3, 7.4, 7.5_
+  - _Boundary: BeatmapInfoCompatibilityEvidenceDocs_
+
+- [ ] 2. Stable client固有のgrade vocabularyを確立する
+- [ ] 2.1 Stable client固有のgrade vocabularyを確立する
+  - XHからNまでの10値をstable compatibility専用のclosed setとして追加し、packageの公開語彙から利用可能にする
+  - core score grade、grade集計、projectionへの依存や変換処理は追加しない
+  - 全memberのnameとwire valueを完全一致で検証し、aliasや追加memberが混入した場合に失敗するunit coverageを追加する
+  - 新規公開classのdocstringは日本語Google Styleでwire meaning、core gradeとの境界、制約を説明する
+  - 完了条件: compatibility packageからStableGradeをimportでき、全10値のunit testsが成功する
+  - _Requirements: 2.1, 2.2, 2.3, 2.4_
+  - _Boundary: StableGradeCompatibilityEnum_
+
+- [ ] 3. 現行4-Grade beatmap info wire contractを方向別に定義する
+- [ ] 3.1 (P) Filenameとbeatmap IDを混在できるC2S request contractを追加する
+  - signed 32-bit filename count、BanchoString filename list、signed 32-bit ID count、signed 32-bit ID listの順序をlittle-endian contractとして表す
+  - 各listの入力順序を保持し、countが0の場合も後続fieldの境界またはpayload終端を正しく表せるようにする
+  - request contractを既存C2S package interfaceから利用可能にする
+  - packet-level parser、maximum count、negative count、trailing bytes policyは追加しない
+  - 新規公開structのdocstringは日本語Google Styleでfield、count invariant、pack / unpack error、制約を説明する
+  - 完了条件: filenameとIDを含むrepresentative valueをCaterpillarでpack / unpackでき、型検査から利用可能なC2S contractになる
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+  - _Boundary: BeatmapInfoRequestWireStruct_
+
+- [ ] 3.2 (P) BeatmapInfo rowとcounted S2C reply contractを追加する
+  - signed request index、3個のsigned identifier、signed ranked byte、osu / fruits / taiko / maniaの4 grades、BanchoString MD5を確定順序で表す
+  - filename由来rowでは0以上のindex、ID由来rowでは-1を保持できるsigned 16-bit contractにする
+  - 4 grade fieldはStableGradeをstrict 1-byte enumとしてencode / decodeし、field順序を型定義上で固定する
+  - replyはsigned 32-bit countとBeatmapInfo rowsを保持し、row順序とempty collectionを表せるようにする
+  - packet builder、metadata lookup、index妥当性検証、MD5内容検証は追加しない
+  - 新規公開structのdocstringは日本語Google Styleで全field、例外、制約を説明する
+  - 完了条件: 2 rowsを持つrepresentative replyをCaterpillarでpack / unpackでき、StableGrade membersがtyped valuesとして復元される
+  - _Depends: 2.1_
+  - _Requirements: 2.2, 2.3, 4.1, 4.2, 4.3, 4.4, 4.5, 5.1, 5.2, 5.3, 5.4_
+  - _Boundary: BeatmapInfoRowReplyWireStruct_
+
+- [ ] 4. 独立golden payloadでrequestとreplyの双方向contractを固定する
+- [ ] 4.1 独立golden payloadでrequestとreplyの双方向contractを固定する
+  - Fixed revision evidenceからfield単位で導出したrequest / reply bytesをtest内の固定literalとして記述し、production pack outputやgeneration scriptを生成元にしない
+  - alpha.osuとbeta.osu、ID 12345と67890を含むmixed requestについて、encodeのbyte-for-byte一致とdecode後のcount / 順序を検証する
+  - filename index 1のrowとID index -1のrowを含む2-row replyについて、non-zero identifiers / ranked status / 32文字MD5を検証する
+  - 各rowのosu / fruits / taiko / maniaに相互に異なるStableGradeを設定し、field swapを検出できるassertionを追加する
+  - requestの0 filenames / 0 IDsを8 zero bytes、replyの0 rowsを4 zero bytesとしてcanonical multi-entry caseから分離する
+  - test moduleの日本語docstringとfield segment commentsにreference-backed evidence、現行4-Grade限定、Target capture未取得、production serializer非依存を記録する
+  - 完了条件: StableGrade、request、row、replyのfocused testsがすべて成功し、固定bytesからtyped valuesを完全復元できる
+  - _Depends: 1.1, 3.1, 3.2_
+  - _Requirements: 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5, 5.1, 5.2, 5.3, 5.4, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9_
+  - _Boundary: BeatmapInfoGoldenFixtureVerification_
+
+- [ ] 5. Fixture evidenceをcompatibility inventoryへ統合して検証する
+- [ ] 5.1 Fixture-backed structとMissing runtimeの状態を同期する
+  - StableGrade、BeatmapInfoRequest、BeatmapInfo、BeatmapInfoReplyをFixture-backedとし、production contractとfocused testをexact evidenceとして記録する
+  - C2S 68とS2C 69はMissingのまま保持し、handler / builder / runtime gapを残したうえでfixture blockerだけをnoneへ変更する
+  - #17 blocker rollupからC2S 68、S2C 69、StableGrade、BeatmapInfo familyの解消済みfixture entriesを除去する
+  - audit rows、inventory rows、blocker rollupの全出現を確認し、同一概念のstatusとevidenceを矛盾させない
+  - Researchとcontext vocabularyをfixture結果と照合し、固定revision、positive / non-evidence sourceの区別、current-only policy、Target capture revalidation policyが不足または陳腐化していれば同期する
+  - ContextのStable enum file placementにgrade moduleを含め、fixture namingにbeatmap info fixture testを含める
+  - 完了条件: compatibility inventoryが4 structをFixture-backed、2 packet runtimesをMissingかつfixture blocker noneとして一貫して示し、Requirement 7.1-7.5のprovenance / capture policyとcontextのfile placement / fixture namingを確認できる
+  - _Depends: 4.1_
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 7.1, 7.2, 7.3, 7.4, 7.5, 8.1, 8.2, 8.3_
+  - _Boundary: BeatmapInfoCompatibilityEvidenceDocs_
+
+- [ ] 5.2 全boundaryを横断してimplementation readinessを検証する
+  - StableGrade value testsとbeatmap info fixture testsを実行し、canonical / empty casesが成功することを確認する
+  - Worktreeのproject toolchainはNix development environment経由で実行し、Ruff format / lint、basedpyright strict、import-linterでdocstring、型安全性、domainからtransportへの依存方向を確認する
+  - 全file対象のpre-commit hook suiteを実行し、自動formatが入った場合は差分を再確認する
+  - Project quality gateとtest gateを実行し、既存stable protocol behaviorにregressionがないことを確認する
+  - Final diffをreviewし、handler、builder、metadata lookup、HTTP endpoint、legacy layout branch、malformed runtime policyが追加されていないことを確認する
+  - Target captureが未取得のままなら未確認状態を維持し、推測したclient behaviorをfixtureへ追加しない
+  - 完了条件: relevant testsとproject gatesがすべて成功し、design boundary外のproduction変更がdiffに存在しない
+  - _Depends: 5.1_
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 7.3, 7.4, 7.5, 8.1, 8.2, 8.3_
+  - _Boundary: StableGradeCompatibilityEnum, BeatmapInfoRequestWireStruct, BeatmapInfoRowReplyWireStruct, BeatmapInfoGoldenFixtureVerification, BeatmapInfoCompatibilityEvidenceDocs_
