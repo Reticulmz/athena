@@ -12,7 +12,7 @@
   - _Boundary: BeatmapInfoCompatibilityEvidenceDocs_
 
 - [ ] 2. Stable client固有のgrade vocabularyを確立する
-- [ ] 2.1 Stable client固有のgrade vocabularyを確立する
+- [x] 2.1 Stable client固有のgrade vocabularyを確立する
   - XHからNまでの10値をstable compatibility専用のclosed setとして追加し、packageの公開語彙から利用可能にする
   - core score grade、grade集計、projectionへの依存や変換処理は追加しない
   - 全memberのnameとwire valueを完全一致で検証し、aliasや追加memberが混入した場合に失敗するunit coverageを追加する
