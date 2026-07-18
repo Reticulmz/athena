@@ -83,7 +83,7 @@ If multi-agent is not available, execute features in the wave sequentially.
 
 ## Step 4: Cross-Spec Review
 
-After all waves complete, spawn a **single sub-agent** for cross-spec consistency review. Use the `spec-reviewer` custom agent if available (configured with `model = "gpt-5.4"` and `model_reasoning_effort = "high"` in `.codex/agents/spec-reviewer.toml`). This is the highest-value quality gate -- it catches issues that per-spec review gates cannot.
+After all waves complete, spawn a **single sub-agent** for cross-spec consistency review. Use the `spec-reviewer` custom agent if available. Its model and reasoning configuration is defined solely in `.codex/agents/spec-reviewer.toml`. This is the highest-value quality gate -- it catches issues that per-spec review gates cannot.
 
 **Sub-agent task**:
 
