@@ -32,7 +32,7 @@
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
   - _Boundary: BeatmapInfoRequestWireStruct_
 
-- [ ] 3.2 (P) BeatmapInfo rowとcounted S2C reply contractを追加する
+- [x] 3.2 (P) BeatmapInfo rowとcounted S2C reply contractを追加する
   - signed request index、3個のsigned identifier、signed ranked byte、osu / fruits / taiko / maniaの4 grades、BanchoString MD5を確定順序で表す
   - filename由来rowでは0以上のindex、ID由来rowでは-1を保持できるsigned 16-bit contractにする
   - 4 grade fieldはStableGradeをstrict 1-byte enumとしてencode / decodeし、field順序を型定義上で固定する
