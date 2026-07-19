@@ -4,8 +4,9 @@
 
 本featureは、Athenaのfirst-party Python全体へ日本語Google Style docstringを整備し、
 public/privateを問わない完全性とsection内容の整合を継続的な品質ゲートへ組み込む。
-`AGENTS.md`を品質基準の正本とし、Ruff `D`、`interrogate`、`pydoclint`がそれぞれ形式、
-完全性、signatureとの内容整合を検証する。
+`AGENTS.md`を品質基準の正本とし、Ruff `D`と`interrogate`がそれぞれGoogle Styleの形式と
+全definitionの完全性を検証する。Args/Returns/Yieldsなどの型と意味の正しさは、canonical standard、
+directory taskの手動review、Sphinx/Napoleon readiness PoCで確認する。
 
 設計時点の対象は追跡される839件のfirst-party `.py`であり、実装中に追加するPython fileも
 同じscope contractへ含める。既存の実行時責務やlayer構造は変更せず、docstring、
@@ -17,7 +18,7 @@ Typer helpと既存`__doc__` assertionはdocstringがruntime-observableである
 
 - 全対象module/class/function/methodに日本語Google Style docstringを設ける。
 - private、nested、dunder、test、fixtureを含むdocstring completenessを100%にする。
-- Ruff `D`違反と`pydoclint`違反を0件にし、baselineやignoreなしで将来の後退を拒否する。
+- Ruff `D`違反を0件、`interrogate` coverageを100%にし、baselineやignoreなしで将来の後退を拒否する。
 - ローカル、pre-commit、CIが同じuv lock済みtoolchainと対象scopeを使う。
 - 別repositoryからSphinx/NapoleonでAPI referenceを生成できるsource品質を持つ。
 
@@ -36,7 +37,7 @@ Typer helpと既存`__doc__` assertionはdocstringがruntime-observableである
 
 - `AGENTS.md`に記載するPython docstringのcanonical standard。
 - first-party Python scopeと、対象となるdefinition分類。
-- Ruff `D`、`interrogate`、`pydoclint`の設定とdev dependency。
+- Ruff `D`と`interrogate`の設定とdev dependency。
 - `./scripts/ci.sh docstrings`および既存`quality`へのdocstring gate統合。
 - 全対象Python定義のdocstring整備とruntime-observable docstringの互換性保護。
 - 別documentation repositoryへ渡すSphinx/Napoleon readiness contractと一時PoC evidence。
@@ -50,12 +51,14 @@ Typer helpと既存`__doc__` assertionはdocstringがruntime-observableである
 - Python以外のcomment、README本文、protocol documentを網羅的に書き直す作業。
 - Sphinx config、API page selection、theme、HTML/PDF、hosting、release lifecycle。
 - BasedPyright suppressionの原因分析、stub/fake/protocol整備、既存抑制の削除。
+- `typing.Annotated` metadataをraw type stringとして比較するpydoclint gate。公式に基底型比較を
+  支持するrelease/configが確認されるまで、このfeatureのquality gateへ含めない。
 
 ### Allowed Dependencies
 
 - Python 3.14+と既存のuv/Nix development environment。
 - uv lock済みRuff。設計時点のuv lockは0.15.13である。
-- dev-only dependencyとして`interrogate 1.7.0`と`pydoclint 0.9.1`。
+- dev-only dependencyとして`interrogate 1.7.0`。
 - project dependencyへ追加しない一時PoC toolとしてSphinx 9.1.0。
 - 既存の`./scripts/ci.sh`、Nix生成pre-commit、GitHub Actions quality job。
 - runtime contract検証に既存pytest/Typer testing infrastructure。
@@ -65,12 +68,13 @@ Production packageからdocstring toolをimportしてはならない。依存方
 ```text
 AGENTS standard and scope -> pyproject tool configuration -> scripts quality command
 scripts quality command -> pre-commit and GitHub CI
-first-party Python source -> Ruff and interrogate and pydoclint input
+first-party Python source -> Ruff and interrogate input
 ```
 
 ### Revalidation Triggers
 
-- Python、Ruff、`interrogate`、`pydoclint`のversion変更。
+- Python、Ruff、`interrogate`のversion変更。
+- `typing.Annotated` metadataを基底型として比較できるpydoclint公式release/configの登場。
 - external documentation repositoryが使用するSphinx/Napoleonのversionまたは設定変更。
 - first-party Python root、file extension、generated/third-party ownershipの変更。
 - `AGENTS.md`のdocstring section、Google Style section contract、coverage thresholdの変更。
@@ -88,10 +92,17 @@ versionとscopeのownershipは分岐している。
 
 Ruff `D`は公開定義の形式と欠落を検査できるが、通常のprivate/nested定義を網羅しない。
 PoCでは`interrogate`が10,617定義を認識し、現状37.4% coverageを報告した。
-`pydoclint`は全839 fileをPython 3.14.4で走査し、日本語Google Style fixtureの
-Args/Returns/Yieldsと型整合を検証できた。class attribute照合はunannotated `StrEnum` memberと
-`__slots__`へruntime annotationを要求するため無効化し、`Attributes:`はcanonical standardと
-reviewで保証する。
+`pydoclint`は全839 fileをPython 3.14.4で走査できたが、Typerの`Annotated` metadata内の
+ASCII `:`をGoogle Args parserが型区切りとして扱う。基底domain型を記述するcanonical standardと
+runtime不変制約を同時に満たす公式設定がないため、採用しない。詳細な一次情報とPoCは`research.md`に
+記録し、`Attributes:`を含む意味・型の正しさはcanonical standardとreviewで保証する。
+
+### Toolchain Compatibility Decision
+
+`pydoclint`はRuffと重複しない内容整合signalを提供するが、AthenaのTyper `Annotated` annotationを
+runtime不変のまま検証できない。production表現をparser都合で変えず、Ruff `D`と`interrogate`を
+quality gateとして採用する。pydoclintを再導入する条件は、公式version/configが`Annotated` metadataを
+除外して基底domain型を比較し、`research.md`のfixtureでDOC103/DOC105/DOC110を出さないことである。
 
 ### Architecture Pattern & Boundary Map
 
@@ -106,15 +117,12 @@ graph TB
     Config --> Gate
     Sources --> Ruff[Ruff D]
     Sources --> Coverage[Interrogate]
-    Sources --> Content[Pydoclint]
     Gate --> Ruff
     Gate --> Coverage
-    Gate --> Content
     Hooks[Precommit] --> Gate
     CI[GitHub CI] --> Gate
     Ruff --> Result[Zero violations]
     Coverage --> Result
-    Content --> Result
     Result --> Sphinx[Sphinx readiness]
     Sphinx --> DocsRepo[External docs repo]
 ```
@@ -123,7 +131,7 @@ Key decisions:
 
 - `AGENTS.md`が意味上の正本で、tool configは検査可能な部分を機械化する。
 - `interrogate`は`sphinx` coverage semanticsを使い、classと`__init__`を別々に数える。
-  docstring記法自体はRuffと`pydoclint`がGoogle Styleとして検査する。
+  Google Styleの形式はRuff、意味と型の妥当性はcanonical standardとreviewが担当する。
 - first-party file inventoryとtool invocationは`scripts/ci.sh`へ集約し、Git index上の
   tracked `.py`から動的に収集する。
 - global gateは全directory cleanup統合後に有効化し、途中baselineは作らない。
@@ -137,7 +145,7 @@ Key decisions:
 | Language | Python 3.14+ | docstring対象とtool runtime | PoCは3.14.4で実施 |
 | Format lint | Ruff 0.15.13 current uv lock | `D`とGoogle convention | pre-commitもuv entryへ統一 |
 | Completeness | interrogate 1.7.0 | privateを含む100% coverage | `sphinx` coverage semantics |
-| Content lint | pydoclint 0.9.1 | Args/Returns/Yieldsと型整合 | Raisesとclass attribute AST照合を無効化 |
+| Deferred content lint | pydoclint | `Annotated`基底型比較の公式対応があるまで不採用 | 詳細PoCと再評価条件は`research.md` |
 | Orchestration | Bash、Git、`scripts/ci.sh` | scopeと実行順序の正本 | `quality`、`docstrings`、`python-files`を提供 |
 | Validation | pytest、prek、GitHub Actions | configとruntime contractの回帰検証 | production dependencyなし |
 | Readiness PoC | Sphinx 9.1.0 transient | Napoleon/autodoc compatibility | project dependency/configは追加しない |
@@ -151,7 +159,7 @@ AGENTS.md                                      # canonical docstring standard
 README.md                                      # local quality command案内
 docs/architecture.md                           # quality gate構成の同期
 .kiro/steering/tech.md                         # docstring toolchainの技術選定
-pyproject.toml                                 # Ruff Dと2 toolの設定・dev dependency宣言
+pyproject.toml                                 # Ruff Dとinterrogateの設定・dev dependency宣言
 uv.lock                                        # dev tool dependency lock
 scripts/ci.sh                                  # Git inventoryとquality/docstrings/python-files command
 flake.nix                                      # uv based Ruff entryとdocstring pre-commit hook
@@ -193,13 +201,13 @@ athena-crypto/tests/                           # Python test definition
   ASCII終端、実行commandを明文化する。
 - `README.md`、`docs/architecture.md`、`.kiro/steering/tech.md` - quality gateのtool構成と
   実行方法を同期する。
-- `pyproject.toml`、`uv.lock` - Ruff `D`/Google conventionとdev-only toolsを固定する。
+- `pyproject.toml`、`uv.lock` - Ruff `D`/Google conventionとinterrogateを固定する。
 - `scripts/ci.sh` - first-party `.py` inventory、`docstrings`/`python-files` command、
   既存qualityへの統合を所有する。
 - `flake.nix` - Ruffを`uv run`へ統一し、full docstring gate hookを追加する。
 - `.pre-commit-config.yaml` - `flake.nix`から再生成する。直接編集しない。
 - 上記Python directory/file - definitionの責務を読んだ日本語Google Style docstringへ整備する。
-  pydoclint型整合に必要な未注釈signatureだけprecise annotationを補う。
+  canonical standardに必要な未注釈signatureだけprecise annotationを補う。
 
 ### New Files
 
@@ -224,7 +232,7 @@ flowchart LR
 ```
 
 Tooling setupではdependencyと設定を追加するが、未整備領域を遮断するglobal hookはまだ有効化しない。
-各cleanup taskは所有pathに対して3 toolを実行し、統合後のfinal taskだけがglobal `D` select、
+各cleanup taskは所有pathに対してRuff `D`と`interrogate`を実行し、統合後のfinal taskだけがglobal `D` select、
 pre-commit、CI quality統合を有効化する。
 
 ## Requirements Traceability
@@ -234,9 +242,9 @@ pre-commit、CI quality統合を有効化する。
 | 1.1 | Ruff `D`とGoogle convention | DocstringToolchain、DocstringGate | Tool configuration、Batch | Gate activation |
 | 1.2 | 既存lint維持 | DocstringToolchain、DocstringGate | Tool configuration | Full quality |
 | 1.3 | convention競合の明示 | DocumentationStandard、DocstringToolchain | Tool configuration | Gate activation |
-| 1.4 | 引数記載検査 | DocstringToolchain | Ruff `D417`、pydoclint | Full quality |
+| 1.4 | 引数記載検査 | DocstringToolchain | Ruff `D417`、canonical review | Full quality |
 | 2.1 | 全definitionの日本語docstring | DocumentationStandard、DocstringCorpus | Standard、Scope | Directory cleanup |
-| 2.2 | Google sectionsと型・意味 | DocumentationStandard、DocstringToolchain、DocstringCorpus | Standard、Content lint | Directory cleanup |
+| 2.2 | Google sectionsと型・意味 | DocumentationStandard、DocstringCorpus | Standard、directory review | Directory cleanup |
 | 2.3 | `None`と制約の説明 | DocumentationStandard、DocstringToolchain、DocstringCorpus | Standard、Content lint | Directory cleanup |
 | 2.4 | ASCII punctuation | DocumentationStandard、DocstringToolchain | Standard、Ruff `D415` | Directory cleanup |
 | 3.1 | 0違反とprivate完全性 | DocstringToolchain、DocstringGate、DocstringCorpus | Batch、Scope | Full quality |
@@ -260,7 +268,7 @@ pre-commit、CI quality統合を有効化する。
 | Component | Domain / Layer | Intent | Req Coverage | Key Dependencies | Contracts |
 | --- | --- | --- | --- | --- | --- |
 | DocumentationStandard | Project documentation | docstring意味規約の正本 | 1.3, 2.1-2.4, 3.3, 5.1-5.3 | Google Style P0 | State |
-| DocstringToolchain | Development tooling | 機械検査を定義 | 1.1-1.4, 2.2-2.4, 3.1-3.3, 4.1-4.4 | uv lock P0 | Batch |
+| DocstringToolchain | Development tooling | 形式と完全性の機械検査を定義 | 1.1-1.4, 3.1-3.3, 4.1-4.4 | uv lock P0 | Batch |
 | DocstringGate | Quality infrastructure | scopeと実行entryを統一 | 1.1, 1.2, 3.1-3.3, 4.4, 5.1 | Toolchain P0 | Batch |
 | DocstringCorpus | First-party Python | 全definitionを規約へ適合 | 2.1-2.4, 3.1, 3.4 | Standard P0、Gate P1 | State |
 | RuntimeContractSafeguards | CLI and introspection | user-visible差分を防止 | 3.4 | Typer P0、pytest P0 | Batch |
@@ -315,8 +323,8 @@ pre-commit、CI quality統合を有効化する。
 
 | Field | Detail |
 | --- | --- |
-| Intent | 形式、完全性、内容整合を非重複toolで検証する |
-| Requirements | 1.1, 1.2, 1.3, 1.4, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4 |
+| Intent | 形式と完全性を非重複toolで検証する |
+| Requirements | 1.1, 1.2, 1.3, 1.4, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4 |
 
 **Responsibilities & Constraints**
 
@@ -326,25 +334,21 @@ pre-commit、CI quality統合を有効化する。
   追加ignoreで規則を緩和しない。
 - `interrogate`は100%未満をfailureにし、module、init、magic、nested class/function、overload、
   private、semiprivate、propertyをignoreしない。
-- `pydoclint`はGoogle Style、private検査、short docstring検査、argument/return/yield type整合、
-  star argument、`None` returnを有効にする。
-- `pydoclint`はclassと`__init__`双方のdocstringを許可し、property methodをclass attributeへ
-  読み替えない。direct ASTに限定されるRaises整合検査と、unannotated enum/slotsへruntime
-  annotationを要求するclass attribute照合は無効化する。
+- Args/Returns/Yields/Raises/Attributesの型と意味は`AGENTS.md`を正本とする。directory taskの
+  implementation reviewは、型注釈、実装、call site、relevant testを照合してこの規約を確認する。
+- `pydoclint`は`Annotated` metadataを基底型として比較する公式対応が確認できるまでdependency、
+  config、gateへ含めない。`noqa`、baseline、per-file ignore、runtime metadataの書換えを代替にしない。
 - baseline、generated baseline、tool-level broad exclude、docstring `noqa`を使わない。
 
 | Tool | Required configuration |
 | --- | --- |
 | Ruff | `D` selected、`lint.pydocstyle.convention = "google"`、追加docstring ignoreなし |
 | interrogate | `fail-under = 100`、`style = "sphinx"`、init/module/magic/nested/overload/private/semiprivate/propertyをignoreしない |
-| pydoclint | `style = "google"`、signature/docstring arg types enabled、arg order enabled、short/private checks enabled、init docstring allowed、None return required、return/yield type checks enabled、underscore/private/star args documented、style mismatch enabled |
-| pydoclint boundaries | Raises check disabled、class attribute check disabled、baseline absent |
 
 **Dependencies**
 
 - External: Ruff uv lock version - basic format and presence lint (P0)
 - External: interrogate 1.7.0 - completeness (P0)
-- External: pydoclint 0.9.1 - signature/content consistency (P0)
 - Inbound: DocumentationStandard - semantic source of truth (P0)
 - Outbound: DocstringGate - executable checks (P0)
 
@@ -355,13 +359,14 @@ pre-commit、CI quality統合を有効化する。
 - Trigger: `./scripts/ci.sh quality`または`./scripts/ci.sh docstrings`。
 - Input / validation: Git indexにあるtracked `.py`を受け取る。
   inventoryが空、またはGit repository外ならgate errorとする。
-- Output / destination: 全tool成功時exit 0。違反、parse failure、tool failureはnon-zero。
+- Output / destination: Ruffとinterrogateがともに成功した場合exit 0。違反、parse failure、tool failureはnon-zero。
 - Idempotency & recovery: read-only。修正後に同じcommandを再実行して0件を確認する。
 
 **Implementation Notes**
 
-- Integration: dev dependency追加はdesign承認をexplicit dependency approvalとして扱う。
-- Validation: Python 3.14.4 fixtureとfull-scope scanを実装時にも再実行する。
+- Integration: dev dependency追加と削除はdesign承認をexplicit dependency approvalとして扱う。
+- Validation: Python 3.14.4 fixtureとfull-scope scanを実装時にも再実行する。pydoclint再評価は
+  `Annotated` metadata fixtureを公式candidate versionで通してから行う。
 - Risks: tool updateでdefinition classificationが変わった場合はversion固定のまま差分を調査する。
 
 #### DocstringGate
@@ -376,8 +381,9 @@ pre-commit、CI quality統合を有効化する。
 - FirstPartyPythonScopeを`scripts/ci.sh`のGit inventoryで所有する。
   `git ls-files --cached -- '*.py'`相当のNUL-safe収集を使い、staging済みのnew rootやnew test fileも
   自動的に対象へ加える。
-- `quality`は全scopeのRuff format/lint、`interrogate`、`pydoclint`と既存quality checksを実行する。
-- `docstrings`はRuff `D`、`interrogate`、`pydoclint`だけを実行する。
+- `quality`は全scopeのRuff format/lintと既存quality checksを実行する。docstring gate統合後はRuff `D`と
+  `interrogate`を追加する。
+- `docstrings`はRuff `D`と`interrogate`だけを実行する。
 - `python-files`は全toolが受け取るinventoryを1 path 1行で出力し、scope auditを可能にする。
 - 既存`fix`も同じinventoryへRuff format/check fixを適用し、対象scopeを`quality`と一致させる。
 - pre-commit Ruff entryを`uv run ruff`へ統一し、first-party Python変更時にfull docstring gateを
@@ -415,7 +421,7 @@ pre-commit、CI quality統合を有効化する。
 - 各docstringは対象definitionのimplementation、call sites、testsを読んで責務を記述する。
 - 英語docstringは日本語化するが、wire field、error code、引用contract phraseは保持する。
 - `Args:`/`Returns:`/`Yields:`/`Raises:`/`Attributes:`/`Notes:`をsignatureと実装に合わせる。
-- 現行auditの型なしargument 4件とreturn annotationなし41件には、pydoclint整合とSphinx signature
+- 現行auditの型なしargument 4件とreturn annotationなし41件には、canonical standardとSphinx signature
   品質に必要なprecise annotationを追加する。
 - 上記signature annotation以外のstatement、annotation、decorator order、constant、control flowを
   変更せず、新しいtyping suppressionを追加しない。
@@ -517,8 +523,7 @@ pre-commit、CI quality統合を有効化する。
 ### Error Strategy
 
 - Tool install/resolve failure、invalid config、source parse failureはgate failureとして即時終了する。
-- Ruff違反はfile/line/rule code、`interrogate`はcoverageとmissing count、`pydoclint`はsection/signature
-  mismatchをそのまま報告する。
+- Ruff違反はfile/line/rule code、`interrogate`はcoverageとmissing countをそのまま報告する。
 - coverageが100%未満でもbaselineへ退避しない。missing definitionを修正して再実行する。
 - tool false positiveを疑う場合はPoC fixtureと公式contractを確認し、設定またはtool採用判断を
   designへ戻す。個別ignoreで回避しない。
@@ -536,15 +541,14 @@ operational signalとなる。
 
 - `test_docstring_quality_configuration.py`がRuff selectに`D`、Google convention、`D417`を確認する。
 - 同testが`interrogate`の100% thresholdと全ignore無効を確認する。
-- 同testが`pydoclint`のGoogle/private/type/None-return設定、Raises/class-attribute照合の
-  意図的な無効化、baseline不在を確認する。
+- 同testがpydoclint dependency/config/baselineが不在で、Ruff/interrogateの設定が唯一のgate設定で
+  あることを確認する。
 - 同testが`./scripts/ci.sh python-files`の出力をGit inventoryと比較し、tracked `.py`を収集して
   `.pyi`とignored artifactを除外することを確認する。
 
 ### Integration Tests
 
-- `./scripts/ci.sh docstrings`が全tracked first-party `.py`でRuff/pydoclint 0件、
-  coverage 100%を返す。
+- `./scripts/ci.sh docstrings`が全tracked first-party `.py`でRuff `D` 0件、coverage 100%を返す。
 - `./scripts/ci.sh quality`が既存Ruff規則、format、basedpyright、import-linterを含め成功する。
 - `prek run --all-files`がuv lock版Ruffとfull docstring gateで成功する。
 - Typer root/subcommand helpがdocstring追加前のdescription contractを維持する。
@@ -561,7 +565,7 @@ operational signalとなる。
 
 ### Performance
 
-- cached Python 3.14 PoCのfull scanは`interrogate`約4.9秒、最終候補設定の`pydoclint`約5.4秒である。
+- cached Python 3.14 PoCのfull scanは`interrogate`約4.9秒である。
 - Python変更時だけpre-commit full scanを行う。実装後の合計時間が大幅に増えてもscopeやthresholdを
   緩和せず、tool profilingとinvocation overheadを調査する。
 
@@ -570,7 +574,7 @@ operational signalとなる。
 1. `AGENTS.md`、tool dependency、tool config、scope contract、configuration testを追加する。
    この段階ではglobal `D`/hookを有効化しない。
 2. directory ownershipごとにdocstringを整備し、各taskは所有pathのRuff `D`、`interrogate 100%`、
-   `pydoclint`とrelevant testsを通す。
+   relevant testsとcanonical standardに対するdirectory reviewを通す。
 3. CLI help metadataとruntime contract testsを固定する。
 4. 全task統合後、Ruff global `D`、`scripts/ci.sh quality/docstrings`、pre-commitを有効化する。
 5. temporary Sphinx/Napoleon buildを実行し、外部docs repository向けreadiness evidenceを記録する。
