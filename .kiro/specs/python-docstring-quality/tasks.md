@@ -74,7 +74,7 @@
     suppressionを変更しない。所有pathのRuff D、interrogate 100%、relevant testを通す
   - testを所有するtaskは、test名の言い換えではなくcontract、condition、observable outcomeを説明する
 
-- [ ] 2.1 (P) Athena CLI core sourceを整備する
+- [x] 2.1 (P) Athena CLI core sourceを整備する
   - src/athena_cli/*.py、src/athena_cli/commands/**、src/athena_cli/env/**へ共通条件を適用する
   - 新しいfunction docstringがTyper helpへ露出する箇所は、従来descriptionなしならdecoratorへ
     help=""を明示してobservable helpを維持する

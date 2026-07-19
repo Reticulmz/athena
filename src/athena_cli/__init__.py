@@ -1,1 +1,1 @@
-"""Athena management CLI package."""
+"""Athena管理CLIのpackageを提供する."""

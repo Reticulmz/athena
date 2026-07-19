@@ -1,3 +1,5 @@
+"""Athena設定を検査するCLI command groupを定義する."""
+
 from __future__ import annotations
 
 import os
@@ -15,16 +17,32 @@ app = typer.Typer(help="Configuration management commands.")
 
 @app.callback()
 def config() -> None:
-    """Manage and validate Athena configuration."""
+    """Athena設定を管理してvalidationするcommand groupを登録する.
+
+    Returns:
+        None: command groupのmetadataを登録し値を返さずに完了する.
+    """
 
 
-@app.command(name="check")
+@app.command(name="check", help="")
 def check_config(
     environment: Annotated[
         str | None,
         typer.Option("--env", help="Target environment."),
     ] = None,
 ) -> None:
+    """Target environmentのAthena設定を読み込み安全性を検査する.
+
+    Args:
+        environment (str | None):
+            設定読み込みに使うtarget environment. 未指定時はprocess環境を使用する.
+
+    Returns:
+        None: validation結果をCLIへ表示し値を返さずに完了する.
+
+    Raises:
+        typer.Exit: 設定validationまたはproduction safety検査が失敗した場合.
+    """
     try:
         _check_config(environment=environment)
     except Exception as exc:
@@ -34,6 +52,19 @@ def check_config(
 
 
 def _check_config(*, environment: str | None) -> None:
+    """AppConfigを読み込みproduction safety policyを適用する.
+
+    Args:
+        environment (str | None): 設定読み込みに使うtarget environment.
+
+    Returns:
+        None: 設定が有効であるmessageを表示し値を返さずに完了する.
+
+    Raises:
+        UnsupportedEnvironmentError: environmentがsupport対象外の場合.
+        ValidationError: AppConfig validationが失敗した場合.
+        ProductionSafetyError: production設定に安全でないlocal defaultが残る場合.
+    """
     context = resolve_context(
         selected_environment=environment,
         process_environment=dict(os.environ),

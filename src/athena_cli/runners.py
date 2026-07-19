@@ -1,3 +1,5 @@
+"""外部processをCLI commandから実行するadapterを提供する."""
+
 from __future__ import annotations
 
 import subprocess
@@ -10,16 +12,49 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class CommandResult:
+    """外部commandのargumentと終了結果を表す.
+
+    Attributes:
+        argv (tuple[str, ...]): 実行したcommandとargument.
+        exit_code (int): 外部processが返した終了code.
+    """
+
     argv: tuple[str, ...]
     exit_code: int
 
 
 class CommandExecutor(Protocol):
-    def run(self, argv: Sequence[str], environment: Mapping[str, str]) -> int: ...
+    """外部commandを実行する抽象boundaryを定義する."""
+
+    def run(self, argv: Sequence[str], environment: Mapping[str, str]) -> int:
+        """外部commandを指定環境で実行して終了codeを返す.
+
+        Args:
+            argv (Sequence[str]): 実行するcommandとargument.
+            environment (Mapping[str, str]): 外部processへ渡す環境変数.
+
+        Returns:
+            int: 外部processが返した終了code.
+        """
+        ...
 
 
 class SubprocessCommandExecutor:
+    """標準library subprocessで外部commandを実行するexecutorを提供する."""
+
     def run(self, argv: Sequence[str], environment: Mapping[str, str]) -> int:
+        """指定した環境変数で外部commandを実行して終了codeを返す.
+
+        Args:
+            argv (Sequence[str]): 実行するcommandとargument.
+            environment (Mapping[str, str]): 外部processへ渡す環境変数.
+
+        Returns:
+            int: 外部processが返した終了code.
+
+        Raises:
+            OSError: commandを起動できない場合.
+        """
         completed = subprocess.run(
             list(argv),
             env=dict(environment),
@@ -30,9 +65,26 @@ class SubprocessCommandExecutor:
 
 @dataclass(frozen=True, slots=True)
 class ProcessRunner:
+    """Athena CLIが使う外部process commandを組み立てて実行する.
+
+    Attributes:
+        executor (CommandExecutor): command実行を委譲するadapter.
+    """
+
     executor: CommandExecutor = field(default_factory=SubprocessCommandExecutor)
 
     def run_alembic_upgrade(self, *, environment: Mapping[str, str]) -> CommandResult:
+        """Alembic upgrade headを実行する.
+
+        Args:
+            environment (Mapping[str, str]): alembic processへ渡す環境変数.
+
+        Returns:
+            CommandResult: 実行したargumentと終了code.
+
+        Raises:
+            OSError: alembic commandを起動できない場合.
+        """
         argv = ("alembic", "upgrade", "head")
         exit_code = self.executor.run(argv, environment)
         return CommandResult(argv=argv, exit_code=exit_code)
@@ -43,6 +95,18 @@ class ProcessRunner:
         paths: Sequence[str],
         environment: Mapping[str, str],
     ) -> CommandResult:
+        """指定pathを引数にpytestを実行する.
+
+        Args:
+            paths (Sequence[str]): pytestへ渡すtest path.
+            environment (Mapping[str, str]): pytest processへ渡す環境変数.
+
+        Returns:
+            CommandResult: 実行したargumentと終了code.
+
+        Raises:
+            OSError: pytest commandを起動できない場合.
+        """
         argv = ("pytest", *paths)
         exit_code = self.executor.run(argv, environment)
         return CommandResult(argv=argv, exit_code=exit_code)
