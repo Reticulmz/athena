@@ -99,7 +99,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/athena_cli/stable_verification/{catalog,getscores,getscores_evidence,models}.py_
 
-- [ ] 2.4 (P) Stable verificationのreplayとscore submission sourceを整備する
+- [x] 2.4 (P) Stable verificationのreplayとscore submission sourceを整備する
   - client.py、parsers.py、replay_download.py、score_submit.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびfocused replay/score-submit verification testが通る
   - _Depends: 1.4_
