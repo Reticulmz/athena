@@ -115,11 +115,6 @@ run_docstrings() {
             status=1
         fi
 
-        echo "--> pydoclint docstring consistency"
-        if ! uv run pydoclint --config pyproject.toml "${python_files[@]}"; then
-            status=1
-        fi
-
         exit "${status}"
     )
 }

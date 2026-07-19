@@ -24,8 +24,9 @@
 
 Python docstringの意味規約は[AGENTS.md](../../AGENTS.md)だけを正本とする。
 `./scripts/ci.sh docstrings`はRuff `D`でGoogle Styleの存在と形式を、interrogateでdefinitionの
-coverageを、pydoclintでsectionとsignatureの整合を検査する。3 toolは同じ検査を重複して
-実行するものではなく、別々の品質信号を担当する。
+coverageを検査する。Args:/Returns:/Yields:/Raises:/Attributes:の型と意味はAGENTS.md、実装、
+call site、relevant testを照合するreviewで確認する。pydoclintはTyperの`Annotated` metadataを
+基底型として比較する公式対応が確認できるまでactive gateへ含めない。
 
 Sphinxのdependency、config、theme、generated artifact、公開workflowはAthenaでは所有せず、
 external documentation repositoryの責務とする。Sphinx autodocはmoduleをimportするため、その

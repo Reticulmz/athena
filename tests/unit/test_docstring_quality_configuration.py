@@ -300,10 +300,11 @@ def _docstring_noqa_locations() -> list[str]:
     return locations
 
 
-def test_declares_locked_docstring_tool_versions() -> None:
-    """承認済みtoolがdev dependencyとuv.lockへ同じversionで存在することを検証する.
+def test_declares_only_active_docstring_tool_versions() -> None:
+    """Activeなdocstring toolだけがdev dependencyとuv.lockに存在することを検証する.
 
-    これはruntime dependencyへtoolが混入せず再現可能な開発環境で実行できることを保証する.
+    これはruntime dependencyへtoolが混入せず、採用を見送ったpydoclintをactiveなquality
+    toolchainへ戻さない再現可能な開発環境を保証する.
 
     Returns:
         None: dependency宣言またはlock versionが異なる場合はassertionで失敗する.
@@ -314,9 +315,9 @@ def test_declares_locked_docstring_tool_versions() -> None:
     locked_versions = _locked_package_versions()
 
     assert "interrogate==1.7.0" in dev_dependencies
-    assert "pydoclint==0.9.1" in dev_dependencies
+    assert all(not dependency.startswith("pydoclint") for dependency in dev_dependencies)
     assert locked_versions["interrogate"] == "1.7.0"
-    assert locked_versions["pydoclint"] == "0.9.1"
+    assert "pydoclint" not in locked_versions
 
 
 def test_configures_non_blocking_google_docstring_toolchain() -> None:
@@ -364,45 +365,16 @@ def test_configures_non_blocking_google_docstring_toolchain() -> None:
     assert "whitelist-regex" not in interrogate
 
 
-def test_configures_pydoclint_content_checks_and_intentional_boundaries() -> None:
-    """pydoclintの内容整合検査と設計上の例外を検証する.
-
-    Raises AST比較とclass attribute比較だけを無効化しながらprivate definitionと
-    Args/Returns/Yieldsの型整合を検査する設定を保護する.
+def test_does_not_configure_deferred_pydoclint() -> None:
+    """Deferredなpydoclintをactive quality gateへ設定しないことを検証する.
 
     Returns:
-        None: 必須検査または意図的な例外が変わった場合はassertionで失敗する.
+        None: pydoclintのtool設定が再導入された場合はassertionで失敗する.
     """
     pyproject = _load_toml(PYPROJECT_PATH)
     tool = _require_table(pyproject["tool"])
-    pydoclint = _require_table(tool["pydoclint"])
 
-    assert pydoclint["style"] == "google"
-    for option in (
-        "arg-type-hints-in-signature",
-        "arg-type-hints-in-docstring",
-        "check-arg-order",
-        "require-return-section-when-returning-nothing",
-        "check-return-types",
-        "require-yield-section-when-yielding-nothing",
-        "check-yield-types",
-        "should-document-star-arguments",
-        "check-style-mismatch",
-    ):
-        assert pydoclint[option] is True
-    for option in (
-        "skip-checking-short-docstrings",
-        "skip-checking-private-functions",
-        "ignore-underscore-args",
-        "ignore-private-args",
-        "omit-stars-when-documenting-varargs",
-    ):
-        assert pydoclint[option] is False
-    assert pydoclint["allow-init-docstring"] is True
-    assert pydoclint["skip-checking-raises"] is True
-    assert pydoclint["check-class-attributes"] is False
-    assert pydoclint["treat-property-methods-as-class-attributes"] is False
-    assert pydoclint["auto-regenerate-baseline"] is False
+    assert "pydoclint" not in tool
 
 
 def test_does_not_hide_docstring_debt_with_configuration_or_noqa() -> None:
@@ -418,17 +390,27 @@ def test_does_not_hide_docstring_debt_with_configuration_or_noqa() -> None:
     tool = _require_table(pyproject["tool"])
     ruff = _require_table(tool["ruff"])
     ruff_lint = _require_table(ruff["lint"])
-    pydoclint = _require_table(tool["pydoclint"])
     per_file_ignores = _require_table(ruff_lint.get("per-file-ignores", {}))
 
-    assert "baseline" not in pydoclint
-    assert "generate-baseline" not in pydoclint
-    assert "exclude" not in pydoclint
+    assert "pydoclint" not in tool
     assert all(
         not any(_contains_docstring_rule(rule) for rule in _require_string_list(ignored_rules))
         for ignored_rules in per_file_ignores.values()
     )
     assert _docstring_noqa_locations() == []
+
+
+def test_docstrings_command_runs_only_active_quality_tools() -> None:
+    """Docstrings commandがRuffとinterrogateだけを起動することを検証する.
+
+    Returns:
+        None: 必須toolのcommandが欠落するかpydoclintが再導入された場合はassertionで失敗する.
+    """
+    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert 'uv run ruff check --select D "${python_files[@]}"' in script
+    assert 'uv run interrogate --config pyproject.toml "${python_files[@]}"' in script
+    assert "uv run pydoclint" not in script
 
 
 def test_python_files_matches_the_git_index() -> None:

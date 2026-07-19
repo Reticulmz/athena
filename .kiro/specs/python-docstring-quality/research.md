@@ -2,14 +2,18 @@
 
 調査日時: 2026-07-19 JST
 
-対象は公式ドキュメント、公式GitHubリポジトリ、PyPIの公式プロジェクトページに限定した。依存関係や設定はまだ変更していない。
+対象は公式ドキュメント、公式GitHubリポジトリ、PyPIの公式プロジェクトページに限定した。初期調査と
+Task 1.2のPoC履歴は証跡として保持し、現在の採用判断はTask 2.1の`Annotated`再調査に従う。
 
 ## 結論
 
 1. 第一段階は、既存のRuffに `D` を追加し、`[tool.ruff.lint.pydocstyle] convention = "google"` を設定するのが妥当である。追加依存なしで、Google Styleに反する形式と公開定義のdocstring欠落を継続的に検出できる。
 2. Ruff単体は数値のdocstring coverageを計測したり、coverage閾値で失敗させたりする機能を提供していない。全定義を対象にした数値目標が必要なら、coverage専用ツールを別途導入する必要がある。
-3. 数値coverageが必要な場合の第一候補は `interrogate` である。ただし最新リリースは2024-04-07で、PyPIのPython classifierは3.12までである。AthenaのPython 3.14環境でのPoCを通過するまで採用を決定しない。
-4. Google StyleのArgs/Returns/Raisesなどと実装の整合性を深く検証する候補は `pydoclint` である。2026-07-03に0.9.1が公開され、現行PyPI metadataの `Requires-Python >=3.10` は3.14を許容する。ただし3.14 classifierはないため、実行PoCを前提にする。docstring自体の存在は検査しないため、Ruff `D` と組み合わせる。
+3. 数値coverageの第一候補である `interrogate` はPython 3.14 PoCを通過したため、privateを含む
+   completeness gateとして採用する。
+4. Google StyleのArgs/Returns/Raisesなどと実装の整合性を深く検証する候補は `pydoclint` である。
+   ただし0.9.1はTyperの`Annotated` metadataを基底型として扱えないため、active gateには採用しない。
+   公式対応が確認できた場合だけ、末尾の再評価fixtureで見直す。
 5. Ruffの `DOC` 規則は `pydoclint` 由来だが、Athenaが固定しているRuff 0.15.13ではpreview扱いである。今回の必須gateにはせず、stable化後に再評価する。
 
 ## Ruff pydocstyle (`D`) の確認結果
@@ -42,7 +46,7 @@ Ruffには `DOC` 規則群もあり、たとえば `DOC201` は値を返す関�
 | Ruff `D` | 存在・形式・Google conventionのlint | 現行Ruff公式settingsとAthenaのlock済み0.15.13 CLIはいずれも `py314` をtarget-versionとして受け付ける | 追加依存なし。private通常定義の欠落と数値coverageは扱えない | 採用する |
 | Ruff `DOC` | Returns/Yields等と実装の一部整合性 | Ruff内蔵 | 0.15.13ではpreview | 今回は見送る |
 | `interrogate` 1.7.0 | module/class/function/methodのcoverage率、詳細一覧、`fail-under` | docsはPython 3.8以上を掲げる一方、現行PyPI classifierは3.12まで。3.14の公式実行確認は未確認 | 最新releaseは2024-04-07だが、公式repoはarchivedではなく2026-06-01にもpushされている。Google style設定、privateを除外しない既定値、`pyproject.toml`設定を持つ | 数値KPIが必要ならPoC候補 |
-| `pydoclint` 0.9.1 | Google Styleの引数・戻り値・yield・raise・属性と実装の整合性、baseline | 現行PyPI metadataは `Requires-Python >=3.10` で3.14を許容するが、3.14 classifierはない。実行確認は未確認 | 最新releaseは2026-07-03。docstringがない定義は検査しないため、Ruff `D` 又はcoverageツールを併用する | 内容検証を追加する次段階のPoC候補 |
+| `pydoclint` 0.9.1 | Google Styleの引数・戻り値・yield・raise・属性と実装の整合性、baseline | Python 3.14で起動するが、Typer `Annotated` metadataを基底型として比較できない | docstringがない定義は検査しない。型比較を無効化すると型付き規約を壊す | active gateには採用しない。公式対応後に再評価 |
 | `docstr-coverage` 2.3.2 | coverage率、`fail-under`、privateやmagic methodの対象制御 | 公式PyPIページでPython 3.14を明示的には確認できなかった | 最新releaseは2024-05-07。YAML専用設定を主とするため、`interrogate`よりAthenaの現行設定方式との親和性が低い | 採用しない |
 | `darglint` | 引数・戻り値の検査 | 未確認 | 公式GitHubリポジトリがarchivedで、最終pushは2022-12-08 | 採用しない |
 
@@ -51,10 +55,11 @@ Ruffには `DOC` 規則群もあり、たとえば `DOC201` は値を返す関�
 ```text
 Ruff D       = docstringの有無とGoogle Styleの基本形式
 interrogate  = 全対象のcoverage率と閾値
-pydoclint   = 書かれたArgs/Returns/Raises等と実装の整合性
+manual review = Args/Returns/Yields/Raises/Attributesの型と意味の整合性
 ```
 
-この3つは重複ではなく、検査対象が異なる。今回の最小構成はRuff `D` のみとし、coverageの数値目標が要件として必要なら `interrogate` のPoCを追加する。`pydoclint` はdocstringが一通り揃った後に導入すると、初期の違反量と設定判断を分離できる。
+Ruffとinterrogateは重複しない機械的signalを担当する。内容整合性はAGENTS.mdを正本に、実装、call
+site、relevant testを照合するreviewで確認する。`pydoclint`は公式対応が得られるまでdeferredとする。
 
 ## 導入前に決める事項
 
@@ -378,35 +383,35 @@ PoCはproject dependencyを変更せず、`nix develop`内のPython 3.14.4と一
 | Tool | Result | Full-scope signal | Design implication |
 | --- | --- | --- | --- |
 | `interrogate 1.7.0` | 起動・走査成功 | 10,617定義中3,975 documented、6,642 missing、37.4%。full scan約4.9秒 | private、nested、magic、property、overloadを含む100% completeness gateとして採用可能 |
-| `pydoclint 0.9.1` | 起動・全839 file走査成功 | 最終候補設定では現状7,011 output linesの違反報告。full scan約5.4秒 | Args/Returns/Yieldsと型注釈の整合gateとして採用可能 |
+| `pydoclint 0.9.1` | 起動・全839 file走査成功 | 最終候補設定では現状7,011 output linesの違反報告。full scan約5.4秒 | 単純なfixtureには使えるが、後続の`Annotated`再調査でactive gateには不採用 |
 | Ruff 0.15.13 / 0.15.17 | 両versionで走査成功 | 両方とも同じ5,345件のGoogle `D`違反 | 現状結果は一致するが、将来差分を避けるためuv lock版へ実行元を統一する |
 
 日本語Google Style、private Protocol、dataclass、`__init__`、property、nested function、
 `None` return、Raises、overloadを含む12定義のfixtureでは、`interrogate` 100%と
-`pydoclint` 0件を同時に達成した。これにより日本語そのもの、Python 3.14 syntax、
-decorator、private/nested分類にはblocking compatibility issueがないことを確認した。
+`pydoclint` 0件を同時に達成した。これは日本語そのもの、Python 3.14 syntax、decorator、
+private/nested分類にはblocking compatibility issueがないことを示すが、Typer `Annotated`を含まない
+fixtureだけの結果である。後続再調査で`Annotated`のblocking incompatibilityを確認した。
 
 `interrogate --style google`はclassまたは`__init__`の片方だけで両方をcoveredとして扱う。
 Athenaは両定義へdocstringを要求するため、coverage styleは`sphinx`を使う。この設定は
 docstring記法をSphinx Styleへ変えるものではなく、class/constructorのcoverage集計だけを
-分離する。Google Styleの形式はRuffと`pydoclint`が検査する。
+分離する。Google Styleの形式はRuffが検査し、sectionの意味と型はcanonical reviewで確認する。
 
 追加のrepresentative PoCでは、`check-class-attributes = true`がtype annotationを持たない
 `StrEnum` memberと`__slots__`をclass attributeとして扱った。`Attributes:`へAthena規約どおり
 型を記載するとDOC605になり、解消にはruntime `__annotations__`の追加または個別除外が必要になる。
-これはruntime不変と抑制禁止に反するため、pydoclintのclass attribute照合は無効化する。
+これはruntime不変と抑制禁止に反するため、pydoclintをactive gateから外す判断の補強材料である。
 `Attributes:`の型と意味は`AGENTS.md`、directory review、final diff reviewで保証する。
 
 Signature auditでは7,997 callableのうち、型なしargumentを持つcallableが4件、return annotationが
-ないcallableが41件だった。`pydoclint`のargument/return型整合を全scopeで有効にするには、これらへ
-precise annotationを追加する必要がある。docstring type contractとSphinx signature品質へ直接必要な
-範囲なので本featureへ含めるが、logicや既存pyright suppressionは変更しない。Typer/FastAPIなど
-annotationをruntime利用するsurfaceは既存observable behaviorをtestで保護する。
+ないcallableが41件だった。canonical standardとSphinx signature品質に直接必要な範囲だけprecise
+annotationを追加するが、logicや既存pyright suppressionは変更しない。Typer/FastAPIなどannotationを
+runtime利用するsurfaceは既存observable behaviorをtestで保護する。
 
 `pydoclint`のRaises検査はfunction body内の直接`raise`を基準にするため、collaboratorから
 意図的に伝播するcontract exceptionを正しく扱えない。Athenaの`Raises:`はcallerが扱うべき
-直接送出または意図的伝播exceptionを記録し、pydoclintのRaises整合検査だけは無効化する。
-Args、Returns、Yields、Attributes、型整合、private、constructorの検査は有効にする。
+直接送出または意図的伝播exceptionを記録し、implementation、call site、relevant testを照合する
+reviewで確認する。
 
 ## Runtime-observable Docstring Investigation
 
@@ -466,11 +471,13 @@ protocol、runtime codeの変更を伴い、docstringだけを変える本featur
 
 ## Design Decisions
 
-### Decision 1: Ruff + interrogate + pydoclintを採用する
+### Decision 1: Ruff + interrogateをactive gateとして採用する
 
 - Ruff `D`とGoogle conventionが存在と基本形式を検査する。
 - `interrogate`がRuff対象外のprivate/nested定義を含む100% completenessを検査する。
-- `pydoclint`が書かれたArgs/Returns/Yieldsとsignature/type annotationの整合を検査する。
+- Args/Returns/Yields/Raises/Attributesの意味と型はAGENTS.md、implementation、call site、relevant
+  testを照合するreviewで検査する。
+- `pydoclint`はTyper `Annotated` metadataの基底型比較を公式に支持するまでactive gateに含めない。
 - Ruff `DOC`はpreviewなので採用しない。repository-owned AST checkerは、`interrogate`が必要な
   定義分類をPython 3.14で満たしたため新設しない。
 
@@ -488,7 +495,7 @@ protocol、runtime codeの変更を伴い、docstringだけを変える本featur
 
 global gateを先に有効化すると、未整備領域の5,345件以上の違反が各task commitを阻害する。
 各package taskは同じtool設定を対象pathへ明示実行し、全task統合後にRuff `D`、100% coverage、
-pydoclint、CI/pre-commit連携を有効化する。baseline、per-file ignore、広範な`noqa`は使わない。
+CI/pre-commit連携を有効化する。baseline、per-file ignore、広範な`noqa`は使わない。
 
 ### Decision 4: Python quality実行元をuv lockへ統一する
 
@@ -503,9 +510,9 @@ Nix生成Ruff hookの実行entryを`uv run ruff`へ切り替え、CI、manual co
 拡張子contractで除外する。新規fileはstaging後に通常のtracked scopeへ入る。個別file arrayでの
 `interrogate` PoCも37.4%を再現した。
 
-`quality`は収集した全fileのRuff format/lint、`interrogate`、`pydoclint`に加えて既存
-basedpyright/import-linterを実行する。`docstrings` subcommandはRuff `D`、`interrogate`、
-`pydoclint`だけを再現可能に実行する。CIは既存`quality`呼出しのまま新gateを継承し、
+`quality`は収集した全fileのRuff format/lint、`interrogate`に加えて既存
+basedpyright/import-linterを実行する。`docstrings` subcommandはRuff `D`と`interrogate`だけを
+再現可能に実行する。CIは既存`quality`呼出しのまま新gateを継承し、
 pre-commitはfirst-party Python変更時に`docstrings`を実行する。
 
 ### Decision 6: Sphinx生成surfaceは別repositoryへ分離する
@@ -524,9 +531,9 @@ docstring cleanupはbehavior-neutralなdocumentation diffとしてreviewする�
 ## Build vs Adopt
 
 private completeness checkerは自作せず`interrogate`を採用する。PoCで必要な定義分類と
-Python 3.14互換性を確認でき、独自AST仕様の保守を避けられるためである。callable内容整合も
-自作せず`pydoclint`を採用し、Athena固有のRaises contractとruntime annotationを要求する
-class attribute照合だけ設定で境界を切る。
+Python 3.14互換性を確認でき、独自AST仕様の保守を避けられるためである。callable内容整合は
+現時点では自作checkerを追加せず、canonical standardとdirectory/final reviewで確認する。
+`pydoclint`は公式の`Annotated`対応が得られた場合だけ再評価する。
 
 ## Risks and Mitigations
 
@@ -536,12 +543,16 @@ class attribute照合だけ設定で境界を切る。
 - **`__doc__` contract破損**: 既存phrase assertionを維持し、対象testを各taskで実行する。
 - **merge conflict**: directory ownershipを分割し、`pyproject.toml`、`uv.lock`、`flake.nix`、
   `scripts/ci.sh`、`AGENTS.md`はtooling taskの単一ownerに限定する。
-- **quality gate実行時間**: PoCのfull scanは2 tool合計約15秒であり、pre-commitではPython変更時だけ
+- **quality gate実行時間**: `interrogate`のfull scanは約4.9秒であり、pre-commitではPython変更時だけ
   実行する。大幅な増加が生じた場合もscopeやthresholdを緩和せず、tool profilingを行う。
 
 ## Task 1.2実装時のPython 3.14再検証
 
 実施日時: 2026-07-19 JST
+
+このsectionはpydoclintを一時導入して行った初期PoCの証跡である。後続の`Annotated`再調査により
+Task 1.4でpydoclint dependency/config/gateを撤去したため、ここに記載する初期採用判断は現在の
+quality gateを表さない。
 
 `nix develop`内のPython 3.14.4で、承認済みの`interrogate 1.7.0`と`pydoclint 0.9.1`を
 dev dependencyとしてlockした。`nix develop --command uv sync`は88 packageを解決して成功した。
@@ -556,22 +567,21 @@ nested function、overload、`None` return、yield、`Raises:`を含む。
 | `uv run pydoclint --config pyproject.toml /tmp/athena_docstring_quality_probe.py` | `No violations` | Google StyleのArgs/Returns/Yields、signature type、private definition、constructor、None return、star argument、style mismatch設定がPython 3.14.4で読まれること |
 
 `interrogate`はRuff `D`がcoverage数値と通常のprivate/nested definitionを完全には扱わない部分を
-100% thresholdで補う。`pydoclint`はRuff `D`が検査しないArgs/Returns/Yieldsとsignature typeの
-整合を補う。このため両toolはRuffと役割が重複しない。
+100% thresholdで補う。初期PoC時点では`pydoclint`もRuffと重複しない内容整合signalを提供したが、
+後続の`Annotated`再調査によりactive gateには採用しない。
 
 Ruffには`[tool.ruff.lint.pydocstyle] convention = "google"`だけを先に追加した。未整備corpusを
 既存quality commandでblockしないため、migration step 1ではglobal `select`または`extend-select`へ
 `D`/`D417`を追加していない。最終gate activation taskで`D`を追加するとGoogle conventionにより
 `D417`も有効になる。Ruff `DOC`はRuff 0.15.13ではpreviewであり、stableな必須gateへ採用しない。
 
-`pydoclint`はdirect ASTの`raise`だけでは意図的に伝播するcaller-visible exceptionを判定できないため
-`skip-checking-raises = true`とした。unannotated `StrEnum` memberと`__slots__`へruntime annotationを
-要求するclass attribute照合も、runtime不変と個別ignore禁止に反するため
-`check-class-attributes = false`とした。それ以外のcontent checksは有効である。
+`pydoclint`はdirect ASTの`raise`だけでは意図的に伝播するcaller-visible exceptionを判定できず、
+unannotated `StrEnum` memberと`__slots__`へruntime annotationを要求するclass attribute照合も
+runtime不変と個別ignore禁止に反する。この初期PoCの境界は、content整合をcanonical reviewで
+確認する現在の判断を補強する証跡として残す。
 
 baseline、baseline生成、tool設定上のbroad exclude、docstring ruleの`noqa`、Ruffのper-file
-docstring ignoreは追加していない。`pydoclint`の既定値が表示する`.git|.tox`はtool内部の既定path
-filterであり、後続taskがGit indexから渡すfirst-party Python inventoryを隠す設定ではない。
+docstring ignoreは追加していない。Task 1.4後のactive toolchainにも同じ抑制禁止方針を適用する。
 
 不採用候補の判断は維持する。repository-owned AST checkerは`interrogate`が必要なdefinition分類を
 Python 3.14で満たしたため不要であり、`darglint`など保守状況またはPython 3.14互換性を確認できない

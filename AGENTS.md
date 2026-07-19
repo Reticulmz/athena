@@ -534,9 +534,13 @@ def test_expired_session_is_rejected(client: TestClient, expired_session: Sessio
 #### Quality Gate And Sphinx Handoff
 
 - `./scripts/ci.sh docstrings`はRuff `D`でGoogle Styleの存在と形式を、`interrogate`で
-  対象definitionの完全性を、`pydoclint`でsectionとsignatureの内容整合を検証する。各toolの
-  設定はこの意味規則を弱めるper-file docstring ignore、docstring `noqa`、tool-level broad
-  exclude、baselineを追加してはならない。
+  対象definitionの完全性を検証する。Args:/Returns:/Yields:/Raises:/Attributes:の型と意味はこの
+  規約を正本とし、implementation、call site、relevant testを照合してreviewする。各toolの設定は
+  この意味規則を弱めるper-file docstring ignore、docstring `noqa`、tool-level broad exclude、
+  baselineを追加してはならない。
+- `pydoclint`はTyperの`Annotated` metadataを基底型として比較できないためactive gateへ含めない。
+  公式対応が確認できた場合だけ、`.kiro/specs/python-docstring-quality/research.md`のfixtureで
+  再評価する。
 - RuffのGoogle conventionでは`D203`、`D204`、`D213`、`D215`、`D400`、`D401`、`D404`、
   `D406`、`D407`、`D408`、`D409`、`D413`をGoogle Styleの対象外として明示する。これは
   conventionとの競合を解消する選択であり、`D417`を含む他のdocstring ruleを追加ignoreで

@@ -51,7 +51,7 @@
   - _Requirements: 3.1, 3.2, 3.3, 4.4, 5.1_
   - _Boundary: scripts/ci.sh, tests/unit/test_docstring_quality_configuration.py_
 
-- [ ] 1.4 pydoclintをactive quality gateから撤去し、Ruffとinterrogateへ移行する
+- [x] 1.4 pydoclintをactive quality gateから撤去し、Ruffとinterrogateへ移行する
   - pydoclintのdev dependency、tool configuration、lock上の不要なpackage entry、docstrings commandの
     invocationを撤去し、Ruff Dとinterrogateだけが同一Git inventoryを検査する状態にする
   - configuration testを更新し、Ruff/Google conventionとinterrogate 100%を保護するとともに、activeな

@@ -72,8 +72,7 @@ See [docs/architecture.md](docs/architecture.md) for the full boundary contract.
 - Valkey with `valkey-glide` for cache, state, queue, and pub/sub infrastructure
 - taskiq and taskiq-redis for background jobs
 - Dishka for dependency composition
-- ruff, interrogate, pydoclint, basedpyright strict mode, pytest, and import-linter
-  for quality gates
+- ruff, interrogate, basedpyright strict mode, pytest, and import-linter for quality gates
 
 ## Local Development
 
@@ -131,9 +130,9 @@ Run only the docstring quality gate:
 ```
 
 The canonical docstring standard is [AGENTS.md](AGENTS.md). Ruff `D` checks Google
-Style presence and format, interrogate checks definition coverage, and pydoclint
-checks section and signature consistency. These tools complement one another; the
-standard itself is not duplicated here.
+Style presence and format, while interrogate checks definition coverage. Section
+types and meanings are reviewed against the canonical standard, implementation,
+call sites, and relevant tests.
 
 Sphinx configuration, themes, generated output, and publishing belong to an
 external documentation repository. Because Sphinx autodoc imports modules, that

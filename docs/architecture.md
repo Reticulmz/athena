@@ -125,10 +125,11 @@ The local quality gate is `./scripts/ci.sh quality`, which runs ruff formatting 
 ### Docstring Quality Contract
 
 [AGENTS.md](../AGENTS.md) is the sole canonical standard for Python docstrings.
-`./scripts/ci.sh docstrings` runs Ruff `D` for Google Style presence and format,
-interrogate for definition coverage, and pydoclint for section and signature
-consistency. The architecture guide records the gate boundary only and does not
-restate the authoring rules.
+`./scripts/ci.sh docstrings` runs Ruff `D` for Google Style presence and format
+and interrogate for definition coverage. Section types and meanings are reviewed
+against the canonical standard, implementation, call sites, and relevant tests.
+The architecture guide records the gate boundary only and does not restate the
+authoring rules.
 
 Sphinx configuration, themes, generated output, and publishing are owned by an
 external documentation repository. Sphinx autodoc imports Athena modules, so that
