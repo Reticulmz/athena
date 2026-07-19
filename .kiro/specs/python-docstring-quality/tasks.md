@@ -37,7 +37,7 @@
   - _Requirements: 1.1, 1.3, 1.4, 3.3, 4.1, 4.2, 4.3, 4.4_
   - _Boundary: pyproject.toml, uv.lock, tests/unit/test_docstring_quality_configuration.py, research.md_
 
-- [ ] 1.3 First-party Python inventoryと非blocking docstring commandを実装する
+- [x] 1.3 First-party Python inventoryと非blocking docstring commandを実装する
   - scripts/ci.shへNUL-safeなGit index inventoryを追加し、tracked first-party .pyを所有する。
     Git repository外、empty inventory、.pyi、ignored artifact、cache、generated file、untracked
     dependencyは拒否または除外する
