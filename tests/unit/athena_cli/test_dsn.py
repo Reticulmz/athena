@@ -1,3 +1,5 @@
+"""CLI用databaseとValkey DSN生成の表示安全性を検証する."""
+
 from __future__ import annotations
 
 from athena_cli.env.dsn import (
@@ -10,6 +12,14 @@ from osu_server.config import AppConfig
 
 
 def test_database_dsn_url_encodes_parts_and_masks_password() -> None:
+    """Database接続情報のURL encodeとpassword mask契約を検証する.
+
+    空白と予約文字を含む入力を前提に.
+    接続用DSNだけが元passwordを持ち表示用DSNはmaskすることを確認する.
+
+    Returns:
+        None: DSNの値とsecret非露出を検証して完了する. 呼び出し側へ値を返さない.
+    """
     dsn = build_database_dsn(
         DatabaseConnectionParts(
             host="localhost",
@@ -30,6 +40,11 @@ def test_database_dsn_url_encodes_parts_and_masks_password() -> None:
 
 
 def test_valkey_dsn_url_encodes_parts_and_masks_password() -> None:
+    """Valkey接続情報のURL encodeとpassword mask契約を検証する.
+
+    Returns:
+        None: DSNの値とsecret非露出を検証して完了する. 呼び出し側へ値を返さない.
+    """
     dsn = build_valkey_dsn(
         ValkeyConnectionParts(
             host="localhost",
@@ -46,6 +61,11 @@ def test_valkey_dsn_url_encodes_parts_and_masks_password() -> None:
 
 
 def test_generated_dsns_are_accepted_by_app_config() -> None:
+    """生成したdatabaseとValkey DSNがAppConfig validationを通ることを検証する.
+
+    Returns:
+        None: validation後の設定値を検証して完了する. 呼び出し側へ値を返さない.
+    """
     database_dsn = build_database_dsn(
         DatabaseConnectionParts(
             host="localhost",

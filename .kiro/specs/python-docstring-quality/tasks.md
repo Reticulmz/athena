@@ -83,7 +83,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/athena_cli/*.py, src/athena_cli/commands/**, src/athena_cli/env/**_
 
-- [ ] 2.2 (P) Athena CLI core testとhelp contractを整備する
+- [x] 2.2 (P) Athena CLI core testとhelp contractを整備する
   - tests/unit/athena_cli/*.pyとtests/integration/athena_cli/*.pyへ共通条件を適用し、
     stable_verification/**とtest_cli_stable_verify.pyは除外する
   - rootとsubcommandの既存help expectationを変更せず、description contractを明示的に保護する
