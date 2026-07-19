@@ -577,3 +577,159 @@ filterであり、後続taskがGit indexから渡すfirst-party Python inventory
 Python 3.14で満たしたため不要であり、`darglint`など保守状況またはPython 3.14互換性を確認できない
 候補は必須gateへ入れない。Sphinxはexternal documentation repositoryの責務であり、Athenaのdev
 dependencyには追加しない。
+
+---
+
+## Task 2.1: `typing.Annotated` と pydoclint の再調査
+
+調査日時: 2026-07-19 JST
+
+### 結論
+
+現行の公式 `pydoclint 0.9.1` には、`typing.Annotated` のmetadataを除外して基底型だけを
+Google Styleの`Args:`型と比較する設定、rule、または後続releaseは確認できなかった。したがって、
+Athenaが要求する`str | None`のようなdomain型をdocstringに書きつつ、Typer metadata内にASCII `:`を
+含む完全な`Annotated[...]` annotationを同時に通す、公式に支持されたtoolchain設定は**未確認ではなく
+現行版では利用不可**と判断する。
+
+productionのannotation、Typer decorator、help文字列、定数配置をparser都合で変えることは、このtaskの
+runtime不変制約を破るため採用しない。型比較をglobalに無効化する設定も、Args型とsignatureの整合を
+検査するという採用目的を失い、抑制禁止方針に反するため採用しない。
+
+### 確認済みの根拠
+
+1. `pydoclint`公式の0.9.1設定一覧は、全30設定を列挙している。型比較に関係する設定は
+   `arg-type-hints-in-docstring`と`arg-type-hints-in-signature`であり、両方を`True`にすると
+   docstringとsignatureの型が一致しなければ違反になる。`Annotated` metadataをunwrapする設定、
+   Google Argsのtype parserを差し替える設定、metadata文字列をescapeする設定は一覧に存在しない。
+2. 公式tag `0.9.1`の`pydoclint/utils/arg.py`では、`Arg.fromAstArg()`がannotation AST全体を
+   `unparseName()`へ渡して`typeHint`に保存する。`Arg._typeHintsEq()`も保存した型文字列を比較する。
+   `Annotated`の第1引数だけを取り出す分岐は同ファイルにない。このため、`Annotated[str | None,
+   typer.Option(...)]`と`str | None`を同一型として扱う公式実装にはなっていない。
+3. Athenaのlock済み組合せは`pydoclint 0.9.1`と`docstring-parser-fork 0.0.16`である。
+   project内の再現では、base型だけの`ruleset (str | None): ...`はDOC105、完全な`Annotated[...]`型は
+   Typer help内のASCII `:`でDOC103/DOC110となった。この再現は0.9.1のfull annotation比較と整合する。
+4. GitHub Releases APIで2026-07-19 JSTに確認した公式releaseは`0.9.1`が最新で、これより新しいreleaseは
+   なかった。従って、更新で解消する具体的なversion候補はない。
+
+### 未確認事項と判断境界
+
+- `docstring-parser-fork 0.0.16`のGoogle parser内部で、ASCII `:`をどの関数がどの規則で分割するかは、
+  この再調査では依存プロジェクトの公式sourceまで確認できなかった。上記DOC103/DOC110はAthenaの
+  lock済み環境での再現結果としてのみ記録する。内部実装を断定しない。
+- Typer 0.26.7の公式sourceにおけるfuture annotationsとmodule-local type aliasの解決経路は、この調査の
+  時間制約内に確認できなかった。Athenaでは`from __future__ import annotations`下のmodule-local aliasで
+  CLI constructionが失敗することをPoC済みだが、そのfailureをTyperの公式仕様として一般化しない。
+- 公式issueの全件検索は実施していない。既知issueの有無は`未確認`であり、存在しないとは主張しない。
+
+### 選択肢の比較
+
+| 選択肢 | 採用条件 | 判断 |
+| --- | --- | --- |
+| A. pydoclintを更新または設定だけで解消する | 公式releaseまたはdocumented settingが、`Annotated` metadataを除外して基底型を比較する | **不採用**。現行最新0.9.1に該当するversion/configはない。 |
+| B. production annotation/help metadataを構造的に変更する | runtime help、CLI construction、decorator metadataを不変と示すfocused testを追加し、task scopeを明示的に拡張する | **fallbackのみ**。parser都合でproduction表現を歪めるため、toolchain品質の最適解ではない。 |
+| C. pydoclintのargument type比較をglobalに無効化する | Args型とsignature型の一致をこのfeatureの品質要件から外す、明示的な仕様改訂がある | **不採用**。期待するSphinx-readyな型品質を失い、広い設定緩和になる。 |
+| D. pydoclintをこのgateから外し、Ruff `D`とinterrogateを継続する | `Annotated`対応が公式に提供されるまで、Args型の機械照合を本featureの完了条件から外す仕様改訂がある | **最も安全な暫定案**。production runtimeを変えず、既に確認済みの存在・coverage gateは維持できる。 |
+
+### 推奨次アクション
+
+Task 2.1は、productionコードを変更せず停止する。specのpydoclint採用条件を「`Annotated` metadataを
+含むsignatureに対して基底型比較を公式に支持すること」へ改め、現時点では選択肢Dを採用するのが最も
+整合的である。将来の公式releaseを再評価する場合は、次のPoCを一時fileで実行する。
+
+```bash
+nix develop --command uvx --from "pydoclint==<official-candidate>" \
+  pydoclint --config /tmp/pydoclint-annotated-poc.toml /tmp/pydoclint_annotated_poc.py
+```
+
+fixtureは`from __future__ import annotations`、`typing.Annotated`、`typer.Option(help="...: ...")`を
+含む`str | None`引数と、`Args:`に`ruleset (str | None): ...`を持つGoogle Style docstringにする。
+候補が公式対応を提供した場合の期待結果は`DOC103`、`DOC105`、`DOC110`が0件である。0.9.1ではこの
+期待結果を満たさないことを既に再現した。
+
+Sources:
+
+- [pydoclint 0.9.1 configuration options](https://github.com/jsh9/pydoclint/blob/0.9.1/docs/config_options.md) (2026-07-19確認)
+- [pydoclint 0.9.1 `Arg` implementation](https://github.com/jsh9/pydoclint/blob/0.9.1/pydoclint/utils/arg.py) (2026-07-19確認)
+- [pydoclint 0.9.1 project metadata](https://github.com/jsh9/pydoclint/blob/0.9.1/pyproject.toml) (2026-07-19確認)
+- [pydoclint releases](https://github.com/jsh9/pydoclint/releases) (2026-07-19確認)
+- Athena `uv.lock`: `pydoclint 0.9.1` and `docstring-parser-fork 0.0.16` (2026-07-19確認)
+- [Typer 0.26.7 source tag](https://github.com/fastapi/typer/tree/0.26.7) (version provenance only; future annotations/type alias internals are未確認)
+
+---
+
+## Task 2.1 追加検証: 型比較だけを外す設定の可否
+
+検証日時: 2026-07-19 JST
+
+### 結論
+
+選択肢Bの「pydoclintを残し、raw type equalityだけを無効化する」は、`pydoclint 0.9.1`では
+成立しない。`arg-type-hints-in-signature`と`arg-type-hints-in-docstring`は型比較だけを止める
+switchではなく、signature又はdocstringに型記載を要求するpolicy switchである。`False`にすると、
+Athenaが既に持つ型注釈はDOC108、Google Styleの型付き`Args:`はDOC111になる。
+
+従って、現行toolでは選択肢Aの「pydoclintをこのfeatureのgateから外す」を推奨する。これは
+pydoclint自体を恒久的に否定する判断ではない。`Annotated` metadataを基底型へ正規化する公式対応、
+又は型を許容したままequalityだけを無効化する公式optionが導入された時点で、選択肢Bを再評価する。
+
+### 公式実装とoptionの意味
+
+- `arg-type-hints-in-signature = true`はsignatureの全argumentに型を要求し、`false`は型注釈が
+  存在すること自体をDOC108として報告する。`arg-type-hints-in-docstring`も同じ対称性で、`false`は
+  型付き`Args:`をDOC111として報告する。どちらも「存在する型を比較しない」設定ではない。
+- 両方が`true`のとき、引数名が同じで型だけが異なる場合にDOC105を報告する。argument数のDOC101/DOC102、
+  name集合のDOC103、順序のDOC104は別の処理である。順序と型が同時に不一致のcaseではDOC105も
+  報告され得るため、flagを片方だけ変えてもraw type equalityを完全に消せない。
+- `check-return-types = false`はReturn型不一致DOC203だけを止め、Returns sectionの有無DOC201/DOC202と
+  `require-return-section-when-returning-nothing`のNone return policyは維持する。`check-yield-types = false`
+  もYields型不一致DOC404だけを止め、Yields sectionの有無DOC402/DOC403と
+  `require-yield-section-when-yielding-nothing`は維持する。
+- private functionの対象可否は`skip-checking-private-functions`、style mismatchは
+  `check-style-mismatch`がそれぞれ独立して決める。上記4設定を変えても、これらの検査は残る。
+
+### 一時PoC
+
+repositoryの`pyproject.toml`とsourceは変更せず、`/tmp`のfixtureとconfigで
+`nix develop --command uv run pydoclint`を実行した。fixtureは`from __future__ import annotations`、
+`Annotated[str | None, typer.Option(help="...: ...")]`、型付きGoogle `Args:`、`-> None`を含む。
+
+| 設定 | `Annotated` fixtureの結果 | 判断 |
+| --- | --- | --- |
+| 両`arg-type-hints-* = true` | `ruleset (str | None)`にDOC105 | 現在の問題を再現。 |
+| signatureのみ`false` | DOC108 | 型注釈を禁止するため不適。 |
+| docstringのみ`false` | DOC111 | AGENTS.mdが必須とする型付き`Args:`を禁止するため不適。 |
+| 両方`false` | DOC108とDOC111 | DOC105は消えるが、正しいsource/docstringを新しい違反にするため不適。 |
+| 両方`false`かつ完全な`Annotated[...]`型をdocstringへ記載 | DOC108とDOC103 | parser上の構造問題も残り、DOC103/DOC105/DOC110をまとめて解消できない。 |
+
+同じ`arg-type-hints-* = false`設定で、型を含まない別fixtureを走査した結果、private callableの
+引数欠落はDOC101/DOC103、argument order不一致はDOC104、`-> None`のReturns欠落はDOC201、
+Yields欠落はDOC402、NumPy StyleはDOC003として報告された。したがって、構造検査が独立で残ることは
+確認できた。しかしこの状態はAthenaの型注釈と型付きGoogle Style docstringを許容しないため、
+選択肢Bの有効な実装にはならない。
+
+`check-return-types = false`と`check-yield-types = false`も同fixtureで検証した。DOC203とDOC404は
+消えた一方、DOC201、DOC402、DOC101、DOC103、DOC104、DOC003は残った。これら2設定はargumentの
+`Annotated`問題を解決しないため、Task 2.1のために変更する必要はなく、型整合性を余計に落とすため
+変更すべきではない。
+
+### A/B判断と再評価条件
+
+| 選択肢 | 現行0.9.1での評価 | 推奨 |
+| --- | --- | --- |
+| A. pydoclint全体をgateから外す | Ruff `D`とinterrogateの存在・coverage gateを維持し、runtimeと型付きdocstringを歪めない | **採用** |
+| B. raw type equalityだけを外してpydoclintを残す | その粒度のofficial settingがなく、候補flagは型記載そのものを禁止する | **不採用** |
+
+将来Bを採用するには、同一fixtureで次をすべて満たす公式version/configが必要である。
+
+1. `ruleset (str | None)`と`Annotated[str | None, typer.Option(help="...: ...")]`の組合せで
+   DOC103/DOC105/DOC108/DOC110/DOC111が0件である。
+2. private引数欠落、argument order不一致、None returnのReturns欠落、Yields欠落、style mismatchが
+   それぞれDOC101/DOC104/DOC201/DOC402/DOC003として引き続き検出される。
+3. `check-return-types`と`check-yield-types`は`true`のままである。
+
+Sources:
+
+- [pydoclint 0.9.1 configuration options](https://github.com/jsh9/pydoclint/blob/0.9.1/docs/config_options.md) (2026-07-19確認)
+- [pydoclint 0.9.1 visitor implementation](https://github.com/jsh9/pydoclint/blob/0.9.1/pydoclint/visitor.py) (2026-07-19確認: argument checks, return/yield checks, private/style options)
+- [pydoclint 0.9.1 argument comparison helper](https://github.com/jsh9/pydoclint/blob/0.9.1/pydoclint/utils/visitor_helper.py) (2026-07-19確認)
