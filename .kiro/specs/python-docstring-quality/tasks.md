@@ -92,7 +92,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/athena_cli/*.py, tests/integration/athena_cli/*.pyからtest_cli_stable_verify.pyを除く_
 
-- [ ] 2.3 (P) Stable verificationのgetscores source modelを整備する
+- [x] 2.3 (P) Stable verificationのgetscores source modelを整備する
   - catalog.py、getscores.py、getscores_evidence.py、models.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびfocused getscores verification testが通る
   - _Depends: 1.4_
