@@ -21,7 +21,7 @@
   - _Requirements: 1.3, 2.1, 2.2, 2.3, 2.4, 3.3, 5.1, 5.2, 5.3, 6.1, 6.3, 6.4_
   - _Boundary: AGENTS.md, README.md, docs/architecture.md, .kiro/steering/tech.md_
 
-- [ ] 1.2 承認済みdocstring toolchainをglobal gate未有効の状態で追加する
+- [x] 1.2 承認済みdocstring toolchainをglobal gate未有効の状態で追加する
   - Python 3.14でinterrogate 1.7.0とpydoclint 0.9.1のPoCを再実行し、Ruff Dと重複しない価値、
     Ruff DOCを採用しない理由、他の不採用候補の判断を再確認する
   - 2 toolをdev-only dependencyとして追加し、uv.lockを更新する。interrogateはsphinx styleで

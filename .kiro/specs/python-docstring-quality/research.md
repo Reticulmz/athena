@@ -538,3 +538,42 @@ class attribute照合だけ設定で境界を切る。
   `scripts/ci.sh`、`AGENTS.md`はtooling taskの単一ownerに限定する。
 - **quality gate実行時間**: PoCのfull scanは2 tool合計約15秒であり、pre-commitではPython変更時だけ
   実行する。大幅な増加が生じた場合もscopeやthresholdを緩和せず、tool profilingを行う。
+
+## Task 1.2実装時のPython 3.14再検証
+
+実施日時: 2026-07-19 JST
+
+`nix develop`内のPython 3.14.4で、承認済みの`interrogate 1.7.0`と`pydoclint 0.9.1`を
+dev dependencyとしてlockした。`nix develop --command uv sync`は88 packageを解決して成功した。
+
+次のfocused fixtureを`/tmp`に作成し、repositoryへfixture artifactを残さずに検証した。
+fixtureは日本語Google Styleのmodule、class、`__init__`、private method、dunder、property、
+nested function、overload、`None` return、yield、`Raises:`を含む。
+
+| Command | Result | 確認したsignal |
+| --- | --- | --- |
+| `uv run interrogate --config pyproject.toml /tmp/athena_docstring_quality_probe.py` | `RESULT: PASSED (minimum: 100.0%, actual: 100.0%)` | `sphinx` coverage semanticsがclassと`__init__`を別definitionとして数え、private/nested/dunder/property/overloadを除外しないこと |
+| `uv run pydoclint --config pyproject.toml /tmp/athena_docstring_quality_probe.py` | `No violations` | Google StyleのArgs/Returns/Yields、signature type、private definition、constructor、None return、star argument、style mismatch設定がPython 3.14.4で読まれること |
+
+`interrogate`はRuff `D`がcoverage数値と通常のprivate/nested definitionを完全には扱わない部分を
+100% thresholdで補う。`pydoclint`はRuff `D`が検査しないArgs/Returns/Yieldsとsignature typeの
+整合を補う。このため両toolはRuffと役割が重複しない。
+
+Ruffには`[tool.ruff.lint.pydocstyle] convention = "google"`だけを先に追加した。未整備corpusを
+既存quality commandでblockしないため、migration step 1ではglobal `select`または`extend-select`へ
+`D`/`D417`を追加していない。最終gate activation taskで`D`を追加するとGoogle conventionにより
+`D417`も有効になる。Ruff `DOC`はRuff 0.15.13ではpreviewであり、stableな必須gateへ採用しない。
+
+`pydoclint`はdirect ASTの`raise`だけでは意図的に伝播するcaller-visible exceptionを判定できないため
+`skip-checking-raises = true`とした。unannotated `StrEnum` memberと`__slots__`へruntime annotationを
+要求するclass attribute照合も、runtime不変と個別ignore禁止に反するため
+`check-class-attributes = false`とした。それ以外のcontent checksは有効である。
+
+baseline、baseline生成、tool設定上のbroad exclude、docstring ruleの`noqa`、Ruffのper-file
+docstring ignoreは追加していない。`pydoclint`の既定値が表示する`.git|.tox`はtool内部の既定path
+filterであり、後続taskがGit indexから渡すfirst-party Python inventoryを隠す設定ではない。
+
+不採用候補の判断は維持する。repository-owned AST checkerは`interrogate`が必要なdefinition分類を
+Python 3.14で満たしたため不要であり、`darglint`など保守状況またはPython 3.14互換性を確認できない
+候補は必須gateへ入れない。Sphinxはexternal documentation repositoryの責務であり、Athenaのdev
+dependencyには追加しない。

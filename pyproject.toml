@@ -41,6 +41,8 @@ dev = [
     "gitlint-core",
     "pytest-fixture-classes>=1.0.4",
     "httpx2>=2.4.0",
+    "interrogate==1.7.0",
+    "pydoclint==0.9.1",
 ]
 
 [tool.uv]
@@ -105,12 +107,52 @@ ignore = [
 "tests/integration/test_polling_e2e.py" = ["PLC0415"]
 "tests/integration/test_registration_flow.py" = ["PLC0415"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.lint.isort]
 known-first-party = ["osu_server", "athena_cli"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.interrogate]
+fail-under = 100
+style = "sphinx"
+ignore-init-method = false
+ignore-init-module = false
+ignore-magic = false
+ignore-module = false
+ignore-nested-functions = false
+ignore-nested-classes = false
+ignore-overloaded-functions = false
+ignore-private = false
+ignore-property-decorators = false
+ignore-setters = false
+ignore-semiprivate = false
+
+[tool.pydoclint]
+style = "google"
+arg-type-hints-in-signature = true
+arg-type-hints-in-docstring = true
+check-arg-order = true
+skip-checking-short-docstrings = false
+skip-checking-raises = true # Caller-visible propagated exceptions cannot be inferred from direct AST raises.
+skip-checking-private-functions = false
+allow-init-docstring = true
+require-return-section-when-returning-nothing = true
+check-return-types = true
+require-yield-section-when-yielding-nothing = true
+check-yield-types = true
+ignore-underscore-args = false
+ignore-private-args = false
+check-class-attributes = false # StrEnum members and __slots__ must not require runtime annotations.
+treat-property-methods-as-class-attributes = false
+should-document-star-arguments = true
+omit-stars-when-documenting-varargs = false
+check-style-mismatch = true
+auto-regenerate-baseline = false
 
 [tool.basedpyright]
 pythonVersion = "3.14"
