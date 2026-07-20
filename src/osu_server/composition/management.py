@@ -1,4 +1,8 @@
-"""Lightweight composition helpers for management commands."""
+"""management command向けの軽量なdependency composition helperを提供する.
+
+command実行中だけ必要なdatabase/Valkey adapterとidentity use-caseを組み立て、
+処理後に所有するresourceを解放する.
+"""
 
 from __future__ import annotations
 
@@ -36,7 +40,21 @@ async def change_user_password(
     config: AppConfig,
     input_data: ChangeUserPasswordCommandInput,
 ) -> ChangeUserPasswordCommandResult:
-    """Build the minimal DB-backed graph needed to change a user's password."""
+    """利用者password変更に必要な最小のdatabase graphを構築して実行する.
+
+    Args:
+        config (AppConfig): database接続先、禁止password一覧を含むruntime設定.
+        input_data (ChangeUserPasswordCommandInput): target userと新passwordを含むcommand input.
+
+    Returns:
+        ChangeUserPasswordCommandResult: password変更use-caseの実行結果.
+
+    Raises:
+        Exception: database graphの構築またはpassword変更use-caseの実行が失敗した場合.
+
+    Notes:
+        このhelperが作成したdatabase engineは処理結果または例外にかかわらずdisposeする.
+    """
     engine = create_engine(str(config.database_url))
     try:
         session_factory = create_session_factory(engine)
@@ -59,7 +77,22 @@ async def change_user_role(
     config: AppConfig,
     input_data: ChangeUserRoleCommandInput,
 ) -> ChangeUserRoleCommandResult:
-    """Build the minimal DB-backed graph needed to change a user's role."""
+    """利用者role変更に必要なdatabase/Valkey graphを構築して実行する.
+
+    Args:
+        config (AppConfig): database/Valkey接続先とsession TTLを含むruntime設定.
+        input_data (ChangeUserRoleCommandInput): target userと割り当てるroleを含むcommand input.
+
+    Returns:
+        ChangeUserRoleCommandResult: role変更use-caseの実行結果.
+
+    Raises:
+        Exception: database/Valkey graphの構築またはrole変更use-caseの実行が失敗した場合.
+
+    Notes:
+        このhelperが作成したValkey clientとdatabase engineは処理結果または例外にかかわらず
+        close/disposeする.
+    """
     engine = create_engine(str(config.database_url))
     try:
         valkey = await create_valkey_client(str(config.valkey_url))

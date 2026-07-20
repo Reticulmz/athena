@@ -1,4 +1,7 @@
-"""CLI-adjacent composition for PP recalculation commands."""
+"""PP recalculation command用のCLI隣接dependency compositionを提供する.
+
+performance calculator runtimeを含めず、recalculation batch作成に必要なproviderだけを組み立てる.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +29,18 @@ def make_performance_cli_container(
     config: AppConfig,
     overrides: Iterable[Provider] = (),
 ) -> AsyncContainer:
-    """Build the CLI graph for PP recalculation without calculator runtime imports."""
+    """PP recalculation CLI用のDishka containerを構築する.
+
+    Args:
+        config (AppConfig): infrastructure providerが使用するruntime設定.
+        overrides (Iterable[Provider]): production provider setへ追加するDishka provider.
+
+    Returns:
+        AsyncContainer: recalculation batch作成に必要なdependencyを解決するcontainer.
+
+    Notes:
+        calculator runtime providerはこのcontainerへ登録しない.
+    """
     return make_async_container(
         InfrastructureProviderSet(config),
         RepositoryProviderSet(),
@@ -39,7 +53,20 @@ def make_performance_cli_container(
 async def create_performance_recalculation_batch_use_case(
     config: AppConfig,
 ) -> AsyncGenerator[CreatePerformanceRecalculationBatchUseCase]:
-    """Resolve the production PP recalculation use-case without calculator imports."""
+    """productionのperformance recalculation batch use-caseを一時的に解決する.
+
+    Args:
+        config (AppConfig): 一時containerのinfrastructure設定.
+
+    Yields:
+        CreatePerformanceRecalculationBatchUseCase: callerがbatchを作成するためのuse-case.
+
+    Raises:
+        Exception: containerの構築またはuse-case解決が失敗した場合.
+
+    Notes:
+        yield終了後は一時containerを必ずcloseする.
+    """
     container = make_performance_cli_container(config)
     try:
         yield await container.get(CreatePerformanceRecalculationBatchUseCase)

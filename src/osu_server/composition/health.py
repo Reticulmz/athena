@@ -1,4 +1,7 @@
-"""Health and version endpoints for the root ASGI application."""
+"""root ASGI applicationのversionとhealth endpointを提供する.
+
+起動時のinfrastructure確認と、request時に返すversion/依存service状態をここで定義する.
+"""
 
 from __future__ import annotations
 
@@ -20,11 +23,15 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger()  # pyright: ignore
 
 
 def get_version_info() -> tuple[str, str]:
-    """Return ``(package_version, commit_hash)`` for health responses.
+    """応答用のpackage versionとcommit hashを取得する.
 
-    * ``package_version`` comes from ``importlib.metadata`` (pyproject.toml).
-    * ``commit_hash`` is the short git HEAD hash; falls back to ``"unknown"``
-      when git is unavailable or the repo is missing.
+    Returns:
+        tuple[str, str]: installed package versionとshort git HEAD hash. gitが利用できない
+            場合のhashは`unknown`.
+
+    Raises:
+        importlib.metadata.PackageNotFoundError: Athena package metadataが実行環境で
+            見つからない場合.
     """
     version = importlib.metadata.version("athena")
 
@@ -43,9 +50,16 @@ def get_version_info() -> tuple[str, str]:
 
 
 async def check_infrastructure(container: AsyncContainer) -> None:
-    """Verify PostgreSQL and Valkey connectivity at startup.
+    """PostgreSQLとValkeyへの接続を確認する.
 
-    Raises on failure so the server refuses to start with broken dependencies.
+    Args:
+        container (AsyncContainer): database engineとValkey clientを解決するDishka container.
+
+    Returns:
+        None: PostgreSQLの`SELECT 1`とValkeyの`ping`を完了したことを示す.
+
+    Raises:
+        Exception: database connection、SQL実行、またはValkey pingが失敗した場合.
     """
     engine = await container.get(AsyncEngine)
     async with engine.connect() as conn:
@@ -58,13 +72,35 @@ async def check_infrastructure(container: AsyncContainer) -> None:
 
 
 async def health_endpoint(request: Request) -> PlainTextResponse:
-    """Return a plain-text health response with version and commit hash."""
+    """versionとcommit hashを含むplain-text health responseを返す.
+
+    Args:
+        request (Request): `version_info`を保持するStarlette request.
+
+    Returns:
+        PlainTextResponse: `athena v<version> (<commit>)`形式のresponse.
+
+    Notes:
+        application lifespanが`request.app.state.version_info`を設定済みであることを前提とする.
+    """
     version, commit = request.app.state.version_info  # pyright: ignore[reportAny]
     return PlainTextResponse(f"athena v{version} ({commit})\n")
 
 
 async def health_check_endpoint(request: Request) -> JSONResponse:
-    """Return infrastructure health status with DB and Valkey connectivity checks."""
+    """databaseとValkeyの状態を含むJSON health responseを返す.
+
+    Args:
+        request (Request): `version_info`と`dishka_container`を保持するStarlette request.
+
+    Returns:
+        JSONResponse: 両serviceが正常なら200/healthy、いずれかが失敗なら503/unhealthyの
+            response.
+
+    Notes:
+        application lifespanがrequest app stateを設定済みであることを前提とし、各serviceの
+        確認失敗はresponseの`checks`へ`error`として記録する.
+    """
     version, commit = request.app.state.version_info  # pyright: ignore[reportAny]
     container: AsyncContainer = request.app.state.dishka_container  # pyright: ignore[reportAny]
 

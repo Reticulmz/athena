@@ -123,7 +123,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/athena_cli/stable_verificationの4 file_
 
-- [ ] 2.7 (P) Application entry pointとtop-level compositionを整備する
+- [x] 2.7 (P) Application entry pointとtop-level compositionを整備する
   - src/osu_server/*.pyとsrc/osu_server/composition/*.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびapplication、worker、lifecycle、composition testが通る
   - _Depends: 1.4_

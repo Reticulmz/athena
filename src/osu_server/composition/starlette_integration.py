@@ -1,4 +1,4 @@
-"""Starlette integration helpers for the Dishka app container."""
+"""Dishka application containerをStarletteへ統合するhelperを提供する."""
 
 from __future__ import annotations
 
@@ -7,5 +7,9 @@ from starlette_dishka import ContainerMiddleware
 
 
 def dishka_middleware() -> Middleware:
-    """Return the Starlette middleware that opens Dishka request scopes."""
+    """Dishka request scopeを開くStarlette middlewareを生成する.
+
+    Returns:
+        Middleware: `ContainerMiddleware`を登録するためのStarlette middleware定義.
+    """
     return Middleware(ContainerMiddleware)

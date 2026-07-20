@@ -1,4 +1,7 @@
-"""Taskiq integration helpers for the Dishka worker container."""
+"""Dishka worker containerをTaskiqへ統合するhelperを提供する.
+
+Taskiq jobごとのDishka scopeとSQL query diagnostics scopeをbroker middlewareとして構成する.
+"""
 
 from __future__ import annotations
 
@@ -30,18 +33,32 @@ logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 @dataclass(slots=True)
 class _ActiveTaskiqDiagnosticScope:
+    """実行中Taskiq jobのSQL query diagnostics scopeを保持する.
+
+    Attributes:
+        manager (AbstractContextManager[QueryDiagnosticCollector]): scopeの開始と終了を管理する
+            context manager.
+        collector (QueryDiagnosticCollector): job実行中にquery情報を収集するcollector.
+    """
+
     manager: AbstractContextManager[QueryDiagnosticCollector]
     collector: QueryDiagnosticCollector
 
 
 class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
-    """Taskiq job ごとに SQL query diagnostics scope を開く middleware."""
+    """Taskiq jobごとにSQL query diagnostics scopeを開くmiddlewareを表す.
+
+    Attributes:
+        _config (AppConfig): diagnosticsの有効状態と閾値を持つruntime設定.
+        _active_scopes (dict[str, _ActiveTaskiqDiagnosticScope]): task IDごとに開始済みの
+            diagnostics scopeを保持するmapping.
+    """
 
     def __init__(self, config: AppConfig) -> None:
-        """Middleware を runtime config で初期化する.
+        """middlewareをruntime configurationで初期化する.
 
         Args:
-            config: Runtime SQL diagnostics の有効状態と thresholds.
+            config (AppConfig): runtime SQL diagnosticsの有効状態とthresholds.
         """
         super().__init__()
         self._config: AppConfig = config
@@ -49,13 +66,16 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
 
     @override
     def pre_execute(self, message: TaskiqMessage) -> TaskiqMessage:
-        """Job 実行前に diagnostics scope を開始する.
+        """job実行前に有効なdiagnostics scopeを開始する.
 
         Args:
-            message: 実行される Taskiq message.
+            message (TaskiqMessage): 実行されるTaskiq message.
 
         Returns:
-            Taskiq に渡す message. Athena では変更しない.
+            TaskiqMessage: Taskiqへ渡す元のmessage. Athenaでは変更しない.
+
+        Raises:
+            Exception: diagnostics scopeの開始に失敗した場合.
         """
         if not self._config.query_diagnostics_effective_enabled:
             return message
@@ -78,11 +98,17 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
         message: TaskiqMessage,
         result: TaskiqResult[object],
     ) -> None:
-        """Job 完了後に scope を閉じて必要なら warning を出す.
+        """job完了後にdiagnostics scopeを閉じて必要ならwarningを出す.
 
         Args:
-            message: 完了した Taskiq message.
-            result: Taskiq の実行結果. 診断では参照しない.
+            message (TaskiqMessage): 完了したTaskiq message.
+            result (TaskiqResult[object]): Taskiqの実行結果. 診断では参照しない.
+
+        Returns:
+            None: 対応するscopeを終了し、必要なwarningを記録したことを示す.
+
+        Raises:
+            Exception: diagnostics scopeの終了またはwarning記録が失敗した場合.
         """
         _ = result
         await self._finish_scope(message)
@@ -94,17 +120,34 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
         result: TaskiqResult[object],
         exception: BaseException,
     ) -> None:
-        """Job 失敗時に scope を閉じて必要なら warning を出す.
+        """job失敗時にdiagnostics scopeを閉じて必要ならwarningを出す.
 
         Args:
-            message: 失敗した Taskiq message.
-            result: Taskiq の実行結果. 診断では参照しない.
-            exception: 発生した例外. 診断では参照しない.
+            message (TaskiqMessage): 失敗したTaskiq message.
+            result (TaskiqResult[object]): Taskiqの実行結果. 診断では参照しない.
+            exception (BaseException): 発生した例外. 診断では参照しない.
+
+        Returns:
+            None: 対応するscopeを終了し、必要なwarningを記録したことを示す.
+
+        Raises:
+            Exception: diagnostics scopeの終了またはwarning記録が失敗した場合.
         """
         _ = (result, exception)
         await self._finish_scope(message)
 
     async def _finish_scope(self, message: TaskiqMessage) -> None:
+        """対象task IDに対応するdiagnostics scopeを終了してsummaryを記録する.
+
+        Args:
+            message (TaskiqMessage): 終了対象scopeのtask IDを持つTaskiq message.
+
+        Returns:
+            None: scopeがない場合は何もせず、存在した場合はwarning記録まで完了したことを示す.
+
+        Raises:
+            Exception: diagnostics scopeの終了またはwarning記録が失敗した場合.
+        """
         active_scope = self._active_scopes.pop(message.task_id, None)
         if active_scope is None:
             return
@@ -121,7 +164,15 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
 
 
 def setup_taskiq_dishka(container: AsyncContainer, broker: AsyncBroker) -> None:
-    """Install one Dishka middleware instance on the taskiq broker."""
+    """Taskiq brokerへDishka container middlewareを1個だけ登録する.
+
+    Args:
+        container (AsyncContainer): Taskiq job scopeで利用するDishka container.
+        broker (AsyncBroker): middlewareを再構成するTaskiq broker.
+
+    Returns:
+        None: 既存ContainerMiddlewareを除去してDishka integrationを設定したことを示す.
+    """
     broker.middlewares = [
         middleware
         for middleware in broker.middlewares
@@ -131,11 +182,14 @@ def setup_taskiq_dishka(container: AsyncContainer, broker: AsyncBroker) -> None:
 
 
 def setup_taskiq_query_diagnostics(config: AppConfig, broker: AsyncBroker) -> None:
-    """Taskiq broker に runtime SQL diagnostics middleware を一度だけ登録する.
+    """Taskiq brokerにruntime SQL diagnostics middlewareを一度だけ登録する.
 
     Args:
-        config: Runtime SQL diagnostics の有効状態と thresholds.
-        broker: Worker が利用する Taskiq broker.
+        config (AppConfig): runtime SQL diagnosticsの有効状態とthresholds.
+        broker (AsyncBroker): workerが利用するTaskiq broker.
+
+    Returns:
+        None: 既存diagnostics middlewareを除去し、有効時だけ新instanceを追加したことを示す.
     """
     broker.middlewares = [
         middleware

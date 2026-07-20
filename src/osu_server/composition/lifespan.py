@@ -1,4 +1,8 @@
-"""Application lifespan management."""
+"""Starlette applicationのlifespanを管理するfactoryとcontext managerを提供する.
+
+Dishka application container、route handler、version metadataをstartup時に準備し、
+lifespan終了時にcontainerをcloseする.
+"""
 
 from __future__ import annotations
 
@@ -27,7 +31,17 @@ if TYPE_CHECKING:
 
 
 async def _initialize_dishka_app_container(container: AsyncContainer) -> None:
-    """Eagerly validate the Starlette app's Dishka APP-scope dependencies."""
+    """Starlette applicationが使用するDishka APP scope dependencyを先行解決する.
+
+    Args:
+        container (AsyncContainer): application用に構築済みのDishka container.
+
+    Returns:
+        None: configuration、infrastructure、HTTP handlerを一度ずつ解決したことを示す.
+
+    Raises:
+        Exception: APP scope dependencyの解決に失敗した場合.
+    """
     _ = await container.get(AppConfig)
     _ = await container.get(AsyncEngine)
     _ = await container.get(AsyncBroker)
@@ -42,10 +56,26 @@ async def _initialize_dishka_app_container(container: AsyncContainer) -> None:
 def create_lifespan(
     provider_overrides: Iterable[Provider] = (),
 ):
-    """Create a Starlette lifespan bound to explicit provider overrides."""
+    """明示したprovider overrideに束縛したStarlette lifespan factoryを作成する.
+
+    Args:
+        provider_overrides (Iterable[Provider]): application containerへ追加するDishka provider.
+
+    Returns:
+        Callable[[Starlette], AbstractAsyncContextManager[None]]: 指定providerを利用して
+            startup/shutdownを実行するStarlette lifespan factory.
+    """
 
     @asynccontextmanager
     async def configured_lifespan(app: Starlette) -> AsyncGenerator[None]:
+        """指定provider overrideでapplication lifespanを実行する.
+
+        Args:
+            app (Starlette): lifespan stateを初期化するapplication.
+
+        Yields:
+            None: startup完了後からshutdown開始前までapplicationを実行可能にする.
+        """
         async with _run_lifespan(app, provider_overrides=provider_overrides):
             yield
 
@@ -54,7 +84,14 @@ def create_lifespan(
 
 @asynccontextmanager
 async def lifespan(app: Starlette) -> AsyncGenerator[None]:
-    """Manage application startup and shutdown lifecycle."""
+    """明示provider overrideなしでapplication lifespanを実行する.
+
+    Args:
+        app (Starlette): lifespan stateを初期化するapplication.
+
+    Yields:
+        None: startup完了後からshutdown開始前までapplicationを実行可能にする.
+    """
     async with _run_lifespan(app, provider_overrides=()):
         yield
 
@@ -65,15 +102,25 @@ async def _run_lifespan(
     *,
     provider_overrides: Iterable[Provider],
 ) -> AsyncGenerator[None]:
-    """Manage application startup and shutdown lifecycle.
+    """アプリケーションcontainerとroute handlerを準備してlifespanを実行する.
 
-    Startup:
-        1. ``load_config()`` — read environment variables into ``AppConfig``
-        2. ``make_app_container(config)`` — build the Dishka app graph
-        3. Eagerly validate app dependency graphs before serving
+    Args:
+        app (Starlette): container、handler、version metadataをstateへ保存するapplication.
+        provider_overrides (Iterable[Provider]): production provider graphへ追加するDishka
+            provider.
 
-    Shutdown:
-        1. ``dishka_container.close()`` — finalize Dishka APP-scope dependencies
+    Yields:
+        None: request handlerが必要とするstateを設定したapplication実行期間.
+
+    Raises:
+        Exception: configuration読み込み、container構築、dependency解決、infrastructure確認、
+            またはhandler解決が失敗した場合.
+
+    Notes:
+        test環境では`check_infrastructure()`を呼ばない. container構築後に発生した例外でも
+        `finally`でcontainerをcloseする.
+        startupでは`load_config()`、`make_app_container()`、dependencyの先行解決を順に行う.
+        shutdownでは`dishka_container.close()`でDishka APP scope dependencyをfinalizeする.
     """
     config = load_config()
     setup_logging(config)
