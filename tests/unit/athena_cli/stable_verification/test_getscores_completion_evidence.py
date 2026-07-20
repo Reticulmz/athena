@@ -1,3 +1,8 @@
+"""Stable getscores completion evidenceのloaderとvalidatorを検証する.
+
+このmoduleはversioned manifest, body fixture, status crosswalkの安全な読込と検証結果を保護する.
+"""
+
 from __future__ import annotations
 
 import base64
@@ -86,6 +91,14 @@ _EXPECTED_RESPONSE_BODIES = {
 def test_load_getscores_completion_evidence_returns_immutable_typed_bundle(
     tmp_path: Path,
 ) -> None:
+    """Completion evidence loaderがimmutable typed bundleを返すことを検証する.
+
+    Args:
+        tmp_path (Path): 有効なmanifest/body bundleを作成する一時root.
+
+    Returns:
+        None: Typed tuple fieldと3種類のPASS validation resultを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     _ = (manifest_root / "branch_cases.json").write_bytes(_BRANCH_CASES_MANIFEST.read_bytes())
 
@@ -108,6 +121,14 @@ def test_load_getscores_completion_evidence_returns_immutable_typed_bundle(
 def test_manifest_rejects_unknown_schema_and_top_level_fields_without_echoing_value(
     tmp_path: Path,
 ) -> None:
+    """Unknown schema/top-level fieldをraw valueを漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): 変更可能な有効manifest bundleを作成する一時root.
+
+    Returns:
+        None: Safe validation errorがschema/field nameだけを報告することを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -127,6 +148,14 @@ def test_manifest_rejects_unknown_schema_and_top_level_fields_without_echoing_va
 
 
 def test_manifest_missing_file_reports_safe_validation_error(tmp_path: Path) -> None:
+    """必須manifestがないbundleをsafe validation errorとして拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Empty manifest/body rootを作成する一時directory.
+
+    Returns:
+        None: Missing manifest errorがtemporary pathを漏らさないことを検証する.
+    """
     manifest_root = tmp_path / "manifests"
     body_root = tmp_path / "bodies"
     manifest_root.mkdir()
@@ -141,6 +170,14 @@ def test_manifest_missing_file_reports_safe_validation_error(tmp_path: Path) -> 
 
 
 def test_manifest_rejects_duplicate_ids_deterministically(tmp_path: Path) -> None:
+    """Duplicate response shape IDを値を漏らさず決定的に拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Duplicate entryを挿入する有効manifest bundleの一時root.
+
+    Returns:
+        None: Duplicate ID errorがshape valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -158,6 +195,14 @@ def test_manifest_rejects_duplicate_ids_deterministically(tmp_path: Path) -> Non
 
 
 def test_manifest_rejects_unknown_shape_reference(tmp_path: Path) -> None:
+    """Branch caseのunknown response shape referenceを拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Corrupt branch caseを作成する有効manifest bundleの一時root.
+
+    Returns:
+        None: Unknown shape errorがraw shape valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -172,6 +217,14 @@ def test_manifest_rejects_unknown_shape_reference(tmp_path: Path) -> None:
 
 
 def test_manifest_rejects_valid_but_unregistered_shape_reference(tmp_path: Path) -> None:
+    """Registryから除いた有効shapeへのbranch referenceを拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Response shape registryを変更する一時manifest bundleのroot.
+
+    Returns:
+        None: Unregistered shapeがunknown shape errorになることを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     response_document = _read_document(response_path)
@@ -195,6 +248,14 @@ def test_manifest_rejects_valid_but_unregistered_shape_reference(tmp_path: Path)
 
 
 def test_manifest_rejects_fixture_root_escape(tmp_path: Path) -> None:
+    """Body fixture root外へ出るrelative pathを拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Unsafe body pathを設定する有効manifest bundleの一時root.
+
+    Returns:
+        None: Safe errorがpath traversal segmentをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -210,6 +271,14 @@ def test_manifest_rejects_fixture_root_escape(tmp_path: Path) -> None:
 
 
 def test_manifest_rejects_missing_body_file_without_echoing_path(tmp_path: Path) -> None:
+    """存在しないbody fixtureをraw pathを漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Missing body fileを参照する有効manifest bundleの一時root.
+
+    Returns:
+        None: Missing body file errorがsecret-like filenameをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -227,6 +296,14 @@ def test_manifest_rejects_missing_body_file_without_echoing_path(tmp_path: Path)
 def test_manifest_rejects_unknown_body_encoding_without_echoing_value(
     tmp_path: Path,
 ) -> None:
+    """Unknown body encodingをraw encoding valueを漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Corrupt body encodingを設定する有効manifest bundleの一時root.
+
+    Returns:
+        None: Enum validation errorがraw encoding valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -243,6 +320,14 @@ def test_manifest_rejects_unknown_body_encoding_without_echoing_value(
 
 
 def test_manifest_rejects_non_object_collection_entry(tmp_path: Path) -> None:
+    """Objectでないmanifest collection entryを値を漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Non-object entryを追加する有効manifest bundleの一時root.
+
+    Returns:
+        None: Entry type errorがraw entry valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -261,6 +346,14 @@ def test_manifest_rejects_non_object_collection_entry(tmp_path: Path) -> None:
 def test_manifest_rejects_raw_secret_and_query_fields_without_echoing_values(
     tmp_path: Path,
 ) -> None:
+    """Forbidden raw query/credential fieldを値を漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Forbidden fieldを追加する有効branch manifestの一時root.
+
+    Returns:
+        None: Field-specific errorがraw query/credential valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -280,6 +373,11 @@ def test_manifest_rejects_raw_secret_and_query_fields_without_echoing_values(
 
 
 def test_public_branch_case_model_is_frozen_and_slotted() -> None:
+    """Public branch case modelがslottedかつimmutable value objectであることを検証する.
+
+    Returns:
+        None: Slot attributeとreplace後にoriginalを保持することを検証する.
+    """
     case = GetscoresBranchCase(
         case_id="case",
         identity_profile=GetscoresIdentityProfile.AUTH_MISSING,
@@ -299,6 +397,14 @@ def test_public_branch_case_model_is_frozen_and_slotted() -> None:
 
 
 def test_manifest_rejects_wrong_top_level_collection_type(tmp_path: Path) -> None:
+    """Top-level collectionがlist以外の場合にmanifestを拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Shapes collectionをobjectへ変更する有効manifest bundleの一時root.
+
+    Returns:
+        None: Collection type errorが報告されることを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -312,6 +418,14 @@ def test_manifest_rejects_wrong_top_level_collection_type(tmp_path: Path) -> Non
 
 
 def test_manifest_rejects_raw_username_field(tmp_path: Path) -> None:
+    """Forbidden raw username fieldをusername valueを漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Raw usernameを追加する有効branch manifestの一時root.
+
+    Returns:
+        None: Username field errorがraw valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -327,6 +441,14 @@ def test_manifest_rejects_raw_username_field(tmp_path: Path) -> None:
 
 
 def test_manifest_rejects_non_utf8_bytes_without_echoing_content(tmp_path: Path) -> None:
+    """UTF-8ではないmanifest bytesをcontentを漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Non-UTF-8 bytesを置く有効manifest bundleの一時root.
+
+    Returns:
+        None: Invalid UTF-8 errorがraw byte representationをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     _ = response_path.write_bytes(b"{\xff")
@@ -340,6 +462,14 @@ def test_manifest_rejects_non_utf8_bytes_without_echoing_content(tmp_path: Path)
 
 
 def test_manifest_root_resolution_failure_is_safe(tmp_path: Path) -> None:
+    """Resolveできないmanifest rootをtemporary pathを漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Self-referential symlink rootを作成する一時directory.
+
+    Returns:
+        None: Unsafe root path errorがtemporary rootをechoしないことを検証する.
+    """
     manifest_root = tmp_path / "manifest-loop"
     body_root = tmp_path / "bodies"
     manifest_root.symlink_to(manifest_root)
@@ -356,6 +486,14 @@ def test_manifest_root_resolution_failure_is_safe(tmp_path: Path) -> None:
 def test_evidence_source_is_typed_and_rejects_raw_query_like_reference(
     tmp_path: Path,
 ) -> None:
+    """Evidence sourceをtyped valueとして読み込みraw query-like referenceを拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Crosswalk evidence sourceを変更する有効manifest bundleの一時root.
+
+    Returns:
+        None: Typed sourceとsafe invalid source errorを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
     document = _read_document(crosswalk_path)
@@ -388,6 +526,14 @@ def test_evidence_source_is_typed_and_rejects_raw_query_like_reference(
 
 
 def test_wire_status_representation_requires_numeric_status(tmp_path: Path) -> None:
+    """Wire representationがnumeric wire statusを必須とすることを検証する.
+
+    Args:
+        tmp_path (Path): Wire statusを欠落させるcrosswalk bundleの一時root.
+
+    Returns:
+        None: Missing wire statusがvalidation errorになることを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
     document = _read_document(crosswalk_path)
@@ -407,6 +553,14 @@ def test_wire_status_representation_requires_numeric_status(tmp_path: Path) -> N
 
 
 def test_evidence_source_rejects_parent_path_segments(tmp_path: Path) -> None:
+    """Evidence source内のparent path segmentをsafe errorとして拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Unsafe evidence sourceを設定するcrosswalk bundleの一時root.
+
+    Returns:
+        None: Invalid source errorがprivate path segmentをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
     document = _read_document(crosswalk_path)
@@ -430,6 +584,14 @@ def test_evidence_source_rejects_parent_path_segments(tmp_path: Path) -> None:
 def test_status_crosswalk_fixture_records_every_canonical_endpoint_contract(
     tmp_path: Path,
 ) -> None:
+    """Status crosswalk fixtureが全canonical statusのendpoint contractを記録することを検証する.
+
+    Args:
+        tmp_path (Path): Canonical crosswalkをisolated bundleへcopyする一時root.
+
+    Returns:
+        None: Getscores/beatmap-info representation, wire status, evidence sourceを検証する.
+    """
     assert _STATUS_CROSSWALK_MANIFEST.is_file()
     manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
 
@@ -486,6 +648,11 @@ def test_status_crosswalk_fixture_records_every_canonical_endpoint_contract(
 
 
 def test_approved_getscores_crosswalk_uses_single_reference_before_athena_corroboration() -> None:
+    """Approved getscores crosswalkがreference implementationを先頭evidenceにすることを検証する.
+
+    Returns:
+        None: Approved endpointのevidence stateと順序付きsource chainを検証する.
+    """
     evidence = load_getscores_completion_evidence(
         _STATUS_CROSSWALK_MANIFEST.parent,
         _COMPLETION_BODY_ROOT,
@@ -505,6 +672,11 @@ def test_approved_getscores_crosswalk_uses_single_reference_before_athena_corrob
 
 
 def test_status_crosswalk_markdown_source_resolves_to_canonical_heading_anchor() -> None:
+    """Markdown evidence sourceがrepository内のcanonical heading anchorを参照することを検証する.
+
+    Returns:
+        None: Source prefix/path/fragmentと生成したGitHub heading anchorの一致を検証する.
+    """
     evidence = load_getscores_completion_evidence(
         _STATUS_CROSSWALK_MANIFEST.parent,
         _COMPLETION_BODY_ROOT,
@@ -534,19 +706,15 @@ def test_status_crosswalk_validator_rejects_official_fixture_wire_status_mismatc
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Official fixtureの実体がcrosswalk wire statusと矛盾した場合に拒否する。
+    """Official fixtureがcrosswalk wire statusと矛盾した場合に拒否することを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): Repository rootを一時fixture sourceへ差し替えるfixture。
-        tmp_path (Path): Fixture sourceを隔離して作成する一時directory。
+        monkeypatch (pytest.MonkeyPatch): Repository rootを一時fixture sourceへ差し替えるfixture.
+        tmp_path (Path): Fixture sourceを隔離して作成する一時directory.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Official fixtureとcrosswalkのwire status不一致をPASSにする場合。
+        None: Status crosswalk validationがsafe failureになることを検証する.
     """
-
     source_root = tmp_path / "fixture-source"
     source_path = source_root / "tests" / "fixtures" / "web_legacy" / "getscores"
     source_path.mkdir(parents=True)
@@ -576,6 +744,14 @@ def test_status_crosswalk_validator_rejects_official_fixture_wire_status_mismatc
 def test_status_crosswalk_rejects_missing_canonical_status_without_echoing_value(
     tmp_path: Path,
 ) -> None:
+    """Canonical statusを欠落したcrosswalkをvalueを漏らさずFAILにすることを検証する.
+
+    Args:
+        tmp_path (Path): Ranked entryを削除するcrosswalk bundleの一時root.
+
+    Returns:
+        None: Status crosswalk validationがFAILになりstatus valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
     crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
     document = _read_document(crosswalk_path)
@@ -597,18 +773,14 @@ def test_status_crosswalk_rejects_missing_canonical_status_without_echoing_value
 def test_status_crosswalk_validator_reports_missing_canonical_mapping_without_key_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Canonical status mappingが欠けてもverifierを安全なFAILとして完了する。
+    """Canonical status mappingが欠けてもverifierが安全なFAILとして完了することを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): Canonical mappingを不完全な状態へ差し替えるfixture。
+        monkeypatch (pytest.MonkeyPatch): Canonical mappingを不完全な状態へ差し替えるfixture.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Mapping欠落でKeyErrorが送出される, またはcrosswalkがPASSになる場合。
+        None: Mapping欠落がKeyErrorでなくcrosswalk FAILになることを検証する.
     """
-
     evidence = load_getscores_completion_evidence(
         _STATUS_CROSSWALK_MANIFEST.parent,
         _COMPLETION_BODY_ROOT,
@@ -632,6 +804,14 @@ def test_status_crosswalk_validator_reports_missing_canonical_mapping_without_ke
 def test_status_crosswalk_rejects_duplicate_canonical_status_without_echoing_value(
     tmp_path: Path,
 ) -> None:
+    """Duplicate canonical statusをvalueを漏らさずFAILにすることを検証する.
+
+    Args:
+        tmp_path (Path): Ranked entryを複製するcrosswalk bundleの一時root.
+
+    Returns:
+        None: Status crosswalk validationがFAILになりstatus valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
     evidence = load_getscores_completion_evidence(manifest_root, body_root)
     ranked = evidence.status_crosswalk[0]
@@ -650,6 +830,14 @@ def test_status_crosswalk_rejects_duplicate_canonical_status_without_echoing_val
 def test_status_crosswalk_validator_rejects_approved_downgrade_to_athena_deterministic(
     tmp_path: Path,
 ) -> None:
+    """Approved mappingをathena_deterministicへdowngradeしたcrosswalkを拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Approved endpoint evidenceを変更するcrosswalk bundleの一時root.
+
+    Returns:
+        None: Status crosswalk validationがdowngrade valueを漏らさずFAILになることを検証する.
+    """
     manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
     crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
     document = _read_document(crosswalk_path)
@@ -721,6 +909,18 @@ def test_status_crosswalk_validator_rejects_noncanonical_endpoint_contract(
     updates: Mapping[str, object],
     forbidden_value: str,
 ) -> None:
+    """Canonical endpoint contractと異なるcrosswalk fieldをvalidation failureにすることを検証する.
+
+    Args:
+        tmp_path (Path): Endpoint contractを変更するcrosswalk bundleの一時root.
+        canonical_status (str): 変更するcanonical beatmap statusの識別子.
+        endpoint_name (str): 変更するendpoint sectionの識別子.
+        updates (Mapping[str, object]): Endpoint sectionへ適用するcorrupt field値.
+        forbidden_value (str): Diagnosticへ出力してはならないraw value.
+
+    Returns:
+        None: Status crosswalk validationがFAILになりraw valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
     crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
     document = _read_document(crosswalk_path)
@@ -778,6 +978,19 @@ def test_status_crosswalk_loader_rejects_invalid_endpoint_semantics(
     error_code: str,
     forbidden_value: str | None,
 ) -> None:
+    """Loaderがendpoint semantic violationをsafe validation errorとして拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Endpoint semanticを変更するcrosswalk bundleの一時root.
+        canonical_status (str): 変更するcanonical beatmap statusの識別子.
+        endpoint_name (str): 変更するendpoint sectionの識別子.
+        updates (Mapping[str, object]): Endpoint sectionへ適用するcorrupt field値.
+        error_code (str): 期待するsafe validation error code.
+        forbidden_value (str | None): Diagnosticから除外するraw value, なければNone.
+
+    Returns:
+        None: Loader error codeとconditional redactionを検証する.
+    """
     manifest_root, body_root = _write_status_crosswalk_manifest_bundle(tmp_path)
     crosswalk_path = manifest_root / "beatmap_status_crosswalk.json"
     document = _read_document(crosswalk_path)
@@ -794,6 +1007,14 @@ def test_status_crosswalk_loader_rejects_invalid_endpoint_semantics(
 
 
 def test_manifest_rejects_excessive_nesting_deterministically(tmp_path: Path) -> None:
+    """過度にnestしたmanifest contentを決定的に拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Deeply nested metadataを追加する有効manifest bundleの一時root.
+
+    Returns:
+        None: Nesting depth limitがvalidation errorになることを検証する.
+    """
     manifest_root, body_root = _write_valid_manifests(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -812,6 +1033,14 @@ def test_manifest_rejects_excessive_nesting_deterministically(tmp_path: Path) ->
 def test_branch_case_catalog_uses_closed_vocabularies_and_known_shape_references(
     tmp_path: Path,
 ) -> None:
+    """Branch case catalogがclosed vocabularyとregistered response shapeを使用することを検証する.
+
+    Args:
+        tmp_path (Path): Canonical branch case bundleを隔離して作成する一時root.
+
+    Returns:
+        None: Profile enum集合とcaseごとのshape/category/warning typeを検証する.
+    """
     assert _BRANCH_CASES_MANIFEST.is_file()
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
 
@@ -889,6 +1118,14 @@ def test_branch_case_catalog_uses_closed_vocabularies_and_known_shape_references
 def test_branch_case_catalog_maps_every_selection_profile_deterministically(
     tmp_path: Path,
 ) -> None:
+    """Selection profileごとのbranch caseが決定的なidentity/shape contractを持つことを検証する.
+
+    Args:
+        tmp_path (Path): Canonical branch case bundleを隔離して作成する一時root.
+
+    Returns:
+        None: Case IDごとのprofile tupleとdeterministic evidence statusを検証する.
+    """
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     evidence = load_getscores_completion_evidence(manifest_root, body_root)
     cases = {case.case_id: case for case in evidence.branch_cases}
@@ -1013,6 +1250,14 @@ def test_branch_case_catalog_maps_every_selection_profile_deterministically(
 def test_branch_case_catalog_marks_malformed_identity_and_optional_fields_provisional(
     tmp_path: Path,
 ) -> None:
+    """Malformed identity/optional field caseがprovisional evidenceとして記録されることを検証する.
+
+    Args:
+        tmp_path (Path): Canonical branch case bundleを隔離して作成する一時root.
+
+    Returns:
+        None: Identity caseとmutation caseのprofile, warning, shape, evidence stateを検証する.
+    """
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     evidence = load_getscores_completion_evidence(manifest_root, body_root)
     cases = {case.case_id: case for case in evidence.branch_cases}
@@ -1118,6 +1363,14 @@ def test_branch_case_catalog_marks_malformed_identity_and_optional_fields_provis
 def test_branch_case_catalog_exercises_every_symbolic_profile_and_invariant_mutation(
     tmp_path: Path,
 ) -> None:
+    """Branch case catalogが全symbolic profileとinvariant mutationを網羅することを検証する.
+
+    Args:
+        tmp_path (Path): Canonical branch case bundleを隔離して作成する一時root.
+
+    Returns:
+        None: Enum coverageとauth/no-score/invariant caseのshape contractを検証する.
+    """
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     evidence = load_getscores_completion_evidence(manifest_root, body_root)
     cases = {case.case_id: case for case in evidence.branch_cases}
@@ -1170,18 +1423,14 @@ def test_branch_case_catalog_exercises_every_symbolic_profile_and_invariant_muta
 
 
 def test_branch_case_validation_rejects_empty_catalog(tmp_path: Path) -> None:
-    """空のbranch catalogをmandatory evidence failureとして扱う。
+    """空のbranch catalogをmandatory evidence failureとして扱うことを検証する.
 
     Args:
-        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory.
 
     Returns:
-        None: 空のcatalogがPASSにならないことを検証する。
-
-    Raises:
-        AssertionError: Branch evidenceがFAILにならない場合。
+        None: 空のcatalogがPASSにならないことを検証する.
     """
-
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -1195,18 +1444,14 @@ def test_branch_case_validation_rejects_empty_catalog(tmp_path: Path) -> None:
 
 
 def test_branch_case_manifest_rejects_missing_cases_collection(tmp_path: Path) -> None:
-    """`cases` collectionを持たないbranch manifestを安全に拒否する。
+    """`cases` collectionを持たないbranch manifestを安全に拒否することを検証する.
 
     Args:
-        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory.
 
     Returns:
-        None: Loaderがmissing collectionをvalidation errorへ変換することを検証する。
-
-    Raises:
-        AssertionError: Loaderが不正manifestを受理する, または安全なerror codeを返さない場合。
+        None: Loaderがmissing collectionをvalidation errorへ変換することを検証する.
     """
-
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -1232,19 +1477,15 @@ def test_branch_case_validation_rejects_missing_required_profile(
     tmp_path: Path,
     missing_case_id: str,
 ) -> None:
-    """必須profileを失ったbranch catalogを拒否する。
+    """必須profileを失ったbranch catalogを拒否することを検証する.
 
     Args:
-        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
-        missing_case_id (str): 一意のidentity, selector, またはmutationを持つ削除対象case ID。
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory.
+        missing_case_id (str): 一意のidentity, selector, またはmutationを持つ削除対象case ID.
 
     Returns:
-        None: 不完全なprofile coverageがPASSにならないことを検証する。
-
-    Raises:
-        AssertionError: Branch evidenceがFAILにならない場合。
+        None: 不完全なprofile coverageがPASSにならないことを検証する.
     """
-
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -1262,18 +1503,14 @@ def test_branch_case_validation_rejects_missing_required_profile(
 def test_branch_case_validation_rejects_local_selector_with_non_global_category(
     tmp_path: Path,
 ) -> None:
-    """Local selectorがGlobal以外のdomain categoryを宣言した場合に拒否する。
+    """Local selectorがGlobal以外のdomain categoryを宣言した場合に拒否することを検証する.
 
     Args:
-        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Local selectorのcategory driftがmandatory evidence failureにならない場合。
+        None: Local selectorのcategory driftがmandatory evidence failureになることを検証する.
     """
-
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -1292,18 +1529,14 @@ def test_branch_case_validation_rejects_local_selector_with_non_global_category(
 def test_branch_case_loader_rejects_missing_nullable_expected_domain_category(
     tmp_path: Path,
 ) -> None:
-    """Nullableなexpected domain categoryのfield欠落を拒否する。
+    """Nullableなexpected domain categoryのfield欠落を拒否することを検証する.
 
     Args:
-        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Field欠落をexplicitなnullと同一視してloaderが受理する場合。
+        None: Field欠落をexplicitなnullと同一視せずloaderが拒否することを検証する.
     """
-
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -1323,18 +1556,14 @@ def test_branch_case_loader_rejects_missing_nullable_expected_domain_category(
 def test_branch_case_loader_preserves_original_entry_position_after_non_mapping(
     tmp_path: Path,
 ) -> None:
-    """Non-object entryの後ろでもdiagnosticが元のmanifest indexを示す。
+    """Non-object entryの後ろでもdiagnosticが元のmanifest indexを示すことを検証する.
 
     Args:
-        tmp_path (Path): Manifest bundleを隔離して作成する一時directory。
+        tmp_path (Path): Manifest bundleを隔離して作成する一時directory.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Compaction後のindexがdiagnosticへ出力される場合。
+        None: Compaction後でなくoriginal entry indexがdiagnosticへ出力されることを検証する.
     """
-
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -1365,6 +1594,16 @@ def test_branch_case_validation_rejects_non_set_mutation_warning_contract(
     field: str,
     invalid_value: object,
 ) -> None:
+    """Mutation/warning collectionがset contractを満たさない場合にFAILになることを検証する.
+
+    Args:
+        tmp_path (Path): Corrupt collectionを設定するbranch case bundleの一時root.
+        field (str): Set contractを破るcollection field名.
+        invalid_value (object): Fieldへ設定するemptyまたはduplicateを含む値.
+
+    Returns:
+        None: Branch validationがFAILになることを検証する.
+    """
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -1388,6 +1627,15 @@ def test_branch_case_validation_rejects_non_provisional_malformed_contract(
     tmp_path: Path,
     case_id: str,
 ) -> None:
+    """Malformed caseがprovisional以外のevidence stateを持つ場合にFAILになることを検証する.
+
+    Args:
+        tmp_path (Path): Evidence stateを変更するbranch case bundleの一時root.
+        case_id (str): Deterministicへ変更するmalformed branch case ID.
+
+    Returns:
+        None: Branch validationがFAILになることを検証する.
+    """
     manifest_root, body_root = _write_branch_case_manifest_bundle(tmp_path)
     branch_path = manifest_root / "branch_cases.json"
     document = _read_document(branch_path)
@@ -1406,6 +1654,14 @@ def test_branch_case_validation_rejects_non_provisional_malformed_contract(
 def test_versioned_response_shape_fixture_defines_five_exact_wire_contracts(
     tmp_path: Path,
 ) -> None:
+    """Versioned response shape fixtureが5種類のexact wire contractを定義することを検証する.
+
+    Args:
+        tmp_path (Path): Canonical response shape fixtureを隔離して作成する一時root.
+
+    Returns:
+        None: HTTP metadata, encoded body, line grammar, row metadata, PASS validationを検証する.
+    """
     manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
 
     evidence = load_getscores_completion_evidence(
@@ -1510,6 +1766,17 @@ def test_response_shape_validation_rejects_invalid_manifest_invariants(
     field: str,
     invalid_value: object,
 ) -> None:
+    """Response shape manifest invariantが崩れた場合にvalidation FAILになることを検証する.
+
+    Args:
+        tmp_path (Path): Response shape manifestを変更する一時root.
+        shape_id (str): Corrupt fieldを設定するresponse shape ID.
+        field (str): Invariantを破るresponse shape field名.
+        invalid_value (object): Fieldへ設定するincompatible value.
+
+    Returns:
+        None: Response shape validationがFAILになることを検証する.
+    """
     manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -1530,6 +1797,14 @@ def test_response_shape_validation_rejects_invalid_manifest_invariants(
 def test_response_shape_validation_requires_all_five_distinct_shapes(
     tmp_path: Path,
 ) -> None:
+    """Response shape fixtureが5種類すべてを持たない場合にFAILになることを検証する.
+
+    Args:
+        tmp_path (Path): Shape entryを削除するresponse shape bundleの一時root.
+
+    Returns:
+        None: Incomplete shape setがvalidation FAILになることを検証する.
+    """
     manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
     response_path = manifest_root / "response_shapes.json"
     document = _read_document(response_path)
@@ -1571,6 +1846,16 @@ def test_response_shape_validation_rejects_invalid_body_grammar(
     shape_id: GetscoresWireShapeId,
     invalid_body: bytes,
 ) -> None:
+    """Invalid response body grammarがresponse shape validationをFAILにすることを検証する.
+
+    Args:
+        tmp_path (Path): Corrupt body fixtureを置くresponse shape bundleの一時root.
+        shape_id (GetscoresWireShapeId): Invalid bodyを設定するresponse shape ID.
+        invalid_body (bytes): Canonical grammarを破るraw body.
+
+    Returns:
+        None: Response shape validationがFAILになることを検証する.
+    """
     manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
     _ = (body_root / f"{shape_id.value}.body.b64").write_bytes(_encode_body_fixture(invalid_body))
 
@@ -1597,6 +1882,16 @@ def test_public_body_decoder_rejects_invalid_base64_without_echoing_payload(
     encoded_body: bytes,
     error_code: str,
 ) -> None:
+    """Public body decoderがinvalid Base64をpayloadを漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Corrupt encoded bodyを置くresponse shape bundleの一時root.
+        encoded_body (bytes): Canonical Base64 contractを破るfixture bytes.
+        error_code (str): 期待するsafe validation error code.
+
+    Returns:
+        None: Decoder error codeとraw payload redactionを検証する.
+    """
     manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
     target = body_root / "unavailable.body.b64"
     _ = target.write_bytes(encoded_body)
@@ -1618,6 +1913,14 @@ def test_public_body_decoder_rejects_invalid_base64_without_echoing_payload(
 def test_public_body_decoder_rejects_unsupported_encoding_without_echoing_value(
     tmp_path: Path,
 ) -> None:
+    """Public body decoderがunsupported encodingをraw valueを漏らさず拒否することを検証する.
+
+    Args:
+        tmp_path (Path): Canonical response shape bundleを隔離して作成する一時root.
+
+    Returns:
+        None: Unsupported encoding errorがraw encoding valueをechoしないことを検証する.
+    """
     manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
     evidence = load_getscores_completion_evidence(manifest_root, body_root)
     shape = next(
@@ -1637,6 +1940,17 @@ def test_public_body_decoder_rejects_unsupported_encoding_without_echoing_value(
 
 
 def _write_valid_manifests(tmp_path: Path) -> tuple[Path, Path]:
+    """Loader単体test用の最小かつ有効なcompletion manifest bundleを書き込む.
+
+    Args:
+        tmp_path (Path): Manifest/body directoryを作成する一時root.
+
+    Returns:
+        tuple[Path, Path]: 作成したmanifest rootとbody fixture root.
+
+    Raises:
+        OSError: Directory作成またはfixture documentの書込みに失敗した場合.
+    """
     manifest_root = tmp_path / "manifests"
     body_root = tmp_path / "bodies"
     manifest_root.mkdir()
@@ -1745,6 +2059,17 @@ def _write_valid_manifests(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _write_response_shape_manifest_bundle(tmp_path: Path) -> tuple[Path, Path]:
+    """Response shape validation用のcanonical fixture bundleを書き込む.
+
+    Args:
+        tmp_path (Path): Manifest/body directoryを作成する一時root.
+
+    Returns:
+        tuple[Path, Path]: Response shape manifestとcopied body fixtureのroot.
+
+    Raises:
+        OSError: Fixture copyまたはempty companion manifestの書込みに失敗した場合.
+    """
     manifest_root = tmp_path / "manifests"
     body_root = tmp_path / "bodies"
     manifest_root.mkdir()
@@ -1773,12 +2098,34 @@ def _write_response_shape_manifest_bundle(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _write_branch_case_manifest_bundle(tmp_path: Path) -> tuple[Path, Path]:
+    """Branch case validation用のcanonical manifest bundleを書き込む.
+
+    Args:
+        tmp_path (Path): Manifest/body directoryを作成する一時root.
+
+    Returns:
+        tuple[Path, Path]: Branch case manifestとresponse shape fixtureを含むroot pair.
+
+    Raises:
+        OSError: Base bundleまたはbranch case manifestの書込みに失敗した場合.
+    """
     manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
     _ = (manifest_root / "branch_cases.json").write_bytes(_BRANCH_CASES_MANIFEST.read_bytes())
     return manifest_root, body_root
 
 
 def _write_status_crosswalk_manifest_bundle(tmp_path: Path) -> tuple[Path, Path]:
+    """Status crosswalk validation用のcanonical manifest bundleを書き込む.
+
+    Args:
+        tmp_path (Path): Manifest/body directoryを作成する一時root.
+
+    Returns:
+        tuple[Path, Path]: Status crosswalk manifestとresponse shape fixtureを含むroot pair.
+
+    Raises:
+        OSError: Base bundleまたはstatus crosswalk manifestの書込みに失敗した場合.
+    """
     manifest_root, body_root = _write_response_shape_manifest_bundle(tmp_path)
     _ = (manifest_root / "beatmap_status_crosswalk.json").write_bytes(
         _STATUS_CROSSWALK_MANIFEST.read_bytes()
@@ -1791,6 +2138,17 @@ def _official_getscores_contract(
     representation: str,
     wire_status: int | None,
 ) -> tuple[str, int | None, str, tuple[str, ...]]:
+    """Official fixtureに基づくgetscores endpoint contract tupleを作成する.
+
+    Args:
+        fixture_stem (str): Official response fixtureのfilename stem.
+        representation (str): Endpointが使用するresponse representation.
+        wire_status (int | None): Wire representationのnumeric status, 非wireならNone.
+
+    Returns:
+        tuple[str, int | None, str, tuple[str, ...]]:
+            Representation, status, evidence state, sourceを持つ比較用tuple.
+    """
     return (
         representation,
         wire_status,
@@ -1804,6 +2162,17 @@ def _deterministic_getscores_contract(
     representation: str,
     wire_status: int | None,
 ) -> tuple[str, int | None, str, tuple[str, ...]]:
+    """Athena deterministic behaviorに基づくgetscores endpoint contract tupleを作成する.
+
+    Args:
+        test_anchor (str): Athena status mapper testのanchor名.
+        representation (str): Endpointが使用するresponse representation.
+        wire_status (int | None): Wire representationのnumeric status, 非wireならNone.
+
+    Returns:
+        tuple[str, int | None, str, tuple[str, ...]]:
+            Representation, status, evidence state, sourceを持つ比較用tuple.
+    """
     return (
         representation,
         wire_status,
@@ -1820,6 +2189,17 @@ def _reference_implementation_getscores_contract(
     representation: str,
     wire_status: int | None,
 ) -> tuple[str, int | None, str, tuple[str, ...]]:
+    """Reference implementationで裏付けたgetscores endpoint contract tupleを作成する.
+
+    Args:
+        test_anchor (str): Athena status mapper testのanchor名.
+        representation (str): Endpointが使用するresponse representation.
+        wire_status (int | None): Wire representationのnumeric status, 非wireならNone.
+
+    Returns:
+        tuple[str, int | None, str, tuple[str, ...]]:
+            Representation, status, evidence state, sourceを持つ比較用tuple.
+    """
     return (
         representation,
         wire_status,
@@ -1837,6 +2217,20 @@ def _status_endpoint(
     canonical_status: str,
     endpoint_name: str,
 ) -> dict[str, object]:
+    """Crosswalk documentから指定status/endpointのmutable mappingを返す.
+
+    Args:
+        document (Mapping[str, object]): `entries` collectionを持つcrosswalk document.
+        canonical_status (str): 検索するcanonical beatmap status.
+        endpoint_name (str): `getscores`または`beatmap_info`のendpoint section名.
+
+    Returns:
+        dict[str, object]: 指定entry内のendpoint mapping.
+
+    Raises:
+        KeyError: Documentに`entries`または指定endpoint sectionがない場合.
+        StopIteration: 指定canonical statusを持つentryがない場合.
+    """
     entry = next(
         entry
         for entry in _entries(document, "entries")
@@ -1846,6 +2240,14 @@ def _status_endpoint(
 
 
 def _github_markdown_anchor(heading_line: str) -> str:
+    """GitHub Markdown headingから比較用anchor文字列を生成する.
+
+    Args:
+        heading_line (str): Hash prefixを含み得るMarkdown heading行.
+
+    Returns:
+        str: Lowercase化してsafe characterだけをhyphen結合したanchor.
+    """
     heading = heading_line.lstrip("#").strip().lower()
     safe_characters = "".join(
         character for character in heading if character.isalnum() or character in {" ", "-", "_"}
@@ -1854,6 +2256,14 @@ def _github_markdown_anchor(heading_line: str) -> str:
 
 
 def _encode_body_fixture(body: bytes) -> bytes:
+    """Raw bodyをcanonical Base64 fixture bytesへ変換する.
+
+    Args:
+        body (bytes): Response shapeへ格納するdecoded body.
+
+    Returns:
+        bytes: Empty bodyならempty bytes, それ以外はterminal LFを持つBase64 bytes.
+    """
     if not body:
         return b""
     return base64.b64encode(body) + b"\n"
@@ -1865,6 +2275,16 @@ def _crosswalk_entry(
     getscores_wire_status: int | None,
     getscores_sources: tuple[str, ...],
 ) -> dict[str, object]:
+    """Ranked status用の最小crosswalk entryを作成する.
+
+    Args:
+        getscores_representation (str): Getscores endpointのresponse representation.
+        getscores_wire_status (int | None): Wire responseのnumeric status, 非wireならNone.
+        getscores_sources (tuple[str, ...]): Getscores evidence sourceの順序付き集合.
+
+    Returns:
+        dict[str, object]: Crosswalk loaderへ渡すranked entry mapping.
+    """
     return {
         "canonical_status": "ranked",
         "getscores": {
@@ -1883,6 +2303,19 @@ def _crosswalk_entry(
 
 
 def _read_document(path: Path) -> dict[str, object]:
+    """JSON fixture documentをmutable top-level mappingとして読み込む.
+
+    Args:
+        path (Path): UTF-8 JSON documentのpath.
+
+    Returns:
+        dict[str, object]: Top-level objectをcopyしたmutable mapping.
+
+    Raises:
+        json.JSONDecodeError: File contentが有効なJSONでない場合.
+        OSError: Fileを読み込めない場合.
+        TypeError: Top-level JSON valueがobjectでない場合.
+    """
     parsed = cast("object", json.loads(path.read_text(encoding="utf-8")))
     if not isinstance(parsed, Mapping):
         raise TypeError("test fixture document must be an object")
@@ -1891,6 +2324,19 @@ def _read_document(path: Path) -> dict[str, object]:
 
 
 def _entries(document: Mapping[str, object], key: str) -> list[dict[str, object]]:
+    """Document collectionをobject entryだけからなるmutable listへ変換する.
+
+    Args:
+        document (Mapping[str, object]): Collection fieldを持つfixture document.
+        key (str): Listとして読むcollection field名.
+
+    Returns:
+        list[dict[str, object]]: Object entryを保持するmutable list.
+
+    Raises:
+        KeyError: 指定collection fieldがdocumentにない場合.
+        TypeError: Collectionがlistでないかentryがobjectでない場合.
+    """
     value = document[key]
     if not isinstance(value, list):
         raise TypeError("test fixture collection must be a list")
@@ -1903,4 +2349,17 @@ def _entries(document: Mapping[str, object], key: str) -> list[dict[str, object]
 
 
 def _write_document(path: Path, document: Mapping[str, object]) -> None:
+    """Fixture documentをUTF-8 JSONとして上書きする.
+
+    Args:
+        path (Path): 書き込むfixture documentのpath.
+        document (Mapping[str, object]): JSON serializationするfixture content.
+
+    Returns:
+        None: Documentを書き込みtestが再読込できる状態にする.
+
+    Raises:
+        OSError: Documentを書き込めない場合.
+        TypeError: DocumentにJSON serializationできない値が含まれる場合.
+    """
     _ = path.write_text(json.dumps(document), encoding="utf-8")

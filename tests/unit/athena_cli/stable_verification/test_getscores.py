@@ -1,3 +1,8 @@
+"""Stable getscores verificationの実行経路と失敗投影を検証する.
+
+このmoduleはgolden fixture, target probe, optional osu.py probeの観測可能なresultを保護する.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -41,21 +46,14 @@ _COMPLETION_EVIDENCE_REFERENCES = (
 
 
 def test_verify_fixtures_parses_existing_web_legacy_getscores_bodies() -> None:
-    """Legacy fixtureとcompletion evidenceの必須結果を検証する。
-
-    Args:
-        なし.
+    """Legacy fixtureとcompletion evidenceがmandatory PASSになることを検証する.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Legacy fixtureまたはcompletion evidenceの結果が期待と異なる場合。
+        None: 固定されたsurface, scope, reference, diagnosticを検証する.
 
     Notes:
-        Completion evidenceは3種類のmandatory golden fixtureとして報告される。
+        Completion evidenceは3種類のmandatory golden fixtureとして順序付きで報告される.
     """
-
     verifier: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier()
 
     results = verifier.verify_fixtures()
@@ -83,22 +81,18 @@ def test_verify_fixtures_projects_missing_completion_evidence_as_safe_failures(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Completion evidenceの読込失敗が安全な必須失敗結果になることを検証する。
+    """Completion evidenceの読込失敗が安全なmandatory failureになることを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): Default fixture rootを一時pathへ差し替えるfixture。
-        tmp_path (Path): Raw markerを含む存在しないfixture rootを作る一時directory。
+        monkeypatch (pytest.MonkeyPatch): Default fixture rootを一時pathへ差し替えるfixture.
+        tmp_path (Path): Raw markerを含む存在しないfixture rootを作る一時directory.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Failure resultの属性またはredactionが期待と異なる場合。
+        None: Failure resultの属性とredactionを検証する.
 
     Notes:
-        Credential, username, raw query, path traversal, internal provenanceを出力しない。
+        Credential, username, raw query, path traversal, internal provenanceを出力しない.
     """
-
     raw_markers = (
         "credential=credential-sentinel",
         "username=username-sentinel",
@@ -151,22 +145,18 @@ def test_verify_fixtures_projects_body_validation_failure_by_completion_surface(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Body fixture不正がresponse shapeだけを安全なFAILとして投影することを検証する。
+    """Body fixture不正がresponse shapeだけを安全なFAILとして投影することを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): Default completion rootを一時copyへ差し替えるfixture。
-        tmp_path (Path): Canonical completion evidenceの一時copyを置くdirectory。
+        monkeypatch (pytest.MonkeyPatch): Default completion rootを一時copyへ差し替えるfixture.
+        tmp_path (Path): Canonical completion evidenceの一時copyを置くdirectory.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Surface別のvalidation結果またはredactionが期待と異なる場合。
+        None: Surface別のvalidation結果とredactionを検証する.
 
     Notes:
-        Branch caseとstatus crosswalkはbody grammarの独立validatorとしてPASSを維持する。
+        Branch caseとstatus crosswalkはbody grammarの独立validatorとしてPASSを維持する.
     """
-
     raw_markers = (
         "credential=credential-sentinel",
         "username=username-sentinel",
@@ -232,18 +222,14 @@ def test_verify_fixtures_projects_body_validation_failure_by_completion_surface(
 
 
 def test_verify_fixtures_uses_injected_completion_fixture_roots(tmp_path: Path) -> None:
-    """Custom completion fixture rootを一貫して検証に使用する。
+    """Injected completion fixture rootだけを検証対象に使用することを検証する.
 
     Args:
-        tmp_path (Path): Completion fixtureの一時copyを作成するdirectory。
+        tmp_path (Path): Completion fixtureの一時copyを作成するdirectory.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Injected rootの不正fixtureを既定fixtureへすり替えてPASSにする場合。
+        None: Injected rootの不正fixtureがresponse shape failureになることを検証する.
     """
-
     manifest_root, body_root = _copy_completion_evidence(tmp_path)
     _ = (body_root / "header_with_rows.body.b64").write_bytes(b"invalid base64\n")
     verifier: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier(
@@ -261,6 +247,11 @@ def test_verify_fixtures_uses_injected_completion_fixture_roots(tmp_path: Path) 
 
 
 def test_load_probe_cases_preserves_stable_query_shape_fields() -> None:
+    """Probe case catalogがstable queryに必要なfieldを保持することを検証する.
+
+    Returns:
+        None: Case名, beatmap identity, selector, mods, request versionを検証する.
+    """
     verifier: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier()
 
     cases = verifier.load_probe_cases()
@@ -292,6 +283,11 @@ def test_load_probe_cases_preserves_stable_query_shape_fields() -> None:
 
 
 def test_build_getscores_query_maps_probe_case_to_stable_web_legacy_shape() -> None:
+    """Probe caseをstable web legacy queryへ決定的に変換することを検証する.
+
+    Returns:
+        None: Canonical caseから生成するquery fieldの完全なshapeを検証する.
+    """
     case = _probe_case()
 
     query = build_getscores_query(case)
@@ -308,6 +304,11 @@ def test_build_getscores_query_maps_probe_case_to_stable_web_legacy_shape() -> N
 
 
 def test_build_getscores_query_maps_named_leaderboard_categories() -> None:
+    """Named leaderboard categoryをstable selector valueへ変換することを検証する.
+
+    Returns:
+        None: Selected Mods, Friends, Country, numeric categoryのselectorを検証する.
+    """
     assert build_getscores_query(_probe_case(leaderboard_type="selected_mods"))["v"] == "2"
     assert build_getscores_query(_probe_case(leaderboard_type="friends"))["v"] == "3"
     assert build_getscores_query(_probe_case(leaderboard_type="country"))["v"] == "4"
@@ -315,6 +316,11 @@ def test_build_getscores_query_maps_named_leaderboard_categories() -> None:
 
 
 def test_probe_target_uses_stable_probe_client_and_parses_response() -> None:
+    """Target probeがstable clientのGETとparsed responseを使用することを検証する.
+
+    Returns:
+        None: Request path/queryとoptional probe resultのdiagnosticを検証する.
+    """
     client = _RecordingGetClient(body=b"2|false|75|1|0||\n0\n[bold:0,size:20]Artist|Title\n10\n")
     verifier: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier(
         target=_target(),
@@ -342,21 +348,14 @@ def test_probe_target_uses_stable_probe_client_and_parses_response() -> None:
 
 
 def test_probe_target_accepts_normal_score_rows_as_implementation_completion() -> None:
-    """正常なleaderboard rowをimplementation-completeのPASSとして検証する。
-
-    Args:
-        なし.
+    """正常なleaderboard rowをimplementation-completeのPASSとして検証する.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Parsed score rowがPASS以外またはstale gap診断になる場合。
+        None: Parsed score rowがPASSになりstale gap診断を持たないことを検証する.
 
     Notes:
-        Malformed responseのFAILとunavailable responseの扱いはこのtestで変更しない。
+        Malformed responseのFAILとunavailable responseの扱いはこのtestで変更しない.
     """
-
     client = _RecordingGetClient(
         body=(
             b"2|false|75|1|1||\n"
@@ -381,15 +380,11 @@ def test_probe_target_accepts_normal_score_rows_as_implementation_completion() -
 
 
 def test_probe_target_rejects_malformed_score_row_before_reporting_pass() -> None:
-    """不正なscore rowを含むtarget responseをPASSとして扱わない。
+    """不正なscore rowを含むtarget responseをPASSとして扱わないことを検証する.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Row grammarが壊れたresponseをtarget probeがPASSとして報告する場合。
+        None: Row grammarが壊れたresponseがFAILになることを検証する.
     """
-
     client = _RecordingGetClient(
         body=(
             b"2|false|75|1|1||\n"
@@ -412,6 +407,11 @@ def test_probe_target_rejects_malformed_score_row_before_reporting_pass() -> Non
 
 
 def test_probe_target_accepts_personal_best_fallback_score_row() -> None:
+    """Personal best fallback rowを含むresponseをPASSとして扱うことを検証する.
+
+    Returns:
+        None: Personal best diagnosticを含むprobe resultを検証する.
+    """
     client = _RecordingGetClient(
         body=(
             b"2|false|75|1|1||\n"
@@ -434,21 +434,14 @@ def test_probe_target_accepts_personal_best_fallback_score_row() -> None:
 
 
 def test_optional_osu_py_probe_skips_without_target_or_prerequisites() -> None:
-    """Completion fixture検証がoptional osu.py probeのskip条件を変えないことを検証する。
-
-    Args:
-        なし.
+    """Mandatory fixture検証がoptional osu.py probeのskip条件を変えないことを検証する.
 
     Returns:
-        None: Assertionだけを実行する。
-
-    Raises:
-        AssertionError: Targetまたはprerequisites未設定時にprobeが実行される場合。
+        None: Targetまたはprerequisites未設定時のskip resultと未呼出しを検証する.
 
     Notes:
-        Fixture検証はmandatoryだが, optional probeのscopeとskip messageは維持する。
+        Fixture検証はmandatoryだが, optional probeのscopeとskip messageは維持する.
     """
-
     probe = _RecordingOptionalProbe()
     verifier_without_target: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier(
         optional_probe=probe,
@@ -477,6 +470,11 @@ def test_optional_osu_py_probe_skips_without_target_or_prerequisites() -> None:
 
 
 def test_optional_osu_py_probe_runs_only_with_target_and_prerequisites() -> None:
+    """Targetとprerequisitesが揃った場合だけoptional osu.py probeを実行することを検証する.
+
+    Returns:
+        None: Probeの呼出し引数とPASS resultを検証する.
+    """
     probe = _RecordingOptionalProbe()
     prerequisites = _ready_prerequisites()
     verifier: GetscoresVerifier[OsuPyProbePrerequisites] = GetscoresVerifier(
@@ -498,6 +496,15 @@ def _probe_case(
     leaderboard_type: str = "local",
     mods: int = 0,
 ) -> GetscoresProbeCase:
+    """Stable getscores query生成用の制御可能なprobe caseを返す.
+
+    Args:
+        leaderboard_type (str): Stable selectorへ変換するleaderboard category.
+        mods (int): Probe caseに設定するstable mod bitmask.
+
+    Returns:
+        GetscoresProbeCase: 固定beatmap identityと指定selectorを持つcase.
+    """
     return GetscoresProbeCase(
         name="ranked_fixture",
         checksum="0123456789abcdef0123456789abcdef",
@@ -511,6 +518,11 @@ def _probe_case(
 
 
 def _target() -> StableTarget:
+    """Local target probe用の固定stable targetを返す.
+
+    Returns:
+        StableTarget: localhostと短いtimeoutを持つtest target.
+    """
     return StableTarget(
         base_url="http://127.0.0.1:8000",
         host_identity="athena.localhost",
@@ -519,6 +531,11 @@ def _target() -> StableTarget:
 
 
 def _ready_prerequisites() -> OsuPyProbePrerequisites:
+    """Optional osu.py probeを実行可能にする固定prerequisitesを返す.
+
+    Returns:
+        OsuPyProbePrerequisites: Credentialが存在することを示す検証用metadata.
+    """
     return OsuPyProbePrerequisites(
         version="20260217",
         executable_sha256="0" * 64,
@@ -528,6 +545,14 @@ def _ready_prerequisites() -> OsuPyProbePrerequisites:
 
 @dataclass(slots=True)
 class _RecordingGetClient:
+    """Getscores verifierが発行するweb legacy GETを記録するfake client.
+
+    Attributes:
+        body (bytes): GETへの応答として返す固定body.
+        path (str | None): 最後に受け取ったrequest path.
+        query (Mapping[str, str] | None): 最後に受け取ったquery field.
+    """
+
     body: bytes
     path: str | None = None
     query: Mapping[str, str] | None = None
@@ -539,6 +564,19 @@ class _RecordingGetClient:
         query: Mapping[str, str],
         host_prefix: str = "osu",
     ) -> ProbeResponse:
+        """Web legacy GETの入力を記録し固定された正常応答を返す.
+
+        Args:
+            path (str): Verifierが要求したweb legacy path.
+            query (Mapping[str, str]): Verifierが構築したstable query field.
+            host_prefix (str): Transport境界との互換性のため受け取るhost prefix.
+
+        Returns:
+            ProbeResponse: 記録済みbodyと固定HTTP metadataを持つprobe response.
+
+        Notes:
+            host_prefixはこのfakeの検証対象ではないため保持しない.
+        """
         _ = host_prefix
         self.path = path
         self.query = query
@@ -547,9 +585,17 @@ class _RecordingGetClient:
 
 @dataclass(slots=True)
 class _RecordingOptionalProbe:
+    """Optional osu.py probeの呼出しを記録するfake implementation.
+
+    Attributes:
+        calls (list[tuple[GetscoresProbeCase, OsuPyProbePrerequisites]]):
+            受け取ったcaseとprerequisitesの順序付き履歴.
+    """
+
     calls: list[tuple[GetscoresProbeCase, OsuPyProbePrerequisites]]
 
     def __init__(self) -> None:
+        """空の呼出し履歴を初期化する."""
         self.calls = []
 
     def probe_getscores(
@@ -557,6 +603,15 @@ class _RecordingOptionalProbe:
         case: GetscoresProbeCase,
         prerequisites: OsuPyProbePrerequisites,
     ) -> SurfaceResult:
+        """Optional probeの呼出しを記録し固定PASS resultを返す.
+
+        Args:
+            case (GetscoresProbeCase): Optional clientへ渡すgetscores probe case.
+            prerequisites (OsuPyProbePrerequisites): Probe実行条件を示すmetadata.
+
+        Returns:
+            SurfaceResult: Optional HEADLESS_PROBEとして報告するPASS result.
+        """
         self.calls.append((case, prerequisites))
         return SurfaceResult(
             surface=StableSurface.GETSCORES,
@@ -569,6 +624,14 @@ class _RecordingOptionalProbe:
 
 
 def _probe_response(body: bytes) -> ProbeResponse:
+    """固定HTTP metadataを持つ正常なgetscores probe responseを生成する.
+
+    Args:
+        body (bytes): GET応答としてparserへ渡すraw body.
+
+    Returns:
+        ProbeResponse: PASS statusとbody sizeを記録したresponse.
+    """
     return ProbeResponse(
         status=VerificationStatus.PASS,
         body=body,
@@ -585,27 +648,34 @@ def _probe_response(body: bytes) -> ProbeResponse:
 def _completion_results(
     results: tuple[SurfaceResult, ...],
 ) -> tuple[SurfaceResult, ...]:
+    """Verification resultからcompletion evidenceのresultだけを抽出する.
+
+    Args:
+        results (tuple[SurfaceResult, ...]): Fixture verificationが返した全surface result.
+
+    Returns:
+        tuple[SurfaceResult, ...]: Completion evidence referenceに一致するresultの順序付きtuple.
+    """
     return tuple(
         result for result in results if result.reference in _COMPLETION_EVIDENCE_REFERENCES
     )
 
 
 def _copy_completion_evidence(tmp_path: Path) -> tuple[Path, Path]:
-    """Canonical completion evidenceを変更しない一時copyとして返す。
+    """Canonical completion evidenceを変更しない一時copyとして返す.
 
     Args:
-        tmp_path (Path): Manifestとbody fixtureのcopy先directory。
+        tmp_path (Path): Manifestとbody fixtureのcopy先directory.
 
     Returns:
-        tuple[Path, Path]: Copyしたmanifest rootとbody root。
+        tuple[Path, Path]: Copyしたmanifest rootとbody root.
 
     Raises:
-        OSError: Canonical fixtureのcopyに失敗した場合。
+        OSError: Canonical fixtureのcopyに失敗した場合.
 
     Notes:
-        Callerはcopy側だけを変更し, repository上のcanonical fixtureを変更しない。
+        Callerはcopy側だけを変更し, repository上のcanonical fixtureを変更しない.
     """
-
     manifest_root = tmp_path / "completion-manifests"
     body_root = tmp_path / "completion-bodies"
     _ = copytree(_GETSCORES_COMPLETION_MANIFEST_ROOT, manifest_root)

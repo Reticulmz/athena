@@ -1,3 +1,5 @@
+"""Stable getscores contract queryとcompletion fixture boundaryを検証する."""
+
 from __future__ import annotations
 
 from dataclasses import replace
@@ -64,16 +66,13 @@ _CANONICAL_CASE_IDS = frozenset(
 def test_global_domain_and_local_build_the_stable_local_runtime_selector(
     tmp_path: Path,
 ) -> None:
-    """Global domainとStable Localがv=1へ決定的に変換されることを確認する。
+    """Global domainとStable Localがv=1へ決定的に変換されることを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
 
     Returns:
-        None: 両profileが同じruntime selectorを持つ新規queryを返す。
-
-    Raises:
-        AssertionError: Selector変換またはbase queryのcopy境界が異なる場合。
+        None: 両profileのruntime selectorとbase queryのcopy境界を検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     cases = {
@@ -118,18 +117,15 @@ def test_request_selector_profiles_build_verified_stable_fields(
     case_id: str,
     expected_fields: dict[str, str],
 ) -> None:
-    """Closed selector profileをselection-changing stable fieldへ変換する。
+    """Closed selector profileをselection-changing stable fieldへ変換することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
-        case_id (str): Canonical branch case ID。
-        expected_fields (dict[str, str]): Selectorが生成するfield subset。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
+        case_id (str): Canonical branch case ID.
+        expected_fields (dict[str, str]): Selectorが生成するfield subset.
 
     Returns:
-        None: Runtime selector fieldが期待値と一致する。
-
-    Raises:
-        AssertionError: Selectorが別categoryへfallbackした場合。
+        None: Runtime selector fieldが期待値と一致することを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     case = next(case for case in evidence.branch_cases if case.case_id == case_id)
@@ -185,19 +181,16 @@ def test_identity_profiles_build_synthetic_auth_and_beatmap_shapes(
     expected_fields: dict[str, str],
     absent_fields: tuple[str, ...],
 ) -> None:
-    """Closed identity profileをsynthetic auth/beatmap queryへ変換する。
+    """Closed identity profileをsynthetic auth/beatmap queryへ変換することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
-        case_id (str): Canonical branch case ID。
-        expected_fields (dict[str, str]): Identity profileが生成するfield subset。
-        absent_fields (tuple[str, ...]): Queryから除去されるfield名。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
+        case_id (str): Canonical branch case ID.
+        expected_fields (dict[str, str]): Identity profileが生成するfield subset.
+        absent_fields (tuple[str, ...]): Queryから除去されるfield名.
 
     Returns:
-        None: Identity query shapeが期待値と一致する。
-
-    Raises:
-        AssertionError: Identity不足、invalid auth、update fallbackの形が異なる場合。
+        None: Identity query shapeが期待値と一致することを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     case = next(case for case in evidence.branch_cases if case.case_id == case_id)
@@ -231,17 +224,14 @@ def test_known_beatmap_preserves_each_caller_owned_identity_field(
     tmp_path: Path,
     caller_identity: dict[str, str],
 ) -> None:
-    """Known beatmap profileがcaller-owned identityを一切上書きしないことを確認する。
+    """Known beatmap profileがcaller-owned identityを一切上書きしないことを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
-        caller_identity (dict[str, str]): Callerが所有する`c/f/i/us/ha`値。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
+        caller_identity (dict[str, str]): Callerが所有する`c/f/i/us/ha`値.
 
     Returns:
-        None: 5つのidentity fieldがexactに保持される。
-
-    Raises:
-        AssertionError: Validation後に固定値へ上書きされたfieldがある場合。
+        None: 5つのidentity fieldがexactに保持されることを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     case = next(case for case in evidence.branch_cases if case.case_id == "global-with-rows")
@@ -254,16 +244,13 @@ def test_known_beatmap_preserves_each_caller_owned_identity_field(
 
 
 def test_auth_invalid_hash_always_differs_from_caller_value(tmp_path: Path) -> None:
-    """Auth invalid profileがcallerのhashと異なるsynthetic値を必ず生成する。
+    """Auth invalid profileがcaller hashと異なるsynthetic値を生成することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
 
     Returns:
-        None: Base hashがpreferred invalid値でも別値が選択される。
-
-    Raises:
-        AssertionError: Invalid hashがcaller値と同一になった場合。
+        None: Base hashがpreferred invalid値でも別値が選択されることを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     case = next(case for case in evidence.branch_cases if case.case_id == "auth-invalid")
@@ -303,18 +290,15 @@ def test_mutation_profiles_apply_after_identity_and_selector(
     case_id: str,
     expected_fields: dict[str, str],
 ) -> None:
-    """Diagnostic/request-version mutationを最後に決定的に適用する。
+    """Diagnostic/request-version mutationを最後に決定的に適用することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
-        case_id (str): Canonical branch case ID。
-        expected_fields (dict[str, str]): Mutationが最終的に生成するfield subset。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
+        case_id (str): Canonical branch case ID.
+        expected_fields (dict[str, str]): Mutationが最終的に生成するfield subset.
 
     Returns:
-        None: Mutation値がidentity/selector適用後のqueryへ残る。
-
-    Raises:
-        AssertionError: Mutationがselector値で上書きされた場合。
+        None: Mutation値がidentity/selector適用後のqueryへ残ることを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     case = next(case for case in evidence.branch_cases if case.case_id == case_id)
@@ -327,16 +311,13 @@ def test_mutation_profiles_apply_after_identity_and_selector(
 def test_all_28_canonical_cases_build_deterministically_without_mutating_base(
     tmp_path: Path,
 ) -> None:
-    """Canonical 28 caseを同じinputから再現可能なqueryへ変換する。
+    """Canonical 28 caseを同じinputから再現可能なqueryへ変換することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
 
     Returns:
-        None: 全caseがdeterministicかつcaller queryを変更しない。
-
-    Raises:
-        AssertionError: Catalog件数、query、identity保持、base copy境界が異なる場合。
+        None: 全caseがdeterministicかつcaller queryを変更しないことを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
 
@@ -381,18 +362,15 @@ def test_required_caller_owned_identity_fields_fail_closed_without_values(
     case_id: str,
     missing_field: str,
 ) -> None:
-    """Seed-owned identity field不足をsafe identifierだけで拒否する。
+    """Seed-owned identity field不足をsafe identifierだけで拒否することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
-        case_id (str): Required fieldを持つcanonical branch case ID。
-        missing_field (str): Base queryから除去するfield名。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
+        case_id (str): Required fieldを持つcanonical branch case ID.
+        missing_field (str): Base queryから除去するfield名.
 
     Returns:
-        None: Missing fieldがvalue-redacted errorになる。
-
-    Raises:
-        AssertionError: Error codeが異なるかcaller値がmessageへ漏れた場合。
+        None: Missing fieldがvalue-redacted errorになることを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     case = next(case for case in evidence.branch_cases if case.case_id == case_id)
@@ -423,18 +401,15 @@ def test_corrupted_runtime_profiles_fail_closed_without_echoing_values(
     profile_kind: str,
     expected_error: str,
 ) -> None:
-    """Typed loaderを迂回したunknown runtime profileを固定errorで拒否する。
+    """Typed loaderを迂回したunknown runtime profileを固定errorで拒否することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
-        profile_kind (str): Corruptするclosed profile fieldの識別子。
-        expected_error (str): 期待するvalue-redacted error code。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
+        profile_kind (str): Corruptするclosed profile fieldの識別子.
+        expected_error (str): 期待するvalue-redacted error code.
 
     Returns:
-        None: Unknown profileがfallbackされず拒否される。
-
-    Raises:
-        AssertionError: Error codeが異なるかprofile/query値がmessageへ漏れた場合。
+        None: Unknown profileがfallbackされず拒否されることを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     case = next(case for case in evidence.branch_cases if case.case_id == "global-with-rows")
@@ -484,16 +459,13 @@ def test_corrupted_runtime_profiles_fail_closed_without_echoing_values(
 
 
 def test_selected_mods_rejects_incoherent_known_seed_profile(tmp_path: Path) -> None:
-    """Selected Modsと不整合なknown seedもfallbackせず拒否する。
+    """Selected Modsと不整合なknown seedをfallbackせず拒否することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
 
     Returns:
-        None: Invalid selector/seed combinationが固定errorになる。
-
-    Raises:
-        AssertionError: Incoherent seedが暗黙のmod bitmaskへ変換された場合。
+        None: Invalid selector/seed combinationが固定errorになることを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     case = next(
@@ -513,17 +485,14 @@ def test_expected_body_resolver_returns_publicly_decoded_fixture_bytes(
     tmp_path: Path,
     shape_id: GetscoresWireShapeId,
 ) -> None:
-    """Known shapeをpublic fixture boundary経由のdecoded bytesへ解決する。
+    """Known shapeをpublic fixture boundary経由のdecoded bytesへ解決することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
-        shape_id (GetscoresWireShapeId): 解決するcanonical wire shape ID。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
+        shape_id (GetscoresWireShapeId): 解決するcanonical wire shape ID.
 
     Returns:
-        None: Resolverとfixture objectが同じexact bytesを返す。
-
-    Raises:
-        AssertionError: Shape lookupまたはBase64 decode boundaryが異なる場合。
+        None: Resolverとfixture objectが同じexact bytesを返すことを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     shape = next(shape for shape in evidence.response_shapes if shape.shape_id is shape_id)
@@ -537,17 +506,14 @@ def test_expected_body_resolver_calls_public_boundary_with_resolved_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Resolverがstrict resolved pathでpublic fixture boundaryを一度だけ呼ぶ。
+    """Resolverがstrict resolved pathでpublic fixture boundaryを一度だけ呼ぶことを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
-        monkeypatch (pytest.MonkeyPatch): Typed spy functionをmethodへ一時設定するfixture。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
+        monkeypatch (pytest.MonkeyPatch): Typed spy functionをmethodへ一時設定するfixture.
 
     Returns:
-        None: Sentinel bytesとexact call pathが確認できた状態。
-
-    Raises:
-        AssertionError: Direct decode、boundary bypass、複数呼び出し、未解決pathの場合。
+        None: Sentinel bytesとexact call pathを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     shape_id = GetscoresWireShapeId.HEADER_ONLY
@@ -559,6 +525,14 @@ def test_expected_body_resolver_calls_public_boundary_with_resolved_path(
     sentinel = b"getscores-public-boundary-sentinel"
 
     def spy(self: GetscoresWireShapeFixture) -> bytes:
+        """Fixture body readのreceiverを記録してsentinel bytesを返す.
+
+        Args:
+            self (GetscoresWireShapeFixture): Public resolverが選択したwire shape fixture.
+
+        Returns:
+            bytes: Direct decodeを検出するための固定sentinel bytes.
+        """
         calls.append(self.body_file)
         return sentinel
 
@@ -573,16 +547,13 @@ def test_expected_body_resolver_calls_public_boundary_with_resolved_path(
 def test_expected_body_resolver_rejects_unknown_shape_without_echoing_value(
     tmp_path: Path,
 ) -> None:
-    """Unknown runtime shape IDをraw valueなしで即時拒否する。
+    """Unknown runtime shape IDをraw valueなしで即時拒否することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
 
     Returns:
-        None: Unknown shapeがsafe error codeになる。
-
-    Raises:
-        AssertionError: Error codeが異なるかunknown valueがmessageへ漏れた場合。
+        None: Unknown shapeがsafe error codeになることを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     unknown = cast("GetscoresWireShapeId", cast("object", "raw-secret-shape"))
@@ -597,16 +568,13 @@ def test_expected_body_resolver_rejects_unknown_shape_without_echoing_value(
 
 
 def test_expected_body_resolver_rejects_missing_known_shape(tmp_path: Path) -> None:
-    """Known shapeがbundleに存在しない場合をfallbackせず拒否する。
+    """Known shapeがbundleに存在しない場合をfallbackせず拒否することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
 
     Returns:
-        None: Missing shapeがsafe error codeになる。
-
-    Raises:
-        AssertionError: Resolverが別shapeへfallbackするかerror codeが異なる場合。
+        None: Missing shapeがsafe error codeになることを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     evidence = replace(
@@ -626,16 +594,13 @@ def test_expected_body_resolver_rejects_missing_known_shape(tmp_path: Path) -> N
 
 
 def test_expected_body_resolver_rejects_duplicate_known_shape(tmp_path: Path) -> None:
-    """Known shapeが複数存在するambiguous bundleを拒否する。
+    """Known shapeが複数存在するambiguous bundleを拒否することを検証する.
 
     Args:
-        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot。
+        tmp_path (Path): Typed evidence用の一時manifest directoryを作るroot.
 
     Returns:
-        None: Duplicate shapeがsafe error codeになる。
-
-    Raises:
-        AssertionError: Resolverが最初のshapeを暗黙選択するかerror codeが異なる場合。
+        None: Duplicate shapeがsafe error codeになることを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     duplicate = next(
@@ -658,16 +623,13 @@ def test_expected_body_resolver_rejects_duplicate_known_shape(tmp_path: Path) ->
 def test_expected_body_resolver_rejects_all_shapes_outside_canonical_root(
     tmp_path: Path,
 ) -> None:
-    """全shapeが同じmalicious parentへ移されてもcanonical root外を拒否する。
+    """全shapeが同じmalicious parentへ移されてもcanonical root外を拒否することを検証する.
 
     Args:
-        tmp_path (Path): Canonical root外のbody filesを置く一時directory。
+        tmp_path (Path): Canonical root外のbody filesを置く一時directory.
 
     Returns:
-        None: Shared malicious parentをtrusted rootとして推論しない。
-
-    Raises:
-        AssertionError: Outside bodyが読まれるかpath/valueがmessageへ漏れた場合。
+        None: Shared malicious parentをtrusted rootとして推論しないことを検証する.
     """
     evidence = _load_branch_evidence(tmp_path)
     outside_root = tmp_path / "raw-secret-outside-root"
@@ -690,6 +652,17 @@ def test_expected_body_resolver_rejects_all_shapes_outside_canonical_root(
 
 
 def _load_branch_evidence(tmp_path: Path) -> GetscoresCompletionEvidence:
+    """Contract query test用にbranch case manifestを隔離して読み込む.
+
+    Args:
+        tmp_path (Path): Copied manifestを配置する一時root.
+
+    Returns:
+        GetscoresCompletionEvidence: 空のcrosswalkを含みbranch caseを保持するtyped evidence.
+
+    Raises:
+        OSError: Fixture copyまたはtemporary manifestの書込みに失敗した場合.
+    """
     manifest_root = tmp_path / "manifests"
     manifest_root.mkdir()
     for filename in ("response_shapes.json", "branch_cases.json"):
@@ -705,6 +678,11 @@ def _load_branch_evidence(tmp_path: Path) -> GetscoresCompletionEvidence:
 
 
 def _base_query() -> dict[str, str]:
+    """Contract query mutation前のcaller-owned stable requestを返す.
+
+    Returns:
+        dict[str, str]: Identity, selector, beatmap, caller-owned fieldを含む独立したmutable query.
+    """
     return {
         "c": _BASE_CHECKSUM,
         "f": "Camellia - Exit (Realazy) [Insane].osu",

@@ -115,7 +115,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/athena_cli/stable_verification/{__init__,osu_py_probe,reporting,runner}.pyと明記した対応test_
 
-- [ ] 2.6 (P) Stable verificationのgetscores testを整備する
+- [x] 2.6 (P) Stable verificationのgetscores testを整備する
   - test_getscores.py、test_getscores_completion_evidence.py、test_getscores_contract.py、
     test_models.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有するgetscores testが通る
