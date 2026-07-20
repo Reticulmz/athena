@@ -106,7 +106,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/athena_cli/stable_verification/{client,parsers,replay_download,score_submit}.py_
 
-- [ ] 2.5 (P) Stable verificationの残りのruntime sourceとtestを整備する
+- [x] 2.5 (P) Stable verificationの残りのruntime sourceとtestを整備する
   - __init__.py、osu_py_probe.py、reporting.py、runner.pyと、catalog、client、osu_py_probe、parsers、replay、
     reporting、runner、score_submitのunit test、test_cli_stable_verify.pyへ共通条件を適用する
   - CLI helpとreport outputを維持する
