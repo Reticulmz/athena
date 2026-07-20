@@ -1,4 +1,4 @@
-"""Shared beatmap providers for app and worker dependency graphs."""
+"""appとworkerで共有するbeatmap providerを構成する."""
 
 from __future__ import annotations
 
@@ -55,12 +55,24 @@ _DISHKA_RUNTIME_HINTS = (
 
 @final
 class BeatmapProviderSet(Provider):
-    """Providers for shared beatmap policies, queries, and fetch workflows."""
+    """共有beatmap policy、query、fetch workflowをAPP scopeで登録する.
+
+    Attributes:
+        scope (Scope): appとworker container内で共有するDishkaのAPP scope.
+    """
 
     scope = Scope.APP
 
     @provide
     def beatmap_freshness_policy(self, config: AppConfig) -> BeatmapFreshnessPolicy:
+        """設定された更新間隔からbeatmap freshness policyを構成する.
+
+        Args:
+            config (AppConfig): ranked、pending、graveyard、mirrorの更新秒数を持つ設定.
+
+        Returns:
+            BeatmapFreshnessPolicy: 各source種別の更新間隔を ``timedelta`` で表すpolicy.
+        """
         return BeatmapFreshnessPolicy(
             ranked_refresh_interval=timedelta(
                 seconds=config.beatmap_ranked_refresh_interval_seconds
@@ -78,6 +90,17 @@ class BeatmapProviderSet(Provider):
 
     @provide
     def beatmap_metadata_provider(self, config: AppConfig) -> BeatmapMetadataProvider:
+        """公式APIとcommunity mirrorを順に利用するmetadata providerを構成する.
+
+        Args:
+            config (AppConfig): 公式API credentialとmetadata mirror base URLを持つ設定.
+
+        Returns:
+            BeatmapMetadataProvider: 公式sourceとmirror sourceを組み合わせたprovider.
+
+        Notes:
+            未設定の公式credentialは空文字列として公式providerへ渡し、利用可否は上位workflowが判断する.
+        """
         official = OsuApiMetadataProviderService(
             client_id=config.beatmap_official_api_client_id or "",
             client_secret=config.beatmap_official_api_client_secret or "",
@@ -91,6 +114,14 @@ class BeatmapProviderSet(Provider):
 
     @provide
     def beatmap_file_provider(self, config: AppConfig) -> BeatmapFileProvider:
+        """公式URLとcommunity mirrorを使うbeatmap file providerを構成する.
+
+        Args:
+            config (AppConfig): current/legacy osu URL templateとmirror URL templateを持つ設定.
+
+        Returns:
+            BeatmapFileProvider: 設定済みURL templateで ``.osu`` fileを取得するprovider.
+        """
         return BeatmapFileProviderService(
             http_client=ConcreteBeatmapHttpClient(),
             osu_current_url_template=config.beatmap_osu_current_url_template,
@@ -100,6 +131,11 @@ class BeatmapProviderSet(Provider):
 
     @provide
     def beatmap_eligibility_service(self) -> BeatmapEligibilityService:
+        """beatmapのmirror利用可否を判定するserviceを構成する.
+
+        Returns:
+            BeatmapEligibilityService: beatmap状態に基づく利用可否判定service.
+        """
         return BeatmapEligibilityService()
 
     @provide
@@ -107,6 +143,14 @@ class BeatmapProviderSet(Provider):
         self,
         repository: BeatmapQueryRepository,
     ) -> ResolveBeatmapByIdQuery:
+        """Beatmap ID検索用queryをread repositoryと接続して構成する.
+
+        Args:
+            repository (BeatmapQueryRepository): beatmap read modelを取得するrepository.
+
+        Returns:
+            ResolveBeatmapByIdQuery: beatmap IDから既存metadataを解決するquery.
+        """
         return ResolveBeatmapByIdQuery(repository)
 
     @provide
@@ -114,6 +158,14 @@ class BeatmapProviderSet(Provider):
         self,
         repository: BeatmapQueryRepository,
     ) -> ResolveBeatmapByChecksumQuery:
+        """checksum検索用queryをread repositoryと接続して構成する.
+
+        Args:
+            repository (BeatmapQueryRepository): beatmap read modelを取得するrepository.
+
+        Returns:
+            ResolveBeatmapByChecksumQuery: checksumから既存metadataを解決するquery.
+        """
         return ResolveBeatmapByChecksumQuery(repository)
 
     @provide
@@ -125,7 +177,21 @@ class BeatmapProviderSet(Provider):
         config: AppConfig,
         leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake,
     ) -> FetchBeatmapMetadataUseCase:
-        """metadata fetch use-case を freshness policy と共に構成する。"""
+        """Metadata fetch commandをsource policyとworker wake portで構成する.
+
+        Args:
+            uow_factory (UnitOfWorkFactory):
+                metadata更新をtransactionで永続化するUnit of Work factory.
+            metadata_provider (BeatmapMetadataProvider):
+                公式sourceまたはmirrorからmetadataを取得するprovider.
+            freshness_policy (BeatmapFreshnessPolicy): 取得済みmetadataの再取得要否を決めるpolicy.
+            config (AppConfig): 公式sourceの利用可否を持つ実行時設定.
+            leaderboard_rebuild_wake (BeatmapLeaderboardRebuildWorkerWake):
+                metadata更新後にleaderboard rebuild workerを起動するport.
+
+        Returns:
+            FetchBeatmapMetadataUseCase: freshness判定、metadata永続化、rebuild wakeを行うcommand.
+        """
         return FetchBeatmapMetadataUseCase(
             uow_factory=uow_factory,
             metadata_provider=metadata_provider,
@@ -141,6 +207,17 @@ class BeatmapProviderSet(Provider):
         file_provider: BeatmapFileProvider,
         blob_storage: BlobStorageService,
     ) -> FetchBeatmapFileUseCase:
+        """Beatmap file fetch commandを取得providerとblob storageで構成する.
+
+        Args:
+            uow_factory (UnitOfWorkFactory):
+                file metadata更新をtransactionで永続化するUnit of Work factory.
+            file_provider (BeatmapFileProvider): 外部sourceから ``.osu`` fileを取得するprovider.
+            blob_storage (BlobStorageService): 取得したfile blobとmetadataを保存するservice.
+
+        Returns:
+            FetchBeatmapFileUseCase: beatmap fileを取得してblob storageへ保存するcommand.
+        """
         return FetchBeatmapFileUseCase(
             uow_factory=uow_factory,
             file_provider=file_provider,

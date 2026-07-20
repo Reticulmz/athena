@@ -1,4 +1,4 @@
-"""Stable bancho transport providers."""
+"""stable bancho transportのproviderを構成する."""
 
 from __future__ import annotations
 
@@ -86,14 +86,22 @@ _DISHKA_RUNTIME_HINTS = (
 
 @dataclass(frozen=True, slots=True)
 class AppEventListeners:
-    """Marker proving app event listeners were registered."""
+    """app event listenerの登録完了を表すmarkerを持つ.
+
+    Attributes:
+        registered (bool): listener registrationが実行済みであることを示す固定値.
+    """
 
     registered: bool = True
 
 
 @final
 class StableBanchoProviderSet(Provider):
-    """Providers for stable bancho login, polling, handlers, and listeners."""
+    """stable banchoのlogin、polling、handler、listenerをAPP scopeで登録する.
+
+    Attributes:
+        scope (Scope): app container内で共有するDishkaのAPP scope.
+    """
 
     scope = Scope.APP
 
@@ -108,6 +116,25 @@ class StableBanchoProviderSet(Provider):
         stable_user_status_store: StableUserStatusStore,
         bot_identity: SystemUserIdentity,
     ) -> LoginResponseBuilder:
+        """Stable login responseを組み立てるworkflow collaboratorを構成する.
+
+        Args:
+            visible_channels_query (ListVisibleChannelsQuery):
+                login userに公開するchannelを列挙するquery.
+            autojoin_channels_query (ListAutojoinChannelsQuery):
+                login時のauto join channelを列挙するquery.
+            friend_ids_query (ListFriendIdsQuery): login userのfriend IDを取得するquery.
+            active_sessions_query (ListActiveSessionsQueryUseCase):
+                online userのsessionを列挙するquery.
+            current_user_stats_query (CurrentUserStatsQuery):
+                login userのscore statsを取得するquery.
+            stable_user_status_store (StableUserStatusStore): stable client向けstatusを読むstore.
+            bot_identity (SystemUserIdentity): system botのidentityを表すvalue object.
+
+        Returns:
+            LoginResponseBuilder: channel、friend、presence、stats packetを含むlogin response
+                builder.
+        """
         return LoginResponseBuilder(
             visible_channels_query=visible_channels_query,
             autojoin_channels_query=autojoin_channels_query,
@@ -126,6 +153,17 @@ class StableBanchoProviderSet(Provider):
         response_builder: LoginResponseBuilder,
         event_bus: LocalEventBus,
     ) -> LoginWorkflow:
+        """Stable bancho login workflowをidentity、country、response依存で構成する.
+
+        Args:
+            login_command (LoginCommandUseCase): credentialを検証してsessionを開始するcommand.
+            country_resolver (CountryResolver): request originからcountryを解決するadapter.
+            response_builder (LoginResponseBuilder): successful login responseを組み立てるbuilder.
+            event_bus (LocalEventBus): login lifecycle eventを配送するlocal event bus.
+
+        Returns:
+            LoginWorkflow: stable login requestを認可してpacket responseを生成するworkflow.
+        """
         return LoginWorkflow(
             login_command=login_command,
             country_resolver=country_resolver,
@@ -139,6 +177,15 @@ class StableBanchoProviderSet(Provider):
         session_store: SessionStore,
         event_bus: LocalEventBus,
     ) -> LifecycleHandlers:
+        """Stable client lifecycle packet handler群を構成する.
+
+        Args:
+            session_store (SessionStore): login sessionを読み書きするvolatile store.
+            event_bus (LocalEventBus): logoutなどのlifecycle eventを配送するlocal event bus.
+
+        Returns:
+            LifecycleHandlers: client lifecycle packetを登録するhandler group.
+        """
         return LifecycleHandlers(session_store=session_store, event_bus=event_bus)
 
     @provide
@@ -151,6 +198,19 @@ class StableBanchoProviderSet(Provider):
         session_store: SessionStore,
         packet_queue: PacketQueue,
     ) -> ChatHandlers:
+        """Stable chat packet handler群を送信commandとsession依存で構成する.
+
+        Args:
+            send_channel_message (SendChannelMessageUseCase): channel messageを配送するcommand.
+            send_private_message (SendPrivateMessageUseCase): private messageを配送するcommand.
+            join_channel (JoinChannelUseCase): channel参加を処理するcommand.
+            leave_channel (LeaveChannelUseCase): channel退出を処理するcommand.
+            session_store (SessionStore): packet senderのsessionを解決するvolatile store.
+            packet_queue (PacketQueue): recipient向けpacketをenqueueするvolatile queue.
+
+        Returns:
+            ChatHandlers: stable chat関連packetを登録するhandler group.
+        """
         return ChatHandlers(
             send_channel_message=send_channel_message,
             send_private_message=send_private_message,
@@ -167,6 +227,16 @@ class StableBanchoProviderSet(Provider):
         remove_friend: RemoveFriendUseCase,
         update_friend_only_dm: UpdateFriendOnlyDmUseCase,
     ) -> FriendHandlers:
+        """Stable friend packet handler群をfriend commandで構成する.
+
+        Args:
+            add_friend (AddFriendUseCase): friend追加を処理するcommand.
+            remove_friend (RemoveFriendUseCase): friend削除を処理するcommand.
+            update_friend_only_dm (UpdateFriendOnlyDmUseCase): friend-only DM設定を更新するcommand.
+
+        Returns:
+            FriendHandlers: friend追加、削除、DM設定packetを登録するhandler group.
+        """
         return FriendHandlers(
             add_friend=add_friend,
             remove_friend=remove_friend,
@@ -182,6 +252,21 @@ class StableBanchoProviderSet(Provider):
         packet_queue: PacketQueue,
         stable_user_status_store: StableUserStatusStore,
     ) -> StatusChangeHandlers:
+        """Stable user status変更packet handler群を構成する.
+
+        Args:
+            beatmap_file_warmup (RequestBeatmapFileWarmupUseCase):
+                status内beatmap fileの取得を要求するcommand.
+            current_user_stats_query (CurrentUserStatsQuery):
+                status通知に含めるscore statsを取得するquery.
+            active_sessions_query (ListActiveSessionsQueryUseCase):
+                status通知先sessionを列挙するquery.
+            packet_queue (PacketQueue): status packetをrecipientへenqueueするqueue.
+            stable_user_status_store (StableUserStatusStore): stable client statusを更新するstore.
+
+        Returns:
+            StatusChangeHandlers: user status変更packetを登録するhandler group.
+        """
         return StatusChangeHandlers(
             beatmap_file_warmup=beatmap_file_warmup,
             stable_user_status_store=stable_user_status_store,
@@ -199,6 +284,19 @@ class StableBanchoProviderSet(Provider):
         bot_identity: SystemUserIdentity,
         stable_user_status_store: StableUserStatusStore,
     ) -> PresenceHandlers:
+        """Stable presence packet handler群をonline sessionとstatus依存で構成する.
+
+        Args:
+            active_sessions_query (ListActiveSessionsQueryUseCase): online sessionを列挙するquery.
+            active_sessions_by_user_ids_query (GetActiveSessionsByUserIdsQueryUseCase):
+                指定userのsessionを取得するquery.
+            packet_queue (PacketQueue): presence packetをrecipientへenqueueするqueue.
+            bot_identity (SystemUserIdentity): system botのpresenceを表すidentity.
+            stable_user_status_store (StableUserStatusStore): stable client statusを読むstore.
+
+        Returns:
+            PresenceHandlers: presence requestとpresence filter packetを登録するhandler group.
+        """
         return PresenceHandlers(
             active_sessions_query=active_sessions_query,
             active_sessions_by_user_ids_query=active_sessions_by_user_ids_query,
@@ -216,6 +314,20 @@ class StableBanchoProviderSet(Provider):
         stable_user_status_store: StableUserStatusStore,
         bot_identity: SystemUserIdentity,
     ) -> StatsRequestHandler:
+        """Stable user stats request handlerをquery、queue、status依存で構成する.
+
+        Args:
+            current_user_stats_query (CurrentUserStatsQuery):
+                requested userのscore statsを取得するquery.
+            active_sessions_by_user_ids_query (GetActiveSessionsByUserIdsQueryUseCase):
+                requested userのsessionを取得するquery.
+            packet_queue (PacketQueue): stats response packetをenqueueするqueue.
+            stable_user_status_store (StableUserStatusStore): stable client statusを読むstore.
+            bot_identity (SystemUserIdentity): system botのstatsを表すidentity.
+
+        Returns:
+            StatsRequestHandler: user stats request packetを登録するhandler group.
+        """
         return StatsRequestHandler(
             current_user_stats_query=current_user_stats_query,
             packet_queue=packet_queue,
@@ -234,6 +346,26 @@ class StableBanchoProviderSet(Provider):
         channel_state: ChannelStateStore,
         stable_user_status_store: StableUserStatusStore,
     ) -> AppEventListeners:
+        """App event listenerを登録し、登録完了markerを返す.
+
+        Args:
+            event_bus (LocalEventBus): domain eventをsubscribeするlocal event bus.
+            packet_queue (PacketQueue): event由来packetをrecipientへenqueueするqueue.
+            active_sessions_query (ListActiveSessionsQueryUseCase):
+                event通知先sessionを列挙するquery.
+            current_user_stats_query (CurrentUserStatsQuery):
+                stats更新event用のscore statsを取得するquery.
+            channel_state (ChannelStateStore): channel state更新eventを反映するstore.
+            stable_user_status_store (StableUserStatusStore):
+                stable client status更新eventを反映するstore.
+
+        Returns:
+            AppEventListeners: listener登録が完了したことを依存graphへ伝えるmarker.
+
+        Notes:
+            ``PacketDispatcher`` がこのmarkerを要求するため、handler登録前に
+            ``setup_listeners`` が実行される.
+        """
         setup_listeners(
             event_bus,
             packet_queue,
@@ -255,6 +387,25 @@ class StableBanchoProviderSet(Provider):
         stats_request_handler: StatsRequestHandler,
         listeners: AppEventListeners,
     ) -> PacketDispatcher:
+        """全stable handler groupを登録したpacket dispatcherを構成する.
+
+        Args:
+            lifecycle_handlers (LifecycleHandlers): lifecycle packetを登録するhandler group.
+            chat_handlers (ChatHandlers): chat packetを登録するhandler group.
+            friend_handlers (FriendHandlers): friend packetを登録するhandler group.
+            status_change_handlers (StatusChangeHandlers): status変更packetを登録するhandler group.
+            presence_handlers (PresenceHandlers): presence packetを登録するhandler group.
+            stats_request_handler (StatsRequestHandler):
+                stats request packetを登録するhandler group.
+            listeners (AppEventListeners): event listener登録完了を強制するmarker.
+
+        Returns:
+            PacketDispatcher: 全handlerをregistration済みのstable C2S packet dispatcher.
+
+        Notes:
+            ``listeners`` は値を使わず、Dishkaにevent listener providerの解決を
+            要求するためだけに受け取る.
+        """
         _ = listeners
         dispatcher = PacketDispatcher()
         lifecycle_handlers.register_all(dispatcher)
@@ -274,6 +425,19 @@ class StableBanchoProviderSet(Provider):
         stable_user_status_store: StableUserStatusStore,
         config: AppConfig,
     ) -> PollingWorkflow:
+        """Stable bancho polling workflowをsession、queue、dispatcherで構成する.
+
+        Args:
+            session_store (SessionStore): polling userのsessionを解決するvolatile store.
+            packet_queue (PacketQueue): queued S2C packetを取り出すqueue.
+            packet_dispatcher (PacketDispatcher): incoming C2S packetをdispatchするdispatcher.
+            stable_user_status_store (StableUserStatusStore):
+                stable client statusを読み書きするstore.
+            config (AppConfig): session TTLと最大request body sizeを持つ設定.
+
+        Returns:
+            PollingWorkflow: stable bancho polling requestを処理するworkflow.
+        """
         return PollingWorkflow(
             session_store=session_store,
             packet_queue=packet_queue,
@@ -289,6 +453,15 @@ class StableBanchoProviderSet(Provider):
         login_workflow: LoginWorkflow,
         polling_workflow: PollingWorkflow,
     ) -> BanchoEndpoint:
+        """loginとpolling workflowを公開するstable bancho endpointを構成する.
+
+        Args:
+            login_workflow (LoginWorkflow): initial login requestを処理するworkflow.
+            polling_workflow (PollingWorkflow): authenticated polling requestを処理するworkflow.
+
+        Returns:
+            BanchoEndpoint: stable client向けroot bancho HTTP endpoint.
+        """
         return BanchoEndpoint(
             login_workflow=login_workflow,
             polling_workflow=polling_workflow,

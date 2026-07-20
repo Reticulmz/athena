@@ -1,4 +1,4 @@
-"""App-facing beatmap mirror providers."""
+"""app processから利用するbeatmap mirror providerを構成する."""
 
 from __future__ import annotations
 
@@ -35,7 +35,11 @@ logger: structlog.stdlib.BoundLogger = cast(
 
 @final
 class BeatmapAppProviderSet(Provider):
-    """Providers for app-only beatmap mirror and enqueue integration."""
+    """app専用のbeatmap mirrorとworker enqueue連携をAPP scopeで登録する.
+
+    Attributes:
+        scope (Scope): app container内で共有するDishkaのAPP scope.
+    """
 
     scope = Scope.APP
 
@@ -48,6 +52,19 @@ class BeatmapAppProviderSet(Provider):
         broker: AsyncBroker,
         config: AppConfig,
     ) -> BeatmapMirrorService:
+        """Mirror read serviceをtrust policyとfetch enqueue callbackで構成する.
+
+        Args:
+            repository (BeatmapQueryRepository): 既存beatmap metadataを読むrepository.
+            eligibility_service (BeatmapEligibilityService):
+                mirrorで返せるbeatmapを判定するservice.
+            freshness_policy (BeatmapFreshnessPolicy): metadataの再取得要否を決めるpolicy.
+            broker (AsyncBroker): stale metadataまたはfile fetchをworkerへenqueueするbroker.
+            config (AppConfig): mirror trust policyと公式source利用可否を持つ設定.
+
+        Returns:
+            BeatmapMirrorService: 必要時に ``enqueue_beatmap_fetch`` を呼ぶapp向けread service.
+        """
         return BeatmapMirrorService(
             repository=repository,
             eligibility_service=eligibility_service,
@@ -62,11 +79,32 @@ class BeatmapAppProviderSet(Provider):
         self,
         beatmap_resolver: BeatmapMirrorService,
     ) -> RequestBeatmapFileWarmupUseCase:
+        """Beatmap file warmup commandをmirror serviceで構成する.
+
+        Args:
+            beatmap_resolver (BeatmapMirrorService):
+                file取得対象のbeatmapを解決してenqueueするservice.
+
+        Returns:
+            RequestBeatmapFileWarmupUseCase: 必要な ``.osu`` file取得を要求するcommand.
+        """
         return RequestBeatmapFileWarmupUseCase(beatmap_resolver)
 
 
 async def enqueue_beatmap_fetch(broker: AsyncBroker, target: BeatmapFetchTarget) -> None:
-    """fetch target に対応する worker job を enqueue する。"""
+    """Fetch targetに対応するworker taskを選択してenqueueする.
+
+    Args:
+        broker (AsyncBroker): ``fetch_beatmap_file`` と ``fetch_beatmap_metadata`` taskを持つ
+            broker.
+        target (BeatmapFetchTarget): file fetchかmetadata fetchかと対象keyを表すrequest.
+
+    Returns:
+        None: task未登録時はerror logを残して何もenqueueせず、それ以外はenqueue完了後に返す.
+
+    Notes:
+        ``force_refresh`` が真の場合だけkeyword argumentとしてworker taskへ渡す.
+    """
     task_name = "fetch_beatmap_file" if target.is_file_fetch else "fetch_beatmap_metadata"
     task = broker.find_task(task_name)
     if task is None:

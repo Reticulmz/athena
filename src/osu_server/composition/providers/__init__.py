@@ -1,4 +1,4 @@
-"""Dishka provider sets for app, worker, and test composition."""
+"""app、worker、test用のDishka provider setを遅延公開する."""
 
 from __future__ import annotations
 
@@ -189,7 +189,20 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str) -> object:
-    """Resolve package-level exports without importing every provider eagerly."""
+    """要求された公開名だけを遅延importしてpackage属性として返す.
+
+    Args:
+        name (str): ``__all__``に含まれるproviderまたはcontainer factoryの公開名.
+
+    Returns:
+        object: 対応moduleから解決し、このpackageのglobal namespaceへcacheした属性.
+
+    Raises:
+        AttributeError: ``name``が遅延公開対象に登録されていない場合.
+
+    Notes:
+        既に解決済みの属性はPythonの通常の属性探索で返り、この関数は呼ばれない.
+    """
     try:
         module_name, attribute_name = _EXPORTS[name]
     except KeyError as exc:
@@ -202,5 +215,14 @@ def __getattr__(name: str) -> object:
 
 
 def _cache_export(name: str, value: object) -> object:
+    """遅延解決した公開属性をpackage namespaceへcacheする.
+
+    Args:
+        name (str): cacheする公開属性名.
+        value (object): 公開属性として返す解決済みの値.
+
+    Returns:
+        object: cacheした ``value`` をそのまま返す値.
+    """
     globals()[name] = value
     return value

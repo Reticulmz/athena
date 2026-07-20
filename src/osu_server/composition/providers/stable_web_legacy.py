@@ -1,4 +1,4 @@
-"""安定版 web legacy transport provider。"""
+"""stable web legacy transportのproviderを構成する."""
 
 from __future__ import annotations
 
@@ -77,7 +77,11 @@ _DISHKA_RUNTIME_HINTS = (
 
 @final
 class StableWebLegacyProviderSet(Provider):
-    """安定版 legacy web handler、parser、mapper の provider set。"""
+    """stable legacy web handler、parser、mapperをAPP scopeで登録する.
+
+    Attributes:
+        scope (Scope): app container内で共有するDishkaのAPP scope.
+    """
 
     scope = Scope.APP
 
@@ -86,18 +90,45 @@ class StableWebLegacyProviderSet(Provider):
         self,
         register_user_command: RegisterUserCommandUseCase,
     ) -> RegistrationHandler:
+        """Legacy registration endpoint handlerをuser registration commandで構成する.
+
+        Args:
+            register_user_command (RegisterUserCommandUseCase):
+                registration inputを検証してuserを作成するcommand.
+
+        Returns:
+            RegistrationHandler: ``osu.$DOMAIN`` の ``POST /users`` とlocal fallbackの
+                ``POST /web/users`` を処理するhandler.
+        """
         return RegistrationHandler(register_user_command=register_user_command)
 
     @provide
     def getscores_parser(self) -> GetscoresQueryParser:
+        """Legacy getscores query parameter parserを構成する.
+
+        Returns:
+            GetscoresQueryParser: ``/web/osu-osz2-getscores.php`` requestをquery inputへ
+                変換するparser.
+        """
         return GetscoresQueryParser()
 
     @provide
     def getscores_status_mapper(self) -> GetscoresStatusMapper:
+        """Legacy getscores response status mapperを構成する.
+
+        Returns:
+            GetscoresStatusMapper: query結果をstable client互換statusとresponseへ変換するmapper.
+        """
         return GetscoresStatusMapper()
 
     @provide
     def replay_download_parser(self) -> ReplayDownloadQueryParser:
+        """Legacy replay download query parameter parserを構成する.
+
+        Returns:
+            ReplayDownloadQueryParser: ``/web/osu-getreplay.php`` requestをquery inputへ
+                変換するparser.
+        """
         return ReplayDownloadQueryParser()
 
     @provide
@@ -115,6 +146,34 @@ class StableWebLegacyProviderSet(Provider):
         beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
         config: AppConfig,
     ) -> GetscoresHandler:
+        """Legacy getscores handlerを認証、score query、beatmap warmup依存で構成する.
+
+        Args:
+            auth_query (SessionCredentialsQueryUseCase):
+                legacy requestのsession credentialを検証するquery.
+            getscores_parser (GetscoresQueryParser):
+                query parameterをgetscores inputへ変換するparser.
+            getscores_repository (BeatmapScoreListingQueryRepository):
+                beatmap score listを読むrepository.
+            leaderboards (BeatmapLeaderboardQueryRepository):
+                materialized leaderboardを読むrepository.
+            user_repository (UserQueryRepository): score ownerとviewer userを読むrepository.
+            permission_service (PermissionService): viewerのscore visibility権限を解決するservice.
+            friend_eligible_user_ids_query (GetFriendEligibleUserIdsQuery):
+                friend限定scoreの可視userを取得するquery.
+            status_mapper (GetscoresStatusMapper): query結果をstable responseへ変換するmapper.
+            beatmap_resolver (BeatmapMirrorService): request対象beatmapを解決するservice.
+            beatmap_file_warmup (RequestBeatmapFileWarmupUseCase):
+                必要なbeatmap file取得を要求するcommand.
+            config (AppConfig): metadata待機上限を持つ実行時設定.
+
+        Returns:
+            GetscoresHandler: legacy getscores requestを認証してresponseを返すhandler.
+
+        Notes:
+            このprovider内で ``BeatmapLeaderboardQuery`` と
+            ``BeatmapScoreListingQuery`` を組み立てる.
+        """
         leaderboard_query = BeatmapLeaderboardQuery(
             getscores_repository,
             leaderboards,
@@ -135,6 +194,17 @@ class StableWebLegacyProviderSet(Provider):
 
     @provide
     def stable_score_submit_mapper(self, config: AppConfig) -> StableScoreSubmitMapper:
+        """Stable multipart score submit requestとresponseを変換するmapperを構成する.
+
+        Args:
+            config (AppConfig): multipart size上限とserver domainを持つ実行時設定.
+
+        Returns:
+            StableScoreSubmitMapper: request size limitとstable web base URLを持つmapper.
+
+        Notes:
+            base URLは ``_stable_web_base_url`` で ``https://osu.`` hostへ正規化する.
+        """
         return StableScoreSubmitMapper(
             limits=MultipartLimits(
                 total_body_size=config.max_request_body_size,
@@ -146,19 +216,13 @@ class StableWebLegacyProviderSet(Provider):
 
     @provide
     def stable_score_payload_parser(self) -> StableScorePayloadParser:
-        """安定版 score payload parser を提供する。
-
-        Args:
-            なし。
+        """Stable plaintext score payloadをparseするtransport parserを構成する.
 
         Returns:
-            Stable plaintext score payload を ParsedScore へ変換する parser。
+            StableScorePayloadParser: plaintext payloadをparsed scoreへ変換するparser.
 
-        Raises:
-            生成時に独自例外は送出しない。
-
-        Constraints:
-            Parser は transport 層の decode 境界で使い、command use-case へ直接渡さない。
+        Notes:
+            parserはstable transportのdecode境界で使用し、command use-caseへ直接渡さない.
         """
         return StableScorePayloadParser()
 
@@ -168,20 +232,19 @@ class StableWebLegacyProviderSet(Provider):
         payload_decryptor: ScoreCryptoService,
         payload_parser: StableScorePayloadParser,
     ) -> StableScoreSubmitDecoder:
-        """安定版 score submit decoder を提供する。
+        """Stable score submit decoderをcrypto serviceとpayload parserで構成する.
 
         Args:
-            payload_decryptor: encrypted stable payload を復号する ScoreCryptoService。
-            payload_parser: 復号後 plaintext を ParsedScore へ変換する parser。
+            payload_decryptor (ScoreCryptoService): encrypted stable payloadを復号するservice.
+            payload_parser (StableScorePayloadParser):
+                復号後plaintextをparsed scoreへ変換するparser.
 
         Returns:
-            stable request mapping を ParsedSubmissionInput へ変換する decoder。
+            StableScoreSubmitDecoder: stable request mappingをparsed submission inputへ
+                変換するdecoder.
 
-        Raises:
-            生成時に独自例外は送出しない。
-
-        Constraints:
-            復号と wire payload parse は stable transport 境界に閉じ込める。
+        Notes:
+            復号とwire payload parseはstable transport境界に閉じ込める.
         """
         return StableScoreSubmitDecoder(
             payload_decryptor=payload_decryptor,
@@ -197,23 +260,24 @@ class StableWebLegacyProviderSet(Provider):
         current_user_stats_query: CurrentUserStatsQuery,
         event_bus: LocalEventBus,
     ) -> ScoreSubmitHandler:
-        """安定版 score submit handler を提供する。
+        """Stable score submit handlerをcommand、decoder、response依存で構成する.
 
         Args:
-            submit_score_command: 正規化済み score submission を処理する command use-case。
-            mapper: stable multipart request と response body を変換する mapper。
-            decoder: stable payload を command input へ変換する decoder。
-            current_user_stats_query: completed response 用 stats を補完する query。
-            event_bus: score submit 後の domain event を配送する local event bus。
+            submit_score_command (ProcessScoreSubmissionUseCase):
+                正規化済みscore submissionを処理するcommand.
+            mapper (StableScoreSubmitMapper):
+                stable multipart requestとresponse bodyを変換するmapper.
+            decoder (StableScoreSubmitDecoder): stable payloadをcommand inputへ変換するdecoder.
+            current_user_stats_query (CurrentUserStatsQuery):
+                completed response用statsを補完するquery.
+            event_bus (LocalEventBus): score submit後のdomain eventを配送するlocal event bus.
 
         Returns:
-            /web/osu-submit-modular-selector.php 用 handler。
+            ScoreSubmitHandler: ``/web/osu-submit-modular-selector.php`` 互換requestを
+                処理するhandler.
 
-        Raises:
-            生成時に独自例外は送出しない。
-
-        Constraints:
-            Provider は依存を組み立てるだけで、request state や DB session を保持しない。
+        Notes:
+            providerは依存を組み立てるだけでrequest stateやDB sessionを保持しない.
         """
         return ScoreSubmitHandler(
             submit_score_command=submit_score_command,
@@ -231,6 +295,20 @@ class StableWebLegacyProviderSet(Provider):
         replay_download_query: ReplayDownloadQuery,
         replay_download_accounting: ReplayDownloadAccountingPublisher,
     ) -> ReplayDownloadHandler:
+        """Legacy replay download handlerを認証、parser、query、accounting publisherで構成する.
+
+        Args:
+            auth_query (SessionCredentialsQueryUseCase):
+                legacy requestのsession credentialを検証するquery.
+            replay_download_parser (ReplayDownloadQueryParser):
+                query parameterをreplay download inputへ変換するparser.
+            replay_download_query (ReplayDownloadQuery): replay可視性とbodyを取得するquery.
+            replay_download_accounting (ReplayDownloadAccountingPublisher):
+                successful downloadを非同期計上するpublisher.
+
+        Returns:
+            ReplayDownloadHandler: ``/web/osu-getreplay.php`` 互換requestを処理するhandler.
+        """
         return ReplayDownloadHandler(
             auth_query=auth_query,
             replay_download_parser=replay_download_parser,
@@ -240,4 +318,15 @@ class StableWebLegacyProviderSet(Provider):
 
 
 def _stable_web_base_url(domain: str) -> str:
+    """Stable web endpoint用のosu subdomain URLを生成する.
+
+    Args:
+        domain (str): leading/trailing periodを含み得るAthenaのbase domain.
+
+    Returns:
+        str: ``https://osu.`` prefixとperiodを除去した ``domain`` を結合したbase URL.
+
+    Notes:
+        domainの妥当性検証は行わず、leading/trailing periodだけを除去する.
+    """
     return f"https://osu.{domain.strip('.')}"

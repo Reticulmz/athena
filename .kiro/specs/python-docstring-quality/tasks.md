@@ -138,7 +138,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したsrc/osu_server/composition/providersの8 file_
 
-- [ ] 2.9 (P) Client familyとapplication composition providerを整備する
+- [x] 2.9 (P) Client familyとapplication composition providerを整備する
   - src/osu_server/composition/providers配下で2.8が所有しない全fileへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびstable、chat、beatmap、score、app、test provider graph testが通る
   - _Depends: 1.4_
