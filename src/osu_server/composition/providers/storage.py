@@ -1,4 +1,8 @@
-"""Shared storage providers for app and worker dependency graphs."""
+"""app/worker graphで共有するblob storage service providerを定義する.
+
+physical storage backend, blob metadata query, command transactionを組み合わせ,
+transportとuse caseがbackend実装を直接知らずにblobを扱えるようにする.
+"""
 
 from __future__ import annotations
 
@@ -29,7 +33,11 @@ _DISHKA_RUNTIME_HINTS = (
 
 @final
 class StorageProviderSet(Provider):
-    """Providers for blob storage application services."""
+    """blob storage application serviceとread adapterを提供する.
+
+    Attributes:
+        scope (Scope): app/worker processの生存期間と一致するDishka scope.
+    """
 
     scope = Scope.APP
 
@@ -41,6 +49,20 @@ class StorageProviderSet(Provider):
         backend: BlobStorageBackend,
         config: AppConfig,
     ) -> BlobStorageService:
+        """Blob metadataとphysical backendを統合するcommand serviceを提供する.
+
+        Args:
+            blob_query_repo (BlobQueryRepository): blob metadataを読み取るquery repository.
+            uow_factory (UnitOfWorkFactory): blob metadata mutationをcommitするtransaction factory.
+            backend (BlobStorageBackend): configuration検証済みのphysical blob storage adapter.
+            config (AppConfig): storage backend kindを含むruntime設定.
+
+        Returns:
+            BlobStorageService: physical contentとdurable metadataを一貫して扱うservice.
+
+        Raises:
+            ValueError: config.blob_storage_backendがBlobStorageBackendKindとして無効な場合.
+        """
         return BlobStorageService(
             blob_query_repo=blob_query_repo,
             uow_factory=uow_factory,
@@ -50,6 +72,15 @@ class StorageProviderSet(Provider):
 
     @provide
     def blob_byte_reader(self, blob_storage_service: BlobStorageService) -> BlobByteReader:
+        """transport向けblob byte reader adapterを提供する.
+
+        Args:
+            blob_storage_service (BlobStorageService): blob contentとmetadataを統合するservice.
+
+        Returns:
+            BlobByteReader: blob byteを返し, content unavailable時はBlobBytesUnavailableErrorを
+                伝播または送出するadapter.
+        """
         return BlobByteReaderAdapter(
             blob_storage_service,
             unavailable_exception_types=(BlobContentUnavailableError,),

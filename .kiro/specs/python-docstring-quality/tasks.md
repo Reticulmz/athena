@@ -130,7 +130,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/*.py, src/osu_server/composition/*.py_
 
-- [ ] 2.8 (P) Infrastructureとrepository composition providerを整備する
+- [x] 2.8 (P) Infrastructureとrepository composition providerを整備する
   - providers配下のidentity.py、infrastructure.py、performance.py、performance_cli.py、
     repositories.py、repository_adapters.py、storage.py、worker.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびprovider graph/replacement testが通る

@@ -1,4 +1,8 @@
-"""Repository adapter families for production and in-memory graphs."""
+"""production/test graph向けrepository adapter familyを定義する.
+
+production graphはSQLAlchemy adapterをsession factoryから生成する.
+test graphは共有in-memory stateを使うadapter replacement集合を生成する.
+"""
 
 from __future__ import annotations
 
@@ -97,108 +101,248 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class RepositoryAdapterReplacement:
-    """One interface-to-adapter binding for provider replacement."""
+    """provider replacement用のinterface-to-adapter bindingを表す.
+
+    Attributes:
+        provides (type[object]): replacement対象となるrepositoryまたはfactory portの型.
+        value (object): portへ注入するconcrete adapter instance.
+    """
 
     provides: type[object]
     value: object
 
 
 class SQLAlchemyRepositoryAdapterFamily:
-    """Build SQLAlchemy repository adapters from the app session factory."""
+    """session factoryからproduction SQLAlchemy repository adapterを生成する.
+
+    各methodはadapter instanceだけを生成し, sessionのcommit/rollback lifecycleは
+    Unit of Workまたはrepository実装へ委譲する.
+    """
 
     def unit_of_work_factory(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> UnitOfWorkFactory:
+        """SQLAlchemy Unit of Work factoryを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): command transaction用sessionを
+                作るfactory.
+
+        Returns:
+            UnitOfWorkFactory: SQLAlchemy command repositoryを束ねるproduction factory.
+        """
         return SQLAlchemyUnitOfWorkFactory(session_factory)
 
     def user_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> UserQueryRepository:
+        """SQLAlchemy user query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            UserQueryRepository: user identityとcredential metadataを読むadapter.
+        """
         return SQLAlchemyUserQueryRepository(session_factory)
 
     def role_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> RoleQueryRepository:
+        """SQLAlchemy role query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            RoleQueryRepository: roleとprivilege定義を読むadapter.
+        """
         return SQLAlchemyRoleQueryRepository(session_factory)
 
     def channel_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> ChannelQueryRepository:
+        """SQLAlchemy channel query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            ChannelQueryRepository: channel metadataを読むadapter.
+        """
         return SQLAlchemyChannelQueryRepository(session_factory)
 
     def chat_history_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> ChatHistoryQueryRepository:
+        """SQLAlchemy chat history query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            ChatHistoryQueryRepository: persisted chat historyを読むadapter.
+        """
         return SQLAlchemyChatHistoryQueryRepository(session_factory)
 
     def beatmap_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> BeatmapQueryRepository:
+        """SQLAlchemy beatmap query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            BeatmapQueryRepository: beatmap metadataとfile参照を読むadapter.
+        """
         return SQLAlchemyBeatmapQueryRepository(session_factory)
 
     def beatmap_score_listing_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> BeatmapScoreListingQueryRepository:
+        """SQLAlchemy beatmap score listing query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            BeatmapScoreListingQueryRepository: stable score listingを読むadapter.
+        """
         return SQLAlchemyBeatmapScoreListingQueryRepository(session_factory)
 
     def beatmap_leaderboard_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> BeatmapLeaderboardQueryRepository:
+        """SQLAlchemy beatmap leaderboard query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            BeatmapLeaderboardQueryRepository: beatmap ranking read modelを読むadapter.
+        """
         return SQLAlchemyBeatmapLeaderboardQueryRepository(session_factory)
 
     def blob_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> BlobQueryRepository:
+        """SQLAlchemy blob metadata query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            BlobQueryRepository: physical blobへ対応するmetadataを読むadapter.
+        """
         return SQLAlchemyBlobQueryRepository(session_factory)
 
     def score_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> ScoreQueryRepository:
+        """SQLAlchemy score query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            ScoreQueryRepository: submitted scoreのread modelを読むadapter.
+        """
         return SQLAlchemyScoreQueryRepository(session_factory)
 
     def personal_best_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> PersonalBestQueryRepository:
+        """SQLAlchemy personal best query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            PersonalBestQueryRepository: user別personal bestを読むadapter.
+        """
         return SQLAlchemyPersonalBestQueryRepository(session_factory)
 
     def friend_relationship_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> FriendRelationshipQueryRepository:
+        """SQLAlchemy friend relationship query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            FriendRelationshipQueryRepository: user間friend relationshipを読むadapter.
+        """
         return SQLAlchemyFriendRelationshipQueryRepository(session_factory)
 
     def score_performance_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> ScorePerformanceQueryRepository:
+        """SQLAlchemy score performance query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            ScorePerformanceQueryRepository: calculation stateとperformance resultを読むadapter.
+        """
         return SQLAlchemyScorePerformanceQueryRepository(session_factory)
 
     def user_stats_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> UserStatsQueryRepository:
+        """SQLAlchemy user statistics query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            UserStatsQueryRepository: user statistics read modelを読むadapter.
+        """
         return SQLAlchemyUserStatsQueryRepository(session_factory)
 
     def replay_download_query_repository(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> ReplayDownloadQueryRepository:
+        """SQLAlchemy replay download query adapterを生成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            ReplayDownloadQueryRepository: replay download対象とaccounting情報を読むadapter.
+        """
         return SQLAlchemyReplayDownloadQueryRepository(session_factory)
 
 
 class InMemoryRepositoryAdapterFamily:
-    """Build one coherent in-memory repository adapter set."""
+    """test graph向けに共有stateを持つin-memory repository adapterを生成する.
+
+    Attributes:
+        state (InMemoryCommandRepositoryState): 全command/query adapterが共有するdurable state代替.
+        unit_of_work_factory (InMemoryUnitOfWorkFactory): shared stateを更新するin-memory
+            transaction factory.
+        query_state_snapshot_provider (InMemoryQueryStateSnapshotProvider): read adapterへ
+            state snapshotを渡すprovider.
+        beatmap_query_repository (InMemoryBeatmapQueryRepository): score listing adapterとも
+            共有するbeatmap query adapter.
+    """
 
     state: InMemoryCommandRepositoryState
     unit_of_work_factory: InMemoryUnitOfWorkFactory
@@ -206,13 +350,31 @@ class InMemoryRepositoryAdapterFamily:
     beatmap_query_repository: InMemoryBeatmapQueryRepository
 
     def __init__(self, state: InMemoryCommandRepositoryState | None = None) -> None:
+        """Shared stateに結び付くin-memory adapter familyを初期化する.
+
+        Args:
+            state (InMemoryCommandRepositoryState | None): 既存shared state. Noneの場合は
+                新しいstateを作る.
+
+        Notes:
+            replacementで返す全adapterはこのinstanceのUnit of Workまたはsnapshot providerを
+                共有する.
+        """
         self.state = state if state is not None else InMemoryCommandRepositoryState()
         self.unit_of_work_factory = InMemoryUnitOfWorkFactory(self.state)
         self.query_state_snapshot_provider = InMemoryQueryStateSnapshotProvider(self.state)
         self.beatmap_query_repository = InMemoryBeatmapQueryRepository(self.unit_of_work_factory)
 
     def replacements(self) -> tuple[RepositoryAdapterReplacement, ...]:
-        """Return provider replacements for all in-memory repository adapters."""
+        """in-memory repository adapter用provider replacementを返す.
+
+        Returns:
+            tuple[RepositoryAdapterReplacement, ...]: test containerへ渡す全repository/factory
+                portのbinding.
+
+        Notes:
+            各bindingは同じshared stateを参照し, production SQLAlchemy providerを置換する.
+        """
         return (
             RepositoryAdapterReplacement(UnitOfWorkFactory, self.unit_of_work_factory),
             RepositoryAdapterReplacement(
