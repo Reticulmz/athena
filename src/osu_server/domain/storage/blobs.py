@@ -57,7 +57,7 @@ class Blob:
         if self.byte_size < 0:
             raise InvalidBlobError("byte_size must be non-negative")
 
-        if not SHA256_PATTERN.match(self.sha256):
+        if not SHA256_PATTERN.fullmatch(self.sha256):
             raise InvalidBlobError("sha256 must be a 64-character lowercase hexadecimal string")
 
         _validate_storage_backend(self.storage_backend)
@@ -94,7 +94,7 @@ class NewBlob:
         if self.byte_size < 0:
             raise InvalidBlobError("byte_size must be non-negative")
 
-        if not SHA256_PATTERN.match(self.sha256):
+        if not SHA256_PATTERN.fullmatch(self.sha256):
             raise InvalidBlobError("sha256 must be a 64-character lowercase hexadecimal string")
 
         _validate_storage_backend(self.storage_backend)

@@ -3,7 +3,12 @@ from typing import cast
 
 import pytest
 
-from osu_server.domain.storage.blobs import Blob, BlobStorageBackendKind, InvalidBlobError
+from osu_server.domain.storage.blobs import (
+    Blob,
+    BlobStorageBackendKind,
+    InvalidBlobError,
+    NewBlob,
+)
 from tests.support.runtime_assertions import assert_rejects_setattr
 
 VALID_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -100,6 +105,50 @@ def test_blob_rejects_invalid_sha256() -> None:
             storage_backend=BlobStorageBackendKind.LOCAL,
             storage_key="key",
             created_at=datetime.now(UTC),
+        )
+
+
+def test_blob_rejects_sha256_with_trailing_newline() -> None:
+    """末尾改行を含むSHA-256 digestをBlobが拒否することを検証する.
+
+    Returns:
+        None: 検証結果を返さない.
+
+    Notes:
+        sha256は正確に64文字の小文字16進数でなければならない.
+    """
+    with pytest.raises(
+        InvalidBlobError, match="sha256 must be a 64-character lowercase hexadecimal string"
+    ):
+        _ = Blob(
+            id=1,
+            sha256="a" * 64 + "\n",
+            byte_size=10,
+            content_type="text/plain",
+            storage_backend=BlobStorageBackendKind.LOCAL,
+            storage_key="key",
+            created_at=datetime.now(UTC),
+        )
+
+
+def test_new_blob_rejects_sha256_with_trailing_newline() -> None:
+    """末尾改行を含むSHA-256 digestをNewBlobが拒否することを検証する.
+
+    Returns:
+        None: 検証結果を返さない.
+
+    Notes:
+        sha256は正確に64文字の小文字16進数でなければならない.
+    """
+    with pytest.raises(
+        InvalidBlobError, match="sha256 must be a 64-character lowercase hexadecimal string"
+    ):
+        _ = NewBlob(
+            sha256="a" * 64 + "\n",
+            byte_size=10,
+            content_type="text/plain",
+            storage_backend=BlobStorageBackendKind.LOCAL,
+            storage_key="key",
         )
 
 
