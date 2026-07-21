@@ -1,10 +1,4 @@
-"""Channel domain model, ChannelType enum, and ChannelRoleOverride.
-
-Defines the Channel entity for DB-managed public persistent channels,
-a ChannelType enum with PUBLIC as the active variant plus reserved
-variants for future use, and ChannelRoleOverride for Discord-style
-role-based access control.
-"""
+"""永続chat channelとrole based access controlのdomain modelを定義するmodule."""
 
 from __future__ import annotations
 
@@ -20,6 +14,15 @@ _CHANNEL_NAME_BODY = re.compile(r"^[a-z0-9_-]+$")
 
 
 class ChannelType(Enum):
+    """Channelの用途を表す閉集合.
+
+    Attributes:
+        PUBLIC (str): 通常の公開channelを示す値.
+        MULTIPLAYER (str): multiplayer用に予約された値.
+        SPECTATOR (str): spectator用に予約された値.
+        TEMPORARY (str): 一時channel用に予約された値.
+    """
+
     PUBLIC = "public"
     MULTIPLAYER = "multiplayer"  # reserved
     SPECTATOR = "spectator"  # reserved
@@ -28,13 +31,22 @@ class ChannelType(Enum):
 
 @dataclass(slots=True)
 class Channel:
-    """A chat channel entity.
+    """DB管理されるchat channelを表す.
 
-    Invariant: ``name`` must start with ``#`` followed by one or more
-    characters matching ``[a-z0-9_-]``.
+    Attributes:
+        id (int): 永続channel ID.
+        name (str): `#`で始まるchannel名.
+        topic (str): channelの説明文.
+        channel_type (ChannelType): channelの用途分類.
+        auto_join (bool): login時に自動参加させるか.
+        rate_limit_messages (int | None): rate limit内で許可するmessage数. 未設定時はNone.
+        rate_limit_window (int | None): rate limitを測る時間window. 未設定時はNone.
+        created_at (datetime): channelを作成した日時.
+        updated_at (datetime): channelを最後に更新した日時.
 
-    Access control is managed via :class:`ChannelRoleOverride` (Discord-style).
-    Channels with no overrides are inaccessible (fail-closed).
+    Notes:
+        nameは`#`の後ろに`[a-z0-9_-]`を1文字以上持つ. role overrideがないchannelへの
+        accessはfail-closedである.
     """
 
     id: int
@@ -48,15 +60,30 @@ class Channel:
     updated_at: datetime
 
     def __post_init__(self) -> None:
+        """Channel名がdomainの命名規則を満たすか検証する.
+
+        Returns:
+            None: channel名を検証して完了する.
+
+        Raises:
+            ValueError: nameが`#`で始まらないか、許可外文字を含む場合.
+        """
         _validate_channel_name(self.name)
 
 
 @dataclass(slots=True)
 class ChannelRoleOverride:
-    """Per-channel, per-role access override (Discord-style ACL).
+    """Channelとroleの組ごとのaccess overrideを表す.
 
-    If no overrides exist for a channel, it is inaccessible (fail-closed).
-    The Default role (assigned to all users) serves as @everyone.
+    Attributes:
+        channel_id (int): overrideを適用するchannel ID.
+        role_id (int): overrideを適用するrole ID.
+        can_read (bool): channelのreadを許可するか.
+        can_write (bool): channelへのmessage送信を許可するか.
+
+    Notes:
+        overrideが一件もないchannelはfail-closedである. Default roleは全userに割り当てる
+        `@everyone`相当として利用できる.
     """
 
     channel_id: int
@@ -66,7 +93,17 @@ class ChannelRoleOverride:
 
 
 def _validate_channel_name(name: str) -> None:
-    """Validate that *name* conforms to ``# + [a-z0-9_-]``."""
+    """Channel名が`#`と許可文字から成るか検証する.
+
+    Args:
+        name (str): 検証するchannel名.
+
+    Returns:
+        None: nameが命名規則を満たすことを確認して完了する.
+
+    Raises:
+        ValueError: nameが`#`で始まらないか、`#`の後ろが空か、許可外文字を含む場合.
+    """
     if not name.startswith("#"):
         msg = "Channel name must start with '#'"
         raise ValueError(msg)
