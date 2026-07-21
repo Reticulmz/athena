@@ -1,4 +1,4 @@
-"""ChannelStateStore Protocol — abstract interface for channel membership management."""
+"""チャンネル参加状態を扱う抽象 contract を定義する module."""
 
 from __future__ import annotations
 
@@ -7,57 +7,95 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class ChannelStateStore(Protocol):
-    """Protocol for channel membership state operations.
+    """チャンネルと user の参加状態を双方向 index として管理する contract.
 
-    Implementations must maintain a bidirectional index:
-    channel -> members and user -> channels.
-
-    Methods: add_member, remove_member, is_member, get_members,
-    get_member_count, get_user_channels, remove_user_from_all.
+    Notes:
+        実装は channel -> members と user -> channels を同じ論理状態として更新する.
+        追加と削除は冪等であり、存在しない参加状態への操作を失敗にしない.
     """
 
     async def add_member(self, channel_name: str, user_id: int) -> None:
-        """Add a user to a channel.
+        """User をチャンネルへ参加させ、両方の index を更新する.
 
-        Both the channel->members and user->channels indices are updated atomically.
-        Idempotent: adding an already-present member is a no-op.
+        Args:
+            channel_name (str): 参加先のチャンネル名.
+            user_id (int): 参加させる user id.
+
+        Returns:
+            None: 参加状態の更新完了を表す.
+
+        Notes:
+            既に参加済みの場合は状態を変えず成功する.
         """
         ...
 
     async def remove_member(self, channel_name: str, user_id: int) -> None:
-        """Remove a user from a channel.
+        """User をチャンネルから退会させ、両方の index を更新する.
 
-        Both the channel->members and user->channels indices are updated atomically.
-        Idempotent: removing a non-member is a no-op.
+        Args:
+            channel_name (str): 退会元のチャンネル名.
+            user_id (int): 退会させる user id.
+
+        Returns:
+            None: 参加状態の更新完了を表す.
+
+        Notes:
+            未参加の場合は状態を変えず成功する.
         """
         ...
 
     async def is_member(self, channel_name: str, user_id: int) -> bool:
-        """Return True if the user is a member of the channel."""
+        """User がチャンネルに参加しているかを返す.
+
+        Args:
+            channel_name (str): 確認するチャンネル名.
+            user_id (int): 確認する user id.
+
+        Returns:
+            bool: 参加していれば True、そうでなければ False.
+        """
         ...
 
     async def get_members(self, channel_name: str) -> set[int]:
-        """Return the set of user IDs in the given channel.
+        """チャンネルに参加している user id の集合を返す.
 
-        Returns an empty set if the channel has no members.
+        Args:
+            channel_name (str): 取得するチャンネル名.
+
+        Returns:
+            set[int]: 現在の参加 user id。チャンネルが未存在または空なら空集合.
         """
         ...
 
     async def get_member_count(self, channel_name: str) -> int:
-        """Return the number of members in the given channel."""
+        """チャンネルの参加者数を返す.
+
+        Args:
+            channel_name (str): 件数を取得するチャンネル名.
+
+        Returns:
+            int: 現在の参加者数。チャンネルが未存在なら 0.
+        """
         ...
 
     async def get_user_channels(self, user_id: int) -> set[str]:
-        """Return the set of channel names the user has joined.
+        """User が参加しているチャンネル名の集合を返す.
 
-        Returns an empty set if the user has not joined any channels.
+        Args:
+            user_id (int): 参加チャンネルを取得する user id.
+
+        Returns:
+            set[str]: 現在のチャンネル名。参加状態がなければ空集合.
         """
         ...
 
     async def remove_user_from_all(self, user_id: int) -> set[str]:
-        """Remove the user from all channels they have joined.
+        """User を参加中の全チャンネルから退会させる.
 
-        Returns the set of channel names the user was removed from.
-        Returns an empty set if the user was not in any channel.
+        Args:
+            user_id (int): 全参加状態を削除する user id.
+
+        Returns:
+            set[str]: 削除したチャンネル名。参加状態がなければ空集合.
         """
         ...
