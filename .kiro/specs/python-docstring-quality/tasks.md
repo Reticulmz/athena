@@ -152,14 +152,14 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/domain/__init__.py, domain/{beatmaps,chat,events,storage}/**_
 
-- [ ] 2.11 (P) Identityとstable compatibility domain contextを整備する
+- [x] 2.11 (P) Identityとstable compatibility domain contextを整備する
   - domain/identity/**とdomain/compatibility/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびidentity/stable compatibility domain testが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/domain/{identity,compatibility}/**_
 
-- [ ] 2.12 (P) Scores domain contextを整備する
+- [x] 2.12 (P) Scores domain contextを整備する
   - domain/scores/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および全score domain testが通る
   - _Depends: 1.4_
