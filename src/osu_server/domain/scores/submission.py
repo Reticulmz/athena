@@ -1,4 +1,4 @@
-"""ScoreSubmission domain model."""
+"""score submission の冪等性記録を表す domain model を定義する."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -46,4 +46,12 @@ class ScoreSubmission:
     result_snapshot: dict[str, object] | None
 
     def __post_init__(self) -> None:
+        """State を canonical な ScoreSubmissionState へ正規化する.
+
+        Returns:
+            None: state が ScoreSubmissionState instance になったことを示す.
+
+        Raises:
+            ValueError: state が定義済み lifecycle 値へ変換できない場合.
+        """
         self.state = ScoreSubmissionState(self.state)
