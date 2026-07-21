@@ -233,6 +233,7 @@
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/repositories/memory/*.py, memory/queries/**_
+  - _Blocked: `InMemoryUnitOfWorkFactory.commit_state` has 50 statements before its mandatory private-method docstring. The docstring raises Ruff PLR0915 to 51; design.md prohibits statement/control-flow refactoring, while no suppression, per-file ignore, or lint-limit relaxation is allowed. A separately approved behavior-preserving refactor task is required._
 
 - [ ] 2.22 (P) SQLAlchemyのbeatmap/performance command repositoryを整備する
   - commands配下のbeatmap_leaderboards.py、beatmap_performance_bests.py、beatmaps.py、
