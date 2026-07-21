@@ -205,7 +205,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/infrastructure/*.py, infrastructure/{country,crypto,database,parsers,security}/**_
 
-- [ ] 2.18 (P) Command repository interfaceを整備する
+- [x] 2.18 (P) Command repository interfaceを整備する
   - repositories/interfaces/commands/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびcommand repository contract testが通る
   - _Depends: 1.4_
