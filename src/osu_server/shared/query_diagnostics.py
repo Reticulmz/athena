@@ -1,4 +1,4 @@
-"""SQL query diagnostics shared scope primitives."""
+"""SQL query diagnostics の共有 scope primitive を定義する."""
 
 from __future__ import annotations
 
@@ -32,19 +32,47 @@ _current_collector: ContextVar[QueryDiagnosticCollector | None] = ContextVar(
 
 
 class _AsyncDiagnosticLogger(Protocol):
-    async def awarning(self, event: str, **event_kw: object) -> object: ...
+    """診断 warning を非同期に記録できる logger の最小境界を表す."""
 
-    async def adebug(self, event: str, **event_kw: object) -> object: ...
+    async def awarning(self, event: str, **event_kw: object) -> object:
+        """Warning event と redacted field を非同期に記録する.
+
+        Args:
+            event (str): warning を識別する event 名.
+            **event_kw (object): event に関連付ける redacted field.
+
+        Returns:
+            object: logger 実装が返す記録結果.
+
+        Raises:
+            Exception: logger 実装が記録に失敗した場合.
+        """
+        ...
+
+    async def adebug(self, event: str, **event_kw: object) -> object:
+        """Diagnostics logging 失敗を示す debug event を非同期に記録する.
+
+        Args:
+            event (str): debug event を識別する event 名.
+            **event_kw (object): event に関連付ける redacted field.
+
+        Returns:
+            object: logger 実装が返す記録結果.
+
+        Raises:
+            Exception: logger 実装が記録に失敗した場合.
+        """
+        ...
 
 
 @dataclass(slots=True, frozen=True)
 class DuplicateQuerySummary:
-    """重複 SQL template の redacted summary.
+    """重複 SQL template の redacted summary を表す.
 
     Attributes:
-        fingerprint: Redacted SQL template から算出した短縮 fingerprint.
-        count: この template が scope 内で観測された回数.
-        sql_prefix: Literal 値を ? に置換した SQL template の先頭部分.
+        fingerprint (str): redacted SQL template から算出した短縮 fingerprint.
+        count (int): この template が scope 内で観測された回数.
+        sql_prefix (str): literal 値を ? に置換した SQL template の先頭部分.
     """
 
     fingerprint: str
@@ -54,15 +82,16 @@ class DuplicateQuerySummary:
 
 @dataclass(slots=True, frozen=True)
 class QueryDiagnosticSummary:
-    """1 つの diagnostic scope で観測した SQL 発行数 summary.
+    """1 つの diagnostic scope で観測した SQL 発行数 summary を表す.
 
     Attributes:
-        scope_kind: `http_request`, `taskiq_job`, `test` などの scope 種別.
-        scope_name: Path や task name などの redacted scope 名.
-        total_queries: Scope 内で観測した SQL query 数.
-        duplicate_queries: 上位 duplicate SQL template の redacted summary.
-        duplicate_templates_total: Duplicate threshold を満たした template 総数.
-        duplicates_truncated: duplicate_queries が上限で切り詰められた場合は true.
+        scope_kind (str): `http_request` や `taskiq_job` などの scope 種別.
+        scope_name (str): path や task name などの redacted scope 名.
+        total_queries (int): scope 内で観測した SQL query 数.
+        duplicate_queries (tuple[DuplicateQuerySummary, ...]): 上位 duplicate SQL template の
+            redacted summary.
+        duplicate_templates_total (int): duplicate threshold を満たした template 総数.
+        duplicates_truncated (bool): duplicate_queries が上限で切り詰められたか.
     """
 
     scope_kind: str
@@ -75,12 +104,14 @@ class QueryDiagnosticSummary:
 
 @dataclass(slots=True)
 class QueryDiagnosticCollector:
-    """Active scope 内の SQL template を記録する collector.
+    """active scope 内の SQL template を記録する collector を表す.
 
     Attributes:
-        scope_kind: Scope 種別.
-        scope_name: Redacted scope 名.
-        duplicate_threshold: Duplicate として扱う同一 template の最小回数.
+        scope_kind (str): scope 種別.
+        scope_name (str): redacted scope 名.
+        duplicate_threshold (int): duplicate として扱う同一 template の最小回数.
+        _query_count (int): scope 内で記録した SQL query 数.
+        _template_counts (Counter[str]): redacted SQL template ごとの出現回数.
     """
 
     scope_kind: str
@@ -93,13 +124,13 @@ class QueryDiagnosticCollector:
         """SQL statement を redacted template として記録する.
 
         Args:
-            statement: SQLAlchemy cursor execute が受け取った SQL statement.
+            statement (str): cursor execute が受け取った SQL statement.
 
         Returns:
-            なし. Active collector 内の query count と template count を更新する.
+            None: active collector 内の query count と template count を更新する.
 
-        Constraints:
-            SQL params は受け取らず, SQL text 内の literal 値も ? に置換する.
+        Notes:
+            SQL params は受け取らず SQL text 内の literal 値も ? に置換する.
         """
         template = _normalize_sql(statement)
         if not template:
@@ -111,11 +142,10 @@ class QueryDiagnosticCollector:
         """現在の記録内容から redacted summary を返す.
 
         Returns:
-            Query count, duplicate template 数, 上位 duplicate summary を持つ
-            QueryDiagnosticSummary.
+            QueryDiagnosticSummary: query count と duplicate template 数と上位 summary を持つ値.
 
-        Constraints:
-            duplicate_queries は上位 10 件に制限し, SQL params と literal 値は含めない.
+        Notes:
+            duplicate_queries は上位 10 件に制限し SQL params と literal 値は含めない.
         """
         duplicate_templates = [
             (template, count)
@@ -147,11 +177,11 @@ def query_diagnostics_exceeded(summary: QueryDiagnosticSummary, *, max_queries: 
     """Summary が runtime warning threshold を超えたかを返す.
 
     Args:
-        summary: Query diagnostic scope の summary.
-        max_queries: 許容する最大 SQL query 数.
+        summary (QueryDiagnosticSummary): query diagnostic scope の summary.
+        max_queries (int): 許容する最大 SQL query 数.
 
     Returns:
-        Query count 超過または duplicate query がある場合は true.
+        bool: query count 超過または duplicate query がある場合は True.
     """
     return summary.total_queries > max_queries or summary.duplicate_templates_total > 0
 
@@ -161,14 +191,14 @@ def query_diagnostics_warning_fields(
     *,
     max_queries: int,
 ) -> dict[str, object]:
-    """Warning log に渡す redacted fields を返す.
+    """Warning log に渡す redacted field を返す.
 
     Args:
-        summary: Query diagnostic scope の summary.
-        max_queries: 許容する最大 SQL query 数.
+        summary (QueryDiagnosticSummary): query diagnostic scope の summary.
+        max_queries (int): 許容する最大 SQL query 数.
 
     Returns:
-        SQL params と SQL literal 値を含まない structlog 用 fields.
+        dict[str, object]: SQL params と SQL literal 値を含まない structlog 用 field.
     """
     return {
         "scope_kind": summary.scope_kind,
@@ -197,15 +227,15 @@ async def emit_sql_query_diagnostics_warning(
     """Threshold 超過時に SQL diagnostics warning を出す.
 
     Args:
-        logger: structlog 互換の async logger.
-        summary: Query diagnostic scope の summary.
-        max_queries: 許容する最大 SQL query 数.
+        logger (_AsyncDiagnosticLogger): structlog 互換の async logger.
+        summary (QueryDiagnosticSummary): query diagnostic scope の summary.
+        max_queries (int): 許容する最大 SQL query 数.
 
     Returns:
-        なし.
+        None: threshold 未超過時は何も記録せず 超過時は warning を記録する.
 
-    Constraints:
-        Diagnostics logging の失敗は request/job の結果を変えない.
+    Notes:
+        diagnostics logging の失敗は request/job の結果を変えない.
     """
     if not query_diagnostics_exceeded(summary, max_queries=max_queries):
         return
@@ -232,12 +262,12 @@ def query_diagnostic_scope(
     """Query diagnostic scope を開き exit 時に active collector を reset する.
 
     Args:
-        scope_kind: `http_request` や `taskiq_job` などの scope 種別.
-        scope_name: method/path や task name などの redacted scope 名.
-        duplicate_threshold: duplicate として扱う同一 SQL template の最小回数.
+        scope_kind (str): `http_request` や `taskiq_job` などの scope 種別.
+        scope_name (str): method/path や task name などの redacted scope 名.
+        duplicate_threshold (int): duplicate として扱う同一 SQL template の最小回数.
 
     Yields:
-        Scope 内で記録された SQL を保持する collector.
+        QueryDiagnosticCollector: scope 内で記録された SQL を保持する collector.
 
     Raises:
         ValueError: duplicate_threshold が 1 未満の場合.
@@ -262,8 +292,14 @@ def record_query(statement: str, *, parameters: object | None = None) -> None:
     """Active collector がある場合だけ SQL statement を記録する.
 
     Args:
-        statement: SQLAlchemy cursor execute が受け取った SQL statement.
-        parameters: DBAPI に渡される params. 記録せず破棄する.
+        statement (str): cursor execute が受け取った SQL statement.
+        parameters (object | None): DBAPI に渡される params. 記録せず破棄する.
+
+    Returns:
+        None: active collector がある場合だけ statement を記録する.
+
+    Notes:
+        parameters は diagnostics output へ含めず credential や個人情報の記録を防ぐ.
     """
     _ = parameters
     collector = _current_collector.get()
@@ -273,11 +309,30 @@ def record_query(statement: str, *, parameters: object | None = None) -> None:
 
 
 def _duplicate_sort_key(item: tuple[str, int]) -> tuple[int, str]:
+    """Duplicate template を出現回数の降順で並べる key を返す.
+
+    Args:
+        item (tuple[str, int]): redacted SQL template とその出現回数.
+
+    Returns:
+        tuple[int, str]: count の降順と template の昇順を表す sort key.
+    """
     template, count = item
     return (-count, template)
 
 
 def _normalize_sql(statement: str) -> str:
+    """SQL statement を literal を含まない比較用 template に正規化する.
+
+    Args:
+        statement (str): cursor execute が受け取った SQL statement.
+
+    Returns:
+        str: comment を除去し literal を ? へ置換して空白を正規化した template.
+
+    Notes:
+        dollar quote と single quote と数値 literal を置換し値そのものを記録しない.
+    """
     without_block_comments = _SQL_BLOCK_COMMENT_PATTERN.sub(" ", statement)
     without_line_comments = _SQL_LINE_COMMENT_PATTERN.sub(" ", without_block_comments)
     without_dollar_literals = _SQL_DOLLAR_QUOTED_LITERAL_PATTERN.sub(
@@ -296,10 +351,26 @@ def _normalize_sql(statement: str) -> str:
 
 
 def _fingerprint_sql(template: str) -> str:
+    """Redacted SQL template の固定長 fingerprint を返す.
+
+    Args:
+        template (str): literal を除去済みの SQL template.
+
+    Returns:
+        str: SHA-256 digest の先頭 16 文字.
+    """
     return hashlib.sha256(template.encode("utf-8")).hexdigest()[:_FINGERPRINT_LENGTH]
 
 
 def _sql_prefix(template: str) -> str:
+    """表示上限に収まる redacted SQL template の prefix を返す.
+
+    Args:
+        template (str): literal を除去済みの SQL template.
+
+    Returns:
+        str: 160 文字以下の template または末尾に ... を付けた prefix.
+    """
     if len(template) <= _SQL_PREFIX_MAX_LENGTH:
         return template
     return f"{template[: _SQL_PREFIX_MAX_LENGTH - 3]}..."

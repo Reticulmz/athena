@@ -1,4 +1,4 @@
-"""Application-specific taskiq job registration boundary."""
+"""アプリケーション固有の Taskiq job を登録する公開境界を定義する."""
 
 from __future__ import annotations
 
@@ -20,13 +20,30 @@ _JOB_MODULES = (
 
 
 def _load_job_modules() -> None:
-    """Import application job modules so decorators populate the registry."""
+    """Job module を import して decorator による registry 登録を行う.
+
+    Returns:
+        None: 全 job module の import を完了する.
+
+    Raises:
+        ImportError: job module またはその依存先の import に失敗した場合.
+    """
     for module_name in _JOB_MODULES:
         _ = import_module(module_name)
 
 
 def register_all_jobs(broker: AsyncBroker) -> None:
-    """Attach registered application taskiq jobs to ``broker``."""
+    """登録済みのアプリケーション Taskiq job を broker へ接続する.
+
+    Args:
+        broker (AsyncBroker): application job を実行可能にする Taskiq broker.
+
+    Returns:
+        None: module import と job 接続を完了する.
+
+    Raises:
+        ImportError: job module またはその依存先の import に失敗した場合.
+    """
     _load_job_modules()
     jobs.attach_to(broker)
 

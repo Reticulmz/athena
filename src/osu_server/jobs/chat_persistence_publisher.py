@@ -1,4 +1,4 @@
-"""Taskiq-backed transitional chat persistence work publisher."""
+"""chat persistence work を既存の Taskiq task へ発行する adapter を定義する."""
 
 from __future__ import annotations
 
@@ -16,24 +16,64 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class _EnqueueableTask(Protocol):
+    """primitive payload を enqueue できる Taskiq task の最小境界を表す."""
+
     async def kiq(self, *args: object, **kwargs: object) -> object:
-        """Enqueue the task with primitive payload arguments."""
+        """Primitive payload 引数を持つ task を enqueue する.
+
+        Args:
+            *args (object): task に渡す positional payload.
+            **kwargs (object): task に渡す keyword payload.
+
+        Returns:
+            object: broker 実装が返す enqueue 結果.
+
+        Raises:
+            Exception: broker 実装が enqueue に失敗した場合.
+        """
         ...
 
 
 class _TaskBroker(Protocol):
+    """stable task name から Taskiq task を検索する最小境界を表す."""
+
     def find_task(self, task_name: str) -> _EnqueueableTask | None:
-        """Find a registered task by stable task name."""
+        """Stable task name で登録済み task を検索する.
+
+        Args:
+            task_name (str): Taskiq registry に登録された stable task 名.
+
+        Returns:
+            _EnqueueableTask | None: 対応する task または未登録時の None.
+
+        Raises:
+            Exception: broker 実装が検索に失敗した場合.
+        """
         ...
 
 
 @final
 class TaskiqChatPersistenceWorkPublisher(ChatPersistenceWorkPublisher):
-    """Maps chat persistence work to the existing taskiq tasks."""
+    """chat persistence work を既存の Taskiq task へ発行する.
+
+    Attributes:
+        _broker (_TaskBroker): task の検索と enqueue を担う broker.
+
+    Notes:
+        task 未登録または enqueue 失敗はログに記録して caller へ送出しない.
+    """
 
     _broker: _TaskBroker
 
     def __init__(self, broker: _TaskBroker) -> None:
+        """Taskiq broker を work publisher に設定する.
+
+        Args:
+            broker (_TaskBroker): task の検索と enqueue を担う broker.
+
+        Returns:
+            None: broker を instance に保持する.
+        """
         self._broker = broker
 
     @override
@@ -41,6 +81,20 @@ class TaskiqChatPersistenceWorkPublisher(ChatPersistenceWorkPublisher):
         self,
         work: ChannelMessagePersistenceWork,
     ) -> None:
+        """Channel message persistence work を best effort で enqueue する.
+
+        Args:
+            work (ChannelMessagePersistenceWork): sender と channel と本文を持つ accepted work.
+
+        Returns:
+            None: task を enqueue するか失敗をログに記録して完了する.
+
+        Raises:
+            Exception: broker で task の検索に失敗した場合.
+
+        Notes:
+            `persist_channel_message` task が未登録または enqueue 失敗なら例外を送出しない.
+        """
         task = self._find_task("persist_channel_message")
         if task is None:
             logger.error(
@@ -71,6 +125,20 @@ class TaskiqChatPersistenceWorkPublisher(ChatPersistenceWorkPublisher):
         self,
         work: PrivateMessagePersistenceWork,
     ) -> None:
+        """Private message persistence work を best effort で enqueue する.
+
+        Args:
+            work (PrivateMessagePersistenceWork): sender と recipient と本文を持つ accepted work.
+
+        Returns:
+            None: task を enqueue するか失敗をログに記録して完了する.
+
+        Raises:
+            Exception: broker で task の検索に失敗した場合.
+
+        Notes:
+            `persist_private_message` task が未登録または enqueue 失敗なら例外を送出しない.
+        """
         task = self._find_task("persist_private_message")
         if task is None:
             logger.error(
@@ -98,4 +166,15 @@ class TaskiqChatPersistenceWorkPublisher(ChatPersistenceWorkPublisher):
             )
 
     def _find_task(self, task_name: str) -> _EnqueueableTask | None:
+        """Stable task name に対応する Taskiq task を返す.
+
+        Args:
+            task_name (str): Taskiq registry に登録された stable task 名.
+
+        Returns:
+            _EnqueueableTask | None: 対応する task または未登録時の None.
+
+        Raises:
+            Exception: broker 実装が task の検索に失敗した場合.
+        """
         return self._broker.find_task(task_name)
