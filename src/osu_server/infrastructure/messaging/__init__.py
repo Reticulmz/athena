@@ -1,4 +1,4 @@
-"""Messaging contracts and local implementations."""
+"""メッセージングの契約とローカル実装を公開します."""
 
 from osu_server.infrastructure.messaging.distributed import (
     DistributedEventEnvelope,

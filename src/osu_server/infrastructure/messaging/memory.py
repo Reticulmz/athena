@@ -1,4 +1,4 @@
-"""In-memory local event fanout."""
+"""メモリ内で完結するローカルイベント配信を実装します."""
 
 from __future__ import annotations
 
@@ -14,20 +14,35 @@ TEvent = TypeVar("TEvent", bound=object)
 
 
 class InMemoryLocalEventBus:
-    """Local-only in-memory event fanout.
+    """メモリ内のローカルイベント配信を提供します.
 
-    Handlers are stored by concrete event type and invoked sequentially in
-    registration order. Handler exceptions are caught and logged so one
-    failing local handler does not block others.
+    Attributes:
+        _handlers (dict[type[object], list[Callable[[object], Awaitable[None]]]]):
+            具象イベント型ごとに登録順で保持する非同期 handler の一覧です.
+
+    Notes:
+        handler は具象イベント型ごとに登録順で呼び出します. handler の例外は記録し、
+        後続 handler の配信を止めません.
     """
 
     def __init__(self) -> None:
+        """空の handler 登録でイベントバスを初期化します."""
         self._handlers: dict[type[object], list[Callable[[object], Awaitable[None]]]] = (
             defaultdict(list)
         )
 
     async def fire(self, event: object) -> None:
-        """Notify all local handlers registered for the event type."""
+        """イベント型に登録された全ローカル handler へ通知します.
+
+        Args:
+            event (object): 配信するイベント値です.
+
+        Returns:
+            None: 登録済み handler の通知試行が完了したことを表します.
+
+        Notes:
+            handler 例外は log に記録して隔離します.
+        """
         for handler in self._handlers.get(type(event), []):
             try:
                 await handler(event)
@@ -43,5 +58,14 @@ class InMemoryLocalEventBus:
         event_type: type[TEvent],
         handler: Callable[[TEvent], Awaitable[None]],
     ) -> None:
-        """Register a local handler for a concrete event type."""
+        """具象イベント型に対するローカル handler を登録します.
+
+        Args:
+            event_type (type[TEvent]): 購読する具象イベント型です.
+            handler (Callable[[TEvent], Awaitable[None]]): 該当イベントを非同期で
+                処理する handler です.
+
+        Returns:
+            None: handler の登録が完了したことを表します.
+        """
         self._handlers[event_type].append(cast("Callable[[object], Awaitable[None]]", handler))

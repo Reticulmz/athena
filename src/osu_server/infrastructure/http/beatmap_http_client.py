@@ -1,4 +1,4 @@
-"""HTTP client for beatmap mirror sources with error handling."""
+"""beatmap mirror source 用 HTTP client と error 分類を実装します."""
 
 from __future__ import annotations
 
@@ -41,6 +41,14 @@ _TEMPORARY_STATUSES: frozenset[int] = frozenset(
 
 
 def _category_for_status(status_code: int) -> BeatmapSourceErrorCategory:
+    """HTTP status code を beatmap source error category へ対応付けます.
+
+    Args:
+        status_code (int): 分類対象の HTTP response status code です.
+
+    Returns:
+        BeatmapSourceErrorCategory: retry、認証、not found、invalid response を表す分類です.
+    """
     if status_code == HTTPStatus.TOO_MANY_REQUESTS:
         return BeatmapSourceErrorCategory.RATE_LIMITED
     if status_code in _TEMPORARY_STATUSES:
@@ -58,6 +66,19 @@ def _error_from_response(
     source: str,
     lookup_key: str,
 ) -> BeatmapSourceError:
+    """HTTP error response から分類済み BeatmapSourceError を構築します.
+
+    Args:
+        response (httpx.Response): error status を持つ HTTP response です.
+        source (str): error と log に記録する beatmap source label です.
+        lookup_key (str): error と log に記録する検索 key です.
+
+    Returns:
+        BeatmapSourceError: status code と request context を保持する source error です.
+
+    Notes:
+        rate limit response の場合だけ beatmap ID を抽出できれば構造化 log に追加します.
+    """
     category = _category_for_status(response.status_code)
 
     if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
@@ -76,6 +97,14 @@ def _error_from_response(
 
 
 def _beatmap_id_from_lookup_key(lookup_key: str) -> int | None:
+    """beatmap_id lookup key から整数 ID を安全に抽出します.
+
+    Args:
+        lookup_key (str): ``beatmap_id=<integer>`` 形式を期待する検索 key です.
+
+    Returns:
+        int | None: 形式と整数変換が有効な beatmap ID、または抽出不能時は None です.
+    """
     prefix = "beatmap_id="
     if not lookup_key.startswith(prefix):
         return None
@@ -94,6 +123,17 @@ def _error_from_exception(
     lookup_key: str,
     category: BeatmapSourceErrorCategory,
 ) -> BeatmapSourceError:
+    """HTTP transport 例外から分類済み BeatmapSourceError を構築します.
+
+    Args:
+        exc (Exception): HTTP transport が送出した元の例外です.
+        source (str): error に記録する beatmap source label です.
+        lookup_key (str): error に記録する検索 key です.
+        category (BeatmapSourceErrorCategory): 呼び出し元が確定した error 分類です.
+
+    Returns:
+        BeatmapSourceError: 元例外と request context を保持する source error です.
+    """
     return BeatmapSourceError(
         category=category,
         source=source,
@@ -104,6 +144,14 @@ def _error_from_exception(
 
 
 def _extract_filename(headers: Mapping[str, str]) -> str | None:
+    """Content-Disposition header から二重引用符付き filename を抽出します.
+
+    Args:
+        headers (Mapping[str, str]): response header の大文字小文字を保持する mapping です.
+
+    Returns:
+        str | None: filename parameter の値、または header と形式がない場合は None です.
+    """
     disposition = headers.get("Content-Disposition")
     if disposition is None:
         return None
@@ -112,7 +160,14 @@ def _extract_filename(headers: Mapping[str, str]) -> str | None:
 
 
 def is_permanent_error(error: BeatmapSourceError) -> bool:
-    """Check if error is permanent (404, 401) vs temporary (rate limit, 5xx, timeout)."""
+    """HTTP beatmap source error が再試行で解消しないか判定します.
+
+    Args:
+        error (BeatmapSourceError): 分類済みの beatmap source error です.
+
+    Returns:
+        bool: NOT_FOUND または UNAUTHORIZED の場合は True、それ以外は False です.
+    """
     return error.category in {
         BeatmapSourceErrorCategory.NOT_FOUND,
         BeatmapSourceErrorCategory.UNAUTHORIZED,
@@ -120,20 +175,39 @@ def is_permanent_error(error: BeatmapSourceError) -> bool:
 
 
 class BeatmapHttpClient:
-    """HTTP client for beatmap mirror sources."""
+    """beatmap mirror source から file と JSON を取得する HTTP client です.
+
+    Attributes:
+        _client (httpx.AsyncClient | None): 注入済み、または初回利用時に生成する HTTP client です.
+    """
 
     _client: httpx.AsyncClient | None
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+        """任意の注入済み HTTP client で client adapter を初期化します.
+
+        Args:
+            client (httpx.AsyncClient | None): 再利用する HTTP client です. None の場合は
+                初回 request 時に生成します.
+        """
         self._client = client
 
     def _get_client(self) -> httpx.AsyncClient:
+        """注入済みまたは遅延生成した HTTP client を返します.
+
+        Returns:
+            httpx.AsyncClient: request を実行する再利用可能な HTTP client です.
+        """
         if self._client is None:
             self._client = httpx.AsyncClient()
         return self._client
 
     def get_client(self) -> BeatmapHttpTransport:
-        """認証付き request 等に利用する低水準 transport を返します."""
+        """認証付き request 等に利用する低水準 transport を返します.
+
+        Returns:
+            BeatmapHttpTransport: この adapter が管理する HTTP transport です.
+        """
         return self._get_client()
 
     async def fetch(
@@ -143,18 +217,18 @@ class BeatmapHttpClient:
         source: str,
         lookup_key: str,
     ) -> HttpFetchResult:
-        """Fetch content from URL.
+        """URL から beatmap source の byte 列を取得します.
 
         Args:
-            url: URL to fetch
-            source: Source label for error messages
-            lookup_key: Lookup key for error messages
+            url (str): 取得対象 URL です.
+            source (str): error と log に使う取得元 label です.
+            lookup_key (str): error と log に使う検索 key です.
 
         Returns:
-            HttpFetchResult with content and optional filename
+            HttpFetchResult: 取得した response body と任意の filename metadata です.
 
         Raises:
-            BeatmapSourceError: On HTTP error or connection failure
+            BeatmapSourceError: HTTP error、timeout、または接続 failure を分類した場合.
         """
         client = self._get_client()
 
@@ -186,22 +260,21 @@ class BeatmapHttpClient:
         source: str,
         lookup_key: str,
     ) -> dict[str, object] | list[object]:
-        """URL から JSON を取得し, object または array として返します.
+        """URL から JSON を取得し、object または array として返します.
 
         Args:
-            url: 取得対象 URL です.
-            source: error と log に使う取得元 label です.
-            lookup_key: error と log に使う検索 key です.
+            url (str): 取得対象 URL です.
+            source (str): error と log に使う取得元 label です.
+            lookup_key (str): error と log に使う検索 key です.
 
         Returns:
-            JSON object (dict) または array (list) です.
+            dict[str, object] | list[object]: JSON object または array です.
 
         Raises:
-            BeatmapSourceError: HTTP error, 接続失敗, JSON decode 失敗,
-                または top-level JSON primitive (int, str, bool, null) の場合は
-                INVALID_RESPONSE category で送出します.
+            BeatmapSourceError: HTTP error、接続失敗、JSON decode failure、または top-level JSON
+                primitive の場合に分類済み error を送出します.
 
-        Constraints:
+        Notes:
             JSON primitive は contract 違反のため INVALID_RESPONSE として拒否します.
         """
         result = await self.fetch(url, source=source, lookup_key=lookup_key)
