@@ -166,7 +166,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/domain/scores/**_
 
-- [ ] 2.13 (P) Shared primitiveとjob adapterを整備する
+- [x] 2.13 (P) Shared primitiveとjob adapterを整備する
   - src/osu_server/shared/**とsrc/osu_server/jobs/**へ共通条件を適用し、task nameとobservable outcomeを
     維持する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびshared、job、worker-job、job-boundary testが通る
@@ -174,7 +174,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/shared/**, src/osu_server/jobs/**_
 
-- [ ] 2.14 (P) Volatile state infrastructureを整備する
+- [x] 2.14 (P) Volatile state infrastructureを整備する
   - src/osu_server/infrastructure/state/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および全state-store testが通る
   - _Depends: 1.4_
