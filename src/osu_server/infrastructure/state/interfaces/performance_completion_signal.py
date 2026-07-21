@@ -1,4 +1,4 @@
-"""Performance completion signal contract."""
+"""Score performance calculation の完了通知 contract を定義する module."""
 
 from __future__ import annotations
 
@@ -12,13 +12,31 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class PerformanceCompletionSignalPayload:
-    """Wake-up payload for a terminal score performance calculation."""
+    """終端済み score performance calculation の wake-up payload.
+
+    Attributes:
+        score_id (int): 完了した score の正の識別子.
+        calculation_id (int): 完了した calculation の正の識別子.
+        state (PerformanceCalculationState): 終端状態である calculation lifecycle state.
+
+    Notes:
+        payload は performance value を運ばず、待機者を再照会へ促す hint だけを表す.
+    """
 
     score_id: int
     calculation_id: int
     state: PerformanceCalculationState
 
     def __post_init__(self) -> None:
+        """Payload の識別子と calculation state が有効かを検証する.
+
+        Returns:
+            None: 検証成功後に instance を確定する.
+
+        Raises:
+            ValueError: score_id または calculation_id が正でない場合、あるいは state が
+                終端でない場合.
+        """
         if self.score_id <= 0:
             msg = "score_id must be positive"
             raise ValueError(msg)
@@ -32,19 +50,53 @@ class PerformanceCompletionSignalPayload:
 
 @runtime_checkable
 class PerformanceCompletionSignal(Protocol):
-    """Best-effort score-scoped wake-up signal for performance completion."""
+    """Score 単位で performance completion を知らせる best-effort contract.
+
+    Notes:
+        signal は durable result ではないため、受信者は score を再照会して最終状態を取得する.
+        通知は terminal calculation の durable commit 後に発行する.
+    """
 
     async def notify(self, payload: PerformanceCompletionSignalPayload) -> None:
-        """Publish a wake-up hint after a terminal calculation is committed."""
+        """Commit 済み terminal calculation の wake-up hint を通知する.
+
+        Args:
+            payload (PerformanceCompletionSignalPayload): 終端 calculation を識別する payload.
+
+        Returns:
+            None: 通知発行処理の完了を表す.
+        """
         ...
 
     async def wait(self, score_id: int, timeout: timedelta) -> bool:
-        """Return True when a signal is observed, False when the wait times out."""
+        """Score の通知を期限まで待ち、観測結果を返す.
+
+        Args:
+            score_id (int): 待機対象となる正の score id.
+            timeout (timedelta): 正である最大待機時間.
+
+        Returns:
+            bool: 対象 score の通知を観測した場合は True、期限切れなら False.
+
+        Raises:
+            ValueError: score_id が正でない場合、または timeout が正でない場合.
+        """
         ...
 
 
 def performance_completion_channel(score_id: int, *, key_prefix: str = "") -> str:
-    """Return the deterministic score-scoped completion channel."""
+    """Score 単位の deterministic な completion channel 名を返す.
+
+    Args:
+        score_id (int): channel に埋め込む正の score id.
+        key_prefix (str): 環境または test を分離する任意の prefix.
+
+    Returns:
+        str: `{key_prefix}performance_completion:{score_id}` 形式の channel 名.
+
+    Raises:
+        ValueError: score_id が正でない場合.
+    """
     if score_id <= 0:
         msg = "score_id must be positive"
         raise ValueError(msg)
@@ -52,7 +104,17 @@ def performance_completion_channel(score_id: int, *, key_prefix: str = "") -> st
 
 
 def validate_performance_completion_timeout(timeout: timedelta) -> None:
-    """Reject non-positive bounded wait values."""
+    """Performance completion の待機時間が正であることを検証する.
+
+    Args:
+        timeout (timedelta): 検証する最大待機時間.
+
+    Returns:
+        None: timeout が正であることを表す.
+
+    Raises:
+        ValueError: timeout がゼロ以下の場合.
+    """
     if timeout <= timedelta(0):
         msg = "timeout must be positive"
         raise ValueError(msg)
