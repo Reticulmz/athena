@@ -1,4 +1,4 @@
-"""Stable client compatibility domain package."""
+"""Stable osu! client 固有の compatibility vocabulary を re-export する package."""
 
 from osu_server.domain.compatibility.stable.grade import StableGrade
 from osu_server.domain.compatibility.stable.mode import StableMode

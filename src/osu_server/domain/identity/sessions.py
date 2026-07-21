@@ -1,4 +1,4 @@
-"""Session and session authorization language for the identity context."""
+"""Identity context の volatile session と authorization snapshot を定義する module."""
 
 from __future__ import annotations
 
@@ -12,6 +12,22 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True)
 class SessionData:
+    """Active session store へ保存する user と client の mutable state を表す value object.
+
+    Attributes:
+        user_id (int): session を所有する user ID.
+        username (str): session 作成時の表示 user name.
+        privileges (int): session 作成時の server-side privilege bitmask.
+        country (str): user の country code.
+        osu_version (str): login client が申告した osu! version.
+        utc_offset (int): login client が申告した UTC offset.
+        display_city (bool): city 表示を許可する client setting.
+        client_hashes (str): client が送る fingerprint/hash 群の文字列表現.
+        pm_private (bool): private message の受信設定.
+        role_ids (tuple[int, ...]): session 作成時の privilege 計算元 role ID 群.
+        silence_end (int): silence 状態の終了値. silence がない場合は0.
+    """
+
     user_id: int
     username: str
     privileges: int
@@ -25,26 +41,49 @@ class SessionData:
     silence_end: int = 0
 
     def __post_init__(self) -> None:
+        """Role ID collection を serializable な tuple へ正規化する.
+
+        Returns:
+            None: role_ids を置換するだけで値を返さない.
+
+        Notes:
+            Runtime では iterable が渡されても tuple に正規化される.
+        """
         self.role_ids = tuple(self.role_ids)
 
 
 @dataclass(slots=True, frozen=True)
 class SessionAuthorization:
-    """Immutable snapshot of current role-derived authorization.
+    """同じ role list から計算した immutable authorization snapshot を表す value object.
 
-    Represents privileges and role_ids as one consistent snapshot
-    computed from the same role list at a single point in time.
+    Attributes:
+        privileges (Privileges): snapshot 作成時に計算した privilege bit flag の組合せ.
+        role_ids (tuple[int, ...]): privileges の計算元になった role ID 群.
+
+    Notes:
+        privileges と role_ids は同じ時点の role list から導出される一貫した組である.
     """
 
     privileges: Privileges
     role_ids: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
+        """Role ID collection を immutable tuple へ正規化する.
+
+        Returns:
+            None: frozen instance の role_ids を正規化して値を返さない.
+        """
         object.__setattr__(self, "role_ids", tuple(self.role_ids))
 
 
 class AuthorizationRefreshStatus(StrEnum):
-    """Outcome status for an authorization refresh operation."""
+    """Session authorization refresh operation の outcome を表す enum.
+
+    Attributes:
+        REFRESHED (AuthorizationRefreshStatus): active session の authorization を更新した結果.
+        NO_ACTIVE_SESSION (AuthorizationRefreshStatus): 更新対象の active session がない結果.
+        FAILED (AuthorizationRefreshStatus): authorization の計算または更新に失敗した結果.
+    """
 
     REFRESHED = "refreshed"
     NO_ACTIVE_SESSION = "no_active_session"
@@ -53,10 +92,16 @@ class AuthorizationRefreshStatus(StrEnum):
 
 @dataclass(slots=True, frozen=True)
 class UserAuthorizationRefreshResult:
-    """Result of refreshing authorization for a single user.
+    """単一 user の authorization refresh 結果を表す immutable value object.
 
-    Invariants:
-        authorization is present only when status is REFRESHED.
+    Attributes:
+        user_id (int): refresh を試みた user ID.
+        status (AuthorizationRefreshStatus): refresh operation の outcome.
+        authorization (SessionAuthorization | None): REFRESHED 時の新しい snapshot.
+            それ以外の status ではNone.
+
+    Notes:
+        authorization は status が REFRESHED の場合にだけ存在しなければならない.
     """
 
     user_id: int
@@ -64,6 +109,14 @@ class UserAuthorizationRefreshResult:
     authorization: SessionAuthorization | None = None
 
     def __post_init__(self) -> None:
+        """Status と authorization の組合せが result invariant を満たすか検証する.
+
+        Returns:
+            None: validation だけを行い値を返さない.
+
+        Raises:
+            ValueError: REFRESHED に authorization がないか, 他 status に authorization がある場合.
+        """
         if self.status == AuthorizationRefreshStatus.REFRESHED:
             if self.authorization is None:
                 raise ValueError("authorization must be present when status is REFRESHED")
@@ -73,14 +126,24 @@ class UserAuthorizationRefreshResult:
 
 @dataclass(slots=True, frozen=True)
 class RoleAuthorizationRefreshResult:
-    """Aggregated result of refreshing authorization for all users assigned to a role.
+    """Role に割り当てられた全 user の authorization refresh 結果を集約する value object.
 
-    Contains one UserAuthorizationRefreshResult per assigned user returned by
-    RoleRepository.get_user_ids_for_role().
+    Attributes:
+        role_id (int): refresh の起点になった role ID.
+        user_results (tuple[UserAuthorizationRefreshResult, ...]): role に割り当てられた
+            user ごとの結果.
+
+    Notes:
+        user_results は role assignment query が返した user ごとに一件ずつ持つ.
     """
 
     role_id: int
     user_results: tuple[UserAuthorizationRefreshResult, ...]
 
     def __post_init__(self) -> None:
+        """User result collection を immutable tuple へ正規化する.
+
+        Returns:
+            None: frozen instance の user_results を正規化して値を返さない.
+        """
         object.__setattr__(self, "user_results", tuple(self.user_results))

@@ -1,4 +1,4 @@
-"""Stable mod compatibility mapping."""
+"""Canonical mod と Stable client bitmask の compatibility mapping を定義する module."""
 
 from __future__ import annotations
 
@@ -43,6 +43,14 @@ _STABLE_SUPPORTED_MOD_FLAGS = (
 
 
 def _stable_supported_mods() -> Mod:
+    """Stable client が表現できる mod flag の union を構築する.
+
+    Returns:
+        Mod: Stable compatibility boundary が受け入れる mod flag の組合せ.
+
+    Notes:
+        Module import 時に一度だけ評価して _STABLE_SUPPORTED_MODS に保持する.
+    """
     supported = Mod.NONE
     for mod in _STABLE_SUPPORTED_MOD_FLAGS:
         supported |= mod
@@ -53,13 +61,27 @@ _STABLE_SUPPORTED_MODS = _stable_supported_mods()
 
 
 class StableModMappingStatus(StrEnum):
+    """Canonical mod combination の Stable mapping outcome を表す enum.
+
+    Attributes:
+        SUPPORTED (StableModMappingStatus): Stable bitmask へ完全に変換できる結果.
+        UNSUPPORTED (StableModMappingStatus): Stable 未対応 bit を含む結果.
+    """
+
     SUPPORTED = "supported"
     UNSUPPORTED = "unsupported"
 
 
 @dataclass(frozen=True, slots=True)
 class StableModMappingResult:
-    """Stable client representation result for a canonical mod combination."""
+    """Canonical mod combination を Stable client 表現へ変換した結果を表す value object.
+
+    Attributes:
+        status (StableModMappingStatus): mapping の成功または未対応結果.
+        bitmask (int | None): 完全変換できた場合の Stable legacy mod bitmask.
+            未対応 bit がある場合はNone.
+        unsupported_bits (int): Stable client が表現できない canonical mod bit 群.
+    """
 
     status: StableModMappingStatus
     bitmask: int | None
@@ -67,20 +89,25 @@ class StableModMappingResult:
 
     @property
     def is_supported(self) -> bool:
+        """Mapping が Stable client で完全に表現できるか返す.
+
+        Returns:
+            bool: status が SUPPORTED の場合はTrue.
+        """
         return self.status == StableModMappingStatus.SUPPORTED
 
 
 def stable_mod_bitmask_to_mod_combination(bitmask: int) -> ModCombination:
-    """stable client bitmaskを対応済みMod combinationへ変換する.
+    """Stable client bitmask を対応済み canonical mod combination へ変換する.
 
     Args:
-        bitmask (int): stable wireから受信した非負のlegacy Mod bitmask.
+        bitmask (int): Stable wire から受信した非負の legacy mod bitmask.
 
     Returns:
-        ModCombination: stableで対応済みのMod combination.
+        ModCombination: Stable で対応済みの canonical mod combination.
 
     Raises:
-        ValueError: bitmaskが負数またはstable未対応bitを含む場合.
+        ValueError: bitmask が負数または Stable 未対応 bit を含む場合.
     """
     mods = ModCombination.from_bitmask(bitmask)
     unsupported_bits = mods.unsupported_bits(_STABLE_SUPPORTED_MODS)
@@ -91,7 +118,14 @@ def stable_mod_bitmask_to_mod_combination(bitmask: int) -> ModCombination:
 
 
 def mod_combination_to_stable_bitmask(mods: ModCombination) -> StableModMappingResult:
-    """Convert canonical mods to stable bitmask or report unsupported bits."""
+    """Canonical mod combination を Stable bitmask へ変換する.
+
+    Args:
+        mods (ModCombination): Stable client 表現へ変換する canonical mod combination.
+
+    Returns:
+        StableModMappingResult: 成功時の bitmask または未対応 bit 群を持つ mapping 結果.
+    """
     unsupported_bits = mods.unsupported_bits(_STABLE_SUPPORTED_MODS)
     if unsupported_bits:
         return StableModMappingResult(

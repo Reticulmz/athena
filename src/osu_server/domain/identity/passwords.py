@@ -1,4 +1,7 @@
-"""Password policy values for identity workflows."""
+"""Identity workflow が使う password policy と legacy credential normalization を定義する.
+
+この module は password validation と stable legacy credential の normalization を提供する.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +17,18 @@ _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
 
 def validate_plain_password(password: str) -> tuple[str, ...]:
-    """Return password policy violations for a plaintext password."""
+    """Plaintext password の policy violation message を返す.
+
+    Args:
+        password (str): 登録または変更で検証する plaintext password.
+
+    Returns:
+        tuple[str, ...]: length または unique-character policy に違反した message 群.
+            違反がない場合は空 tuple.
+
+    Notes:
+        length と unique-character の両方に違反した場合は両方の message を返す.
+    """
     messages: list[str] = []
 
     if len(password) < PASSWORD_MIN_LENGTH or len(password) > PASSWORD_MAX_LENGTH:
@@ -34,16 +48,13 @@ def normalize_legacy_md5_hex(value: str) -> str:
     """Stable legacy MD5 hex credential を canonical form に正規化する.
 
     Args:
-        value: Stable client から受け取った password-md5 credential 候補.
+        value (str): stable client から受け取った password-md5 credential 候補.
 
     Returns:
         str: 32文字の hex 値なら lowercase にした credential. それ以外は入力値.
 
-    Raises:
-        なし.
-
     Notes:
-        Stable client 互換のため, MD5 hex の大小文字差を認証差や fingerprint 差にしない.
+        stable client 互換のため, MD5 hex の大小文字差を認証差や fingerprint 差にしない.
         MD5 は保存用 hash ではなく legacy wire credential の識別だけに使う.
     """
     if len(value) != _MD5_HEX_LENGTH:

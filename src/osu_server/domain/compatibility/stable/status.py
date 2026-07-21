@@ -1,11 +1,28 @@
-"""Stable client status values."""
+"""Stable client status の compatibility value を定義する module."""
 
 from dataclasses import dataclass
 from enum import IntEnum
 
 
 class StableStatus(IntEnum):
-    """Stable client の Status wire 値を表す。"""
+    """Stable client の Status wire 値を表す enum.
+
+    Attributes:
+        Idle (StableStatus): idle status の wire 値0.
+        Afk (StableStatus): away-from-keyboard status の wire 値1.
+        Playing (StableStatus): playing status の wire 値2.
+        Editing (StableStatus): editing status の wire 値3.
+        Modding (StableStatus): modding status の wire 値4.
+        Multiplayer (StableStatus): multiplayer status の wire 値5.
+        Watching (StableStatus): watching status の wire 値6.
+        Unknown (StableStatus): unknown status の wire 値7.
+        Testing (StableStatus): testing status の wire 値8.
+        Submitting (StableStatus): submitting status の wire 値9.
+        Paused (StableStatus): paused status の wire 値10.
+        Lobby (StableStatus): lobby status の wire 値11.
+        Multiplaying (StableStatus): multiplaying status の wire 値12.
+        OsuDirect (StableStatus): osu!direct status の wire 値13.
+    """
 
     Idle = 0
     Afk = 1
@@ -25,24 +42,18 @@ class StableStatus(IntEnum):
 
 @dataclass(frozen=True, slots=True)
 class StableUserStatus:
-    """Stable USER_STATS に載せる current status fields。
+    """Stable USER_STATS に載せる current status field を表す immutable value object.
 
-    引数:
-        status: Stable Status の wire 値。
-        status_text: Client が送った status text。
-        beatmap_md5: Client が送った beatmap md5。未設定なら空文字。
-        mods: Stable mods bitmask。
-        play_mode: Stable Mode の wire 値。
-        beatmap_id: Client が送った beatmap id。未設定なら 0。
+    Attributes:
+        status (int): Stable Status の wire 値.
+        status_text (str): client が送った status text.
+        beatmap_md5 (str): client が送った beatmap MD5. 未設定時は空文字.
+        mods (int): Stable mod bitmask.
+        play_mode (int): Stable Mode の wire 値.
+        beatmap_id (int): client が送った beatmap ID. 未設定時は0.
 
-    戻り値:
-        dataclass のため値そのものを返さない。
-
-    例外:
-        現時点では wire parser 済みの値を保持するだけなので独自例外は送出しない。
-
-    制約:
-        Bancho wire 型ではなく、transport から domain-compatible state へ写した値として扱う。
+    Notes:
+        Bancho wire 型ではなく, transport から domain-compatible state へ写した値として扱う.
     """
 
     status: int
@@ -53,7 +64,14 @@ class StableUserStatus:
     beatmap_id: int
 
     def with_play_mode(self, play_mode: int) -> "StableUserStatus":
-        """play_mode だけ差し替えた current status を返す。"""
+        """Play mode だけを差し替えた current status を返す.
+
+        Args:
+            play_mode (int): 置き換える Stable Mode wire 値.
+
+        Returns:
+            StableUserStatus: 他の field を保持して play_mode だけを置き換えた value object.
+        """
         return StableUserStatus(
             status=self.status,
             status_text=self.status_text,

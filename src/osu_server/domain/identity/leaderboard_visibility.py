@@ -1,4 +1,4 @@
-"""Leaderboard visibility policy for identity privileges."""
+"""Identity privilege に基づく public leaderboard visibility policy を定義する module."""
 
 from __future__ import annotations
 
@@ -11,7 +11,17 @@ LEADERBOARD_VISIBLE_PERMISSION_MASK: Final[int] = int(LEADERBOARD_VISIBLE_PRIVIL
 
 
 def is_leaderboard_visible_user(privileges: Privileges | int) -> bool:
-    """Return whether privileges satisfy public leaderboard visibility."""
+    """Public leaderboard に表示できる privilege 状態か判定する.
+
+    Args:
+        privileges (Privileges | int): 判定対象 user の privilege bitmask.
+
+    Returns:
+        bool: NORMAL と UNRESTRICTED の両方を持つ場合はTrue.
+
+    Notes:
+        ADMIN はこの visibility policy を bypass しない.
+    """
     user_privileges = Privileges(privileges)
     return (user_privileges & LEADERBOARD_VISIBLE_PRIVILEGES) == LEADERBOARD_VISIBLE_PRIVILEGES
 
