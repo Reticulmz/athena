@@ -145,7 +145,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/composition/providers/**から2.8の所有fileを除く_
 
-- [ ] 2.10 (P) Beatmap、chat、event、storage domain contextを整備する
+- [x] 2.10 (P) Beatmap、chat、event、storage domain contextを整備する
   - domain/__init__.pyとdomain/{beatmaps,chat,events,storage}/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびrelevant domain testが通る
   - _Depends: 1.4_
