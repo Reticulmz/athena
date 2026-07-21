@@ -1,4 +1,7 @@
-"""SQLAlchemy async engine factory."""
+"""SQLAlchemy async engineを作成するfactoryを提供するmodule.
+
+PostgreSQL URLをasyncpg URLへ正規化し, query diagnosticsを登録する.
+"""
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -6,17 +9,17 @@ from osu_server.infrastructure.database.query_diagnostics import install_query_d
 
 
 def create_engine(database_url: str) -> AsyncEngine:
-    """Database URL から async SQLAlchemy engine を作成する。
+    """Database URLからasync SQLAlchemy engineを作成する.
 
-    ``postgresql://`` と ``postgres://`` は asyncpg driver 付き URL に変換する。
-    ``pool_pre_ping`` を有効化し、DB restart などで pool に残った stale connection
-    を checkout 前に破棄できるようにする。
+    ``postgresql://``と``postgres://``はasyncpg driver付きURLに変換する.
+    ``pool_pre_ping``を有効化し, DB restartなどでpoolに残ったstale connectionを
+    checkout前に破棄できるようにする.
 
     Args:
-        database_url: PostgreSQL connection URL.
+        database_url (str): PostgreSQL接続URL.
 
     Returns:
-        asyncpg driver と stale connection check を設定した AsyncEngine.
+        AsyncEngine: asyncpg driver, stale connection check, query diagnosticsを設定したengine.
     """
     url = database_url.replace("postgres://", "postgresql+asyncpg://", 1).replace(
         "postgresql://", "postgresql+asyncpg://", 1

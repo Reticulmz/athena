@@ -1,4 +1,7 @@
-"""Database administration helpers for local development tasks."""
+"""local development用のPostgreSQL database管理補助を提供するmodule.
+
+test databaseの作成に必要なURL変換, identifier quoting, 存在確認を収める.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +13,19 @@ _MAINTENANCE_DATABASE = "postgres"
 
 
 def to_asyncpg_url(database_url: str) -> URL:
-    """Return a PostgreSQL URL using the asyncpg SQLAlchemy driver."""
+    """PostgreSQL URLをasyncpg driver付きSQLAlchemy URLへ変換する.
+
+    Args:
+        database_url (str): PostgreSQL接続先を表すURL.
+
+    Returns:
+        URL: ``postgresql+asyncpg`` driverを使うSQLAlchemy URL.
+
+    Raises:
+        sqlalchemy.exc.ArgumentError: ``database_url``が空または不正で、
+            ``make_url``が解析できない場合.
+        ValueError: PostgreSQL以外のdriverを含むURLが渡された場合.
+    """
     url = make_url(database_url)
     if url.drivername in {"postgres", "postgresql"}:
         return url.set(drivername="postgresql+asyncpg")
@@ -21,7 +36,19 @@ def to_asyncpg_url(database_url: str) -> URL:
 
 
 def maintenance_url_for(database_url: str) -> tuple[URL, str]:
-    """Return the maintenance DB URL and target database name."""
+    """対象databaseを作成するためのmaintenance URLとdatabase名を返す.
+
+    Args:
+        database_url (str): 作成対象を含むPostgreSQL接続URL.
+
+    Returns:
+        tuple[URL, str]: ``postgres`` databaseへのasyncpg URLと対象database名.
+
+    Raises:
+        sqlalchemy.exc.ArgumentError: 空または不正な``database_url``を
+            ``to_asyncpg_url``から伝播する場合.
+        ValueError: URLのdriverがPostgreSQLではないか, database名を含まない場合.
+    """
     target_url = to_asyncpg_url(database_url)
     target_database = target_url.database
     if not target_database:
@@ -31,7 +58,17 @@ def maintenance_url_for(database_url: str) -> tuple[URL, str]:
 
 
 def quote_identifier(identifier: str) -> str:
-    """Quote a PostgreSQL identifier for DDL statements."""
+    """PostgreSQL DDLで安全に使えるようidentifierをdouble quoteで囲む.
+
+    Args:
+        identifier (str): quoteするPostgreSQL identifier.
+
+    Returns:
+        str: 内部のdouble quoteをescapeしたquoted identifier.
+
+    Raises:
+        ValueError: identifierにNUL byteが含まれる場合.
+    """
     if "\x00" in identifier:
         msg = "PostgreSQL identifiers cannot contain NUL bytes"
         raise ValueError(msg)
@@ -40,7 +77,22 @@ def quote_identifier(identifier: str) -> str:
 
 
 async def create_database_if_missing(database_url: str) -> bool:
-    """Create the target database if it does not already exist."""
+    """対象databaseが未作成の場合だけ作成する.
+
+    Args:
+        database_url (str): 作成対象のdatabase名を含むPostgreSQL接続URL.
+
+    Returns:
+        bool: databaseを新規作成した場合はTrue. 既に存在した場合はFalse.
+
+    Raises:
+        sqlalchemy.exc.ArgumentError: 空または不正な``database_url``を
+            ``maintenance_url_for``から伝播する場合.
+        ValueError: URLのdriverがPostgreSQLではないか, database名を含まない場合.
+
+    Notes:
+        engineは処理の成否にかかわらずdisposeする.
+    """
     maintenance_url, target_database = maintenance_url_for(database_url)
     engine = create_async_engine(
         maintenance_url.render_as_string(hide_password=False),
