@@ -188,7 +188,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/infrastructure/{beatmaps,storage,cache}/**_
 
-- [ ] 2.16 (P) Messaging、job、performance、HTTP infrastructure contractを整備する
+- [x] 2.16 (P) Messaging、job、performance、HTTP infrastructure contractを整備する
   - infrastructure/{messaging,jobs,performance,http}/**とtests/unit/infrastructure/messaging/**へ
     共通条件を適用する
   - LocalEventBusとDistributedEventEnvelopeの既存英語contract phraseを日本語docstring内に保持する
