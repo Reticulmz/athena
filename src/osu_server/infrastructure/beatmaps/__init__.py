@@ -1,4 +1,4 @@
-"""Beatmap external source infrastructure adapters."""
+"""ビートマップの外部metadataおよびfile source infrastructure adapterを公開する."""
 
 from osu_server.infrastructure.beatmaps.file_sources import BeatmapFileProviderService
 from osu_server.infrastructure.beatmaps.metadata_source_adapters import (
