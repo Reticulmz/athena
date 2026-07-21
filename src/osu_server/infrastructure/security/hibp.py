@@ -1,3 +1,8 @@
+"""Have I Been Pwned password range APIを利用するsecurity adapterを提供するmodule.
+
+SHA-1 hashのprefixだけを送るk-anonymity requestで漏洩passwordを照会する.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -10,32 +15,58 @@ _HIBP_RANGE_URL = "https://api.pwnedpasswords.com/range/"
 
 @runtime_checkable
 class HIBPClient(Protocol):
-    """HIBP k-Anonymity API クライアントの Protocol 抽象インターフェース。"""
+    """HIBP k-anonymity API clientの抽象Protocol.
+
+    外部serviceの障害時にFalseを返す実装は, 漏洩passwordを未検知として許可し得るfail-openである.
+    """
 
     async def is_password_compromised(self, password: str) -> bool:
-        """パスワードが HIBP データベースに漏洩済みか判定する。
+        """passwordがHIBP databaseに漏洩済みか判定する.
 
         Args:
-            password: 平文パスワード。
+            password (str): 漏洩照会する平文password.
 
         Returns:
-            True なら漏洩済み。エラー時は False。
+            bool: 漏洩済みならTrue. 外部serviceの通信失敗時はFalseとなるfail-open判定.
         """
         ...
 
 
 class HTTPHIBPClient:
-    """HIBP k-Anonymity API クライアントの HTTP 実装。
+    """HIBP k-anonymity API clientのHTTP実装.
 
-    SHA-1 の先頭5文字のみ外部に送信し、レスポンスのサフィックスと照合する。
-    API 到達不能時は False を返す(フォールバック: 登録を阻害しない)。
+    SHA-1 hashの先頭5文字だけを外部へ送信し, responseのsuffixと照合する.
+    APIに到達できない場合はregistrationを阻害しないためFalseを返すfail-open実装である.
+    このfallbackは漏洩済みpasswordを未検知として許可し得る.
+
+    Attributes:
+        _http_client (httpx.AsyncClient): HIBP range endpointへrequestを送るHTTP client.
     """
 
     def __init__(self, http_client: httpx.AsyncClient) -> None:
+        """HIBP requestに使う非同期HTTP clientを保持する.
+
+        Args:
+            http_client (httpx.AsyncClient): lifecycleを呼出側が所有するHTTP client.
+
+        Returns:
+            None: clientをinstanceへ保存するだけでnetwork requestは送らない.
+        """
         self._http_client: httpx.AsyncClient = http_client
 
     async def is_password_compromised(self, password: str) -> bool:
-        """パスワードが HIBP データベースに漏洩済みか判定する。"""
+        """passwordがHIBP databaseに漏洩済みか判定する.
+
+        Args:
+            password (str): SHA-1 hash化して照会する平文password.
+
+        Returns:
+            bool: HIBP responseに同じhash suffixがあればTrue. 通信失敗時はFalseとなるfail-open判定.
+
+        Notes:
+            password全体やSHA-1 hash全体は外部へ送らず, 5文字のprefixだけを送る.
+            HTTP障害時のFalseは漏洩passwordを未検知として許可し得る.
+        """
         sha1 = hashlib.sha1(password.encode()).hexdigest().upper()
         prefix = sha1[:5]
         suffix = sha1[5:]

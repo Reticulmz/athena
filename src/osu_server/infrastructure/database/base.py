@@ -1,11 +1,14 @@
-"""Declarative base for SQLAlchemy ORM models.
+"""SQLAlchemy ORM model用のdeclarative baseを定義するmodule.
 
-All ORM models should inherit from ``Base`` so that Alembic can
-auto-detect schema changes.
+全ORM modelは``Base``を継承し, Alembicがschema変更を検出できるようにする.
 """
 
 from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
-    """Base class for all SQLAlchemy ORM models."""
+    """全SQLAlchemy ORM modelが継承するdeclarative base.
+
+    Attributes:
+        なし: SQLAlchemyが継承先modelのmetadataを管理する.
+    """

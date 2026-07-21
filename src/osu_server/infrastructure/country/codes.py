@@ -1,4 +1,7 @@
-"""国コード変換ユーティリティ — ISO 3166-1 alpha-2 → osu! 数値 ID。"""
+"""ISO 3166-1 alpha-2国コードをosu!の数値IDへ変換するmodule.
+
+stable clientのuser presence packetで使う国コードと数値IDの対応表を所有する.
+"""
 
 from __future__ import annotations
 
@@ -263,12 +266,15 @@ _COUNTRY_CODE_TO_ID: dict[str, int] = {
 
 
 def country_code_to_id(code: str) -> int:
-    """2文字の ISO 3166-1 alpha-2 国コードを osu! 数値 ID に変換する。
+    """2文字のISO 3166-1 alpha-2国コードをosu!の数値IDへ変換する.
 
     Args:
-        code: 大文字2文字の国コード (例: ``"JP"``, ``"US"``)。
+        code (str): 大文字2文字の国コード. 例は``"JP"``と``"US"``.
 
     Returns:
-        対応する osu! 数値 ID。不明コードは ``0``。
+        int: 対応するosu!数値ID. 対応表にない値は``0``.
+
+    Notes:
+        入力は大文字化しないため, 小文字や未知の国コードは``0``になる.
     """
     return _COUNTRY_CODE_TO_ID.get(code, 0)

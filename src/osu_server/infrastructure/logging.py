@@ -1,7 +1,7 @@
-"""Structured logging initialization using structlog + stdlib integration.
+"""structlogとstdlibを統合するstructured logging初期化を提供するmodule.
 
-Configures dual output (console + optional JSON file) with a shared processor chain.
-All stdlib loggers (including uvicorn) are routed through structlog's ProcessorFormatter.
+consoleとJSON fileへ同じprocessor chainで出力し, uvicornを含むstdlib loggerを
+structlogのProcessorFormatter経由へ統一する.
 """
 
 from __future__ import annotations
@@ -40,6 +40,17 @@ _SENSITIVE_KEYS: frozenset[str] = frozenset(
 
 @dataclass(slots=True)
 class _LoggingSessionLock:
+    """process間のlogging sessionを表すfile lockの保持状態.
+
+    Attributes:
+        file (TextIO | None): 開いたlock file. 未取得時はNone.
+        path (Path | None): ``file``に対応するlock file path. 未取得時はNone.
+
+    Notes:
+        ``fcntl``が利用できるplatformだけがこの状態でprocess間sessionを共有する.
+        ``fcntl``がないfallbackではfileとpathを保持せず, process間のsession判定を行わない.
+    """
+
     file: TextIO | None = None
     path: Path | None = None
 
@@ -52,7 +63,19 @@ def mask_sensitive_fields(
     _method_name: str,
     event_dict: structlog.types.EventDict,
 ) -> structlog.types.EventDict:
-    """Replace sensitive field values with '***' to prevent credential leakage."""
+    """Credential leakageを防ぐためsensitive fieldの値を``"***"``へ置換する.
+
+    Args:
+        _logger (structlog.types.WrappedLogger): structlog processorが渡すlogger. 使用しない.
+        _method_name (str): logger method名. 使用しない.
+        event_dict (structlog.types.EventDict): 出力直前のstructured logging event.
+
+    Returns:
+        structlog.types.EventDict: sensitive keyをmaskした同一event mapping.
+
+    Notes:
+        mappingはin-placeで更新し, ``password``, ``password_hash``, ``password_md5``だけをmaskする.
+    """
     for key in _SENSITIVE_KEYS:
         if key in event_dict:
             event_dict[key] = "***"
@@ -60,7 +83,18 @@ def mask_sensitive_fields(
 
 
 def _archive_latest_file(latest_path: Path, log_dir: Path) -> None:
-    """latest.jsonl を日付ベースのファイルに圧縮アーカイブし、元ファイルを削除する。"""
+    """``latest.jsonl``を日付連番のgzip fileへarchiveして元fileを削除する.
+
+    Args:
+        latest_path (Path): archiveする``latest.jsonl``のpath.
+        log_dir (Path): gzip archiveを作成するdirectory.
+
+    Returns:
+        None: archive作成後にsource fileを削除し値を返さない.
+
+    Raises:
+        OSError: sourceまたはarchive fileのread/write/deleteに失敗した場合.
+    """
     today_str = datetime.now().astimezone().date().isoformat()
     max_n = 0
     for p in log_dir.glob(f"{today_str}-*.jsonl.gz"):
@@ -87,7 +121,18 @@ def _archive_latest_file(latest_path: Path, log_dir: Path) -> None:
 
 
 def _cleanup_old_archives(log_dir: Path, max_files: int) -> None:
-    """古いアーカイブを削除する。"""
+    """archive数が上限を超えたとき更新時刻が古いfileを削除する.
+
+    Args:
+        log_dir (Path): ``*.jsonl.gz`` archiveを検索するdirectory.
+        max_files (int): 保持するarchive fileの最大数.
+
+    Returns:
+        None: 不要なarchiveを削除して値を返さない.
+
+    Notes:
+        statまたは削除のOSErrorはwarningに記録し, 残りのfileの処理を続ける.
+    """
     archives: list[tuple[float, Path]] = []
     for p in log_dir.glob("*.jsonl.gz"):
         try:
@@ -117,6 +162,18 @@ def _cleanup_old_archives(log_dir: Path, max_files: int) -> None:
 
 
 def _open_logging_session_lock(log_dir: Path, lock_path: Path) -> TextIO | None:
+    """Logging sessionのlock fileを開く.
+
+    Args:
+        log_dir (Path): lock fileを作るdirectory.
+        lock_path (Path): append modeで開くlock file path.
+
+    Returns:
+        TextIO | None: 開いたlock file. directory作成またはopen失敗時はNone.
+
+    Notes:
+        OSErrorはwarningに記録してcallerが安全にrotationをskipできるようにする.
+    """
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         return lock_path.open("a")
@@ -130,6 +187,18 @@ def _open_logging_session_lock(log_dir: Path, lock_path: Path) -> TextIO | None:
 
 
 def _acquire_existing_logging_session(lock_file: TextIO, lock_path: Path) -> bool:
+    """既に開始済みのlogging session用にshared lockを取得する.
+
+    Args:
+        lock_file (TextIO): shared lockを取得する開済みfile.
+        lock_path (Path): warning messageに使うlock file path.
+
+    Returns:
+        bool: shared lockを取得できた場合はTrue. 非対応platformまたはOSError時はFalse.
+
+    Notes:
+        ``fcntl``がないplatformではfile lockを扱えないためFalseを返す.
+    """
     if fcntl is None:
         return False
 
@@ -146,7 +215,18 @@ def _acquire_existing_logging_session(lock_file: TextIO, lock_path: Path) -> boo
 
 
 def _prepare_process_logging_session(log_dir: Path) -> bool:
-    """Return True only for the first active process using this log directory."""
+    """このlog directoryを使う最初のactive processだけを判定する.
+
+    Args:
+        log_dir (Path): process間でsessionを共有するlogging directory.
+
+    Returns:
+        bool: current processが``latest.jsonl``をrotateすべき場合はTrue.
+
+    Notes:
+        ``fcntl``がないfallbackではsession lockを作らないため, 各processがTrueを受け取る.
+        その場合はprocess間の排他制御なしでarchiveを試行する.
+    """
     lock_path = log_dir / ".session.lock"
     if _SESSION_LOCK.path == lock_path and _SESSION_LOCK.file is not None:
         return False
@@ -186,7 +266,14 @@ def _prepare_process_logging_session(log_dir: Path) -> bool:
 
 
 def _downgrade_process_logging_session() -> None:
-    """Keep a shared lock so later processes know this log session is active."""
+    """後続processがactive sessionを検出できるようlockをshared lockへ降格する.
+
+    Returns:
+        None: lock状態を更新するだけで値を返さない.
+
+    Notes:
+        lockを保持していない場合, または``fcntl``非対応platformでは何もしない.
+    """
     if fcntl is None or _SESSION_LOCK.file is None or _SESSION_LOCK.path is None:
         return
 
@@ -201,13 +288,21 @@ def _downgrade_process_logging_session() -> None:
 
 
 def rotate_logs(log_dir: Path, max_files: int) -> None:
-    """起動時にログファイルをアーカイブし、古いアーカイブを削除する。
+    """起動時の``latest.jsonl``をarchiveし, 古いarchiveを削除する.
 
-    1. latest.jsonl が存在し非空なら、ファイルロック取得を試みる
-    2. ロック取得成功: latest.jsonl を {date}-{N}.jsonl.gz にアーカイブ
-    3. アーカイブ数が max_files を超えたら古い順に削除
-    4. ロック取得失敗 or ファイル不在/空: スキップ
-    5. 全ての OSError は warnings.warn で警告して続行
+    Args:
+        log_dir (Path): ``latest.jsonl``とarchiveを格納するdirectory.
+        max_files (int): 保持するgzip archiveの最大数.
+
+    Returns:
+        None: rotationを実行またはskipして値を返さない.
+
+    Notes:
+        非空の``latest.jsonl``だけを対象にする.
+        ``fcntl``が利用可能な場合はprocess間lockを取得できた場合だけrotationする.
+        ``fcntl``がないfallbackではprocess lockなしでarchiveを試行するため, 同時process間の
+        排他制御は保証しない.
+        すべてのOSErrorは``warnings.warn``へ記録し, application起動を継続する.
     """
     latest_path = log_dir / "latest.jsonl"
     try:
@@ -255,15 +350,21 @@ def rotate_logs(log_dir: Path, max_files: int) -> None:
 
 
 def setup_logging(config: AppConfig) -> None:
-    """Initialize structlog with stdlib integration and configure output handlers.
+    """structlogとstdlib loggerを初期化してconsole/JSON handlerを設定する.
 
-    - Calls rotate_logs(Path(config.log_dir), config.log_max_files) once per
-      active multi-process logging session.
-    - Console output (ConsoleRenderer) is always enabled via StreamHandler(stderr).
-    - A FileHandler with JSONRenderer is always added to config.log_dir / "latest.jsonl".
-    - config.log_level controls the root logger level.
-    - uvicorn.error and uvicorn.access logger handlers are overridden with
-      structlog ProcessorFormatter.
+    Args:
+        config (AppConfig): log directory, 最大archive数, root log levelを持つapplication設定.
+
+    Returns:
+        None: process全体のlogging handlerを設定するだけで値を返さない.
+
+    Notes:
+        ``fcntl``が利用可能な場合はactive logging sessionごとに一度だけrotationを試行する.
+        ``fcntl``がないfallbackでは各processがrotationを試行し, process間の排他制御は行わない.
+        console outputは常にstderrへ出力する.
+        JSON handlerの作成に成功した場合だけ``latest.jsonl``へ追加出力する.
+        JSON handlerの作成がOSErrorで失敗した場合はwarningを記録し, console outputだけを継続する.
+        ``uvicorn.error``と``uvicorn.access``のhandlerもstructlog formatterへ置き換える.
     """
     # 起動時ローテーションの実行
     log_dir_path = Path(config.log_dir)
@@ -344,7 +445,15 @@ def _override_uvicorn_handlers(
     console_handler: logging.Handler,
     json_handler: logging.Handler | None,
 ) -> None:
-    """Replace uvicorn logger handlers so their output goes through structlog."""
+    """Uvicorn loggerのhandlerをstructlog formatterへ到達するhandlerに置換する.
+
+    Args:
+        console_handler (logging.Handler): 常時利用するconsole output handler.
+        json_handler (logging.Handler | None): 利用可能な場合に追加するJSON file handler.
+
+    Returns:
+        None: 対象loggerのhandlerを置換するだけで値を返さない.
+    """
     for logger_name in ("uvicorn.error", "uvicorn.access"):
         uvicorn_logger = logging.getLogger(logger_name)
         for handler in uvicorn_logger.handlers:
