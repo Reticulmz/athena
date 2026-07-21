@@ -1,4 +1,4 @@
-"""User model for the identity bounded context."""
+"""Identity context の persistent user model を定義する module."""
 
 from __future__ import annotations
 
@@ -11,6 +11,20 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True, init=False)
 class User:
+    """Authentication と profile 情報を保持する persistent user を表す domain model.
+
+    Attributes:
+        id (int): 永続化された user ID. test fixture では0を許容する.
+        username (str): user に表示する name.
+        safe_username (str): 一意性判定用に正規化した user name.
+        email (str): user の email address.
+        password_hash (str): 認証に使う password hash.
+        country (str): ISO 3166-1 alpha-2 country code.
+        created_at (datetime): user 作成時刻.
+        updated_at (datetime): user row の最終更新時刻.
+        latest_activity_at (datetime): user-observable activity の最新時刻.
+    """
+
     id: int
     username: str
     safe_username: str
@@ -33,33 +47,23 @@ class User:
         updated_at: datetime,
         latest_activity_at: datetime | None = None,
     ) -> None:
-        """User を作成する。
-
-        latest_activity_at が未指定の場合は created_at を初期 activity として使う。
-        updated_at は行更新 metadata であり activity の代替にはしない。
+        """User の persistent field を初期化する.
 
         Args:
-            id (int): 永続化済み user id。未永続化の test/domain fixture では 0 を許容する。
-            username (str): 表示用 username。
-            safe_username (str): 一意性判定用に正規化済みの username。
-            email (str): user の email address。
-            password_hash (str): 認証用 password hash。
-            country (str): ISO 3166-1 alpha-2 country code。
-                Athena では2文字国コードとして扱う。
-            created_at (datetime): user 作成時刻。
-            updated_at (datetime): user 行の最終更新時刻。
-            latest_activity_at (datetime | None): user の latest activity 時刻。
-                未指定時は created_at。
+            id (int): 永続化済み user ID. test/domain fixture では0を許容する.
+            username (str): 表示用 user name.
+            safe_username (str): 一意性判定用に正規化済みの user name.
+            email (str): user の email address.
+            password_hash (str): 認証用 password hash.
+            country (str): ISO 3166-1 alpha-2 country code.
+            created_at (datetime): user 作成時刻.
+            updated_at (datetime): user row の最終更新時刻.
+            latest_activity_at (datetime | None): user-observable activity の最新時刻.
+                未指定時は created_at を使用する.
 
-        Returns:
-            None: instance 初期化だけを行い、値を返さない。
-
-        Raises:
-            なし。
-
-        Constraints:
+        Notes:
             latest_activity_at は updated_at ではなく replay download などの
-            user-observable activity 専用 metadata として扱う。
+            user-observable activity 専用 metadata として扱う.
         """
         self.id = id
         self.username = username
@@ -75,5 +79,15 @@ class User:
 
     @staticmethod
     def normalize_username(username: str) -> str:
-        """Normalize username: lowercase + spaces to underscores."""
+        """User name を一意性判定用の safe username へ正規化する.
+
+        Args:
+            username (str): 表示用の入力 user name.
+
+        Returns:
+            str: lowercase 化し space を underscore に置換した user name.
+
+        Notes:
+            この変換は文字種 validation を行わず, 比較用表現だけを作る.
+        """
         return username.lower().replace(" ", "_")

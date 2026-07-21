@@ -1,4 +1,4 @@
-"""Stable replay download の互換語彙."""
+"""Stable replay download の transport-independent compatibility vocabulary を定義する module."""
 
 from __future__ import annotations
 
@@ -12,20 +12,20 @@ if TYPE_CHECKING:
 
 
 class ReplayDownloadBranch(StrEnum):
-    """Stable replay download の response branch を表す.
+    """Stable replay download の client-visible response branch を表す enum.
 
-    引数:
-        なし.
+    Attributes:
+        SUCCESS (ReplayDownloadBranch): replay response を正常に返す branch.
+        AUTH_FAILURE (ReplayDownloadBranch): request user を認証できない branch.
+        HIDDEN_SCORE (ReplayDownloadBranch): score が閲覧不可の branch.
+        STORAGE_MISSING (ReplayDownloadBranch): replay blob が storage にない branch.
+        MISSING_REPLAY_PROVISIONAL (ReplayDownloadBranch): replay がない暫定 branch.
+        MALFORMED_REQUEST_PROVISIONAL (ReplayDownloadBranch): malformed request の暫定 branch.
+        BODY_STRATEGY_BLOCKED (ReplayDownloadBranch): body strategy が response を禁止する branch.
 
-    戻り値:
-        Enum class のため戻り値はない.
-
-    例外:
-        なし.
-
-    制約:
-        Client-visible branch label だけを保持し, transport, SQLAlchemy,
-        storage backend, athena_cli には依存しない.
+    Notes:
+        Client-visible branch label だけを保持し, transport, SQLAlchemy, storage backend,
+        athena_cli には依存しない.
     """
 
     SUCCESS = "success"
@@ -38,20 +38,16 @@ class ReplayDownloadBranch(StrEnum):
 
 
 class ReplayDownloadBodyStrategy(StrEnum):
-    """Stable replay download response body の生成方針を表す.
+    """Stable replay download response body の生成方針を表す enum.
 
-    引数:
-        なし.
+    Attributes:
+        BLOCKED (ReplayDownloadBodyStrategy): success response body の生成を禁止する方針.
+        DIRECT_BLOB_BYTES (ReplayDownloadBodyStrategy): stored blob bytes を直接返す方針.
+        ASSEMBLE_DOWNLOAD_BODY (ReplayDownloadBodyStrategy): download response body を
+            組み立てる方針.
 
-    戻り値:
-        Enum class のため戻り値はない.
-
-    例外:
-        なし.
-
-    制約:
-        `blocked` は success response body を生成してはいけない strategy として扱う.
-        Stored Replay blob object と client-visible response body は別概念として扱う.
+    Notes:
+        Stored replay blob object と client-visible response body は別概念として扱う.
     """
 
     BLOCKED = "blocked"
@@ -61,19 +57,13 @@ class ReplayDownloadBodyStrategy(StrEnum):
 
 @dataclass(slots=True, frozen=True)
 class ReplayDownloadResponseBody:
-    """Stable client に返す Replay Download Response Body を表す.
+    """Stable client に返す replay download response body を表す value object.
 
-    引数:
-        payload: Client-visible response body bytes.
+    Attributes:
+        payload (bytes): client-visible response body bytes. repr には出さない.
 
-    戻り値:
-        Dataclass のため戻り値はない.
-
-    例外:
-        なし.
-
-    制約:
-        Stored Replay blob object とは別概念として扱う. repr には payload を出さない.
+    Notes:
+        Stored replay blob object とは別概念として扱う.
     """
 
     payload: bytes = field(repr=False)
@@ -82,37 +72,24 @@ class ReplayDownloadResponseBody:
     def byte_size(self) -> int:
         """Response body payload の byte size を返す.
 
-        引数:
-            なし.
+        Returns:
+            int: payload に含まれる byte 数.
 
-        戻り値:
-            Payload の byte size.
-
-        例外:
-            なし.
-
-        制約:
-            Payload 内容は公開しない.
+        Notes:
+            payload の内容は公開しない.
         """
-
         return len(self.payload)
 
 
 @dataclass(slots=True, frozen=True)
 class ReplayDownloadStoredBlobObject:
-    """保存済み Replay blob object を response body から分離して表す.
+    """保存済み replay blob object を response body と分離して表す value object.
 
-    引数:
-        payload: Stored Replay blob object bytes.
+    Attributes:
+        payload (bytes): stored replay blob object bytes. repr には出さない.
 
-    戻り値:
-        Dataclass のため戻り値はない.
-
-    例外:
-        なし.
-
-    制約:
-        Replay Download Response Body と同一視しない. repr には payload を出さない.
+    Notes:
+        ReplayDownloadResponseBody と同一視しない.
     """
 
     payload: bytes = field(repr=False)
@@ -121,19 +98,12 @@ class ReplayDownloadStoredBlobObject:
     def byte_size(self) -> int:
         """Stored blob payload の byte size を返す.
 
-        引数:
-            なし.
+        Returns:
+            int: payload に含まれる byte 数.
 
-        戻り値:
-            Payload の byte size.
-
-        例外:
-            なし.
-
-        制約:
-            Payload 内容は公開しない.
+        Notes:
+            payload の内容は公開しない.
         """
-
         return len(self.payload)
 
 
