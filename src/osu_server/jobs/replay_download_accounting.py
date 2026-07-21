@@ -1,4 +1,4 @@
-"""Taskiq adapters for replay download accounting."""
+"""replay download accounting command を呼び出す Taskiq adapter を定義する."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 
 class ReplayDownloadAccountingExecutor(Protocol):
-    """Replay download accounting job が要求する use-case surface."""
+    """replay download accounting job が要求する use-case 境界を表す."""
 
     async def execute(
         self,
@@ -31,91 +31,95 @@ class ReplayDownloadAccountingExecutor(Protocol):
         """Replay download accounting command を実行する.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download 成功後の accounting 入力.
 
         Returns:
-            Replay View Count と latest activity branch の結果。
+            ReplayDownloadAccountingResult: replay view count と latest activity branch の結果.
 
         Raises:
-            実装依存。job adapter は runtime state 不足以外を use-case に委譲する。
+            Exception: use-case の処理に失敗した場合.
 
-        Constraints:
-            taskiq adapter は repository や concrete state backend を直接扱わない。
+        Notes:
+            job adapter は runtime state を解決して command を委譲するだけである.
         """
         ...
 
 
 class _EnqueueableTask(Protocol):
-    """Taskiq task enqueue に必要な最小 surface."""
+    """Taskiq task enqueue に必要な最小境界を表す."""
 
     async def kiq(self, *args: object, **kwargs: object) -> object:
         """Taskiq job を primitive payload で enqueue する.
 
         Args:
-            args: task に渡す positional payload。
-            kwargs: task に渡す keyword payload。
+            *args (object): task に渡す positional payload.
+            **kwargs (object): task に渡す keyword payload.
 
         Returns:
-            broker 実装依存の enqueue 結果。
+            object: broker 実装が返す enqueue 結果.
 
         Raises:
-            broker 実装依存の enqueue 例外。
+            Exception: broker 実装が enqueue に失敗した場合.
         """
         ...
 
 
 class _TaskBroker(Protocol):
-    """Taskiq task lookup に必要な最小 surface."""
+    """Taskiq task lookup に必要な最小境界を表す."""
 
     def find_task(self, task_name: str) -> _EnqueueableTask | None:
         """登録済み task を stable task name で探す.
 
         Args:
-            task_name: taskiq に登録された task name。
+            task_name (str): Taskiq registry に登録された stable task 名.
 
         Returns:
-            対応する task。未登録の場合は None。
+            _EnqueueableTask | None: 対応する task または未登録時の None.
 
         Raises:
-            なし。
+            Exception: broker 実装が検索に失敗した場合.
         """
         ...
 
 
 @final
 class TaskiqReplayDownloadAccountingPublisher:
-    """Replay download accounting work を taskiq job として発行する."""
+    """replay download accounting work を Taskiq job として発行する.
+
+    Attributes:
+        _broker (_TaskBroker): task の検索と enqueue を担う broker.
+
+    Notes:
+        task 未登録または enqueue 失敗は response path へ送出せず構造化ログへ記録する.
+    """
 
     _broker: _TaskBroker
 
     def __init__(self, broker: _TaskBroker) -> None:
-        """Taskiq broker を受け取る.
+        """Taskiq broker を publisher に設定する.
 
         Args:
-            broker: task lookup と enqueue を行う taskiq broker。
+            broker (_TaskBroker): task の検索と enqueue を担う broker.
 
         Returns:
-            None。
-
-        Raises:
-            なし。
+            None: broker を instance に保持する.
         """
         self._broker = broker
 
     async def publish(self, input_data: ReplayDownloadAccountingInput) -> None:
-        """Replay download accounting job を best-effort に enqueue する.
+        """Replay download accounting job を best effort で enqueue する.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download 成功後の accounting 入力.
 
         Returns:
-            None。
+            None: primitive payload を enqueue するか失敗をログに記録して完了する.
 
         Raises:
-            なし。task 未登録や enqueue 失敗はログに畳み込む。
+            Exception: broker で task の検索に失敗した場合.
 
-        Constraints:
-            response path では durable accounting を実行せず、primitive payload だけを渡す。
+        Notes:
+            task 未登録または enqueue 失敗はログに記録し response path へ送出しない.
         """
         task = self._broker.find_task(_ACCOUNT_REPLAY_DOWNLOAD_TASK_NAME)
         if task is None:
@@ -151,13 +155,10 @@ def get_replay_download_accounting_executor(
     """Taskiq state から replay download accounting use-case を返す.
 
     Args:
-        state: taskiq worker runtime state。
+        state (TaskiqState): worker runtime が保持する Taskiq state.
 
     Returns:
-        登録済み use-case。未登録の場合は None。
-
-    Raises:
-        なし。
+        ReplayDownloadAccountingExecutor | None: 登録済み use-case または未登録時の None.
     """
     return cast(
         "ReplayDownloadAccountingExecutor | None",
@@ -176,18 +177,18 @@ async def account_replay_download(
     """Replay download accounting job を command use-case に委譲する.
 
     Args:
-        score_id: replay download 対象 score id。
-        score_owner_user_id: 対象 score の owner user id。
-        viewer_user_id: 認証済み viewer user id。
-        occurred_at_iso: replay download 成功時刻の ISO 8601 文字列。
-        context: taskiq runtime context。
+        score_id (int): replay download 対象 score の ID.
+        score_owner_user_id (int): 対象 score の owner user ID.
+        viewer_user_id (int): 認証済み viewer user ID.
+        occurred_at_iso (str): replay download 成功時刻の ISO 8601 文字列.
+        context (Context): use-case を取得する Taskiq runtime context.
 
     Returns:
-        None。
+        None: accounting input を作成して command use-case を実行する.
 
     Raises:
-        RuntimeError: worker runtime state に use-case が登録されていない場合。
-        ValueError: occurred_at_iso が不正、または input precondition に違反する場合。
+        RuntimeError: accounting use-case が worker state に未登録の場合.
+        ValueError: occurred_at_iso が不正または input precondition に違反する場合.
     """
     use_case = get_replay_download_accounting_executor(context.state)
     if use_case is None:
@@ -216,13 +217,13 @@ def _parse_occurred_at(occurred_at_iso: str) -> datetime:
     """ISO 8601 payload を datetime に変換する.
 
     Args:
-        occurred_at_iso: replay download 成功時刻の ISO 8601 文字列。
+        occurred_at_iso (str): replay download 成功時刻の ISO 8601 文字列.
 
     Returns:
-        datetime.fromisoformat() で復元した datetime。
+        datetime: datetime.fromisoformat() で復元した datetime.
 
     Raises:
-        ValueError: occurred_at_iso が datetime として parse できない場合。
+        ValueError: occurred_at_iso が datetime として parse できない場合.
     """
     try:
         return datetime.fromisoformat(occurred_at_iso)

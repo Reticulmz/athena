@@ -1,4 +1,4 @@
-"""Taskiq adapters for beatmap fetch command use-cases."""
+"""beatmap fetch command use-case を呼び出す Taskiq adapter を定義する."""
 
 from __future__ import annotations
 
@@ -17,19 +17,50 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class WorkerBeatmapMetadataFetch(Protocol):
-    """Beatmap metadata fetch use-case surface required by job adapters."""
+    """beatmap metadata fetch job が要求する use-case 境界を表す."""
 
-    async def execute(self, target: BeatmapFetchTarget) -> None: ...
+    async def execute(self, target: BeatmapFetchTarget) -> None:
+        """Metadata fetch target を処理する.
+
+        Args:
+            target (BeatmapFetchTarget): metadata を取得する typed target.
+
+        Returns:
+            None: metadata 取得処理を完了する.
+
+        Raises:
+            Exception: use-case の処理に失敗した場合.
+        """
+        ...
 
 
 class WorkerBeatmapFileFetch(Protocol):
-    """Beatmap file fetch use-case surface required by job adapters."""
+    """beatmap file fetch job が要求する use-case 境界を表す."""
 
-    async def execute(self, target: BeatmapFetchTarget) -> None: ...
+    async def execute(self, target: BeatmapFetchTarget) -> None:
+        """File fetch target を処理する.
+
+        Args:
+            target (BeatmapFetchTarget): file を取得する typed target.
+
+        Returns:
+            None: file 取得処理を完了する.
+
+        Raises:
+            Exception: use-case の処理に失敗した場合.
+        """
+        ...
 
 
 def get_beatmap_metadata_fetch(state: TaskiqState) -> WorkerBeatmapMetadataFetch | None:
-    """Return the beatmap metadata fetch use-case stored in taskiq state."""
+    """Taskiq state から beatmap metadata fetch use-case を返す.
+
+    Args:
+        state (TaskiqState): worker runtime が保持する Taskiq state.
+
+    Returns:
+        WorkerBeatmapMetadataFetch | None: 登録済み use-case または未登録時の None.
+    """
     return cast(
         "WorkerBeatmapMetadataFetch | None",
         getattr(state, "beatmap_metadata_fetch", None),
@@ -37,7 +68,14 @@ def get_beatmap_metadata_fetch(state: TaskiqState) -> WorkerBeatmapMetadataFetch
 
 
 def get_beatmap_file_fetch(state: TaskiqState) -> WorkerBeatmapFileFetch | None:
-    """Return the beatmap file fetch use-case stored in taskiq state."""
+    """Taskiq state から beatmap file fetch use-case を返す.
+
+    Args:
+        state (TaskiqState): worker runtime が保持する Taskiq state.
+
+    Returns:
+        WorkerBeatmapFileFetch | None: 登録済み use-case または未登録時の None.
+    """
     return cast(
         "WorkerBeatmapFileFetch | None",
         getattr(state, "beatmap_file_fetch", None),
@@ -52,7 +90,21 @@ async def fetch_beatmap_metadata(
     *,
     force_refresh: bool = False,
 ) -> None:
-    """beatmap metadata fetch command を Taskiq payload から呼び出す。"""
+    """Taskiq payload から beatmap metadata fetch command を呼び出す.
+
+    Args:
+        target_type (str): metadata fetch の target 種別を表す primitive payload.
+        target_key (str): target 種別に対応する lookup key.
+        context (Context): use-case を取得する Taskiq runtime context.
+        force_refresh (bool): cache 状態にかかわらず refresh するか.
+
+    Returns:
+        None: typed target を use-case へ委譲して完了する.
+
+    Raises:
+        RuntimeError: metadata fetch use-case が worker state に未登録の場合.
+        ValueError: payload が BeatmapFetchTarget の不変条件を満たさない場合.
+    """
     use_case = get_beatmap_metadata_fetch(context.state)
     if use_case is None:
         logger.error(
@@ -79,7 +131,21 @@ async def fetch_beatmap_file(
     *,
     force_refresh: bool = False,
 ) -> None:
-    """beatmap file fetch command を Taskiq payload から呼び出す。"""
+    """Taskiq payload から beatmap file fetch command を呼び出す.
+
+    Args:
+        target_type (str): file fetch の target 種別を表す primitive payload.
+        target_key (str): target 種別に対応する lookup key.
+        context (Context): use-case を取得する Taskiq runtime context.
+        force_refresh (bool): cache 状態にかかわらず refresh するか.
+
+    Returns:
+        None: typed target を use-case へ委譲して完了する.
+
+    Raises:
+        RuntimeError: file fetch use-case が worker state に未登録の場合.
+        ValueError: payload が BeatmapFetchTarget の不変条件を満たさない場合.
+    """
     use_case = get_beatmap_file_fetch(context.state)
     if use_case is None:
         logger.error(

@@ -1,4 +1,4 @@
-"""Taskiq adapters for Beatmap Leaderboard rebuild command use-cases."""
+"""Beatmap leaderboard 再構築 command を呼び出す Taskiq adapter を定義する."""
 
 from __future__ import annotations
 
@@ -24,43 +24,118 @@ REBUILD_BEATMAP_LEADERBOARDS_FOR_BEATMAPSET_TASK = "rebuild_beatmap_leaderboards
 
 
 class BeatmapLeaderboardUserRebuildUseCase(Protocol):
-    """User-slice rebuild use-case surface required by job adapters."""
+    """user 単位の leaderboard 再構築 job が要求する use-case 境界を表す."""
 
     async def execute(
         self,
         command: RebuildBeatmapLeaderboardsForUserCommand,
-    ) -> RebuildBeatmapLeaderboardsResult: ...
+    ) -> RebuildBeatmapLeaderboardsResult:
+        """User 単位の leaderboard 再構築 command を実行する.
+
+        Args:
+            command (RebuildBeatmapLeaderboardsForUserCommand): 再構築対象と理由を持つ command.
+
+        Returns:
+            RebuildBeatmapLeaderboardsResult: 対象有無と更新件数を持つ再構築結果.
+
+        Raises:
+            Exception: use-case の処理に失敗した場合.
+        """
+        ...
 
 
 class BeatmapLeaderboardBeatmapsetRebuildUseCase(Protocol):
-    """Beatmapset-slice rebuild use-case surface required by job adapters."""
+    """beatmapset 単位の leaderboard 再構築 job が要求する use-case 境界を表す."""
 
     async def execute(
         self,
         command: RebuildBeatmapLeaderboardsForBeatmapsetCommand,
-    ) -> RebuildBeatmapLeaderboardsResult: ...
+    ) -> RebuildBeatmapLeaderboardsResult:
+        """Beatmapset 単位の leaderboard 再構築 command を実行する.
+
+        Args:
+            command (RebuildBeatmapLeaderboardsForBeatmapsetCommand): 再構築対象と理由を持つ
+                command.
+
+        Returns:
+            RebuildBeatmapLeaderboardsResult: 対象有無と更新件数を持つ再構築結果.
+
+        Raises:
+            Exception: use-case の処理に失敗した場合.
+        """
+        ...
 
 
 class _EnqueueableTask(Protocol):
+    """primitive payload を enqueue できる Taskiq task の最小境界を表す."""
+
     async def kiq(self, *args: object, **kwargs: object) -> object:
-        """Enqueue the task with primitive payload arguments."""
+        """Primitive payload 引数を持つ task を enqueue する.
+
+        Args:
+            *args (object): task に渡す positional payload.
+            **kwargs (object): task に渡す keyword payload.
+
+        Returns:
+            object: broker 実装が返す enqueue 結果.
+
+        Raises:
+            Exception: broker 実装が enqueue に失敗した場合.
+        """
         ...
 
 
 class _TaskBroker(Protocol):
+    """stable task name から Taskiq task を検索する最小境界を表す."""
+
     def find_task(self, task_name: str) -> _EnqueueableTask | None:
-        """Find a registered task by stable task name."""
+        """Stable task name で登録済み task を検索する.
+
+        Args:
+            task_name (str): Taskiq registry に登録された stable task 名.
+
+        Returns:
+            _EnqueueableTask | None: 対応する task または未登録時の None.
+
+        Raises:
+            Exception: broker 実装が検索に失敗した場合.
+        """
         ...
 
 
 @final
 class TaskiqBeatmapLeaderboardRebuildWorkerWake:
-    """Maps leaderboard rebuild wake requests to taskiq jobs."""
+    """leaderboard 再構築の起動要求を Taskiq job へ変換する.
+
+    Attributes:
+        _broker (_TaskBroker): task の検索と enqueue を担う broker.
+    """
 
     def __init__(self, broker: _TaskBroker) -> None:
+        """Taskiq broker を起動 adapter に設定する.
+
+        Args:
+            broker (_TaskBroker): task の検索と enqueue を担う broker.
+
+        Returns:
+            None: broker を instance に保持する.
+        """
         self._broker = broker
 
     async def wake_user_rebuild(self, *, user_id: int, reason: str) -> None:
+        """User 単位の leaderboard 再構築 task を enqueue する.
+
+        Args:
+            user_id (int): 再構築対象 user の ID.
+            reason (str): 再構築を要求した理由.
+
+        Returns:
+            None: `rebuild_beatmap_leaderboards_for_user` task の enqueue を完了する.
+
+        Raises:
+            RuntimeError: 対応する task が broker に未登録の場合.
+            Exception: task の検索または enqueue に失敗した場合.
+        """
         task_name = REBUILD_BEATMAP_LEADERBOARDS_FOR_USER_TASK
         task = self._broker.find_task(task_name)
         if task is None:
@@ -87,6 +162,19 @@ class TaskiqBeatmapLeaderboardRebuildWorkerWake:
             raise
 
     async def wake_beatmapset_rebuild(self, *, beatmapset_id: int, reason: str) -> None:
+        """Beatmapset 単位の leaderboard 再構築 task を enqueue する.
+
+        Args:
+            beatmapset_id (int): 再構築対象 beatmapset の ID.
+            reason (str): 再構築を要求した理由.
+
+        Returns:
+            None: `rebuild_beatmap_leaderboards_for_beatmapset` task の enqueue を完了する.
+
+        Raises:
+            RuntimeError: 対応する task が broker に未登録の場合.
+            Exception: task の検索または enqueue に失敗した場合.
+        """
         task_name = REBUILD_BEATMAP_LEADERBOARDS_FOR_BEATMAPSET_TASK
         task = self._broker.find_task(task_name)
         if task is None:
@@ -116,7 +204,14 @@ class TaskiqBeatmapLeaderboardRebuildWorkerWake:
 def get_beatmap_leaderboard_user_rebuild_use_case(
     state: TaskiqState,
 ) -> BeatmapLeaderboardUserRebuildUseCase | None:
-    """Return the user rebuild use-case from taskiq state."""
+    """Taskiq state から user 単位の leaderboard 再構築 use-case を返す.
+
+    Args:
+        state (TaskiqState): worker runtime が保持する Taskiq state.
+
+    Returns:
+        BeatmapLeaderboardUserRebuildUseCase | None: 登録済み use-case または未登録時の None.
+    """
     return cast(
         "BeatmapLeaderboardUserRebuildUseCase | None",
         getattr(state, "beatmap_leaderboard_user_rebuild_use_case", None),
@@ -126,7 +221,14 @@ def get_beatmap_leaderboard_user_rebuild_use_case(
 def get_beatmap_leaderboard_beatmapset_rebuild_use_case(
     state: TaskiqState,
 ) -> BeatmapLeaderboardBeatmapsetRebuildUseCase | None:
-    """Return the beatmapset rebuild use-case from taskiq state."""
+    """Taskiq state から beatmapset 単位の leaderboard 再構築 use-case を返す.
+
+    Args:
+        state (TaskiqState): worker runtime が保持する Taskiq state.
+
+    Returns:
+        BeatmapLeaderboardBeatmapsetRebuildUseCase | None: 登録済み use-case または未登録時の None.
+    """
     return cast(
         "BeatmapLeaderboardBeatmapsetRebuildUseCase | None",
         getattr(state, "beatmap_leaderboard_beatmapset_rebuild_use_case", None),
@@ -139,7 +241,23 @@ async def rebuild_beatmap_leaderboards_for_user(
     reason: object,
     context: Annotated[Context, TaskiqDepends()],
 ) -> None:
-    """Delegate one user projection rebuild to the command use-case."""
+    """User 単位の leaderboard 再構築を command use-case に委譲する.
+
+    Args:
+        user_id (object): 正の整数でなければならない再構築対象 user の ID.
+        reason (object): 空文字列でない再構築要求理由.
+        context (Context): use-case を取得する Taskiq runtime context.
+
+    Returns:
+        None: `rebuild_beatmap_leaderboards_for_user` の実行と完了ログを記録する.
+
+    Raises:
+        ValueError: user_id または reason が task payload の制約を満たさない場合.
+        RuntimeError: user 単位の再構築 use-case が worker state に未登録の場合.
+
+    Notes:
+        task name と primitive payload の順序は worker の互換 contract として維持する.
+    """
     validated_user_id = _validate_positive_int(user_id, "user_id")
     validated_reason = _validate_non_empty_str(reason, "reason")
     use_case = get_beatmap_leaderboard_user_rebuild_use_case(context.state)
@@ -181,7 +299,23 @@ async def rebuild_beatmap_leaderboards_for_beatmapset(
     reason: object,
     context: Annotated[Context, TaskiqDepends()],
 ) -> None:
-    """Delegate one beatmapset projection rebuild to the command use-case."""
+    """Beatmapset 単位の leaderboard 再構築を command use-case に委譲する.
+
+    Args:
+        beatmapset_id (object): 正の整数でなければならない再構築対象 beatmapset の ID.
+        reason (object): 空文字列でない再構築要求理由.
+        context (Context): use-case を取得する Taskiq runtime context.
+
+    Returns:
+        None: `rebuild_beatmap_leaderboards_for_beatmapset` の実行と完了ログを記録する.
+
+    Raises:
+        ValueError: beatmapset_id または reason が task payload の制約を満たさない場合.
+        RuntimeError: beatmapset 単位の再構築 use-case が worker state に未登録の場合.
+
+    Notes:
+        task name と primitive payload の順序は worker の互換 contract として維持する.
+    """
     validated_beatmapset_id = _validate_positive_int(beatmapset_id, "beatmapset_id")
     validated_reason = _validate_non_empty_str(reason, "reason")
     use_case = get_beatmap_leaderboard_beatmapset_rebuild_use_case(context.state)
@@ -218,6 +352,18 @@ async def rebuild_beatmap_leaderboards_for_beatmapset(
 
 
 def _validate_positive_int(value: object, field_name: str) -> int:
+    """Task payload の値が bool ではない正の整数か検証する.
+
+    Args:
+        value (object): 検証する primitive payload.
+        field_name (str): error message に含める payload field 名.
+
+    Returns:
+        int: 検証済みの正の整数.
+
+    Raises:
+        ValueError: value が bool または正の整数以外の場合.
+    """
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         msg = f"{field_name} must be a positive integer"
         raise ValueError(msg)
@@ -225,6 +371,18 @@ def _validate_positive_int(value: object, field_name: str) -> int:
 
 
 def _validate_non_empty_str(value: object, field_name: str) -> str:
+    """Task payload の値が空文字列でない文字列か検証する.
+
+    Args:
+        value (object): 検証する primitive payload.
+        field_name (str): error message に含める payload field 名.
+
+    Returns:
+        str: 検証済みの空文字列でない文字列.
+
+    Raises:
+        ValueError: value が文字列でないか空文字列の場合.
+    """
     if not isinstance(value, str) or not value:
         msg = f"{field_name} must be a non-empty string"
         raise ValueError(msg)
@@ -240,6 +398,22 @@ def _log_completed(
     user_id: int | None = None,
     beatmapset_id: int | None = None,
 ) -> None:
+    """Leaderboard 再構築の完了結果を構造化ログへ記録する.
+
+    Args:
+        task_name (str): 完了した stable Taskiq task 名.
+        target_kind (str): `user` または `beatmapset` を表す対象種別.
+        reason (str): 再構築を要求した理由.
+        result (RebuildBeatmapLeaderboardsResult): 対象有無と更新件数を持つ処理結果.
+        user_id (int | None): user 対象時の ID. beatmapset 対象時は None.
+        beatmapset_id (int | None): beatmapset 対象時の ID. user 対象時は None.
+
+    Returns:
+        None: 完了 event を構造化ログへ記録する.
+
+    Notes:
+        user_id と beatmapset_id のうち対象に対応する一方だけを設定する.
+    """
     logger.info(
         "beatmap_leaderboard_rebuild_completed",
         task_name=task_name,
