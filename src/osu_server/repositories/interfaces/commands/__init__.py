@@ -1,4 +1,4 @@
-"""Command repository interface package."""
+"""Command repository interface の公開 package."""
 
 from osu_server.repositories.interfaces.commands.beatmap_leaderboards import (
     BeatmapLeaderboardCommandRepository,
