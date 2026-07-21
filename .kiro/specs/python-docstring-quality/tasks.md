@@ -181,7 +181,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/infrastructure/state/**_
 
-- [ ] 2.15 (P) Beatmap、storage、cache infrastructureを整備する
+- [x] 2.15 (P) Beatmap、storage、cache infrastructureを整備する
   - infrastructure/{beatmaps,storage,cache}/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびbeatmap provider/blob-storage testが通る
   - _Depends: 1.4_
