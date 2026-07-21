@@ -1,7 +1,8 @@
-"""HTTP infrastructure - beatmap mirror HTTP client.
+"""beatmap mirror 用 HTTP infrastructure の公開契約を提供します.
 
-BeatmapHttpClient は Protocol (interfaces.py) を re-export します.
-具象クラスが必要な場合は beatmap_http_client モジュールから直接 import してください.
+Notes:
+    BeatmapHttpClient は Protocol (interfaces.py) を re-export します. 具象クラスが必要な
+    場合は beatmap_http_client モジュールから直接 import してください.
 """
 
 from osu_server.infrastructure.http.beatmap_http_client import is_permanent_error
