@@ -197,7 +197,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/infrastructure/{messaging,jobs,performance,http}/**, tests/unit/infrastructure/messaging/**_
 
-- [ ] 2.17 (P) 残りのinfrastructure adapterを整備する
+- [x] 2.17 (P) 残りのinfrastructure adapterを整備する
   - infrastructure/*.pyとinfrastructure/{country,crypto,database,parsers,security}/**へ共通条件を
     適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびdatabase、crypto、parser、security、logging、country testが通る
