@@ -1,4 +1,4 @@
-"""User domain events."""
+"""User contextが発行する接続状態domain eventを定義するmodule."""
 
 from __future__ import annotations
 
@@ -9,13 +9,21 @@ from osu_server.domain.events import Event
 
 @dataclass(frozen=True, slots=True)
 class UserConnected(Event):
-    """ユーザーがサーバーへ接続したことを表すドメインイベント。"""
+    """Userがserverへ接続したことを表すdomain event.
+
+    Attributes:
+        user_id (int): 接続したuserのID.
+    """
 
     user_id: int
 
 
 @dataclass(frozen=True, slots=True)
 class UserDisconnected(Event):
-    """ユーザーがサーバーから切断したことを表すドメインイベント。"""
+    """Userがserverから切断したことを表すdomain event.
+
+    Attributes:
+        user_id (int): 切断したuserのID.
+    """
 
     user_id: int

@@ -1,4 +1,4 @@
-"""Beatmap domain models."""
+"""Beatmap contextの公開domain modelとpolicyを再exportするpackage."""
 
 from osu_server.domain.beatmaps.eligibility import (
     BeatmapStatus,

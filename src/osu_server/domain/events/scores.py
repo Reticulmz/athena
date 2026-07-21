@@ -1,4 +1,4 @@
-"""Score domain events."""
+"""Score contextが発行するdomain eventを定義するmodule."""
 
 from __future__ import annotations
 
@@ -14,7 +14,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class CurrentUserStatsUpdated(Event):
-    """current UserStats が更新されたことを同一 process 内へ通知する event。"""
+    """Current UserStatsの更新を同一process内へ通知するeventを表す.
+
+    Attributes:
+        user_id (int): 更新対象userのID.
+        ruleset (Ruleset): 更新されたscore ruleset.
+        playstyle (Playstyle): 更新されたplaystyle.
+        current_stats (UserCurrentStats | None): 更新後のcurrent stats. 統計が存在しない場合はNone.
+    """
 
     user_id: int
     ruleset: Ruleset
