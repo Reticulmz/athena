@@ -1,8 +1,7 @@
-"""Beatmap metadata provider implementations.
+"""ビートマップメタデータproviderを優先順位付きで合成する.
 
-CompositeBeatmapMetadataProvider chains official and mirror providers:
-official first, mirror as fallback. Both are expected to return None
-on normal lookup misses rather than raising.
+公式providerを優先し、通常の未検出または取得失敗時だけmirror providerへ
+フォールバックする. 両providerは通常の未検出を ``None`` で表す.
 """
 
 from __future__ import annotations
@@ -18,7 +17,12 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class CompositeBeatmapMetadataProvider:
-    """Chains official and mirror providers with official-first priority."""
+    """公式providerを優先してメタデータ取得を合成する.
+
+    Attributes:
+        _official (BeatmapMetadataProvider): 最初に照会する公式provider.
+        _mirror (BeatmapMetadataProvider): 公式providerが結果を返さない場合の代替provider.
+    """
 
     _official: BeatmapMetadataProvider
     _mirror: BeatmapMetadataProvider
@@ -29,10 +33,26 @@ class CompositeBeatmapMetadataProvider:
         official: BeatmapMetadataProvider,
         mirror: BeatmapMetadataProvider,
     ) -> None:
+        """公式providerと代替mirror providerを保持する.
+
+        Args:
+            official (BeatmapMetadataProvider): 最優先で照会する公式provider.
+            mirror (BeatmapMetadataProvider): 公式providerの未検出または失敗後に照会するprovider.
+        """
         self._official = official
         self._mirror = mirror
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+        """ビートマップIDからスナップショットを優先順位付きで取得する.
+
+        Args:
+            beatmap_id (int): 検索対象のビートマップID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 取得したスナップショット.
+                全providerが未検出または失敗した場合は
+                ``None``.
+        """
         key = str(beatmap_id)
         official_failed = False
         try:
@@ -69,6 +89,16 @@ class CompositeBeatmapMetadataProvider:
             return mirror_result
 
     async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+        """ビートマップセットIDからスナップショットを優先順位付きで取得する.
+
+        Args:
+            beatmapset_id (int): 検索対象のビートマップセットID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 取得したスナップショット.
+                全providerが未検出または失敗した場合は
+                ``None``.
+        """
         key = str(beatmapset_id)
         official_failed = False
         try:
@@ -105,6 +135,16 @@ class CompositeBeatmapMetadataProvider:
             return mirror_result
 
     async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+        """MD5チェックサムからスナップショットを優先順位付きで取得する.
+
+        Args:
+            checksum_md5 (str): 検索対象のビートマップMD5チェックサム.
+
+        Returns:
+            BeatmapsetSnapshot | None: 取得したスナップショット.
+                全providerが未検出または失敗した場合は
+                ``None``.
+        """
         official_failed = False
         try:
             result = await self._official.lookup_by_checksum(checksum_md5)

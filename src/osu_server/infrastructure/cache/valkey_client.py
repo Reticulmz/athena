@@ -1,7 +1,4 @@
-"""Valkey async client factory.
-
-Creates a GlideClient for connecting to a Valkey server.
-"""
+"""Valkey serverへ接続するGlide async clientを生成する."""
 
 from __future__ import annotations
 
@@ -15,6 +12,17 @@ type ValkeyPubSubCallback = Callable[[PubSubMsg, object], None]
 
 
 def parse_valkey_database_id(path: str) -> int | None:
+    """Valkey URL pathからoptional database IDを解析する.
+
+    Args:
+        path (str): URL parserが返すpath. 空文字列または ``/`` はdatabase未指定を表す.
+
+    Returns:
+        int | None: 単一のdecimal path componentを整数化したdatabase ID. 未指定なら ``None``.
+
+    Raises:
+        ValueError: pathが複数component、または単一のdecimal値でない場合.
+    """
     if not path or path == "/":
         return None
 
@@ -27,13 +35,16 @@ def parse_valkey_database_id(path: str) -> int | None:
 
 
 async def create_valkey_client(valkey_url: str) -> GlideClient:
-    """Create a GlideClient from a ``redis://`` DSN.
+    """Valkey URLから通常command用のconnected GlideClientを生成する.
 
     Args:
-        valkey_url: Valkey connection URL (e.g. ``redis://localhost:6379``).
+        valkey_url (str): host、optional port、optional database pathを含むValkey connection URL.
 
     Returns:
-        A connected GlideClient instance.
+        GlideClient: URLのhost、port、database IDで接続済みのclient.
+
+    Raises:
+        ValueError: URLのportまたはdatabase pathが不正な場合.
     """
     parsed = urlparse(valkey_url)
     host = parsed.hostname or "localhost"
@@ -51,7 +62,18 @@ async def create_valkey_pubsub_client(
     valkey_url: str,
     callback: ValkeyPubSubCallback,
 ) -> GlideClient:
-    """Create a GlideClient configured for Pub/Sub callbacks."""
+    """Pub/Sub callbackを設定したconnected GlideClientを生成する.
+
+    Args:
+        valkey_url (str): host、optional port、optional database pathを含むValkey connection URL.
+        callback (ValkeyPubSubCallback): Pub/Sub messageとcontextを受け取るcallback.
+
+    Returns:
+        GlideClient: exact channel subscriptionsとcallbackを設定して接続済みのclient.
+
+    Raises:
+        ValueError: URLのportまたはdatabase pathが不正な場合.
+    """
     parsed = urlparse(valkey_url)
     host = parsed.hostname or "localhost"
     port = parsed.port or 6379
