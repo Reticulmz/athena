@@ -1,4 +1,8 @@
-"""Beatmap command use-case package."""
+"""beatmap metadata 取得と .osu file warmup の command use-case を公開する.
+
+この module は transport や job adapter が利用する beatmap command boundary の型と use-case を
+再 export する. 永続化実装や provider の具体型はこの namespace から公開しない.
+"""
 
 from osu_server.services.commands.beatmaps.fetch import (
     BeatmapBlobStorage,

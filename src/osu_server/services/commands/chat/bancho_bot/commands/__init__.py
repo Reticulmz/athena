@@ -1,7 +1,7 @@
-"""BanchoBot registered command handlers and builtin catalog.
+"""BanchoBot の builtin handler と command catalog を構成する.
 
-Provides `create_builtin_registry()` for composition roots to obtain a
-deterministically ordered registry of builtin player-visible commands.
+composition root は `create_builtin_registry()` を通じて、決定的な登録順を持つ
+player-visible command registry を取得する.
 """
 
 from __future__ import annotations
@@ -11,13 +11,13 @@ from osu_server.services.commands.chat.bancho_bot.registry import CommandRegistr
 
 
 def create_builtin_registry() -> CommandRegistry:
-    """Create a registry pre-populated with builtin player-visible commands.
+    """Builtin の player-visible command を登録済みの registry を作成する.
 
-    Registration order is determined by the order of ``setup_*()`` calls.
-    Currently only ``setup_general()`` registers ``!roll`` then ``!help``.
+    登録順は `setup_*()` 呼び出しの順番で決まり、現在は `setup_general()` が `!roll` と
+    `!help` をこの順で登録する.
 
     Returns:
-        A new CommandRegistry with all builtin commands registered.
+        CommandRegistry: 全 builtin command を決定的な順番で登録した新しい registry.
     """
     registry = CommandRegistry()
     setup_general(registry)
