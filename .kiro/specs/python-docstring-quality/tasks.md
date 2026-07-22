@@ -286,7 +286,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/services/commands/scores/performance/**_
 
-- [ ] 2.29 (P) Score submission processingとauthorizationを整備する
+- [x] 2.29 (P) Score submission processingとauthorizationを整備する
   - services/commands/scores/process_submission.pyとauthorization.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびscore submission/authorization testが通る
   - _Depends: 1.4_
