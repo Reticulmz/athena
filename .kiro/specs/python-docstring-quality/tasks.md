@@ -265,7 +265,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/repositories/sqlalchemy/*.py, sqlalchemy/models/**, valkey/**_
 
-- [ ] 2.26 (P) Beatmapとchat command use-caseを整備する
+- [x] 2.26 (P) Beatmapとchat command use-caseを整備する
   - services/commands/*.pyとservices/commands/{beatmaps,chat}/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびrelevant beatmap/chat command testが通る
   - _Depends: 1.4_
@@ -861,3 +861,7 @@
   - _Depends: 5.3_
   - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 5.1, 6.2_
   - _Boundary: validationとreviewのみで新しいfeature scopeを追加しない_
+
+## Implementation Notes
+
+- `__init__`は`Returns:`を記載しない例外であり、それ以外の`None` return callableは`Returns: None`を記載する.
