@@ -1,4 +1,4 @@
-"""Query repository interface package."""
+"""Read-only query repository interface の公開契約を集約する."""
 
 from osu_server.repositories.interfaces.queries.beatmap_leaderboards import (
     BeatmapLeaderboardQueryRepository,
