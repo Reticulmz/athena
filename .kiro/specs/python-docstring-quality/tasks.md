@@ -257,7 +257,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/repositories/sqlalchemy/queries/**_
 
-- [ ] 2.25 (P) Persistence model、SQLAlchemy Unit of Work、Valkey repositoryを整備する
+- [x] 2.25 (P) Persistence model、SQLAlchemy Unit of Work、Valkey repositoryを整備する
   - repositories/sqlalchemy/*.py、repositories/sqlalchemy/models/**、repositories/valkey/**へ
     共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびmodel、enum、Unit of Work、Valkey session repository testが通る
