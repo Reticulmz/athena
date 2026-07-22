@@ -75,7 +75,7 @@ class RefreshPerformanceBestCommand:
         score_id (int): refresh 対象となる accepted score の正の永続識別子.
 
     Notes:
-        Performance Calculation row は変更せず、current completed PP を読み取り入力にする.
+        Performance Calculation row は変更せず,current completed PP を読み取り入力にする.
     """
 
     score_id: int
@@ -84,7 +84,7 @@ class RefreshPerformanceBestCommand:
         """score_id が正の永続識別子であることを検証する.
 
         Returns:
-            None: score_id を検証し、呼び出し側へ値を返さずに完了する.
+            None: score_id を検証し,呼び出し側へ値を返さずに完了する.
 
         Raises:
             ValueError: score_id が0以下の場合.
@@ -99,11 +99,11 @@ class RefreshPerformanceBestResult:
     """1 score refresh workflow の結果を表す.
 
     Attributes:
-        outcome (RefreshPerformanceBestOutcome): refresh、skip、または未検出の結果種別.
+        outcome (RefreshPerformanceBestOutcome): refresh,skip,または未検出の結果種別.
         score_id (int): command が対象にした score 識別子.
         projection (BeatmapPerformanceBest | None): 更新後または維持した winner. ない場合はNone.
         skip_reason (str | None):
-            projection を作れない、または対象外となった理由. 該当しない場合はNone.
+            projection を作れない,または対象外となった理由. 該当しない場合はNone.
     """
 
     outcome: RefreshPerformanceBestOutcome
@@ -118,7 +118,7 @@ class RebuildPerformanceBestProjectionCommand:
 
     Attributes:
         user_id (int | None):
-            rebuild 対象 user の正の識別子. beatmap_ids と排他的で、未指定時はNone.
+            rebuild 対象 user の正の識別子. beatmap_ids と排他的で,未指定時はNone.
         beatmap_ids (tuple[int, ...]): rebuild 対象 beatmap の正の識別子列. user_id と排他的.
 
     Notes:
@@ -132,11 +132,11 @@ class RebuildPerformanceBestProjectionCommand:
         """指定 rebuild scope が排他的かつ正の永続識別子だけで構成されることを検証する.
 
         Returns:
-            None: rebuild scope を検証し、呼び出し側へ値を返さずに完了する.
+            None: rebuild scope を検証し,呼び出し側へ値を返さずに完了する.
 
         Raises:
             ValueError:
-                user scope と beatmap scope が同時指定または未指定、または id が0以下の場合.
+                user scope と beatmap scope が同時指定または未指定,または id が0以下の場合.
         """
         has_user_scope = self.user_id is not None
         has_beatmap_scope = len(self.beatmap_ids) > 0
@@ -210,7 +210,7 @@ class RefreshPerformanceBestUseCase:
 
         Args:
             unit_of_work_factory (UnitOfWorkFactory):
-                score、projection、stats を一貫して扱う factory.
+                score,projection,stats を一貫して扱う factory.
             eligibility_policy (PerformanceEligibilityPolicy | None):
                 performance candidate の対象可否を判定する policy. 未指定時は既定 policy.
             user_stats_policy (UserStatsPolicy | None):
@@ -232,7 +232,7 @@ class RefreshPerformanceBestUseCase:
             command (RefreshPerformanceBestCommand): refresh 対象 score を指定する command.
 
         Returns:
-            RefreshPerformanceBestResult: refresh、skip、または score 未検出の結果.
+            RefreshPerformanceBestResult: refresh,skip,または score 未検出の結果.
 
         Notes:
             projection が変わる場合だけ同じ transaction で current user stats を更新する.
@@ -330,7 +330,7 @@ class RebuildPerformanceBestProjectionUseCase:
 
         Args:
             unit_of_work_factory (UnitOfWorkFactory):
-                source score、projection、stats を一貫して扱う factory.
+                source score,projection,stats を一貫して扱う factory.
             eligibility_policy (PerformanceEligibilityPolicy | None):
                 performance candidate の対象可否を判定する policy. 未指定時は既定 policy.
             user_stats_policy (UserStatsPolicy | None):
@@ -354,7 +354,7 @@ class RebuildPerformanceBestProjectionUseCase:
 
         Returns:
             RebuildPerformanceBestProjectionResult:
-                読み込んだ候補、保存 projection、除外理由の集計.
+                読み込んだ候補,保存 projection,除外理由の集計.
 
         Notes:
             slice 内で影響を受けた各 user/ruleset/playstyle の current user stats を再導出する.
@@ -445,7 +445,7 @@ async def replace_user_performance_best_slice(
             performance best candidate の対象可否を判定する policy.
 
     Returns:
-        None: user slice を置き換え、呼び出し側へ値を返さずに完了する.
+        None: user slice を置き換え,呼び出し側へ値を返さずに完了する.
 
     Raises:
         ValueError: candidate score または current calculation の id が未採番の場合.
@@ -659,7 +659,7 @@ def _performance_best_scope_for_score(score: Score) -> BeatmapPerformanceBestSco
     """対象 score から performance best の一意な projection scope を構成する.
 
     Args:
-        score (Score): user、beatmap、ruleset、playstyle を持つ score.
+        score (Score): user,beatmap,ruleset,playstyle を持つ score.
 
     Returns:
         BeatmapPerformanceBestScope: score が属する projection scope.
@@ -680,7 +680,7 @@ def _score_matches_performance_scope(
 
     Args:
         score (Score): scope との一致を調べる score.
-        scope (BeatmapPerformanceBestScope): user、beatmap、ruleset、playstyle の比較対象.
+        scope (BeatmapPerformanceBestScope): user,beatmap,ruleset,playstyle の比較対象.
 
     Returns:
         bool: 4つの scope component がすべて一致する場合はTrue.
@@ -706,7 +706,7 @@ def _projection_candidate_for_eligible_score(
             score の current performance calculation. 未取得時はNone.
 
     Returns:
-        _ProjectionCandidate: upsert row、または candidate を作れない理由.
+        _ProjectionCandidate: upsert row,または candidate を作れない理由.
 
     Raises:
         ValueError: completed calculation の id が未採番の場合.
@@ -774,7 +774,7 @@ def _candidate_beats_selected(
         selected (UpsertBeatmapPerformanceBest): 現在選ばれている projection candidate.
 
     Returns:
-        bool: PP 降順、submitted_at 昇順、score id 昇順で candidate が優先される場合はTrue.
+        bool: PP 降順,submitted_at 昇順,score id 昇順で candidate が優先される場合はTrue.
     """
     if candidate.pp != selected.pp:
         return candidate.pp > selected.pp
@@ -794,7 +794,7 @@ def _candidate_beats_projection(
         projection (BeatmapPerformanceBest): 現在保存されている scope winner.
 
     Returns:
-        bool: PP 降順、submitted_at 昇順、score id 昇順で candidate が優先される場合はTrue.
+        bool: PP 降順,submitted_at 昇順,score id 昇順で candidate が優先される場合はTrue.
     """
     if candidate.pp != projection.pp:
         return candidate.pp > projection.pp

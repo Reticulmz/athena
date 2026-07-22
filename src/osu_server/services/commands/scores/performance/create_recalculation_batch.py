@@ -90,10 +90,10 @@ class CreatePerformanceRecalculationBatchCommand:
         """任意の数値 filter が指定時に正であることを検証する.
 
         Returns:
-            None: filter 値を検証し、呼び出し側へ値を返さずに完了する.
+            None: filter 値を検証し,呼び出し側へ値を返さずに完了する.
 
         Raises:
-            ValueError: score_id、beatmap_id、user_id、または limit が0以下の場合.
+            ValueError: score_id,beatmap_id,user_id,または limit が0以下の場合.
         """
         _validate_optional_positive("score_id", self.score_id)
         _validate_optional_positive("beatmap_id", self.beatmap_id)
@@ -164,7 +164,7 @@ class PerformanceRecalculationBatchWorkerWake(Protocol):
             batch_id (int): 処理対象の作成済み recalculation batch 識別子.
 
         Returns:
-            None: worker 起動を要求し、呼び出し側へ値を返さずに完了する.
+            None: worker 起動を要求し,呼び出し側へ値を返さずに完了する.
         """
         ...
 
@@ -180,13 +180,13 @@ class NoopPerformanceRecalculationBatchWorkerWake:
             batch_id (int): 破棄する recalculation batch 識別子.
 
         Returns:
-            None: 外部 worker を起動せず、呼び出し側へ値を返さずに完了する.
+            None: 外部 worker を起動せず,呼び出し側へ値を返さずに完了する.
         """
         _ = batch_id
 
 
 class CreatePerformanceRecalculationBatchUseCase:
-    """候補を選択し、必要に応じて durable recalculation batch work を作成する."""
+    """候補を選択し,必要に応じて durable recalculation batch work を作成する."""
 
     def __init__(
         self,
@@ -197,7 +197,7 @@ class CreatePerformanceRecalculationBatchUseCase:
         worker_wake: PerformanceRecalculationBatchWorkerWake | None = None,
         formula_profile_policy: FormulaProfilePolicy | None = None,
     ) -> None:
-        """候補選択、永続化、worker 起動に必要な dependency を受け取る.
+        """候補選択,永続化,worker 起動に必要な dependency を受け取る.
 
         Args:
             query_repository (ScorePerformanceQueryRepository):
@@ -228,7 +228,7 @@ class CreatePerformanceRecalculationBatchUseCase:
         """Dry-run候補選択または永続batch作成を実行する.
 
         Args:
-            command (CreatePerformanceRecalculationBatchCommand): Scope、mode、要求日時.
+            command (CreatePerformanceRecalculationBatchCommand): Scope,mode,要求日時.
 
         Returns:
             CreatePerformanceRecalculationBatchResult: 候補集計とbatch作成結果.
@@ -302,11 +302,11 @@ class CreatePerformanceRecalculationBatchUseCase:
         target_calculator_version: str,
         target_formula_profile: FormulaProfile,
     ) -> CreatePerformanceRecalculationBatchResult:
-        """選択済み candidate から durable batch を作成し、必要なら worker を起動する.
+        """選択済み candidate から durable batch を作成し,必要なら worker を起動する.
 
         Args:
             command (CreatePerformanceRecalculationBatchCommand):
-                作成 mode、filter、要求時刻を含む command.
+                作成 mode,filter,要求時刻を含む command.
             selected (ScorePerformanceRecalculationCandidateResult):
                 query repository が選択した候補.
             reason_counts (Mapping[RecalculationCandidateReason, int]):
@@ -318,7 +318,7 @@ class CreatePerformanceRecalculationBatchUseCase:
 
         Returns:
             CreatePerformanceRecalculationBatchResult:
-                durable batch、candidate 集計、worker 起動結果.
+                durable batch,candidate 集計,worker 起動結果.
 
         Raises:
             ValueError: worker 起動前に作成済み batch の id が割り当てられていない場合.
@@ -381,7 +381,7 @@ def _validate_optional_positive(field_name: str, value: int | None) -> None:
         value (int | None): 検証する値. 未指定時はNone.
 
     Returns:
-        None: 値を検証し、呼び出し側へ値を返さずに完了する.
+        None: 値を検証し,呼び出し側へ値を返さずに完了する.
 
     Raises:
         ValueError: value が指定されていて0以下の場合.
@@ -420,7 +420,7 @@ def _requires_full_scope_confirmation(
 
     Args:
         command (CreatePerformanceRecalculationBatchCommand):
-            mode、filter、確認状態を含む入力 command.
+            mode,filter,確認状態を含む入力 command.
 
     Returns:
         bool: 危険な全件 execute を拒否すべき場合はTrue.
@@ -433,7 +433,7 @@ def _requires_full_scope_confirmation(
 
 
 def _has_narrow_filter(command: CreatePerformanceRecalculationBatchCommand) -> bool:
-    """入力 command が対象を score、beatmap、user、ruleset のいずれかで絞っているか判定する.
+    """入力 command が対象を score,beatmap,user,ruleset のいずれかで絞っているか判定する.
 
     Args:
         command (CreatePerformanceRecalculationBatchCommand): filter を含む入力 command.

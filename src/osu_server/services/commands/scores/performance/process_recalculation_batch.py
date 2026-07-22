@@ -64,10 +64,10 @@ class ProcessPerformanceRecalculationBatchCommand:
         """対象 batch id と claim owner の入力制約を検証する.
 
         Returns:
-            None: command の不変条件を検証し、呼び出し側へ値を返さずに完了する.
+            None: command の不変条件を検証し,呼び出し側へ値を返さずに完了する.
 
         Raises:
-            ValueError: batch_id が0以下、または claim_owner が空文字列の場合.
+            ValueError: batch_id が0以下,または claim_owner が空文字列の場合.
         """
         if self.batch_id <= 0:
             msg = "batch_id must be positive"
@@ -114,14 +114,14 @@ class PerformanceCalculationRequester(Protocol):
                 replacement の対象 score と calculator provenance.
 
         Returns:
-            RequestPerformanceCalculationResult: calculation の作成、再利用、または失敗を表す結果.
+            RequestPerformanceCalculationResult: calculation の作成,再利用,または失敗を表す結果.
         """
         ...
 
 
 @final
 class ProcessPerformanceRecalculationBatchUseCase:
-    """durable recalculation work を claim し、replacement calculation request を実行する."""
+    """durable recalculation work を claim し,replacement calculation request を実行する."""
 
     def __init__(
         self,
@@ -131,7 +131,7 @@ class ProcessPerformanceRecalculationBatchUseCase:
         calculator_identity: PerformanceCalculatorIdentity,
         settings: PerformanceRuntimeSettings | None = None,
     ) -> None:
-        """対象 work の claim、replacement request、calculator provenance の dependency を受け取る.
+        """対象 work の claim,replacement request,calculator provenance の dependency を受け取る.
 
         Args:
             unit_of_work_factory (UnitOfWorkFactory):
@@ -156,7 +156,7 @@ class ProcessPerformanceRecalculationBatchUseCase:
 
         Args:
             command (ProcessPerformanceRecalculationBatchCommand):
-                batch、claim owner、基準時刻を含む command.
+                batch,claim owner,基準時刻を含む command.
 
         Returns:
             ProcessPerformanceRecalculationBatchResult: claim 件数と terminal/retryable 結果の集計.
@@ -270,7 +270,7 @@ class ProcessPerformanceRecalculationBatchUseCase:
 
         Returns:
             _WorkOutcome:
-                completed、unavailable、retryable failure、または finalization conflict の分類.
+                completed,unavailable,retryable failure,または finalization conflict の分類.
         """
         calculation = request_result.calculation
         if calculation is None:
@@ -326,7 +326,7 @@ class ProcessPerformanceRecalculationBatchUseCase:
             calculation_id (int): completed replacement calculation の永続識別子.
 
         Returns:
-            _WorkOutcome: completed、または owner/state 競合を示す finalization conflict.
+            _WorkOutcome: completed,または owner/state 競合を示す finalization conflict.
         """
         async with self._unit_of_work_factory() as uow:
             updated = await uow.score_performance.mark_recalculation_work_completed(
@@ -360,7 +360,7 @@ class ProcessPerformanceRecalculationBatchUseCase:
             reason (str): unavailable 状態として保存する理由.
 
         Returns:
-            _WorkOutcome: unavailable、または owner/state 競合を示す finalization conflict.
+            _WorkOutcome: unavailable,または owner/state 競合を示す finalization conflict.
         """
         async with self._unit_of_work_factory() as uow:
             updated = await uow.score_performance.mark_recalculation_work_unavailable(
@@ -393,7 +393,7 @@ class ProcessPerformanceRecalculationBatchUseCase:
             error (str): 後続処理で診断する failure 種別.
 
         Returns:
-            _WorkOutcome: retryable failure、または owner/state 競合を示す finalization conflict.
+            _WorkOutcome: retryable failure,または owner/state 競合を示す finalization conflict.
         """
         async with self._unit_of_work_factory() as uow:
             updated = await uow.score_performance.mark_recalculation_work_failed(

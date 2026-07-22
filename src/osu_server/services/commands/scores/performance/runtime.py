@@ -48,14 +48,14 @@ class PerformanceRuntimeSettings:
     claim_timeout: timedelta = DEFAULT_PERFORMANCE_CLAIM_TIMEOUT
 
     def __post_init__(self) -> None:
-        """設定値を検証し、formula profile の対応を不変な copy に置き換える.
+        """設定値を検証し,formula profile の対応を不変な copy に置き換える.
 
         Returns:
-            None: 設定を検証して正規化し、呼び出し側へ値を返さずに完了する.
+            None: 設定を検証して正規化し,呼び出し側へ値を返さずに完了する.
 
         Raises:
             ValueError:
-                待機時間、chunk size、claim timeout が非正、または VANILLA profile がない場合.
+                待機時間,chunk size,claim timeout が非正,または VANILLA profile がない場合.
         """
         if self.bounded_wait <= timedelta(0):
             msg = "bounded_wait must be positive"

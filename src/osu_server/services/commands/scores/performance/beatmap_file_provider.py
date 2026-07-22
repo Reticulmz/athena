@@ -33,7 +33,7 @@ class _BeatmapFileResolver(Protocol):
                 osu file の取得要件を含む解決オプション. 未指定時はNone.
 
         Returns:
-            BeatmapResolveResult: beatmap metadata、file 状態、解決理由を含む結果.
+            BeatmapResolveResult: beatmap metadata,file 状態,解決理由を含む結果.
         """
         ...
 
@@ -126,7 +126,7 @@ class PerformanceBeatmapFileQuery:
         """指定した beatmap id が正の永続識別子であることを検証する.
 
         Returns:
-            None: 入力値を検証し、呼び出し側へ値を返さずに完了する.
+            None: 入力値を検証し,呼び出し側へ値を返さずに完了する.
 
         Raises:
             ValueError: beatmap_id が0以下の場合.
@@ -156,10 +156,10 @@ class PerformanceBeatmapFileProvenance:
         """この provenance の永続識別子がすべて正であることを検証する.
 
         Returns:
-            None: 識別子を検証し、呼び出し側へ値を返さずに完了する.
+            None: 識別子を検証し,呼び出し側へ値を返さずに完了する.
 
         Raises:
-            ValueError: beatmap、attachment、または blob の id が0以下の場合.
+            ValueError: beatmap,attachment,または blob の id が0以下の場合.
         """
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
@@ -255,7 +255,7 @@ class PerformanceBeatmapFileProvider(Protocol):
         self,
         query: PerformanceBeatmapFileQuery,
     ) -> PerformanceBeatmapFileResult:
-        """指定 query に対応する ready、pending、または unavailable 入力を返す.
+        """指定 query に対応する ready,pending,または unavailable 入力を返す.
 
         Args:
             query (PerformanceBeatmapFileQuery): 解決対象 beatmap を指定する要求.
@@ -288,14 +288,14 @@ class BeatmapMirrorPerformanceBeatmapFileProvider:
         self,
         query: PerformanceBeatmapFileQuery,
     ) -> PerformanceBeatmapFileResult:
-        """指定 beatmap の osu file を解決し、calculation 用の入力状態へ変換する.
+        """指定 beatmap の osu file を解決し,calculation 用の入力状態へ変換する.
 
         Args:
             query (PerformanceBeatmapFileQuery): 要求する beatmap の正の永続識別子.
 
         Returns:
             PerformanceBeatmapFileResult:
-                ready bytes、再試行可能な pending、または unavailable の結果.
+                ready bytes,再試行可能な pending,または unavailable の結果.
         """
         result = await self._beatmap_resolver.resolve_by_beatmap_id(
             query.beatmap_id,
@@ -318,7 +318,7 @@ class BeatmapMirrorPerformanceBeatmapFileProvider:
         result: BeatmapResolveResult,
         attachment: BeatmapFileAttachment,
     ) -> PerformanceBeatmapFileReady | PerformanceBeatmapFileUnavailable:
-        """解決済み attachment の blob を読み込み、ready または unavailable 結果へ変換する.
+        """解決済み attachment の blob を読み込み,ready または unavailable 結果へ変換する.
 
         Args:
             beatmap_id (int): 要求された beatmap の永続識別子.
