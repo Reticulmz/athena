@@ -272,7 +272,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/services/commands/*.py, commands/{beatmaps,chat}/**_
 
-- [ ] 2.27 (P) Identityとstorage command use-caseを整備する
+- [x] 2.27 (P) Identityとstorage command use-caseを整備する
   - services/commands/{identity,storage}/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびidentity/blob-storage command testが通る
   - _Depends: 1.4_
