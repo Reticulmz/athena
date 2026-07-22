@@ -212,7 +212,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/repositories/interfaces/commands/**_
 
-- [ ] 2.19 (P) Queryとtransaction repository interfaceを整備する
+- [x] 2.19 (P) Queryとtransaction repository interfaceを整備する
   - repositories/__init__.py、repositories/interfaces/*.py、interfaces/queries/**へ共通条件を
     適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびquery、session-store、Unit of Work contract testが通る
@@ -220,7 +220,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/repositories/__init__.py, interfaces/*.py, interfaces/queries/**_
 
-- [ ] 2.20 (P) In-memory command repositoryを整備する
+- [x] 2.20 (P) In-memory command repositoryを整備する
   - repositories/memory/commands/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびin-memory command repository testが通る
   - _Depends: 1.4_
