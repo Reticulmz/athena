@@ -1,4 +1,4 @@
-"""Beatmap leaderboard command workflows."""
+"""beatmap leaderboard projectionを再構築するcommand workflowを公開する."""
 
 from osu_server.services.commands.scores.leaderboards.rebuild_beatmap_leaderboards import (
     RebuildBeatmapLeaderboardsForBeatmapsetCommand,

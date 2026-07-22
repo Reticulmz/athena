@@ -1,4 +1,4 @@
-"""Current UserStats projection rebuild helpers."""
+"""current UserStats projectionを再構築するcommand-side helperを定義する."""
 
 from __future__ import annotations
 
@@ -30,21 +30,21 @@ async def replace_current_user_stats_projection(
     playstyle: Playstyle,
     policy: UserStatsPolicy,
 ) -> UserStatsProjection:
-    """Unit of Work 内で 1 user/mode の current UserStats projection を置き換える。
+    """Unit of Work内で一つのuser/ruleset/playstyleのcurrent UserStats projectionを置き換える.
 
     Args:
-        uow: 呼び出し側が所有する command Unit of Work。
-        user_id: 置き換え対象の user id。
-        ruleset: 置き換え対象の ruleset。
-        playstyle: 置き換え対象の playstyle。
-        policy: PP と accuracy の計算 policy。
+        uow (UnitOfWork): 呼び出し側が所有するcommand Unit of Work.
+        user_id (int): 置き換え対象userのID.
+        ruleset (Ruleset): 置き換え対象のruleset.
+        playstyle (Playstyle): 置き換え対象のplaystyle.
+        policy (UserStatsPolicy): PPとaccuracyを集計するpolicy.
 
     Returns:
-        永続化された current UserStats projection。
+        UserStatsProjection: 永続化されたcurrent UserStats projection.
 
-    制約:
-        commit は呼び出し側が行う。同一 transaction で score/performance 更新と
-        projection 置き換えをまとめたい workflow から使う。
+    Notes:
+        commitは呼び出し側が行う. 同一transactionでscore/performance更新とprojection
+        置き換えをまとめるworkflowから使用する.
     """
     scope = UserStatsScope(user_id=user_id, ruleset=ruleset, playstyle=playstyle)
     await uow.current_user_stats.lock_scope(scope)
@@ -78,7 +78,22 @@ def build_current_user_stats_projection(
     bests: tuple[BeatmapPerformanceBest, ...],
     policy: UserStatsPolicy,
 ) -> UserStatsProjection:
-    """source scores と performance best rows から current UserStats projection を作る。"""
+    """Source scoreとperformance best rowからcurrent UserStats projectionを作る.
+
+    Args:
+        user_id (int): 集計対象userのID.
+        ruleset (Ruleset): 集計対象ruleset.
+        playstyle (Playstyle): 集計対象playstyle.
+        scores (tuple[Score, ...]): current stats候補として読み込んだscore列.
+        bests (tuple[BeatmapPerformanceBest, ...]): performance集計に使うbeatmapごとのbest row列.
+        policy (UserStatsPolicy): PPとaccuracyを集計するpolicy.
+
+    Returns:
+        UserStatsProjection: 対象scopeのscoreとperformanceから作ったprojection.
+
+    Notes:
+        RELAXまたはAUTOPILOTのscoreはcurrent statsの集計対象から除外する.
+    """
     scoped_scores = tuple(
         score
         for score in scores
@@ -108,6 +123,14 @@ def build_current_user_stats_projection(
 
 
 def _hit_totals(scores: tuple[Score, ...]) -> UserStatsHitTotals:
+    """score列のhit countをruleset非依存の合計値へ変換する.
+
+    Args:
+        scores (tuple[Score, ...]): hit countを合計するscore列.
+
+    Returns:
+        UserStatsHitTotals: 各hit種別の合計値.
+    """
     return UserStatsHitTotals(
         count_300=sum(score.n300 for score in scores),
         count_100=sum(score.n100 for score in scores),
@@ -119,6 +142,14 @@ def _hit_totals(scores: tuple[Score, ...]) -> UserStatsHitTotals:
 
 
 def _score_in_current_stats_scope(score: Score) -> bool:
+    """scoreがcurrent UserStats projectionの集計対象か判定する.
+
+    Args:
+        score (Score): 集計対象として検査するscore.
+
+    Returns:
+        bool: RELAXとAUTOPILOTのいずれも持たない場合はTrue.
+    """
     return not score.mods.has(Mod.RELAX) and not score.mods.has(Mod.AUTOPILOT)
 
 
