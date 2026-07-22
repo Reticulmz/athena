@@ -1,4 +1,4 @@
-"""SQLAlchemy command repository package."""
+"""SQLAlchemy command repositoryの公開実装を集約する."""
 
 from osu_server.repositories.interfaces.commands.blobs import DuplicateBlobError
 from osu_server.repositories.sqlalchemy.commands.beatmap_leaderboards import (

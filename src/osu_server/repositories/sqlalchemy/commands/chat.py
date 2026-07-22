@@ -1,4 +1,4 @@
-"""SQLAlchemy command-side chat repository."""
+"""SQLAlchemyでchannel messageとprivate messageを保存するrepositoryを提供する."""
 
 from __future__ import annotations
 
@@ -26,9 +26,24 @@ logger: structlog.stdlib.BoundLogger = structlog.stdlib.get_logger(__name__)
 
 
 class SQLAlchemyChatCommandRepository:
-    """Chat command repository backed by a UoW-owned SQLAlchemy session."""
+    """Unit of Work所有sessionで受理済みchat履歴を保存するrepository.
+
+    Attributes:
+        _session (AsyncSession): command transactionを実行しcommitを所有しないsession.
+    """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Unit of Workから受け取ったSQLAlchemy sessionを保持する.
+
+        Args:
+            session (AsyncSession): chat履歴の保存に使うsession.
+
+        Returns:
+            None: repositoryの初期化完了を示す.
+
+        Notes:
+            commitとrollbackは呼び出し側のUnit of Workが所有する.
+        """
         self._session: AsyncSession = session
 
     async def save_channel_message(
@@ -38,7 +53,19 @@ class SQLAlchemyChatCommandRepository:
         channel_name: str,
         content: str,
     ) -> ChatPersistenceResult:
-        """Persist accepted public channel chat history."""
+        """受理済みchannel messageを保存し結果を返す.
+
+        Args:
+            sender_id (int): messageを送信したuserの永続化識別子.
+            channel_name (str): 保存先channelの完全一致name.
+            content (str): 保存するmessage本文.
+
+        Returns:
+            ChatPersistenceResult: 成功またはchannel未存在とstorage errorを表す結果.
+
+        Notes:
+            SQLAlchemyErrorはlogへ記録し例外ではなくSTORAGE_ERROR結果に変換する.
+        """
         try:
             channel_id = await self._resolve_channel_id(channel_name)
             if channel_id is None:
@@ -74,7 +101,19 @@ class SQLAlchemyChatCommandRepository:
         target_id: int,
         content: str,
     ) -> ChatPersistenceResult:
-        """Persist accepted private chat history."""
+        """受理済みprivate messageを保存し結果を返す.
+
+        Args:
+            sender_id (int): messageを送信したuserの永続化識別子.
+            target_id (int): messageを受信するuserの永続化識別子.
+            content (str): 保存するmessage本文.
+
+        Returns:
+            ChatPersistenceResult: 成功またはstorage errorを表す結果.
+
+        Notes:
+            SQLAlchemyErrorはlogへ記録し例外ではなくSTORAGE_ERROR結果に変換する.
+        """
         try:
             self._session.add(
                 PrivateMessageModel(
@@ -98,5 +137,16 @@ class SQLAlchemyChatCommandRepository:
         return ChatPersistenceResult.success_result()
 
     async def _resolve_channel_id(self, channel_name: str) -> int | None:
+        """Channel nameからmessage保存用の永続化idを解決する.
+
+        Args:
+            channel_name (str): 解決対象channelの完全一致name.
+
+        Returns:
+            int | None: 対応するchannel id. 存在しない場合はNone.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+        """
         stmt = select(ChannelModel.id).where(ChannelModel.name == channel_name)
         return (await self._session.execute(stmt)).scalar_one_or_none()
