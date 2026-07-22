@@ -865,3 +865,4 @@
 ## Implementation Notes
 
 - `__init__`は`Returns:`を記載しない例外であり、それ以外の`None` return callableは`Returns: None`を記載する.
+- 全corpus taskはRuff Dとinterrogateに加え、ASTでdocstring token中のnon-ASCII punctuationが0件であることを確認する. `。`と`、`はASCII `.`と`,`へ置換し、runtime stringは変更しない.
