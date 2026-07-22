@@ -250,7 +250,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/repositories/sqlalchemy/commands/**から2.22の所有fileを除く_
 
-- [ ] 2.24 (P) SQLAlchemy query repositoryを整備する
+- [x] 2.24 (P) SQLAlchemy query repositoryを整備する
   - repositories/sqlalchemy/queries/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および全SQLAlchemy query repository testが通る
   - _Depends: 1.4_
