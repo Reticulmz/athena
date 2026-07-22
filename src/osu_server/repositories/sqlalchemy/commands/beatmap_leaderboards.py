@@ -1,4 +1,4 @@
-"""SQLAlchemy command-side beatmap leaderboard projection repository."""
+"""SQLAlchemy を用いて beatmap leaderboard projection を永続化する command repository."""
 
 from __future__ import annotations
 
@@ -39,13 +39,25 @@ if TYPE_CHECKING:
 
 
 class SQLAlchemyBeatmapLeaderboardCommandRepository:
-    """UoW 所有 session で raw Mod scope best を永続化する repository."""
+    """UoW 所有 session で raw Mod scope の best projection を永続化する repository.
+
+    Attributes:
+        _session (AsyncSession): 呼び出し元の Unit of Work が所有する非同期 session.
+    """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Unit of Work 所有の SQLAlchemy session を保存する.
+
+        Args:
+            session (AsyncSession): command transaction を共有する非同期 session.
+
+        Returns:
+            None: repository の初期化だけを行い transaction を開始または確定しないことを示す.
+        """
         self._session: AsyncSession = session
 
     async def lock_rebuild(self) -> None:
-        """projection rebuild用のexclusive transaction lockを取得する.
+        """Projection rebuild 用の exclusive transaction lock を取得する.
 
         Returns:
             None: transaction終了まで全submit projection更新を停止したことを示す.
@@ -54,7 +66,7 @@ class SQLAlchemyBeatmapLeaderboardCommandRepository:
         _ = await self._session.execute(statement)
 
     async def lock_scope(self, scope: BeatmapLeaderboardUserScope) -> None:
-        """submit更新をrebuildおよび同一scope更新とtransaction内で直列化する.
+        """Submit 更新を rebuild および同一 scope 更新と transaction 内で直列化する.
 
         Args:
             scope (BeatmapLeaderboardUserScope): Modを含まないserialization scope.
@@ -157,7 +169,7 @@ class SQLAlchemyBeatmapLeaderboardCommandRepository:
         slice_: BeatmapLeaderboardProjectionSlice,
         rows: Iterable[UpsertBeatmapLeaderboardUserBest],
     ) -> None:
-        """再構築対象 slice の Mod別 best を置換する.
+        """再構築対象 slice の Mod 別 best を置換する.
 
         Args:
             slice_ (BeatmapLeaderboardProjectionSlice): user または Beatmap の対象範囲.
@@ -183,12 +195,28 @@ class SQLAlchemyBeatmapLeaderboardCommandRepository:
 def _select_by_scope(
     scope: BeatmapLeaderboardUserBestScope,
 ) -> Select[tuple[BeatmapLeaderboardUserBestModel]]:
+    """Raw Mod を含む完全一致 scope の SELECT statement を構築する.
+
+    Args:
+        scope (BeatmapLeaderboardUserBestScope): 検索対象の projection natural key.
+
+    Returns:
+        Select[tuple[BeatmapLeaderboardUserBestModel]]: scope が一致する保存行だけを返す statement.
+    """
     return select(BeatmapLeaderboardUserBestModel).where(*_scope_conditions(scope))
 
 
 def _scope_conditions(
     scope: BeatmapLeaderboardUserBestScope,
 ) -> tuple[ColumnElement[bool], ...]:
+    """Raw Mod を含む projection scope の絞り込み条件を返す.
+
+    Args:
+        scope (BeatmapLeaderboardUserBestScope): 比較する beatmap、ruleset、user、Mod の scope.
+
+    Returns:
+        tuple[ColumnElement[bool], ...]: natural key の各列を完全一致で比較する条件列.
+    """
     return (
         BeatmapLeaderboardUserBestModel.beatmap_id == scope.beatmap_id,
         BeatmapLeaderboardUserBestModel.beatmap_checksum == scope.beatmap_checksum,
@@ -202,6 +230,14 @@ def _scope_conditions(
 def _global_scope_conditions(
     scope: BeatmapLeaderboardUserScope,
 ) -> tuple[ColumnElement[bool], ...]:
+    """Mod を除く Global best 検索用の projection scope 条件を返す.
+
+    Args:
+        scope (BeatmapLeaderboardUserScope): Mod をまたいで比較する beatmap と user の scope.
+
+    Returns:
+        tuple[ColumnElement[bool], ...]: Mod 列を含めず natural key を比較する条件列.
+    """
     return (
         BeatmapLeaderboardUserBestModel.beatmap_id == scope.beatmap_id,
         BeatmapLeaderboardUserBestModel.beatmap_checksum == scope.beatmap_checksum,
@@ -212,6 +248,14 @@ def _global_scope_conditions(
 
 
 def _upsert_if_better_statement(command: UpsertBeatmapLeaderboardUserBest) -> Insert:
+    """候補が既存 rank key を上回る場合だけ更新する UPSERT statement を構築する.
+
+    Args:
+        command (UpsertBeatmapLeaderboardUserBest): 保存する scope、score ID、rank key の候補.
+
+    Returns:
+        Insert: natural key 競合時に freshness または順位が改善した行だけを更新する statement.
+    """
     insert_statement = insert(BeatmapLeaderboardUserBestModel).values(
         beatmap_id=command.scope.beatmap_id,
         beatmap_checksum=command.scope.beatmap_checksum,
@@ -246,6 +290,14 @@ def _upsert_if_better_statement(command: UpsertBeatmapLeaderboardUserBest) -> In
 
 
 def _candidate_beats_current(rank_key: ScoreRankKey) -> ColumnElement[bool]:
+    """候補の rank key が保存済み row より優先される条件を構築する.
+
+    Args:
+        rank_key (ScoreRankKey): score、送信時刻、score ID による候補順位.
+
+    Returns:
+        ColumnElement[bool]: score 降順、submitted_at 昇順、score ID 昇順の優先順を表す条件.
+    """
     return or_(
         BeatmapLeaderboardUserBestModel.score < rank_key.score,
         and_(
@@ -261,17 +313,17 @@ def _candidate_beats_current(rank_key: ScoreRankKey) -> ColumnElement[bool]:
 
 
 def _scope_lock_key(scope: BeatmapLeaderboardUserScope) -> int:
-    """leaderboard更新scopeをPostgreSQL advisory lock keyへ変換する.
+    """Leaderboard 更新 scope を PostgreSQL advisory lock key へ変換する.
 
     Args:
-        scope (BeatmapLeaderboardUserScope): user/Beatmap/ruleset/playstyleを含むlock scope.
+        scope (BeatmapLeaderboardUserScope): user、beatmap、ruleset、playstyle を含む lock scope.
 
     Returns:
         int: `pg_advisory_xact_lock`へ渡すsigned 64-bit key.
 
     Notes:
-        同じscopeは同じkeyを返す. Modとchecksumはserialization identityに含めない.
-        構築済みscopeを受け取る前提で、このhelper自体は独自の例外を送出しない.
+        同じ scope は同じ key を返す. Mod と checksum は serialization identity に含めない.
+        構築済み scope を受け取る前提でこの helper 自体は独自の例外を送出しない.
     """
     namespace = (
         "beatmap_leaderboard_user_bests:"
@@ -281,22 +333,22 @@ def _scope_lock_key(scope: BeatmapLeaderboardUserScope) -> int:
 
 
 def _score_id_lock_key(score_id: int) -> int:
-    """projectionのscore_idをPostgreSQL advisory lock keyへ変換する.
+    """Projection の score ID を PostgreSQL advisory lock key へ変換する.
 
     Args:
-        score_id (int): 一意性を直列化するsource Score ID.
+        score_id (int): 一意性を直列化する source score ID.
 
     Returns:
         int: `pg_advisory_xact_lock`へ渡すsigned 64-bit key.
 
     Notes:
-        同じscore_idは同じkeyを返し、transaction終了まで所有確認とupsertを直列化する.
+        同じ score ID は同じ key を返し transaction 終了まで所有確認と upsert を直列化する.
     """
     return _advisory_lock_key(f"beatmap_leaderboard_user_bests:score_id:{score_id}")
 
 
 def _projection_rebuild_lock_key() -> int:
-    """全projection rebuildで共有するPostgreSQL advisory lock keyを返す.
+    """全 projection rebuild で共有する PostgreSQL advisory lock key を返す.
 
     Returns:
         int: submitがshared, rebuildがexclusiveで取得するsigned 64-bit key.
@@ -305,13 +357,13 @@ def _projection_rebuild_lock_key() -> int:
 
 
 def _advisory_lock_key(namespace: str) -> int:
-    """advisory lock namespaceを安定したsigned 64-bit keyへ変換する.
+    """Advisory lock namespace を安定した signed 64-bit key へ変換する.
 
     Args:
-        namespace (str): repository内で一意なlock namespace.
+        namespace (str): repository 内で一意な lock namespace.
 
     Returns:
-        int: PostgreSQL bigint範囲のdeterministic advisory lock key.
+        int: PostgreSQL bigint 範囲の deterministic advisory lock key.
     """
     return int.from_bytes(
         blake2b(namespace.encode(), digest_size=8).digest(),
@@ -321,6 +373,14 @@ def _advisory_lock_key(namespace: str) -> int:
 
 
 def _delete_slice_statement(slice_: BeatmapLeaderboardProjectionSlice) -> Delete:
+    """指定 projection slice の保存行を削除する DELETE statement を構築する.
+
+    Args:
+        slice_ (BeatmapLeaderboardProjectionSlice): user または beatmap ID 群で表す再構築範囲.
+
+    Returns:
+        Delete: slice に含まれる projection row だけを削除する statement.
+    """
     statement = delete(BeatmapLeaderboardUserBestModel)
     if isinstance(slice_, BeatmapLeaderboardUserProjectionSlice):
         return statement.where(BeatmapLeaderboardUserBestModel.user_id == slice_.user_id)
@@ -331,6 +391,15 @@ def _slice_contains(
     slice_: BeatmapLeaderboardProjectionSlice,
     scope: BeatmapLeaderboardUserBestScope,
 ) -> bool:
+    """Projection slice が候補 scope を含むか判定する.
+
+    Args:
+        slice_ (BeatmapLeaderboardProjectionSlice): user または beatmap ID 群で表す対象範囲.
+        scope (BeatmapLeaderboardUserBestScope): 置換候補の projection natural key.
+
+    Returns:
+        bool: candidate scope が slice に含まれる場合は True. それ以外は False.
+    """
     if isinstance(slice_, BeatmapLeaderboardUserProjectionSlice):
         return scope.user_id == slice_.user_id
     return scope.beatmap_id in slice_.beatmap_ids
@@ -362,6 +431,17 @@ def _model_has_scope(
 
 
 def _model_to_domain(model: BeatmapLeaderboardUserBestModel) -> BeatmapLeaderboardUserBest:
+    """SQLAlchemy projection model を domain の leaderboard best へ変換する.
+
+    Args:
+        model (BeatmapLeaderboardUserBestModel): 永続化済みの projection row.
+
+    Returns:
+        BeatmapLeaderboardUserBest: ruleset、playstyle、Mod、rank key を復元した domain value.
+
+    Raises:
+        ValueError: 保存済みの ruleset、playstyle、または Mod bitmask が不正な場合.
+    """
     return BeatmapLeaderboardUserBest(
         id=model.id,
         scope=BeatmapLeaderboardUserBestScope(
