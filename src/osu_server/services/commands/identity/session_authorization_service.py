@@ -1,4 +1,4 @@
-"""SessionAuthorizationService — セッション認可の更新オーケストレーション。"""
+"""session authorizationの更新をオーケストレーションするserviceを提供する."""
 
 from __future__ import annotations
 
@@ -18,14 +18,36 @@ if TYPE_CHECKING:
 
 
 class _PermissionAuthorizationComputer(Protocol):
+    """ユーザーの現在のroleからsession authorizationを計算する依存serviceを定義する."""
+
     async def compute_session_authorization(
         self,
         user_id: int,
-    ) -> SessionAuthorization: ...
+    ) -> SessionAuthorization:
+        """ユーザーの現在のroleとpermissionからauthorizationを計算する.
+
+        Args:
+            user_id (int): authorizationを計算するユーザーID.
+
+        Returns:
+            SessionAuthorization: active sessionへ適用するauthorization snapshot.
+        """
+        ...
 
 
 class _RoleUserLookup(Protocol):
-    async def get_user_ids_for_role(self, role_id: int) -> list[int]: ...
+    """roleに属するユーザーを検索する依存repositoryを定義する."""
+
+    async def get_user_ids_for_role(self, role_id: int) -> list[int]:
+        """指定roleを持つユーザーIDを取得する.
+
+        Args:
+            role_id (int): 検索対象のrole ID.
+
+        Returns:
+            list[int]: roleが割り当てられたユーザーID.
+        """
+        ...
 
 
 logger: structlog.stdlib.BoundLogger = cast(
@@ -35,7 +57,13 @@ logger: structlog.stdlib.BoundLogger = cast(
 
 
 class SessionAuthorizationService:
-    """ユーザー単位・ロール単位の認可 refresh をオーケストレーションする。"""
+    """ユーザー単位とrole単位のsession authorization更新をオーケストレーションする.
+
+    Attributes:
+        _permission_service (_PermissionAuthorizationComputer): authorization計算service.
+        _session_store (SessionAuthorizationRuntime): session authorization更新store.
+        _role_repository (_RoleUserLookup): roleに属するユーザーIDを取得するrepository.
+    """
 
     _permission_service: _PermissionAuthorizationComputer
     _session_store: SessionAuthorizationRuntime
@@ -48,6 +76,14 @@ class SessionAuthorizationService:
         session_store: SessionAuthorizationRuntime,
         role_repository: _RoleUserLookup,
     ) -> None:
+        """Session authorization更新に必要な依存を初期化する.
+
+        Args:
+            permission_service (_PermissionAuthorizationComputer): authorization計算service.
+            session_store (SessionAuthorizationRuntime): session authorization更新store.
+            role_repository (_RoleUserLookup): roleに属するユーザーIDを取得するrepository.
+
+        """
         self._permission_service = permission_service
         self._session_store = session_store
         self._role_repository = role_repository
@@ -56,14 +92,17 @@ class SessionAuthorizationService:
         self,
         user_id: int,
     ) -> UserAuthorizationRefreshResult:
-        """*user_id* の現在のロール状態から認可 snapshot を計算し、
-        active session に適用する。
+        """ユーザーの現在のroleからsession authorizationを計算して適用する.
+
+        Args:
+            user_id (int): authorizationを再計算するユーザーID.
 
         Returns:
-            UserAuthorizationRefreshResult:
-                - REFRESHED: 認可が更新された (authorization あり)
-                - NO_ACTIVE_SESSION: active session なし (authorization なし)
-                - FAILED: snapshot 計算に失敗 (authorization なし)
+            UserAuthorizationRefreshResult: 更新、active session不在、または計算失敗を表す結果.
+
+        Notes:
+            authorization計算の例外はFAILED結果へ変換する. active sessionがない場合は
+            NO_ACTIVE_SESSIONを返す.
         """
         try:
             snapshot = await self._permission_service.compute_session_authorization(
@@ -110,10 +149,16 @@ class SessionAuthorizationService:
         self,
         role_id: int,
     ) -> RoleAuthorizationRefreshResult:
-        """*role_id* に割り当てられた全ユーザーの認可を refresh する。
+        """指定roleに属する全ユーザーのsession authorizationを更新する.
 
-        RoleRepository.get_user_ids_for_role() で取得した各ユーザーに対し
-        refresh_user_authorization() を呼び、結果を集約する。
+        Args:
+            role_id (int): authorizationを更新するユーザーを検索するrole ID.
+
+        Returns:
+            RoleAuthorizationRefreshResult: role所属ユーザーごとの更新結果を集約した結果.
+
+        Notes:
+            各ユーザーを順番に更新し、個別の計算失敗はUserAuthorizationRefreshResultへ保持する.
         """
         user_ids = await self._role_repository.get_user_ids_for_role(role_id)
 

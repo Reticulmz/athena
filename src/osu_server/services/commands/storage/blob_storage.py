@@ -1,4 +1,4 @@
-"""BlobStorageService — stream writes, integrity metadata, and deduplication."""
+"""blobのstream書込み、整合性metadata、deduplicationを提供するserviceを定義する."""
 
 from __future__ import annotations
 
@@ -29,19 +29,26 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class BlobContentTypeError(ValueError):
-    """Raised when a blob write is requested without an explicit content type."""
+    """blob書込みで有効なcontent typeが指定されない場合に送出する."""
 
 
 class BlobContentUnavailableError(FileNotFoundError):
-    """Raised when blob metadata or backend content is unavailable."""
+    """blob metadataまたはbackend contentを読み出せない場合に送出する."""
 
 
 class BlobStorageWriteError(RuntimeError):
-    """Raised when blob storage cannot produce a successful blob result."""
+    """blob storageが成功したblob resultを生成できない場合に送出する."""
 
 
 class BlobStorageService:
-    """Coordinate staged blob writes with SHA-256 metadata and deduplication."""
+    """staged blob書込みをSHA-256 metadataとdeduplicationとともに調整する.
+
+    Attributes:
+        _blob_query_repo (BlobQueryRepository): blob metadataを読むrepository.
+        _uow_factory (UnitOfWorkFactory): 新しいblob metadataを書き込むUnit of Workのfactory.
+        _backend (BlobStorageBackend): contentをstagedに書込み、読み出すstorage backend.
+        _storage_backend (BlobStorageBackendKind): 作成するmetadataに保存するbackend種別.
+    """
 
     _blob_query_repo: BlobQueryRepository
     _uow_factory: UnitOfWorkFactory
@@ -56,6 +63,15 @@ class BlobStorageService:
         backend: BlobStorageBackend,
         storage_backend: BlobStorageBackendKind,
     ) -> None:
+        """Blob storage操作に必要な依存を初期化する.
+
+        Args:
+            blob_query_repo (BlobQueryRepository): SHA-256またはIDでblob metadataを読むrepository.
+            uow_factory (UnitOfWorkFactory): 新しいblob metadataを書き込むUnit of Workのfactory.
+            backend (BlobStorageBackend): contentをstagedに書込み、読み出すstorage backend.
+            storage_backend (BlobStorageBackendKind): 作成するmetadataに保存するbackend種別.
+
+        """
         self._blob_query_repo = blob_query_repo
         self._uow_factory = uow_factory
         self._backend = backend
@@ -67,9 +83,27 @@ class BlobStorageService:
         *,
         content_type: str,
     ) -> BlobStoreResult:
-        """Store one in-memory byte payload through the stream write path."""
+        """memory上のbyte payloadをstream書込み経路で保存する.
+
+        Args:
+            data (bytes): 保存するmemory上のpayload.
+            content_type (str): 空白以外のMIME content type.
+
+        Returns:
+            BlobStoreResult: 新規保存または既存blobへのdeduplicationを表す結果.
+
+        Raises:
+            BlobContentTypeError: content_typeが空白だけの場合.
+            BlobStorageWriteError: metadataの作成失敗をdeduplicationで解決できない場合.
+            BackendWriteError: staged backendへの書込みまたはfinalizeが失敗した場合.
+        """
 
         async def chunks() -> ByteChunks:
+            """memory上のpayloadを一つのstream chunkとして生成する.
+
+            Yields:
+                bytes: storage backendへ渡すpayload全体.
+            """
             yield data
 
         return await self.put_stream(chunks(), content_type=content_type)
@@ -80,7 +114,24 @@ class BlobStorageService:
         *,
         content_type: str,
     ) -> BlobStoreResult:
-        """Store one sequential byte stream or return an existing duplicate blob."""
+        """順序付きbyte streamを保存するか、既存の同一blobを返す.
+
+        Args:
+            chunks (ByteChunks): 順番に消費して保存するbyte chunk stream.
+            content_type (str): 空白以外のMIME content type.
+
+        Returns:
+            BlobStoreResult: 新規保存または既存blobへのdeduplicationを表す結果.
+
+        Raises:
+            BlobContentTypeError: content_typeが空白だけの場合.
+            BlobStorageWriteError: metadataの作成失敗をdeduplicationで解決できない場合.
+            BackendWriteError: staged backendへの書込みまたはfinalizeが失敗した場合.
+
+        Notes:
+            SHA-256、byte size、storage keyをstream消費中に計算する. metadataはcontent
+            finalize後に作成する.
+        """
         normalized_content_type = _require_content_type(content_type)
         staged = None
         digest_builder = hashlib.sha256()
@@ -166,7 +217,20 @@ class BlobStorageService:
             raise
 
     async def stream_read(self, blob_id: int) -> ByteChunks:
-        """Open a backend chunk stream for existing blob metadata."""
+        """既存blob metadataに対応するbackend chunk streamを開く.
+
+        Args:
+            blob_id (int): 読み出すblob metadataのID.
+
+        Returns:
+            ByteChunks: backendから順番にcontentを読むchunk stream.
+
+        Raises:
+            BlobContentUnavailableError: metadataがないか、streamを開く前にbackend
+                contentがない場合.
+            BlobContentMissingError: streamを返した後にbackend contentが削除された場合.
+            BackendReadError: 開いたbackend streamの読取り中にerrorが発生した場合.
+        """
         blob = await self._blob_query_repo.get_by_id(blob_id)
         if blob is None:
             logger.warning("blob_read_failed", blob_id=blob_id, reason="BlobMetadataMissing")
@@ -187,12 +251,39 @@ class BlobStorageService:
             ) from exc
 
     async def read_bytes(self, blob_id: int) -> bytes:
-        """Read a known-small blob body into memory."""
+        """既知の小さいblob bodyをmemoryへ読み込む.
+
+        Args:
+            blob_id (int): 読み出すblob metadataのID.
+
+        Returns:
+            bytes: streamの全chunkを連結したblob content.
+
+        Raises:
+            BlobContentUnavailableError: metadataがないか、streamを開く前にbackend
+                contentがない場合.
+            BlobContentMissingError: streamを返した後にbackend contentが削除された場合.
+            BackendReadError: backend streamの読取り中にerrorが発生した場合.
+
+        Notes:
+            大きいblobにはstream_read()を使い、全contentをmemoryへ保持しないこと.
+        """
         chunks = await self.stream_read(blob_id)
         return b"".join([chunk async for chunk in chunks])
 
 
 def _require_content_type(content_type: str) -> str:
+    """Content typeから前後空白を除去し、空文字列を拒否する.
+
+    Args:
+        content_type (str): callerが指定したMIME content type.
+
+    Returns:
+        str: 前後空白を除去したcontent type.
+
+    Raises:
+        BlobContentTypeError: content_typeが空白だけの場合.
+    """
     normalized = content_type.strip()
     if not normalized:
         raise BlobContentTypeError("content_type must not be empty")
@@ -200,10 +291,29 @@ def _require_content_type(content_type: str) -> str:
 
 
 def _storage_key_for_sha256(digest: str) -> str:
+    """SHA-256 digestからcontent-addressed storage keyを作成する.
+
+    Args:
+        digest (str): 16進数SHA-256 digest.
+
+    Returns:
+        str: digestの先頭4文字で分割したstorage key.
+    """
     return f"sha256/{digest[:2]}/{digest[2:4]}/{digest}"
 
 
 async def _discard_for_failure(staged: StagedBlobWrite) -> None:
+    """未finalizeのstaged writeを破棄し、破棄失敗を記録する.
+
+    Args:
+        staged (StagedBlobWrite): failure後に破棄するstaged backend write.
+
+    Returns:
+        None: 破棄を試行し、呼び出し側へ値を返さずに完了する.
+
+    Notes:
+        discard()の例外は元の書込み失敗を隠さないためlogへ記録して抑制する.
+    """
     try:
         await staged.discard()
     except Exception as exc:
