@@ -1,4 +1,4 @@
-"""Performance best projection の refresh / rebuild workflows。"""
+"""performance best projection の refresh / rebuild workflow を定義する."""
 
 from __future__ import annotations
 
@@ -31,7 +31,22 @@ if TYPE_CHECKING:
 
 
 class RefreshPerformanceBestOutcome(Enum):
-    """1 score refresh workflow の永続化結果。"""
+    """1 score refresh workflow の永続化結果を表す.
+
+    Attributes:
+        REFRESHED (RefreshPerformanceBestOutcome):
+            current PP から projection を更新した結果.
+        SCORE_NOT_FOUND (RefreshPerformanceBestOutcome):
+            対象 score が存在しない結果.
+        SKIPPED_INELIGIBLE_SCORE (RefreshPerformanceBestOutcome):
+            leaderboard または policy 対象外の結果.
+        MISSING_CURRENT_PERFORMANCE (RefreshPerformanceBestOutcome):
+            current calculation がない結果.
+        MISSING_CURRENT_PP (RefreshPerformanceBestOutcome):
+            completed calculation に PP がない結果.
+        PERFORMANCE_UNAVAILABLE (RefreshPerformanceBestOutcome):
+            current performance が unavailable または pending の結果.
+    """
 
     REFRESHED = "refreshed"
     SCORE_NOT_FOUND = "score_not_found"
@@ -42,29 +57,38 @@ class RefreshPerformanceBestOutcome(Enum):
 
 
 class RebuildPerformanceBestProjectionOutcome(Enum):
-    """Performance best projection rebuild workflow の永続化結果。"""
+    """performance best projection rebuild workflow の永続化結果を表す.
+
+    Attributes:
+        REBUILT (RebuildPerformanceBestProjectionOutcome):
+            指定 projection slice を source data から置換した結果.
+    """
 
     REBUILT = "rebuilt"
 
 
 @dataclass(frozen=True, slots=True)
 class RefreshPerformanceBestCommand:
-    """1 つの affected score から projection row を更新する command。
+    """1件の affected score から projection row を更新する command を表す.
 
-    Args:
-        score_id: refresh 対象の accepted score id。
+    Attributes:
+        score_id (int): refresh 対象となる accepted score の正の永続識別子.
 
-    Raises:
-        ValueError: `score_id` が非正の場合。
-
-    制約:
-        Performance Calculation row は変更せず、current completed PP を読み取り入力にする。
+    Notes:
+        Performance Calculation row は変更せず、current completed PP を読み取り入力にする.
     """
 
     score_id: int
 
     def __post_init__(self) -> None:
-        """score_id の永続化 key として不正な非正値を拒否する。"""
+        """score_id が正の永続識別子であることを検証する.
+
+        Returns:
+            None: score_id を検証し、呼び出し側へ値を返さずに完了する.
+
+        Raises:
+            ValueError: score_id が0以下の場合.
+        """
         if self.score_id <= 0:
             msg = "score_id must be positive"
             raise ValueError(msg)
@@ -72,7 +96,15 @@ class RefreshPerformanceBestCommand:
 
 @dataclass(frozen=True, slots=True)
 class RefreshPerformanceBestResult:
-    """1 score refresh workflow の結果。"""
+    """1 score refresh workflow の結果を表す.
+
+    Attributes:
+        outcome (RefreshPerformanceBestOutcome): refresh、skip、または未検出の結果種別.
+        score_id (int): command が対象にした score 識別子.
+        projection (BeatmapPerformanceBest | None): 更新後または維持した winner. ない場合はNone.
+        skip_reason (str | None):
+            projection を作れない、または対象外となった理由. 該当しない場合はNone.
+    """
 
     outcome: RefreshPerformanceBestOutcome
     score_id: int
@@ -82,25 +114,30 @@ class RefreshPerformanceBestResult:
 
 @dataclass(frozen=True, slots=True)
 class RebuildPerformanceBestProjectionCommand:
-    """user または beatmap slice の projection rows を再構築する command。
+    """user または beatmap slice の projection rows を再構築する command を表す.
 
-    Args:
-        user_id: user slice rebuild 対象の user id。`beatmap_ids` とは同時指定しない。
-        beatmap_ids: beatmap slice rebuild 対象の beatmap ids。`user_id` とは同時指定しない。
+    Attributes:
+        user_id (int | None):
+            rebuild 対象 user の正の識別子. beatmap_ids と排他的で、未指定時はNone.
+        beatmap_ids (tuple[int, ...]): rebuild 対象 beatmap の正の識別子列. user_id と排他的.
 
-    Raises:
-        ValueError: user scope と beatmap scope が同時指定または未指定の場合。
-        ValueError: 指定された id が非正の場合。
-
-    制約:
-        Rebuild は Score と current Performance Calculation から projection を再導出する。
+    Notes:
+        Rebuild は Score と current Performance Calculation から projection を再導出する.
     """
 
     user_id: int | None = None
     beatmap_ids: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
-        """rebuild scope として不正な指定を拒否する。"""
+        """指定 rebuild scope が排他的かつ正の永続識別子だけで構成されることを検証する.
+
+        Returns:
+            None: rebuild scope を検証し、呼び出し側へ値を返さずに完了する.
+
+        Raises:
+            ValueError:
+                user scope と beatmap scope が同時指定または未指定、または id が0以下の場合.
+        """
         has_user_scope = self.user_id is not None
         has_beatmap_scope = len(self.beatmap_ids) > 0
         if has_user_scope == has_beatmap_scope:
@@ -116,7 +153,14 @@ class RebuildPerformanceBestProjectionCommand:
 
 @dataclass(frozen=True, slots=True)
 class RebuildPerformanceBestProjectionResult:
-    """projection slice rebuild workflow の結果。"""
+    """projection slice rebuild workflow の結果を表す.
+
+    Attributes:
+        outcome (RebuildPerformanceBestProjectionOutcome): projection slice の置換結果.
+        candidate_count (int): rebuild source として読み込んだ score 件数.
+        projected_count (int): slice に保存した winner projection 件数.
+        skip_reasons (dict[str, int]): projection 候補から除外した理由ごとの件数.
+    """
 
     outcome: RebuildPerformanceBestProjectionOutcome
     candidate_count: int
@@ -126,17 +170,26 @@ class RebuildPerformanceBestProjectionResult:
 
 @dataclass(frozen=True, slots=True)
 class _ProjectionCandidate:
+    """eligible score から導出した projection candidate または除外理由を表す.
+
+    Attributes:
+        row (UpsertBeatmapPerformanceBest | None):
+            projection に保存する candidate row. 除外時はNone.
+        skip_reason (str | None): row を作れない理由. candidate を作れた場合はNone.
+    """
+
     row: UpsertBeatmapPerformanceBest | None
     skip_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class PerformanceBestRefresh:
-    """Affected score scope refresh の結果。
+    """affected score scope refresh の結果を表す.
 
-    属性:
-        projection: 更新後の scope winner。winner がない場合は None。
-        changed: projection row が変わり得る永続化操作を実行したかどうか。
+    Attributes:
+        projection (BeatmapPerformanceBest | None):
+            更新後または既存の scope winner. winner がない場合はNone.
+        changed (bool): projection row を変え得る永続化操作を実行したか.
     """
 
     projection: BeatmapPerformanceBest | None
@@ -144,7 +197,7 @@ class PerformanceBestRefresh:
 
 
 class RefreshPerformanceBestUseCase:
-    """1 score の current PP から performance best projection を更新する。"""
+    """1 score の current PP から performance best projection を更新する."""
 
     def __init__(
         self,
@@ -153,7 +206,16 @@ class RefreshPerformanceBestUseCase:
         eligibility_policy: PerformanceEligibilityPolicy | None = None,
         user_stats_policy: UserStatsPolicy | None = None,
     ) -> None:
-        """UoW factory と eligibility policy を受け取る。"""
+        """更新用 projection refresh に必要な Unit of Work factory と policy を受け取る.
+
+        Args:
+            unit_of_work_factory (UnitOfWorkFactory):
+                score、projection、stats を一貫して扱う factory.
+            eligibility_policy (PerformanceEligibilityPolicy | None):
+                performance candidate の対象可否を判定する policy. 未指定時は既定 policy.
+            user_stats_policy (UserStatsPolicy | None):
+                changed scope の user stats を再導出する policy. 未指定時は既定 policy.
+        """
         self._unit_of_work_factory: UnitOfWorkFactory = unit_of_work_factory
         self._eligibility_policy: PerformanceEligibilityPolicy = (
             eligibility_policy or PerformanceEligibilityPolicy()
@@ -164,7 +226,17 @@ class RefreshPerformanceBestUseCase:
         self,
         command: RefreshPerformanceBestCommand,
     ) -> RefreshPerformanceBestResult:
-        """affected score の projection row を current completed PP から refresh する。"""
+        """対象 score の projection row を current completed PP から refresh する.
+
+        Args:
+            command (RefreshPerformanceBestCommand): refresh 対象 score を指定する command.
+
+        Returns:
+            RefreshPerformanceBestResult: refresh、skip、または score 未検出の結果.
+
+        Notes:
+            projection が変わる場合だけ同じ transaction で current user stats を更新する.
+        """
         async with self._unit_of_work_factory() as uow:
             score = await uow.scores.get_by_id(command.score_id)
             if score is None:
@@ -245,7 +317,7 @@ class RefreshPerformanceBestUseCase:
 
 
 class RebuildPerformanceBestProjectionUseCase:
-    """user または beatmap slice の performance best projection を再構築する。"""
+    """user または beatmap slice の performance best projection を再構築する."""
 
     def __init__(
         self,
@@ -254,7 +326,16 @@ class RebuildPerformanceBestProjectionUseCase:
         eligibility_policy: PerformanceEligibilityPolicy | None = None,
         user_stats_policy: UserStatsPolicy | None = None,
     ) -> None:
-        """UoW factory と eligibility policy を受け取る。"""
+        """再構築用 projection rebuild に必要な Unit of Work factory と policy を受け取る.
+
+        Args:
+            unit_of_work_factory (UnitOfWorkFactory):
+                source score、projection、stats を一貫して扱う factory.
+            eligibility_policy (PerformanceEligibilityPolicy | None):
+                performance candidate の対象可否を判定する policy. 未指定時は既定 policy.
+            user_stats_policy (UserStatsPolicy | None):
+                affected user stats を再導出する policy. 未指定時は既定 policy.
+        """
         self._unit_of_work_factory: UnitOfWorkFactory = unit_of_work_factory
         self._eligibility_policy: PerformanceEligibilityPolicy = (
             eligibility_policy or PerformanceEligibilityPolicy()
@@ -265,7 +346,19 @@ class RebuildPerformanceBestProjectionUseCase:
         self,
         command: RebuildPerformanceBestProjectionCommand,
     ) -> RebuildPerformanceBestProjectionResult:
-        """指定 slice の projection rows を source data から置き換える。"""
+        """指定 slice の projection rows を source data から置き換える.
+
+        Args:
+            command (RebuildPerformanceBestProjectionCommand):
+                user または beatmap の rebuild scope を指定する command.
+
+        Returns:
+            RebuildPerformanceBestProjectionResult:
+                読み込んだ候補、保存 projection、除外理由の集計.
+
+        Notes:
+            slice 内で影響を受けた各 user/ruleset/playstyle の current user stats を再導出する.
+        """
         async with self._unit_of_work_factory() as uow:
             if command.user_id is not None:
                 scores = await uow.scores.list_leaderboard_rebuild_candidates_for_user(
@@ -343,22 +436,23 @@ async def replace_user_performance_best_slice(
     user_id: int,
     eligibility_policy: PerformanceEligibilityPolicy,
 ) -> None:
-    """Unit of Work 内で 1 user 分の performance best slice を置き換える。
+    """Unit of Work 内で1 user 分の performance best slice を置き換える.
 
-    引数:
-        uow: 呼び出し側が所有する command Unit of Work。
-        user_id: 置き換え対象の user id。
-        eligibility_policy: performance best 候補の eligibility 判定 policy。
+    Args:
+        uow (UnitOfWork): 呼び出し側が所有する command Unit of Work.
+        user_id (int): 置き換え対象 user の永続識別子.
+        eligibility_policy (PerformanceEligibilityPolicy):
+            performance best candidate の対象可否を判定する policy.
 
-    戻り値:
-        None。
+    Returns:
+        None: user slice を置き換え、呼び出し側へ値を返さずに完了する.
 
-    例外:
-        score id や calculation id が未採番の場合は ValueError を送出する。
+    Raises:
+        ValueError: candidate score または current calculation の id が未採番の場合.
 
-    制約:
-        commit は呼び出し側が行う。同一 transaction で計算確定と projection 置換を
-        まとめたい workflow から使う。
+    Notes:
+        commit は呼び出し側が行う. 同一 transaction で計算確定と projection 置換を
+        まとめる workflow から使う.
     """
     scores = await uow.scores.list_leaderboard_rebuild_candidates_for_user(user_id)
     rows_by_scope: dict[BeatmapPerformanceBestScope, UpsertBeatmapPerformanceBest] = {}
@@ -399,20 +493,25 @@ async def refresh_performance_best_for_current_score(
     calculation: PerformanceCalculation | None,
     eligibility_policy: PerformanceEligibilityPolicy,
 ) -> PerformanceBestRefresh:
-    """Unit of Work 内で affected score の performance best scope だけを更新する。
+    """Unit of Work 内で affected score の performance best scope だけを更新する.
 
-    引数:
-        uow: 呼び出し側が所有する command Unit of Work。
-        score: current Performance Calculation が変わった score。
-        calculation: score の current Performance Calculation。未取得や ineligible 時は None。
-        eligibility_policy: performance best 候補の eligibility 判定 policy。
+    Args:
+        uow (UnitOfWork): 呼び出し側が所有する command Unit of Work.
+        score (Score): current Performance Calculation が変わった score.
+        calculation (PerformanceCalculation | None):
+            score の current calculation. 未取得または対象外時はNone.
+        eligibility_policy (PerformanceEligibilityPolicy):
+            performance best candidate の対象可否を判定する policy.
 
-    戻り値:
-        更新後の scope winner と、projection row が変わり得る操作を実行したかどうか。
+    Returns:
+        PerformanceBestRefresh: 更新後の scope winner と永続化操作の実行有無.
 
-    制約:
-        commit は呼び出し側が行う。PP 低下や unavailable 化で current winner が
-        失効したときだけ同一 user/beatmap/mode scope を再選定する。
+    Raises:
+        ValueError: score または candidate calculation の id が未採番の場合.
+
+    Notes:
+        commit は呼び出し側が行う. current winner が失効したときだけ
+        同一 user/beatmap/mode scope を再選定する.
     """
     scope = _performance_best_scope_for_score(score)
     await uow.beatmap_performance_bests.lock_scope(scope)
@@ -467,6 +566,18 @@ async def _replace_scope_if_current_score(
     score_id: int,
     eligibility_policy: PerformanceEligibilityPolicy,
 ) -> PerformanceBestRefresh:
+    """対象 score が既存 winner の場合だけ scope を再選定する.
+
+    Args:
+        uow (UnitOfWork): lock 済み scope を操作する command Unit of Work.
+        scope (BeatmapPerformanceBestScope): 再選定する user/beatmap/ruleset/playstyle scope.
+        score_id (int): current candidate と比較する score 識別子.
+        eligibility_policy (PerformanceEligibilityPolicy):
+            replacement candidate の対象可否を判定する policy.
+
+    Returns:
+        PerformanceBestRefresh: 既存 winner または再選定後 winner と変更有無.
+    """
     current = await uow.beatmap_performance_bests.get_best(scope)
     if current is None or current.score_id != score_id:
         return PerformanceBestRefresh(projection=current, changed=False)
@@ -484,6 +595,16 @@ async def _replace_performance_best_scope_without_lock(
     scope: BeatmapPerformanceBestScope,
     eligibility_policy: PerformanceEligibilityPolicy,
 ) -> BeatmapPerformanceBest | None:
+    """既に lock 済みの performance best scope の winner を source score から再選定する.
+
+    Args:
+        uow (UnitOfWork): scope の winner を照会および置換する command Unit of Work.
+        scope (BeatmapPerformanceBestScope): 再選定する user/beatmap/ruleset/playstyle scope.
+        eligibility_policy (PerformanceEligibilityPolicy): candidate の対象可否を判定する policy.
+
+    Returns:
+        BeatmapPerformanceBest | None: 置換後 winner. 有効 candidate がない場合はNone.
+    """
     scores = await uow.scores.list_leaderboard_rebuild_candidates_for_beatmap_ids(
         (scope.beatmap_id,)
     )
@@ -517,6 +638,15 @@ def _score_eligibility_skip_reason(
     score: Score,
     eligibility_policy: PerformanceEligibilityPolicy,
 ) -> str | None:
+    """対象 score が performance best candidate から除外される理由を返す.
+
+    Args:
+        score (Score): leaderboard と performance policy を評価する score.
+        eligibility_policy (PerformanceEligibilityPolicy): performance 対象可否を判定する policy.
+
+    Returns:
+        str | None: 除外理由. candidate にできる場合はNone.
+    """
     if not score.leaderboard_eligible_at_submission:
         return "leaderboard_ineligible"
     eligibility = eligibility_policy.evaluate(score)
@@ -526,6 +656,14 @@ def _score_eligibility_skip_reason(
 
 
 def _performance_best_scope_for_score(score: Score) -> BeatmapPerformanceBestScope:
+    """対象 score から performance best の一意な projection scope を構成する.
+
+    Args:
+        score (Score): user、beatmap、ruleset、playstyle を持つ score.
+
+    Returns:
+        BeatmapPerformanceBestScope: score が属する projection scope.
+    """
     return BeatmapPerformanceBestScope(
         user_id=score.user_id,
         beatmap_id=score.beatmap_id,
@@ -538,6 +676,15 @@ def _score_matches_performance_scope(
     score: Score,
     scope: BeatmapPerformanceBestScope,
 ) -> bool:
+    """対象 score が指定 performance best scope に厳密一致するか判定する.
+
+    Args:
+        score (Score): scope との一致を調べる score.
+        scope (BeatmapPerformanceBestScope): user、beatmap、ruleset、playstyle の比較対象.
+
+    Returns:
+        bool: 4つの scope component がすべて一致する場合はTrue.
+    """
     return (
         score.user_id == scope.user_id
         and score.beatmap_id == scope.beatmap_id
@@ -551,6 +698,19 @@ def _projection_candidate_for_eligible_score(
     score: Score,
     calculation: PerformanceCalculation | None,
 ) -> _ProjectionCandidate:
+    """対象 eligible score と current calculation から projection candidate を導出する.
+
+    Args:
+        score (Score): projection candidate に変換する eligible score.
+        calculation (PerformanceCalculation | None):
+            score の current performance calculation. 未取得時はNone.
+
+    Returns:
+        _ProjectionCandidate: upsert row、または candidate を作れない理由.
+
+    Raises:
+        ValueError: completed calculation の id が未採番の場合.
+    """
     if calculation is None:
         return _ProjectionCandidate(row=None, skip_reason="missing_current_performance")
     if calculation.state is PerformanceCalculationState.UNAVAILABLE:
@@ -584,6 +744,14 @@ def _projection_candidate_for_eligible_score(
 
 
 def _refresh_outcome_for_skip(skip_reason: str | None) -> RefreshPerformanceBestOutcome:
+    """除外理由を公開 refresh outcome へ変換する.
+
+    Args:
+        skip_reason (str | None): candidate 導出または score 解決で得た除外理由.
+
+    Returns:
+        RefreshPerformanceBestOutcome: 理由に対応する公開 outcome. 未知理由は対象外 outcome.
+    """
     if skip_reason == "score_not_found":
         return RefreshPerformanceBestOutcome.SCORE_NOT_FOUND
     if skip_reason == "missing_current_performance":
@@ -599,6 +767,15 @@ def _candidate_beats_selected(
     candidate: UpsertBeatmapPerformanceBest,
     selected: UpsertBeatmapPerformanceBest,
 ) -> bool:
+    """2つの upsert candidate のうち candidate が selected より優先されるか判定する.
+
+    Args:
+        candidate (UpsertBeatmapPerformanceBest): 新しく比較する projection candidate.
+        selected (UpsertBeatmapPerformanceBest): 現在選ばれている projection candidate.
+
+    Returns:
+        bool: PP 降順、submitted_at 昇順、score id 昇順で candidate が優先される場合はTrue.
+    """
     if candidate.pp != selected.pp:
         return candidate.pp > selected.pp
     if candidate.submitted_at != selected.submitted_at:
@@ -610,6 +787,15 @@ def _candidate_beats_projection(
     candidate: UpsertBeatmapPerformanceBest,
     projection: BeatmapPerformanceBest,
 ) -> bool:
+    """新しい upsert candidate が現在の保存 projection より優先されるか判定する.
+
+    Args:
+        candidate (UpsertBeatmapPerformanceBest): 保存 projection と比較する candidate.
+        projection (BeatmapPerformanceBest): 現在保存されている scope winner.
+
+    Returns:
+        bool: PP 降順、submitted_at 昇順、score id 昇順で candidate が優先される場合はTrue.
+    """
     if candidate.pp != projection.pp:
         return candidate.pp > projection.pp
     if candidate.submitted_at != projection.submitted_at:
@@ -618,6 +804,17 @@ def _candidate_beats_projection(
 
 
 def _require_score_id(score: Score) -> int:
+    """更新処理に必要な score id が割り当て済みであることを確認する.
+
+    Args:
+        score (Score): 永続識別子を持つ必要がある score.
+
+    Returns:
+        int: 割り当て済みの score 識別子.
+
+    Raises:
+        ValueError: score id がまだ割り当てられていない場合.
+    """
     if score.id is None:
         msg = "score id must be assigned before projection refresh"
         raise ValueError(msg)
