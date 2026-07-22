@@ -1,4 +1,9 @@
-"""Chat command use-case package."""
+"""chat channel membership、message delivery、durable work の command use-case を公開する.
+
+この module は chat transport と job adapter が利用する command input、結果、use-case、
+persistence work port を再 export する. 各 workflow の具体的な state store と repository は
+constructor injection で受け取る.
+"""
 
 from osu_server.services.commands.chat.join_channel import (
     JoinChannelCommand,

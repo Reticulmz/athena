@@ -1,12 +1,10 @@
-"""CommandService -- parses chat content, resolves commands, and returns responses.
+"""BanchoBot command text を解析し、登録済み handler の response へ変換する.
 
-The service detects the "!" command prefix, extracts the command name and
-arguments, resolves the handler case-insensitively through a CommandRegistry,
-builds an immutable CommandContext, and returns a ChatCommandResponse when a
-handler produces output.
-
-It does NOT own BanchoBot author identity -- that responsibility stays in
-the transport layer via BANCHO_BOT_IDENTITY.
+service は `!` prefix、command name、argument を抽出し、case-insensitive な registry から
+handler
+を解決する. handler が出力する場合は immutable `CommandContext` と `ChatCommandResponse`
+を作る.
+BanchoBot の author identity は transport layer の責務であり、この module は所有しない.
 """
 
 from __future__ import annotations
@@ -26,19 +24,37 @@ if TYPE_CHECKING:
 
 
 class CommandService:
-    """Parse chat content and execute registered BanchoBot commands.
+    """chat content を解析し、登録済み BanchoBot command を実行する.
 
-    Constructor-injected with a CommandRegistry.  Command resolution is
-    case-insensitive.  Response target semantics match the existing behaviour:
-    channel targets stay channel, PM targets become the sender's username.
+    command name の解決は case-insensitive である. channel target は channel へ response
+    を返し、
+    PM target は sender username へ response を返す.
+
+    Attributes:
+        _registry (CommandRegistry): command metadata と async handler を解決する registry.
+        _HELP_HELP_CONTENT (str): `!help --help` に返す固定の usage text.
     """
 
     def __init__(self, registry: CommandRegistry) -> None:
+        """Command 実行に使用する registry を設定する.
+
+        Args:
+            registry (CommandRegistry):
+                case-insensitive な command lookup と登録順 metadata を提供する registry.
+
+        """
         self._registry: CommandRegistry = registry
 
     @staticmethod
     def _unknown_response(target: str) -> tuple[ChatCommandResponse, ...]:
-        """Return the standard unknown-command response for *target*."""
+        """Target 向けの標準 unknown-command response を作成する.
+
+        Args:
+            target (str): response を送信する channel name または sender username.
+
+        Returns:
+            tuple[ChatCommandResponse, ...]: unknown command を案内する1件の response.
+        """
         return (
             ChatCommandResponse(
                 target=target,
@@ -52,7 +68,17 @@ class CommandService:
         privileges: int,
         destination: CommandDestination,
     ) -> bool:
-        """Return True if *meta* is executable with *privileges* in *destination*."""
+        """Metadata の command が privilege と destination で可視かを判定する.
+
+        Args:
+            meta (CommandMetadata): 必要 privilege と許可 destination を持つ command metadata.
+            privileges (int): caller の server-side privilege bitset.
+            destination (CommandDestination):
+                command を実行しようとする channel または PM destination.
+
+        Returns:
+            bool: privilege を満たし、metadata が destination を許可する場合はTrue.
+        """
         if meta.required_privileges != Privileges.NONE and not has_privilege(
             privileges, meta.required_privileges
         ):
@@ -64,7 +90,16 @@ class CommandService:
         meta: CommandMetadata,
         target: str,
     ) -> tuple[ChatCommandResponse, ...]:
-        """Return common detail help for *meta* targeted at *target* (Req 4.1, 4.4)."""
+        """Metadata の common detail help を target 向けに作成する.
+
+        Args:
+            meta (CommandMetadata): usage と argument description を持つ command metadata.
+            target (str): detail help response を送信する channel name または sender username.
+
+        Returns:
+            tuple[ChatCommandResponse, ...]: usage と argument の required status を含む1件の
+            response.
+        """
         lines = [f"Usage: {meta.usage}"]
         if meta.arguments:
             lines.append("Arguments:")
@@ -84,7 +119,18 @@ class CommandService:
         meta: CommandMetadata,
         target: str,
     ) -> tuple[ChatCommandResponse, ...] | None:
-        """Return common help response when *args* starts with --help, or None."""
+        """先頭 argument が`--help`の場合に common help response を返す.
+
+        Args:
+            args (tuple[str, ...]): command name の後ろに解析された argument 群.
+            cmd_name (str): case-normalized された command name.
+            meta (CommandMetadata): help を作成する command metadata.
+            target (str): help response を送信する channel name または sender username.
+
+        Returns:
+            tuple[ChatCommandResponse, ...] | None: `--help` が先頭なら help response.
+            それ以外はNone.
+        """
         if not args or args[0] != "--help":
             return None
         if cmd_name == "help":
@@ -104,9 +150,24 @@ class CommandService:
         response_target: str,
         sender_name: str,
     ) -> tuple[ChatCommandResponse, ...] | None:
-        """Return gating responses when *destination* is not allowed, or ``None``.
+        """Destination が許可されない場合に guidance response を返す.
 
-        Must only be called after privilege checks have passed.
+        Args:
+            allowed_dest (CommandDestination): metadata が許可する destination.
+            destination (CommandDestination): caller が command を実行した destination.
+            command_name (str): guidance text に表示する command name.
+            response_target (str): channel または PM へ返す primary response target.
+            sender_name (str): channel から PM guidance を送る sender username.
+
+        Returns:
+            tuple[ChatCommandResponse, ...] | None: destination が不許可なら unknown response
+            または
+            guidance response. 許可される場合はNone.
+
+        Notes:
+            caller privilege の検証が済んだ後だけ呼び出す. channel で PM-only command
+            を使った場合は channel の unknown
+            response と sender への PM guidance を返す.
         """
         if allowed_dest == CommandDestination.BOTH:
             return None
@@ -134,12 +195,25 @@ class CommandService:
         content: str,
         authorization: ChatAuthorization,
     ) -> tuple[ChatCommandResponse, ...]:
-        """Parse *content* and, when it names a registered command, execute it.
+        """Content を解析し、登録済み command なら handler を実行する.
 
-        Returns an empty tuple for non-command messages, prefix-only content,
-        empty command names, and commands whose handler returns ``None``.
-        Returns a single-element tuple with an unknown-command response for
-        unregistered or unauthorized commands.
+        Args:
+            sender_id (int): command を送信した user の識別子.
+            sender_name (str): PM response target と `CommandContext` に使う sender username.
+            target (str): 先頭が`#`なら channel、それ以外なら PM と扱う送信先.
+            content (str): `!` prefix を含む可能性がある chat message text.
+            authorization (ChatAuthorization):
+                command visibility を判定する privilege と role snapshot.
+
+        Returns:
+            tuple[ChatCommandResponse, ...]: non-command、空 command、handler のNone
+            outputなら空 tuple.
+            未登録または未認可なら unknown response. 実行成功なら handler output の response.
+
+        Notes:
+            PM の response target は input target ではなく sender name になる. destination
+            gating は
+            privilege check の後に行い、未認可 command の存在を guidance で漏らさない.
         """
         if not content.startswith("!"):
             return ()
