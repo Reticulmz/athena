@@ -1,3 +1,9 @@
+"""current user statisticsとbeatmap performance bestを保存するORM modelを定義する.
+
+両projectionはruleset/playstyleを非NULL scopeに含める.
+rank queryに必要な値をread modelとして保持する.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 -- SQLAlchemy Mapped requires runtime import
@@ -22,7 +28,26 @@ from osu_server.infrastructure.database.base import Base
 
 
 class BeatmapPerformanceBestModel(Base):
-    """beatmap_performance_bests table の SQLAlchemy model。"""
+    """beatmapごとのuser最高performance scoreを表すprojection.
+
+    Attributes:
+        __tablename__ (str): 保存先のbeatmap_performance_bests table名.
+        __table_args__ (tuple[CheckConstraint | Index, ...]):
+            scope一意性とranking/rebuildを支えるconstraint/index.
+        id (Mapped[int]): 自動採番するprojectionのprimary key.
+        user_id (Mapped[int]): best performanceを保持するuserの識別子.
+        beatmap_id (Mapped[int]): 対象beatmapの識別子.
+        ruleset (Mapped[int]): 対象rulesetのcanonical integer値.
+        playstyle (Mapped[int]): 対象playstyleのcanonical integer値.
+        score_id (Mapped[int]): projectionの根拠となるscoreのforeign key.
+        performance_calculation_id (Mapped[int]): 根拠となるperformance calculationのforeign key.
+        pp (Mapped[Decimal]): rankingに使うperformance point. 負値は保存できない.
+        accuracy (Mapped[float]): scoreのaccuracy ratio. 0から1までに制約される.
+        score (Mapped[int]): score比較に使うscore値. 負値は保存できない.
+        submitted_at (Mapped[datetime]): scoreを受理したUTC timestamp.
+        created_at (Mapped[datetime]): projectionを作成したUTC timestamp.
+        updated_at (Mapped[datetime]): projectionを最後に更新したUTC timestamp.
+    """
 
     __tablename__: str = "beatmap_performance_bests"
     __table_args__: tuple[CheckConstraint | Index, ...] = (
@@ -92,7 +117,30 @@ class BeatmapPerformanceBestModel(Base):
 
 
 class CurrentUserStatsModel(Base):
-    """current_user_stats table の SQLAlchemy model。"""
+    """userのruleset/playstyle別current statisticsを表すprojection.
+
+    Attributes:
+        __tablename__ (str): 保存先のcurrent_user_stats table名.
+        __table_args__ (tuple[CheckConstraint | Index, ...]): 集計値制約とrank queryを支えるindex.
+        user_id (Mapped[int]): statisticsを保持するuserの識別子かつ複合primary key要素.
+        ruleset (Mapped[int]): 対象rulesetかつ複合primary key要素.
+        playstyle (Mapped[int]): 対象playstyleかつ複合primary key要素.
+        pp (Mapped[Decimal]): current performance point. 負値は保存できない.
+        accuracy (Mapped[float]): current accuracy ratio. 0から1までに制約される.
+        play_count (Mapped[int]): 集計対象play数. 負値は保存できない.
+        ranked_score (Mapped[int]): ranked score合計. 負値は保存できない.
+        total_score (Mapped[int]): total score合計. 負値は保存できない.
+        max_combo (Mapped[int]): 観測済み最大combo. 負値は保存できない.
+        play_time_seconds (Mapped[int | None]): 集計play時間秒数. 不明ならNULL.
+        count_300 (Mapped[int]): 300 judgement累計. 負値は保存できない.
+        count_100 (Mapped[int]): 100 judgement累計. 負値は保存できない.
+        count_50 (Mapped[int]): 50 judgement累計. 負値は保存できない.
+        count_geki (Mapped[int]): geki judgement累計. 負値は保存できない.
+        count_katu (Mapped[int]): katu judgement累計. 負値は保存できない.
+        count_miss (Mapped[int]): miss judgement累計. 負値は保存できない.
+        created_at (Mapped[datetime]): projectionを作成したUTC timestamp.
+        updated_at (Mapped[datetime]): projectionを最後に更新したUTC timestamp.
+    """
 
     __tablename__: str = "current_user_stats"
     __table_args__: tuple[CheckConstraint | Index, ...] = (

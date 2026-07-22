@@ -1,4 +1,8 @@
-"""ValkeySessionStore — Valkey-backed session store implementation."""
+"""Valkeyをbacking storeにするstable session repositoryを実装する.
+
+session tokenとuser reverse mappingをTTL付きkeyとして保存する.
+Lua scriptで複数keyの更新をatomicにする.
+"""
 
 from __future__ import annotations
 
@@ -18,17 +22,29 @@ if TYPE_CHECKING:
 
 
 class ValkeySessionStore:
-    """Valkey implementation of the SessionStore Protocol.
+    """Valkey上でSessionStore Protocolを実装するrepositoryを表す.
 
-    Key patterns:
-        - ``{prefix}session:{token}`` -> JSON-encoded ``SessionData`` fields
-        - ``{prefix}user_session:{user_id}`` -> token string
+    Attributes:
+        _CREATE_SCRIPT (ClassVar[Script]): old session削除と新session作成をatomicにするLua script.
+        _REFRESH_SCRIPT (ClassVar[Script]): sessionとuser mappingのTTLをatomicに更新するLua script.
+        _DELETE_BY_USER_SCRIPT (ClassVar[Script]):
+            user reverse mappingからsessionをatomicに削除するLua script.
+        _UPDATE_AUTHORIZATION_SCRIPT (ClassVar[Script]):
+            active sessionのauthorization snapshotをatomicに置換するLua script.
+        _UPDATE_PM_PRIVATE_SCRIPT (ClassVar[Script]):
+            active sessionのpm_private flagをatomicに置換するLua script.
+        _DELETE_SCRIPT (ClassVar[Script]):
+            token sessionと一致するuser reverse mappingをatomicに削除するLua script.
+        _client (GlideClient): Valkey commandとLua scriptを実行するclient.
+        _ttl (int): create/refreshでsession keyへ設定するTTL秒数.
+        _prefix (str): 全session keyのnamespaceを分離するprefix.
 
-    Both keys share the same TTL.  When a user creates a new session while
-    an old one exists, the old session is deleted first.
-
-    Atomicity: ``create``, ``delete``, and ``refresh`` use Lua scripts
-    (via Script objects / EVALSHA) to avoid TOCTOU races.
+    Notes:
+        session keyは{prefix}session:{token}を使う.
+        user reverse mappingは{prefix}user_session:{user_id}を使う.
+        create/delete/refreshと各patchはLua scriptで実行する.
+        read-modify-writeのTOCTOU raceを避ける.
+        createは同一userのold tokenを先に削除する. session keyとreverse mappingへ同じTTLを設定する.
     """
 
     # KEYS[1] = user_session:{user_id}, KEYS[2] = session:{new_token}
@@ -149,6 +165,16 @@ return 1""")
         ttl: int = 3600,
         key_prefix: str = "",
     ) -> None:
+        """Valkey clientとsession keyの有効期限設定を保持する.
+
+        Args:
+            client (GlideClient): session dataとLua scriptを実行する接続済みclient.
+            ttl (int): create/refresh時に設定するTTL秒数. Valkey EXが受け入れる正の値を渡す.
+            key_prefix (str): session keyの先頭に付加するnamespace prefix.
+
+        Notes:
+            key_prefixを共有するstoreは同じsession namespaceを操作する.
+        """
         self._client: GlideClient = client
         self._ttl: int = ttl
         self._prefix: str = key_prefix
@@ -156,15 +182,44 @@ return 1""")
     # -- key helpers ----------------------------------------------------------
 
     def _session_key(self, token: str) -> str:
+        """tokenからValkey session keyを構成する.
+
+        Args:
+            token (str): sessionを一意に識別するtoken.
+
+        Returns:
+            str: key_prefixを含むsession:{token}形式のValkey key.
+        """
         return f"{self._prefix}session:{token}"
 
     def _user_key(self, user_id: int) -> str:
+        """user識別子からValkey reverse mapping keyを構成する.
+
+        Args:
+            user_id (int): active sessionを検索するuserの識別子.
+
+        Returns:
+            str: key_prefixを含むuser_session:{user_id}形式のValkey key.
+        """
         return f"{self._prefix}user_session:{user_id}"
 
     # -- SessionStore Protocol methods ----------------------------------------
 
     async def create(self, user_id: int, token: str, data: SessionData) -> None:
-        """Store a session.  If the user already has one, remove the old session first."""
+        """userのactive sessionを新しいtokenとdataでatomicに置き換える.
+
+        Args:
+            user_id (int): sessionを所有するuserの識別子.
+            token (str): 新sessionに割り当てる一意なtoken.
+            data (SessionData): JSONとして保存するsession authorizationとclient state.
+
+        Returns:
+            None: session keyとuser reverse mappingを保存し値を返さずに完了する.
+
+        Notes:
+            同一userのold sessionがある場合は先に削除する.
+            session keyとreverse mappingは同じTTL秒数で保存する.
+        """
         _ = await self._client.invoke_script(
             self._CREATE_SCRIPT,
             keys=[self._user_key(user_id), self._session_key(token)],
@@ -177,14 +232,37 @@ return 1""")
         )
 
     async def get(self, token: str) -> SessionData | None:
-        """Return session data for *token*, or ``None`` if not found."""
+        """tokenに対応するSessionDataを取得する.
+
+        Args:
+            token (str): 取得するsessionのtoken.
+
+        Returns:
+            SessionData | None: JSONを復元したsession data. keyが存在しない場合はNone.
+
+        Raises:
+            json.JSONDecodeError: Valkeyに保存されたsession JSONが破損している場合.
+            TypeError: 保存JSONがSessionDataのrequired fieldに適合しない場合.
+        """
         raw = await self._client.get(self._session_key(token))
         if raw is None:
             return None
         return SessionData(**json.loads(raw))  # pyright: ignore[reportAny] — json.loads returns Any
 
     async def get_by_user(self, user_id: int) -> SessionData | None:
-        """Return session data for *user_id*, or ``None`` if not found."""
+        """User reverse mappingからactive SessionDataを取得する.
+
+        Args:
+            user_id (int): active sessionを検索するuserの識別子.
+
+        Returns:
+            SessionData | None: active session data. reverse mappingがない場合はNone.
+
+        Raises:
+            UnicodeDecodeError: reverse mappingのtoken bytesがUTF-8として不正な場合.
+            json.JSONDecodeError: 参照先session JSONが破損している場合.
+            TypeError: 参照先JSONがSessionDataのrequired fieldに適合しない場合.
+        """
         token_raw = await self._client.get(self._user_key(user_id))
         if token_raw is None:
             return None
@@ -192,11 +270,17 @@ return 1""")
         return await self.get(token)
 
     async def delete(self, token: str) -> None:
-        """Remove the session identified by *token*.
+        """tokenに対応するsessionと一致するreverse mappingをatomicに削除する.
 
-        Also removes the reverse ``user_session:{user_id}`` mapping, but only
-        if it still points to this token (avoids destroying a newer session
-        created by a concurrent login).
+        Args:
+            token (str): 削除するsessionのtoken.
+
+        Returns:
+            None: 対象keyを削除または存在しないまま完了し値を返さない.
+
+        Notes:
+            reverse mappingは同tokenを指す場合だけ削除する.
+            concurrent loginが作った新しいsession mappingは削除しない.
         """
         _ = await self._client.invoke_script(
             self._DELETE_SCRIPT,
@@ -209,14 +293,28 @@ return 1""")
         )
 
     async def exists(self, token: str) -> bool:
-        """Return ``True`` if a session with *token* exists."""
+        """tokenのsession keyがValkeyに存在するか確認する.
+
+        Args:
+            token (str): 存在確認するsessionのtoken.
+
+        Returns:
+            bool: session keyが存在する場合はTrue. 存在しない場合はFalse.
+        """
         result = await self._client.exists([self._session_key(token)])
         return result > 0
 
     async def refresh(self, token: str) -> bool:
-        """Atomically reset the TTL on both session and user-mapping keys.
+        """sessionとuser reverse mappingのTTLをatomicに更新する.
 
-        Returns ``True`` if the session exists and was refreshed.
+        Args:
+            token (str): TTLを更新するsessionのtoken.
+
+        Returns:
+            bool: session keyが存在してTTL更新できた場合はTrue. 存在しない場合はFalse.
+
+        Notes:
+            user reverse mappingはsession JSONのuser_idから求める. sessionと同じTTL秒数へ更新する.
         """
         result = await self._client.invoke_script(
             self._REFRESH_SCRIPT,
@@ -230,7 +328,17 @@ return 1""")
         return bool(result)
 
     async def delete_by_user(self, user_id: int) -> None:
-        """Remove the session for *user_id*.  No-op if not found (idempotent)."""
+        """User reverse mappingからactive sessionをatomicに削除する.
+
+        Args:
+            user_id (int): 削除するactive sessionを所有するuserの識別子.
+
+        Returns:
+            None: sessionを削除または存在しないまま完了し値を返さない.
+
+        Notes:
+            reverse mappingがない場合はno-opでありidempotentに利用できる.
+        """
         _ = await self._client.invoke_script(
             self._DELETE_BY_USER_SCRIPT,
             keys=[self._user_key(user_id)],
@@ -242,11 +350,18 @@ return 1""")
         user_id: int,
         authorization: SessionAuthorization,
     ) -> bool:
-        """Atomically patch ``privileges`` and ``role_ids`` in the active session.
+        """Active sessionのprivilegesとrole_idsをatomicに更新する.
 
-        Preserves all other fields, the user-to-token mapping, and the
-        remaining TTL on the session key.  Returns ``False`` when no active
-        session exists for *user_id*.
+        Args:
+            user_id (int): authorizationを更新するactive sessionの所有者.
+            authorization (SessionAuthorization): 保存するPrivilege bitsetとrole ID snapshot.
+
+        Returns:
+            bool: active reverse mappingとsessionが存在して更新できた場合はTrue. それ以外はFalse.
+
+        Notes:
+            他fieldとuser reverse mappingは維持する.
+            session TTLを維持する. script実行時にTTLが0以下なら3600秒へfallbackする.
         """
         result = await self._client.invoke_script(
             self._UPDATE_AUTHORIZATION_SCRIPT,
@@ -260,11 +375,19 @@ return 1""")
         return bool(result)
 
     async def update_pm_private(self, user_id: int, enabled: bool) -> bool:
-        """Atomically patch ``pm_private`` in the active session.
+        """Active sessionのpm_private flagをatomicに更新する.
 
-        Preserves all other fields, the user-to-token mapping, and the
-        remaining TTL on the session key.  Returns ``False`` when no active
-        session exists for *user_id*.
+        Args:
+            user_id (int): private message設定を更新するactive sessionの所有者.
+            enabled (bool): private messageを許可するならTrue. 拒否するならFalse.
+
+        Returns:
+            bool: active reverse mappingとsessionが存在して更新できた場合はTrue. それ以外はFalse.
+
+        Notes:
+            他fieldとuser reverse mappingを維持する.
+            TTL付きkeyは残りのmillisecond TTLを維持する. expiry直前は最低1msで再保存する.
+            expirationなしのkeyはexpirationを付けずに再保存する.
         """
         result = await self._client.invoke_script(
             self._UPDATE_PM_PRIVATE_SCRIPT,
@@ -277,7 +400,22 @@ return 1""")
         return bool(result)
 
     async def list_active_sessions(self) -> list[SessionData]:
-        """Return all active sessions by scanning ``user_session:*`` keys."""
+        """User reverse mappingをSCANして現在取得できるactive sessionを列挙する.
+
+        Returns:
+            list[SessionData]: scan中にreverse mappingから復元できたsession dataのlist.
+
+        Raises:
+            ValueError: matching reverse mapping keyのuser ID suffixが整数でない場合.
+            UnicodeDecodeError: reverse mappingのtoken bytesがUTF-8として不正な場合.
+            json.JSONDecodeError: 参照先session JSONが破損している場合.
+            TypeError: 参照先JSONがSessionDataのrequired fieldに適合しない場合.
+
+        Notes:
+            Valkey SCANはatomic snapshotでも順序保証でもない.
+            concurrent create/deleteやTTL expiryが起きうる.
+            scan後に取得できないsessionは結果から除外する.
+        """
         prefix = f"{self._prefix}user_session:"
         sessions: list[SessionData] = []
         cursor = "0"

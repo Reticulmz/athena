@@ -1,3 +1,9 @@
+"""score performance計算とrecalculation queueを保存するORM modelを定義する.
+
+calculationとbatch work itemはlease metadataをdatabase constraintで検証する.
+worker間の状態遷移を保護する.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 -- SQLAlchemy Mapped requires runtime import
@@ -89,10 +95,36 @@ _WORK_ITEM_CLAIM_METADATA_CONSTRAINT = or_(
 
 
 class ScorePerformanceCalculationModel(Base):
-    """1回の PP 計算と処理中の lease を保持する ORM model.
+    """1回のperformance calculationと処理中leaseを保存する.
 
-    `claim_owner` は処理中 worker の識別子、`claim_expires_at` は lease 有効期限を表す.
-    未 claim または terminal state では両方を `NULL` にし、片方だけの保存を禁止する.
+    Attributes:
+        __tablename__ (str): 保存先のscore_performance_calculations table名.
+        __table_args__ (tuple[CheckConstraint | Index, ...]):
+            lifecycle値とlease整合性およびlookup index.
+        id (Mapped[int]): 自動採番するcalculationのprimary key.
+        score_id (Mapped[int]): 計算対象scoreのforeign key.
+        state (Mapped[str]): queued/completed/unavailableなどのcalculation状態.
+        is_current (Mapped[bool]): scoreのcurrent calculationとして採用するか.
+        pp (Mapped[Decimal | None]): 算出したperformance point. 未完了ならNULL.
+        star_rating (Mapped[Decimal | None]): 算出したstar rating. 未完了ならNULL.
+        calculator_name (Mapped[str]): 結果を算出したcalculator名.
+        calculator_version (Mapped[str]): 結果を算出したcalculator version.
+        formula_profile (Mapped[str]): 使用したformula profile.
+        beatmap_file_attachment_id (Mapped[int | None]): 計算入力.osu file attachmentのforeign key.
+        beatmap_file_checksum_md5 (Mapped[str | None]): 計算入力fileのMD5 checksum.
+        unavailable_reason (Mapped[str | None]): unavailable状態の理由. 他状態ではNULLを許可する.
+        claim_owner (Mapped[str | None]): 現在処理するworkerの識別子. 未claimならNULL.
+        claim_expires_at (Mapped[datetime | None]):
+            現claimのlease失効UTC timestamp. 未claimならNULL.
+        attempt_count (Mapped[int]): queueからclaimした試行回数.
+        created_at (Mapped[datetime]): calculationを作成したUTC timestamp.
+        updated_at (Mapped[datetime]): calculationを最後に更新したUTC timestamp.
+        calculated_at (Mapped[datetime | None]): 結果を計算したUTC timestamp. 未完了ならNULL.
+
+    Notes:
+        completed状態はpp/star_rating/calculated_atを必須にする.
+        unavailable状態はunavailable_reasonを必須にする.
+        claim_ownerとclaim_expires_atは常に両方NULLまたは両方非NULLである.
     """
 
     __tablename__: str = "score_performance_calculations"
@@ -162,6 +194,24 @@ class ScorePerformanceCalculationModel(Base):
 
 
 class PerformanceRecalculationBatchModel(Base):
+    """performance再計算の対象集合と集計進捗を保存する.
+
+    Attributes:
+        __tablename__ (str): 保存先のperformance_recalculation_batches table名.
+        __table_args__ (tuple[Index, ...]): statusと作成時刻の検索を支えるindex群.
+        id (Mapped[int]): 自動採番するrecalculation batchのprimary key.
+        status (Mapped[str]): queued/running/completedなどのbatch lifecycle状態.
+        filters (Mapped[dict[str, object]]): 対象scoreを選択したfilter snapshotのJSONB.
+        reason_counts (Mapped[dict[str, object]]): 再計算理由別のcandidate数JSONB.
+        target_calculator_version (Mapped[str]): 再計算で使うcalculator version.
+        target_formula_profile (Mapped[str]): 再計算で使うformula profile.
+        candidate_count (Mapped[int]): batchに登録したcandidate数.
+        completed_count (Mapped[int]): 成功完了したwork item数.
+        unavailable_count (Mapped[int]): unavailable完了したwork item数.
+        created_at (Mapped[datetime]): batchを作成したUTC timestamp.
+        updated_at (Mapped[datetime]): batchを最後に更新したUTC timestamp.
+    """
+
     __tablename__: str = "performance_recalculation_batches"
     __table_args__: tuple[Index, ...] = (
         Index("idx_performance_recalculation_batches_status", "status"),
@@ -192,10 +242,29 @@ class PerformanceRecalculationBatchModel(Base):
 
 
 class PerformanceRecalculationWorkItemModel(Base):
-    """再計算 batch 内の1 score と worker claim を保持する ORM model.
+    """recalculation batch内の1 scoreとworker claimを保存する.
 
-    `CLAIMED` state だけが `claim_owner` と `claim_expires_at` を持つ. `PENDING` と
-    terminal state では両方を `NULL` にする.
+    Attributes:
+        __tablename__ (str): 保存先のperformance_recalculation_work_items table名.
+        __table_args__ (tuple[CheckConstraint | Index, ...]):
+            claim整合性とqueue lookupを支えるconstraint/index.
+        id (Mapped[int]): 自動採番するwork itemのprimary key.
+        batch_id (Mapped[int]): 所属recalculation batchのforeign key.
+        score_id (Mapped[int]): 再計算対象scoreのforeign key.
+        reason (Mapped[str]): work itemを作成したrecalculation理由.
+        state (Mapped[str]): pending/claimed/completedなどのwork item状態.
+        calculation_id (Mapped[int | None]): 実行結果calculationのforeign key. 未完了ならNULL.
+        claim_owner (Mapped[str | None]): itemを処理するworkerの識別子. claimed以外はNULL.
+        claim_expires_at (Mapped[datetime | None]):
+            worker lease失効UTC timestamp. claimed以外はNULL.
+        attempt_count (Mapped[int]): workerがclaimした試行回数.
+        last_error (Mapped[str | None]): 最後の失敗理由. 失敗前はNULL.
+        created_at (Mapped[datetime]): work itemを作成したUTC timestamp.
+        updated_at (Mapped[datetime]): work itemを最後に更新したUTC timestamp.
+
+    Notes:
+        claimed状態だけがclaim_ownerとclaim_expires_atを持つ.
+        pendingとterminal状態では両方をNULLにする.
     """
 
     __tablename__: str = "performance_recalculation_work_items"
