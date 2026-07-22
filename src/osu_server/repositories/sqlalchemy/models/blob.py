@@ -1,3 +1,8 @@
+"""binary blobのmetadataを保存するSQLAlchemy ORM modelを定義する.
+
+content本体はstorage backendに置く. このmodelはcontent-addressed metadataだけを保持する.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 — SQLAlchemy Mapped requires runtime import
@@ -20,6 +25,20 @@ _BYTE_SIZE_COLUMN = column("byte_size", BigInteger)
 
 
 class BlobModel(Base):
+    """SHA-256で識別するbinary blobの保存先metadataを表す.
+
+    Attributes:
+        __tablename__ (str): 保存先のblobs table名.
+        __table_args__ (tuple[UniqueConstraint, CheckConstraint]): checksum一意性と非負sizeの制約.
+        id (Mapped[int]): 自動採番するblobのprimary key.
+        sha256 (Mapped[str]): contentの64文字SHA-256 checksum.
+        byte_size (Mapped[int]): contentのbyte数. 負値は保存できない.
+        content_type (Mapped[str]): contentのMIME type.
+        storage_backend (Mapped[str]): contentを保存するbackend種別.
+        storage_key (Mapped[str]): backend内でcontentを参照するkey.
+        created_at (Mapped[datetime]): metadataを作成したUTC timestamp.
+    """
+
     __tablename__: str = "blobs"
     __table_args__: tuple[UniqueConstraint, CheckConstraint] = (
         UniqueConstraint("sha256", name="uq_blobs_sha256"),

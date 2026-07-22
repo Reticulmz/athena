@@ -1,6 +1,6 @@
-"""SQLAlchemy ORM models.
+"""Alembic metadataへ登録するSQLAlchemy ORM modelを集約する.
 
-Import all models here so that Alembic can discover them via Base.metadata.
+このmoduleをimportするとAlembicはBase.metadataから全modelのtable定義を発見できる.
 """
 
 from osu_server.repositories.sqlalchemy.models.beatmap import (

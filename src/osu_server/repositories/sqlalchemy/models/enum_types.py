@@ -1,4 +1,7 @@
-"""SQLAlchemy ORM modelで共有するCHECK付き文字列Enumを定義する."""
+"""SQLAlchemy ORM modelで共有するCHECK制約付き文字列Enumを定義する.
+
+全EnumはPostgreSQL native enumではない. 値検証付きのVARCHARとnamed CHECK constraintで保存する.
+"""
 
 from __future__ import annotations
 
@@ -33,6 +36,14 @@ if TYPE_CHECKING:
 
 
 def _enum_values(enum_type: type[Enum]) -> tuple[str, ...]:
+    """Domain Enumから永続化に使う文字列値を定義順で取得する.
+
+    Args:
+        enum_type (type[Enum]): 文字列valueを持つdomain Enum型.
+
+    Returns:
+        tuple[str, ...]: SQLAlchemy Enumへ渡す文字列valueのtuple.
+    """
     return tuple(cast("str", member.value) for member in enum_type)
 
 
@@ -42,6 +53,19 @@ def _checked_string_enum(
     constraint_name: str,
     length: int,
 ) -> SQLAlchemyEnum:
+    """値検証とCHECK constraintを持つ文字列SQLAlchemy Enumを生成する.
+
+    Args:
+        enum_type (type[Enum]): 保存可能な文字列valueを持つdomain Enum型.
+        constraint_name (str): 生成するCHECK constraintの永続名.
+        length (int): 保存する文字列columnの最大長.
+
+    Returns:
+        SQLAlchemyEnum: native enumを使わず文字列値を検証するcolumn type.
+
+    Notes:
+        constraint_nameとlengthはmigrationに固定されたschema contractと一致させること.
+    """
     return SQLAlchemyEnum(
         *_enum_values(enum_type),
         name=constraint_name,

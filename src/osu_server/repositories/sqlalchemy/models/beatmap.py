@@ -1,3 +1,9 @@
+"""beatmap metadataと取得状態を保存するSQLAlchemy ORM modelを定義する.
+
+official metadataとlocal overrideを分離する.
+beatmap file attachmentと取得retry stateも同じbounded contextで保持する.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 -- SQLAlchemy Mapped requires runtime import
@@ -36,6 +42,25 @@ _PASS_COUNT_COLUMN = column("pass_count", BigInteger)
 
 
 class BeatmapSetModel(Base):
+    """beatmap setに共有されるofficial metadata snapshotを表す.
+
+    Attributes:
+        __tablename__ (str): 保存先のbeatmapsets table名.
+        id (Mapped[int]): osu!が割り当てるbeatmap set識別子.
+        artist (Mapped[str]): 主表示用artist名.
+        title (Mapped[str]): 主表示用title.
+        creator (Mapped[str]): beatmap setを作成したmapper名.
+        artist_unicode (Mapped[str | None]): Unicode artist名. 未提供ならNULL.
+        title_unicode (Mapped[str | None]): Unicode title. 未提供ならNULL.
+        official_status (Mapped[str]): upstreamが報告したrank status.
+        official_status_source (Mapped[str]): official statusを得たmetadata source.
+        official_status_verified (Mapped[bool]): statusが信頼できるsourceで確認済みか.
+        last_fetched_at (Mapped[datetime | None]): metadataを最後に取得したUTC timestamp.
+        next_refresh_at (Mapped[datetime | None]): 次のmetadata refresh予定UTC timestamp.
+        created_at (Mapped[datetime]): recordを作成したUTC timestamp.
+        updated_at (Mapped[datetime]): recordを最後に更新したUTC timestamp.
+    """
+
     __tablename__: str = "beatmapsets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
@@ -68,6 +93,41 @@ class BeatmapSetModel(Base):
 
 
 class BeatmapModel(Base):
+    """1 difficultyのofficial metadataとserver-local stateを表す.
+
+    Attributes:
+        __tablename__ (str): 保存先のbeatmaps table名.
+        __table_args__ (tuple[UniqueConstraint | Index | CheckConstraint, ...]):
+            checksum一意性とcount制約および検索index.
+        id (Mapped[int]): osu!が割り当てるbeatmap識別子.
+        beatmapset_id (Mapped[int]): 所属beatmap setのforeign key.
+        checksum_md5 (Mapped[str | None]): .osu fileのMD5 checksum. 未確認ならNULL.
+        mode (Mapped[str]): beatmap ruleset種別.
+        version (Mapped[str]): difficulty version名.
+        total_length (Mapped[int | None]): breakを含む総play length秒数. 未提供ならNULL.
+        hit_length (Mapped[int | None]): hit object区間のplay length秒数. 未提供ならNULL.
+        max_combo (Mapped[int | None]): map上の最大combo. 未提供ならNULL.
+        bpm (Mapped[Decimal | None]): beatmap BPM. 未提供ならNULL.
+        cs (Mapped[Decimal | None]): circle size. 未提供ならNULL.
+        od (Mapped[Decimal | None]): overall difficulty. 未提供ならNULL.
+        ar (Mapped[Decimal | None]): approach rate. 未提供ならNULL.
+        hp (Mapped[Decimal | None]): HP drain rate. 未提供ならNULL.
+        difficulty_rating (Mapped[Decimal | None]): upstream difficulty rating. 未提供ならNULL.
+        official_status (Mapped[str]): upstreamが報告したrank status.
+        official_status_source (Mapped[str]): official statusを得たmetadata source.
+        official_status_verified (Mapped[bool]): statusが信頼できるsourceで確認済みか.
+        local_status_override (Mapped[str | None]): serverが設定したlocal status. 未設定ならNULL.
+        local_status_override_changed_at (Mapped[datetime | None]):
+            local overrideを変更したUTC timestamp.
+        play_count (Mapped[int]): serverで受理したplay数. 負値は保存できない.
+        pass_count (Mapped[int]): passed play数. play_countを超えられない.
+        official_last_updated_at (Mapped[datetime | None]): upstream metadata更新のUTC timestamp.
+        last_fetched_at (Mapped[datetime | None]): metadataを最後に取得したUTC timestamp.
+        next_refresh_at (Mapped[datetime | None]): 次のmetadata refresh予定UTC timestamp.
+        created_at (Mapped[datetime]): recordを作成したUTC timestamp.
+        updated_at (Mapped[datetime]): recordを最後に更新したUTC timestamp.
+    """
+
     __tablename__: str = "beatmaps"
     __table_args__: tuple[UniqueConstraint | Index | CheckConstraint, ...] = (
         UniqueConstraint("checksum_md5", name="uq_beatmaps_checksum_md5"),
@@ -133,6 +193,23 @@ class BeatmapModel(Base):
 
 
 class BeatmapFileAttachmentModel(Base):
+    """beatmapの取得済み.osu fileとblobを結び付ける.
+
+    Attributes:
+        __tablename__ (str): 保存先のbeatmap_file_attachments table名.
+        __table_args__ (tuple[UniqueConstraint | Index, ...]): beatmap/checksum一意性と検索index.
+        id (Mapped[int]): 自動採番するattachmentのprimary key.
+        beatmap_id (Mapped[int]): attachment先beatmapのforeign key.
+        blob_id (Mapped[int]): .osu file contentを持つblobのforeign key.
+        checksum_md5 (Mapped[str]): sourceが示した32文字MD5 checksum.
+        verified_md5 (Mapped[str | None]): Athenaが検証したMD5 checksum. 未検証ならNULL.
+        source (Mapped[str]): fileを取得したsource種別.
+        original_filename (Mapped[str | None]): source上のfile名. 未提供ならNULL.
+        fetched_at (Mapped[datetime]): fileを取得したUTC timestamp.
+        verified_at (Mapped[datetime | None]): checksumを検証したUTC timestamp. 未検証ならNULL.
+        created_at (Mapped[datetime]): attachmentを作成したUTC timestamp.
+    """
+
     __tablename__: str = "beatmap_file_attachments"
     __table_args__: tuple[UniqueConstraint | Index, ...] = (
         UniqueConstraint(
@@ -163,6 +240,22 @@ class BeatmapFileAttachmentModel(Base):
 
 
 class BeatmapFetchStateModel(Base):
+    """beatmap metadataまたはfile取得のretry stateを表す.
+
+    Attributes:
+        __tablename__ (str): 保存先のbeatmap_fetch_states table名.
+        __table_args__ (tuple[UniqueConstraint | Index, ...]): target一意性とstatus lookup index.
+        id (Mapped[int]): 自動採番するfetch stateのprimary key.
+        target_type (Mapped[str]): metadata/fileなどの取得対象種別.
+        target_key (Mapped[str]): target_type内で一意な取得対象key.
+        status (Mapped[str]): pending/succeeded/failedなどの取得状態.
+        attempt_count (Mapped[int]): retryを含む取得試行回数.
+        last_error (Mapped[str | None]): 最後の失敗理由. 成功時または未試行ならNULL.
+        pending_since (Mapped[datetime | None]): pending状態へ遷移したUTC timestamp.
+        last_attempted_at (Mapped[datetime | None]): 最後に取得を試行したUTC timestamp.
+        updated_at (Mapped[datetime]): stateを最後に更新したUTC timestamp.
+    """
+
     __tablename__: str = "beatmap_fetch_states"
     __table_args__: tuple[UniqueConstraint | Index, ...] = (
         UniqueConstraint("target_type", "target_key", name="uq_beatmap_fetch_states_target"),
