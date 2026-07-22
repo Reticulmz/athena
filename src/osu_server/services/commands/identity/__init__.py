@@ -1,4 +1,4 @@
-"""Identity command use-case package."""
+"""identity contextのcommand use-caseとcommand boundaryを再公開するpackageを提供する."""
 
 from osu_server.services.commands.identity.change_password import (
     ChangeUserPasswordCommand,
