@@ -243,7 +243,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したsrc/osu_server/repositories/sqlalchemy/commandsの4 file_
 
-- [ ] 2.23 (P) 残りのSQLAlchemy command repositoryを整備する
+- [x] 2.23 (P) 残りのSQLAlchemy command repositoryを整備する
   - repositories/sqlalchemy/commands配下で2.22が所有しない全fileへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびfocused SQLAlchemy command repository testが通る
   - _Depends: 1.4_
