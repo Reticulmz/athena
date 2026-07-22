@@ -227,7 +227,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/repositories/memory/commands/**_
 
-- [ ] 2.21 (P) In-memory queryとUnit of Work repositoryを整備する
+- [x] 2.21 (P) In-memory queryとUnit of Work repositoryを整備する
   - repositories/memory/*.pyとrepositories/memory/queries/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびin-memory query、session-store、Unit of Work testが通る
   - _Depends: 1.4_
@@ -235,7 +235,7 @@
   - _Boundary: src/osu_server/repositories/memory/*.py, memory/queries/**_
   - _Approved exception: 2026-07-22に利用者承認。`InMemoryUnitOfWorkFactory.commit_state` からreplay stateの連続3操作を `_commit_replay_state()` へ抽出する振る舞い保存refactorを許可する。操作順、container identity、UoW observable behaviorを維持し、suppression、per-file ignore、lint上限緩和は追加しない。_
 
-- [ ] 2.22 (P) SQLAlchemyのbeatmap/performance command repositoryを整備する
+- [x] 2.22 (P) SQLAlchemyのbeatmap/performance command repositoryを整備する
   - commands配下のbeatmap_leaderboards.py、beatmap_performance_bests.py、beatmaps.py、
     score_performance.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびfocused SQLAlchemy command repository testが通る
