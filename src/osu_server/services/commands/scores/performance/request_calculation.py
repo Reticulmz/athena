@@ -80,7 +80,7 @@ class RequestPerformanceCalculationResult:
     """performance calculation request workflow の型付き結果を表す.
 
     Attributes:
-        outcome (RequestPerformanceCalculationOutcome): 作成、再利用、対象外、競合の結果種別.
+        outcome (RequestPerformanceCalculationOutcome): 作成,再利用,対象外,競合の結果種別.
         score_id (int): command が対象にした score 識別子.
         calculation (PerformanceCalculation | None):
             作成または再利用した calculation. 作成不能時はNone.
@@ -114,7 +114,7 @@ class PerformanceCalculationWorkerWake(Protocol):
             calculation_id (int): 処理対象の durable performance calculation 識別子.
 
         Returns:
-            None: worker 起動を要求し、呼び出し側へ値を返さずに完了する.
+            None: worker 起動を要求し,呼び出し側へ値を返さずに完了する.
         """
         ...
 
@@ -131,7 +131,7 @@ class NoopPerformanceCalculationWorkerWake:
             calculation_id (int): 破棄する calculation 識別子.
 
         Returns:
-            None: 外部 worker を起動せず、呼び出し側へ値を返さずに完了する.
+            None: 外部 worker を起動せず,呼び出し側へ値を返さずに完了する.
         """
         _ = score_id
         _ = calculation_id
@@ -179,14 +179,14 @@ class RequestPerformanceCalculationUseCase:
 
         Args:
             command (RequestPerformanceCalculationCommand):
-                score、calculator provenance、要求時刻を含む command.
+                score,calculator provenance,要求時刻を含む command.
 
         Returns:
             RequestPerformanceCalculationResult:
-                calculation の作成、再利用、対象外、または一時競合の結果.
+                calculation の作成,再利用,対象外,または一時競合の結果.
 
         Notes:
-            durable mutation を commit してから worker 起動を試み、起動例外は結果に記録する.
+            durable mutation を commit してから worker 起動を試み,起動例外は結果に記録する.
         """
         async with self._unit_of_work_factory() as uow:
             score = await uow.scores.get_by_id(command.score_id)
@@ -286,11 +286,11 @@ def _outcome_from_request_result(
 
     Args:
         request_result (ScorePerformanceCalculationRequestResult):
-            created、replacement、state を含む durable 結果.
+            created,replacement,state を含む durable 結果.
 
     Returns:
         RequestPerformanceCalculationOutcome:
-            作成、再利用、または current 判定に対応する公開 outcome.
+            作成,再利用,または current 判定に対応する公開 outcome.
     """
     if request_result.created:
         if request_result.is_replacement:

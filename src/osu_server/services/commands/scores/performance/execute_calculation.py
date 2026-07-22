@@ -90,7 +90,7 @@ class ExecutePerformanceCalculationCommand:
     Attributes:
         calculation_id (int): claim と terminal 化の対象となる正の calculation 識別子.
         claim_owner (str): work を所有する worker の空でない識別子.
-        claimed_at (datetime): claim、state transition、calculation の基準時刻.
+        claimed_at (datetime): claim,state transition,calculation の基準時刻.
     """
 
     calculation_id: int
@@ -101,10 +101,10 @@ class ExecutePerformanceCalculationCommand:
         """対象 calculation id と claim owner の入力制約を検証する.
 
         Returns:
-            None: command の不変条件を検証し、呼び出し側へ値を返さずに完了する.
+            None: command の不変条件を検証し,呼び出し側へ値を返さずに完了する.
 
         Raises:
-            ValueError: calculation_id が0以下、または claim_owner が空文字列の場合.
+            ValueError: calculation_id が0以下,または claim_owner が空文字列の場合.
         """
         if self.calculation_id <= 0:
             msg = "calculation_id must be positive"
@@ -119,7 +119,7 @@ class ExecutePerformanceCalculationResult:
     """worker 側 performance calculation 実行の型付き結果を表す.
 
     Attributes:
-        outcome (ExecutePerformanceCalculationOutcome): 実行、待機、競合の最終結果.
+        outcome (ExecutePerformanceCalculationOutcome): 実行,待機,競合の最終結果.
         calculation_id (int): command が対象にした calculation 識別子.
         score_id (int | None): 関連する score 識別子. claim 未取得時はNone.
         calculation (PerformanceCalculation | None):
@@ -158,7 +158,7 @@ class _ClaimedCalculation:
 
 @final
 class ExecutePerformanceCalculationUseCase:
-    """pending performance row を claim、計算、terminal 化、通知する."""
+    """pending performance row を claim,計算,terminal 化,通知する."""
 
     def __init__(
         self,
@@ -207,11 +207,11 @@ class ExecutePerformanceCalculationUseCase:
 
         Args:
             command (ExecutePerformanceCalculationCommand):
-                claim owner、対象 calculation、基準時刻を含む command.
+                claim owner,対象 calculation,基準時刻を含む command.
 
         Returns:
             ExecutePerformanceCalculationResult:
-                completed、unavailable、pending、または競合の実行結果.
+                completed,unavailable,pending,または競合の実行結果.
 
         Notes:
             PENDING_INPUT の場合は terminal 化と completion signal 通知を行わない.
@@ -242,15 +242,15 @@ class ExecutePerformanceCalculationUseCase:
         self,
         command: ExecutePerformanceCalculationCommand,
     ) -> _ClaimedCalculation | ExecutePerformanceCalculationResult:
-        """対象 pending calculation を claim し、対応 score を解決して処理単位を返す.
+        """対象 pending calculation を claim し,対応 score を解決して処理単位を返す.
 
         Args:
             command (ExecutePerformanceCalculationCommand):
-                claim owner、calculation id、基準時刻を含む command.
+                claim owner,calculation id,基準時刻を含む command.
 
         Returns:
             _ClaimedCalculation | ExecutePerformanceCalculationResult:
-                処理可能な claim、または claim/terminal 競合の結果.
+                処理可能な claim,または claim/terminal 競合の結果.
         """
         claim_expires_at = command.claimed_at + self._settings.claim_timeout
         async with self._unit_of_work_factory() as uow:
@@ -341,7 +341,7 @@ class ExecutePerformanceCalculationUseCase:
 
         Returns:
             PerformanceCalculation | ExecutePerformanceCalculationResult:
-                更新済み calculation、または finalization 競合の結果.
+                更新済み calculation,または finalization 競合の結果.
         """
         async with self._unit_of_work_factory() as uow:
             calculation = await uow.score_performance.update_pending_calculation_state(
@@ -378,7 +378,7 @@ class ExecutePerformanceCalculationUseCase:
                 解決済み file 入力または利用不能理由.
 
         Returns:
-            ExecutePerformanceCalculationResult: terminal 結果、または state transition 競合の結果.
+            ExecutePerformanceCalculationResult: terminal 結果,または state transition 競合の結果.
         """
         if isinstance(file_result, PerformanceBeatmapFileUnavailable):
             return await self._finalize_unavailable(
@@ -443,7 +443,7 @@ class ExecutePerformanceCalculationUseCase:
         file_result: PerformanceBeatmapFileReady,
         calculator_result: PerformanceCalculatorCompleted,
     ) -> ExecutePerformanceCalculationResult:
-        """完了した calculator 結果を永続化し、関連 projection と signal を更新する.
+        """完了した calculator 結果を永続化し,関連 projection と signal を更新する.
 
         Args:
             command (ExecutePerformanceCalculationCommand):
@@ -456,7 +456,7 @@ class ExecutePerformanceCalculationUseCase:
                 calculator が返した PP と star rating.
 
         Returns:
-            ExecutePerformanceCalculationResult: completed 結果、または finalization 競合の結果.
+            ExecutePerformanceCalculationResult: completed 結果,または finalization 競合の結果.
         """
         async with self._unit_of_work_factory() as uow:
             finalized = await uow.score_performance.mark_completed(
@@ -514,7 +514,7 @@ class ExecutePerformanceCalculationUseCase:
         file_result: PerformanceBeatmapFileReady | PerformanceBeatmapFileUnavailable,
         reason: str,
     ) -> ExecutePerformanceCalculationResult:
-        """利用不能理由を永続化し、関連 projection と signal を更新する.
+        """利用不能理由を永続化し,関連 projection と signal を更新する.
 
         Args:
             command (ExecutePerformanceCalculationCommand):
@@ -527,7 +527,7 @@ class ExecutePerformanceCalculationUseCase:
             reason (str): unavailable 状態として保存する理由.
 
         Returns:
-            ExecutePerformanceCalculationResult: unavailable 結果、または finalization 競合の結果.
+            ExecutePerformanceCalculationResult: unavailable 結果,または finalization 競合の結果.
         """
         provenance = file_result.provenance
         async with self._unit_of_work_factory() as uow:
@@ -585,7 +585,7 @@ class ExecutePerformanceCalculationUseCase:
         self,
         calculation: PerformanceCalculation,
     ) -> ExecutePerformanceCalculationResult:
-        """永続化済み terminal calculation の completion signal を通知し、最終結果を構成する.
+        """永続化済み terminal calculation の completion signal を通知し,最終結果を構成する.
 
         Args:
             calculation (PerformanceCalculation):
@@ -599,7 +599,7 @@ class ExecutePerformanceCalculationUseCase:
                 completion signal を送る前に calculation id が割り当てられていない場合.
 
         Notes:
-            signal 通知の例外は durable terminal 結果を rollback せず、
+            signal 通知の例外は durable terminal 結果を rollback せず,
             結果の signal_failed に記録する.
         """
         calculation_id = calculation.id
