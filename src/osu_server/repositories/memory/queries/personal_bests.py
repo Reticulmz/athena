@@ -1,4 +1,4 @@
-"""In-memory query-side personal best repository."""
+"""Committed in-memory state から getscores Personal Best を読む adapter を提供する."""
 
 from __future__ import annotations
 
@@ -13,9 +13,24 @@ if TYPE_CHECKING:
 
 
 class InMemoryPersonalBestQueryRepository:
-    """Read-only personal best projection adapter over committed memory state."""
+    """Committed in-memory Personal Best projection を読む read-only repository.
+
+    Attributes:
+        _factory (InMemoryUnitOfWorkFactory): query ごとの committed snapshot を生成する factory.
+
+    Notes:
+        各 query は snapshot だけを読み, Personal Best, Score, Replay state を変更しない.
+    """
 
     def __init__(self, uow_factory: InMemoryUnitOfWorkFactory) -> None:
+        """Committed snapshot を取得する factory を保持する.
+
+        Args:
+            uow_factory (InMemoryUnitOfWorkFactory): read に使用する committed state factory.
+
+        Returns:
+            None: factory を保持する repository を構築する.
+        """
         self._factory: InMemoryUnitOfWorkFactory = uow_factory
 
     async def get_personal_best(
@@ -27,6 +42,24 @@ class InMemoryPersonalBestQueryRepository:
         playstyle: Playstyle,
         category: LeaderboardCategory,
     ) -> GetscoresPersonalBest | None:
+        """指定 scope の User Personal Best を getscores read model に変換する.
+
+        Args:
+            user_id (int): Personal Best を取得する User の ID.
+            beatmap_id (int): Personal Best の Beatmap ID.
+            ruleset (Ruleset): 絞り込む ruleset.
+            playstyle (Playstyle): 絞り込む playstyle.
+            category (LeaderboardCategory): 絞り込む leaderboard category.
+
+        Returns:
+            GetscoresPersonalBest | None: scope に対応する score, username, rank, replay 有無を含む
+            read model. projection, score, score ID, または User がなければ None.
+
+        Notes:
+            rank は同じ Beatmap/ruleset/playstyle/category で ranking_value がより大きい
+            projection の件数に 1 を加えて算出する. Replay は score ID が一致する record が一件でも
+            あれば存在する.
+        """
         state = self._factory.snapshot()
         personal_best_id = state.personal_best_id_by_scope.get(
             (
@@ -77,6 +110,20 @@ def _score_listing_from_domain(
     rank: int,
     has_replay: bool,
 ) -> GetscoresPersonalBest:
+    """Domain Score を getscores Personal Best read model に変換する.
+
+    Args:
+        score (Score): ID が設定済みの Personal Best Score.
+        username (str): score owner の username.
+        rank (int): scope 内で算出済みの順位.
+        has_replay (bool): score に対応する Replay の有無.
+
+    Returns:
+        GetscoresPersonalBest: Score field と指定された presentation field を転記した read model.
+
+    Raises:
+        AssertionError: score.id が None の場合.
+    """
     assert score.id is not None
     return GetscoresPersonalBest(
         score_id=score.id,

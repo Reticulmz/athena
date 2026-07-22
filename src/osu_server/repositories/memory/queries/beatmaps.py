@@ -1,4 +1,4 @@
-"""In-memory query-side beatmap repository adapters."""
+"""Committed in-memory state から Beatmap を読む query adapter を提供する."""
 
 from __future__ import annotations
 
@@ -16,22 +16,61 @@ if TYPE_CHECKING:
 
 
 class InMemoryBeatmapQueryRepository:
-    """Read-only beatmap repository that reads committed memory state."""
+    """Committed in-memory state を読む read-only Beatmap repository.
+
+    Attributes:
+        _factory (InMemoryUnitOfWorkFactory): query ごとの committed snapshot を生成する factory.
+
+    Notes:
+        各 query は factory の snapshot だけを読み, factory state を変更しない.
+    """
 
     _factory: InMemoryUnitOfWorkFactory
 
     def __init__(self, uow_factory: InMemoryUnitOfWorkFactory) -> None:
+        """Committed snapshot を取得する factory を保持する.
+
+        Args:
+            uow_factory (InMemoryUnitOfWorkFactory): read に使用する committed state factory.
+
+        Returns:
+            None: factory を保持する repository を構築する.
+        """
         self._factory = uow_factory
 
     async def get_beatmap(self, beatmap_id: int) -> Beatmap | None:
+        """ID で Beatmap を取得する.
+
+        Args:
+            beatmap_id (int): 取得する Beatmap の ID.
+
+        Returns:
+            Beatmap | None: snapshot 内の Beatmap. ID がなければ None.
+        """
         state = self._factory.snapshot()
         return state.beatmaps_by_id.get(beatmap_id)
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
+        """ID で BeatmapSet を取得する.
+
+        Args:
+            beatmapset_id (int): 取得する BeatmapSet の ID.
+
+        Returns:
+            BeatmapSet | None: snapshot 内の BeatmapSet. ID がなければ None.
+        """
         state = self._factory.snapshot()
         return state.beatmapsets_by_id.get(beatmapset_id)
 
     async def get_beatmap_by_checksum(self, checksum_md5: str) -> Beatmap | None:
+        """Checksum MD5 の索引から Beatmap を取得する.
+
+        Args:
+            checksum_md5 (str): 検索する Beatmap checksum.
+
+        Returns:
+            Beatmap | None: 索引先の Beatmap. checksum または Beatmap がなければ None.
+        """
         state = self._factory.snapshot()
         beatmap_id = state.beatmap_id_by_checksum.get(checksum_md5)
         if beatmap_id is None:
@@ -41,6 +80,15 @@ class InMemoryBeatmapQueryRepository:
     async def get_beatmap_by_filename_in_beatmapset(
         self, beatmapset_id: int, original_filename: str
     ) -> Beatmap | None:
+        """BeatmapSet 内で元 filename が一致する Beatmap を取得する.
+
+        Args:
+            beatmapset_id (int): 検索対象 BeatmapSet の ID.
+            original_filename (str): 一致させる file attachment の元 filename.
+
+        Returns:
+            Beatmap | None: 最初に一致した Beatmap. BeatmapSet または一致 file がなければ None.
+        """
         state = self._factory.snapshot()
         beatmapset = state.beatmapsets_by_id.get(beatmapset_id)
         if beatmapset is None:
@@ -52,6 +100,18 @@ class InMemoryBeatmapQueryRepository:
         return None
 
     async def get_current_file_attachment(self, beatmap_id: int) -> BeatmapFileAttachment | None:
+        """Beatmap の最後に記録された file attachment を取得する.
+
+        Args:
+            beatmap_id (int): attachment を取得する Beatmap の ID.
+
+        Returns:
+            BeatmapFileAttachment | None: attachment key の末尾に対応する attachment.
+            key がなければ None.
+
+        Raises:
+            KeyError: 最後の attachment key が attachment 索引に存在しない場合.
+        """
         state = self._factory.snapshot()
         keys = state.attachment_keys_by_beatmap_id.get(beatmap_id)
         if not keys:
@@ -59,5 +119,13 @@ class InMemoryBeatmapQueryRepository:
         return state.attachments_by_key[keys[-1]]
 
     async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        """Fetch target の取得状態を取得する.
+
+        Args:
+            target (BeatmapFetchTarget): 状態を読む fetch target.
+
+        Returns:
+            BeatmapFetchRecord | None: snapshot 内の fetch record. 記録がなければ None.
+        """
         state = self._factory.snapshot()
         return state.fetch_states_by_target.get(target)
