@@ -1,4 +1,4 @@
-"""SQLAlchemy query-side score performance repository."""
+"""SQLAlchemyからScore performance calculationをread-onlyで取得するquery repositoryを提供する."""
 
 from __future__ import annotations
 
@@ -36,13 +36,46 @@ _ROW_TUPLE_LENGTH = 3
 
 
 class SQLAlchemyScorePerformanceQueryRepository:
-    """Read-only score performance repository backed by short SQLAlchemy sessions."""
+    """短命なSQLAlchemy read sessionでScore performance calculationを取得する.
+
+    Attributes:
+        _session_factory (SQLAlchemyQuerySessionFactory): queryごとに閉じるread sessionのfactory.
+        _eligibility (PerformanceEligibilityPolicy): recalculation候補を判定するpolicy.
+    """
 
     def __init__(self, session_factory: SQLAlchemyQuerySessionFactory) -> None:
+        """読み取り用session factoryとeligibility policyを保持してrepositoryを初期化する.
+
+        Args:
+            session_factory (SQLAlchemyQuerySessionFactory): query用の非同期read session factory.
+
+        Returns:
+            None: session factoryとdefault eligibility policyを保持したrepository instanceを
+                初期化する.
+
+        Notes:
+            policyはdefault設定で生成し、初期化時にはsessionを生成しない.
+        """
         self._session_factory: SQLAlchemyQuerySessionFactory = session_factory
         self._eligibility: PerformanceEligibilityPolicy = PerformanceEligibilityPolicy()
 
     async def get_current_for_score(self, score_id: int) -> PerformanceCalculation | None:
+        """Scoreに対するcurrent performance calculationを取得する.
+
+        Args:
+            score_id (int): calculationを検索するScoreの永続ID.
+
+        Returns:
+            PerformanceCalculation | None: is_currentがTrueのdomain calculation.
+            対象rowがない場合はNone.
+
+        Raises:
+            SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
+            ValueError: model.stateまたはmodel.formula_profileをdomain enumへ変換できない場合.
+
+        Notes:
+            historical calculationは取得せず、calculation stateは変更しない.
+        """
         async with self._session_factory() as session:
             model = (
                 await session.execute(
@@ -64,6 +97,23 @@ class SQLAlchemyScorePerformanceQueryRepository:
         self,
         selection: ScorePerformanceCandidateSelection,
     ) -> ScorePerformanceRecalculationCandidateResult:
+        """指定targetと一致しないScore performance calculationの再計算候補を選別する.
+
+        Args:
+            selection (ScorePerformanceCandidateSelection): target条件と上限を含む選別条件.
+
+        Returns:
+            ScorePerformanceRecalculationCandidateResult: candidateとreason別件数を含む結果.
+
+        Raises:
+            SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
+            ValueError: candidate Score modelのenum値またはmods bitmask、またはperformance modelの
+                state/formula profileをdomain valueへ変換できない場合.
+
+        Notes:
+            passedかつVANILLAのeligible Scoreだけを候補にする.
+            limitはeligibleな候補を数えた後に適用する.
+        """
         async with self._session_factory() as session:
             rows = (await session.execute(_candidate_statement(selection))).all()
 
@@ -98,6 +148,18 @@ class SQLAlchemyScorePerformanceQueryRepository:
 
 
 def _candidate_statement(selection: ScorePerformanceCandidateSelection):
+    """再計算判定に必要なScore、current calculation、latest attachmentを読むstatementを構築する.
+
+    Args:
+        selection (ScorePerformanceCandidateSelection): Score、Beatmap、User、rulesetの任意filterを
+            含む選別条件.
+
+    Returns:
+        Select: Score、current calculation、最新Beatmap file attachmentを返すSELECT statement.
+
+    Notes:
+        passedかつVANILLAのScoreだけを対象にし、limitはPython側のeligibility判定後に適用する.
+    """
     latest_attachment = (
         select(
             BeatmapFileAttachmentModel.beatmap_id.label("beatmap_id"),
@@ -146,6 +208,20 @@ def _iter_candidate_rows(
         BeatmapFileAttachmentModel | None,
     ]
 ]:
+    """SQLAlchemy result rowを型検証済みrecalculation candidate tupleへ正規化する.
+
+    Args:
+        rows (object): tuple形式またはattribute形式のSQLAlchemy result row list.
+
+    Returns:
+        list[tuple[ScoreModel, ScorePerformanceCalculationModel | None,
+            BeatmapFileAttachmentModel | None]]: Score model、current calculation model、
+            latest attachment modelのtuple.
+        Score modelを持たないrowは含めない.
+
+    Notes:
+        calculationとattachmentはouter join由来のため、型が一致しない場合もNoneとして保持する.
+    """
     result: list[
         tuple[
             ScoreModel,
@@ -188,6 +264,22 @@ def _candidate_reason(
     selection: ScorePerformanceCandidateSelection,
     target_attachment: BeatmapFileAttachmentModel | None,
 ) -> RecalculationCandidateReason | None:
+    """Current calculationをtarget selectionと比較して再計算reasonを決定する.
+
+    Args:
+        current (PerformanceCalculation | None): Scoreに紐づくcurrent calculation. 未計算時はNone.
+        selection (ScorePerformanceCandidateSelection): target calculator、formula、Beatmap fileを
+            含む選別条件.
+        target_attachment (BeatmapFileAttachmentModel | None): ScoreのBeatmapに対する
+            最新attachment model.
+
+    Returns:
+        RecalculationCandidateReason | None: 再計算が必要なreason.
+        pending、historical、完全一致時はNone.
+
+    Notes:
+        UNAVAILABLEはselection.include_unavailableがTrueの場合だけ候補にする.
+    """
     reason: RecalculationCandidateReason | None = None
     if current is None:
         reason = RecalculationCandidateReason.UNCALCULATED
@@ -214,6 +306,21 @@ def _is_stale(
     selection: ScorePerformanceCandidateSelection,
     target_attachment: BeatmapFileAttachmentModel | None,
 ) -> bool:
+    """Current calculationのBeatmap file identityがtargetと異なるかを判定する.
+
+    Args:
+        current (PerformanceCalculation): stale判定するcurrent calculation.
+        selection (ScorePerformanceCandidateSelection): 明示target attachment IDまたはchecksumを
+            含む選別条件.
+        target_attachment (BeatmapFileAttachmentModel | None): ScoreのBeatmapに対する
+            最新attachment model.
+
+    Returns:
+        bool: 最新または明示targetのattachment ID/checksumと一致しない場合はTrue. それ以外はFalse.
+
+    Notes:
+        attachmentが未登録の場合は明示targetとの比較だけを行う.
+    """
     if target_attachment is not None and (
         current.beatmap_file_attachment_id != target_attachment.id
         or current.beatmap_file_checksum_md5 != target_attachment.checksum_md5
@@ -231,6 +338,20 @@ def _is_stale(
 
 
 def _model_to_domain(model: ScorePerformanceCalculationModel) -> PerformanceCalculation:
+    """永続化されたScore performance calculation modelをdomain valueへ変換する.
+
+    Args:
+        model (ScorePerformanceCalculationModel): calculation tableから取得済みの永続model.
+
+    Returns:
+        PerformanceCalculation: stateとformula profileをdomain enumへ変換したcalculation value.
+
+    Raises:
+        ValueError: model.stateまたはmodel.formula_profileを対応するdomain enumへ変換できない場合.
+
+    Notes:
+        current flag、claim情報以外のread contract fieldを永続値から転記する.
+    """
     return PerformanceCalculation(
         id=model.id,
         score_id=model.score_id,

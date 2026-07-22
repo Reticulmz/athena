@@ -1,4 +1,4 @@
-"""SQLAlchemy query repository package."""
+"""SQLAlchemy実装のread-only query repositoryを集約して公開する."""
 
 from osu_server.repositories.sqlalchemy.queries.beatmap_leaderboards import (
     SQLAlchemyBeatmapLeaderboardQueryRepository,
