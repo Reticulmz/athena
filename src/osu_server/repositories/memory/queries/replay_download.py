@@ -1,4 +1,4 @@
-"""In-memory replay download query repository."""
+"""Committed in-memory state から replay download candidate を投影する adapter を提供する."""
 
 from __future__ import annotations
 
@@ -23,37 +23,29 @@ if TYPE_CHECKING:
 
 
 class InMemoryReplayDownloadQueryRepository:
-    """Replay download candidate を committed memory state から投影する.
+    """Committed in-memory state から replay download candidate を投影する.
 
-    引数:
-        snapshot_provider: Committed in-memory state snapshot を返す query-side provider.
+    Attributes:
+        _snapshot_provider (InMemoryQueryStateSnapshotProvider): query ごとの committed state
+            snapshot provider.
 
-    戻り値:
-        Class のため戻り値はない.
-
-    例外:
-        なし.
-
-    制約:
-        Raw replay bytes, blob storage key, filesystem path は読まない.
-        Score, owner visibility, replay attachment metadata だけを参照する.
+    Notes:
+        Raw replay bytes, Blob storage key, filesystem path は読まない. Score, owner visibility,
+        Replay attachment metadata だけを参照し, state を変更しない.
     """
 
     def __init__(self, snapshot_provider: InMemoryQueryStateSnapshotProvider) -> None:
-        """Repository を query-side snapshot provider で初期化する.
+        """Query-side snapshot provider を保持する.
 
-        引数:
-            snapshot_provider: Query ごとに committed state snapshot を生成する provider.
+        Args:
+            snapshot_provider (InMemoryQueryStateSnapshotProvider): query ごとに committed state の
+                clone を返す provider.
 
-        戻り値:
-            None.
+        Returns:
+            None: provider を保持する repository を構築する.
 
-        例外:
-            なし.
-
-        制約:
-            Command Unit of Work factory ではなく query-side provider だけに依存する.
-            Snapshot は query 実行時に取得する.
+        Notes:
+            Command Unit of Work factory には依存せず, snapshot は各 query 実行時に取得する.
         """
         self._snapshot_provider: InMemoryQueryStateSnapshotProvider = snapshot_provider
 
@@ -61,20 +53,18 @@ class InMemoryReplayDownloadQueryRepository:
         self,
         query: ReplayDownloadCandidateQuery,
     ) -> ReplayDownloadCandidate:
-        """Score id と ruleset から replay download candidate branch を返す.
+        """Score ID と ruleset に対応する replay download branch を返す.
 
-        引数:
-            query: Parsed score id と Stable ruleset scope.
+        Args:
+            query (ReplayDownloadCandidateQuery): parsed Score ID と Stable ruleset scope.
 
-        戻り値:
-            Score not found, hidden score, missing replay, available replay のいずれか.
+        Returns:
+            ReplayDownloadCandidate: Score not found, hidden score, missing replay,
+            available replay のいずれかの candidate.
 
-        例外:
-            なし.
-
-        制約:
-            Committed memory state の metadata だけを投影する. Blob object の
-            storage key や raw bytes は読まない.
+        Notes:
+            committed state の metadata だけを投影する. Blob object の storage key や raw bytes は
+            読まず, state を変更しない.
         """
         state = self._snapshot_provider.snapshot()
         score = state.scores_by_id.get(query.score_id)
@@ -107,6 +97,19 @@ def _score_is_replay_download_visible(
     state: InMemoryCommandRepositoryState,
     score: Score,
 ) -> bool:
+    """Score が replay download に公開可能かを判定する.
+
+    Args:
+        state (InMemoryCommandRepositoryState): Score eligibility と Role assignment を含む
+            snapshot.
+        score (Score): 判定する Score.
+
+    Returns:
+        bool: ID を持ち, passed で, leaderboard eligible かつ owner が可視なら True.
+
+    Notes:
+        state と score は変更しない.
+    """
     score_id = score.id
     if score_id is None:
         return False
@@ -118,6 +121,18 @@ def _score_is_replay_download_visible(
 
 
 def _user_is_visible(state: InMemoryCommandRepositoryState, user_id: int) -> bool:
+    """User に割り当てられた Role permissions から leaderboard 可視性を判定する.
+
+    Args:
+        state (InMemoryCommandRepositoryState): Role と User Role assignment を含む snapshot.
+        user_id (int): 可視性を判定する User の ID.
+
+    Returns:
+        bool: 合成した Privileges が leaderboard-visible なら True, それ以外は False.
+
+    Notes:
+        存在しない Role ID は無視し, state を変更しない.
+    """
     privileges = Privileges.NONE
     for role_id in state.role_ids_by_user_id.get(user_id, set()):
         role = state.roles_by_id.get(role_id)
@@ -130,6 +145,18 @@ def _replay_for_score(
     state: InMemoryCommandRepositoryState,
     score_id: int,
 ) -> Replay | None:
+    """Score ID に対応する最初の Replay を取得する.
+
+    Args:
+        state (InMemoryCommandRepositoryState): Replay record を含む snapshot.
+        score_id (int): 対応する Replay を検索する Score の ID.
+
+    Returns:
+        Replay | None: replays_by_id の反復順で最初に一致した Replay. 一致しなければ None.
+
+    Notes:
+        state を変更しない.
+    """
     return next(
         (replay for replay in state.replays_by_id.values() if replay.score_id == score_id),
         None,
