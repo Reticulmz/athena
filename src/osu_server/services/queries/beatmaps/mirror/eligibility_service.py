@@ -1,4 +1,4 @@
-"""Beatmap eligibility service for score ingestion."""
+"""score ingestionで使うbeatmap eligibilityをread-onlyに判定するserviceを定義する."""
 
 from __future__ import annotations
 
@@ -21,10 +21,36 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class BeatmapStatusResolver:
+    """beatmapのeffective statusとlocal overrideの妥当性を判定する.
+
+    Notes:
+        APPROVEDはofficial status専用でありlocal overrideとしては受け付けない.
+    """
+
     def effective_status(self, beatmap: Beatmap) -> BeatmapRankStatus:
+        """beatmapに適用されるeffective rank statusを返す.
+
+        Args:
+            beatmap (Beatmap): effective statusを取得するbeatmap.
+
+        Returns:
+            BeatmapRankStatus: official statusとlocal overrideから決定済みのstatus.
+        """
         return beatmap.effective_status
 
     def validate_local_override(self, status: object) -> None:
+        """Local status overrideに許容される値か検証する.
+
+        Args:
+            status (object): local overrideとして保存する候補値.
+
+        Returns:
+            None: 許容されるNoneまたはLocalBeatmapStatusを検証して値を返さない.
+
+        Raises:
+            ValueError: statusがAPPROVEDの場合.
+            TypeError: statusがNoneでもLocalBeatmapStatusでもない場合.
+        """
         if status is None:
             return
         if status is BeatmapRankStatus.APPROVED:
@@ -36,7 +62,19 @@ class BeatmapStatusResolver:
 
 
 class BeatmapEligibilityService:
+    """beatmap statusとsource trustからscore submissionのeligibilityを投影する.
+
+    Attributes:
+        _status_resolver (BeatmapStatusResolver): effective statusを解決するpolicy.
+    """
+
     def __init__(self, status_resolver: BeatmapStatusResolver | None = None) -> None:
+        """optionalなstatus resolverを保持し未指定時は既定resolverを作る.
+
+        Args:
+            status_resolver (BeatmapStatusResolver | None): status判定に使うresolver.
+                Noneの場合は新しいBeatmapStatusResolverを使う.
+        """
         self._status_resolver: BeatmapStatusResolver = status_resolver or BeatmapStatusResolver()
 
     def evaluate(
@@ -45,6 +83,18 @@ class BeatmapEligibilityService:
         *,
         mirror_trust_enabled: bool = False,
     ) -> BeatmapEligibility:
+        """beatmapがscoreを受け付ける条件とleaderboard条件を評価する.
+
+        Args:
+            beatmap (Beatmap): eligibilityを計算するbeatmap.
+            mirror_trust_enabled (bool): mirror由来statusをscore受付に利用するか.
+
+        Returns:
+            BeatmapEligibility: score受付とPP付与とleaderboard利用可否を持つ投影結果.
+
+        Notes:
+            mirror由来かつlocal overrideのないstatusはmirror trustが無効なら拒否する.
+        """
         status = self._status_resolver.effective_status(beatmap)
         is_mirror_sourced = beatmap.official_status_source is BeatmapMetadataSource.MIRROR
         is_mirror_derived = is_mirror_sourced and beatmap.local_status_override is None
@@ -122,6 +172,16 @@ def _denied_eligibility(
     is_officially_verified: bool,
     is_mirror_derived: bool,
 ) -> BeatmapEligibility:
+    """score受付を拒否する一貫したeligibility投影を作る.
+
+    Args:
+        denial_reason (str): clientまたはdiagnosticへ返す拒否理由.
+        is_officially_verified (bool): sourceがofficialに検証済みか.
+        is_mirror_derived (bool): statusがmirror由来かつlocal overrideなしで決まったか.
+
+    Returns:
+        BeatmapEligibility: score受付とleaderboardとPP付与を全て拒否した結果.
+    """
     return BeatmapEligibility(
         accepts_scores=False,
         has_leaderboard=False,

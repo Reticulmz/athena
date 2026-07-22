@@ -1,4 +1,4 @@
-"""Chat private-message query use-cases."""
+"""private message宛先の存在とonline stateを読むquery use-caseを定義する."""
 
 from __future__ import annotations
 
@@ -18,14 +18,24 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 @dataclass(frozen=True, slots=True)
 class ResolvePrivateMessageTargetQueryInput:
-    """Private-message target lookup input."""
+    """private message宛先を解決するread-only入力を表す.
+
+    Attributes:
+        target_name (str): 正規化前の宛先user名.
+    """
 
     target_name: str
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvePrivateMessageTargetQueryResult:
-    """Private-message target lookup result."""
+    """private message宛先を解決したread-only結果を表す.
+
+    Attributes:
+        exists (bool): 宛先userが存在するか.
+        target_id (int | None): 宛先user ID. 宛先不存在時はNone.
+        is_online (bool): 宛先userがonline sessionを持つか.
+    """
 
     exists: bool
     target_id: int | None
@@ -33,7 +43,12 @@ class ResolvePrivateMessageTargetQueryResult:
 
 
 class ResolvePrivateMessageTargetQuery:
-    """Resolve a PM target and current online state without mutation."""
+    """private message宛先とcurrent online stateをmutationなしで解決する.
+
+    Attributes:
+        _user_repository (UserQueryRepository): normalized usernameからuserを読むrepository.
+        _session_store (UserSessionLookup): userのonline sessionを読むstore.
+    """
 
     def __init__(
         self,
@@ -41,6 +56,12 @@ class ResolvePrivateMessageTargetQuery:
         user_repository: UserQueryRepository,
         session_store: UserSessionLookup,
     ) -> None:
+        """Private message宛先queryに使うrepositoryとsession storeを保持する.
+
+        Args:
+            user_repository (UserQueryRepository): normalized usernameからuserを読むrepository.
+            session_store (UserSessionLookup): userのonline sessionを読むstore.
+        """
         self._user_repository: UserQueryRepository = user_repository
         self._session_store: UserSessionLookup = session_store
 
@@ -48,6 +69,14 @@ class ResolvePrivateMessageTargetQuery:
         self,
         input_data: ResolvePrivateMessageTargetQueryInput,
     ) -> ResolvePrivateMessageTargetQueryResult:
+        """宛先名を正規化してuserの存在とonline stateを解決する.
+
+        Args:
+            input_data (ResolvePrivateMessageTargetQueryInput): 正規化前の宛先user名を持つ入力.
+
+        Returns:
+            ResolvePrivateMessageTargetQueryResult: 宛先の存在とuser IDとonline stateを持つ結果.
+        """
         safe_username = User.normalize_username(input_data.target_name)
         user = await self._user_repository.get_by_safe_username(safe_username)
 

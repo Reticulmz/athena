@@ -1,4 +1,4 @@
-"""Chat query use-case package."""
+"""channelとprivate messageのread-only query use-caseを公開するpackageを定義する."""
 
 from osu_server.services.queries.chat.channels import (
     ChannelCatalogQueryInput,

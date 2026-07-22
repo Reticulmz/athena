@@ -1,4 +1,4 @@
-"""Beatmap mirror query services."""
+"""beatmap mirrorのread-only解決とeligibility判定serviceを公開するpackageを定義する."""
 
 from osu_server.services.queries.beatmaps.mirror.eligibility_service import (
     BeatmapEligibilityService,
