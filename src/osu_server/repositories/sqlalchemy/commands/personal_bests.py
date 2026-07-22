@@ -1,4 +1,4 @@
-"""SQLAlchemy command-side personal best repository."""
+"""SQLAlchemyでscore personal best projectionを永続化するrepositoryを提供する."""
 
 from __future__ import annotations
 
@@ -23,12 +23,41 @@ if TYPE_CHECKING:
 
 
 class SQLAlchemyPersonalBestCommandRepository:
-    """Personal best command repository backed by a UoW-owned SQLAlchemy session."""
+    """Unit of Work所有sessionでpersonal best projectionを更新するrepository.
+
+    Attributes:
+        _session (AsyncSession): command transactionを実行しcommitを所有しないsession.
+    """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Unit of Workから受け取ったSQLAlchemy sessionを保持する.
+
+        Args:
+            session (AsyncSession): personal best操作に使うsession.
+
+        Returns:
+            None: repositoryの初期化完了を示す.
+
+        Notes:
+            commitとrollbackは呼び出し側のUnit of Workが所有する.
+        """
         self._session: AsyncSession = session
 
     async def get_by_scope(self, scope: PersonalBestScope) -> PersonalBest | None:
+        """完全なpersonal best scopeに対応するprojectionを取得する.
+
+        Args:
+            scope (PersonalBestScope): userとbeatmapとrulesetとplaystyleとcategoryから成る取得条件.
+
+        Returns:
+            PersonalBest | None: 対応するpersonal best. 未作成の場合はNone.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+
+        Notes:
+            userとbeatmapとrulesetとplaystyleとcategoryを完全一致で照合する.
+        """
         model = (
             await self._session.execute(
                 _select_by_scope(scope),
@@ -37,6 +66,21 @@ class SQLAlchemyPersonalBestCommandRepository:
         return _model_to_domain(model) if isinstance(model, PersonalBestModel) else None
 
     async def upsert_if_better(self, command: UpsertPersonalBest) -> PersonalBest:
+        """Ranking valueがより良い場合だけpersonal best projectionを更新する.
+
+        Args:
+            command (UpsertPersonalBest): scopeとcandidate scoreとranking valueを持つ更新command.
+
+        Returns:
+            PersonalBest: 更新後または既存の永続化済みpersonal best.
+
+        Raises:
+            RuntimeError: upsert後に対応するprojectionを再取得できない場合.
+            SQLAlchemyError: upsertまたはrow lock付きselectに失敗した場合.
+
+        Notes:
+            ranking valueが既存値以下ならdatabase conflict条件により既存値を保持する.
+        """
         _ = await self._session.execute(_upsert_if_better_statement(command))
         model = (
             await self._session.execute(
@@ -51,6 +95,14 @@ class SQLAlchemyPersonalBestCommandRepository:
 
 
 def _select_by_scope(scope: PersonalBestScope) -> Select[tuple[PersonalBestModel]]:
+    """Personal best scopeに一致するprojectionを取得するselectを作る.
+
+    Args:
+        scope (PersonalBestScope): userとbeatmapとrulesetとplaystyleとcategoryの完全一致条件.
+
+    Returns:
+        Select[tuple[PersonalBestModel]]: 対応するpersonal best rowを返すSQLAlchemy select.
+    """
     return select(PersonalBestModel).where(
         PersonalBestModel.user_id == scope.user_id,
         PersonalBestModel.beatmap_id == scope.beatmap_id,
@@ -61,6 +113,17 @@ def _select_by_scope(scope: PersonalBestScope) -> Select[tuple[PersonalBestModel
 
 
 def _upsert_if_better_statement(command: UpsertPersonalBest) -> Insert:
+    """より良いranking valueだけを反映するPostgreSQL upsertを作る.
+
+    Args:
+        command (UpsertPersonalBest): insert値と更新判定に使うcandidate personal best.
+
+    Returns:
+        Insert: scopeをconflict keyにしてranking valueを比較するPostgreSQL insert statement.
+
+    Notes:
+        同値または低いranking valueは保存済みrowを変更しない.
+    """
     insert_statement = insert(PersonalBestModel).values(
         user_id=command.scope.user_id,
         beatmap_id=command.scope.beatmap_id,
@@ -87,6 +150,17 @@ def _upsert_if_better_statement(command: UpsertPersonalBest) -> Insert:
 
 
 def _model_to_domain(model: PersonalBestModel) -> PersonalBest:
+    """SQLAlchemy personal best modelをdomain projectionへ変換する.
+
+    Args:
+        model (PersonalBestModel): 永続化層から読み出したpersonal best row.
+
+    Returns:
+        PersonalBest: scopeの有限値をdomain enumへ復元したpersonal best.
+
+    Raises:
+        ValueError: 保存されたrulesetかplaystyleかcategoryが既知のenum値でない場合.
+    """
     return PersonalBest(
         id=model.id,
         scope=PersonalBestScope(

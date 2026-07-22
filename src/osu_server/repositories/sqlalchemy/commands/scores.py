@@ -1,4 +1,4 @@
-"""SQLAlchemy command-side score repository."""
+"""SQLAlchemyでscoreとscore由来projection入力を永続化するrepositoryを提供する."""
 
 from __future__ import annotations
 
@@ -22,12 +22,42 @@ _EXCLUDED_INITIAL_STATS_MODS = int(Mod.RELAX | Mod.AUTOPILOT)
 
 
 class SQLAlchemyScoreCommandRepository:
-    """Score command repository backed by a UoW-owned SQLAlchemy session."""
+    """Unit of Work所有sessionでscoreを読み書きするrepository.
+
+    Attributes:
+        _session (AsyncSession): command transactionを実行しcommitを所有しないsession.
+    """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Unit of Workから受け取ったSQLAlchemy sessionを保持する.
+
+        Args:
+            session (AsyncSession): score操作に使うsession.
+
+        Returns:
+            None: repositoryの初期化完了を示す.
+
+        Notes:
+            commitとrollbackは呼び出し側のUnit of Workが所有する.
+        """
         self._session: AsyncSession = session
 
     async def create(self, score: Score) -> Score:
+        """新しいscoreを永続化してdomain modelへ変換する.
+
+        Args:
+            score (Score): score値とsubmission metadataを持つ新規score.
+
+        Returns:
+            Score: flushとrefresh後の永続化済みscore.
+
+        Raises:
+            ValueError: 同じonline_checksumのscoreが既に存在する場合.
+            SQLAlchemyError: checksum重複以外の永続化処理に失敗した場合.
+
+        Notes:
+            このmethodはUnit of Workをcommitしない.
+        """
         model = ScoreModel(
             user_id=score.user_id,
             beatmap_id=score.beatmap_id,
@@ -74,6 +104,17 @@ class SQLAlchemyScoreCommandRepository:
         return _score_to_domain(model)
 
     async def exists_by_online_checksum(self, checksum: str) -> bool:
+        """Online checksumを持つscoreが存在するか確認する.
+
+        Args:
+            checksum (str): 確認対象scoreのonline checksum.
+
+        Returns:
+            bool: 対応するscoreが存在する場合はTrue. 存在しない場合はFalse.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+        """
         result = (
             await self._session.execute(
                 select(ScoreModel.id).where(ScoreModel.online_checksum == checksum)
@@ -82,6 +123,17 @@ class SQLAlchemyScoreCommandRepository:
         return result is not None
 
     async def get_by_online_checksum(self, checksum: str) -> Score | None:
+        """Online checksumで保存済みscoreを取得する.
+
+        Args:
+            checksum (str): 取得対象scoreのonline checksum.
+
+        Returns:
+            Score | None: 対応するscore. 存在しない場合はNone.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+        """
         model = (
             await self._session.execute(
                 select(ScoreModel).where(ScoreModel.online_checksum == checksum)
@@ -90,23 +142,34 @@ class SQLAlchemyScoreCommandRepository:
         return _score_to_domain(model) if isinstance(model, ScoreModel) else None
 
     async def get_by_id(self, score_id: int) -> Score | None:
+        """永続化識別子で保存済みscoreを取得する.
+
+        Args:
+            score_id (int): 取得対象scoreの永続化識別子.
+
+        Returns:
+            Score | None: 対応するscore. 存在しない場合はNone.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+        """
         model = await self._session.get(ScoreModel, score_id)
         return _score_to_domain(model) if isinstance(model, ScoreModel) else None
 
     async def increment_replay_view_count(self, score_id: int) -> bool:
-        """対象 score の Replay View Count を 1 増やす。
+        """指定scoreのreplay view countを1増加させる.
 
-        引数:
-            score_id: 更新対象 score の identifier.
+        Args:
+            score_id (int): 更新対象scoreの永続化識別子.
 
-        戻り値:
-            対象 score が存在し、更新された場合は True.
+        Returns:
+            bool: 対象scoreが存在し更新した場合はTrue. 存在しない場合はFalse.
 
-        例外:
-            SQLAlchemy session の永続化例外は呼び出し元へ送出する.
+        Raises:
+            SQLAlchemyError: updateまたはflushに失敗した場合.
 
-        制約:
-            Unit of Work 所有 session を使い、この method では commit しない.
+        Notes:
+            Unit of Work所有sessionを使いこのmethodではcommitしない.
         """
         stmt = (
             update(ScoreModel)
@@ -119,6 +182,18 @@ class SQLAlchemyScoreCommandRepository:
         return result.scalar_one_or_none() is not None
 
     async def count_submissions_for_beatmap(self, beatmap_id: int) -> BeatmapSubmissionCounts:
+        """beatmapへのscore submission数とpass数を集計する.
+
+        Args:
+            beatmap_id (int): 集計対象beatmapの永続化識別子.
+
+        Returns:
+            BeatmapSubmissionCounts: 全submission数とpassed score数を持つ集計値.
+
+        Raises:
+            TypeError: database結果のcount値が整数として扱えない場合.
+            SQLAlchemyError: 集計selectの実行に失敗した場合.
+        """
         raw_row = cast(
             "object",
             (await self._session.execute(_beatmap_submission_counts_statement(beatmap_id))).one(),
@@ -140,6 +215,22 @@ class SQLAlchemyScoreCommandRepository:
         ruleset: Ruleset,
         playstyle: Playstyle,
     ) -> tuple[Score, ...]:
+        """UserStats更新に使うuserのscoreを時系列順で取得する.
+
+        Args:
+            user_id (int): scoreを取得するuserの永続化識別子.
+            ruleset (Ruleset): 取得対象のruleset.
+            playstyle (Playstyle): 取得対象のplaystyle.
+
+        Returns:
+            tuple[Score, ...]: submission時刻とidの昇順で並ぶ対象score.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+
+        Notes:
+            RELAXとAUTOPILOT modを含むscoreはinitial statisticsから除外する.
+        """
         models = (
             await self._session.execute(
                 _current_stats_scores_statement(
@@ -155,6 +246,17 @@ class SQLAlchemyScoreCommandRepository:
         self,
         user_id: int,
     ) -> tuple[Score, ...]:
+        """1 userのleaderboard projection再構築候補scoreを取得する.
+
+        Args:
+            user_id (int): 候補を取得するuserの永続化識別子.
+
+        Returns:
+            tuple[Score, ...]: leaderboard適格条件を満たすscoreの決定的な順序のtuple.
+
+        Raises:
+            SQLAlchemyError: join selectの実行に失敗した場合.
+        """
         models = (
             await self._session.execute(
                 _leaderboard_rebuild_candidate_statement().where(ScoreModel.user_id == user_id)
@@ -166,6 +268,20 @@ class SQLAlchemyScoreCommandRepository:
         self,
         beatmap_ids: tuple[int, ...],
     ) -> tuple[Score, ...]:
+        """指定beatmap群のleaderboard projection再構築候補scoreを取得する.
+
+        Args:
+            beatmap_ids (tuple[int, ...]): 候補を取得するbeatmapの永続化識別子.
+
+        Returns:
+            tuple[Score, ...]: leaderboard適格条件を満たすscoreの決定的な順序のtuple.
+
+        Raises:
+            SQLAlchemyError: join selectの実行に失敗した場合.
+
+        Notes:
+            空tuple入力ではSQLを実行せず空tupleを返す.
+        """
         if len(beatmap_ids) == 0:
             return ()
         models = (
@@ -179,6 +295,23 @@ class SQLAlchemyScoreCommandRepository:
 
 
 def _score_to_domain(model: ScoreModel) -> Score:
+    """SQLAlchemy score modelをscore domain modelへ変換する.
+
+    Args:
+        model (ScoreModel): 永続化層から読み出したscore row. modsは非負のbitmaskであり
+            非nullのplay_time_sourceは既知のPlayTimeSource値でなければならない.
+
+    Returns:
+        Score: 有限値と非負のmod bitmaskをdomain表現へ復元したscore.
+
+    Raises:
+        ValueError: model.modsが負でModCombinationへ復元できない場合.
+            またはrulesetかplaystyleかgradeか非nullのbeatmap_status_at_submissionか
+            非nullのplay_time_sourceが既知のdomain enum値でない場合.
+
+    Notes:
+        非負の未知mod bitはIntFlagで保持するため変換時にエラーにしない.
+    """
     return Score(
         id=model.id,
         user_id=model.user_id,
@@ -219,6 +352,14 @@ def _score_to_domain(model: ScoreModel) -> Score:
 
 
 def _beatmap_submission_counts_statement(beatmap_id: int) -> Select[tuple[int, int]]:
+    """beatmapのsubmission数とpass数を集計するselectを作る.
+
+    Args:
+        beatmap_id (int): 集計対象beatmapの永続化識別子.
+
+    Returns:
+        Select[tuple[int, int]]: 全score数とpassed score数を返すSQLAlchemy select.
+    """
     return select(
         func.count(ScoreModel.id),
         func.coalesce(
@@ -229,6 +370,17 @@ def _beatmap_submission_counts_statement(beatmap_id: int) -> Select[tuple[int, i
 
 
 def _count_value(value: object) -> int:
+    """Database aggregate結果をboolではない整数countへ絞り込む.
+
+    Args:
+        value (object): SQLAlchemy result rowから取り出した集計値.
+
+    Returns:
+        int: boolを除外して検証済みの整数count.
+
+    Raises:
+        TypeError: valueがboolまたは整数以外の場合.
+    """
     if isinstance(value, bool):
         msg = "count value must be an integer"
         raise TypeError(msg)
@@ -244,6 +396,19 @@ def _current_stats_scores_statement(
     ruleset: Ruleset,
     playstyle: Playstyle,
 ) -> Select[tuple[ScoreModel]]:
+    """指定scopeのinitial UserStats入力scoreを取得するselectを作る.
+
+    Args:
+        user_id (int): scoreを取得するuserの永続化識別子.
+        ruleset (Ruleset): 取得対象のruleset.
+        playstyle (Playstyle): 取得対象のplaystyle.
+
+    Returns:
+        Select[tuple[ScoreModel]]: 時系列順の対象scoreを返すSQLAlchemy select.
+
+    Notes:
+        RELAXとAUTOPILOT modを含むscoreはwhere条件で除外する.
+    """
     return (
         select(ScoreModel)
         .where(
@@ -257,10 +422,24 @@ def _current_stats_scores_statement(
 
 
 def _initial_stats_mod_condition() -> ColumnElement[bool]:
+    """Initial UserStatsから除外するmod bitmask条件を作る.
+
+    Returns:
+        ColumnElement[bool]: RELAXとAUTOPILOTの両方が未設定であることを示すSQL条件.
+    """
     return ScoreModel.mods.bitwise_and(_EXCLUDED_INITIAL_STATS_MODS) == literal(0)
 
 
 def _leaderboard_rebuild_candidate_statement() -> Select[tuple[ScoreModel]]:
+    """Leaderboard projection再構築候補を決定的順序で取得するselectを作る.
+
+    Returns:
+        Select[tuple[ScoreModel]]: leaderboard適格scoreを返すSQLAlchemy select.
+
+    Notes:
+        passedかつeligibleでcurrent beatmap checksumと一致するscoreだけを対象とする.
+        sort keyはbeatmapとrulesetとplaystyleとuserとscoreとsubmission時刻とidの順序を固定する.
+    """
     return (
         select(ScoreModel)
         .join(BeatmapModel, BeatmapModel.id == ScoreModel.beatmap_id)
