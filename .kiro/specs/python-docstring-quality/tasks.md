@@ -301,7 +301,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/services/commands/scores/**から2.28と2.29の所有pathを除く_
 
-- [ ] 2.31 (P) Beatmap、chat、storage query use-caseを整備する
+- [x] 2.31 (P) Beatmap、chat、storage query use-caseを整備する
   - services/queries/{beatmaps,chat,storage}/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびrelevant query testが通る
   - _Depends: 1.4_
