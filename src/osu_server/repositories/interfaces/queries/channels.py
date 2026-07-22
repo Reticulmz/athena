@@ -1,4 +1,4 @@
-"""Query-side channel repository contract."""
+"""Channel read model 用 read-only query repository contract を定義する."""
 
 from __future__ import annotations
 
@@ -9,26 +9,60 @@ if TYPE_CHECKING:
 
 
 class ChannelQueryRepository(Protocol):
-    """Read-only channel access for display and compatibility workflows."""
+    """Display と compatibility workflow 用 channel read-only access を定義する.
+
+    Notes:
+        この Protocol は channel と role override の read model を返すだけである. Channel state や
+        override を変更せず Command Unit of Work を開始または commit/rollback しない.
+    """
 
     async def get_by_name(self, name: str) -> Channel | None:
-        """Return the channel with the name."""
+        """Name に対応する Channel を返す.
+
+        Args:
+            name (str): 検索する channel name.
+
+        Returns:
+            Channel | None: 対応する Channel. 見つからない場合は `None`.
+        """
         ...
 
     async def get_all(self) -> list[Channel]:
-        """Return all public channels."""
+        """すべての public Channel を返す.
+
+        Returns:
+            list[Channel]: Public Channel の一覧. 対象がない場合は空の list.
+        """
         ...
 
     async def get_auto_join(self) -> list[Channel]:
-        """Return auto-join channels."""
+        """Auto-join 対象の Channel を返す.
+
+        Returns:
+            list[Channel]: Auto-join Channel の一覧. 対象がない場合は空の list.
+        """
         ...
 
     async def get_overrides_for_channel(self, channel_id: int) -> list[ChannelRoleOverride]:
-        """Return role overrides for one channel."""
+        """一つの Channel に適用する role override を返す.
+
+        Args:
+            channel_id (int): Role override を取得する Channel ID.
+
+        Returns:
+            list[ChannelRoleOverride]: Channel の role override 一覧. 対象がない場合は空の list.
+        """
         ...
 
     async def get_overrides_for_channels(
         self, channel_ids: list[int]
     ) -> dict[int, list[ChannelRoleOverride]]:
-        """Return role overrides keyed by channel id."""
+        """複数 Channel の role override を Channel ID ごとに返す.
+
+        Args:
+            channel_ids (list[int]): Role override を取得する Channel ID の一覧.
+
+        Returns:
+            dict[int, list[ChannelRoleOverride]]: Channel ID を key とする role override 一覧.
+        """
         ...
