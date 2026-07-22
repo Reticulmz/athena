@@ -1,8 +1,7 @@
-"""PrivateMessageService — PM 宛先解決とオンライン判定。
+"""private message宛先の存在とonline stateをread-onlyに解決するserviceを定義する.
 
-パケット構築・配信はトランスポート層の責務。本サービスは宛先ユーザーの
-存在確認とオンライン状態を返し、呼び出し元が S2C パケットの構築と
-PacketQueue への enqueue を行う。
+packet構築とdeliveryはtransport layerの責務である. このserviceは宛先userの存在とonline
+stateだけを返しcallerがS2C packet構築とPacketQueueへのenqueueを行う.
 """
 
 from __future__ import annotations
@@ -23,7 +22,13 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 @dataclass(slots=True)
 class PMDeliveryResult:
-    """Result of PM delivery attempt."""
+    """private message宛先解決の結果を表す.
+
+    Attributes:
+        success (bool): 宛先userが存在しdelivery判定を完了したか.
+        target_id (int | None): 解決した宛先user ID. 宛先不存在時はNone.
+        is_online (bool): 解決した宛先userがonline sessionを持つか.
+    """
 
     success: bool
     target_id: int | None
@@ -31,10 +36,14 @@ class PMDeliveryResult:
 
 
 class PrivateMessageService:
-    """PM 宛先解決とオンライン判定。
+    """private message宛先の存在とonline stateをread-onlyに解決する.
 
-    UserRepository でユーザーの存在を確認し、SessionStore でオンライン状態を
-    判定する。実際のパケット配信はトランスポート層が担当する。
+    Attributes:
+        _user_repo (UserQueryRepository): normalized usernameからuserを読むrepository.
+        _session_store (UserSessionLookup): userのonline sessionを読むstore.
+
+    Notes:
+        packet deliveryはtransport layerが担当しこのserviceはpacketを構築またはenqueueしない.
     """
 
     _user_repo: UserQueryRepository
@@ -46,6 +55,12 @@ class PrivateMessageService:
         user_repo: UserQueryRepository,
         session_store: UserSessionLookup,
     ) -> None:
+        """Private message宛先解決に使うrepositoryとsession storeを保持する.
+
+        Args:
+            user_repo (UserQueryRepository): normalized usernameからuserを読むrepository.
+            session_store (UserSessionLookup): userのonline sessionを読むstore.
+        """
         self._user_repo = user_repo
         self._session_store = session_store
 
@@ -54,16 +69,13 @@ class PrivateMessageService:
         *,
         target_name: str,
     ) -> PMDeliveryResult:
-        """PM 宛先を解決し、オンライン状態を判定する。
+        """Private message宛先を解決してonline stateを判定する.
 
         Args:
-            target_name: 宛先ユーザー名 (正規化前)。
+            target_name (str): 正規化前の宛先user名.
 
         Returns:
-            PMDeliveryResult:
-            - ``success=False`` — ユーザーが存在しない
-            - ``success=True, is_online=True`` — オンライン
-            - ``success=True, is_online=False`` — オフライン
+            PMDeliveryResult: 宛先不存在または解決済みuser IDとonline stateを持つ結果.
         """
         safe_username = User.normalize_username(target_name)
         user = await self._user_repo.get_by_safe_username(safe_username)
@@ -91,16 +103,13 @@ class PrivateMessageService:
         self,
         target_name: str,
     ) -> tuple[bool, int | None, bool]:
-        """PM 宛先を解決する。
+        """Private message宛先をlegacy tuple形式で解決する.
 
         Args:
-            target_name: 宛先ユーザー名 (正規化前)。
+            target_name (str): 正規化前の宛先user名.
 
         Returns:
-            (exists, user_id, is_online) のタプル:
-            - ``(False, None, False)`` — ユーザーが存在しない
-            - ``(True, user_id, True)`` — ユーザーが存在しオンライン
-            - ``(True, user_id, False)`` — ユーザーが存在するがオフライン
+            tuple[bool, int | None, bool]: 宛先の存在とuser IDとonline stateの順のtuple.
         """
         safe_username = User.normalize_username(target_name)
         user = await self._user_repo.get_by_safe_username(safe_username)

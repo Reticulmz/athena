@@ -1,8 +1,6 @@
-"""Cache-first beatmap resolution service.
+"""cache-firstでbeatmapとbeatmapsetを解決するquery serviceを定義する.
 
-Provides ``resolve_by_beatmap_id``, ``resolve_by_beatmapset_id``, and
-``resolve_by_checksum`` with structured result states for callers like
-score submission, leaderboard, and rank management.
+score submissionとleaderboardとrank managementなどのcallerへ構造化した結果stateを返す.
 """
 
 from __future__ import annotations
@@ -42,13 +40,19 @@ _POLL_INTERVAL: float = 0.05
 
 
 class BeatmapMirrorService:
-    """Cache-first beatmap resolver.
+    """cache-firstでbeatmapとbeatmapsetを解決してfreshnessとeligibilityを投影する.
 
-    Depends on ``BeatmapQueryRepository`` for persistence lookups,
-    ``BeatmapEligibilityService`` for eligibility projection, and
-    ``BeatmapFreshnessPolicy`` for staleness decisions.  An optional
-    ``enqueue_refresh`` callback can be wired in later (task 5.2) to
-    trigger background metadata / file fetches.
+    Attributes:
+        _repository (BeatmapQueryRepository): cached beatmapとfetch stateを読み取るrepository.
+        _eligibility (BeatmapEligibilityService): score受付可否を投影するservice.
+        _freshness (BeatmapFreshnessPolicy): metadataがstaleかを判定するpolicy.
+        _mirror_trust_enabled (bool): mirror由来statusを信頼するか.
+        _official_sources_available (bool): official metadata sourceが現在利用可能か.
+        _enqueue_refresh (Callable[[BeatmapFetchTarget], Awaitable[None]] | None): optionalな
+            background metadataまたはfile refresh callback.
+
+    Notes:
+        enqueue_refreshはoptionalであり未設定時はcache missまたはstale状態をresultとして返す.
     """
 
     _repository: BeatmapQueryRepository
@@ -68,6 +72,17 @@ class BeatmapMirrorService:
         official_sources_available: bool = True,
         enqueue_refresh: Callable[[BeatmapFetchTarget], Awaitable[None]] | None = None,
     ) -> None:
+        """read-only解決に必要なrepositoryとpolicyとoptional refresh callbackを保持する.
+
+        Args:
+            repository (BeatmapQueryRepository): cached beatmapとfetch stateを読み取るrepository.
+            eligibility_service (BeatmapEligibilityService): score受付可否を投影するservice.
+            freshness_policy (BeatmapFreshnessPolicy): metadata freshnessを判定するpolicy.
+            mirror_trust_enabled (bool): mirror由来statusを信頼するか.
+            official_sources_available (bool): official metadata sourceが現在利用可能か.
+            enqueue_refresh (Callable[[BeatmapFetchTarget], Awaitable[None]] | None):
+                background refreshを要求するoptional callback.
+        """
         self._repository = repository
         self._eligibility = eligibility_service
         self._freshness = freshness_policy
@@ -84,7 +99,18 @@ class BeatmapMirrorService:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
-        """Resolve a single beatmap by its id."""
+        """Beatmap IDからcache-firstに一件のbeatmapを解決する.
+
+        Args:
+            beatmap_id (int): 解決するbeatmapのID.
+            options (BeatmapResolveOptions | None): file要件とrefresh要件とwait上限を持つoption.
+
+        Returns:
+            BeatmapResolveResult: known beatmapまたはfetch stateを持つunavailable結果.
+
+        Notes:
+            cache missまたはstale stateでは設定済みenqueue_refresh callbackを呼び出す場合がある.
+        """
         opts = options or BeatmapResolveOptions()
         now = datetime.now(UTC)
 
@@ -116,7 +142,18 @@ class BeatmapMirrorService:
         beatmapset_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapSetResolveResult:
-        """Resolve a beatmapset by its id."""
+        """Beatmapset IDからcache-firstに一件のbeatmapsetを解決する.
+
+        Args:
+            beatmapset_id (int): 解決するbeatmapsetのID.
+            options (BeatmapResolveOptions | None): refresh要件とwait上限を持つoption.
+
+        Returns:
+            BeatmapSetResolveResult: known beatmapsetまたはfetch stateを持つunavailable結果.
+
+        Notes:
+            cache missまたはstale stateでは設定済みenqueue_refresh callbackを呼び出す場合がある.
+        """
         opts = options or BeatmapResolveOptions()
         now = datetime.now(UTC)
 
@@ -144,7 +181,18 @@ class BeatmapMirrorService:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
-        """Resolve a beatmap by its MD5 checksum."""
+        """MD5 checksumからcache-firstに一件のbeatmapを解決する.
+
+        Args:
+            checksum_md5 (str): 解決するbeatmap contentのMD5 checksum.
+            options (BeatmapResolveOptions | None): file要件とrefresh要件とwait上限を持つoption.
+
+        Returns:
+            BeatmapResolveResult: known beatmapまたはfetch stateを持つunavailable結果.
+
+        Notes:
+            cache missまたはstale stateでは設定済みenqueue_refresh callbackを呼び出す場合がある.
+        """
         opts = options or BeatmapResolveOptions()
         now = datetime.now(UTC)
 
@@ -178,6 +226,16 @@ class BeatmapMirrorService:
         opts: BeatmapResolveOptions,
         now: datetime,
     ) -> BeatmapResolveResult:
+        """Cached beatmapからfreshnessとfile stateを反映した解決結果を作る.
+
+        Args:
+            beatmap (Beatmap): repositoryから取得したcached beatmap.
+            opts (BeatmapResolveOptions): fileとrefreshの解決要件.
+            now (datetime): freshness判定に使うUTC現在時刻.
+
+        Returns:
+            BeatmapResolveResult: eligibilityとfetch statusを含むknown beatmap結果.
+        """
         decision = self._freshness.evaluate(
             beatmap,
             now=now,
@@ -221,7 +279,14 @@ class BeatmapMirrorService:
     # ------------------------------------------------------------------
 
     async def _try_enqueue(self, target: BeatmapFetchTarget) -> None:
-        """Enqueue a refresh if the callback is configured."""
+        """Refresh callbackが設定されている場合だけfetch targetをenqueueする.
+
+        Args:
+            target (BeatmapFetchTarget): metadataまたはfile refreshを要求するtarget.
+
+        Returns:
+            None: callback未設定時は何もせず値を返さない.
+        """
         if self._enqueue_refresh is not None:
             await self._enqueue_refresh(target)
 
@@ -234,7 +299,15 @@ class BeatmapMirrorService:
         beatmap_id: int,
         opts: BeatmapResolveOptions,
     ) -> Beatmap | None:
-        """Poll repository for beatmap data until the wait limit expires."""
+        """wait上限までrepositoryをpollしてbeatmapの出現を待つ.
+
+        Args:
+            beatmap_id (int): 出現を待つbeatmapのID.
+            opts (BeatmapResolveOptions): wait_timeout_secondsを提供するoption.
+
+        Returns:
+            Beatmap | None: wait中に取得したbeatmap. 上限到達時はNone.
+        """
         deadline = datetime.now(UTC).timestamp() + opts.wait_timeout_seconds
         while True:
             remaining = deadline - datetime.now(UTC).timestamp()
@@ -250,7 +323,15 @@ class BeatmapMirrorService:
         beatmapset_id: int,
         opts: BeatmapResolveOptions,
     ) -> BeatmapSet | None:
-        """Poll repository for beatmapset data until the wait limit expires."""
+        """wait上限までrepositoryをpollしてbeatmapsetの出現を待つ.
+
+        Args:
+            beatmapset_id (int): 出現を待つbeatmapsetのID.
+            opts (BeatmapResolveOptions): wait_timeout_secondsを提供するoption.
+
+        Returns:
+            BeatmapSet | None: wait中に取得したbeatmapset. 上限到達時はNone.
+        """
         deadline = datetime.now(UTC).timestamp() + opts.wait_timeout_seconds
         while True:
             remaining = deadline - datetime.now(UTC).timestamp()
@@ -266,7 +347,15 @@ class BeatmapMirrorService:
         checksum_md5: str,
         opts: BeatmapResolveOptions,
     ) -> Beatmap | None:
-        """Poll repository for beatmap data by checksum until the wait limit expires."""
+        """wait上限までrepositoryをpollしてchecksum一致beatmapの出現を待つ.
+
+        Args:
+            checksum_md5 (str): 出現を待つbeatmap contentのMD5 checksum.
+            opts (BeatmapResolveOptions): wait_timeout_secondsを提供するoption.
+
+        Returns:
+            Beatmap | None: wait中に取得したbeatmap. 上限到達時はNone.
+        """
         deadline = datetime.now(UTC).timestamp() + opts.wait_timeout_seconds
         while True:
             remaining = deadline - datetime.now(UTC).timestamp()
@@ -289,6 +378,20 @@ class BeatmapMirrorService:
         opts: BeatmapResolveOptions,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter] -- reserved for task 5.2
         now: datetime,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter] -- reserved for task 5.2
     ) -> BeatmapResolveResult:
+        """未発見beatmapのmetadata recordとfile recordから解決結果を作る.
+
+        Args:
+            metadata_target (BeatmapFetchTarget): metadata fetch stateを取得するtarget.
+            file_target (BeatmapFetchTarget | None): file fetch stateを取得するoptional target.
+            opts (BeatmapResolveOptions): 将来のunavailable result投影に使うoption.
+            now (datetime): 将来のunavailable result投影に使うUTC現在時刻.
+
+        Returns:
+            BeatmapResolveResult: 未発見beatmapと既知またはpending fetch stateを持つ結果.
+
+        Notes:
+            optsとnowはtask 5.2での拡張用に受け取るが現在の投影には影響しない.
+        """
         metadata_record = await self._repository.get_fetch_state(metadata_target)
 
         if metadata_record is None:
@@ -326,6 +429,19 @@ class BeatmapMirrorService:
         opts: BeatmapResolveOptions,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter] -- reserved for task 5.2
         now: datetime,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter] -- reserved for task 5.2
     ) -> BeatmapSetResolveResult:
+        """未発見beatmapsetのmetadata recordから解決結果を作る.
+
+        Args:
+            metadata_target (BeatmapFetchTarget): metadata fetch stateを取得するtarget.
+            opts (BeatmapResolveOptions): 将来のunavailable result投影に使うoption.
+            now (datetime): 将来のunavailable result投影に使うUTC現在時刻.
+
+        Returns:
+            BeatmapSetResolveResult: 未発見beatmapsetと既知またはpending fetch stateを持つ結果.
+
+        Notes:
+            optsとnowはtask 5.2での拡張用に受け取るが現在の投影には影響しない.
+        """
         metadata_record = await self._repository.get_fetch_state(metadata_target)
 
         if metadata_record is None:
@@ -353,7 +469,15 @@ class BeatmapMirrorService:
         self,
         file_target: BeatmapFetchTarget | None,
     ) -> BeatmapFileState:
-        """Determine file fetch state for unknown beatmap."""
+        """未発見beatmapに対応するfile fetch stateを判定する.
+
+        Args:
+            file_target (BeatmapFetchTarget | None): file fetch stateを取得するoptional target.
+
+        Returns:
+            BeatmapFileState: targetまたはfetch recordがない場合はMISSING. それ以外は
+                record由来state.
+        """
         if file_target is None:
             return BeatmapFileState.MISSING
 
@@ -373,7 +497,15 @@ def _derive_metadata_status(
     beatmap: Beatmap,
     decision: BeatmapFreshnessDecision,
 ) -> BeatmapFetchState:
-    """Derive metadata status from beatmap fetch state and freshness decision."""
+    """Beatmap fetch stateとfreshness decisionからmetadata statusを導出する.
+
+    Args:
+        beatmap (Beatmap): current metadata fetch stateを持つbeatmap.
+        decision (BeatmapFreshnessDecision): staleかrefreshすべきかを表すdecision.
+
+    Returns:
+        BeatmapFetchState: pendingとfailedを優先し必要ならSTALEへ変換したstatus.
+    """
     if beatmap.metadata_fetch_state is BeatmapFetchState.PENDING_FETCH:
         return BeatmapFetchState.PENDING_FETCH
     if beatmap.metadata_fetch_state is BeatmapFetchState.FAILED:
@@ -388,13 +520,30 @@ def _result_reason(
     opts: BeatmapResolveOptions,
     beatmap: Beatmap,
 ) -> str | None:
-    """Derive a human-readable reason string."""
+    """解決結果に表示するhuman-readableなreasonを導出する.
+
+    Args:
+        decision (BeatmapFreshnessDecision): freshness判定のreasonを持つdecision.
+        opts (BeatmapResolveOptions): osu file要件を持つoption.
+        beatmap (Beatmap): file stateを持つresolved beatmap.
+
+    Returns:
+        str | None: file要件不足またはfreshness由来のreason. reason不要時はNone.
+    """
     if opts.require_osu_file and beatmap.file_state is not BeatmapFileState.AVAILABLE:
         return "osu_file_required_but_unavailable"
     return decision.reason
 
 
 def _fetch_record_reason(record: object) -> str | None:
+    """Fetch recordのstateからunavailable result用reasonを導出する.
+
+    Args:
+        record (object): statusとoptionalなlast_errorを持つfetch record.
+
+    Returns:
+        str | None: failedまたはpending状態のreason. それ以外はNone.
+    """
     status: object = getattr(record, "status", None)
     if status is BeatmapFetchState.FAILED:
         error: object = getattr(record, "last_error", None)
@@ -405,6 +554,14 @@ def _fetch_record_reason(record: object) -> str | None:
 
 
 def _file_state_from_fetch_status(status: BeatmapFetchState) -> BeatmapFileState:
+    """Metadata fetch stateをunknown beatmap用のfile stateへ変換する.
+
+    Args:
+        status (BeatmapFetchState): file targetに保存されたfetch state.
+
+    Returns:
+        BeatmapFileState: pendingまたはfailedを維持しそれ以外はMISSINGとするfile state.
+    """
     if status is BeatmapFetchState.PENDING_FETCH:
         return BeatmapFileState.PENDING_FETCH
     if status is BeatmapFetchState.FAILED:
@@ -413,7 +570,14 @@ def _file_state_from_fetch_status(status: BeatmapFetchState) -> BeatmapFileState
 
 
 def _set_result(beatmapset: BeatmapSet) -> BeatmapSetResolveResult:
-    """Build a resolve result for a known, cached beatmapset."""
+    """knownかつcachedなbeatmapsetのread-only解決結果を作る.
+
+    Args:
+        beatmapset (BeatmapSet): repositoryから取得したcached beatmapset.
+
+    Returns:
+        BeatmapSetResolveResult: fresh metadata stateを持つresolved beatmapset結果.
+    """
     return BeatmapSetResolveResult(
         beatmapset=beatmapset,
         metadata_status=BeatmapFetchState.FRESH,
