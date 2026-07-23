@@ -293,7 +293,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/services/commands/scores/{process_submission,authorization}.py_
 
-- [ ] 2.30 (P) 残りのscore command use-caseを整備する
+- [x] 2.30 (P) 残りのscore command use-caseを整備する
   - services/commands/scores配下からperformance/**、process_submission.py、authorization.pyを
     除いた全fileへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびleaderboard、replay accounting、submission、stats projection testが通る
