@@ -343,7 +343,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/transports/stable/bancho/*.py, bancho/{mappers,parsers,workflows}/**_
 
-- [ ] 2.37 (P) Legacy web mapperを整備する
+- [x] 2.37 (P) Legacy web mapperを整備する
   - transports/stable/web_legacy/mappers/**へ共通条件を適用し、legacy field nameとresponse semanticsを
     維持する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびmapper/fixture testが通る
