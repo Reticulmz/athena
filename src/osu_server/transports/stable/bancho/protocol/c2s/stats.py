@@ -1,4 +1,4 @@
-"""C2S stats request packet payloads."""
+"""C2S stats request packet payloadを解析および構築する."""
 
 from typing import Annotated
 
@@ -15,20 +15,42 @@ _MAX_STATS_REQUEST_IDS = 256
 
 @cpstruct(order=LittleEndian)
 class StatsRequestPayload:
-    """STATS_REQUEST の user id list payload。"""
+    """STATS_REQUESTのuser ID list payloadを表す.
+
+    Attributes:
+        count (int): user_idsの件数を表すuint16 wire値.
+        user_ids (list[int]): count件のsigned int32 user IDをwire順に保持する一覧.
+    """
 
     count: Annotated[int, uint16]
     user_ids: Annotated[list[int], int32[this.count]]
 
 
 def stats_request_payload(user_ids: list[int]) -> bytes:
-    """STATS_REQUEST fixture 用の IntList payload を構築する."""
+    """fixture用のSTATS_REQUEST IntList payloadを構築する.
+
+    Args:
+        user_ids (list[int]): statsを要求するstable user IDの一覧.
+
+    Returns:
+        bytes: countとsigned int32 user ID列を連結したpayload.
+    """
     payload: bytes = pack(StatsRequestPayload(count=len(user_ids), user_ids=user_ids))
     return payload
 
 
 def parse_stats_request_payload(payload: bytes) -> tuple[int, ...]:
-    """STATS_REQUEST の IntList payload を検証して user id 順で返す."""
+    """STATS_REQUEST IntList payloadを検証してuser ID順で返す.
+
+    Args:
+        payload (bytes): stable clientから受け取ったC2S payload bytes.
+
+    Returns:
+        tuple[int, ...]: payloadに含まれるuser IDをwire順に並べたtuple.
+
+    Raises:
+        PacketReadError: payloadをdecodeできない, 非canonical, または256件を超える場合.
+    """
     try:
         parsed = unpack(StatsRequestPayload, payload)
     except Exception as exc:

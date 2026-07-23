@@ -1,4 +1,4 @@
-"""C2S (client-to-server) packet payload definitions."""
+"""C2S client-to-server packet payload定義を再exportする."""
 
 from osu_server.transports.stable.bancho.protocol.c2s.beatmap_info import (
     BeatmapInfoRequest,

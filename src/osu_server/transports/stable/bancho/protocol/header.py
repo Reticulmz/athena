@@ -1,13 +1,4 @@
-"""PacketHeader — bancho binary protocol header (7 bytes, little-endian).
-
-Wire layout (Req 1.1, 1.2):
-    Offset 0: PacketID      uint16  (2 bytes)
-    Offset 2: Compression   boolean (1 byte)
-    Offset 3: ContentSize   uint32  (4 bytes)
-    Total:    7 bytes
-
-Design ref: PacketHeader component in bancho-protocol design.md
-"""
+"""7 bytes little-endian Bancho packet headerを定義する."""
 
 from typing import Annotated
 
@@ -16,12 +7,18 @@ from caterpillar.fields import boolean, uint16, uint32
 from caterpillar.model import struct
 
 HEADER_SIZE: int = 7
-"""Fixed byte length of a bancho packet header."""
+"""Bancho packet headerの固定byte長を表す."""
 
 
 @struct(order=LittleEndian)
 class PacketHeader:
-    """Bancho packet header: PacketID + Compression + ContentSize."""
+    """Bancho packet headerのwire field群を表す.
+
+    Attributes:
+        packet_id (int): uint16のpacket ID.
+        compression (bool): 圧縮の有無を表すboolean field.
+        content_size (int): uint32のpayload byte長.
+    """
 
     packet_id: Annotated[int, uint16]
     compression: Annotated[bool, boolean]

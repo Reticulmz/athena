@@ -1,4 +1,4 @@
-"""bancho binary protocol — public API re-exports."""
+"""Bancho binary protocolのpublic APIを再exportする."""
 
 from osu_server.transports.stable.bancho.protocol.enums import (
     ClientPacketID,
@@ -24,6 +24,7 @@ from osu_server.transports.stable.bancho.protocol.types import (
 from osu_server.transports.stable.bancho.protocol.writer import write_packet
 
 PROTOCOL_VERSION = 19
+"""stable clientへ通知するBancho protocol versionを表す."""
 
 __all__ = [
     "HEADER_SIZE",

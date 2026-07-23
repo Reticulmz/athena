@@ -1,15 +1,13 @@
-"""C2S / S2C packet ID enumerations for the bancho binary protocol.
+"""Bancho binary protocolのC2S/S2C packet ID enumを定義する.
 
-Defined per bancho-documentation Wiki (ID 0-109).
-Two independent IntEnum types allow the same numeric ID to coexist
-in different directions (Req 2.3).
+同じ数値IDをdirectionごとに表現するため, 独立したIntEnum型を使う.
 """
 
 from enum import IntEnum
 
 
 class ClientPacketID(IntEnum):
-    """Client → Server packet identifiers (49 entries)."""
+    """Clientからserverへ送るpacket identifierを表す."""
 
     STATUS_CHANGE = 0
     SEND_MESSAGE = 1
@@ -63,7 +61,7 @@ class ClientPacketID(IntEnum):
 
 
 class ServerPacketID(IntEnum):
-    """Server → Client packet identifiers (62 entries)."""
+    """Serverからclientへ送るpacket identifierを表す."""
 
     LOGIN_REPLY = 5
     COMMAND_ERROR = 6

@@ -1,8 +1,4 @@
-"""C2S status packet payloads.
-
-Lekuruu bancho-documentation:
-- ChangeStatus (0): StatusUpdate
-"""
+"""C2S STATUS_CHANGE payloadをstable wire contractに従って扱う."""
 
 from caterpillar.byteorder import LittleEndian
 from caterpillar.fields import int32, uint8
@@ -17,19 +13,40 @@ _COMPAT_EMPTY_STRING_PAYLOAD = b"\x0b\x00"
 
 @cpstruct(order=LittleEndian)
 class StatusChangePayload:
-    """STATUS_CHANGE の StatusUpdate payload。"""
+    """STATUS_CHANGEのStatusUpdate payloadを表す.
+
+    Attributes:
+        status_update (StatusUpdate): player statusを表すwire field群.
+    """
 
     status_update: StatusUpdate
 
 
 def status_change_payload(status_update: StatusUpdate) -> bytes:
-    """C2S fixture 用の STATUS_CHANGE payload を構築する。"""
+    """fixture用のSTATUS_CHANGE payloadを構築する.
+
+    Args:
+        status_update (StatusUpdate): wire順に符号化するplayer status.
+
+    Returns:
+        bytes: StatusUpdate 1 fieldで構成したpayload.
+    """
     payload: bytes = pack(StatusChangePayload(status_update=status_update))
     return payload
 
 
 def parse_status_change_payload(payload: bytes) -> StatusUpdate:
-    """STATUS_CHANGE payload を stable 互換の空文字表現込みで解析する。"""
+    """stable互換の空文字表現を含むSTATUS_CHANGE payloadを解析する.
+
+    Args:
+        payload (bytes): clientから受け取ったStatusUpdate payload.
+
+    Returns:
+        StatusUpdate: canonicalまたは空文字列互換表現として検証済みのstatus.
+
+    Raises:
+        PacketReadError: payloadをdecodeできないか非canonical bytesを含む場合.
+    """
     try:
         parsed = unpack(StatusChangePayload, payload)
     except Exception as exc:
@@ -41,6 +58,14 @@ def parse_status_change_payload(payload: bytes) -> StatusUpdate:
 
 
 def _status_update_payload_variants(status_update: StatusUpdate) -> tuple[bytes, ...]:
+    """Status updateに許可するstable互換payload表現を列挙する.
+
+    Args:
+        status_update (StatusUpdate): 表現候補を作るdecode済みstatus.
+
+    Returns:
+        tuple[bytes, ...]: 空文字列のcanonicalまたは互換表現を組み合わせた候補.
+    """
     status_payload: bytes = pack(status_update.status, LittleEndian + uint8)
     mods_payload: bytes = pack(status_update.mods, LittleEndian + int32)
     play_mode_payload: bytes = pack(status_update.play_mode, LittleEndian + uint8)
@@ -58,6 +83,14 @@ def _status_update_payload_variants(status_update: StatusUpdate) -> tuple[bytes,
 
 
 def _string_payload_variants(value: str) -> tuple[bytes, ...]:
+    """文字列に許可するBanchoString payload表現を返す.
+
+    Args:
+        value (str): wire表現に変換する文字列.
+
+    Returns:
+        tuple[bytes, ...]: 非空文字列ではcanonical表現, 空文字列では互換表現も含む候補.
+    """
     canonical_payload: bytes = pack(value, LittleEndian + BanchoString)
     if value:
         return (canonical_payload,)

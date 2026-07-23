@@ -1,7 +1,4 @@
-"""S2C chat packet builders - send_message, channel_join_success, channel_revoked.
-
-Design ref: S2C Chat Builders in channel-system design.md
-"""
+"""stable clientへ送るS2C chat packetを構築する."""
 
 from caterpillar.byteorder import LittleEndian
 from caterpillar.model import pack
@@ -14,18 +11,10 @@ from osu_server.transports.stable.bancho.protocol.writer import write_packet
 
 @cpstruct(order=LittleEndian)
 class SendMessagePayload:
-    """SEND_MESSAGE payload.
+    """SEND_MESSAGEのMessage payloadを表す.
 
-    挙動:
-        stable client に配送する chat message を Message wire type として保持する.
-    引数:
-        message: sender/content/target/sender_id を含む Message.
-    戻り値:
-        Caterpillar pack 時に Message と同じ byte 列へ encode される.
-    例外:
-        field 値が wire type の範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        packet header は含めず, payload 本体だけを表す.
+    Attributes:
+        message (Message): 送信者, 本文, 宛先, 送信者IDを持つchat message.
     """
 
     message: Message
@@ -33,18 +22,10 @@ class SendMessagePayload:
 
 @cpstruct(order=LittleEndian)
 class UserDmBlockedPayload:
-    """USER_DM_BLOCKED payload.
+    """USER_DM_BLOCKEDのMessage形式payloadを表す.
 
-    挙動:
-        DM が拒否された target を Message wire type として保持する.
-    引数:
-        message: 空の sender/content と target, sender_id=0 を含む Message.
-    戻り値:
-        Caterpillar pack 時に Message と同じ byte 列へ encode される.
-    例外:
-        field 値が wire type の範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        stable client 互換のため Message 形式を維持する.
+    Attributes:
+        message (Message): 空のsender/content, target, sender_id=0を持つmessage.
     """
 
     message: Message
@@ -52,18 +33,10 @@ class UserDmBlockedPayload:
 
 @cpstruct(order=LittleEndian)
 class ChannelJoinSuccessPayload:
-    """CHANNEL_JOIN_SUCCESS payload.
+    """CHANNEL_JOIN_SUCCESSのchannel name payloadを表す.
 
-    挙動:
-        join に成功した channel name を BanchoString として保持する.
-    引数:
-        channel_name: stable channel name.
-    戻り値:
-        Caterpillar pack 時に BanchoString の byte 列へ encode される.
-    例外:
-        channel_name が encode 不能な場合は Caterpillar の pack error を送出する.
-    制約:
-        packet header は含めず, payload 本体だけを表す.
+    Attributes:
+        channel_name (str): joinに成功したBanchoString stable channel名.
     """
 
     channel_name: BanchoStringT
@@ -71,37 +44,26 @@ class ChannelJoinSuccessPayload:
 
 @cpstruct(order=LittleEndian)
 class ChannelRevokedPayload:
-    """CHANNEL_REVOKED payload.
+    """CHANNEL_REVOKEDのchannel name payloadを表す.
 
-    挙動:
-        revoke された channel name を BanchoString として保持する.
-    引数:
-        channel_name: stable channel name.
-    戻り値:
-        Caterpillar pack 時に BanchoString の byte 列へ encode される.
-    例外:
-        channel_name が encode 不能な場合は Caterpillar の pack error を送出する.
-    制約:
-        packet header は含めず, payload 本体だけを表す.
+    Attributes:
+        channel_name (str): revokeされたBanchoString stable channel名.
     """
 
     channel_name: BanchoStringT
 
 
 def send_message(*, sender: str, content: str, target: str, sender_id: int) -> bytes:
-    """SEND_MESSAGE packet を構築する.
+    """SEND_MESSAGE packetを構築する.
 
-    引数:
-        sender: 表示する送信者名.
-        content: chat message 本文.
-        target: channel name または private message target.
-        sender_id: 送信者の stable user id.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        field 値が wire type の範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        外部シグネチャと Message wire format は互換性維持のため変更しない.
+    Args:
+        sender (str): 表示する送信者名.
+        content (str): chat message本文.
+        target (str): channel名またはprivate message target.
+        sender_id (int): 送信者のstable user ID.
+
+    Returns:
+        bytes: 7 byte headerとMessage payloadを含むpacket.
     """
     msg = Message(sender=sender, content=content, target=target, sender_id=sender_id)
     payload: bytes = pack(SendMessagePayload(message=msg))
@@ -109,16 +71,13 @@ def send_message(*, sender: str, content: str, target: str, sender_id: int) -> b
 
 
 def user_dm_blocked(*, target: str) -> bytes:
-    """USER_DM_BLOCKED packet を構築する.
+    """USER_DM_BLOCKED packetを構築する.
 
-    引数:
-        target: DM を拒否した target username.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        target が encode 不能な場合は Caterpillar の pack error を送出する.
-    制約:
-        stable client 互換のため payload は Message wire format とする.
+    Args:
+        target (str): DMを拒否したtarget username.
+
+    Returns:
+        bytes: 7 byte headerとMessage形式payloadを含むpacket.
     """
     msg = Message(sender="", content="", target=target, sender_id=0)
     payload: bytes = pack(UserDmBlockedPayload(message=msg))
@@ -126,32 +85,26 @@ def user_dm_blocked(*, target: str) -> bytes:
 
 
 def channel_join_success(*, channel_name: str) -> bytes:
-    """CHANNEL_JOIN_SUCCESS packet を構築する.
+    """CHANNEL_JOIN_SUCCESS packetを構築する.
 
-    引数:
-        channel_name: join に成功した stable channel name.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        channel_name が encode 不能な場合は Caterpillar の pack error を送出する.
-    制約:
-        payload は BanchoString 1 field の wire format とする.
+    Args:
+        channel_name (str): joinに成功したstable channel名.
+
+    Returns:
+        bytes: 7 byte headerとBanchoString payloadを含むpacket.
     """
     payload: bytes = pack(ChannelJoinSuccessPayload(channel_name=channel_name))
     return write_packet(ServerPacketID.CHANNEL_JOIN_SUCCESS, payload)
 
 
 def channel_revoked(*, channel_name: str) -> bytes:
-    """CHANNEL_REVOKED packet を構築する.
+    """CHANNEL_REVOKED packetを構築する.
 
-    引数:
-        channel_name: revoke された stable channel name.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        channel_name が encode 不能な場合は Caterpillar の pack error を送出する.
-    制約:
-        payload は BanchoString 1 field の wire format とする.
+    Args:
+        channel_name (str): revokeされたstable channel名.
+
+    Returns:
+        bytes: 7 byte headerとBanchoString payloadを含むpacket.
     """
     payload: bytes = pack(ChannelRevokedPayload(channel_name=channel_name))
     return write_packet(ServerPacketID.CHANNEL_REVOKED, payload)

@@ -1,8 +1,4 @@
-"""Packet reader — parse C2S packets from a byte stream using Caterpillar Greedy arrays.
-
-Design ref: RawPacket + read_packets component in bancho-protocol design.md
-Requirements: 4.1, 4.2, 4.4, 4.5
-"""
+"""Caterpillarを使いbyte streamからC2S packetを解析する."""
 
 from typing import Annotated
 
@@ -18,10 +14,13 @@ from osu_server.transports.stable.bancho.protocol.header import HEADER_SIZE
 
 @struct(order=LittleEndian)
 class RawPacket:
-    """Header + variable-length payload as a single Caterpillar struct.
+    """headerと可変長payloadを持つCaterpillar structを表す.
 
-    Used with Greedy array ``RawPacket[...]`` to bulk-parse all packets
-    from an HTTP body in one ``unpack()`` call.
+    Attributes:
+        packet_id (int): uint16のpacket ID.
+        compression (bool): headerのcompression flag.
+        content_size (int): uint32のpayload byte長.
+        payload (bytes): content_size bytesのpacket payload.
     """
 
     packet_id: Annotated[int, uint16]
@@ -31,13 +30,16 @@ class RawPacket:
 
 
 def read_packets(data: bytes | bytearray) -> list[tuple[ClientPacketID, bytes]]:
-    """Read all C2S packets from *data* using Caterpillar Greedy array.
+    """C2S packet streamを解析し, 未知IDを除いて返す.
 
-    Returns a list of ``(ClientPacketID, payload_bytes)`` tuples.
-    Unknown packet IDs (not in :class:`ClientPacketID`) are silently skipped.
+    Args:
+        data (bytes | bytearray): 0件以上のheaderとpayloadを連結したHTTP body.
 
-    Raises :class:`PacketReadError` if the data is malformed (incomplete
-    header or insufficient payload).
+    Returns:
+        list[tuple[ClientPacketID, bytes]]: 既知packet IDとpayloadのwire順list.
+
+    Raises:
+        PacketReadError: headerまたはpayloadが途中で終わるかCaterpillarがdecodeできない場合.
     """
     if len(data) == 0:
         return []

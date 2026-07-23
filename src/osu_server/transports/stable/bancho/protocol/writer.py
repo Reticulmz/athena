@@ -1,9 +1,4 @@
-"""Packet writer — build S2C packets from ServerPacketID and payload.
-
-Design ref: write_packet component in bancho-protocol design.md
-Requirements: 4.3
-Logging requirements: 5.1-5.4 (structured-logging spec)
-"""
+"""ServerPacketIDとpayloadからS2C packetを構築する."""
 
 import struct
 
@@ -22,16 +17,21 @@ QUIET_S2C_PACKETS: frozenset[ServerPacketID] = frozenset(
         ServerPacketID.USER_PRESENCE,
     }
 )
+"""debug levelで送信eventを記録する頻出S2C packet ID集合を表す."""
 
 
 def write_packet(packet_id: ServerPacketID, payload: bytes = b"") -> bytes:
-    """Build a complete S2C packet: 7-byte header + payload.
+    """7 byte headerとpayloadから完全なS2C packetを構築する.
 
-    Compression is always False (unused in modern clients).
+    Args:
+        packet_id (ServerPacketID): headerに書き込むS2C packet ID.
+        payload (bytes): header直後に連結するpayload. 既定値は空bytes.
 
-    Logging behaviour:
-    - Quiet packets (PING, USER_STATS, USER_PRESENCE) → ``logger.debug("s2c_packet", ...)``
-    - All other packets → ``logger.info("s2c_packet", ...)``
+    Returns:
+        bytes: compression flagをFalseにしたheaderとpayloadの連結bytes.
+
+    Notes:
+        PING, USER_STATS, USER_PRESENCEはdebug, それ以外はinfoでs2c_packet eventを記録する.
     """
     header = _HEADER_FMT.pack(packet_id, 0, len(payload))
 
