@@ -1,4 +1,4 @@
-"""テスト用 credential 形状値を共有する helper."""
+"""test用credential形状値を共有するhelperを提供する."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ FIXED_TEST_PASSWORD_MD5 = "a" * 32
 
 
 def fixed_test_password_md5() -> str:
-    """テスト専用の固定 password_md5 値を返す.
+    """test専用の固定password_md5値を返す.
 
     Returns:
-        実在 credential ではない deterministic な MD5 hex 形式の文字列.
+        str: 実在credentialではないdeterministicなMD5 hex形式の文字列.
     """
     return FIXED_TEST_PASSWORD_MD5

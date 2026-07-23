@@ -1,3 +1,5 @@
+"""immutable objectのruntime拒否契約を検証するassertion helperを提供する."""
+
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
@@ -7,22 +9,56 @@ import pytest
 
 
 def assert_rejects_setattr(instance: object, attribute: str, value: object) -> None:
-    """frozen オブジェクトの属性代入不可能性を検証するヘルパー。
+    """Frozen objectが属性代入を拒否するruntime契約を検証する.
 
-    型チェックの警告を発生させずに、実行時の FrozenInstanceError 送出をアサートする。
+    Args:
+        instance (object): 属性代入を試行するfrozen instance.
+        attribute (str): 代入を試行するattribute名.
+        value (object): attributeへ代入を試行する値.
+
+    Returns:
+        None: FrozenInstanceErrorが送出されることをassertして完了する.
+
+    Notes:
+        型checkerの静的な代入拒否を回避し, runtime contractだけを検証する.
     """
     with pytest.raises(FrozenInstanceError):
         setattr(instance, attribute, value)
 
 
 def assert_rejects_setitem(instance: object, index: int, value: object) -> None:
-    """immutable sequence の要素代入不可能性を検証するヘルパー。
+    """Immutable sequenceが要素代入を拒否するruntime契約を検証する.
 
-    型チェックの警告を発生させずに、実行時の TypeError 送出をアサートする。
+    Args:
+        instance (object): 要素代入を試行するimmutable sequence.
+        index (int): 代入を試行するzero-based index.
+        value (object): indexへ代入を試行する値.
+
+    Returns:
+        None: TypeErrorが送出されることをassertして完了する.
+
+    Notes:
+        型checkerの静的な代入拒否を回避し, runtime contractだけを検証する.
     """
     with pytest.raises(TypeError):
         cast("_SupportsSetitem", instance)[index] = value
 
 
 class _SupportsSetitem(Protocol):
-    def __setitem__(self, index: int, value: object) -> None: ...
+    """item assignmentを受け入れるstructural protocolを表す.
+
+    Notes:
+        assertion helperがruntime assignmentを型安全に実行するためだけのprivate protocol.
+    """
+
+    def __setitem__(self, index: int, value: object) -> None:
+        """指定indexへ値を代入する.
+
+        Args:
+            index (int): 代入先のzero-based index.
+            value (object): indexへ保存する値.
+
+        Returns:
+            None: item assignmentを完了し, 呼び出し側へ値を返さない.
+        """
+        ...

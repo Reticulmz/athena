@@ -1,3 +1,5 @@
+"""共通test supportの公開helperを再exportする."""
+
 from __future__ import annotations
 
 from tests.support.fakes import ErrorRaisingUserRepository, FakeHIBPClient

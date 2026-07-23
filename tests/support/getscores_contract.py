@@ -1,4 +1,4 @@
-"""Getscores completion evidence向けのsymbolic test helper。"""
+"""Getscores completion evidence用のsymbolic test helperを提供する."""
 
 from __future__ import annotations
 
@@ -37,20 +37,20 @@ def build_getscores_contract_query(
     case: GetscoresBranchCase,
     base_query: Mapping[str, str],
 ) -> dict[str, str]:
-    """Symbolic branch caseからsafeなstable queryを構築する。
+    """Symbolic branch caseからsafeなstable queryを構築する.
 
     Args:
-        case (GetscoresBranchCase): Closed profileだけを保持するbranch case。
-        base_query (Mapping[str, str]): Caller所有のsynthetic基底query。
+        case (GetscoresBranchCase): closed profileだけを保持するbranch case.
+        base_query (Mapping[str, str]): caller所有のsynthetic基底query.
 
     Returns:
-        dict[str, str]: Caller入力から独立した新しいquery。
+        dict[str, str]: caller入力から独立した新しいquery.
 
     Raises:
-        ValueError: Unknown/incoherent profileまたはrequired base field不足の場合。
+        ValueError: unknown/incoherent profileまたはrequired base fieldが不足する場合.
 
     Notes:
-        Callerのquery値を保存または記録しない。
+        callerのquery値を保存または記録しない.
     """
     query = dict(base_query)
     query.update({"m": "0", "mods": "0", "s": "0", "v": "1", "vv": "4"})
@@ -63,6 +63,18 @@ def build_getscores_contract_query(
 
 
 def _apply_identity_profile(query: dict[str, str], raw_profile: object) -> None:
+    """Identity profileに対応するquery fieldをmutateする.
+
+    Args:
+        query (dict[str, str]): stable request用に更新するquery.
+        raw_profile (object): GetscoresIdentityProfileへ正規化するraw profile値.
+
+    Returns:
+        None: identity profileに対応するfieldを更新し, 呼び出し側へ値を返さずに完了する.
+
+    Raises:
+        ValueError: profileがunknown, またはprofile必須のbase fieldが不足する場合.
+    """
     profile = _closed_profile(
         GetscoresIdentityProfile,
         raw_profile,
@@ -121,6 +133,19 @@ def _apply_request_selector(
     raw_selector: object,
     raw_seed_profile: object,
 ) -> None:
+    """Request selectorとseed profileに対応するquery fieldをmutateする.
+
+    Args:
+        query (dict[str, str]): stable request用に更新するquery.
+        raw_selector (object): GetscoresRequestSelectorへ正規化するraw selector値.
+        raw_seed_profile (object): GetscoresSeedProfileへ正規化するraw seed profile値.
+
+    Returns:
+        None: selectorに対応するfieldを更新し, 呼び出し側へ値を返さずに完了する.
+
+    Raises:
+        ValueError: selector/seed profileがunknown, またはselected-mods profileが非整合な場合.
+    """
     selector = _closed_profile(
         GetscoresRequestSelector,
         raw_selector,
@@ -160,6 +185,18 @@ def _apply_mutation_profiles(
     query: dict[str, str],
     mutation_profiles: tuple[object, ...],
 ) -> None:
+    """Mutation profileごとに意図的なinvalid query fieldを適用する.
+
+    Args:
+        query (dict[str, str]): stable request用に更新するquery.
+        mutation_profiles (tuple[object, ...]): GetscoresMutationProfileへ正規化するraw profile列.
+
+    Returns:
+        None: 全mutation profileを適用し, 呼び出し側へ値を返さずに完了する.
+
+    Raises:
+        ValueError: mutation profileのいずれかがunknownの場合.
+    """
     for raw_mutation in mutation_profiles:
         mutation = _closed_profile(
             GetscoresMutationProfile,
@@ -192,6 +229,19 @@ def _closed_profile[ProfileT: StrEnum](
     raw_profile: object,
     error_code: str,
 ) -> ProfileT:
+    """Raw profileをclosed StrEnum memberへ正規化する.
+
+    Args:
+        profile_type (type[ProfileT]): raw valueを受理するclosed StrEnum type.
+        raw_profile (object): enum memberまたはそのvalueとして渡されたprofile.
+        error_code (str): 正規化失敗時に送出するstable error code.
+
+    Returns:
+        ProfileT: profile_typeに属する正規化済みenum member.
+
+    Raises:
+        ValueError: raw_profileがprofile_typeのmemberへ変換できない場合.
+    """
     try:
         return profile_type(raw_profile)
     except (TypeError, ValueError):
@@ -199,6 +249,18 @@ def _closed_profile[ProfileT: StrEnum](
 
 
 def _required_base_value(query: Mapping[str, str], field: str) -> str:
+    """Base queryから空でない必須field値を取得する.
+
+    Args:
+        query (Mapping[str, str]): 必須fieldを読むbase query.
+        field (str): 読み出す必須field名.
+
+    Returns:
+        str: fieldに保存された空でないvalue.
+
+    Raises:
+        ValueError: fieldが存在しない, または空文字列の場合.
+    """
     value = query.get(field)
     if not value:
         raise ValueError(f"getscores_contract:base_query:{field}:missing_field")
@@ -206,6 +268,15 @@ def _required_base_value(query: Mapping[str, str], field: str) -> str:
 
 
 def _different_synthetic_md5(current: str, preferred: str) -> str:
+    """Current valueと異なるdeterministicなsynthetic MD5を選択する.
+
+    Args:
+        current (str): 衝突を避ける現在のMD5 value.
+        preferred (str): currentと異なる場合に優先して使うsynthetic MD5.
+
+    Returns:
+        str: currentと必ず異なるsynthetic MD5 value.
+    """
     if current != preferred:
         return preferred
     return _ALTERNATE_SYNTHETIC_MD5
@@ -215,19 +286,20 @@ def read_getscores_expected_body(
     evidence: GetscoresCompletionEvidence,
     shape_id: GetscoresWireShapeId,
 ) -> bytes:
-    """Known shapeに対応するexact body bytesを読み出す。
+    """Known shapeに対応するexact body bytesを読み出す.
 
     Args:
-        evidence (GetscoresCompletionEvidence): Typed completion evidence bundle。
-        shape_id (GetscoresWireShapeId): 読み出すknown wire shape ID。
+        evidence (GetscoresCompletionEvidence): typed completion evidence bundle.
+        shape_id (GetscoresWireShapeId): 読み出すknown wire shape ID.
 
     Returns:
-        bytes: Canonical Base64 fixtureから復元したresponse body。
+        bytes: canonical Base64 fixtureから復元したresponse body.
 
     Raises:
-        ValueError: Unknown/missing/duplicate shapeまたはcanonical root外のpathの場合。
-        GetscoresEvidenceValidationError: Canonical Base64 fixtureのdecodeまたは内容検証に
-            失敗した場合。
+        ValueError: unknown/missing/duplicate shape, canonical root外のpath,
+            またはunexpected ownerの場合.
+        GetscoresEvidenceValidationError: canonical Base64 fixtureのdecodeまたは
+            内容検証に失敗する場合.
     """
     known_shape_id = _closed_profile(
         GetscoresWireShapeId,
