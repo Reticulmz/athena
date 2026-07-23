@@ -39,7 +39,7 @@ def setup_listeners(
             stable statusを取得するoptional store.
 
     Returns:
-        None: listener群を登録し、呼び出し側へ値を返さずに完了する.
+        None: listener群を登録し,呼び出し側へ値を返さずに完了する.
     """
     lifecycle = LifecycleListeners(
         active_sessions_query=active_sessions_query,

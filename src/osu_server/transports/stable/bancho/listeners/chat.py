@@ -20,7 +20,7 @@ class ChatListeners(ListenerGroup):
         _channel_state (ChannelStateStore): process-local channel membershipを管理するstore.
 
     Notes:
-        chat historyのdurable persistenceはこのlistenerの責務外である。
+        chat historyのdurable persistenceはこのlistenerの責務外である.
     """
 
     _channel_state: ChannelStateStore
@@ -45,6 +45,6 @@ class ChatListeners(ListenerGroup):
             event (UserDisconnected): 除去対象userのdisconnect domain event.
 
         Returns:
-            None: channel cleanupを実行し、呼び出し側へ値を返さずに完了する.
+            None: channel cleanupを実行し,呼び出し側へ値を返さずに完了する.
         """
         _ = await self._channel_state.remove_user_from_all(event.user_id)

@@ -1,6 +1,6 @@
 """stable Bancho local event listenerを宣言的に登録する基盤を提供する.
 
-``@listens``でevent型へ関連付けたmethodをlocal event busへ一括subscribeする。
+``@listens``でevent型へ関連付けたmethodをlocal event busへ一括subscribeする.
 """
 
 from __future__ import annotations
@@ -15,10 +15,7 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.messaging.local import LocalEventBus
 
 listens = route
-"""local event listener用の``route`` aliasを提供する.
-
-``@listens(UserDisconnected)``のようにevent型をmethodへ関連付ける。
-"""
+"""Alias for :func:`route` — use ``@listens(UserDisconnected)``."""
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -26,8 +23,8 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 class ListenerGroup(RouteGroup):
     """local event listener群の共通登録機能を提供する.
 
-    subclassのasync methodを``@listens(EventType)``で宣言し、``register_all``で
-    local event busへsubscribeする。
+    subclassのasync methodを``@listens(EventType)``で宣言し,``register_all``で
+    local event busへsubscribeする.
     """
 
     def register_all(self, event_bus: LocalEventBus) -> None:
@@ -37,7 +34,7 @@ class ListenerGroup(RouteGroup):
             event_bus (LocalEventBus): listenerを登録するlocal event bus.
 
         Returns:
-            None: 登録数をlogへ記録し、呼び出し側へ値を返さずに完了する.
+            None: 登録数をlogへ記録し,呼び出し側へ値を返さずに完了する.
         """
         count = 0
         for event_type, handler in self.get_routes():

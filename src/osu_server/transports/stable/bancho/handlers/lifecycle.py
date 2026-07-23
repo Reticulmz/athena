@@ -28,7 +28,7 @@ class LifecycleHandlers(HandlerGroup):
         _event_bus (LocalEventBus): disconnect domain eventを発行するlocal event bus.
 
     Notes:
-        EXITではevent発行が失敗しても``finally``でsession削除を実行する。
+        EXITではevent発行が失敗しても``finally``でsession削除を実行する.
     """
 
     _session_store: SessionLifecycleRuntime
@@ -57,7 +57,7 @@ class LifecycleHandlers(HandlerGroup):
             _user_id (int): 内容を利用しない送信元user ID.
 
         Returns:
-            None: keepaliveを受理し、呼び出し側へ値を返さずに完了する.
+            None: keepaliveを受理し,呼び出し側へ値を返さずに完了する.
         """
 
     @handles(ClientPacketID.EXIT)
@@ -69,10 +69,13 @@ class LifecycleHandlers(HandlerGroup):
             user_id (int): 切断する認証済みuserのID.
 
         Returns:
-            None: event発行後にsession削除を行い、値を返さずに完了する.
+            None: event発行後にsession削除を行い,値を返さずに完了する.
+
+        Raises:
+            RuntimeError: LocalEventBus実装のfireが送出し,session削除後に伝播する場合.
 
         Notes:
-            event発行の例外は伝播するが、``finally``によりsession削除は必ず試行する。
+            event発行の例外は伝播するが,``finally``によりsession削除は必ず試行する.
         """
         try:
             await self._event_bus.fire(UserDisconnected(user_id=user_id))

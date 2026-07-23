@@ -65,7 +65,7 @@ class FriendHandlers(HandlerGroup):
             user_id (int): relationshipを所有する認証済みuserのID.
 
         Returns:
-            None: 不正payloadをdropするか、追加commandを実行して値を返さずに完了する.
+            None: 不正payloadをdropするか,追加commandを実行して値を返さずに完了する.
         """
         target_user_id = _parse_friend_user_id(payload, "ADD_FRIEND")
         if target_user_id is None:
@@ -83,7 +83,7 @@ class FriendHandlers(HandlerGroup):
             user_id (int): relationshipを所有する認証済みuserのID.
 
         Returns:
-            None: 不正payloadをdropするか、削除commandを実行して値を返さずに完了する.
+            None: 不正payloadをdropするか,削除commandを実行して値を返さずに完了する.
         """
         target_user_id = _parse_friend_user_id(payload, "REMOVE_FRIEND")
         if target_user_id is None:
@@ -101,7 +101,7 @@ class FriendHandlers(HandlerGroup):
             user_id (int): 更新対象となる認証済みuserのID.
 
         Returns:
-            None: 不正payloadをdropするか、更新commandを実行して値を返さずに完了する.
+            None: 不正payloadをdropするか,更新commandを実行して値を返さずに完了する.
         """
         enabled = _parse_friend_only_dms(payload)
         if enabled is None:

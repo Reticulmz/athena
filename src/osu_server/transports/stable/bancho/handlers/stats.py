@@ -95,7 +95,7 @@ class StatsRequestHandler(HandlerGroup):
             None: 取得できたvisible targetのUSER_STATS packetをenqueueして値を返さずに完了する.
 
         Notes:
-            requester自身、offline user、leaderboard非公開userはstats queryの前に除外する。
+            requester自身,offline user,leaderboard非公開userはstats queryの前に除外する.
         """
         requested_user_ids = _parse_stats_request(payload)
         if requested_user_ids is None:
@@ -167,7 +167,7 @@ class StatsRequestHandler(HandlerGroup):
             tuple[int, ...]: statsを返せるvisible online user ID群. query失敗時は空tuple.
 
         Notes:
-            BanchoBotはactive sessionを持たないため常に保持する。
+            BanchoBotはactive sessionを持たないため常に保持する.
         """
         bot_user_id = self._bot_identity.user_id
         session_user_ids = tuple(user_id for user_id in user_ids if user_id != bot_user_id)
@@ -211,7 +211,7 @@ class StatsRequestHandler(HandlerGroup):
             dict[int, UserCurrentStats]: 取得できたcurrent statsのuser ID対応.
 
         Notes:
-            一つのplay modeのqueryが失敗しても、他のplay modeの結果は保持する。
+            一つのplay modeのqueryが失敗しても,他のplay modeの結果は保持する.
         """
         stats_by_user_id: dict[int, UserCurrentStats] = {}
         for play_mode, scoped_user_ids in _user_ids_by_play_mode(

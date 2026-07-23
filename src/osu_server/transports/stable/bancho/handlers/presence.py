@@ -97,7 +97,7 @@ class PresenceHandlers(HandlerGroup):
             None: online targetのpresence packetをenqueueして値を返さずに完了する.
 
         Notes:
-            offline targetは除外し、BanchoBotはrequesterのcurrent modeで返す。
+            offline targetは除外し,BanchoBotはrequesterのcurrent modeで返す.
         """
         requested_user_ids = _parse_presence_request(payload)
         if requested_user_ids is None:
@@ -151,10 +151,10 @@ class PresenceHandlers(HandlerGroup):
             user_id (int): rosterを要求した認証済みuserのID.
 
         Returns:
-            None: online user、BanchoBot、roster bundleをenqueueして値を返さずに完了する.
+            None: online user,BanchoBot,roster bundleをenqueueして値を返さずに完了する.
 
         Notes:
-            不正なreserved payloadはqueryとenqueueを行わずdropする。
+            不正なreserved payloadはqueryとenqueueを行わずdropする.
         """
         if not _parse_presence_request_all(payload):
             return

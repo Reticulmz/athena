@@ -70,10 +70,10 @@ class LifecycleListeners(ListenerGroup):
             event (UserConnected): 接続したuserを表すdomain event.
 
         Returns:
-            None: recipientがある場合にUSER_PRESENCEをenqueueし、値を返さずに完了する.
+            None: recipientがある場合にUSER_PRESENCEをenqueueし,値を返さずに完了する.
 
         Notes:
-            active sessionに存在しないuserと接続user自身にはpacketを配信しない。
+            active sessionに存在しないuserと接続user自身にはpacketを配信しない.
         """
         active_sessions = await self._active_sessions_query.execute(ListActiveSessionsQueryInput())
         play_mode = await self._play_mode_for_user(event.user_id)
@@ -94,7 +94,7 @@ class LifecycleListeners(ListenerGroup):
             user_id (int): modeを取得するconnected userのID.
 
         Returns:
-            int: 有効なstable play mode. store未設定、値なし、読取失敗、不正値ではosu mode.
+            int: 有効なstable play mode. store未設定,値なし,読取失敗,不正値ではosu mode.
         """
         if self._stable_user_status_store is None:
             return StableMode.Osu.value
@@ -121,10 +121,10 @@ class LifecycleListeners(ListenerGroup):
             event (UserDisconnected): 切断したuserを表すdomain event.
 
         Returns:
-            None: recipientごとにUSER_QUITをenqueueし、呼び出し側へ値を返さずに完了する.
+            None: recipientごとにUSER_QUITをenqueueし,呼び出し側へ値を返さずに完了する.
 
         Notes:
-            切断user自身には自身のquit通知を配信しない。
+            切断user自身には自身のquit通知を配信しない.
         """
         active_sessions = await self._active_sessions_query.execute(ListActiveSessionsQueryInput())
         fanout = self._presence_roster.disconnected_user_fanout(

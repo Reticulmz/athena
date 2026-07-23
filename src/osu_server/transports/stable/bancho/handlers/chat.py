@@ -1,6 +1,6 @@
 """stable Bancho chat C2S packetをchat commandへ適応する.
 
-channel message、private message、channel参加と離脱をpacket queueへのS2C応答へ変換する。
+channel message,private message,channel参加と離脱をpacket queueへのS2C応答へ変換する.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ class ChatHandlers(HandlerGroup):
         _packet_queue (PacketQueue): stable S2C packetを対象sessionへenqueueするqueue.
 
     Notes:
-        不正payloadまたは存在しないsessionはcommandを実行せずdropする。
+        不正payloadまたは存在しないsessionはcommandを実行せずdropする.
     """
 
     _send_channel_message: SendChannelMessageUseCase
@@ -114,7 +114,7 @@ class ChatHandlers(HandlerGroup):
             None: command結果をchannel recipientとsenderへenqueueして値を返さずに完了する.
 
         Notes:
-            channel向けbot応答はrecipientへ、sender専用bot応答はsenderだけへ配信する。
+            channel向けbot応答はrecipientへ,sender専用bot応答はsenderだけへ配信する.
         """
         msg = _parse_message(payload, "SEND_MESSAGE")
         if msg is None:
@@ -183,7 +183,7 @@ class ChatHandlers(HandlerGroup):
             None: delivery結果またはbot応答をenqueueして値を返さずに完了する.
 
         Notes:
-            friend-only DMにより拒否された場合はsenderへuser_dm_blockedを返す。
+            friend-only DMにより拒否された場合はsenderへuser_dm_blockedを返す.
         """
         msg = _parse_message(payload, "SEND_PRIVATE_MESSAGE")
         if msg is None:

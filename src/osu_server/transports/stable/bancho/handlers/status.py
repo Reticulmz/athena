@@ -58,7 +58,7 @@ class _BeatmapFileWarmupUseCase(Protocol):
 
 
 class StatusChangeHandlers(HandlerGroup):
-    """STATUS_CHANGEとREQUEST_STATUSをstatus、stats、warmupへ適応する.
+    """STATUS_CHANGEとREQUEST_STATUSをstatus,stats,warmupへ適応する.
 
     Attributes:
         _beatmap_file_warmup (_BeatmapFileWarmupUseCase): beatmap file取得を要求するuse case.
@@ -102,17 +102,17 @@ class StatusChangeHandlers(HandlerGroup):
 
     @handles(ClientPacketID.STATUS_CHANGE)
     async def handle_status_change(self, payload: bytes, user_id: int) -> None:
-        """STATUS_CHANGEをstatus保存、USER_STATS fan-out、beatmap warmupへ適応する.
+        """STATUS_CHANGEをstatus保存,USER_STATS fan-out,beatmap warmupへ適応する.
 
         Args:
             payload (bytes): StatusUpdateを含むC2S packet payload.
             user_id (int): statusを更新した認証済みuserのID.
 
         Returns:
-            None: 利用可能な副作用を実行し、呼び出し側へ値を返さずに完了する.
+            None: 利用可能な副作用を実行し,呼び出し側へ値を返さずに完了する.
 
         Notes:
-            payload decode失敗とbeatmap warmup失敗はlogへ記録してclientへの例外を防ぐ。
+            payload decode失敗とbeatmap warmup失敗はlogへ記録してclientへの例外を防ぐ.
         """
         try:
             status_update = parse_status_change_payload(payload)
@@ -182,10 +182,10 @@ class StatusChangeHandlers(HandlerGroup):
             user_id (int): statusを保存するuserのID.
 
         Returns:
-            None: storeが利用可能な場合に保存を試行し、値を返さずに完了する.
+            None: storeが利用可能な場合に保存を試行し,値を返さずに完了する.
 
         Notes:
-            store未設定または保存失敗はlogへ記録して後続処理を継続する。
+            store未設定または保存失敗はlogへ記録して後続処理を継続する.
         """
         if self._stable_user_status_store is None:
             return
@@ -214,10 +214,10 @@ class StatusChangeHandlers(HandlerGroup):
             user_id (int): stats更新元userのID.
 
         Returns:
-            None: stats packetの送信を試行し、呼び出し側へ値を返さずに完了する.
+            None: stats packetの送信を試行し,呼び出し側へ値を返さずに完了する.
 
         Notes:
-            active session queryが失敗した場合も本人への送信は継続する。
+            active session queryが失敗した場合も本人への送信は継続する.
         """
         if self._current_user_stats_query is None or self._packet_queue is None:
             return
@@ -268,7 +268,7 @@ class StatusChangeHandlers(HandlerGroup):
             error_event (str): queryまたはenqueue失敗時に記録するlog event名.
 
         Returns:
-            None: current statsを取得して各recipientへenqueueし、値を返さずに完了する.
+            None: current statsを取得して各recipientへenqueueし,値を返さずに完了する.
         """
         if self._current_user_stats_query is None or self._packet_queue is None:
             return
@@ -302,7 +302,7 @@ class StatusChangeHandlers(HandlerGroup):
             user_id (int): statusを取得する認証済みuserのID.
 
         Returns:
-            StableUserStatus: 保存済みstatus. store未設定、読取失敗、値なしでは既定status.
+            StableUserStatus: 保存済みstatus. store未設定,読取失敗,値なしでは既定status.
         """
         if self._stable_user_status_store is None:
             return DEFAULT_STABLE_USER_STATUS
@@ -329,7 +329,7 @@ def _warmup_request_from_status_update(
         user_id (int): statusを更新した認証済みuserのID.
 
     Returns:
-        BeatmapFileWarmupRequest: 正のbeatmap IDを優先し、有効なchecksumをfallbackにした要求.
+        BeatmapFileWarmupRequest: 正のbeatmap IDを優先し,有効なchecksumをfallbackにした要求.
     """
     beatmap_id = status_update.beatmap_id
     if beatmap_id > 0:

@@ -65,13 +65,13 @@ class UserStatsListeners(ListenerGroup):
 
         Args:
             event (CurrentUserStatsUpdated):
-                user、ruleset、playstyle、optional stats snapshotを持つevent.
+                user,ruleset,playstyle,optional stats snapshotを持つevent.
 
         Returns:
             None: current statsを取得できた場合にUSER_STATSをenqueueして値を返さずに完了する.
 
         Notes:
-            eventがsnapshotを持たない場合だけqueryから補完し、query失敗時はpacketを送らない。
+            eventがsnapshotを持たない場合だけqueryから補完し,query失敗時はpacketを送らない.
         """
         play_mode = event.ruleset.value
         should_notify, current_stats = await self._current_stats_for_event(event)
@@ -128,7 +128,7 @@ class UserStatsListeners(ListenerGroup):
             user_id (int): statusを取得するtarget userのID.
 
         Returns:
-            StableUserStatus: 保存済みstatus. store未設定、読取失敗、値なしでは既定status.
+            StableUserStatus: 保存済みstatus. store未設定,読取失敗,値なしでは既定status.
         """
         if self._stable_user_status_store is None:
             return DEFAULT_STABLE_USER_STATUS
