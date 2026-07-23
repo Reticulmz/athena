@@ -322,7 +322,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/services/__init__.py, queries/*.py, queries/scores/**_
 
-- [ ] 2.34 (P) Caterpillar-backed Bancho protocol definitionを整備する
+- [x] 2.34 (P) Caterpillar-backed Bancho protocol definitionを整備する
   - transports/stable/bancho/protocol/**へ共通条件を適用し、wire nameとprotocol valueを維持する
   - 完了条件: scoped Ruff Dとinterrogate 100%および全Bancho protocol fixture/codec testが通る
   - _Depends: 1.4_
