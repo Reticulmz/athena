@@ -1,4 +1,4 @@
-"""安定版 legacy score submit の request/response mapper。"""
+"""安定版 legacy score submitのrequestとresponseを変換する."""
 
 from __future__ import annotations
 
@@ -46,10 +46,31 @@ _OPAQUE_METADATA_FIELDS = frozenset({"fs", "bmk", "sbk", "c1", "st", "i", "token
 
 
 class _FingerprintHasher(Protocol):
-    def update(self, data: bytes, /) -> None: ...
+    """Submission fingerprintを更新するhash objectの最小interfaceを表す."""
+
+    def update(self, data: bytes, /) -> None:
+        """指定したbytesをfingerprint計算へ追加する.
+
+        Args:
+            data (bytes): hashへ追加する順序付きbytes.
+
+        Returns:
+            None: hash stateを更新し, 呼び出し側へ値を返さずに完了する.
+        """
+        ...
 
 
 def _update_fingerprint_bytes(hasher: _FingerprintHasher, label: bytes, value: bytes) -> None:
+    """長さを区切ったbytes fieldをsubmission fingerprintへ追加する.
+
+    Args:
+        hasher (_FingerprintHasher): 追加先のhash object.
+        label (bytes): fieldを識別する固定label.
+        value (bytes): fingerprint対象のraw value.
+
+    Returns:
+        None: labelとvalueをambiguousでない順序でhashへ追加して完了する.
+    """
     hasher.update(label)
     hasher.update(b"\0")
     hasher.update(str(len(value)).encode())
@@ -59,10 +80,31 @@ def _update_fingerprint_bytes(hasher: _FingerprintHasher, label: bytes, value: b
 
 
 def _update_fingerprint_text(hasher: _FingerprintHasher, label: str, value: str) -> None:
+    """Text fieldをUTF-8 bytesへ変換してsubmission fingerprintへ追加する.
+
+    Args:
+        hasher (_FingerprintHasher): 追加先のhash object.
+        label (str): fieldを識別する固定label.
+        value (str): fingerprint対象のtext value.
+
+    Returns:
+        None: textをbytes fieldとして追加し, 呼び出し側へ値を返さずに完了する.
+    """
     _update_fingerprint_bytes(hasher, label.encode(), value.encode())
 
 
 def _hash_submission_metadata(metadata: dict[str, str]) -> dict[str, str]:
+    """許可したopaque metadataだけをSHA-256 digestへ変換する.
+
+    Args:
+        metadata (dict[str, str]): multipart requestから取得したmetadata.
+
+    Returns:
+        dict[str, str]: 許可field名に_sha256を付加したdigest mapping.
+
+    Notes:
+        raw metadata値をcommand inputやlogへ渡さないため, allowlist外のfieldは無視する.
+    """
     return {
         f"{key}_sha256": hashlib.sha256(value.encode()).hexdigest()
         for key, value in sorted(metadata.items())
@@ -71,15 +113,11 @@ def _hash_submission_metadata(metadata: dict[str, str]) -> dict[str, str]:
 
 
 class StableScorePayloadDecryptor(Protocol):
-    """安定版 score payload を復号する transport 境界。
+    """安定版score payloadを復号するtransport boundaryを表す.
 
-    振る舞い:
-        Stable multipart から取り出した encrypted payload と IV を復号し、
-        plaintext と checksum 検証結果を返す。
-
-    Constraints:
-        実装は credential や encrypted payload を logging しない。復号失敗の詳細は
-        呼び出し側で stable response 用の固定理由へ正規化される。
+    Notes:
+        implementationはcredentialやencrypted payloadをloggingしない. 復号失敗の詳細は
+        呼び出し側でstable response用の固定理由へ正規化する.
     """
 
     def decrypt_score_payload(
@@ -88,44 +126,44 @@ class StableScorePayloadDecryptor(Protocol):
         iv: bytes,
         osu_version: str | None,
     ) -> DecryptedPayload:
-        """暗号化 payload と IV を復号し checksum 検証結果を返す。
+        """暗号化payloadとIVを復号しchecksum検証結果を返す.
 
         Args:
-            encrypted: multipart field から取り出した encrypted score payload。
-            iv: stable client が送る IV。
-            osu_version: stable client version。未送信の場合は None。
+            encrypted (bytes): multipart fieldから取り出したencrypted score payload.
+            iv (bytes): stable clientが送るIV.
+            osu_version (str | None): stable client version. 未送信の場合はNone.
 
         Returns:
-            plaintext と checksum_valid を含む DecryptedPayload。
+            DecryptedPayload: plaintextとchecksum_validを含む復号結果.
 
         Raises:
-            DecryptionError: payload を復号できない、または暗号入力が不正な場合。
+            DecryptionError: payloadを復号できないか暗号入力が不正な場合.
 
-        Constraints:
-            plaintext は transport 境界内で parse し、command use-case へ encrypted
-            payload や IV を渡さない。
+        Notes:
+            plaintextはtransport boundary内でparseし, command use-caseへencrypted payloadやIVを
+            渡さない.
         """
         ...
 
 
 class StableScorePayloadParser:
-    """安定版 score payload text を canonical score domain 値へ変換する parser。
+    """安定版score payload textをcanonical score domain値へ変換するparser.
 
-    Legacy 16-field payload と stable 16-19-field payload を受け付け、
-    command 境界で扱う ParsedScore へ変換する。
+    Legacy 16-field payloadとstable 16-19-field payloadを受け付け, command boundaryで扱う
+    ParsedScoreへ変換する.
     """
 
     def parse(self, payload: str) -> ParsedScore:
-        """レガシーまたは stable score payload を ParsedScore に変換する.
+        """Legacyまたはstable score payloadをParsedScoreへ変換する.
 
         Args:
-            payload: stable client が送る colon-delimited payload.
+            payload (str): stable clientが送るcolon-delimited payload.
 
         Returns:
-            ParsedScore.
+            ParsedScore: command inputへ渡せるcanonicalなscore値.
 
         Raises:
-            ParseError: payload が空, field count が不正, または field 値を変換できない場合.
+            ParseError: payloadが空かfield countまたはfield値を変換できない場合.
         """
         if not payload:
             raise ParseError("Payload cannot be empty")
@@ -145,30 +183,26 @@ class StableScorePayloadParser:
 
 @dataclass(frozen=True, slots=True)
 class StableScoreSubmitRequestMapping:
-    """安定版 multipart request から取り出した復号前 material。
+    """安定版multipart requestから取り出した復号前materialを表す.
 
-    振る舞い:
-        Handler が受け取った HTTP request body から、score payload、IV、replay、
-        credential、client metadata、診断用 metadata を保持する。
+    Attributes:
+        encrypted_payload (bytes): 復号前のscore payload.
+        iv (bytes): payload復号に使うIV.
+        replay_data (bytes | None): 添付replay binary. 未送信の場合はNone.
+        password_md5 (str): stable clientが送るpassword-md5 credential.
+        client_hash (str): stable clientのchecksum/hash field.
+        submitted_at (datetime): serverがrequestを受け取った時刻.
+        score_field_count (int): multipart内のscore field数.
+        replay_present (bool): replay fieldが存在したかどうか.
+        replay_byte_size (int | None): replay_dataのbyte数. 未送信の場合はNone.
+        fail_time_ms (int | None): fail time field. 未送信の場合はNone.
+        submit_exit_classification (str | None): client終了種別の診断値.
+        osu_version (str | None): stable client version. 未送信の場合はNone.
+        beatmap_id (int | None): form field由来のbeatmap id. 未送信の場合はNone.
+        submission_metadata (dict[str, str]): opaque fieldのraw値. commandへはhash済みで渡す.
 
-    Args:
-        encrypted_payload: 復号前の score payload。
-        iv: payload 復号に使う IV。
-        replay_data: 添付 replay binary。未送信の場合は None。
-        password_md5: stable client が送る password-md5 credential。
-        client_hash: stable client の checksum/hash field。
-        submitted_at: server が request を受け取った時刻。
-        score_field_count: multipart 内の score field 数。
-        replay_present: replay field が存在したかどうか。
-        replay_byte_size: replay_data の byte 数。未送信の場合は None。
-        fail_time_ms: fail time field。未送信の場合は None。
-        submit_exit_classification: client 終了種別の診断値。
-        osu_version: stable client version。未送信の場合は None。
-        beatmap_id: form field 由来の beatmap id。未送信の場合は None。
-        submission_metadata: token など opaque field の生値。command へは hash 済みで渡す。
-
-    Constraints:
-        この型は transport 内だけで扱い、command use-case へは渡さない。
+    Notes:
+        この型はtransport内だけで扱い, command use-caseへ渡さない.
     """
 
     encrypted_payload: bytes
@@ -189,20 +223,20 @@ class StableScoreSubmitRequestMapping:
 
 @dataclass(frozen=True, slots=True)
 class StableScoreSubmitCommandMapping:
-    """命令 input と stable transport 診断情報をまとめた decode 結果。
+    """Command inputとstable transport診断情報をまとめたdecode結果を表す.
 
-    Args:
-        input_data: score submission command に渡す正規化済み入力。
-        score_field_count: multipart 内の score field 数。
-        replay_present: replay field が存在したかどうか。
-        replay_byte_size: replay_data の byte 数。未送信の場合は None。
-        fail_time_ms: fail time field。未送信の場合は None。
-        submit_exit_classification: client 終了種別の診断値。
-        osu_version: stable client version。未送信の場合は None。
+    Attributes:
+        input_data (ParsedSubmissionInput): score submission commandへ渡す正規化済み入力.
+        score_field_count (int): multipart内のscore field数.
+        replay_present (bool): replay fieldが存在したかどうか.
+        replay_byte_size (int | None): replay_dataのbyte数. 未送信の場合はNone.
+        fail_time_ms (int | None): fail time field. 未送信の場合はNone.
+        submit_exit_classification (str | None): client終了種別の診断値.
+        osu_version (str | None): stable client version. 未送信の場合はNone.
 
-    Constraints:
-        logging 用の診断値と command input を同じ decode 結果として返すが、
-        transport wire 型は command input へ混入させない。
+    Notes:
+        logging用の診断値とcommand inputを同じdecode結果として返すが, transport wire型は
+        command inputへ混入させない.
     """
 
     input_data: ParsedSubmissionInput
@@ -215,11 +249,18 @@ class StableScoreSubmitCommandMapping:
 
 
 class StableScoreSubmitDecodeError(Exception):
-    """安定版 score submit payload を command input に変換できない場合の例外。
+    """安定版score submit payloadをcommand inputへ変換できない場合の例外を表す.
 
-    振る舞い:
-        復号失敗、checksum 不一致、payload parse 失敗を stable response 用の
-        SubmissionResult と sanitized diagnostics に変換して保持する。
+    Attributes:
+        result (SubmissionResult): clientへ返すstable responseの基になる結果.
+        reason (str): loggingと分類に使う固定理由.
+        request_hash (str): stable requestを識別するhash.
+        opaque_field_hashes (dict[str, str]): opaque metadataのSHA-256 digest.
+        error (str | None): raw exception textを含まないsanitized error label.
+
+    Notes:
+        復号失敗, checksum不一致, payload parse失敗をstable response用のSubmissionResultと
+        sanitized diagnosticsに変換して保持する.
     """
 
     def __init__(
@@ -231,24 +272,18 @@ class StableScoreSubmitDecodeError(Exception):
         opaque_field_hashes: dict[str, str],
         error: str | None = None,
     ) -> None:
-        """復号 decode 失敗の response 結果と診断情報を保持する。
+        """復号decode失敗のresponse結果と診断情報を初期化する.
 
         Args:
-            result: client へ返す stable response の基になる SubmissionResult。
-            reason: logging と分類に使う固定理由。
-            request_hash: stable request を識別する hash。
-            opaque_field_hashes: opaque metadata の SHA-256 hash。
-            error: raw exception text を含まない sanitized error label。
+            result (SubmissionResult): clientへ返すstable responseの基になる結果.
+            reason (str): loggingと分類に使う固定理由.
+            request_hash (str): stable requestを識別するhash.
+            opaque_field_hashes (dict[str, str]): opaque metadataのSHA-256 digest.
+            error (str | None): raw exception textを含まないsanitized error label.
 
-        Returns:
-            None。
-
-        Raises:
-            生成時に独自例外は送出しない。
-
-        Constraints:
-            error と result.error_reason に復号鍵、payload、credential、raw exception
-            message を含めない。
+        Notes:
+            errorとresult.error_reasonに復号鍵, payload, credential, raw exception messageを
+            含めない.
         """
         super().__init__(result.error_reason)
         self.result: SubmissionResult = result
@@ -260,17 +295,18 @@ class StableScoreSubmitDecodeError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class StableScoreSubmitOverallStats:
-    """安定版 score submit overall chart に載せる current stats 値。
+    """安定版score submit overall chartに載せるcurrent stats値を表す.
 
-    Args:
-        rank: current global rank。未取得の場合は None。
-        ranked_score: current ranked score。未取得の場合は None。
-        total_score: current total score。未取得の場合は None。
-        accuracy: current accuracy。未取得の場合は None。
-        stable_pp: stable client response 用の rounded pp。未取得の場合は None。
+    Attributes:
+        rank (int | None): current global rank. 未取得の場合はNone.
+        ranked_score (int): current ranked score.
+        total_score (int): current total score.
+        max_combo (int): current maximum combo.
+        accuracy (float): current accuracy.
+        stable_pp (int): stable client response用にroundしたpp.
 
-    Constraints:
-        response formatting 専用の値であり、command result の canonical state には戻さない。
+    Notes:
+        response formatting専用の値であり, command resultのcanonical stateには戻さない.
     """
 
     rank: int | None = None
@@ -283,6 +319,16 @@ class StableScoreSubmitOverallStats:
 
 @dataclass(frozen=True, slots=True)
 class _BeatmapMetadataFields:
+    """Beatmap metadata chart行を組み立てる内部field集合を表す.
+
+    Attributes:
+        beatmap_id (int): beatmap識別子.
+        beatmapset_id (int): beatmapset識別子.
+        playcount (int): 表示するplay count.
+        passcount (int): 表示するpass count.
+        approved_at (datetime | None): approval日時. 未設定の場合はNone.
+    """
+
     beatmap_id: int
     beatmapset_id: int
     playcount: int
@@ -292,6 +338,24 @@ class _BeatmapMetadataFields:
 
 @dataclass(frozen=True, slots=True)
 class _BeatmapChartFields:
+    """Beatmap ranking chart行を組み立てる内部field集合を表す.
+
+    Attributes:
+        chart_url (str): stable web上のbeatmap URL.
+        achieved (str): scoreが達成済みかを表すwire値.
+        rank_before (int | str): 送信前rank. 不明時は空文字列.
+        rank_after (int): 送信後rank.
+        max_combo_before (int): 送信前maximum combo.
+        max_combo_after (int): 送信後maximum combo.
+        accuracy_before (str): 送信前accuracyのwire表現.
+        accuracy_after (str): 送信後accuracyのwire表現.
+        score_before (int): 送信前score.
+        score_after (int): 送信後score.
+        pp_before (int): 送信前pp.
+        pp_after (int): 送信後pp.
+        score_id (int): online score識別子.
+    """
+
     chart_url: str
     achieved: str
     rank_before: int | str
@@ -309,6 +373,25 @@ class _BeatmapChartFields:
 
 @dataclass(frozen=True, slots=True)
 class _OverallChartFields:
+    """Overall ranking chart行を組み立てる内部field集合を表す.
+
+    Attributes:
+        chart_url (str): stable web上のuser URL.
+        rank_before (int): 送信前global rank.
+        rank_after (int): 送信後global rank.
+        ranked_score_before (int): 送信前ranked score.
+        ranked_score_after (int): 送信後ranked score.
+        total_score_before (int): 送信前total score.
+        total_score_after (int): 送信後total score.
+        max_combo_before (int): 送信前maximum combo.
+        max_combo_after (int): 送信後maximum combo.
+        accuracy_before (str): 送信前accuracyのwire表現.
+        accuracy_after (str): 送信後accuracyのwire表現.
+        pp_before (int): 送信前pp.
+        pp_after (int): 送信後pp.
+        score_id (int): online score識別子.
+    """
+
     chart_url: str
     rank_before: int
     rank_after: int
@@ -326,10 +409,10 @@ class _OverallChartFields:
 
 
 class StableScoreSubmitMapper:
-    """安定版 legacy score submit の wire request/response を変換する mapper。
+    """安定版legacy score submitのwire requestとresponseを変換するmapper.
 
-    Stable multipart request を復号前 mapping に変換し、command の SubmissionResult を
-    stable client 互換の text response へ整形する。
+    Stable multipart requestを復号前mappingに変換し, commandのSubmissionResultをstable client互換の
+    text responseへ整形する.
     """
 
     def __init__(
@@ -337,20 +420,14 @@ class StableScoreSubmitMapper:
         limits: MultipartLimits | None = None,
         stable_web_base_url: str = "",
     ) -> None:
-        """変換 mapper の multipart 制限と stable URL base を設定する。
+        """変換mapperのmultipart制限とstable URL baseを設定する.
 
         Args:
-            limits: multipart parser の制限値。None の場合は既定値を使う。
-            stable_web_base_url: response 内 chart URL の base URL。
+            limits (MultipartLimits | None): multipart parserの制限値. Noneの場合は既定値を使う.
+            stable_web_base_url (str): response内chart URLのbase URL.
 
-        Returns:
-            None。
-
-        Raises:
-            生成時に独自例外は送出しない。
-
-        Constraints:
-            stable_web_base_url 末尾の slash は response 組み立て前に除去する。
+        Notes:
+            stable_web_base_url末尾のslashはresponse組み立て前に除去する.
         """
         self._limits: MultipartLimits = limits or MultipartLimits()
         self._stable_web_base_url: str = stable_web_base_url.rstrip("/")
@@ -362,18 +439,18 @@ class StableScoreSubmitMapper:
         content_type: str,
         submitted_at: datetime,
     ) -> StableScoreSubmitRequestMapping:
-        """マルチパート body を復号前の request mapping に変換する.
+        """Multipart bodyを復号前のrequest mappingへ変換する.
 
         Args:
-            body: stable client が送信した multipart body.
-            content_type: multipart boundary を含む Content-Type header.
-            submitted_at: transport が request を受け取った時刻.
+            body (bytes): stable clientが送信したmultipart body.
+            content_type (str): multipart boundaryを含むContent-Type header.
+            submitted_at (datetime): transportがrequestを受け取った時刻.
 
         Returns:
-            復号前 payload, replay, metadata を含む request mapping.
+            StableScoreSubmitRequestMapping: 復号前payload, replay, metadataを含むrequest mapping.
 
         Raises:
-            MultipartParseError: multipart body が stable score submit として不正な場合.
+            MultipartParseError: multipart bodyがstable score submitとして不正な場合.
         """
         parsed = parse(body, content_type, self._limits)
         return StableScoreSubmitRequestMapping(
@@ -399,21 +476,19 @@ class StableScoreSubmitMapper:
         *,
         overall_stats: StableScoreSubmitOverallStats | None = None,
     ) -> Response:
-        """送信 result を stable legacy response body へ変換する。
+        """送信resultをstable legacy response bodyへ変換する.
 
         Args:
-            result: command use-case が返した submission 結果。
-            overall_stats: handler が補完した現在 user stats。None の場合は result から作る。
+            result (SubmissionResult): command use-caseが返したsubmission結果.
+            overall_stats (StableScoreSubmitOverallStats | None): handlerが補完した現在user stats.
+                Noneの場合はresultから作る.
 
         Returns:
-            stable client 互換の Starlette Response。
+            Response: stable client互換のStarlette response.
 
-        Raises:
-            response 整形時に独自例外は送出しない。
-
-        Constraints:
-            COMPLETED は chart 行を返し、RETRYABLE と ACCEPTED_PENDING は
-            ``error: yes``、terminal reject は ``error: no`` を返す。
+        Notes:
+            COMPLETEDはchart行を返し, RETRYABLEとACCEPTED_PENDINGはerror: yes, terminal rejectは
+            error: noを返す.
         """
         if result.outcome == SubmissionOutcome.COMPLETED:
             return _format_completed_response(
@@ -428,10 +503,10 @@ class StableScoreSubmitMapper:
 
 
 class StableScoreSubmitDecoder:
-    """安定版 score submit wire payload を command input に変換する decoder。
+    """安定版score submit wire payloadをcommand inputへ変換するdecoder.
 
-    復号、checksum 検証、stable payload parse、request hash 生成、opaque metadata の
-    hash 化を transport 層で完結させる。
+    復号, checksum検証, stable payload parse, request hash生成, opaque metadataのhash化を
+    transport layerで完結させる.
     """
 
     def __init__(
@@ -439,21 +514,15 @@ class StableScoreSubmitDecoder:
         payload_decryptor: StableScorePayloadDecryptor,
         payload_parser: StableScorePayloadParser,
     ) -> None:
-        """復号 decoder の復号器と parser を受け取る。
+        """復号decoderの復号器とparserを受け取る.
 
         Args:
-            payload_decryptor: encrypted payload を復号する port。
-            payload_parser: plaintext stable payload を ParsedScore へ変換する parser。
+            payload_decryptor (StableScorePayloadDecryptor): encrypted payloadを復号するport.
+            payload_parser (StableScorePayloadParser): plaintext stable payloadをParsedScoreへ
+                変換するparser.
 
-        Returns:
-            None。
-
-        Raises:
-            生成時に独自例外は送出しない。
-
-        Constraints:
-            decoder は transport 境界でのみ使い、command use-case へ復号器や parser を
-            注入しない。
+        Notes:
+            decoderはtransport boundaryでのみ使い, command use-caseへ復号器やparserを注入しない.
         """
         self._payload_decryptor: StableScorePayloadDecryptor = payload_decryptor
         self._payload_parser: StableScorePayloadParser = payload_parser
@@ -462,16 +531,17 @@ class StableScoreSubmitDecoder:
         self,
         request_mapping: StableScoreSubmitRequestMapping,
     ) -> ParsedSubmissionInput:
-        """要求 mapping を復号して command input だけを返す.
+        """Request mappingを復号してcommand inputだけを返す.
 
         Args:
-            request_mapping: Stable multipart から取り出した復号前 request material.
+            request_mapping (StableScoreSubmitRequestMapping): stable multipartから取り出した
+                復号前material.
 
         Returns:
-            score submission command に渡す parsed input.
+            ParsedSubmissionInput: score submission commandに渡すparsed input.
 
         Raises:
-            StableScoreSubmitDecodeError: 復号, checksum 検証, または payload parse に失敗した場合.
+            StableScoreSubmitDecodeError: 復号, checksum検証, またはpayload parseに失敗した場合.
         """
         return self.to_command_mapping(request_mapping).input_data
 
@@ -479,16 +549,17 @@ class StableScoreSubmitDecoder:
         self,
         request_mapping: StableScoreSubmitRequestMapping,
     ) -> StableScoreSubmitCommandMapping:
-        """要求 mapping を復号/parse し command mapping に変換する.
+        """Request mappingを復号およびparseしcommand mappingへ変換する.
 
         Args:
-            request_mapping: Stable multipart から取り出した復号前 request material.
+            request_mapping (StableScoreSubmitRequestMapping): stable multipartから取り出した
+                復号前material.
 
         Returns:
-            command input と stable transport 診断情報.
+            StableScoreSubmitCommandMapping: command inputとstable transport診断情報.
 
         Raises:
-            StableScoreSubmitDecodeError: 復号, checksum 検証, または payload parse に失敗した場合.
+            StableScoreSubmitDecodeError: 復号, checksum検証, またはpayload parseに失敗した場合.
         """
         request_hash = _generate_stable_score_submit_request_hash(request_mapping)
         opaque_field_hashes = _hash_submission_metadata(request_mapping.submission_metadata)
@@ -564,6 +635,18 @@ class StableScoreSubmitDecoder:
 def _generate_stable_score_submit_request_hash(
     request_mapping: StableScoreSubmitRequestMapping,
 ) -> str:
+    """安定版score submit requestを一意に識別するSHA-256 hashを生成する.
+
+    Args:
+        request_mapping (StableScoreSubmitRequestMapping): fingerprintに含める復号前request
+            material.
+
+    Returns:
+        str: credentialやopaque値のraw textを露出しない決定的なrequest hash.
+
+    Notes:
+        passwordとopaque metadataはdigest化してから組み込み, replayの有無も区別する.
+    """
     hasher = hashlib.sha256()
     _update_fingerprint_bytes(hasher, b"encrypted_payload", request_mapping.encrypted_payload)
     _update_fingerprint_bytes(hasher, b"iv", request_mapping.iv)
@@ -596,6 +679,14 @@ def _generate_stable_score_submit_request_hash(
 
 
 def _is_int(value: str) -> bool:
+    """文字列を整数へ変換できるかを判定する.
+
+    Args:
+        value (str): 判定する文字列.
+
+    Returns:
+        bool: intで受理できる場合はTrue. それ以外はFalse.
+    """
     try:
         _ = int(value)
     except ValueError:
@@ -604,6 +695,17 @@ def _is_int(value: str) -> bool:
 
 
 def _parse_bool(value: str) -> bool:
+    """Stable payloadのbool文字列を真偽値へ変換する.
+
+    Args:
+        value (str): 1, 0, True, Falseのいずれかで表現された値.
+
+    Returns:
+        bool: 解釈した真偽値.
+
+    Raises:
+        ValueError: stable payloadで許可されないbool表現の場合.
+    """
     match value:
         case "1" | "True" | "true":
             return True
@@ -614,16 +716,16 @@ def _parse_bool(value: str) -> bool:
 
 
 def _parse_stable_mods(value: str) -> ModCombination:
-    """stable Mods fieldをcanonical Mod combinationへ変換する.
+    """Stable Mods fieldをcanonical ModCombinationへ変換する.
 
     Args:
         value (str): stable payload内の10進bitmask文字列.
 
     Returns:
-        ModCombination: stable対応済みbitだけを含むcanonical Mods.
+        ModCombination: stable対応済みbitだけを含むcanonical mods.
 
     Raises:
-        ParseError: integer変換に失敗した場合, または無効/未対応bitを含む場合.
+        ParseError: integer変換に失敗するか無効または未対応bitを含む場合.
 
     Notes:
         wire integerのsyntax errorとMod bitmaskのsemantic errorを別messageで報告する.
@@ -640,6 +742,17 @@ def _parse_stable_mods(value: str) -> ModCombination:
 
 
 def _parse_legacy_payload(fields: list[str]) -> ParsedScore:
+    """16 fieldのlegacy score payloadをParsedScoreへ変換する.
+
+    Args:
+        fields (list[str]): user idからpassed flagまでを順序どおり含むlegacy field列.
+
+    Returns:
+        ParsedScore: legacy fieldをcanonicalなscore値へ変換した結果.
+
+    Raises:
+        ParseError: 整数fieldまたはmodsを有効なscore値へ変換できない場合.
+    """
     try:
         return ParsedScore(
             user_id=int(fields[0]),
@@ -664,6 +777,17 @@ def _parse_legacy_payload(fields: list[str]) -> ParsedScore:
 
 
 def _parse_stable_payload(fields: list[str]) -> ParsedScore:
+    """16から19 fieldのstable score payloadをParsedScoreへ変換する.
+
+    Args:
+        fields (list[str]): checksumからoptional client metadataまでを含むstable field列.
+
+    Returns:
+        ParsedScore: stable fieldをcanonicalなscore値へ変換した結果.
+
+    Raises:
+        ParseError: 整数fieldまたはmodsを有効なscore値へ変換できない場合.
+    """
     try:
         return ParsedScore(
             user_id=_NO_PAYLOAD_USER_ID,
@@ -703,6 +827,16 @@ def _format_completed_response(
     overall_stats_after: StableScoreSubmitOverallStats | None,
     stable_web_base_url: str,
 ) -> Response:
+    """Completed submission結果を3本のstable chart responseへ整形する.
+
+    Args:
+        result (SubmissionResult): 完了したscore submissionの結果.
+        overall_stats_after (StableScoreSubmitOverallStats | None): 更新後のoverall stats.
+        stable_web_base_url (str): chart URLを組み立てるstable web base URL.
+
+    Returns:
+        Response: beatmap metadata, beatmap chart, overall chartを含むHTTP 200 response.
+    """
     overall_stats_before = _score_submit_overall_stats(result.overall_stats_before)
     body = "\n".join(
         (
@@ -728,6 +862,14 @@ def _format_completed_response(
 
 
 def _beatmap_metadata_fields(result: SubmissionResult) -> _BeatmapMetadataFields:
+    """Submission結果からbeatmap metadata chart用のfield集合を構築する.
+
+    Args:
+        result (SubmissionResult): metadata sourceとなるsubmission結果.
+
+    Returns:
+        _BeatmapMetadataFields: fallbackを補完したbeatmap metadata field集合.
+    """
     return _BeatmapMetadataFields(
         beatmap_id=result.beatmap_id or 0,
         beatmapset_id=result.beatmapset_id or 0,
@@ -738,6 +880,14 @@ def _beatmap_metadata_fields(result: SubmissionResult) -> _BeatmapMetadataFields
 
 
 def _displayed_passcount(result: SubmissionResult) -> int:
+    """Stable responseに表示するbeatmap pass countを決定する.
+
+    Args:
+        result (SubmissionResult): pass countとpass状態を含むsubmission結果.
+
+    Returns:
+        int: 明示されたpass count. 値がない場合はpass状態から導いたfallback.
+    """
     if result.beatmap_passcount is not None:
         return result.beatmap_passcount
     return 0 if result.passed is False else 1
@@ -748,6 +898,15 @@ def _beatmap_chart_fields(
     *,
     stable_web_base_url: str,
 ) -> _BeatmapChartFields:
+    """Submission結果からbeatmap ranking chart用のfield集合を構築する.
+
+    Args:
+        result (SubmissionResult): rankとpersonal bestのsourceとなるsubmission結果.
+        stable_web_base_url (str): beatmap chart URLを組み立てるbase URL.
+
+    Returns:
+        _BeatmapChartFields: stable wire responseへ渡すbeatmap chart field集合.
+    """
     score_before, max_combo_before, accuracy_before = _score_submit_before_fields(
         result.personal_best_delta,
     )
@@ -777,6 +936,15 @@ def _beatmap_chart_fields(
 def _score_submit_before_fields(
     personal_best_delta: PersonalBestDelta | None,
 ) -> tuple[int, int, str]:
+    """Personal best更新前のscore, combo, accuracyをstable wire値へ整形する.
+
+    Args:
+        personal_best_delta (PersonalBestDelta | None): personal best更新差分. 存在しない場合は
+            None.
+
+    Returns:
+        tuple[int, int, str]: score, maximum combo, accuracy percentの更新前wire値.
+    """
     if personal_best_delta is None:
         return 0, 0, "0"
     return (
@@ -787,6 +955,14 @@ def _score_submit_before_fields(
 
 
 def _score_submit_after_fields(result: SubmissionResult) -> tuple[int, int, str]:
+    """Personal best更新後のscore, combo, accuracyをstable wire値へ整形する.
+
+    Args:
+        result (SubmissionResult): personal best差分または今回のscoreを含むsubmission結果.
+
+    Returns:
+        tuple[int, int, str]: score, maximum combo, accuracy percentの更新後wire値.
+    """
     personal_best_delta = result.personal_best_delta
     if personal_best_delta is None:
         return result.score or 0, result.max_combo or 0, _format_accuracy_percent(result.accuracy)
@@ -798,6 +974,14 @@ def _score_submit_after_fields(result: SubmissionResult) -> tuple[int, int, str]
 
 
 def _beatmap_rank_fields(beatmap_rank_delta: BeatmapRankDelta | None) -> tuple[int | str, int]:
+    """Beatmap rank差分をstable chartの前後rank値へ変換する.
+
+    Args:
+        beatmap_rank_delta (BeatmapRankDelta | None): 更新前後rankの差分. 存在しない場合はNone.
+
+    Returns:
+        tuple[int | str, int]: 更新前rankと更新後rank. 不明な値はstable互換の空値または0.
+    """
     if beatmap_rank_delta is None:
         return "", 0
 
@@ -815,6 +999,17 @@ def _overall_chart_fields(
     overall_stats_after: StableScoreSubmitOverallStats | None,
     stable_web_base_url: str,
 ) -> _OverallChartFields:
+    """Submission結果からoverall ranking chart用のfield集合を構築する.
+
+    Args:
+        result (SubmissionResult): user idとscore idを含むsubmission結果.
+        overall_stats_before (StableScoreSubmitOverallStats | None): 更新前overall stats.
+        overall_stats_after (StableScoreSubmitOverallStats | None): 更新後overall stats.
+        stable_web_base_url (str): overall chart URLを組み立てるbase URL.
+
+    Returns:
+        _OverallChartFields: stable wire responseへ渡すoverall chart field集合.
+    """
     before = overall_stats_before or StableScoreSubmitOverallStats()
     after = overall_stats_after or StableScoreSubmitOverallStats()
 
@@ -837,6 +1032,14 @@ def _overall_chart_fields(
 
 
 def _format_beatmap_metadata_line(fields: _BeatmapMetadataFields) -> str:
+    """Beatmap metadata field集合をstable responseの1行へ整形する.
+
+    Args:
+        fields (_BeatmapMetadataFields): 出力するbeatmap metadata field集合.
+
+    Returns:
+        str: key:valueをvertical barで連結したmetadata chart行.
+    """
     return _format_chart_line(
         (
             ("beatmapId", fields.beatmap_id),
@@ -849,6 +1052,14 @@ def _format_beatmap_metadata_line(fields: _BeatmapMetadataFields) -> str:
 
 
 def _format_beatmap_chart_line(fields: _BeatmapChartFields) -> str:
+    """Beatmap chart field集合をstable responseの1行へ整形する.
+
+    Args:
+        fields (_BeatmapChartFields): 出力するbeatmap chart field集合.
+
+    Returns:
+        str: key:valueをvertical barで連結したbeatmap chart行.
+    """
     return _format_chart_line(
         (
             ("chartId", "beatmap"),
@@ -871,6 +1082,14 @@ def _format_beatmap_chart_line(fields: _BeatmapChartFields) -> str:
 
 
 def _format_overall_chart_line(fields: _OverallChartFields) -> str:
+    """Overall chart field集合をstable responseの1行へ整形する.
+
+    Args:
+        fields (_OverallChartFields): 出力するoverall chart field集合.
+
+    Returns:
+        str: key:valueをvertical barで連結したoverall chart行.
+    """
     return _format_chart_line(
         (
             ("chartId", "overall"),
@@ -895,12 +1114,30 @@ def _format_overall_chart_line(fields: _OverallChartFields) -> str:
 
 
 def _stable_beatmap_url(stable_web_base_url: str, beatmap_id: int) -> str:
+    """Beatmap識別子からstable web上のbeatmap URLを構築する.
+
+    Args:
+        stable_web_base_url (str): stable webのbase URL.
+        beatmap_id (int): URLへ埋め込むbeatmap識別子.
+
+    Returns:
+        str: 有効なbase URLとbeatmap idがある場合のbeatmap URL. それ以外は空文字列.
+    """
     if not stable_web_base_url or beatmap_id <= 0:
         return ""
     return f"{stable_web_base_url}/b/{beatmap_id}"
 
 
 def _stable_user_url(stable_web_base_url: str, user_id: int) -> str:
+    """User識別子からstable web上のuser URLを構築する.
+
+    Args:
+        stable_web_base_url (str): stable webのbase URL.
+        user_id (int): URLへ埋め込むuser識別子.
+
+    Returns:
+        str: 有効なbase URLとuser idがある場合のuser URL. それ以外は空文字列.
+    """
     if not stable_web_base_url or user_id <= 0:
         return ""
     return f"{stable_web_base_url}/u/{user_id}"
@@ -909,6 +1146,14 @@ def _stable_user_url(stable_web_base_url: str, user_id: int) -> str:
 def _score_submit_overall_stats(
     current_stats: UserCurrentStats | None,
 ) -> StableScoreSubmitOverallStats | None:
+    """Current user statsをstable score submit chart用のstatsへ変換する.
+
+    Args:
+        current_stats (UserCurrentStats | None): command側が取得した現在のuser stats.
+
+    Returns:
+        StableScoreSubmitOverallStats | None: stable response用にroundしたstats. 未取得時はNone.
+    """
     if current_stats is None:
         return None
     return StableScoreSubmitOverallStats(
@@ -922,6 +1167,14 @@ def _score_submit_overall_stats(
 
 
 def _format_accuracy_percent(accuracy: float | None) -> str:
+    """Accuracy比率をstable chart用のpercentage文字列へ整形する.
+
+    Args:
+        accuracy (float | None): 0から1のaccuracy比率. 未取得の場合はNone.
+
+    Returns:
+        str: trailing zeroを除いたpercentage値. 未取得時は0.
+    """
     if accuracy is None:
         return "0"
     percent = accuracy * 100
@@ -929,6 +1182,14 @@ def _format_accuracy_percent(accuracy: float | None) -> str:
 
 
 def _format_stable_datetime(value: datetime | None) -> str:
+    """Datetimeをstable chart用のUTC非timezone文字列へ整形する.
+
+    Args:
+        value (datetime | None): 整形する日時. 未取得の場合はNone.
+
+    Returns:
+        str: YYYY-MM-DD HH:MM:SS形式の日時. 未取得時は空文字列.
+    """
     if value is None:
         return ""
     stable_value = value if value.tzinfo is None else value.astimezone(UTC).replace(tzinfo=None)
@@ -936,6 +1197,14 @@ def _format_stable_datetime(value: datetime | None) -> str:
 
 
 def _format_chart_line(entries: tuple[tuple[str, object], ...]) -> str:
+    """Stable chart field列をkey:value形式の1行へ連結する.
+
+    Args:
+        entries (tuple[tuple[str, object], ...]): 順序を保持するchart fieldのkeyとvalue.
+
+    Returns:
+        str: vertical barで区切ったstable chart行.
+    """
     return "|".join(f"{key}:{value}" for key, value in entries)
 
 

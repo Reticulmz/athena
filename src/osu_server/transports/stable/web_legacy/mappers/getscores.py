@@ -1,4 +1,4 @@
-"""Stable legacy getscores query and response mappers."""
+"""安定版 legacy getscores のqueryとresponseを変換する."""
 
 from __future__ import annotations
 
@@ -46,6 +46,16 @@ def _parse_int(
     warnings: list[GetscoresParseWarning],
     warning_kind: GetscoresParseWarning,
 ) -> int | None:
+    """任意のquery文字列を整数へ変換し, 失敗をwarningへ記録する.
+
+    Args:
+        raw (str | None): 整数として解釈するquery値.
+        warnings (list[GetscoresParseWarning]): 解析失敗を追加するwarningの可変list.
+        warning_kind (GetscoresParseWarning): 変換失敗時に追加するwarning種別.
+
+    Returns:
+        int | None: 変換した整数. 値がないか整数でない場合はNone.
+    """
     if raw is None:
         return None
     try:
@@ -60,6 +70,16 @@ def _parse_bool(
     warnings: list[GetscoresParseWarning],
     warning_kind: GetscoresParseWarning,
 ) -> bool | None:
+    """整数表現のquery値をboolへ変換し, 失敗をwarningへ記録する.
+
+    Args:
+        raw (str | None): 0または非0の整数として解釈するquery値.
+        warnings (list[GetscoresParseWarning]): 解析失敗を追加するwarningの可変list.
+        warning_kind (GetscoresParseWarning): 変換失敗時に追加するwarning種別.
+
+    Returns:
+        bool | None: 整数の真偽値. 値がないか整数でない場合はNone.
+    """
     if raw is None:
         return None
     try:
@@ -70,10 +90,10 @@ def _parse_bool(
 
 
 class GetscoresQueryParser:
-    """Map stable legacy getscores query parameters to a query input value."""
+    """安定版 legacy getscoresのquery parameterをquery inputへ変換する."""
 
     def parse(self, query: Mapping[str, str]) -> GetscoresParseResult:
-        """stable getscores queryをtyped parse resultへ変換する.
+        """Stable getscores queryをtyped parse resultへ変換する.
 
         Args:
             query (Mapping[str, str]): Stable clientから受け取ったquery fieldのmapping.
@@ -153,10 +173,10 @@ class GetscoresQueryParser:
 
 
 class StableGetscoresLeaderboardMapper:
-    """stable getscoresのcategory fieldをleaderboard選択へ変換するmapper."""
+    """Stable getscoresのcategory fieldをleaderboard選択へ変換するmapper."""
 
     def map_request(self, request: GetscoresRequest) -> StableLeaderboardSelection:
-        """getscores requestからleaderboard選択結果を構築する.
+        """Getscores requestからleaderboard選択結果を構築する.
 
         Args:
             request (GetscoresRequest): stable clientから解析したgetscores request.
@@ -202,15 +222,31 @@ class StableGetscoresLeaderboardMapper:
 
 
 class GetscoresStatusMapper:
-    """Map beatmap rank status to stable legacy getscores wire status."""
+    """Beatmapのrank statusを安定版legacy getscoresのwire statusへ変換する."""
 
     def map_header_status(self, beatmap: Beatmap) -> int | None:
+        """Beatmapのrank statusをheaderで返すwire値へ変換する.
+
+        Args:
+            beatmap (Beatmap): rank statusを取得するbeatmap.
+
+        Returns:
+            int | None: stable clientへ返すstatus値. scoreを返せないstatusはNone.
+        """
         return _STATUS_TO_WIRE.get(beatmap.effective_status)
 
 
 def _leaderboard_category_from_request(
     request: GetscoresRequest,
 ) -> LeaderboardCategory | None:
+    """Getscoresのleaderboard typeを内部categoryへ変換する.
+
+    Args:
+        request (GetscoresRequest): leaderboard typeを含む解析済みrequest.
+
+    Returns:
+        LeaderboardCategory | None: 対応するcategory. 未指定または未対応値ではNone.
+    """
     if request.leaderboard_type == _LOCAL_LEADERBOARD_TYPE:
         return LeaderboardCategory.GLOBAL
     if request.leaderboard_type == _SELECTED_MODS_LEADERBOARD_TYPE:
@@ -223,6 +259,14 @@ def _leaderboard_category_from_request(
 
 
 def _mods_from_request(request: GetscoresRequest) -> ModCombination | None:
+    """Getscores requestのmod bitmaskをcanonicalなModCombinationへ変換する.
+
+    Args:
+        request (GetscoresRequest): mod bitmaskを含む解析済みrequest.
+
+    Returns:
+        ModCombination | None: stable対応済みのmods. 不正または未対応bitではNone.
+    """
     try:
         return stable_mod_bitmask_to_mod_combination(request.mods or 0)
     except ValueError:
