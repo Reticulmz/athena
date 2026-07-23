@@ -336,7 +336,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/transports/stable/bancho/{handlers,listeners}/**_
 
-- [ ] 2.36 (P) Bancho dispatch、mapping、parsing、workflowを整備する
+- [x] 2.36 (P) Bancho dispatch、mapping、parsing、workflowを整備する
   - transports/stable/bancho/*.pyとbancho/{mappers,parsers,workflows}/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびdispatch、endpoint、login、polling、workflow testが通る
   - _Depends: 1.4_
