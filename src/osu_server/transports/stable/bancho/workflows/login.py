@@ -1,4 +1,4 @@
-"""Login workflow contracts and orchestration."""
+"""Stable Bancho login request の解析, 認証, response 構築を orchestrate する."""
 
 from __future__ import annotations
 
@@ -29,7 +29,12 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 @dataclass(slots=True, frozen=True)
 class LoginWorkflowInput:
-    """Input for the Starlette-independent login workflow."""
+    """Starlette に依存しない login workflow の入力を表す.
+
+    Attributes:
+        body (bytes): stable client が送った raw login request body.
+        headers (Mapping[str, str]): country resolver へ渡す HTTP request header.
+    """
 
     body: bytes
     headers: Mapping[str, str]
@@ -37,14 +42,26 @@ class LoginWorkflowInput:
 
 @dataclass(slots=True, frozen=True)
 class LoginWorkflowResult:
-    """Result returned by the Starlette-independent login workflow."""
+    """Starlette に依存しない login workflow の response を表す.
+
+    Attributes:
+        content (bytes): client へ返す S2C packet stream.
+        cho_token (str | None): 成功時の session token. login failure 時は None.
+    """
 
     content: bytes
     cho_token: str | None
 
 
 class LoginWorkflow:
-    """Orchestrate login parsing, authentication, and success response building."""
+    """Stable Bancho login の解析, 認証, success response 構築を orchestrate する.
+
+    Attributes:
+        _login_command (LoginCommand): login request を認証して session を作る command.
+        _country_resolver (CountryResolver): request header から country を解決する dependency.
+        _response_builder (LoginResponseBuilder): success response を構築する builder.
+        _event_bus (LocalEventBus): successful connection を通知する local event bus.
+    """
 
     _login_command: LoginCommand
     _country_resolver: CountryResolver
@@ -59,13 +76,37 @@ class LoginWorkflow:
         response_builder: LoginResponseBuilder,
         event_bus: LocalEventBus,
     ) -> None:
+        """Login workflow に必要な command, resolver, builder, event bus を設定する.
+
+        Args:
+            login_command (LoginCommand): parsed login request を処理する command.
+            country_resolver (CountryResolver): request header から country を解決する dependency.
+            response_builder (LoginResponseBuilder): successful login response を構築する builder.
+            event_bus (LocalEventBus): UserConnected event を fire する local event bus.
+        """
         self._login_command = login_command
         self._country_resolver = country_resolver
         self._response_builder = response_builder
         self._event_bus = event_bus
 
     async def execute(self, workflow_input: LoginWorkflowInput) -> LoginWorkflowResult:
-        """Execute the Starlette-independent login workflow."""
+        """Starlette 非依存の stable login workflow を実行する.
+
+        Args:
+            workflow_input (LoginWorkflowInput): raw body と HTTP header を持つ login 入力.
+
+        Returns:
+            LoginWorkflowResult: authentication result に応じた S2C stream と optional cho-token.
+
+        Raises:
+            UnicodeDecodeError: raw body を UTF-8 text として復号できない場合.
+
+        Notes:
+            ValueError による body の parse failure と authentication rejection は
+            authentication failed packet を返す.
+            successful login 後の UserConnected event failure は記録する.
+            event failure があっても login response は維持する.
+        """
         try:
             login_request = parse_login_request(workflow_input.body)
         except ValueError:

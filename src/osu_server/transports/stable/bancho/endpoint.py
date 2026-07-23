@@ -1,4 +1,4 @@
-"""Bancho HTTP endpoint boundary."""
+"""Stable Bancho HTTP request を login または polling workflow へ適合させる."""
 
 from __future__ import annotations
 
@@ -20,23 +20,42 @@ if TYPE_CHECKING:
 
 
 class _LoginWorkflow(Protocol):
-    """Login workflow dependency accepted by BanchoEndpoint."""
+    """BanchoEndpoint が受け取る login workflow の contract を表す."""
 
     async def execute(self, workflow_input: LoginWorkflowInput) -> LoginWorkflowResult:
-        """Execute login workflow."""
+        """指定した login workflow input を処理して response contract を返す.
+
+        Args:
+            workflow_input (LoginWorkflowInput): HTTP boundary から変換した login 入力.
+
+        Returns:
+            LoginWorkflowResult: response bytes と cho-token の contract.
+        """
         ...
 
 
 class _PollingWorkflow(Protocol):
-    """Polling workflow dependency accepted by BanchoEndpoint."""
+    """BanchoEndpoint が受け取る polling workflow の contract を表す."""
 
     async def execute(self, workflow_input: PollingWorkflowInput) -> PollingWorkflowResult:
-        """Execute polling workflow."""
+        """指定した polling workflow input を処理して response contract を返す.
+
+        Args:
+            workflow_input (PollingWorkflowInput): HTTP boundary から変換した polling 入力.
+
+        Returns:
+            PollingWorkflowResult: client へ返す S2C response bytes の contract.
+        """
         ...
 
 
 class BanchoEndpoint:
-    """Starlette-facing stable bancho POST / endpoint."""
+    """Stable Bancho の POST / request を workflow へ委譲する.
+
+    Attributes:
+        _login_workflow (_LoginWorkflow): osu-token がない request を処理する workflow.
+        _polling_workflow (_PollingWorkflow): osu-token がある request を処理する workflow.
+    """
 
     _login_workflow: _LoginWorkflow
     _polling_workflow: _PollingWorkflow
@@ -47,11 +66,28 @@ class BanchoEndpoint:
         login_workflow: _LoginWorkflow,
         polling_workflow: _PollingWorkflow,
     ) -> None:
+        """HTTP boundary が委譲する login と polling workflow を設定する.
+
+        Args:
+            login_workflow (_LoginWorkflow): 初回 login request を処理する workflow.
+            polling_workflow (_PollingWorkflow): 認証後 polling request を処理する workflow.
+        """
         self._login_workflow = login_workflow
         self._polling_workflow = polling_workflow
 
     async def __call__(self, request: Request) -> Response:
-        """Map the stable bancho HTTP request to the selected workflow."""
+        """Stable Bancho HTTP request を選択した workflow の response へ変換する.
+
+        Args:
+            request (Request): stable client が送信した POST request.
+
+        Returns:
+            Response: polling では S2C bytes だけを持ち, login では Bancho header も持つ response.
+
+        Notes:
+            osu-token header が存在すれば値が空でも polling を選ぶ. login response の cho-token が
+            None の場合は endpoint が random token を発行し cho-protocol も常に設定する.
+        """
         body = await request.body()
 
         if "osu-token" in request.headers:

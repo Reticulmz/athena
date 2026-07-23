@@ -1,4 +1,4 @@
-"""Bancho workflow contract exports."""
+"""Stable Bancho workflow の contract を再公開する."""
 
 from osu_server.transports.stable.bancho.workflows.c2s_actions import (
     C2SActionExecutionResult,

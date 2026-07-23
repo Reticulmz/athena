@@ -1,4 +1,4 @@
-"""Stable bancho authorization output mapping."""
+"""Stable Bancho packet 用の client-visible authorization を変換する."""
 
 from __future__ import annotations
 
@@ -17,7 +17,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class StableBanchoAuthorizationOutput:
-    """Client-visible authorization flags for stable bancho packets."""
+    """Stable Bancho packet へ載せる client-visible authorization を表す.
+
+    Attributes:
+        login_permissions (BanchoClientPermission): login reply に使う permission flag.
+        presence_permissions (BanchoClientPermission): USER_PRESENCE に使う permission flag.
+    """
 
     login_permissions: BanchoClientPermission
     presence_permissions: BanchoClientPermission
@@ -26,7 +31,14 @@ class StableBanchoAuthorizationOutput:
 def map_stable_bancho_authorization(
     privileges: Privileges,
 ) -> StableBanchoAuthorizationOutput:
-    """Map server-side privileges to stable bancho authorization output."""
+    """server-side privilege を Stable Bancho authorization output へ変換する.
+
+    Args:
+        privileges (Privileges): domain が認可に使う server-side privilege 集合.
+
+    Returns:
+        StableBanchoAuthorizationOutput: login と presence の両方に使う stable permission flag.
+    """
     client_permissions = to_bancho_client_permissions(privileges)
     return StableBanchoAuthorizationOutput(
         login_permissions=client_permissions,

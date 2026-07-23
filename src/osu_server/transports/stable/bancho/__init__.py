@@ -1,4 +1,4 @@
-"""bancho transport — public API re-exports."""
+"""Stable Bancho transport の公開 API を再公開する."""
 
 from osu_server.transports.stable.bancho.dispatch import (
     PacketDispatcher,

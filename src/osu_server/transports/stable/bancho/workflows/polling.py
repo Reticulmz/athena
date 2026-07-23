@@ -1,4 +1,4 @@
-"""Polling workflow contracts and pipeline."""
+"""Stable Bancho polling request の C2S dispatch と S2C drain を実行する."""
 
 from __future__ import annotations
 
@@ -25,7 +25,12 @@ logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 @dataclass(slots=True, frozen=True)
 class PollingWorkflowInput:
-    """Input for the Starlette-independent polling workflow."""
+    """Starlette に依存しない polling workflow の入力を表す.
+
+    Attributes:
+        token (str): osu-token header から取得した session token.
+        body (bytes): client が送った C2S packet stream.
+    """
 
     token: str
     body: bytes
@@ -33,13 +38,26 @@ class PollingWorkflowInput:
 
 @dataclass(slots=True, frozen=True)
 class PollingWorkflowResult:
-    """Result returned by the Starlette-independent polling workflow."""
+    """Starlette に依存しない polling workflow の response を表す.
+
+    Attributes:
+        content (bytes): client へ返す S2C packet stream.
+    """
 
     content: bytes
 
 
 class PollingWorkflow:
-    """Execute the C2S dispatch and S2C drain pipeline without Starlette."""
+    """Starlette 非依存で C2S dispatch と S2C queue drain を実行する.
+
+    Attributes:
+        _session_store (PollingSessionRuntime): session を取得して TTL を更新する store.
+        _packet_queue (PacketQueue): user ごとの S2C packet を drain して TTL を更新する queue.
+        _stable_user_status_store (StableUserStatusStore | None): optional status TTL store.
+        _c2s_actions (C2SActionExecutor): raw C2S packet stream を dispatch する executor.
+        _session_ttl (int): session と queue に設定する TTL 秒数.
+        _max_request_body_size (int): C2S body として受け入れる最大 bytes 数.
+    """
 
     _session_store: PollingSessionRuntime
     _packet_queue: PacketQueue
@@ -58,6 +76,16 @@ class PollingWorkflow:
         session_ttl: int = 300,
         max_request_body_size: int = 1_048_576,
     ) -> None:
+        """Polling pipeline の state dependency と request limit を設定する.
+
+        Args:
+            session_store (PollingSessionRuntime): token から user session を取得する store.
+            packet_queue (PacketQueue): user ごとの outbound packet queue.
+            packet_dispatcher (PacketDispatcher): inbound C2S packet を dispatch する registry.
+            stable_user_status_store (StableUserStatusStore | None): optional status TTL store.
+            session_ttl (int): session, queue, status に適用する TTL 秒数.
+            max_request_body_size (int): 処理する C2S request body の最大 bytes 数.
+        """
         self._session_store = session_store
         self._packet_queue = packet_queue
         self._stable_user_status_store = stable_user_status_store
@@ -66,7 +94,19 @@ class PollingWorkflow:
         self._max_request_body_size = max_request_body_size
 
     async def execute(self, workflow_input: PollingWorkflowInput) -> PollingWorkflowResult:
-        """Execute polling in the same order as the legacy endpoint path."""
+        """Legacy endpoint と同じ順序で polling request を実行する.
+
+        Args:
+            workflow_input (PollingWorkflowInput): token と C2S request body を持つ polling 入力.
+
+        Returns:
+            PollingWorkflowResult: auth failure, empty response, または S2C bytes.
+
+        Notes:
+            oversized body は session lookup 前に空 response で拒否する.
+            無効 token は authentication failed packet を返す.
+            valid session では TTL refresh 後に C2S dispatch と S2C queue drain を行う.
+        """
         start = time.monotonic()
         body = workflow_input.body
 

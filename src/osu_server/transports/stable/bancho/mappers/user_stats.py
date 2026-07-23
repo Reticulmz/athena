@@ -1,4 +1,4 @@
-"""Stable bancho UserStats packet mapping."""
+"""Current user stats と system bot を Stable Bancho USER_STATS packet へ変換する."""
 
 from __future__ import annotations
 
@@ -27,26 +27,20 @@ def stable_user_stats_packet(
     play_mode: int | None = None,
     status: StableUserStatus | None = None,
 ) -> bytes:
-    """current stats を stable USER_STATS packet に mapping する.
+    """指定した current stats を Stable Bancho USER_STATS packet へ変換する.
 
-    引数:
-        user_id: packet の対象 user id.
-        current_stats: transport-neutral current stats. None の場合は stable-safe
-            default values を使う.
-        play_mode: stable Mode wire 値. 未指定時は status の mode を使い、
-            status も未指定の場合は osu! standard を使う.
-        status: STATUS_CHANGE 由来の stable status fields. 未指定時は
-            login/STATS_REQUEST 向けの default status fields を使う.
+    Args:
+        user_id (int): packet の対象 user ID.
+        current_stats (UserCurrentStats | None): current stats. None なら default 値.
+        play_mode (int | None): stable mode wire 値. None なら status の mode を使う.
+        status (StableUserStatus | None): STATUS_CHANGE の status fields. None なら default.
 
-    戻り値:
-        Stable USER_STATS の complete packet.
+    Returns:
+        bytes: complete USER_STATS packet.
 
-    例外:
-        wire type の範囲外値は既存 packet builder の pack error として送出する.
-
-    制約:
-        status 未指定時は status fields に default values を使う. PP は stable
-        int に ROUND_HALF_UP で丸め、最終的な uint16 clamp は packet builder に委ねる.
+    Notes:
+        status と play_mode が None の場合は osu! standard mode を使う.
+        PP は ROUND_HALF_UP で整数化し, uint16 clamp は packet builder に委ねる.
     """
     stable_status = status or DEFAULT_STABLE_USER_STATUS
     stable_play_mode = play_mode if play_mode is not None else stable_status.play_mode
@@ -84,22 +78,19 @@ def bot_user_stats_packet(
     *,
     play_mode: int | None = None,
 ) -> bytes:
-    """BanchoBot 用の stable USER_STATS packet を構築する。
+    """指定した system bot identity の Stable Bancho USER_STATS packet を構築する.
 
-    引数:
-        bot_identity: packet に載せる system user identity。未指定時は BanchoBot。
-        play_mode: Bot を表示する stable mode wire 値。未指定時は osu!。
+    Args:
+        bot_identity (SystemUserIdentity | None): system bot. None なら BanchoBot.
+        play_mode (int | None): bot を表示する stable mode wire 値. None なら osu! mode.
 
-    戻り値:
-        Bancho S2C USER_STATS packet bytes。
+    Returns:
+        bytes: system bot の default stats を持つ USER_STATS packet.
 
-    例外:
-        wire type の範囲外値は既存 packet builder の pack error として送出する。
-
-    制約:
-        Stable protocol は user を複数 mode に同時所属させられないため、呼び出し元が
-        request context に合った単一 mode を指定する。本家 bancho.py と同じく
-        Bot は常時 online な valid target として扱う。
+    Notes:
+        stable protocol では user を複数 mode に同時所属させられない.
+        呼び出し側は request context に合う単一 mode を指定する.
+        BanchoBot は常時 online な valid target として扱う.
     """
     bot = bot_identity or BANCHO_BOT_IDENTITY
     return stable_user_stats_packet(
@@ -110,6 +101,14 @@ def bot_user_stats_packet(
 
 
 def _stable_pp(pp: Decimal) -> int:
+    """与えられた performance point を stable wire 用の整数へ丸める.
+
+    Args:
+        pp (Decimal): current stats が保持する performance point.
+
+    Returns:
+        int: ROUND_HALF_UP で丸めた stable packet 用の整数.
+    """
     return int(pp.to_integral_value(rounding=ROUND_HALF_UP))
 
 

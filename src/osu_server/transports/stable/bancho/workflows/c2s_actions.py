@@ -1,4 +1,4 @@
-"""Stable C2S packet stream execution policy."""
+"""Stable Bancho polling request 内の C2S packet stream を実行する."""
 
 from __future__ import annotations
 
@@ -21,21 +21,46 @@ logger: structlog.stdlib.BoundLogger = cast(
 
 @dataclass(slots=True, frozen=True)
 class C2SActionExecutionResult:
-    """Result of executing one stable C2S request body."""
+    """1 個の stable C2S request body を実行した結果を表す.
+
+    Attributes:
+        packet_count (int): parse に成功して dispatch を試行した packet の数.
+    """
 
     packet_count: int
 
 
 class C2SActionExecutor:
-    """Owns packet-stream parse and handler failure policy for polling."""
+    """polling 用 C2S packet stream の解析と handler failure policy を所有する.
+
+    Attributes:
+        _packet_dispatcher (PacketDispatcher): C2S packet ごとの handler を呼び出す dispatcher.
+    """
 
     _packet_dispatcher: PacketDispatcher
 
     def __init__(self, packet_dispatcher: PacketDispatcher) -> None:
+        """C2S packet を dispatch する dependency を設定する.
+
+        Args:
+            packet_dispatcher (PacketDispatcher): packet handler registry と dispatcher.
+        """
         self._packet_dispatcher = packet_dispatcher
 
     async def execute(self, *, body: bytes, user_id: int) -> C2SActionExecutionResult:
-        """Parse and dispatch all C2S packets in one request body."""
+        """受け取った request body 内の C2S packet を順番に dispatch する.
+
+        Args:
+            body (bytes): polling request から受け取った C2S packet stream.
+            user_id (int): packet を送った認証済み user の ID.
+
+        Returns:
+            C2SActionExecutionResult: dispatch を試行した packet 数.
+
+        Notes:
+            空 body は packet_count 0 で完了する. parse error は記録して全 dispatch を省略し,
+            individual handler error は記録して残りの packet の処理を継続する.
+        """
         if not body:
             return C2SActionExecutionResult(packet_count=0)
 
