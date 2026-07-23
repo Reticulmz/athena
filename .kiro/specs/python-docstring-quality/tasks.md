@@ -351,7 +351,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/transports/stable/web_legacy/mappers/**_
 
-- [ ] 2.38 (P) Legacy endpointと残りのtransport moduleを整備する
+- [x] 2.38 (P) Legacy endpointと残りのtransport moduleを整備する
   - transports/*.py、transports/{api,lazer}/**、transports/stable/*.py、
     transports/stable/web_legacy/*.pyへ共通条件を適用する
   - Signature annotation追加時もFastAPI、Pydantic、Starlette、legacy endpoint metadataを維持する
