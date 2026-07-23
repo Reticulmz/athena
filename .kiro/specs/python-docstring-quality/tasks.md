@@ -367,7 +367,7 @@
     fixture、assertionと手動照合する。既存assertionとtest behaviorを変更せず、scoped Ruff D、
     interrogate 100%、所有testを通す
 
-- [ ] 3.1 (P) Shared test supportを整備する
+- [x] 3.1 (P) Shared test supportを整備する
   - tests/support/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびsupport依存のfocused testが通る
   - _Depends: 1.4_
