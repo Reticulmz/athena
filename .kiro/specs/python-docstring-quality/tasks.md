@@ -381,7 +381,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/*.py, tests/factories/**, tests/fixtures/**, tests/e2e/**_
 
-- [ ] 3.3 (P) Compositionとfactory unit testを整備する
+- [x] 3.3 (P) Compositionとfactory unit testを整備する
   - tests/unit/composition/**とtests/unit/factories/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有unit testが通る
   - _Depends: 1.4_
