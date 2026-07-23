@@ -388,7 +388,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/{composition,factories}/**_
 
-- [ ] 3.4 (P) Domain context package testを整備する
+- [x] 3.4 (P) Domain context package testを整備する
   - tests/unit/domain/{compatibility,identity,scores}/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有domain testが通る
   - _Depends: 1.4_
