@@ -1,4 +1,4 @@
-"""Canonical score mod domain tests."""
+"""Canonical score mod domainの表現境界を検証する."""
 
 from __future__ import annotations
 
@@ -12,6 +12,14 @@ from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 
 
 def test_mod_combination_preserves_bitmask_for_persistence() -> None:
+    """Canonical mod combinationが既知bitを保持して永続化bitmaskへ戻せることを検証する.
+
+    Returns:
+        None: HIDDEN, DOUBLE_TIME, 非HARD_ROCKと元bitmaskを検証して完了する.
+
+    Raises:
+        AssertionError: canonical化または永続化変換でbitが変化した場合.
+    """
     combination = ModCombination.from_bitmask(72)
 
     assert combination.has(Mod.HIDDEN)
@@ -21,6 +29,14 @@ def test_mod_combination_preserves_bitmask_for_persistence() -> None:
 
 
 def test_score_and_parsed_score_use_canonical_mod_combination() -> None:
+    """ScoreとParsedScoreがmod型としてcanonical ModCombinationを参照することを検証する.
+
+    Returns:
+        None: forward annotationと解決済みhintを検証して完了する.
+
+    Raises:
+        AssertionError: score workflow境界が別のmod表現へ戻った場合.
+    """
     parsed_hints = get_type_hints(ParsedScore, globalns={"ModCombination": ModCombination})
 
     assert get_annotations(Score)["mods"] == "ModCombination"
@@ -28,10 +44,26 @@ def test_score_and_parsed_score_use_canonical_mod_combination() -> None:
 
 
 def test_mod_combination_does_not_own_stable_bitmask_mapping() -> None:
+    """Canonical ModCombinationがStable固有のbitmask mappingを所有しないことを検証する.
+
+    Returns:
+        None: Stable専用factoryが存在しないことを検証して完了する.
+
+    Raises:
+        AssertionError: Stable compatibility責務をscore domainへ追加した場合.
+    """
     assert not hasattr(ModCombination, "from_stable_bitmask")
 
 
 def test_score_keeps_canonical_mods_while_storage_can_use_integer_bitmask() -> None:
+    """Scoreがcanonical modを保持しstorage境界でのみ整数bitmaskへ変換することを検証する.
+
+    Returns:
+        None: Scoreのmods同一性と永続化bitmaskを検証して完了する.
+
+    Raises:
+        AssertionError: Score内のcanonical mod表現またはstorage変換が変わった場合.
+    """
     mods = ModCombination.from_bitmask(88)
     score = Score(
         id=None,

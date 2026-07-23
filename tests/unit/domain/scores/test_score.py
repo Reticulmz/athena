@@ -1,4 +1,4 @@
-"""Unit tests for Score domain model."""
+"""Score domain modelの値保持と最小invariantを検証する."""
 
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -12,7 +12,14 @@ from osu_server.domain.scores.score import Grade, Playstyle, Ruleset, Score
 
 
 def test_score_creation_with_all_fields() -> None:
-    """Score dataclassが全フィールドを受け入れる。"""
+    """Scoreが全必須fieldとsubmit時beatmap statusを保持することを検証する.
+
+    Returns:
+        None: 構築後の主要識別子, enum, statusを検証して完了する.
+
+    Raises:
+        AssertionError: Scoreが受理したfieldを保持しない場合.
+    """
     score = Score(
         id=1,
         user_id=100,
@@ -48,7 +55,14 @@ def test_score_creation_with_all_fields() -> None:
 
 
 def test_score_without_id() -> None:
-    """ID未割り当て(None)のScoreを作成できる。"""
+    """未永続化ScoreがID未割当のNoneを保持できることを検証する.
+
+    Returns:
+        None: None IDを持つScoreの構築を検証して完了する.
+
+    Raises:
+        AssertionError: 未永続化ScoreをIDなしで表現できない場合.
+    """
     score = Score(
         id=None,
         user_id=100,
@@ -78,26 +92,54 @@ def test_score_without_id() -> None:
 
 
 def test_score_replay_view_count_defaults_to_zero() -> None:
-    """Replay View Count は未指定時に 0 で利用できる。"""
+    """replay_view_count未指定のScoreが初期値0を持つことを検証する.
+
+    Returns:
+        None: default replay view countが0であることを検証して完了する.
+
+    Raises:
+        AssertionError: 未指定時の閲覧回数初期値が0以外の場合.
+    """
     score = _score()
 
     assert score.replay_view_count == 0
 
 
 def test_score_replay_view_count_rejects_null() -> None:
-    """Replay View Count は null を受け入れない。"""
+    """Scoreがnull replay_view_countをValueErrorで拒否することを検証する.
+
+    Returns:
+        None: null値でのreplaceがValueErrorになることを検証して完了する.
+
+    Raises:
+        AssertionError: null閲覧回数を有効なScore状態として受理した場合.
+    """
     with pytest.raises(ValueError, match="replay_view_count cannot be null"):
         _ = replace(_score(), replay_view_count=cast("int", cast("object", None)))
 
 
 def test_score_replay_view_count_rejects_negative_value() -> None:
-    """Replay View Count は負数を受け入れない。"""
+    """Scoreが負のreplay_view_countをValueErrorで拒否することを検証する.
+
+    Returns:
+        None: 負数でのreplaceがValueErrorになることを検証して完了する.
+
+    Raises:
+        AssertionError: 負の閲覧回数を有効なScore状態として受理した場合.
+    """
     with pytest.raises(ValueError, match="replay_view_count must be non-negative"):
         _ = replace(_score(), replay_view_count=-1)
 
 
 def test_ruleset_enum_values() -> None:
-    """Rulesetがosu/taiko/catch/maniaをサポート。"""
+    """Rulesetがosu, taiko, catch, maniaの固定protocol valueを持つことを検証する.
+
+    Returns:
+        None: 各Ruleset memberの整数valueを検証して完了する.
+
+    Raises:
+        AssertionError: rulesetの固定整数valueが変更された場合.
+    """
     assert Ruleset.OSU.value == 0
     assert Ruleset.TAIKO.value == 1
     assert Ruleset.CATCH.value == 2
@@ -105,12 +147,26 @@ def test_ruleset_enum_values() -> None:
 
 
 def test_playstyle_enum_values() -> None:
-    """PlaystyleがVANILLA(Wave 1 scope)をサポート。"""
+    """Playstyleがcurrent scopeのVANILLA固定valueを持つことを検証する.
+
+    Returns:
+        None: VANILLAの整数valueを検証して完了する.
+
+    Raises:
+        AssertionError: current scopeのplaystyle valueが変更された場合.
+    """
     assert Playstyle.VANILLA.value == 0
 
 
 def test_grade_enum_values() -> None:
-    """GradeがXH/X/SH/S/A/B/C/Dをサポート。"""
+    """Gradeがcanonical result codeの閉じた文字列集合を持つことを検証する.
+
+    Returns:
+        None: 各Grade memberの固定文字列valueを検証して完了する.
+
+    Raises:
+        AssertionError: grade codeの追加, 欠落またはvalue変更があった場合.
+    """
     assert Grade.XH.value == "XH"
     assert Grade.X.value == "X"
     assert Grade.SH.value == "SH"
@@ -122,6 +178,11 @@ def test_grade_enum_values() -> None:
 
 
 def _score() -> Score:
+    """Replay view count invariant検証用の有効なScoreを作成する.
+
+    Returns:
+        Score: default値以外を固定した有効なscore.
+    """
     return Score(
         id=1,
         user_id=100,

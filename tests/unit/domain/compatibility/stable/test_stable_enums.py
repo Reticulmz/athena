@@ -1,4 +1,4 @@
-"""Stable compatibility enum value tests."""
+"""Stable compatibility enumの固定wire valueを検証する."""
 
 from enum import IntEnum
 
@@ -14,6 +14,14 @@ from osu_server.domain.compatibility.stable.grade import (
 
 
 def test_stable_status_values_match_guide() -> None:
+    """Stable status enumがprotocol guideのmember順と整数値を保持することを検証する.
+
+    Returns:
+        None: status member集合の完全一致を検証して完了する.
+
+    Raises:
+        AssertionError: statusのmember名, 順序またはwire valueが変更された場合.
+    """
     members = [(member.name, member.value) for member in StableStatus]
 
     assert members == [
@@ -35,6 +43,14 @@ def test_stable_status_values_match_guide() -> None:
 
 
 def test_stable_mode_values_match_guide() -> None:
+    """Stable mode enumがprotocol guideのmember順と整数値を保持することを検証する.
+
+    Returns:
+        None: mode member集合の完全一致を検証して完了する.
+
+    Raises:
+        AssertionError: modeのmember名, 順序またはwire valueが変更された場合.
+    """
     members = [(member.name, member.value) for member in StableMode]
 
     assert members == [
@@ -46,6 +62,14 @@ def test_stable_mode_values_match_guide() -> None:
 
 
 def test_stable_presence_filter_values_match_guide() -> None:
+    """Stable presence filter enumがprotocol guideの固定値を保持することを検証する.
+
+    Returns:
+        None: presence filter member集合の完全一致を検証して完了する.
+
+    Raises:
+        AssertionError: filterのmember名, 順序またはwire valueが変更された場合.
+    """
     members = [(member.name, member.value) for member in StablePresenceFilter]
 
     assert members == [
@@ -56,16 +80,16 @@ def test_stable_presence_filter_values_match_guide() -> None:
 
 
 def test_stable_grade_is_exact_closed_int_enum() -> None:
-    """StableGrade の宣言順、wire 値、閉集合性を検証する。
+    """StableGradeがaliasを含まない閉じたIntEnumとして固定wire語彙を持つことを検証する.
 
     Returns:
-        None: pytest assertion により検証結果を表す。
+        None: member名, 順序, 値, 型を検証して完了する.
 
     Raises:
-        AssertionError: StableGrade が設計済みの member、順序、値、型を満たさない場合。
+        AssertionError: StableGradeが設計済みのmember, 順序, 値, 型を満たさない場合.
 
-    Constraints:
-        __members__ を使い、iteration では見えない alias も検証対象に含める。
+    Notes:
+        __members__を使い, iterationでは見えないaliasも検証対象に含める.
     """
     members = [
         (member_name, member.value) for member_name, member in StableGrade.__members__.items()
@@ -87,15 +111,15 @@ def test_stable_grade_is_exact_closed_int_enum() -> None:
 
 
 def test_stable_grade_is_reexported_from_stable_package() -> None:
-    """StableGrade が stable package root から同じ型として公開されることを検証する。
+    """StableGradeがstable package rootからdefinitionと同一の型として公開されることを検証する.
 
     Returns:
-        None: pytest assertion により検証結果を表す。
+        None: package rootの再公開が同一型であることを検証して完了する.
 
     Raises:
-        AssertionError: package root の再公開が欠けるか別の型を公開している場合。
+        AssertionError: package rootの再公開が欠けるか別の型を公開している場合.
 
-    Constraints:
-        transport は package root の stable compatibility vocabulary のみを参照する。
+    Notes:
+        transportはpackage rootのstable compatibility vocabularyだけを参照する.
     """
     assert StableGrade is StableGradeDefinition

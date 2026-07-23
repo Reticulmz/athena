@@ -1,4 +1,4 @@
-"""Unit tests for Score Validator."""
+"""Score hit count validatorのruleset別計算とreject契約を検証する."""
 
 import pytest
 
@@ -12,7 +12,14 @@ from osu_server.domain.scores.validator import (
 
 
 def test_validate_osu_standard_valid() -> None:
-    """osu! standard ruleset の valid hit counts を受け入れる。"""
+    """Osu! standardの整合したhit countをvalid resultとして受理することを検証する.
+
+    Returns:
+        None: valid flag, 正のaccuracy, 既知Gradeを検証して完了する.
+
+    Raises:
+        AssertionError: 整合したosu! standard inputを拒否するか不正なresultを返した場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -40,8 +47,14 @@ def test_validate_osu_standard_valid() -> None:
 
 
 def test_validate_osu_accuracy_calculation() -> None:
-    """osu! ruleset の accuracy を正しく計算する。"""
-    # 300=100, 100=0, 50=0, miss=0 => 100% accuracy
+    """Osu! standardの全300判定をaccuracy 1.0として計算することを検証する.
+
+    Returns:
+        None: valid resultと1.0近傍のaccuracyを検証して完了する.
+
+    Raises:
+        AssertionError: 全300判定のaccuracy計算が1.0から外れた場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -68,7 +81,14 @@ def test_validate_osu_accuracy_calculation() -> None:
 
 
 def test_validate_osu_grade_ss() -> None:
-    """osu! ruleset で SS grade を正しく計算する。"""
+    """Osu! standardのperfect全300判定をGrade.Xとして分類することを検証する.
+
+    Returns:
+        None: result gradeがGrade.Xであることを検証して完了する.
+
+    Raises:
+        AssertionError: perfect全300判定のgrade分類が変わった場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -94,8 +114,14 @@ def test_validate_osu_grade_ss() -> None:
 
 
 def test_validate_osu_grade_s() -> None:
-    """osu! ruleset で S grade を正しく計算する。"""
-    # Accuracy > 90%, no miss
+    """Osu! standardの90%超かつmissなしのinputをGrade.Sとして分類することを検証する.
+
+    Returns:
+        None: result gradeがGrade.Sであることを検証して完了する.
+
+    Raises:
+        AssertionError: S grade閾値またはmiss条件の分類が変わった場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -121,8 +147,14 @@ def test_validate_osu_grade_s() -> None:
 
 
 def test_validate_osu_grade_a() -> None:
-    """osu! ruleset で A grade を正しく計算する。"""
-    # Accuracy > 80%
+    """Osu! standardの80%超inputをGrade.Aとして分類することを検証する.
+
+    Returns:
+        None: result gradeがGrade.Aであることを検証して完了する.
+
+    Raises:
+        AssertionError: A gradeのaccuracy閾値による分類が変わった場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -148,7 +180,14 @@ def test_validate_osu_grade_a() -> None:
 
 
 def test_validate_taiko_valid() -> None:
-    """taiko ruleset の valid hit counts を受け入れる。"""
+    """taikoの整合したhit countをvalid resultとして受理することを検証する.
+
+    Returns:
+        None: valid flagと正のaccuracyを検証して完了する.
+
+    Raises:
+        AssertionError: 整合したtaiko inputを拒否するか不正なresultを返した場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -175,7 +214,14 @@ def test_validate_taiko_valid() -> None:
 
 
 def test_validate_taiko_ignores_n50() -> None:
-    """taiko ruleset で n50 が無視されることを確認する。"""
+    """Taiko accuracy計算がn50を無視して全300判定を1.0と扱うことを検証する.
+
+    Returns:
+        None: 大きなn50でもvalid resultと1.0近傍accuracyを検証して完了する.
+
+    Raises:
+        AssertionError: taikoのaccuracy計算がn50を考慮した場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -202,7 +248,14 @@ def test_validate_taiko_ignores_n50() -> None:
 
 
 def test_validate_catch_valid() -> None:
-    """catch ruleset の valid hit counts を受け入れる。"""
+    """catchの整合したhit countをvalid resultとして受理することを検証する.
+
+    Returns:
+        None: valid flagと正のaccuracyを検証して完了する.
+
+    Raises:
+        AssertionError: 整合したcatch inputを拒否するか不正なresultを返した場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -229,7 +282,14 @@ def test_validate_catch_valid() -> None:
 
 
 def test_validate_mania_valid() -> None:
-    """mania ruleset の valid hit counts を受け入れる。"""
+    """maniaの整合したhit countをvalid resultとして受理することを検証する.
+
+    Returns:
+        None: valid flagと正のaccuracyを検証して完了する.
+
+    Raises:
+        AssertionError: 整合したmania inputを拒否するか不正なresultを返した場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -256,7 +316,14 @@ def test_validate_mania_valid() -> None:
 
 
 def test_validate_inconsistent_hit_counts_all_zero() -> None:
-    """全ての hit counts が 0 の場合 ValidationError を発生させる。"""
+    """全hit countが0のinconsistent inputをValidationErrorで拒否することを検証する.
+
+    Returns:
+        None: exception messageにhit countが含まれることを検証して完了する.
+
+    Raises:
+        AssertionError: 全ゼロhit countをvalid scoreとして受理するかdiagnosticを失った場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -283,7 +350,14 @@ def test_validate_inconsistent_hit_counts_all_zero() -> None:
 
 
 def test_validate_negative_hit_counts() -> None:
-    """Negative hit counts で ValidationError を発生させる。"""
+    """負のhit countをValidationErrorで拒否することを検証する.
+
+    Returns:
+        None: exception messageにnegativeが含まれることを検証して完了する.
+
+    Raises:
+        AssertionError: 負の判定数をvalid scoreとして受理するかdiagnosticを失った場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
@@ -310,7 +384,14 @@ def test_validate_negative_hit_counts() -> None:
 
 
 def test_validate_unknown_ruleset() -> None:
-    """Unknown ruleset で ValidationError を発生させる。"""
+    """未知のruleset整数値をValidationErrorで拒否することを検証する.
+
+    Returns:
+        None: exception messageにrulesetが含まれることを検証して完了する.
+
+    Raises:
+        AssertionError: 未知rulesetをvalid scoreとして受理するかdiagnosticを失った場合.
+    """
     parsed = ParsedScore(
         user_id=100,
         username="test",
