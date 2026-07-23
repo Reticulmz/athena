@@ -1,1 +1,1 @@
-"""Lazer REST API mapper package."""
+"""Lazer REST APIのwire mapperを提供するpackage."""

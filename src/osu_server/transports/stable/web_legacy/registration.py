@@ -1,10 +1,6 @@
-"""RegistrationHandler — POST /users handler for osu! stable account registration.
+"""Stable clientのlegacy account registration endpointを提供する.
 
-The osu! stable client sends form-encoded data to ``POST /users`` on ``osu.$DOMAIN``.
-Fields: ``user[username]``, ``user[user_email]``, ``user[password]``, ``check``.
-
-- ``check=1``: validate only (real-time validation while the user types)
-- ``check=0``: validate and create the account
+`check=1`は入力検証だけを行い, `check=0`は検証後にaccountを作成する.
 """
 
 from __future__ import annotations
@@ -27,19 +23,31 @@ _log = logging.getLogger(__name__)
 
 
 class RegistrationHandler:
-    """Starlette handler for ``POST /users``.
+    """`POST /users`をregistration commandへ適合させるhandler.
 
-    Receives DI dependencies in ``__init__`` and acts as a callable ASGI
-    endpoint via ``__call__``.
+    Attributes:
+        _register_user_command (RegisterUserCommand): 入力を検証しaccountを作成するcommand.
     """
 
     _register_user_command: RegisterUserCommand
 
     def __init__(self, *, register_user_command: RegisterUserCommand) -> None:
+        """Registration commandをhandlerへ設定する.
+
+        Args:
+            register_user_command (RegisterUserCommand): account登録または入力検証を行うcommand.
+        """
         self._register_user_command = register_user_command
 
     async def __call__(self, request: Request) -> Response:
-        """Parse form data and execute the registration command use-case."""
+        """Form requestをregistration commandへ渡してstable responseへ変換する.
+
+        Args:
+            request (Request): stable clientから届いたform-encoded POST request.
+
+        Returns:
+            Response: 成功時は`ok`のHTTP 200, 検証失敗時はform_errorを持つHTTP 400 response.
+        """
         async with request.form() as form_data:
             username = str(form_data.get("user[username]", ""))
             email = str(form_data.get("user[user_email]", ""))

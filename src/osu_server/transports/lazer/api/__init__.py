@@ -1,1 +1,1 @@
-"""Lazer REST API transport package."""
+"""Lazer REST APIのtransport adapterを提供するpackage."""

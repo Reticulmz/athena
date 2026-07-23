@@ -1,4 +1,4 @@
-"""Stable legacy replay download handler."""
+"""Stable legacy replay download requestを認証してresponseへ変換するhandlerを提供する."""
 
 from __future__ import annotations
 
@@ -48,29 +48,29 @@ logger: structlog.stdlib.BoundLogger = cast(
 
 
 def _utc_now() -> datetime:
+    """Replay download accounting用のUTC現在時刻を返す.
+
+    Returns:
+        datetime: UTC timezoneを持つ現在時刻.
+    """
     return datetime.now(UTC)
 
 
 class StableReplayDownloadExchange:
-    """Stable replay download の auth, parse, query orchestration を行う.
+    """Stable replay downloadの認証, parse, queryを調整する.
 
-    引数:
-        auth_query: Stable legacy credential を検証する query boundary.
-        replay_download_parser: Confirmed replay download query keys を parse する mapper.
-        replay_download_query: Replay download branch を解決する query use-case.
-        replay_download_accounting: Success branch の best-effort accounting publisher.
-        now_func: Accounting input 用の現在時刻 provider.
+    Attributes:
+        _auth_query (SessionCredentialsQuery): legacy credentialを検証するquery.
+        _replay_download_parser (ReplayDownloadQueryParser): query parameterをrequestへ
+            変換するparser.
+        _replay_download_query (ReplayDownloadQuery): replay可視性とbodyを取得するquery.
+        _replay_download_accounting (ReplayDownloadAccountingPublisher | None):
+            成功時のaccounting publisher.
+        _now_func (Callable[[], datetime]): accounting inputへ設定する現在時刻provider.
 
-    戻り値:
-        Class のため戻り値はない.
-
-    例外:
-        なし.
-
-    制約:
-        `u` と `h` は auth mapping だけに渡す. Auth failure では parser と
-        replay query を呼ばない. Unavailable branch の内部原因は response に
-        含めない.
+    Notes:
+        `u`と`h`は認証だけに渡す. 認証失敗時はparserとreplay queryを呼ばず, unavailable
+        branchの内部原因はresponseに含めない.
     """
 
     def __init__(
@@ -82,6 +82,17 @@ class StableReplayDownloadExchange:
         replay_download_accounting: ReplayDownloadAccountingPublisher | None = None,
         now_func: Callable[[], datetime] = _utc_now,
     ) -> None:
+        """Replay downloadの認証, parse, query依存を設定する.
+
+        Args:
+            auth_query (SessionCredentialsQuery): legacy credentialを検証するquery.
+            replay_download_parser (ReplayDownloadQueryParser): queryをreplay requestへ
+                変換するparser.
+            replay_download_query (ReplayDownloadQuery): replay可視性とbodyを取得するquery.
+            replay_download_accounting (ReplayDownloadAccountingPublisher | None):
+                成功時のaccounting publisher.
+            now_func (Callable[[], datetime]): accounting input用の現在時刻provider.
+        """
         self._auth_query: SessionCredentialsQuery = auth_query
         self._replay_download_parser: ReplayDownloadQueryParser = replay_download_parser
         self._replay_download_query: ReplayDownloadQuery = replay_download_query
@@ -91,23 +102,18 @@ class StableReplayDownloadExchange:
         self._now_func: Callable[[], datetime] = now_func
 
     async def respond(self, query: Mapping[str, str]) -> Response:
-        """Stable replay download query を HTTP response に変換する.
+        """Stable replay download queryをHTTP responseへ変換する.
 
-        引数:
-            query: Starlette QueryParams 互換または plain mapping.
+        Args:
+            query (Mapping[str, str]): Starlette QueryParams互換またはplain mappingのquery values.
 
-        戻り値:
-            Auth failure は empty 401. Malformed parse と unavailable branch は
-            empty 404. Success branch は target-compatible body と download
-            header を返す.
+        Returns:
+            Response: 認証失敗には空のHTTP 401, malformedまたはunavailableには空のHTTP 404,
+                成功時にはdownload headerを持つresponse.
 
-        例外:
-            Query use-case の想定外例外はそのまま送出する.
-
-        制約:
-            Raw query values, credential values, storage detail は response に含めない.
+        Notes:
+            raw query value, credential, storage detailはresponseに含めない.
         """
-
         auth_query_result = await self._auth_query.execute(
             SessionCredentialsQueryInput(
                 username=query.get("u"),
@@ -144,6 +150,15 @@ class StableReplayDownloadExchange:
         viewer_user_id: int,
         result: ReplayDownloadQueryResult,
     ) -> StarletteBackgroundTask | None:
+        """成功したreplay downloadのbackground accounting taskを作成する.
+
+        Args:
+            viewer_user_id (int): replayを閲覧した認証済みuser ID.
+            result (ReplayDownloadQueryResult): replay queryが解決したbranchとbody.
+
+        Returns:
+            StarletteBackgroundTask | None: accounting可能な成功branchにはtask, それ以外にはNone.
+        """
         if self._replay_download_accounting is None:
             return None
 
@@ -168,6 +183,19 @@ class StableReplayDownloadExchange:
         score_owner_user_id: int,
         viewer_user_id: int,
     ) -> None:
+        """成功したreplay downloadのaccounting eventをbest-effortで発行する.
+
+        Args:
+            score_id (int): downloadされたscore ID.
+            score_owner_user_id (int): score所有者のuser ID.
+            viewer_user_id (int): replayを閲覧したuser ID.
+
+        Returns:
+            None: accountingを発行するか失敗を記録し, responseへ値を返さず完了する.
+
+        Notes:
+            accounting input生成またはpublisherの失敗は記録して抑制し, download responseを変えない.
+        """
         try:
             input_data = ReplayDownloadAccountingInput(
                 score_id=score_id,
@@ -204,23 +232,10 @@ class StableReplayDownloadExchange:
 
 
 class ReplayDownloadHandler:
-    """Starlette adapter for `GET /web/osu-getreplay.php`.
+    """`GET /web/osu-getreplay.php`をexchangeへ委譲するStarlette adapter.
 
-    引数:
-        auth_query: Stable legacy credential を検証する query boundary.
-        replay_download_parser: Replay download query parser.
-        replay_download_query: Replay download query use-case.
-        replay_download_accounting: Success branch 後の best-effort accounting publisher.
-        now_func: Accounting input 用の現在時刻 provider.
-
-    戻り値:
-        Class のため戻り値はない.
-
-    例外:
-        なし.
-
-    制約:
-        Route registration と DI wiring は後続 task が所有する.
+    Attributes:
+        _exchange (StableReplayDownloadExchange): queryをstable responseへ変換するexchange.
     """
 
     def __init__(
@@ -232,6 +247,17 @@ class ReplayDownloadHandler:
         replay_download_accounting: ReplayDownloadAccountingPublisher | None = None,
         now_func: Callable[[], datetime] = _utc_now,
     ) -> None:
+        """Replay download requestを処理するexchangeを構成する.
+
+        Args:
+            auth_query (SessionCredentialsQuery): legacy credentialを検証するquery.
+            replay_download_parser (ReplayDownloadQueryParser): queryをreplay requestへ
+                変換するparser.
+            replay_download_query (ReplayDownloadQuery): replay可視性とbodyを取得するquery.
+            replay_download_accounting (ReplayDownloadAccountingPublisher | None):
+                成功時のaccounting publisher.
+            now_func (Callable[[], datetime]): accounting input用の現在時刻provider.
+        """
         self._exchange: StableReplayDownloadExchange = StableReplayDownloadExchange(
             auth_query=auth_query,
             replay_download_parser=replay_download_parser,
@@ -241,21 +267,17 @@ class ReplayDownloadHandler:
         )
 
     async def __call__(self, request: Request) -> Response:
-        """Stable replay download request を exchange に委譲する.
+        """Stable replay download requestをexchangeへ委譲する.
 
-        引数:
-            request: Starlette request.
+        Args:
+            request (Request): stable clientから届いたGET request.
 
-        戻り値:
-            Stable replay download の HTTP response.
+        Returns:
+            Response: 認証とreplay queryの結果を反映したstable response.
 
-        例外:
-            Exchange の想定外例外をそのまま送出する.
-
-        制約:
-            Request body は読まず, query params だけを使う.
+        Notes:
+            request bodyは読まず, query parameterだけを使う.
         """
-
         return await self._exchange.respond(request.query_params)
 
 
@@ -264,6 +286,19 @@ def _response_from_query_result(
     *,
     background: StarletteBackgroundTask | None = None,
 ) -> Response:
+    """Replay query resultのbranchをstable HTTP responseへ変換する.
+
+    Args:
+        result (ReplayDownloadQueryResult): replay可視性, body, accounting metadataを持つquery結果.
+        background (StarletteBackgroundTask | None): 成功responseの後に実行するaccounting task.
+
+    Returns:
+        Response: successにはreplay bodyのHTTP 200, auth failureには空のHTTP 401,
+            非公開または欠損branchには空のHTTP 404 response.
+
+    Raises:
+        AssertionError: 未対応のReplayDownloadBranchを受け取った場合.
+    """
     if result.branch is ReplayDownloadBranch.SUCCESS:
         if result.response_body is None:
             return _empty_response(HTTPStatus.NOT_FOUND)
@@ -288,6 +323,14 @@ def _response_from_query_result(
 
 
 def _empty_response(status_code: HTTPStatus) -> Response:
+    """Bodyとdownload headerを持たないstable responseを構築する.
+
+    Args:
+        status_code (HTTPStatus): responseへ設定するHTTP status.
+
+    Returns:
+        Response: 空bodyと指定statusを持つresponse.
+    """
     return Response(content=b"", status_code=status_code)
 
 
