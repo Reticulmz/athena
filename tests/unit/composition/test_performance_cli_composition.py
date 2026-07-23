@@ -1,4 +1,4 @@
-"""Composition tests for the PP recalculation CLI graph."""
+"""PP recalculation CLI graph の composition 契約を検証する."""
 
 from __future__ import annotations
 
@@ -17,6 +17,13 @@ from osu_server.services.commands.scores.performance import (
 
 @pytest.mark.asyncio
 async def test_performance_cli_container_resolves_recalculation_use_case() -> None:
+    """Performance CLI containerが再計算use caseとinstalled calculator identityを解決する.
+
+    この契約を検証する.
+
+    Returns:
+        None: 解決した dependency 型と calculator 名を検証して完了する.
+    """
     container = make_performance_cli_container(make_app_config(environment="test"))
 
     try:

@@ -17,12 +17,25 @@ if TYPE_CHECKING:
 
 @final
 class _RecordingBanchoEndpoint:
-    """Fake BanchoEndpoint for testing composition routing."""
+    """Composition routing の呼出しを記録する Bancho endpoint fake.
+
+    Attributes:
+        called (bool): endpoint が request を受け取ったか.
+    """
 
     def __init__(self) -> None:
+        """未呼出し状態の endpoint fake を初期化する."""
         self.called = False
 
     async def __call__(self, request: Request) -> Response:
+        """Request を記録して固定 Bancho response を返す.
+
+        Args:
+            request (Request): adapter から渡される Bancho request.
+
+        Returns:
+            Response: 固定 test response.
+        """
         _ = request
         self.called = True
         return Response(content=b"test-response")
@@ -30,10 +43,25 @@ class _RecordingBanchoEndpoint:
 
 @final
 class _RecordingReplayDownloadHandler:
+    """Composition routing の呼出しを記録する replay download handler fake.
+
+    Attributes:
+        called (bool): handler が request を受け取ったか.
+    """
+
     def __init__(self) -> None:
+        """未呼出し状態の replay handler fake を初期化する."""
         self.called = False
 
     async def __call__(self, request: Request) -> Response:
+        """Request を記録して固定 replay response を返す.
+
+        Args:
+            request (Request): adapter から渡される replay request.
+
+        Returns:
+            Response: 固定 test response.
+        """
         _ = request
         self.called = True
         return Response(content=b"replay-response")
@@ -41,7 +69,11 @@ class _RecordingReplayDownloadHandler:
 
 @pytest.mark.asyncio
 async def test_bancho_endpoint_delegates_to_refactored_endpoint() -> None:
-    """bancho_endpoint adapter pulls BanchoEndpoint from app.state."""
+    """Bancho endpoint adapter が app.state の handler へ request を委譲する契約を検証する.
+
+    Returns:
+        None: fake handler の呼出しと response body を検証して完了する.
+    """
     fake_endpoint = _RecordingBanchoEndpoint()
 
     app = Starlette()
@@ -57,6 +89,11 @@ async def test_bancho_endpoint_delegates_to_refactored_endpoint() -> None:
 
 @pytest.mark.asyncio
 async def test_replay_download_endpoint_delegates_to_stable_handler() -> None:
+    """Replay download adapter が app.state の stable handler へ request を委譲する契約を検証する.
+
+    Returns:
+        None: fake handler の呼出しと response body を検証して完了する.
+    """
     fake_handler = _RecordingReplayDownloadHandler()
 
     app = Starlette()

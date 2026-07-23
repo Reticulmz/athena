@@ -1,4 +1,4 @@
-"""Provider replacement tests for the Dishka composition surface."""
+"""Dishka composition surface の provider replacement 契約を検証する."""
 
 from __future__ import annotations
 
@@ -65,6 +65,11 @@ SOURCE_ROOT = Path(__file__).parents[3] / "src" / "osu_server"
 
 @pytest.mark.asyncio
 async def test_app_container_accepts_test_provider_replacements_without_test_env() -> None:
+    """開発 environment の app container が test provider replacement を受け入れる契約を検証する.
+
+    Returns:
+        None: 置換された queue と session store の identity と queue 動作を検証して完了する.
+    """
     config = make_app_config(environment="development")
     packet_queue: PacketQueue = InMemoryPacketQueue(max_size=2)
     session_store: SessionStore = InMemorySessionStore()
@@ -99,6 +104,13 @@ async def test_app_container_accepts_test_provider_replacements_without_test_env
 
 @pytest.mark.asyncio
 async def test_worker_container_accepts_test_provider_replacements_without_test_env() -> None:
+    """本番environmentのworker containerがtest provider replacementを受け入れる.
+
+    この契約を検証する.
+
+    Returns:
+        None: 置換された event bus と queue の identity を検証して完了する.
+    """
     config = make_app_config(environment="production")
     event_bus: LocalEventBus = InMemoryLocalEventBus()
     packet_queue: PacketQueue = InMemoryPacketQueue(max_size=1)
@@ -128,6 +140,11 @@ async def test_worker_container_accepts_test_provider_replacements_without_test_
 
 
 def test_production_provider_modules_do_not_branch_on_test_environment() -> None:
+    """Production provider source が test environment を条件分岐しない構造契約を検証する.
+
+    Returns:
+        None: 全対象 module source に test environment 比較がないことを検証して完了する.
+    """
     for module in PRODUCTION_PROVIDER_MODULES:
         source = inspect.getsource(module)
         assert 'environment == "test"' not in source
@@ -135,6 +152,13 @@ def test_production_provider_modules_do_not_branch_on_test_environment() -> None
 
 
 def test_provider_package_exports_modular_sets_without_common_provider() -> None:
+    """Provider packageがdeprecated common providerなしでmodular provider setを公開する.
+
+    この契約を検証する.
+
+    Returns:
+        None: 公開名に common provider がなく必要な set があることを検証して完了する.
+    """
     assert "CommonProviderSet" not in provider_exports
     assert "InfrastructureProviderSet" in provider_exports
     assert "PerformanceCliProviderSet" in provider_exports
@@ -144,11 +168,23 @@ def test_provider_package_exports_modular_sets_without_common_provider() -> None
 
 
 def test_app_and_worker_provider_sets_are_marker_only() -> None:
+    """App と worker provider set が各 graph method だけを持つ marker である契約を検証する.
+
+    Returns:
+        None: 公開 provider method 名を検証して完了する.
+    """
     assert _provider_method_names(app_providers.AppProviderSet) == ("app_provider_graph",)
     assert _provider_method_names(worker_providers.WorkerProviderSet) == ("worker_provider_graph",)
 
 
 def test_production_provider_modules_use_decorator_first_registration() -> None:
+    """Production provider moduleがloopやimperative provideを使わない登録構造を保つ.
+
+    この契約を検証する.
+
+    Returns:
+        None: container module 以外の source に禁止構文がないことを検証して完了する.
+    """
     for module in PRODUCTION_PROVIDER_MODULES:
         if module is container_providers:
             continue
@@ -159,6 +195,13 @@ def test_production_provider_modules_use_decorator_first_registration() -> None:
 
 
 def test_provider_definitions_stay_out_of_domain_and_infrastructure_packages() -> None:
+    """Domainとinfrastructure sourceがDishka importとProvider subclassを含まない境界を保つ.
+
+    この契約を検証する.
+
+    Returns:
+        None: 全対象 source の AST に composition 定義がないことを検証して完了する.
+    """
     for package_path in (SOURCE_ROOT / "domain", SOURCE_ROOT / "infrastructure"):
         for source_path in package_path.rglob("*.py"):
             tree = ast.parse(source_path.read_text(encoding="utf-8"))
@@ -168,12 +211,28 @@ def test_provider_definitions_stay_out_of_domain_and_infrastructure_packages() -
 
 
 def _provider_method_names(provider_type: type[object]) -> tuple[str, ...]:
+    """Provider type の公開 method 名を declaration 順で抽出する.
+
+    Args:
+        provider_type (type[object]): 公開 method を検査する provider class.
+
+    Returns:
+        tuple[str, ...]: private 名と scope を除いた method 名.
+    """
     return tuple(
         name for name in provider_type.__dict__ if not name.startswith("_") and name != "scope"
     )
 
 
 def _imports_dishka(tree: ast.AST) -> bool:
+    """AST に Dishka module を参照する import があるか判定する.
+
+    Args:
+        tree (ast.AST): 検査する Python source の構文木.
+
+    Returns:
+        bool: Dishka またはその submodule の import がある場合はTrue.
+    """
     for node in ast.walk(tree):
         if isinstance(node, ast.Import) and any(
             alias.name == "dishka" or alias.name.startswith("dishka.") for alias in node.names
@@ -189,6 +248,14 @@ def _imports_dishka(tree: ast.AST) -> bool:
 
 
 def _contains_provider_subclass(tree: ast.AST) -> bool:
+    """AST に Dishka Provider を継承する class 定義があるか判定する.
+
+    Args:
+        tree (ast.AST): 検査する Python source の構文木.
+
+    Returns:
+        bool: Provider を base class に持つ class がある場合はTrue.
+    """
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue

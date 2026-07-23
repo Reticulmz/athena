@@ -1,3 +1,5 @@
+"""Beatmap test factory と provider fake の出力契約を検証する."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -19,6 +21,11 @@ from tests.factories.beatmap import (
 
 
 def test_make_beatmapset_snapshot_factory_creates_complete_snapshot() -> None:
+    """Beatmapset snapshot factory が関連 beatmap を含む完全な既定 snapshot を返す契約を検証する.
+
+    Returns:
+        None: beatmapset と入れ子 beatmap の主要属性を検証して完了する.
+    """
     snapshot = make_beatmapset_snapshot_factory()
 
     assert snapshot.beatmapset_id == 1_000
@@ -32,6 +39,11 @@ def test_make_beatmapset_snapshot_factory_creates_complete_snapshot() -> None:
 
 
 def test_make_beatmap_snapshot_factory_allows_overrides() -> None:
+    """Beatmap snapshot factory が metadata と取得日時の override を保持する契約を検証する.
+
+    Returns:
+        None: 指定値を持つ snapshot を検証して完了する.
+    """
     fetched_at = datetime.now(UTC)
 
     beatmap = make_beatmap_snapshot_factory(
@@ -55,6 +67,13 @@ def test_make_beatmap_snapshot_factory_allows_overrides() -> None:
 
 
 def test_make_fetch_state_and_file_attachment_factories_are_typed() -> None:
+    """Fetch stateとfile attachment factoryが指定された文字列状態を型付きmodelへ渡す.
+
+    この契約を検証する.
+
+    Returns:
+        None: 作成された state と attachment の属性を検証して完了する.
+    """
     state = make_beatmap_fetch_state_factory(
         target_type="file",
         target_key="2000",
@@ -74,6 +93,11 @@ def test_make_fetch_state_and_file_attachment_factories_are_typed() -> None:
 
 
 def test_make_beatmap_file_body_matches_default_checksum() -> None:
+    """Beatmap file body factory が既定 checksum と osu file 内容を組にする契約を検証する.
+
+    Returns:
+        None: 既定 checksum と内容 prefix を検証して完了する.
+    """
     body = make_beatmap_file_body()
 
     assert body.md5 == "0123456789abcdef0123456789abcdef"
@@ -94,6 +118,14 @@ def test_make_beatmap_file_body_matches_default_checksum() -> None:
 async def test_fake_metadata_provider_returns_configured_result(
     kind: FakeProviderResultKind,
 ) -> None:
+    """設定した metadata 結果種別を fake provider が検索呼出しとともに返す契約を検証する.
+
+    Args:
+        kind (FakeProviderResultKind): 応答として設定する結果種別.
+
+    Returns:
+        None: 結果種別と記録した検索引数を検証して完了する.
+    """
     provider = FakeBeatmapMetadataProvider(
         by_beatmap_id={2_000: make_metadata_provider_response(kind=kind)}
     )
@@ -116,6 +148,14 @@ async def test_fake_metadata_provider_returns_configured_result(
 async def test_fake_file_provider_returns_failure_scenarios(
     error_kind: FakeProviderErrorKind,
 ) -> None:
+    """設定した file provider error が body なしの結果として返る契約を検証する.
+
+    Args:
+        error_kind (FakeProviderErrorKind): 応答として設定する失敗種別.
+
+    Returns:
+        None: error 種別, body の不在, 呼出し記録を検証して完了する.
+    """
     response = make_file_provider_response(error_kind=error_kind)
     provider = FakeBeatmapFileProvider(by_beatmap_id={2_000: response})
 
@@ -127,6 +167,11 @@ async def test_fake_file_provider_returns_failure_scenarios(
 
 
 async def test_fake_file_provider_returns_successful_body() -> None:
+    """成功 body を設定した fake file provider が内容と checksum を返す契約を検証する.
+
+    Returns:
+        None: 成功種別と返却 body の内容を検証して完了する.
+    """
     provider = FakeBeatmapFileProvider(
         by_beatmap_id={
             2_000: make_file_provider_response(

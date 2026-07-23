@@ -1,4 +1,4 @@
-"""SQL query diagnostics runtime middleware tests."""
+"""HTTP SQL query diagnostics middleware の runtime 契約を検証する."""
 
 from __future__ import annotations
 
@@ -20,6 +20,14 @@ if TYPE_CHECKING:
 
 
 async def _sql_endpoint(request: Request) -> PlainTextResponse:
+    """秘密値を含む二つの query を記録して成功 response を返す test endpoint.
+
+    Args:
+        request (Request): diagnostics middleware を通過した HTTP request.
+
+    Returns:
+        PlainTextResponse: query 記録後の固定成功 response.
+    """
     _ = request
     record_query(
         "SELECT * FROM users WHERE email = 'secret@example.invalid' AND id = 123",
@@ -33,6 +41,15 @@ async def _sql_endpoint(request: Request) -> PlainTextResponse:
 
 
 def _make_app(*, environment: str, enabled: bool | None = None) -> Starlette:
+    """指定した diagnostics 設定で middleware を持つ test app を作る.
+
+    Args:
+        environment (str): AppConfig に設定する実行環境.
+        enabled (bool | None): diagnostics 有効状態の明示 override. None は既定に委ねる.
+
+    Returns:
+        Starlette: diagnostics endpoint と middleware を設定済みの app.
+    """
     app = Starlette(
         routes=[Route("/diagnostics", _sql_endpoint)],
         middleware=[Middleware(SQLQueryDiagnosticsMiddleware)],
@@ -47,7 +64,11 @@ def _make_app(*, environment: str, enabled: bool | None = None) -> Starlette:
 
 
 def test_http_sql_query_diagnostics_warns_in_development() -> None:
-    """Development request で threshold 超過時に redacted warning を出す."""
+    """開発 request の query 数超過時に秘密値を伏せた warning を出す契約を検証する.
+
+    Returns:
+        None: HTTP response, warning 集計値, redaction 後 template を検証して完了する.
+    """
     app = _make_app(environment="development")
 
     with structlog.testing.capture_logs() as logs, TestClient(app) as client:
@@ -67,7 +88,11 @@ def test_http_sql_query_diagnostics_warns_in_development() -> None:
 
 
 def test_http_sql_query_diagnostics_skips_non_development_default() -> None:
-    """Production default では runtime warning を出さない."""
+    """本番既定では query を記録しても runtime warning を出さない契約を検証する.
+
+    Returns:
+        None: HTTP 成功 response と warning 不在を検証して完了する.
+    """
     app = _make_app(environment="production")
 
     with structlog.testing.capture_logs() as logs, TestClient(app) as client:
@@ -78,7 +103,11 @@ def test_http_sql_query_diagnostics_skips_non_development_default() -> None:
 
 
 def test_http_sql_query_diagnostics_respects_disabled_override() -> None:
-    """Development でも明示 disabled なら runtime warning を出さない."""
+    """開発環境でも明示的 disabled override が runtime warning を抑止する契約を検証する.
+
+    Returns:
+        None: HTTP 成功 response と warning 不在を検証して完了する.
+    """
     app = _make_app(environment="development", enabled=False)
 
     with structlog.testing.capture_logs() as logs, TestClient(app) as client:
