@@ -1,4 +1,4 @@
-"""Score command use-case package."""
+"""scoreの永続化,projection,互換処理を担うcommand use-caseを公開する."""
 
 from osu_server.services.commands.scores.authorization import (
     AuthorizationContext,

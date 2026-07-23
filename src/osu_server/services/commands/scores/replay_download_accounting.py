@@ -1,4 +1,4 @@
-"""Replay download accounting command policy."""
+"""replay download成功後の閲覧数と活動時刻を集計するcommand policyを定義する."""
 
 from __future__ import annotations
 
@@ -27,22 +27,16 @@ _logger: structlog.stdlib.BoundLogger = cast(
 
 @dataclass(slots=True, frozen=True)
 class ReplayDownloadAccountingInput:
-    """Replay download 成功後の accounting 入力。
+    """replay download成功後にaccountingへ渡す入力を表す.
 
-    Args:
-        score_id: replay download 対象 score id。
-        score_owner_user_id: 対象 score の owner user id。
-        viewer_user_id: 認証済み viewer user id。
-        occurred_at: replay download 成功時刻。
+    Attributes:
+        score_id (int): downloadされたreplayに対応するscore ID.
+        score_owner_user_id (int): 対象scoreを所有するuser ID.
+        viewer_user_id (int): replayを閲覧した認証済みuser ID.
+        occurred_at (datetime): download成功時刻を表すtimezone-awareな日時.
 
-    Returns:
-        なし。
-
-    Raises:
-        ValueError: id が正の整数でない場合、または occurred_at が timezone-aware でない場合。
-
-    Constraints:
-        duplicate identity は viewer_user_id と score_id だけを使う。
+    Notes:
+        重複閲覧のidentityはviewer_user_idとscore_idの組だけで判定する.
     """
 
     score_id: int
@@ -51,7 +45,14 @@ class ReplayDownloadAccountingInput:
     occurred_at: datetime
 
     def __post_init__(self) -> None:
-        """入力 precondition を検証する。"""
+        """accounting入力の識別子と時刻の前提条件を検証する.
+
+        Returns:
+            None: 値を変更せず検証を完了する.
+
+        Raises:
+            ValueError: いずれかのIDが正でないかoccurred_atがtimezone-awareでない場合.
+        """
         _validate_positive_id("score_id", self.score_id)
         _validate_positive_id("score_owner_user_id", self.score_owner_user_id)
         _validate_positive_id("viewer_user_id", self.viewer_user_id)
@@ -61,7 +62,14 @@ class ReplayDownloadAccountingInput:
 
 
 class ReplayViewAccountingOutcome(StrEnum):
-    """Replay View Count 更新の結果。"""
+    """replay view count更新branchの結果を表す.
+
+    Attributes:
+        INCREMENTED (str): replay view countを1増やした状態.
+        SKIPPED_SELF_VIEW (str): owner自身の閲覧のため更新しなかった状態.
+        SKIPPED_DUPLICATE (str): cooldown中の重複閲覧のため更新しなかった状態.
+        FAILED (str): gateまたはdurable更新の失敗により更新できなかった状態.
+    """
 
     INCREMENTED = "incremented"
     SKIPPED_SELF_VIEW = "skipped_self_view"
@@ -70,7 +78,13 @@ class ReplayViewAccountingOutcome(StrEnum):
 
 
 class LatestActivityAccountingOutcome(StrEnum):
-    """Latest activity 更新の結果。"""
+    """latest activity更新branchの結果を表す.
+
+    Attributes:
+        TOUCHED (str): viewerのlatest activityを更新した状態.
+        THROTTLED (str): throttle中のためactivity更新を抑止した状態.
+        FAILED (str): gateまたはdurable更新の失敗により更新できなかった状態.
+    """
 
     TOUCHED = "touched"
     THROTTLED = "throttled"
@@ -78,7 +92,14 @@ class LatestActivityAccountingOutcome(StrEnum):
 
 
 class _GateClaimOutcome(StrEnum):
-    """Temporary gate claim の内部判定結果。"""
+    """temporary gate claimの内部判定結果を表す.
+
+    Attributes:
+        OPEN (str): 呼び出しがmarkerを新規にclaimした状態.
+        CLOSED (str): 既存markerによりclaimが拒否された状態.
+        FAILED_OPEN (str): gate失敗を許容して後続処理を継続する状態.
+        FAILED_CLOSED (str): gate失敗により後続処理を抑止する状態.
+    """
 
     OPEN = "open"
     CLOSED = "closed"
@@ -88,20 +109,14 @@ class _GateClaimOutcome(StrEnum):
 
 @dataclass(slots=True, frozen=True)
 class ReplayDownloadAccountingResult:
-    """Replay download accounting command の結果。
+    """replay download accounting commandの二つのbranch結果を表す.
 
-    Args:
-        replay_view_outcome: Replay View Count branch の結果。
-        latest_activity_outcome: Latest activity branch の結果。
+    Attributes:
+        replay_view_outcome (ReplayViewAccountingOutcome): score閲覧数更新の結果.
+        latest_activity_outcome (LatestActivityAccountingOutcome): viewer活動時刻更新の結果.
 
-    Returns:
-        なし。
-
-    Raises:
-        なし。
-
-    Constraints:
-        Replay View Count と latest activity の結果は独立して表現する。
+    Notes:
+        二つのbranchは独立して処理されるため一方の失敗が他方の結果を上書きしない.
     """
 
     replay_view_outcome: ReplayViewAccountingOutcome
@@ -109,7 +124,12 @@ class ReplayDownloadAccountingResult:
 
 
 class ReplayDownloadAccountingUseCase:
-    """Replay download 成功を server-observable consumption signal として集計する。"""
+    """replay download成功をserver-observableなconsumption signalとして集計する.
+
+    Attributes:
+        _unit_of_work_factory (UnitOfWorkFactory): durableなscoreとuser更新を開始するfactory.
+        _accounting_gate (ReplayDownloadAccountingGate): cooldownとthrottle markerを管理するgate.
+    """
 
     def __init__(
         self,
@@ -117,20 +137,15 @@ class ReplayDownloadAccountingUseCase:
         unit_of_work_factory: UnitOfWorkFactory,
         accounting_gate: ReplayDownloadAccountingGate,
     ) -> None:
-        """UoW factory と temporary accounting gate を受け取る。
+        """durable更新用のUnit of Work factoryとtemporary accounting gateを保持する.
 
         Args:
-            unit_of_work_factory: score count を更新する command UoW factory。
-            accounting_gate: duplicate cooldown marker を first-claim する gate。
+            unit_of_work_factory (UnitOfWorkFactory): score countを更新するcommand UoW factory.
+            accounting_gate (ReplayDownloadAccountingGate): duplicate cooldown markerを
+                claimするgate.
 
-        Returns:
-            None。
-
-        Raises:
-            なし。
-
-        Constraints:
-            durable repository や concrete state backend は直接構築しない。
+        Notes:
+            durable repositoryとconcrete state backendはこのuse-case内で直接構築しない.
         """
         self._unit_of_work_factory: UnitOfWorkFactory = unit_of_work_factory
         self._accounting_gate: ReplayDownloadAccountingGate = accounting_gate
@@ -139,21 +154,18 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> ReplayDownloadAccountingResult:
-        """Replay download accounting policy を適用する。
+        """Replay download accounting policyを適用する.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
 
         Returns:
-            Replay View Count と latest activity branch の結果。
+            ReplayDownloadAccountingResult: 閲覧数と活動時刻のbranchごとの結果.
 
-        Raises:
-            なし。temporary gate や durable 更新の失敗は result に畳み込む。
-
-        Constraints:
-            self-view は count せず、non-owner は 24h duplicate cooldown が open の時だけ
-            score-scoped Replay View Count を 1 増やす。latest activity は self-view と
-            duplicate cooldown hit を含むすべての成功 replay download で評価する。
+        Notes:
+            self-viewはcountしない. non-ownerは24h duplicate cooldownがopenのときだけ
+            score-scoped replay view countを1増やす. latest activityはself-viewと
+            duplicate cooldown hitを含む全ての成功replay downloadで評価する.
         """
         replay_view_outcome = await self._apply_replay_view_policy(input_data)
         latest_activity_outcome = await self._apply_latest_activity_policy(input_data)
@@ -166,16 +178,16 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> ReplayViewAccountingOutcome:
-        """Replay view count 更新 policy を適用する。
+        """Replay view count更新policyを適用する.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
 
         Returns:
-            self-view skip、duplicate cooldown skip、失敗、または increment 成功の結果。
+            ReplayViewAccountingOutcome: self-view skipとduplicate skipと成功と失敗の結果.
 
-        Raises:
-            なし。gate や durable 更新の失敗は outcome に畳み込む。
+        Notes:
+            gateまたはdurable更新の失敗は例外送出せずoutcomeに畳み込む.
         """
         if input_data.viewer_user_id == input_data.score_owner_user_id:
             return ReplayViewAccountingOutcome.SKIPPED_SELF_VIEW
@@ -197,16 +209,16 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> LatestActivityAccountingOutcome:
-        """Latest activity 更新 policy を適用する。
+        """Latest activity更新policyを適用する.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
 
         Returns:
-            throttle skip、touch 成功、または失敗の結果。
+            LatestActivityAccountingOutcome: throttle skipとtouch成功と失敗の結果.
 
-        Raises:
-            なし。gate や durable 更新の失敗は outcome に畳み込む。
+        Notes:
+            gateまたはdurable更新の失敗は例外送出せずoutcomeに畳み込む.
         """
         throttle_claim = await self._claim_latest_activity(input_data)
         if throttle_claim is _GateClaimOutcome.CLOSED:
@@ -223,16 +235,16 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> _GateClaimOutcome:
-        """Replay view duplicate marker を claim する.
+        """Replay view duplicate markerをclaimする.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
 
         Returns:
-            Claim の成功、既存 marker、または fail-closed error を表す内部結果。
+            _GateClaimOutcome: claim成功と既存markerとfail-closed errorの内部結果.
 
-        Raises:
-            なし。gate 例外は fail-closed 結果と warning log に畳み込む。
+        Notes:
+            gate例外はfail-closed結果とwarning logに畳み込む.
         """
         try:
             claimed = await self._accounting_gate.claim_replay_view(
@@ -257,16 +269,16 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> _GateClaimOutcome:
-        """Latest activity throttle marker を claim する.
+        """Latest activity throttle markerをclaimする.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
 
         Returns:
-            Claim の成功、既存 marker、または fail-open error を表す内部結果。
+            _GateClaimOutcome: claim成功と既存markerとfail-open errorの内部結果.
 
-        Raises:
-            なし。gate 例外は fail-open 結果と warning log に畳み込む。
+        Notes:
+            gate例外はfail-open結果とwarning logに畳み込む.
         """
         try:
             claimed = await self._accounting_gate.claim_latest_activity(
@@ -291,17 +303,17 @@ class ReplayDownloadAccountingUseCase:
         input_data: ReplayDownloadAccountingInput,
         claim_outcome: _GateClaimOutcome,
     ) -> None:
-        """Replay view durable 更新失敗時に marker を best-effort で戻す.
+        """Replay view durable更新失敗時にmarkerをbest-effortで戻す.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
-            claim_outcome: 直前の replay view marker claim 結果。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
+            claim_outcome (_GateClaimOutcome): 直前のreplay view marker claim結果.
 
         Returns:
-            None。
+            None: markerを戻す必要がある場合だけreleaseを試みる.
 
-        Raises:
-            なし。release 失敗は warning log に畳み込む。
+        Notes:
+            release失敗はwarning logに畳み込み呼び出し元のoutcomeを変更しない.
         """
         if claim_outcome is not _GateClaimOutcome.OPEN:
             return
@@ -325,17 +337,17 @@ class ReplayDownloadAccountingUseCase:
         input_data: ReplayDownloadAccountingInput,
         claim_outcome: _GateClaimOutcome,
     ) -> None:
-        """Latest activity durable 更新失敗時に marker を best-effort で戻す.
+        """Latest activity durable更新失敗時にmarkerをbest-effortで戻す.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
-            claim_outcome: 直前の latest activity marker claim 結果。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
+            claim_outcome (_GateClaimOutcome): 直前のlatest activity marker claim結果.
 
         Returns:
-            None。
+            None: markerを戻す必要がある場合だけreleaseを試みる.
 
-        Raises:
-            なし。release 失敗は warning log に畳み込む。
+        Notes:
+            release失敗はwarning logに畳み込み呼び出し元のoutcomeを変更しない.
         """
         if claim_outcome is not _GateClaimOutcome.OPEN:
             return
@@ -357,17 +369,16 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> bool:
-        """Score の replay view count を 1 増やす。
+        """scoreのreplay view countを1増やす.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
 
         Returns:
-            更新に成功した場合は True。score が存在しない、または例外が発生した
-            場合は False。
+            bool: score更新に成功した場合はTrue. score不存在または例外発生時はFalse.
 
-        Raises:
-            なし。例外は warning log に畳み込み False を返す。
+        Notes:
+            durable更新の例外はwarning logに畳み込みFalseを返す.
         """
         try:
             async with self._unit_of_work_factory() as uow:
@@ -397,17 +408,16 @@ class ReplayDownloadAccountingUseCase:
         self,
         input_data: ReplayDownloadAccountingInput,
     ) -> bool:
-        """Viewer の latest activity を更新する。
+        """viewerのlatest activityを更新する.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
 
         Returns:
-            更新に成功した場合は True。user が存在しない、または例外が発生した
-            場合は False。
+            bool: user更新に成功した場合はTrue. user不存在または例外発生時はFalse.
 
-        Raises:
-            なし。例外は warning log に畳み込み False を返す。
+        Notes:
+            durable更新の例外はwarning logに畳み込みFalseを返す.
         """
         try:
             async with self._unit_of_work_factory() as uow:
@@ -438,38 +448,36 @@ class ReplayDownloadAccountingUseCase:
 
 
 class ReplayDownloadAccountingPublisher(Protocol):
-    """Replay download accounting work を非同期実行境界へ発行する port。"""
+    """replay download accounting workを非同期実行境界へ発行するportを定義する."""
 
     async def publish(self, input_data: ReplayDownloadAccountingInput) -> None:
-        """Accounting work を best-effort に発行する。
+        """Accounting workをbest-effortに発行する.
 
         Args:
-            input_data: replay download 成功後の accounting 入力。
+            input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
 
         Returns:
-            None。
+            None: 発行を受け付けた後に値を返さない.
 
-        Raises:
-            実装依存。transport 側は best-effort 境界として例外を握り、ログに残す。
-
-        Constraints:
-            実装は replay download response body の生成や永続更新を直接行わない。
+        Notes:
+            具体的な例外契約は実装に委ねる. transport側はbest-effort境界として例外を握り
+            logに残す. 実装はreplay download response bodyの生成や永続更新を直接行わない.
         """
         ...
 
 
 def _validate_positive_id(name: str, value: int) -> None:
-    """id が正の整数であることを検証する。
+    """識別子が正の整数であることを検証する.
 
     Args:
-        name (str): 検証対象の引数名。
-        value (int): 検証する整数値。
+        name (str): 検証対象の引数名.
+        value (int): 検証する整数値.
 
     Returns:
-        None: 検証のみを行い、正常時は値を返さない。
+        None: 検証のみを行い正常時は値を返さない.
 
     Raises:
-        ValueError: value が 0 以下の場合。
+        ValueError: valueが0以下の場合.
     """
     if value <= 0:
         msg = f"{name} must be positive"
@@ -485,23 +493,18 @@ def _log_accounting_failure(
     exception: BaseException | None = None,
     exception_type: str | None = None,
 ) -> None:
-    """Accounting 失敗を sanitize した warning log として記録する。
+    """accounting失敗をsanitizeしたwarning logとして記録する.
 
     Args:
-        event (str): structlog event 名。
-        input_data (ReplayDownloadAccountingInput): replay download 成功後の
-            accounting 入力。
-        operation (str): 失敗した操作名。
-        outcome (str): 失敗時の outcome 分類。
-        exception (BaseException | None): 発生した例外。
-            例外 message は log に含めない。
-        exception_type (str | None): 例外型名の明示上書き。
+        event (str): structlog event名.
+        input_data (ReplayDownloadAccountingInput): replay download成功後のaccounting入力.
+        operation (str): 失敗した操作名.
+        outcome (str): 失敗時のoutcome分類.
+        exception (BaseException | None): 発生した例外. 例外messageはlogに含めない.
+        exception_type (str | None): 例外型名の明示上書き.
 
     Returns:
-        None: warning log の記録だけを行い、値を返さない。
-
-    Raises:
-        なし。
+        None: warning logの記録だけを行い値を返さない.
     """
     _logger.warning(
         event,
