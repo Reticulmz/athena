@@ -1,4 +1,7 @@
-"""PermissionService -- server-side RBAC authorization calculation."""
+"""role由来のserver-side authorizationを計算するquery serviceを提供するmodule.
+
+query repositoryから取得したrole集合をPrivilegesとSessionAuthorizationへ集約する.
+"""
 
 from __future__ import annotations
 
@@ -16,17 +19,30 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class PermissionService:
-    """ユーザーの全ロールから内部権限を計算する。"""
+    """userの全roleから内部Privilegesとsession authorizationを計算する.
+
+    Attributes:
+        _role_repo (RoleQueryRepository): userに割り当てられたroleを読むquery repository.
+    """
 
     _role_repo: RoleQueryRepository
 
     def __init__(self, role_repo: RoleQueryRepository) -> None:
+        """Role query repositoryを設定する.
+
+        Args:
+            role_repo (RoleQueryRepository): userに割り当てられたroleを読むrepository.
+        """
         self._role_repo = role_repo
 
     async def compute_permissions(self, user_id: int) -> Privileges:
-        """*user_id* に割り当てられた全ロールの permissions を OR 結合して返す。
+        """指定userに割り当てられたroleのPrivilegesをOR結合して返す.
 
-        ロールが存在しない場合は ``Privileges.NONE`` を返す。
+        Args:
+            user_id (int): 権限を計算するuserの識別子.
+
+        Returns:
+            Privileges: role由来のserver-side権限. roleがない場合はPrivileges.NONE.
         """
         roles = await self._role_repo.get_roles_for_user(user_id)
         result = Privileges.NONE
@@ -39,11 +55,16 @@ class PermissionService:
         self,
         user_id: int,
     ) -> SessionAuthorization:
-        """*user_id* の全ロールから認可 snapshot を計算して返す。
+        """指定userのrole集合からsession authorization snapshotを計算して返す.
 
-        ``compute_permissions()`` と同じロールリストから privileges の OR と
-        role_ids を単一の ``SessionAuthorization`` として返す。
-        login と refresh の両方がこのメソッドを共有の認可計算元として使う。
+        Args:
+            user_id (int): authorizationを計算するuserの識別子.
+
+        Returns:
+            SessionAuthorization: 同じrole集合から導出したPrivilegesとposition順のrole ID群.
+
+        Notes:
+            loginとrefreshはこのmethodを共通のauthorization計算元として利用する.
         """
         roles = await self._role_repo.get_roles_for_user(user_id)
         privileges = Privileges.NONE
