@@ -1,8 +1,4 @@
-"""Bancho local listeners - subscribe to local events and enqueue S2C packets.
-
-Provides ``setup_listeners`` which creates and registers all bancho
-listener groups with the local event bus.
-"""
+"""stable Bancho local event listener群を初期化してS2C packetへ適応する."""
 
 from __future__ import annotations
 
@@ -31,10 +27,19 @@ def setup_listeners(
     current_user_stats_query: CurrentUserStatsQuery,
     stable_user_status_store: StableUserStatusStore | None = None,
 ) -> None:
-    """Register all Bancho local event listeners.
+    """全Bancho local event listener群を作成してevent busへ登録する.
 
-    Called during application startup (lifespan).  Creates listener group
-    instances and delegates to their ``register_all`` methods.
+    Args:
+        eventbus (LocalEventBus): listenerをsubscribeするlocal event bus.
+        packet_queue (PacketQueue): listenerがS2C packetをenqueueするqueue.
+        active_sessions_query (ListActiveSessionsQuery): online sessionを取得するquery.
+        channel_state (ChannelStateStore): disconnect時にchannel membershipをcleanupするstore.
+        current_user_stats_query (CurrentUserStatsQuery): current statsを取得するquery.
+        stable_user_status_store (StableUserStatusStore | None):
+            stable statusを取得するoptional store.
+
+    Returns:
+        None: listener群を登録し、呼び出し側へ値を返さずに完了する.
     """
     lifecycle = LifecycleListeners(
         active_sessions_query=active_sessions_query,

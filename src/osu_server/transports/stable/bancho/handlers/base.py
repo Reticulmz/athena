@@ -1,10 +1,6 @@
-"""HandlerGroup — declarative C2S packet handler registration.
+"""stable Bancho C2S handlerを宣言的に登録する基盤を提供する.
 
-Extends :class:`RouteGroup` to register ``@handles``-decorated methods
-with a :class:`PacketDispatcher` in one call.
-
-Design ref: HandlerGroup component in c2s-handlers design.md
-Requirements: 2.1, 2.2, 2.3, 2.4, 1.5
+``@handles``でpacket IDへ関連付けたmethodを、PacketDispatcherへ一括登録する。
 """
 
 from __future__ import annotations
@@ -19,26 +15,32 @@ if TYPE_CHECKING:
     from osu_server.transports.stable.bancho.dispatch import PacketDispatcher
 
 handles = route
-"""Alias for :func:`route` — use ``@handles(ClientPacketID.PONG)``."""
+"""C2S handler用の``route`` aliasを提供する.
+
+``@handles(ClientPacketID.PONG)``のようにpacket IDをmethodへ関連付ける。
+"""
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
 
 class HandlerGroup(RouteGroup):
-    """Base class for C2S packet handler groups.
+    """C2S packet handler群の共通登録機能を提供する.
 
-    Subclass this, decorate async methods with ``@handles(ClientPacketID.XXX)``,
-    then call :meth:`register_all` to wire them into a
-    :class:`PacketDispatcher`.
+    subclassのasync methodを``@handles(ClientPacketID.PONG)``で宣言し、
+    ``register_all``でPacketDispatcherへ関連付ける。
     """
 
     def register_all(self, dispatcher: PacketDispatcher) -> None:
-        """Register all ``@handles``-decorated methods with *dispatcher*.
+        """宣言済みのC2S handlerをPacketDispatcherへ登録する.
 
-        Logs ``handlers_registered`` on success with group name and count.
-        Warns if the group has no handlers (Req 1.5).
-        Raises :class:`DuplicateHandlerError` if *dispatcher* already has
-        a handler for one of the packet IDs (Req 2.4).
+        Args:
+            dispatcher (PacketDispatcher): handlerをdispatchする登録先.
+
+        Returns:
+            None: 登録数をlogへ記録し、呼び出し側へ値を返さずに完了する.
+
+        Notes:
+            同じpacket IDがすでに登録済みの場合の例外はdispatcherから伝播する。
         """
         count = 0
         for packet_id, handler in self.get_routes():

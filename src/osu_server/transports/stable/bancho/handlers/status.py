@@ -1,4 +1,4 @@
-"""STATUS_CHANGE handler for stable beatmap file warmup."""
+"""stable BanchoのSTATUS_CHANGEとREQUEST_STATUS C2S packetを処理する."""
 
 from __future__ import annotations
 
@@ -40,14 +40,34 @@ _CHECKSUM_MD5_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
 
 
 class _BeatmapFileWarmupUseCase(Protocol):
+    """status change由来のbeatmap file warmupを実行するprotocolを表す."""
+
     async def execute(
         self,
         request: BeatmapFileWarmupRequest,
-    ) -> BeatmapFileWarmupResult: ...
+    ) -> BeatmapFileWarmupResult:
+        """Beatmap file warmup requestを実行する.
+
+        Args:
+            request (BeatmapFileWarmupRequest): stable status changeから組み立てたwarmup要求.
+
+        Returns:
+            BeatmapFileWarmupResult: warmupの実行結果.
+        """
+        ...
 
 
 class StatusChangeHandlers(HandlerGroup):
-    """STATUS_CHANGE の beatmap file warmup と current stats 更新を扱う。"""
+    """STATUS_CHANGEとREQUEST_STATUSをstatus、stats、warmupへ適応する.
+
+    Attributes:
+        _beatmap_file_warmup (_BeatmapFileWarmupUseCase): beatmap file取得を要求するuse case.
+        _stable_user_status_store (StableUserStatusStore | None):
+            stable user statusを保存するstore.
+        _current_user_stats_query (CurrentUserStatsQuery | None): current statsを取得するquery.
+        _packet_queue (PacketQueue | None): USER_STATS packetを配信するqueue.
+        _active_sessions_query (ListActiveSessionsQuery | None): stats fan-out先を取得するquery.
+    """
 
     _beatmap_file_warmup: _BeatmapFileWarmupUseCase
     _stable_user_status_store: StableUserStatusStore | None
@@ -64,6 +84,16 @@ class StatusChangeHandlers(HandlerGroup):
         packet_queue: PacketQueue | None = None,
         active_sessions_query: ListActiveSessionsQuery | None = None,
     ) -> None:
+        """Status changeを処理する依存を初期化する.
+
+        Args:
+            beatmap_file_warmup (_BeatmapFileWarmupUseCase): beatmap file warmupを実行するuse case.
+            stable_user_status_store (StableUserStatusStore | None): status保存用のoptional store.
+            current_user_stats_query (CurrentUserStatsQuery | None): stats取得用のoptional query.
+            packet_queue (PacketQueue | None): S2C packet送信用のoptional queue.
+            active_sessions_query (ListActiveSessionsQuery | None):
+                fan-out先取得用のoptional query.
+        """
         self._beatmap_file_warmup = beatmap_file_warmup
         self._stable_user_status_store = stable_user_status_store
         self._current_user_stats_query = current_user_stats_query
@@ -72,7 +102,18 @@ class StatusChangeHandlers(HandlerGroup):
 
     @handles(ClientPacketID.STATUS_CHANGE)
     async def handle_status_change(self, payload: bytes, user_id: int) -> None:
-        """STATUS_CHANGE payload を解釈し、必要な副作用をキューへ反映する。"""
+        """STATUS_CHANGEをstatus保存、USER_STATS fan-out、beatmap warmupへ適応する.
+
+        Args:
+            payload (bytes): StatusUpdateを含むC2S packet payload.
+            user_id (int): statusを更新した認証済みuserのID.
+
+        Returns:
+            None: 利用可能な副作用を実行し、呼び出し側へ値を返さずに完了する.
+
+        Notes:
+            payload decode失敗とbeatmap warmup失敗はlogへ記録してclientへの例外を防ぐ。
+        """
         try:
             status_update = parse_status_change_payload(payload)
         except PacketReadError as exc:
@@ -110,7 +151,15 @@ class StatusChangeHandlers(HandlerGroup):
 
     @handles(ClientPacketID.REQUEST_STATUS)
     async def handle_request_status(self, payload: bytes, user_id: int) -> None:
-        """REQUEST_STATUS payload を処理し、自分自身の current stats を返す。"""
+        """REQUEST_STATUSに対してrequester自身のcurrent USER_STATSを返す.
+
+        Args:
+            payload (bytes): 内容を利用しないREQUEST_STATUS packet payload.
+            user_id (int): statusを要求した認証済みuserのID.
+
+        Returns:
+            None: 保存済みstatusに対応するUSER_STATSをenqueueして値を返さずに完了する.
+        """
         _ = payload
         status = await self._current_status(user_id=user_id)
         play_mode = _stable_play_mode(status.play_mode)
@@ -126,6 +175,18 @@ class StatusChangeHandlers(HandlerGroup):
         )
 
     async def _store_status(self, status: StableUserStatus, *, user_id: int) -> None:
+        """Stable user statusをoptional storeへbest-effortで保存する.
+
+        Args:
+            status (StableUserStatus): STATUS_CHANGEから作成したcurrent status.
+            user_id (int): statusを保存するuserのID.
+
+        Returns:
+            None: storeが利用可能な場合に保存を試行し、値を返さずに完了する.
+
+        Notes:
+            store未設定または保存失敗はlogへ記録して後続処理を継続する。
+        """
         if self._stable_user_status_store is None:
             return
         try:
@@ -145,6 +206,19 @@ class StatusChangeHandlers(HandlerGroup):
         play_mode: int,
         user_id: int,
     ) -> None:
+        """Current USER_STATSを本人とactive sessionへfan-outする.
+
+        Args:
+            status (StableUserStatus): packetへ反映するcurrent status.
+            play_mode (int): statusに対応する正規化済みstable play mode.
+            user_id (int): stats更新元userのID.
+
+        Returns:
+            None: stats packetの送信を試行し、呼び出し側へ値を返さずに完了する.
+
+        Notes:
+            active session queryが失敗した場合も本人への送信は継続する。
+        """
         if self._current_user_stats_query is None or self._packet_queue is None:
             return
         recipient_user_ids = (user_id,)
@@ -184,6 +258,18 @@ class StatusChangeHandlers(HandlerGroup):
         recipient_user_ids: tuple[int, ...],
         error_event: str,
     ) -> None:
+        """指定recipientへcurrent USER_STATS packetをenqueueする.
+
+        Args:
+            status (StableUserStatus): packetへ反映するcurrent status.
+            play_mode (int): stats queryとpacketで使うstable play mode.
+            user_id (int): current statsを取得するuserのID.
+            recipient_user_ids (tuple[int, ...]): 同じpacketを受信するuser ID群.
+            error_event (str): queryまたはenqueue失敗時に記録するlog event名.
+
+        Returns:
+            None: current statsを取得して各recipientへenqueueし、値を返さずに完了する.
+        """
         if self._current_user_stats_query is None or self._packet_queue is None:
             return
         try:
@@ -210,6 +296,14 @@ class StatusChangeHandlers(HandlerGroup):
             )
 
     async def _current_status(self, *, user_id: int) -> StableUserStatus:
+        """userの保存済みstable statusまたは既定idle statusを取得する.
+
+        Args:
+            user_id (int): statusを取得する認証済みuserのID.
+
+        Returns:
+            StableUserStatus: 保存済みstatus. store未設定、読取失敗、値なしでは既定status.
+        """
         if self._stable_user_status_store is None:
             return DEFAULT_STABLE_USER_STATUS
         try:
@@ -228,6 +322,15 @@ def _warmup_request_from_status_update(
     *,
     user_id: int,
 ) -> BeatmapFileWarmupRequest:
+    """StatusUpdateからstable status change用のwarmup requestを組み立てる.
+
+    Args:
+        status_update (StatusUpdate): C2S payloadからparseしたstatus更新値.
+        user_id (int): statusを更新した認証済みuserのID.
+
+    Returns:
+        BeatmapFileWarmupRequest: 正のbeatmap IDを優先し、有効なchecksumをfallbackにした要求.
+    """
     beatmap_id = status_update.beatmap_id
     if beatmap_id > 0:
         return BeatmapFileWarmupRequest(
@@ -248,6 +351,14 @@ def _warmup_request_from_status_update(
 
 
 def _stable_play_mode(play_mode: int) -> int | None:
+    """Play modeがstable protocolで有効かを検証する.
+
+    Args:
+        play_mode (int): StatusUpdateから得たmode値.
+
+    Returns:
+        int | None: 有効なstable play mode. 不正な値の場合はNone.
+    """
     try:
         return StableMode(play_mode).value
     except ValueError:
@@ -259,6 +370,15 @@ def _stable_user_status_from_update(
     *,
     play_mode: int,
 ) -> StableUserStatus:
+    """StatusUpdateを保存可能なStableUserStatusへ変換する.
+
+    Args:
+        status_update (StatusUpdate): C2S payloadからparseしたstatus更新値.
+        play_mode (int): 検証済みのstable play mode.
+
+    Returns:
+        StableUserStatus: status storeとUSER_STATS packetへ使うcurrent status.
+    """
     return StableUserStatus(
         status=status_update.status,
         status_text=status_update.status_text,
@@ -270,6 +390,14 @@ def _stable_user_status_from_update(
 
 
 def _ruleset_for_play_mode(play_mode: int) -> Ruleset:
+    """Stable play modeに対応するRulesetを返す.
+
+    Args:
+        play_mode (int): 検証済みのstable play mode.
+
+    Returns:
+        Ruleset: 対応するRuleset. 不正な値の場合はOSU ruleset.
+    """
     try:
         return Ruleset(play_mode)
     except ValueError:
