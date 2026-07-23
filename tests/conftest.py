@@ -146,10 +146,8 @@ class RuntimeResourceTracker:
         ) -> None:
             """生成したbrokerを追跡して元のinitializerを実行する.
 
-            Args:
-                self (ListQueueBroker): patch対象のbroker instance.
-                args (object): 元のinitializerへ渡す位置引数.
-                kwargs (object): 元のinitializerへ渡すkeyword引数.
+            Patch対象brokerとforwardされたposition / keyword引数で元initializerを呼び,
+            初期化済みbrokerのweak referenceをtrackerへ保持する.
 
             Returns:
                 None: brokerを初期化して追跡し, 呼び出し側へ値を返さずに完了する.

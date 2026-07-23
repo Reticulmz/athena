@@ -799,10 +799,14 @@ class TestFileSourceTrackingE2E:
 
     @pytest.mark.asyncio
     async def test_osu_current_source_recorded_in_attachment(self) -> None:
-        """Osu_current取得fileが対応するattachment sourceを保存することを検証する.
+        """OSU_CURRENTのfile fetchがattachment sourceを保持するcontractを検証する.
+
+        metadataのみを保存したin-memory storeへOSU_CURRENTのprovider結果を設定し,
+        file fetch targetをFetchBeatmapFileUseCaseで実行する.
+        保存後のcurrent attachmentが存在し, sourceがOSU_CURRENTであることを確認する.
 
         Returns:
-            None: current sourceの記録を検証し, 呼び出し側へ値を返さずに完了する.
+            None: attachment sourceの永続化結果を検証し, 呼び出し側へ値を返さずに完了する.
         """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
@@ -823,10 +827,14 @@ class TestFileSourceTrackingE2E:
 
     @pytest.mark.asyncio
     async def test_osu_legacy_source_recorded_in_attachment(self) -> None:
-        """Osu_legacy取得fileが対応するattachment sourceを保存することを検証する.
+        """OSU_LEGACYのfile fetchがattachment sourceを保持するcontractを検証する.
+
+        metadataのみを保存したin-memory storeへOSU_LEGACYのprovider結果を設定し,
+        file fetch targetをFetchBeatmapFileUseCaseで実行する.
+        保存後のcurrent attachmentが存在し, sourceがOSU_LEGACYであることを確認する.
 
         Returns:
-            None: legacy sourceの記録を検証し, 呼び出し側へ値を返さずに完了する.
+            None: attachment sourceの永続化結果を検証し, 呼び出し側へ値を返さずに完了する.
         """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
@@ -847,10 +855,14 @@ class TestFileSourceTrackingE2E:
 
     @pytest.mark.asyncio
     async def test_community_mirror_source_recorded_in_attachment(self) -> None:
-        """Community mirror取得fileが対応するattachment sourceを保存することを検証する.
+        """COMMUNITY_MIRRORのfile fetchがattachment sourceを保持するcontractを検証する.
+
+        metadataのみを保存したin-memory storeへCOMMUNITY_MIRRORのprovider結果を設定し,
+        file fetch targetをFetchBeatmapFileUseCaseで実行する.
+        保存後のcurrent attachmentが存在し, sourceがCOMMUNITY_MIRRORであることを確認する.
 
         Returns:
-            None: mirror sourceの記録を検証し, 呼び出し側へ値を返さずに完了する.
+            None: attachment sourceの永続化結果を検証し, 呼び出し側へ値を返さずに完了する.
         """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)

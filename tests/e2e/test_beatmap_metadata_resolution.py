@@ -353,11 +353,14 @@ class TestMetadataResolutionByBeatmapsetIdE2E:
 
     @pytest.mark.asyncio
     async def test_missing_beatmapset_transitions_from_pending_to_fresh(self) -> None:
-        """未知beatmapset idがmetadata job後にPENDING_FETCHからFRESHへ遷移することを検証する.
+        """未知beatmapset idのmetadata fetch lifecycleを検証する.
+
+        official snapshotを登録したin-memory providerに対して未知のbeatmapset idをresolveし,
+        PENDING_FETCHとMETADATA_BY_BEATMAPSET_ID targetのenqueueを確認する.
+        targetのjob実行後に同じidを再resolveし, FRESHなofficial verified beatmapsetを確認する.
 
         Returns:
-            None: beatmapset id解決のobservable lifecycleを検証し,
-                呼び出し側へ値を返さずに完了する.
+            None: pendingからfreshへのstate遷移とresolve metadataを検証して完了する.
         """
         repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot(beatmapset_id=_ALT_BEATMAPSET_ID, beatmap_id=_ALT_BEATMAP_ID)
@@ -397,10 +400,15 @@ class TestMetadataResolutionByChecksumE2E:
 
     @pytest.mark.asyncio
     async def test_missing_beatmap_by_checksum_transitions_from_pending_to_fresh(self) -> None:
-        """未知checksumがmetadata job後にPENDING_FETCHからFRESHへ遷移することを検証する.
+        """未知checksumのmetadata fetch lifecycleを検証する.
+
+        official snapshotのchecksumを指定して未解決のchecksumをresolveし,
+        PENDING_FETCHとMETADATA_BY_CHECKSUM targetおよびtarget keyを確認する.
+        targetのjob実行後に同じchecksumを再resolveし,
+        FRESHなbeatmap idとofficial verificationを確認する.
 
         Returns:
-            None: checksum解決のobservable lifecycleを検証し, 呼び出し側へ値を返さずに完了する.
+            None: checksum resolveのpendingからfreshへのobservable stateを検証して完了する.
         """
         repo = InMemoryBeatmapStore()
         checksum = _ALT_CHECKSUM
@@ -444,10 +452,14 @@ class TestMetadataResolutionIdempotencyE2E:
     async def test_concurrent_missing_resolves_produce_consistent_pending_state(
         self,
     ) -> None:
-        """同一未知beatmapへのconcurrent resolveが一貫したpending stateを返すことを検証する.
+        """同一未知beatmapへのconcurrent resolveのpending contractを検証する.
+
+        snapshotを持つproviderと空のrepositoryを用意し, 同一beatmap idのresolveを2件同時実行する.
+        両responseがPENDING_FETCHとなり,
+        job実行前でも少なくとも1件のrefresh targetがenqueueされることを確認する.
 
         Returns:
-            None: concurrent requestのstatusとenqueue数を検証し, 呼び出し側へ値を返さずに完了する.
+            None: concurrent requestのstateとenqueueのobservable outcomeを検証して完了する.
         """
         repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
@@ -469,10 +481,13 @@ class TestMetadataResolutionIdempotencyE2E:
 
     @pytest.mark.asyncio
     async def test_re_resolve_after_cached_does_not_enqueue(self) -> None:
-        """Fresh metadataの再resolveが新たなrefresh targetをenqueueしないことを検証する.
+        """保存済みfresh metadataの再resolveがrefreshをenqueueしないcontractを検証する.
+
+        最初のresolveでenqueueされたmetadata jobを実行してsnapshotを保存し, enqueue spyをclearする.
+        同じbeatmap idを再resolveした結果がFRESHとなり, 新しいtargetが記録されないことを確認する.
 
         Returns:
-            None: cache reuse時のenqueue contractを検証し, 呼び出し側へ値を返さずに完了する.
+            None: cache reuse時のstateとenqueue countを検証して完了する.
         """
         repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
@@ -574,10 +589,14 @@ class TestMetadataResolutionBoundedWaitE2E:
 
     @pytest.mark.asyncio
     async def test_bounded_wait_returns_pending_on_timeout(self) -> None:
-        """Bounded wait中にmetadataが到着しないとPENDING_FETCHを返すことを検証する.
+        """Bounded wait timeoutがexceptionではなくpending resultを返すcontractを検証する.
+
+        snapshotを持たないproviderと空のrepositoryでwait timeoutを0.001秒に指定してresolveする.
+        metadataが保存されないままtimeoutしても,
+        beatmapなしのPENDING_FETCHとunsolicited reasonを確認する.
 
         Returns:
-            None: timeout時の非exception結果を検証し, 呼び出し側へ値を返さずに完了する.
+            None: timeout時のnon-exception response stateを検証して完了する.
         """
         repo = InMemoryBeatmapStore()
         official = InMemoryBeatmapMetadataProvider()
@@ -603,10 +622,14 @@ class TestMetadataResolutionFailureE2E:
 
     @pytest.mark.asyncio
     async def test_all_providers_fail_produces_failed_state(self) -> None:
-        """全providerが空のときmetadata jobがFAILED stateを記録することを検証する.
+        """全metadata providerが空の場合のFAILED state contractを検証する.
+
+        snapshotを登録しないproviderで最初のresolveを行い, enqueueされたmetadata jobを実行する.
+        再resolve結果がbeatmapなしのFAILEDとなり,
+        provider failure reasonとeligibilityなしを返すことを確認する.
 
         Returns:
-            None: all-provider failureのstateとreasonを検証し, 呼び出し側へ値を返さずに完了する.
+            None: all-provider failureのobservable stateとreasonを検証して完了する.
         """
         repo = InMemoryBeatmapStore()
         # Both providers are empty -- no snapshot preloaded
@@ -636,10 +659,14 @@ class TestBeatmapIdentityAfterResolutionE2E:
 
     @pytest.mark.asyncio
     async def test_resolved_beatmap_exposes_full_identity(self) -> None:
-        """解決済みbeatmapがdownstream向け完全identityを公開することを検証する.
+        """解決済みbeatmapがmetadata job後に完全identityを公開するcontractを検証する.
+
+        official snapshotを登録し, 最初のresolveでenqueueされたmetadata jobを実行してから
+        再resolveする. beatmapのid, checksum, mode, difficulty fieldとbeatmapsetのartist,
+        title, creatorを確認する.
 
         Returns:
-            None: beatmapとbeatmapsetのidentity fieldを検証し, 呼び出し側へ値を返さずに完了する.
+            None: downstream consumer向けidentity metadataを検証して完了する.
         """
         repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()

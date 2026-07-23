@@ -225,11 +225,14 @@ class TestExitUserQuitBroadcast:
     """EXIT送信後に他userのpolling responseへUSER_QUITをbroadcastするcontractを検証する."""
 
     def test_exit_broadcasts_user_quit_to_other_user(self) -> None:
-        """EXIT C2S packetが他online userへUSER_QUIT S2C packetをenqueueすることを検証する.
+        """EXITが他online userへUSER_QUITをbroadcastするC2S contractを検証する.
+
+        2 userをregistrationとloginでonlineにし, user AのtokenでEXIT C2S packetをPOSTする.
+        user BがpollしたresponseにUSER_QUIT packetが含まれ,
+        payloadのuser idが正であることを確認する.
 
         Returns:
-            None: 他userのpolling responseのpacket idとuser idを検証し,
-                呼び出し側へ値を返さずに完了する.
+            None: broadcast responseのstatus, packet id, payloadを検証して完了する.
         """
         with _test_env():
             app = create_app()
@@ -269,11 +272,14 @@ class TestExitUserQuitBroadcast:
                 assert quit_user_id > 0, "USER_QUIT should contain a positive user_id"
 
     def test_exit_does_not_enqueue_user_quit_for_self(self) -> None:
-        """EXITしたsole online userが自身のUSER_QUIT通知を受けないことを検証する.
+        """唯一のonline userのEXITが自身へUSER_QUITをenqueueしないcontractを検証する.
+
+        1 userだけをregistrationとloginでonlineにし, そのtokenでEXIT C2S packetをPOSTする.
+        session削除後のEXIT responseをparseしてHTTP 200であり,
+        USER_QUIT packetが0件であることを確認する.
 
         Returns:
-            None: EXIT responseにUSER_QUITが含まれないことを検証し,
-                呼び出し側へ値を返さずに完了する.
+            None: self-notificationを含まないEXIT responseを検証して完了する.
         """
         with _test_env():
             app = create_app()
@@ -312,10 +318,13 @@ class TestPongAcceptance:
     """PONG C2S packetをerrorなく受理するcontractを検証する."""
 
     def test_pong_returns_empty_response(self) -> None:
-        """PONG C2S packetがHTTP 200とempty S2C responseを返すことを検証する.
+        """単一PONG C2S packetがno-opとして受理されるcontractを検証する.
+
+        registrationとloginを完了したuserのtokenでPONG packetをPOSTする.
+        responseがHTTP 200となり, S2C packetを生成せずbodyがempty byte列であることを確認する.
 
         Returns:
-            None: no-op PONGのresponse statusとbodyを検証し, 呼び出し側へ値を返さずに完了する.
+            None: no-op PONGのstatusとempty bodyを検証して完了する.
         """
         with _test_env():
             app = create_app()
@@ -338,10 +347,13 @@ class TestPongAcceptance:
                 assert resp.content == b""
 
     def test_multiple_pongs_accepted(self) -> None:
-        """1 request内の複数PONG packetをすべて受理することを検証する.
+        """1 request内の連結PONG packetがすべて受理されるcontractを検証する.
+
+        registrationとloginを完了したuserのtokenで3個のPONG packetを連結してPOSTする.
+        dispatcherが各packetをno-opとして処理し, HTTP 200とempty response bodyを返すことを確認する.
 
         Returns:
-            None: 複数PONGのHTTP 200とempty responseを検証し, 呼び出し側へ値を返さずに完了する.
+            None: 複数PONGを含むrequestのstatusとbodyを検証して完了する.
         """
         with _test_env():
             app = create_app()
@@ -374,11 +386,14 @@ class TestExceptionIsolation:
     """失敗したpacket handlerが後続packetの処理を止めないcontractを検証する."""
 
     def test_invalid_packet_followed_by_pong_still_processes_pong(self) -> None:
-        """未登録packetとPONGを同一requestで送って後続PONGが処理されることを検証する.
+        """未登録packet後も後続PONGを処理するpacket isolation contractを検証する.
+
+        login済みuserのtokenでgarbage payloadを持つ未登録SEND_MESSAGE packetとPONG packetを
+        連結してPOSTする. dispatcherが未登録packetをskipしてrequestを中断せず,
+        HTTP 200とempty response bodyを返すことを確認する.
 
         Returns:
-            None: dispatcherが未登録packetをskipしてHTTP 200を返すことを検証し,
-                呼び出し側へ値を返さずに完了する.
+            None: packet isolation後のstatusとS2C outputを検証して完了する.
         """
         with _test_env():
             app = create_app()
