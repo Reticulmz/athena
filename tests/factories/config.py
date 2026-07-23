@@ -1,3 +1,5 @@
+"""AppConfigを構築する型安全なtest data factoryを提供する."""
+
 from __future__ import annotations
 
 from pydantic import PostgresDsn, RedisDsn
@@ -50,9 +52,52 @@ def make_app_config(
     beatmap_default_bounded_wait_seconds: float = 3.0,
     beatmap_max_bounded_wait_seconds: float = 3.0,
 ) -> AppConfig:
-    """Type-safe factory for AppConfig.
+    """指定値またはtest default値からAppConfigを作る.
 
-    Avoids using **kwargs to prevent type degradation.
+    Args:
+        database_url (str | PostgresDsn): PostgreSQL接続URL.
+        valkey_url (str | RedisDsn): Valkey接続URL.
+        environment (str): 実行environment名.
+        server_host (str): listenするhost.
+        server_port (int): listenするport.
+        domain (str): Athena domain名.
+        banned_passwords (list[str] | None): 拒否するpassword一覧. Noneなら空list.
+        session_ttl (int): sessionの有効秒数.
+        packet_queue_max_size (int): packet queueの最大要素数.
+        max_request_body_size (int): request bodyの最大byte数.
+        message_max_length (int): chat messageの最大文字数.
+        rate_limit_messages (int): rate limit window内で許可するmessage数.
+        rate_limit_window (int): rate limit windowの秒数.
+        log_level (str): logging level名.
+        log_dir (str): log出力directory.
+        log_max_files (int): 保持するlog file数.
+        query_diagnostics_enabled (bool | None): query diagnostics有効化設定.
+        query_diagnostics_max_queries (int): diagnosticsで許可する最大query数.
+        query_diagnostics_duplicate_threshold (int): duplicate query判定の最小回数.
+        blob_storage_backend (str): 使用するblob storage backend名.
+        blob_storage_local_root (str): local blob storageのroot path.
+        blob_storage_s3_bucket (str | None): S3 bucket名.
+        blob_storage_s3_region (str | None): S3 region名.
+        blob_storage_s3_endpoint (str | None): S3 endpoint URL.
+        blob_storage_s3_access_key (str | None): S3 access key.
+        blob_storage_s3_secret_key (str | None): S3 secret key.
+        beatmap_official_sources_enabled (bool): official beatmap sourceを有効にするか.
+        beatmap_official_api_client_id (str | None): official API client ID.
+        beatmap_official_api_client_secret (str | None): official API client secret.
+        beatmap_mirror_trust_policy (str): beatmap mirrorのtrust policy名.
+        beatmap_osu_current_url_template (str): current osu file URL template.
+        beatmap_osu_legacy_url_template (str): legacy osu file URL template.
+        beatmap_community_mirror_url_templates (list[str] | None):
+            community mirror URL template一覧. Noneなら空list.
+        beatmap_ranked_refresh_interval_seconds (int): ranked metadataの更新間隔秒数.
+        beatmap_pending_refresh_interval_seconds (int): pending metadataの更新間隔秒数.
+        beatmap_graveyard_refresh_interval_seconds (int): graveyard metadataの更新間隔秒数.
+        beatmap_mirror_refresh_interval_seconds (int): mirror metadataの更新間隔秒数.
+        beatmap_default_bounded_wait_seconds (float): default bounded wait秒数.
+        beatmap_max_bounded_wait_seconds (float): 許可する最大bounded wait秒数.
+
+    Returns:
+        AppConfig: testが型情報を失わずに利用できる設定値.
     """
     if banned_passwords is None:
         banned_passwords = []

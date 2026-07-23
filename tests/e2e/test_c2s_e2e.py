@@ -1,19 +1,4 @@
-"""E2E tests for C2S packet handlers: EXIT, PONG, and exception isolation.
-
-Tests the full HTTP POST → C2S dispatch → LocalEventBus → S2C response pipeline
-using the real Starlette app with in-memory stores (ENVIRONMENT=test).
-
-Requirements coverage:
-- Req 8.1: Exception logged, remaining packets continue
-- Req 8.2: Error log includes packet ID and payload size
-- Req 8.3: Each packet processed independently
-- Req 9.3: HTTP POST → S2C response bytes E2E tests
-
-Test scenarios:
-1. EXIT → USER_QUIT broadcast to other online users
-2. PONG accepted without error (empty response)
-3. Exception isolation: bad packet + PONG in same request
-"""
+"""C2S packet handlerのHTTP dispatchとexception isolationのE2E contractを検証する."""
 
 from __future__ import annotations
 
@@ -66,7 +51,11 @@ _DEFAULT_ROLE = Role(
 
 @contextmanager
 def _test_env() -> Generator[None]:
-    """Temporarily set ENVIRONMENT=test for the duration of the block."""
+    """block実行中だけE2E test用environment variableを設定する.
+
+    Yields:
+        None: ENVIRONMENT=testとAthena domainが設定された実行scope.
+    """
     old_environment = os.environ.get("ENVIRONMENT")
     old_domain = os.environ.get("DOMAIN")
     os.environ["ENVIRONMENT"] = "test"
@@ -87,7 +76,14 @@ def _test_env() -> Generator[None]:
 
 
 def _seed_default_role(app: Starlette) -> None:
-    """Seed the Default role into command-side in-memory persistence."""
+    """command-side in-memory persistenceへDefault roleをseedする.
+
+    Args:
+        app (Starlette): DI containerを保持するtest application.
+
+    Returns:
+        None: login前提となるDefault roleを保存し, 呼び出し側へ値を返さずに完了する.
+    """
     seed_role_sync(app, _DEFAULT_ROLE)
 
 
@@ -97,12 +93,29 @@ def _login_body(
     password_md5: str = _TEST_PASSWORD_MD5,
     client_info: str = _TEST_CLIENT_INFO,
 ) -> bytes:
-    """Build a raw login request body in osu! stable format."""
+    """Osu! stable formatのraw login request bodyを作る.
+
+    Args:
+        username (str): loginするuser名.
+        password_md5 (str): passwordのMD5 digest.
+        client_info (str): stable client information field.
+
+    Returns:
+        bytes: bancho login endpointへ送るnewline区切りbody.
+    """
     return f"{username}\n{password_md5}\n{client_info}\n".encode()
 
 
 def _registration_form(*, username: str, email: str) -> dict[str, str]:
-    """Build a registration form data dict with check=0 (create account)."""
+    """account作成を要求するlegacy registration formを作る.
+
+    Args:
+        username (str): 作成するuser名.
+        email (str): 作成するemail address.
+
+    Returns:
+        dict[str, str]: check=0を含むlegacy endpoint用form field mapping.
+    """
     return {
         "user[username]": username,
         "user[user_email]": email,
@@ -112,13 +125,30 @@ def _registration_form(*, username: str, email: str) -> dict[str, str]:
 
 
 def _register_user(client: TestClient, *, username: str, email: str) -> None:
-    """Register a test user. Asserts success."""
+    """Legacy registration endpointでtest userを作成する.
+
+    Args:
+        client (TestClient): requestを送るapplication client.
+        username (str): 作成するuser名.
+        email (str): 作成するemail address.
+
+    Returns:
+        None: HTTP 200のaccount作成をassertし, 呼び出し側へ値を返さずに完了する.
+    """
     resp = client.post("/web/users", data=_registration_form(username=username, email=email))
     assert resp.status_code == HTTPStatus.OK, f"Registration failed: {resp.content!r}"
 
 
 def _login_user(client: TestClient, *, username: str) -> str:
-    """Login and return the cho-token."""
+    """Stable loginを完了し, 初期packet queueをdrainしてcho-tokenを返す.
+
+    Args:
+        client (TestClient): login requestを送るapplication client.
+        username (str): loginするuser名.
+
+    Returns:
+        str: 後続bancho requestのosu-token headerへ設定するcho-token.
+    """
     resp = client.post(_BANCHO_URL, content=_login_body(username=username))
     assert resp.status_code == HTTPStatus.OK
     token = resp.headers["cho-token"]
@@ -133,13 +163,28 @@ def _login_user(client: TestClient, *, username: str) -> str:
 
 
 def _build_c2s_packet(packet_id: int, payload: bytes = b"") -> bytes:
-    """Build a raw C2S packet: 7-byte header + payload."""
+    """7 byte headerとpayloadからraw C2S packetを作る.
+
+    Args:
+        packet_id (int): C2S packet識別子.
+        payload (bytes): header後に連結するpacket payload.
+
+    Returns:
+        bytes: little-endian headerを持つwire packet.
+    """
     header = struct.pack("<HBI", packet_id, 0, len(payload))
     return header + payload
 
 
 def _parse_s2c_packets(body: bytes) -> list[tuple[int, bytes]]:
-    """Parse a concatenated S2C packet stream into (packet_id, content) pairs."""
+    """連結されたS2C packet streamをpacket idとcontentのpairへ分解する.
+
+    Args:
+        body (bytes): bancho response bodyのpacket stream.
+
+    Returns:
+        list[tuple[int, bytes]]: 完全なheaderとcontentを持つpacket pair一覧.
+    """
     packets: list[tuple[int, bytes]] = []
     offset = 0
     while offset + _PACKET_HEADER_SIZE <= len(body):
@@ -161,7 +206,15 @@ def _find_packets(
     packets: list[tuple[int, bytes]],
     packet_id: int,
 ) -> list[bytes]:
-    """Find all packets with the given ID and return their contents."""
+    """指定packet idに一致するS2C packet contentを抽出する.
+
+    Args:
+        packets (list[tuple[int, bytes]]): parse済みS2C packet一覧.
+        packet_id (int): 抽出するpacket識別子.
+
+    Returns:
+        list[bytes]: packet idが一致するcontent一覧.
+    """
     return [content for pid, content in packets if pid == packet_id]
 
 
@@ -169,10 +222,15 @@ def _find_packets(
 
 
 class TestExitUserQuitBroadcast:
-    """EXIT packet from user A → USER_QUIT appears in user B's polling response."""
+    """EXIT送信後に他userのpolling responseへUSER_QUITをbroadcastするcontractを検証する."""
 
     def test_exit_broadcasts_user_quit_to_other_user(self) -> None:
-        """POST with EXIT C2S packet enqueues USER_QUIT S2C for all other online users."""
+        """EXIT C2S packetが他online userへUSER_QUIT S2C packetをenqueueすることを検証する.
+
+        Returns:
+            None: 他userのpolling responseのpacket idとuser idを検証し,
+                呼び出し側へ値を返さずに完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -211,7 +269,12 @@ class TestExitUserQuitBroadcast:
                 assert quit_user_id > 0, "USER_QUIT should contain a positive user_id"
 
     def test_exit_does_not_enqueue_user_quit_for_self(self) -> None:
-        """EXIT user should not receive their own USER_QUIT notification."""
+        """EXITしたsole online userが自身のUSER_QUIT通知を受けないことを検証する.
+
+        Returns:
+            None: EXIT responseにUSER_QUITが含まれないことを検証し,
+                呼び出し側へ値を返さずに完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -246,10 +309,14 @@ class TestExitUserQuitBroadcast:
 
 
 class TestPongAcceptance:
-    """PONG C2S packet is accepted without error."""
+    """PONG C2S packetをerrorなく受理するcontractを検証する."""
 
     def test_pong_returns_empty_response(self) -> None:
-        """POST with PONG C2S packet returns 200 with empty body (no S2C queued)."""
+        """PONG C2S packetがHTTP 200とempty S2C responseを返すことを検証する.
+
+        Returns:
+            None: no-op PONGのresponse statusとbodyを検証し, 呼び出し側へ値を返さずに完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -271,7 +338,11 @@ class TestPongAcceptance:
                 assert resp.content == b""
 
     def test_multiple_pongs_accepted(self) -> None:
-        """Multiple PONG packets in a single request are all accepted."""
+        """1 request内の複数PONG packetをすべて受理することを検証する.
+
+        Returns:
+            None: 複数PONGのHTTP 200とempty responseを検証し, 呼び出し側へ値を返さずに完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -300,14 +371,14 @@ class TestPongAcceptance:
 
 
 class TestExceptionIsolation:
-    """A failing packet handler does not prevent subsequent packets from processing."""
+    """失敗したpacket handlerが後続packetの処理を止めないcontractを検証する."""
 
     def test_invalid_packet_followed_by_pong_still_processes_pong(self) -> None:
-        """Send an unregistered/invalid C2S packet + PONG in same request.
+        """未登録packetとPONGを同一requestで送って後続PONGが処理されることを検証する.
 
-        The unregistered packet is silently skipped by the dispatcher,
-        and PONG is still processed normally.
-        This validates the try/except in PollingWorkflow (Req 8.1, 8.3).
+        Returns:
+            None: dispatcherが未登録packetをskipしてHTTP 200を返すことを検証し,
+                呼び出し側へ値を返さずに完了する.
         """
         with _test_env():
             app = create_app()
@@ -336,10 +407,14 @@ class TestExceptionIsolation:
                 assert resp.content == b""
 
     def test_exception_in_handler_does_not_break_subsequent_packets(self) -> None:
-        """Register a handler that raises, send it + PONG, verify PONG still works.
+        """送出するhandler後も後続EXIT packetが処理されることを検証する.
 
-        This directly tests the PollingWorkflow's try/except per-packet isolation
-        with the real two-argument handler signature (Req 8.1, 8.2, 8.3).
+        意図的failure handlerとEXITを同一requestで送信し,
+        他userがUSER_QUITを受信することを確認する.
+
+        Returns:
+            None: packet単位exception isolationのobservable broadcastを検証し,
+                呼び出し側へ値を返さずに完了する.
         """
         with _test_env():
             app = create_app()
@@ -357,6 +432,18 @@ class TestExceptionIsolation:
 
                 @dispatcher.register(ClientPacketID.BEATMAP_INFO)
                 async def _boom(_payload: bytes, _user_id: int) -> None:
+                    """packet単位のexception isolationを起動する意図的なfailure handler.
+
+                    Args:
+                        _payload (bytes): dispatcherが渡すpacket payload.
+                        _user_id (int): packetを送信したuser識別子.
+
+                    Returns:
+                        None: 常にRuntimeErrorを送出し, 呼び出し側へ値を返さずに完了しない.
+
+                    Raises:
+                        RuntimeError: exception isolationを検証するため常に送出する.
+                    """
                     msg = "intentional test explosion"
                     raise RuntimeError(msg)
 

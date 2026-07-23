@@ -1,7 +1,3 @@
-"""Test factories package for Athena.
-
-Provides type-safe factory functions for domain models and config objects
-to prevent type degradation during tests.
-"""
+"""Athena testで型安全なdomain modelとconfig dataを作るfactory package."""
 
 from __future__ import annotations

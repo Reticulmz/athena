@@ -1,4 +1,4 @@
-"""Score test data factory."""
+"""legacy score submission用の有効なscore data factoryを提供する."""
 
 
 def make_score_data(
@@ -19,7 +19,28 @@ def make_score_data(
     mods: int = 0,
     passed: bool = True,
 ) -> dict[str, int | str | bool]:
-    """Create valid score data for testing."""
+    """Score submission testに渡すdefault有効score dataを作る.
+
+    Args:
+        beatmap_checksum (str): score対象beatmapのMD5 checksum.
+        username (str): scoreを送信するuser名.
+        password_md5 (str): user passwordのMD5 digest.
+        score (int): 記録したscore値.
+        max_combo (int): 最大combo.
+        count_300 (int): 300判定数.
+        count_100 (int): 100判定数.
+        count_50 (int): 50判定数.
+        count_geki (int): geki判定数.
+        count_katu (int): katu判定数.
+        count_miss (int): miss判定数.
+        perfect (bool): full comboか.
+        grade (str): grade文字列.
+        mods (int): stable mod bitmask.
+        passed (bool): beatmapをpassしたか.
+
+    Returns:
+        dict[str, int | str | bool]: legacy score formへ変換する入力mapping.
+    """
     return {
         "beatmap_checksum": beatmap_checksum,
         "username": username,

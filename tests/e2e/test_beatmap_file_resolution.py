@@ -1,11 +1,4 @@
-"""E2E tests for .osu file availability resolution flow.
-
-Exercises the full file fetch pipeline: missing file state, file fetch job
-completion, md5 verification against expected beatmap checksum, blob storage
-write, attachment availability, community mirror fallback, and checksum
-mismatch rejection.  Uses in-memory repositories, stub file providers, and
-stub blob storage -- no real network credentials required.
-"""
+""".osu file解決pipelineのend-to-end contractを検証する."""
 
 from __future__ import annotations
 
@@ -72,6 +65,17 @@ def _make_osu_file_result(
     source: BeatmapFileSource = BeatmapFileSource.OSU_CURRENT,
     original_filename: str | None = f"{_BEATMAP_ID}.osu",
 ) -> OsuFileFetchResult:
+    """指定値からfile providerが返す.osu file取得結果を作る.
+
+    Args:
+        beatmap_id (int): fileを取得したbeatmap識別子.
+        body (bytes): 取得した.osu fileのbyte列.
+        source (BeatmapFileSource): fileを返したprovider source.
+        original_filename (str | None): providerが返した元filename.
+
+    Returns:
+        OsuFileFetchResult: file fetch use-caseへ渡す取得結果.
+    """
     return OsuFileFetchResult(
         beatmap_id=beatmap_id,
         body=body,
@@ -89,6 +93,19 @@ def _make_snapshot(
     title: str = "Freedom Dive",
     creator: str = "Nakagawa-Kanon",
 ) -> BeatmapsetSnapshot:
+    """file解決test用の検証済みbeatmapset snapshotを作る.
+
+    Args:
+        beatmap_id (int): 所属beatmap識別子.
+        beatmapset_id (int): beatmapset識別子.
+        checksum_md5 (str): 期待する.osu fileのMD5 checksum.
+        artist (str): 曲のartist名.
+        title (str): 曲名.
+        creator (str): beatmap作成者名.
+
+    Returns:
+        BeatmapsetSnapshot: metadata fetch jobへ渡すofficial snapshot.
+    """
     bm = BeatmapSnapshot(
         beatmap_id=beatmap_id,
         beatmapset_id=beatmapset_id,
@@ -118,6 +135,11 @@ def _make_snapshot(
 
 
 def _make_freshness_policy() -> BeatmapFreshnessPolicy:
+    """file解決test用のmetadata freshness policyを作る.
+
+    Returns:
+        BeatmapFreshnessPolicy: rankedとgraveyardを30日, 他を1時間で更新するpolicy.
+    """
     return BeatmapFreshnessPolicy(
         ranked_refresh_interval=_THIRTY_DAYS,
         pending_refresh_interval=_ONE_HOUR,
@@ -133,13 +155,31 @@ def _make_freshness_policy() -> BeatmapFreshnessPolicy:
 
 @dataclass
 class StubFileProvider:
-    """Conforms to ``BeatmapFileProvider``. Returns pre-configured results or raises."""
+    """設定済みfile結果またはexceptionを返すBeatmapFileProvider stub.
+
+    Attributes:
+        by_beatmap_id (dict[int, OsuFileFetchResult]): beatmap id別のfile取得結果.
+        exception (Exception | None): fetch時に送出するexception. 未設定時はNone.
+        calls (list[int]): fetch要求されたbeatmap識別子.
+    """
 
     by_beatmap_id: dict[int, OsuFileFetchResult] = field(default_factory=dict)
     exception: Exception | None = None
     calls: list[int] = field(default_factory=list)
 
     async def fetch_osu_file(self, beatmap_id: int) -> OsuFileFetchResult:
+        """指定beatmapの設定済みfile結果を返す.
+
+        Args:
+            beatmap_id (int): fileを取得するbeatmap識別子.
+
+        Returns:
+            OsuFileFetchResult: 設定済みfile取得結果.
+
+        Raises:
+            Exception: exceptionが設定されている場合.
+            ValueError: beatmap_idに対応するfile結果が未設定の場合.
+        """
         self.calls.append(beatmap_id)
         if self.exception is not None:
             raise self.exception
@@ -151,7 +191,14 @@ class StubFileProvider:
 
 @dataclass
 class StubMetadataProvider:
-    """Conforms to ``BeatmapMetadataProvider``. Returns pre-configured snapshots."""
+    """設定済みsnapshotを返すBeatmapMetadataProvider stub.
+
+    Attributes:
+        by_beatmap_id (dict[int, BeatmapsetSnapshot | None]): beatmap id別snapshot.
+        by_beatmapset_id (dict[int, BeatmapsetSnapshot | None]): beatmapset id別snapshot.
+        by_checksum (dict[str, BeatmapsetSnapshot | None]): checksum別snapshot.
+        calls (list[str]): 実行したlookup操作.
+    """
 
     by_beatmap_id: dict[int, BeatmapsetSnapshot | None] = field(default_factory=dict)
     by_beatmapset_id: dict[int, BeatmapsetSnapshot | None] = field(default_factory=dict)
@@ -159,26 +206,64 @@ class StubMetadataProvider:
     calls: list[str] = field(default_factory=list)
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+        """Beatmap idの設定済みsnapshotを返す.
+
+        Args:
+            beatmap_id (int): lookupするbeatmap識別子.
+
+        Returns:
+            BeatmapsetSnapshot | None: 設定済みsnapshot. 未登録時はNone.
+        """
         self.calls.append(f"beatmap_id:{beatmap_id}")
         return self.by_beatmap_id.get(beatmap_id)
 
     async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+        """Beatmapset idの設定済みsnapshotを返す.
+
+        Args:
+            beatmapset_id (int): lookupするbeatmapset識別子.
+
+        Returns:
+            BeatmapsetSnapshot | None: 設定済みsnapshot. 未登録時はNone.
+        """
         self.calls.append(f"beatmapset_id:{beatmapset_id}")
         return self.by_beatmapset_id.get(beatmapset_id)
 
     async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+        """checksumの設定済みsnapshotを返す.
+
+        Args:
+            checksum_md5 (str): lookupするMD5 checksum.
+
+        Returns:
+            BeatmapsetSnapshot | None: 設定済みsnapshot. 未登録時はNone.
+        """
         self.calls.append(f"checksum:{checksum_md5}")
         return self.by_checksum.get(checksum_md5)
 
 
 @dataclass
 class StubBlobStorageService:
-    """Stub blob storage that records stored blobs and returns ``BlobStored``."""
+    """保存したblobを記録してBlobStoredを返すblob storage stub.
+
+    Attributes:
+        next_blob_id (int): 次に割り当てるblob識別子.
+        stored (list[Blob]): put_bytesで保存したblob metadata.
+    """
 
     next_blob_id: int = 1
     stored: list[Blob] = field(default_factory=list)
 
     async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
+        """byte列を保存済みblobとして記録して返す.
+
+        Args:
+            data (bytes): 保存するfile body.
+            content_type (str): 保存するbodyのMIME type.
+
+        Returns:
+            BlobStored: 記録したblob metadataを持つ保存結果.
+        """
         from osu_server.domain.storage.blobs import BlobStored  # noqa: PLC0415
 
         blob = Blob(
@@ -205,10 +290,27 @@ def _build_service(
     *,
     mirror_trust_enabled: bool = False,
 ) -> tuple[BeatmapMirrorService, list[BeatmapFetchTarget]]:
-    """Wire a service with a spy-based enqueue callback."""
+    """enqueue呼び出しを記録するBeatmapMirrorServiceを組み立てる.
+
+    Args:
+        repo (InMemoryBeatmapStore): test用のin-memory beatmap store.
+        mirror_trust_enabled (bool): community mirrorを信頼済みと扱うか.
+
+    Returns:
+        tuple[BeatmapMirrorService, list[BeatmapFetchTarget]]:
+            serviceとenqueueされたfetch target一覧.
+    """
     enqueued: list[BeatmapFetchTarget] = []
 
     async def _enqueue(target: BeatmapFetchTarget) -> None:
+        """serviceが要求したrefresh targetを記録する.
+
+        Args:
+            target (BeatmapFetchTarget): 後でfetch jobへ渡すrefresh対象.
+
+        Returns:
+            None: targetを記録し, 呼び出し側へ値を返さずに完了する.
+        """
         enqueued.append(target)
 
     service = BeatmapMirrorService(
@@ -227,7 +329,16 @@ async def _save_beatmap_metadata(
     beatmap_id: int = _BEATMAP_ID,
     checksum_md5: str = _FILE_BODY_MD5,
 ) -> None:
-    """Save beatmap metadata into the repository via a metadata job."""
+    """Metadata fetch jobを通じてbeatmap snapshotをrepositoryへ保存する.
+
+    Args:
+        repo (InMemoryBeatmapStore): metadataを保存するtest store.
+        beatmap_id (int): 保存するbeatmap識別子.
+        checksum_md5 (str): 保存するbeatmapのMD5 checksum.
+
+    Returns:
+        None: metadata jobを実行し, 呼び出し側へ値を返さずに完了する.
+    """
     snapshot = _make_snapshot(beatmap_id=beatmap_id, checksum_md5=checksum_md5)
     metadata_provider = StubMetadataProvider(by_beatmap_id={beatmap_id: snapshot})
     composite = CompositeBeatmapMetadataProvider(
@@ -249,11 +360,18 @@ async def _save_beatmap_metadata(
 
 
 class TestFileResolutionE2E:
+    """missing.osu fileがfetch後にavailableへ遷移するcontractを検証する."""
+
     @pytest.mark.asyncio
     async def test_missing_file_transitions_to_available_after_fetch(self) -> None:
-        """Beatmap metadata is cached but .osu file is missing.  After resolve
-        enqueues a file fetch and the job completes, the file is available with
-        verified checksum and source recorded."""
+        """Missing fileをfetchするとverified attachmentとしてavailableになることを検証する.
+
+        metadataだけを保存した状態でfile fetchを実行し,
+        後続resolveがAVAILABLEとchecksumとsourceを返すことを確認する.
+
+        Returns:
+            None: file availabilityのobservable stateを検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -308,8 +426,14 @@ class TestFileResolutionE2E:
 
     @pytest.mark.asyncio
     async def test_file_resolve_without_require_flag_does_not_enqueue_file(self) -> None:
-        """When require_osu_file is False (default), resolve does not enqueue a
-        file fetch even when the file is missing."""
+        """require_osu_fileなしのresolveがmissing fileをenqueueしないことを検証する.
+
+        metadataだけを保存した状態でdefault optionのresolveを実行し,
+        MISSINGのままfile targetが記録されないことを確認する.
+
+        Returns:
+            None: default resolveのenqueue contractを検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -326,8 +450,15 @@ class TestFileResolutionE2E:
 
     @pytest.mark.asyncio
     async def test_unknown_beatmap_require_osu_file_returns_missing(self) -> None:
-        """An unknown beatmap with require_osu_file returns file MISSING and
-        enqueues both metadata and file fetches."""
+        """未知beatmapのfile必須resolveがmetadataとfile fetchをenqueueすることを検証する.
+
+        repositoryが空の状態でrequire_osu_fileを指定し,
+        PENDING_FETCHとMISSINGおよび2種のtargetを確認する.
+
+        Returns:
+            None: unknown beatmapのfetch scheduling contractを検証し,
+                呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         service, enqueued = _build_service(repo)
 
@@ -353,10 +484,17 @@ class TestFileResolutionE2E:
 
 
 class TestFileChecksumVerificationE2E:
+    """file bodyとbeatmap checksumの照合contractを検証する."""
+
     @pytest.mark.asyncio
     async def test_checksum_mismatch_rejects_file(self) -> None:
-        """When the fetched file body does not match the expected md5 checksum,
-        the file fetch is marked failed and the file remains MISSING."""
+        """checksum不一致のfile bodyをrejectしてMISSINGを維持することを検証する.
+
+        期待MD5と異なるbodyをfetchし, blob未保存とfile状態MISSINGとunavailable reasonを確認する.
+
+        Returns:
+            None: checksum rejectionのobservable stateを検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -402,7 +540,14 @@ class TestFileChecksumVerificationE2E:
 
     @pytest.mark.asyncio
     async def test_fetch_marks_failed_state_on_checksum_mismatch(self) -> None:
-        """The file fetch state is marked FAILED after checksum mismatch."""
+        """checksum不一致がfetch stateをFAILEDとして記録することを検証する.
+
+        異なるfile bodyでfile targetを実行し,
+        failure recordにchecksum mismatchが記録されることを確認する.
+
+        Returns:
+            None: fetch stateのfailure contractを検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -431,11 +576,17 @@ class TestFileChecksumVerificationE2E:
 
 
 class TestFileMirrorFallbackE2E:
+    """community mirror由来fileの保存とresolve contractを検証する."""
+
     @pytest.mark.asyncio
     async def test_mirror_fallback_records_community_mirror_source(self) -> None:
-        """When direct sources fail (simulated) and a community mirror provides
-        the file, the attachment records the COMMUNITY_MIRROR source and the
-        file is available."""
+        """Community mirror fileがAVAILABLE attachmentとして保存されることを検証する.
+
+        mirror sourceの取得結果をfile jobへ渡し, attachmentのsourceとfilenameなしの状態を確認する.
+
+        Returns:
+            None: mirror attachmentのobservable metadataを検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -476,8 +627,13 @@ class TestFileMirrorFallbackE2E:
 
     @pytest.mark.asyncio
     async def test_after_mirror_file_fetch_service_reports_available(self) -> None:
-        """After a mirror-sourced file fetch completes, the service reports
-        the file as available on the next resolve."""
+        """Mirror file fetch後のresolveがAVAILABLEを返すことを検証する.
+
+        mirror sourceでfile jobを完了し, require_osu_file付きresolveのfile stateとreasonを確認する.
+
+        Returns:
+            None: mirror fetch後のresolve contractを検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -512,15 +668,13 @@ class TestFileMirrorFallbackE2E:
 
     @pytest.mark.asyncio
     async def test_rate_limited_direct_source_fallback_to_mirror(self) -> None:
-        """Simulate direct source rate limiting: a stub provider that raises
-        a simulated failure is a simplified representation of the composite
-        provider's 429 fallback.  The file job should handle the provider
-        failing and mark the fetch as failed.  Then a second provider
-        (mirror) can succeed.
+        """Direct provider failure後にmirror retryがfileをavailableにすることを検証する.
 
-        This test exercises the architecture where the composite provider
-        handles fallback internally; here we model the outcome: the resolved
-        file shows COMMUNITY_MIRROR source after attachment.
+        最初のproviderが429相当のexceptionを送出してFAILEDになった後,
+        mirror sourceのretryがattachmentを保存することを確認する.
+
+        Returns:
+            None: failure recovery後のfile stateとsourceを検証し, 呼び出し側へ値を返さずに完了する.
         """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
@@ -583,10 +737,18 @@ class TestFileMirrorFallbackE2E:
 
 
 class TestFileBlobStorageIntegrationE2E:
+    """file bodyをblob storageへ分離保存するcontractを検証する."""
+
     @pytest.mark.asyncio
     async def test_file_body_stored_through_blob_storage_not_embedded(self) -> None:
-        """The file body is stored through the blob storage service; the beatmap
-        metadata references a blob id, not the raw file bytes."""
+        """File bodyがbeatmap metadataではなくblob storageへ保存されることを検証する.
+
+        file jobを実行し, attachmentがraw byte列ではなく保存済みblob idを参照することを確認する.
+
+        Returns:
+            None: blob separationのobservable persistence contractを検証し,
+                呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -633,10 +795,15 @@ class TestFileBlobStorageIntegrationE2E:
 
 
 class TestFileSourceTrackingE2E:
+    """attachmentがfile取得sourceを正確に保存するcontractを検証する."""
+
     @pytest.mark.asyncio
     async def test_osu_current_source_recorded_in_attachment(self) -> None:
-        """When the file is fetched from osu_current, the attachment records
-        the correct source."""
+        """Osu_current取得fileが対応するattachment sourceを保存することを検証する.
+
+        Returns:
+            None: current sourceの記録を検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -656,8 +823,11 @@ class TestFileSourceTrackingE2E:
 
     @pytest.mark.asyncio
     async def test_osu_legacy_source_recorded_in_attachment(self) -> None:
-        """When the file is fetched from osu_legacy, the attachment records
-        the correct source."""
+        """Osu_legacy取得fileが対応するattachment sourceを保存することを検証する.
+
+        Returns:
+            None: legacy sourceの記録を検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -677,8 +847,11 @@ class TestFileSourceTrackingE2E:
 
     @pytest.mark.asyncio
     async def test_community_mirror_source_recorded_in_attachment(self) -> None:
-        """When the file is fetched from a community mirror, the attachment
-        records the correct source."""
+        """Community mirror取得fileが対応するattachment sourceを保存することを検証する.
+
+        Returns:
+            None: mirror sourceの記録を検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
@@ -703,10 +876,18 @@ class TestFileSourceTrackingE2E:
 
 
 class TestFileProviderFailureE2E:
+    """file provider exception時のfailure state contractを検証する."""
+
     @pytest.mark.asyncio
     async def test_file_provider_raises_marks_failed_and_file_stays_missing(self) -> None:
-        """When the file provider raises, the fetch is marked failed and the
-        file remains missing."""
+        """File provider exceptionがfetchをFAILEDにしてMISSINGを維持することを検証する.
+
+        exceptionを送出するproviderでfile jobを実行し,
+        failure stateとavailableにならないfile stateを確認する.
+
+        Returns:
+            None: provider failureのobservable stateを検証し, 呼び出し側へ値を返さずに完了する.
+        """
         repo = InMemoryBeatmapStore()
         await _save_beatmap_metadata(repo)
 
