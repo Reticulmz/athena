@@ -308,14 +308,14 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/services/queries/{beatmaps,chat,storage}/**_
 
-- [ ] 2.32 (P) Identity query use-caseを整備する
+- [x] 2.32 (P) Identity query use-caseを整備する
   - services/queries/identity/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびidentity query testが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/services/queries/identity/**_
 
-- [ ] 2.33 (P) Score query use-caseとservice package moduleを整備する
+- [x] 2.33 (P) Score query use-caseとservice package moduleを整備する
   - services/__init__.py、services/queries/*.py、services/queries/scores/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびscore query testが通る
   - _Depends: 1.4_
