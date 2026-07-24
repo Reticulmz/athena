@@ -410,7 +410,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/domain/*.pyから3.5の所有fileを除く_
 
-- [ ] 3.7 (P) Architectureとdependency boundary unit testを整備する
+- [x] 3.7 (P) Architectureとdependency boundary unit testを整備する
   - tests/unit/__init__.py、test_architecture_*.py、test_blob_config.py、test_di_integration.py、
     test_event_boundaries.py、test_forbidden_words.py、test_job_boundaries.pyへ共通条件を適用する
   - tooling ownerのtests/unit/test_docstring_quality_configuration.pyは編集しない
