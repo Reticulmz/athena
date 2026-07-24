@@ -334,7 +334,8 @@ class TestChannelRoleOverride:
     def test_fields(self) -> None:
         """ChannelRoleOverrideが固定したaccess control field集合を持つことを検証する.
 
-        dataclass field名をchannel IDとrole IDおよびread/write flagの期待集合と比較する.
+        channel IDとrole IDおよびread/write flagの期待集合を用意し,dataclass field名から得る
+        actual集合と比較して両者が一致することを確認する.
 
         Returns:
             None: role override field集合の検証を完了する.
