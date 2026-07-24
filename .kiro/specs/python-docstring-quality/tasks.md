@@ -419,7 +419,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit root fileでtooling ownerのconfiguration testを除く_
 
-- [ ] 3.8 (P) Handler、lifecycle handler、routing unit testを整備する
+- [x] 3.8 (P) Handler、lifecycle handler、routing unit testを整備する
   - test_handler_group.py、test_lifecycle_handlers.py、test_routing.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および3 fileのtestが通る
   - _Depends: 1.4_
