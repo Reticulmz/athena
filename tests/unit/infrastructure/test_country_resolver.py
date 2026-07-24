@@ -1,4 +1,4 @@
-"""CountryResolver と国コード変換のテスト。"""
+"""Cloudflare country resolverとstable country code conversionの契約を検証するmodule."""
 
 from __future__ import annotations
 
@@ -10,10 +10,14 @@ from osu_server.infrastructure.country.interfaces import CountryResolver
 
 
 class TestCloudflareCountryResolver:
-    """CloudflareCountryResolver のテスト。"""
+    """Cloudflare headerから国コードを解決するCountryResolver契約を検証するtest群."""
 
     def test_returns_country_code_from_cf_header(self) -> None:
-        """CF-IPCountry ヘッダが存在する場合、その値を返す。"""
+        """CF-IPCountry headerにJPを与えてresolveしたとき同じJPを返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         resolver = CloudflareCountryResolver()
 
         result = resolver.resolve({"CF-IPCountry": "JP"})
@@ -21,7 +25,11 @@ class TestCloudflareCountryResolver:
         assert result == "JP"
 
     def test_returns_xx_when_header_missing(self) -> None:
-        """CF-IPCountry ヘッダが存在しない場合、"XX" を返す。"""
+        """CF-IPCountry headerなしでresolveしたとき不明国codeのXXを返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         resolver = CloudflareCountryResolver()
 
         result = resolver.resolve({})
@@ -29,7 +37,11 @@ class TestCloudflareCountryResolver:
         assert result == "XX"
 
     def test_returns_various_country_codes(self) -> None:
-        """様々な国コードを正しく返す。"""
+        """複数の有効国codeをCF-IPCountry headerへ与えたとき各入力値をそのまま返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         for code in ("US", "KR", "GB", "FR", "DE"):
             resolver = CloudflareCountryResolver()
 
@@ -38,14 +50,22 @@ class TestCloudflareCountryResolver:
             assert result == code
 
     def test_satisfies_protocol(self) -> None:
-        """CloudflareCountryResolver は CountryResolver Protocol を満たす。"""
+        """Cloudflare resolverがCountryResolver Protocolとして認識されることを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         resolver = CloudflareCountryResolver()
 
         assert isinstance(resolver, CountryResolver)
 
 
 class TestCountryCodeToId:
-    """country_code_to_id 変換のテスト。"""
+    """stable bancho country codeから数値IDへの変換契約を検証するtest群.
+
+    Attributes:
+        _EXPECTED (ClassVar[dict[str, int]]): stable protocol用の国codeと数値IDの対応表.
+    """
 
     # 数値は osuAkatsuki/bancho.py の stable bancho プロトコル準拠
     _EXPECTED: ClassVar[dict[str, int]] = {
@@ -58,24 +78,44 @@ class TestCountryCodeToId:
     }
 
     def test_known_codes(self) -> None:
-        """既知の国コードは正しい数値 ID を返す。"""
+        """既知の大文字国codeを変換しstable protocolの数値IDを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         for code, expected_id in self._EXPECTED.items():
             assert country_code_to_id(code) == expected_id
 
     def test_unknown_code_returns_zero(self) -> None:
-        """不明な国コードは 0 を返す。"""
+        """未知国codeを変換したときfallback値0を返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         assert country_code_to_id("ZZ") == 0
         assert country_code_to_id("??") == 0
 
     def test_xx_returns_244(self) -> None:
-        """'XX' (不明国) は stable bancho の XX コード 244 を返す。"""
+        """不明国codeのXXを変換したときstable protocolの244を返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         assert country_code_to_id("XX") == 244
 
     def test_empty_string_returns_zero(self) -> None:
-        """空文字列は 0 を返す。"""
+        """空文字列を変換したときfallback値0を返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         assert country_code_to_id("") == 0
 
     def test_case_sensitive(self) -> None:
-        """国コード変換は大文字のみ受け付ける (小文字は不明扱い)。"""
+        """小文字国codeを変換したとき入力を大文字化せずfallback値0を返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         assert country_code_to_id("jp") == 0
         assert country_code_to_id("us") == 0

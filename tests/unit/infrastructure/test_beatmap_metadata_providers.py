@@ -1,7 +1,4 @@
-"""Tests for OsuApiMetadataProviderService — osu! API v2 integration.
-
-Uses httpx.MockTransport for deterministic HTTP simulation.
-"""
+"""公式osu! API metadata providerのHTTP integration契約を検証するmodule."""
 
 from __future__ import annotations
 
@@ -27,18 +24,46 @@ from osu_server.infrastructure.http.beatmap_http_client import BeatmapHttpClient
 
 
 class _RequestHeaders(Protocol):
+    """MockTransport requestのheaderを参照する最小Protocol.
+
+    Attributes:
+        headers (Mapping[str, str]): MockTransport requestから参照するHTTP header mapping.
+    """
+
     headers: Mapping[str, str]
 
 
 class _MockTransportRequest(Protocol):
-    @property
-    def url(self) -> object: ...
+    """MockTransport requestのURLとHTTP methodを参照する最小Protocol."""
 
     @property
-    def method(self) -> str: ...
+    def url(self) -> object:
+        """MockTransport requestのURL objectを公開するproperty.
+
+        Returns:
+            object: MockTransport requestから公開するURL object.
+        """
+        ...
+
+    @property
+    def method(self) -> str:
+        """MockTransport requestのHTTP methodを公開するproperty.
+
+        Returns:
+            str: MockTransport requestから公開するHTTP method.
+        """
+        ...
 
 
 def _request_url_and_method(request: httpx.Request) -> tuple[str, str]:
+    """Httpx requestからURL文字列とHTTP methodを抽出する.
+
+    Args:
+        request (httpx.Request): MockTransport handlerへ渡されるHTTP request.
+
+    Returns:
+        tuple[str, str]: request URL文字列とHTTP methodの組.
+    """
     mock_request = cast("_MockTransportRequest", cast("object", request))
     return str(mock_request.url), mock_request.method
 
@@ -122,10 +147,19 @@ _BEATMAP_RESPONSE_BODY = {
 
 
 class _MetadataProviderMockHandler:
-    """Build a httpx.MockTransport handler function.
+    """OAuth tokenとmetadata endpointの結果を決定的に再現するMockTransport handler.
 
-    Routes POST to _TOKEN_URL → token response, GET to _BASE_URL/* → API response.
-    When *token_count* > 0, each token request returns ``tok_<N>`` with incrementing N.
+    Attributes:
+        _api_status (int): metadata endpointが返すHTTP status.
+        _api_body (Mapping[str, object] | None): metadata endpoint用のJSON body.
+        _api_error (type[Exception] | None): metadata request時に送出するexception typeまたはNone.
+        _token_status (int): OAuth token endpointが返すHTTP status.
+        _token_body (Mapping[str, object] | None): OAuth token endpoint用のJSON body.
+        _token_error (type[Exception] | None): OAuth token requestで送出するexception type.
+        _token_count (int): incrementするtoken値を返すtoken request回数.
+        _token_expires_in (int): 生成tokenの有効期間を表す秒数.
+        token_request_count (int): 受信したOAuth token requestの累計件数.
+        authorization_headers (list[str | None]): metadata requestで記録するAuthorization header値.
     """
 
     _api_status: int
@@ -151,6 +185,18 @@ class _MetadataProviderMockHandler:
         token_count: int,
         token_expires_in: int,
     ) -> None:
+        """tokenとAPI responseの設定および観測stateを初期化する.
+
+        Args:
+            api_status (int): testが操作するAPI status値.
+            api_body (Mapping[str, object] | None): mock API endpointが返すJSON body.
+            api_error (type[Exception] | None): API request時に送出するexception type.
+            token_status (int): token endpointが返すHTTP status.
+            token_body (Mapping[str, object] | None): token endpointが返すJSON body.
+            token_error (type[Exception] | None): token request時に送出するexception type.
+            token_count (int): requestごとにincrementするtoken値を返す回数.
+            token_expires_in (int): 取得tokenの有効期間を表す秒数.
+        """
         self._api_status = api_status
         self._api_body = api_body
         self._api_error = api_error
@@ -163,6 +209,17 @@ class _MetadataProviderMockHandler:
         self.authorization_headers = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
+        """Token requestまたはmetadata requestを設定済みresponseへ振り分ける.
+
+        Args:
+            request (httpx.Request): MockTransport handlerへ渡されるHTTP request.
+
+        Returns:
+            httpx.Response: mock handlerがrequestへ返すHTTP response.
+
+        Raises:
+            Exception: 設定済みtoken_errorまたはapi_errorがrequest処理時に存在する場合.
+        """
         url_str, method = _request_url_and_method(request)
 
         # -- Token endpoint (POST) --------------------------------------------
@@ -208,6 +265,21 @@ def _handler_for(
     token_count: int = 0,
     token_expires_in: int = 3600,
 ) -> _MetadataProviderMockHandler:
+    """指定したOAuthとmetadata response条件を持つmock handlerを構築する.
+
+    Args:
+        api_status (int): testが操作するAPI status値.
+        api_body (Mapping[str, object] | None): mock API endpointが返すJSON body.
+        api_error (type[Exception] | None): API request時に送出するexception type.
+        token_status (int): token endpointが返すHTTP status.
+        token_body (Mapping[str, object] | None): token endpointが返すJSON body.
+        token_error (type[Exception] | None): token request時に送出するexception type.
+        token_count (int): requestごとにincrementするtoken値を返す回数.
+        token_expires_in (int): 取得tokenの有効期間を表す秒数.
+
+    Returns:
+        _MetadataProviderMockHandler: 指定したOAuthとAPI条件を持つMockTransport handler.
+    """
     return _MetadataProviderMockHandler(
         api_status=api_status,
         api_body=api_body,
@@ -230,7 +302,20 @@ def _make_provider(
     token_error: type[Exception] | None = None,
     token_count: int = 0,
 ) -> OsuApiMetadataProviderService:
-    """Create an OsuApiMetadataProviderService backed by a MockTransport."""
+    """指定したmock response条件で公式metadata providerを構築する.
+
+    Args:
+        token_status (int): token endpointが返すHTTP status.
+        token_body (Mapping[str, object] | None): token endpointが返すJSON body.
+        api_status (int): testが操作するAPI status値.
+        api_body (Mapping[str, object] | None): mock API endpointが返すJSON body.
+        api_error (type[Exception] | None): API request時に送出するexception type.
+        token_error (type[Exception] | None): token request時に送出するexception type.
+        token_count (int): requestごとにincrementするtoken値を返す回数.
+
+    Returns:
+        OsuApiMetadataProviderService: MockTransportを注入した公式metadata provider.
+    """
     handler = _handler_for(
         token_status=token_status,
         token_body=token_body,
@@ -255,6 +340,16 @@ def _make_provider_with_handler(
     token_count: int = 0,
     token_expires_in: int = 3600,
 ) -> tuple[OsuApiMetadataProviderService, _MetadataProviderMockHandler]:
+    """Token request履歴を観測できるmock handler付きproviderを構築する.
+
+    Args:
+        token_count (int): requestごとにincrementするtoken値を返す回数.
+        token_expires_in (int): 取得tokenの有効期間を表す秒数.
+
+    Returns:
+        tuple[OsuApiMetadataProviderService, _MetadataProviderMockHandler]:
+            公式metadata providerとtoken request履歴を観測するhandlerの組.
+    """
     handler = _handler_for(
         api_body=_BEATMAPSET_RESPONSE_BODY,
         token_count=token_count,
@@ -279,8 +374,14 @@ def _make_provider_with_handler(
 
 
 class TestLookupByBeatmapsetId:
+    """beatmapset IDによる公式metadata lookupの成功とerror mappingを検証するtest群."""
+
     async def test_returns_snapshot_on_success(self) -> None:
-        """Regular 200 response → BeatmapsetSnapshot with correct fields."""
+        """200 responseをlookupし公式snapshotの主要metadata fieldを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_body=_BEATMAPSET_RESPONSE_BODY)
 
         result = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
@@ -304,7 +405,11 @@ class TestLookupByBeatmapsetId:
         assert bm.bpm == 220.0
 
     async def test_returns_none_on_404(self) -> None:
-        """404 from API returns None (not found, not an error)."""
+        """404 responseを返すmockで未知beatmapsetをlookupしたときNoneを返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_status=404)
 
         result = await provider.lookup_by_beatmapset_id(99999)
@@ -312,7 +417,11 @@ class TestLookupByBeatmapsetId:
         assert result is None
 
     async def test_raises_on_401(self) -> None:
-        """401 → BeatmapSourceError(UNAUTHORIZED)."""
+        """401 responseをlookupしUNAUTHORIZED categoryのerrorを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_status=401)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
@@ -321,7 +430,11 @@ class TestLookupByBeatmapsetId:
         assert exc_info.value.category is BeatmapSourceErrorCategory.UNAUTHORIZED
 
     async def test_raises_on_429(self) -> None:
-        """429 → BeatmapSourceError(RATE_LIMITED)."""
+        """429 responseをlookupしRATE_LIMITED categoryのerrorを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_status=429)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
@@ -331,7 +444,14 @@ class TestLookupByBeatmapsetId:
 
     @pytest.mark.parametrize("status", [500, 502, 503])
     async def test_raises_on_5xx(self, status: int) -> None:
-        """5xx → BeatmapSourceError(TEMPORARY_UNAVAILABLE)."""
+        """各5xx responseをlookupしTEMPORARY_UNAVAILABLE errorへの変換を検証する.
+
+        Args:
+            status (int): parametrized mock HTTP status.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_status=status)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
@@ -340,7 +460,11 @@ class TestLookupByBeatmapsetId:
         assert exc_info.value.category is BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
 
     async def test_raises_on_timeout(self) -> None:
-        """httpx.TimeoutException → BeatmapSourceError(TIMEOUT)."""
+        """TimeoutExceptionを送出するmockでlookupしたときTIMEOUT categoryへ変換することを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_error=httpx.TimeoutException)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
@@ -349,7 +473,11 @@ class TestLookupByBeatmapsetId:
         assert exc_info.value.category is BeatmapSourceErrorCategory.TIMEOUT
 
     async def test_raises_on_connection_error(self) -> None:
-        """httpx.ConnectError → BeatmapSourceError(TEMPORARY_UNAVAILABLE)."""
+        """ConnectError時のlookupがTEMPORARY_UNAVAILABLE errorになることを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_error=httpx.ConnectError)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
@@ -358,9 +486,21 @@ class TestLookupByBeatmapsetId:
         assert exc_info.value.category is BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
 
     async def test_raises_on_invalid_json(self) -> None:
-        """Non-JSON response body → BeatmapSourceError(INVALID_RESPONSE)."""
+        """不正JSONを返すAPI lookupがINVALID_RESPONSE errorになることを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
 
         def bad_json(request: httpx.Request) -> httpx.Response:
+            """Token endpointへ正常JSONを返しAPIへ不正JSONを返すhandlerを構築する.
+
+            Args:
+                request (httpx.Request): MockTransport handlerへ渡されるHTTP request.
+
+            Returns:
+                httpx.Response: mock handlerがrequestへ返すHTTP response.
+            """
             url_str, method = _request_url_and_method(request)
             if _TOKEN_URL in url_str and method == "POST":
                 return httpx.Response(
@@ -391,8 +531,14 @@ class TestLookupByBeatmapsetId:
 
 
 class TestLookupByBeatmapId:
+    """beatmap IDによる公式metadata lookupのresponse正規化を検証するtest群."""
+
     async def test_returns_snapshot_from_beatmap_endpoint(self) -> None:
-        """Beatmap endpoint response (nested beatmapset) is correctly unwrapped."""
+        """Nested beatmapsetを含むresponseをsnapshotへ正規化することを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_body=_BEATMAP_RESPONSE_BODY)
 
         result = await provider.lookup_by_beatmap_id(_BEATMAP_ID)
@@ -404,6 +550,11 @@ class TestLookupByBeatmapId:
         assert result.beatmaps[0].beatmap_id == _BEATMAP_ID
 
     async def test_returns_none_on_404(self) -> None:
+        """404 responseを返すmockで未知beatmap IDをlookupしたときNoneを返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_status=404)
 
         result = await provider.lookup_by_beatmap_id(99999)
@@ -417,8 +568,14 @@ class TestLookupByBeatmapId:
 
 
 class TestLookupByChecksum:
+    """checksumによる公式metadata lookupのresponse契約を検証するtest群."""
+
     async def test_returns_snapshot_from_checksum_lookup(self) -> None:
-        """Checksum lookup uses the same beatmap endpoint response shape."""
+        """Beatmap responseを返すmockでchecksum lookupしたときsnapshotを返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_body=_BEATMAP_RESPONSE_BODY)
 
         result = await provider.lookup_by_checksum(_CHECKSUM)
@@ -427,6 +584,11 @@ class TestLookupByChecksum:
         assert result.beatmapset_id == _BEATMAPSET_ID
 
     async def test_returns_none_on_404(self) -> None:
+        """404 responseを返すmockで未知checksumをlookupしたときNoneを返すことを確認する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(api_status=404)
 
         result = await provider.lookup_by_checksum("f" * 32)
@@ -440,8 +602,14 @@ class TestLookupByChecksum:
 
 
 class TestTokenManagement:
+    """OAuth tokenの取得再利用期限切れ更新とerror mappingを検証するtest群."""
+
     async def test_acquires_token_on_first_call(self) -> None:
-        """First API call triggers token acquisition."""
+        """初回lookupでtoken requestが1回となりBearer headerを送ることを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider, handler = _make_provider_with_handler()
 
         assert handler.token_request_count == 0
@@ -452,7 +620,11 @@ class TestTokenManagement:
         assert handler.authorization_headers == ["Bearer tok_deadbeef"]
 
     async def test_reuses_cached_token(self) -> None:
-        """Second call reuses cached token (no new token request)."""
+        """連続lookupでcached tokenを再利用しtoken requestを増やさないことを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider, handler = _make_provider_with_handler()
 
         _ = await provider.lookup_by_beatmapset_id(_BEATMAPSET_ID)
@@ -467,7 +639,11 @@ class TestTokenManagement:
         ]
 
     async def test_refreshes_expired_token(self) -> None:
-        """When token is expired, a new one is acquired."""
+        """期限切れtokenで連続lookupし新しいBearer tokenを取得することを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider, handler = _make_provider_with_handler(
             token_count=1,
             token_expires_in=1,
@@ -483,7 +659,11 @@ class TestTokenManagement:
         ]
 
     async def test_raises_on_token_401(self) -> None:
-        """401 from token endpoint → BeatmapSourceError(UNAUTHORIZED)."""
+        """Token endpointの401 responseをUNAUTHORIZED errorへ変換することを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(token_status=401)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
@@ -493,7 +673,11 @@ class TestTokenManagement:
         assert exc_info.value.source == "osu_oauth"
 
     async def test_raises_on_token_error_response(self) -> None:
-        """5xx from token endpoint → BeatmapSourceError(TEMPORARY_UNAVAILABLE)."""
+        """Token endpointの5xx responseをTEMPORARY_UNAVAILABLE errorへ変換することを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(token_status=503)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
@@ -503,7 +687,11 @@ class TestTokenManagement:
         assert exc_info.value.source == "osu_oauth"
 
     async def test_raises_on_token_timeout(self) -> None:
-        """Timeout on token endpoint → BeatmapSourceError(TIMEOUT)."""
+        """Token endpointのTimeoutExceptionをTIMEOUT errorへ変換することを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         provider = _make_provider(token_error=httpx.TimeoutException)
 
         with pytest.raises(BeatmapSourceError) as exc_info:
@@ -513,12 +701,24 @@ class TestTokenManagement:
         assert exc_info.value.source == "osu_oauth"
 
     async def test_raises_on_invalid_token_json(self) -> None:
-        """Non-JSON token response → BeatmapSourceError(INVALID_RESPONSE)."""
+        """Token endpointの不正JSONをINVALID_RESPONSE errorへ変換することを検証する.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         handler = _handler_for()
         transport = httpx.MockTransport(handler)
         client = httpx.AsyncClient(transport=transport)
 
         def bad_token(request: httpx.Request) -> httpx.Response:
+            """Token endpointへ不正JSONを返しAPIへ正常JSONを返すhandlerを構築する.
+
+            Args:
+                request (httpx.Request): MockTransport handlerへ渡されるHTTP request.
+
+            Returns:
+                httpx.Response: mock handlerがrequestへ返すHTTP response.
+            """
             url_str, method = _request_url_and_method(request)
             if _TOKEN_URL in url_str and method == "POST":
                 return httpx.Response(200, content=b"not valid json {{{", request=request)
@@ -550,7 +750,7 @@ class TestTokenManagement:
 
 
 class TestStatusMapping:
-    """Verify osu! API status strings are correctly mapped."""
+    """公式API status文字列をdomain rank statusへ変換する契約を検証するtest群."""
 
     @pytest.mark.parametrize(
         ("api_status", "expected"),
@@ -564,6 +764,15 @@ class TestStatusMapping:
         ],
     )
     async def test_status_mapping(self, api_status: str, expected: BeatmapRankStatus) -> None:
+        """各API statusでlookupしsetとbeatmapが同じrank statusになることを検証する.
+
+        Args:
+            api_status (str): testが操作するAPI status値.
+            expected (BeatmapRankStatus): domainへ変換されるexpected rank status.
+
+        Returns:
+            None: 検証またはtest helperの処理を完了し値を返さない.
+        """
         body = dict(_BEATMAPSET_RESPONSE_BODY)
         body["status"] = api_status
         if "beatmaps" in body:
