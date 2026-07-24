@@ -426,7 +426,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/{test_handler_group,test_lifecycle_handlers,test_routing}.py_
 
-- [ ] 3.9 (P) Listener、worker、logging、entry-point unit testを整備する
+- [x] 3.9 (P) Listener、worker、logging、entry-point unit testを整備する
   - test_listener_group.py、test_lifecycle_listeners.py、test_log_rotation.py、
     test_osu_server_main.py、test_worker.py、test_worker_jobs.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および6 fileのtestが通る
