@@ -1,4 +1,4 @@
-"""Tests for SessionStore Protocol + InMemorySessionStore (TDD — RED phase first)."""
+"""SessionStoreのmemory実装に対するsession lifecycle契約を検証する."""
 
 from __future__ import annotations
 
@@ -26,11 +26,23 @@ _SESSION = SessionData(
 
 @pytest.fixture
 def store() -> InMemorySessionStore:
+    """各testへtokenとuserの対応が空のsession storeを提供する.
+
+    Returns:
+        InMemorySessionStore: 各testで独立して使用するsession store.
+    """
     return InMemorySessionStore()
 
 
 async def test_create_and_get(store: InMemorySessionStore) -> None:
-    """create stores session data; get retrieves it by token."""
+    """sessionを作成したときtoken検索が同じusernameとprivilegeを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     result = await store.get("abc-123")
@@ -41,14 +53,28 @@ async def test_create_and_get(store: InMemorySessionStore) -> None:
 
 
 async def test_get_nonexistent_returns_none(store: InMemorySessionStore) -> None:
-    """get on unknown token returns None."""
+    """未知tokenを検索したときNoneを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     result = await store.get("nonexistent-token")
 
     assert result is None
 
 
 async def test_get_by_user(store: InMemorySessionStore) -> None:
-    """get_by_user retrieves session data by user_id."""
+    """sessionを作成したときuser ID検索が同じsession dataを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     result = await store.get_by_user(user_id=1)
@@ -58,14 +84,28 @@ async def test_get_by_user(store: InMemorySessionStore) -> None:
 
 
 async def test_get_by_user_nonexistent_returns_none(store: InMemorySessionStore) -> None:
-    """get_by_user for unknown user_id returns None."""
+    """未知user IDを検索したときNoneを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     result = await store.get_by_user(user_id=9999)
 
     assert result is None
 
 
 async def test_delete(store: InMemorySessionStore) -> None:
-    """delete removes the session; subsequent get returns None."""
+    """tokenでsessionを削除したときtokenとuserの両検索がNoneを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     await store.delete("abc-123")
@@ -75,19 +115,40 @@ async def test_delete(store: InMemorySessionStore) -> None:
 
 
 async def test_exists_true(store: InMemorySessionStore) -> None:
-    """exists returns True for a created session."""
+    """sessionを作成したtokenに対してexistsがTrueを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     assert await store.exists("abc-123") is True
 
 
 async def test_exists_false(store: InMemorySessionStore) -> None:
-    """exists returns False for an unknown token."""
+    """未知tokenに対してexistsがFalseを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     assert await store.exists("nonexistent-token") is False
 
 
 async def test_create_overwrites_previous_session(store: InMemorySessionStore) -> None:
-    """Same user_id with a new token replaces the old session entirely."""
+    """同じuserへ新tokenを作成したとき旧tokenを失効し新sessionへ置換することを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     data_old = replace(_SESSION, country="US")
     data_new = replace(_SESSION, country="JP")
 
@@ -110,7 +171,14 @@ async def test_create_overwrites_previous_session(store: InMemorySessionStore) -
 
 
 async def test_refresh_existing_token(store: InMemorySessionStore) -> None:
-    """refresh returns True for an existing session."""
+    """既存tokenをrefreshしたときsessionを保ったままTrueを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     result = await store.refresh("abc-123")
@@ -119,7 +187,14 @@ async def test_refresh_existing_token(store: InMemorySessionStore) -> None:
 
 
 async def test_refresh_nonexistent_token(store: InMemorySessionStore) -> None:
-    """refresh returns False for an unknown token."""
+    """未知tokenをrefreshしたときFalseを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     result = await store.refresh("nonexistent-token")
 
     assert result is False
@@ -131,7 +206,14 @@ async def test_refresh_nonexistent_token(store: InMemorySessionStore) -> None:
 
 
 async def test_delete_by_user_removes_session(store: InMemorySessionStore) -> None:
-    """delete_by_user removes the session for the given user_id."""
+    """User IDでsessionを削除したとき両lookupとexistsから消えることを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     await store.delete_by_user(user_id=1)
@@ -142,13 +224,27 @@ async def test_delete_by_user_removes_session(store: InMemorySessionStore) -> No
 
 
 async def test_delete_by_user_idempotent(store: InMemorySessionStore) -> None:
-    """delete_by_user on a non-existent user_id is a no-op (no error)."""
+    """未知user IDを削除したとき例外を送出せずno-opで完了することを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     # Should not raise
     await store.delete_by_user(user_id=9999)
 
 
 async def test_delete_by_user_does_not_affect_other_users(store: InMemorySessionStore) -> None:
-    """delete_by_user only removes the targeted user's session."""
+    """一方のuserを削除したとき別userのsessionを保持することを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     other_session = replace(_SESSION, user_id=2, username="cookiezi")
     await store.create(user_id=1, token="token-1", data=_SESSION)
     await store.create(user_id=2, token="token-2", data=other_session)
@@ -167,14 +263,28 @@ async def test_delete_by_user_does_not_affect_other_users(store: InMemorySession
 
 
 async def test_list_active_sessions_empty_store(store: InMemorySessionStore) -> None:
-    """list_active_sessions returns an empty list when the store is empty."""
+    """空storeのactive session一覧を取得したとき空listを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     result = await store.list_active_sessions()
 
     assert result == []
 
 
 async def test_list_active_sessions_returns_all(store: InMemorySessionStore) -> None:
-    """list_active_sessions returns all active sessions."""
+    """3sessionを作成したときactive一覧が全user IDを含むことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     session_2 = replace(_SESSION, user_id=2, username="cookiezi")
     session_3 = replace(_SESSION, user_id=3, username="whitecat")
 
@@ -188,7 +298,14 @@ async def test_list_active_sessions_returns_all(store: InMemorySessionStore) -> 
 
 
 async def test_list_active_sessions_excludes_deleted(store: InMemorySessionStore) -> None:
-    """list_active_sessions does not include users whose sessions were deleted."""
+    """sessionを削除したuserがactive一覧から除かれることを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     session_2 = replace(_SESSION, user_id=2, username="cookiezi")
     await store.create(user_id=1, token="t1", data=_SESSION)
     await store.create(user_id=2, token="t2", data=session_2)
@@ -208,7 +325,14 @@ async def test_list_active_sessions_excludes_deleted(store: InMemorySessionStore
 async def test_update_authorization_updates_privileges_and_role_ids(
     store: InMemorySessionStore,
 ) -> None:
-    """update_authorization updates privileges and role_ids on the active session."""
+    """Active sessionのauthorization更新でprivilegesとrole IDsが置換されることを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     new_auth = SessionAuthorization(
@@ -227,7 +351,14 @@ async def test_update_authorization_updates_privileges_and_role_ids(
 async def test_update_authorization_preserves_other_fields(
     store: InMemorySessionStore,
 ) -> None:
-    """update_authorization preserves all non-authorization session fields."""
+    """authorizationを更新したとき他のsession fieldを変更しないことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     new_auth = SessionAuthorization(
@@ -252,7 +383,14 @@ async def test_update_authorization_preserves_other_fields(
 async def test_update_authorization_preserves_token_lookup(
     store: InMemorySessionStore,
 ) -> None:
-    """After update_authorization, get(token) returns the updated session."""
+    """authorization更新後にtoken lookupが更新済みsessionを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     new_auth = SessionAuthorization(
@@ -270,7 +408,14 @@ async def test_update_authorization_preserves_token_lookup(
 async def test_update_authorization_preserves_user_lookup(
     store: InMemorySessionStore,
 ) -> None:
-    """After update_authorization, get_by_user(user_id) returns the updated session."""
+    """authorization更新後にuser lookupが更新済みsessionを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     new_auth = SessionAuthorization(
@@ -288,7 +433,14 @@ async def test_update_authorization_preserves_user_lookup(
 async def test_update_authorization_returns_false_for_offline_user(
     store: InMemorySessionStore,
 ) -> None:
-    """update_authorization returns False for a user without an active session."""
+    """Offline userのauthorization更新がstateを作らずFalseを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     new_auth = SessionAuthorization(
         privileges=Privileges.NORMAL,
         role_ids=(),
@@ -303,7 +455,14 @@ async def test_update_authorization_returns_false_for_offline_user(
 async def test_update_authorization_does_not_affect_other_users(
     store: InMemorySessionStore,
 ) -> None:
-    """update_authorization only modifies the targeted user's session."""
+    """一方のuserのauthorization更新が別userのsessionを変えないことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     other_session = replace(_SESSION, user_id=2, username="cookiezi")
     await store.create(user_id=1, token="token-1", data=_SESSION)
     await store.create(user_id=2, token="token-2", data=other_session)
@@ -326,7 +485,14 @@ async def test_update_authorization_does_not_affect_other_users(
 async def test_update_authorization_idempotent(
     store: InMemorySessionStore,
 ) -> None:
-    """Repeated update_authorization with the same authorization has the same result."""
+    """同じauthorizationを繰返し更新しても成功結果とsession値が不変であることを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     new_auth = SessionAuthorization(
@@ -347,7 +513,14 @@ async def test_update_authorization_idempotent(
 async def test_update_authorization_token_mapping_unchanged(
     store: InMemorySessionStore,
 ) -> None:
-    """update_authorization does not change token-to-user or user-to-token mappings."""
+    """authorization更新がtokenとuser IDの双方向mappingを変えないことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     new_auth = SessionAuthorization(
@@ -373,7 +546,14 @@ async def test_update_authorization_token_mapping_unchanged(
 async def test_update_pm_private_updates_session(
     store: InMemorySessionStore,
 ) -> None:
-    """update_pm_private updates only the active session privacy flag."""
+    """Active sessionのprivate message設定を更新したときflagだけが指定値へ変わることを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     result = await store.update_pm_private(user_id=1, enabled=True)
@@ -394,7 +574,14 @@ async def test_update_pm_private_updates_session(
 async def test_update_pm_private_preserves_other_fields(
     store: InMemorySessionStore,
 ) -> None:
-    """update_pm_private preserves all non-privacy session fields."""
+    """Private message設定を更新したとき他のsession fieldを保持することを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     original = replace(
         _SESSION,
         privileges=int(Privileges.MODERATOR),
@@ -422,7 +609,14 @@ async def test_update_pm_private_preserves_other_fields(
 async def test_update_pm_private_returns_false_for_offline_user(
     store: InMemorySessionStore,
 ) -> None:
-    """update_pm_private returns False without creating session state."""
+    """Offline userのprivate message設定更新がstateを作らずFalseを返すことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     result = await store.update_pm_private(user_id=9999, enabled=True)
 
     assert result is False
@@ -433,7 +627,14 @@ async def test_update_pm_private_returns_false_for_offline_user(
 async def test_update_pm_private_token_mapping_unchanged(
     store: InMemorySessionStore,
 ) -> None:
-    """update_pm_private does not change token-to-user or user-to-token mappings."""
+    """Private message設定更新がtokenとuser IDの双方向mappingを変えないことを確認する.
+
+    Args:
+        store (InMemorySessionStore): 検証対象の空のsession store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.create(user_id=1, token="abc-123", data=_SESSION)
 
     _ = await store.update_pm_private(user_id=1, enabled=True)
@@ -453,7 +654,11 @@ async def test_update_pm_private_token_mapping_unchanged(
 
 
 async def test_inmemory_session_store_is_instance_of_session_store() -> None:
-    """InMemorySessionStore is recognized as a SessionStore Protocol instance."""
+    """memory実装を生成したときSessionStore Protocolとして認識されることを確認する.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     store = InMemorySessionStore()
 
     assert isinstance(store, SessionStore)

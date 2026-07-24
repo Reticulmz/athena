@@ -1,4 +1,4 @@
-"""Tests for PacketQueue Protocol + InMemoryPacketQueue."""
+"""PacketQueueのmemory実装に対するFIFO契約を検証する."""
 
 from __future__ import annotations
 
@@ -9,16 +9,33 @@ from osu_server.infrastructure.state.memory.packet_queue import InMemoryPacketQu
 
 @pytest.fixture
 def queue() -> InMemoryPacketQueue:
+    """通常上限を持つ空のpacket queueを各testへ提供する.
+
+    Returns:
+        InMemoryPacketQueue: 各testで独立して使用するpacket queue.
+    """
     return InMemoryPacketQueue(max_size=4096)
 
 
 @pytest.fixture
 def small_queue() -> InMemoryPacketQueue:
+    """trimming挙動を検証するため上限3の空queueを提供する.
+
+    Returns:
+        InMemoryPacketQueue: 各testで独立して使用するpacket queue.
+    """
     return InMemoryPacketQueue(max_size=3)
 
 
 async def test_enqueue_single_packet(queue: InMemoryPacketQueue) -> None:
-    """enqueue stores a single packet; dequeue_all returns it."""
+    """有効sessionへ1packetをenqueueしたときdequeue_allが同じbytesを返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await queue.refresh_ttl(user_id=1, ttl=300)
     await queue.enqueue(1, b"\x01\x02\x03")
 
@@ -28,7 +45,14 @@ async def test_enqueue_single_packet(queue: InMemoryPacketQueue) -> None:
 
 
 async def test_enqueue_multiple_packets_single_call(queue: InMemoryPacketQueue) -> None:
-    """enqueue with multiple *data args stores all; dequeue_all returns concatenated."""
+    """1回の複数packet enqueue後にdequeue_allが入力順の連結bytesを返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await queue.refresh_ttl(user_id=1, ttl=300)
     await queue.enqueue(1, b"\x01", b"\x02", b"\x03")
 
@@ -38,7 +62,14 @@ async def test_enqueue_multiple_packets_single_call(queue: InMemoryPacketQueue) 
 
 
 async def test_enqueue_multiple_calls(queue: InMemoryPacketQueue) -> None:
-    """Multiple enqueue calls accumulate; dequeue_all returns all concatenated."""
+    """複数回enqueueしたときdequeue_allが全packetを順序どおり連結して返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await queue.refresh_ttl(user_id=1, ttl=300)
     await queue.enqueue(1, b"\x01\x02")
     await queue.enqueue(1, b"\x03\x04")
@@ -49,7 +80,14 @@ async def test_enqueue_multiple_calls(queue: InMemoryPacketQueue) -> None:
 
 
 async def test_dequeue_all_empties_queue(queue: InMemoryPacketQueue) -> None:
-    """After dequeue_all, subsequent call returns empty bytes."""
+    """dequeue_allでpacketを取得した後は次の取得が空bytesを返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await queue.refresh_ttl(user_id=1, ttl=300)
     await queue.enqueue(1, b"\x01\x02")
 
@@ -61,7 +99,14 @@ async def test_dequeue_all_empties_queue(queue: InMemoryPacketQueue) -> None:
 
 
 async def test_dequeue_empty_queue(queue: InMemoryPacketQueue) -> None:
-    """dequeue_all on an active but empty queue returns b""."""
+    """有効だがpacket未投入のqueueを取得したとき空bytesを返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await queue.refresh_ttl(user_id=1, ttl=300)
 
     result = await queue.dequeue_all(user_id=1)
@@ -70,14 +115,28 @@ async def test_dequeue_empty_queue(queue: InMemoryPacketQueue) -> None:
 
 
 async def test_dequeue_nonexistent_user(queue: InMemoryPacketQueue) -> None:
-    """dequeue_all for unknown user returns b""."""
+    """未知userのqueueを取得したとき空bytesを返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     result = await queue.dequeue_all(user_id=9999)
 
     assert result == b""
 
 
 async def test_size_limit_trims_oldest(small_queue: InMemoryPacketQueue) -> None:
-    """When queue exceeds max_size, oldest packets are trimmed."""
+    """上限3のqueueへ5packetを投入したとき最古2件を除いた3packetを返すことを確認する.
+
+    Args:
+        small_queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await small_queue.refresh_ttl(user_id=1, ttl=300)
     for i in range(5):
         await small_queue.enqueue(1, bytes([i]))
@@ -88,7 +147,14 @@ async def test_size_limit_trims_oldest(small_queue: InMemoryPacketQueue) -> None
 
 
 async def test_size_limit_trims_oldest_bulk(small_queue: InMemoryPacketQueue) -> None:
-    """Bulk enqueue also respects max_size, trimming oldest."""
+    """複数packetを一括投入して上限を超えたとき最古packetをtrimすることを確認する.
+
+    Args:
+        small_queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await small_queue.refresh_ttl(user_id=1, ttl=300)
     await small_queue.enqueue(1, b"\x00", b"\x01", b"\x02", b"\x03", b"\x04")
 
@@ -98,7 +164,14 @@ async def test_size_limit_trims_oldest_bulk(small_queue: InMemoryPacketQueue) ->
 
 
 async def test_enqueue_without_session_discards(queue: InMemoryPacketQueue) -> None:
-    """enqueue without prior refresh_ttl discards packets (session absent)."""
+    """sessionを有効化せずenqueueしたときpacketを保持せず空bytesを返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await queue.enqueue(1, b"\x01\x02\x03")
 
     result = await queue.dequeue_all(user_id=1)
@@ -107,7 +180,14 @@ async def test_enqueue_without_session_discards(queue: InMemoryPacketQueue) -> N
 
 
 async def test_enqueue_empty_data_is_noop(queue: InMemoryPacketQueue) -> None:
-    """enqueue with no data args is a no-op."""
+    """dataなしでenqueueしたときqueue内容を変更せず空bytesを返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await queue.refresh_ttl(user_id=1, ttl=300)
     await queue.enqueue(1)
 
@@ -117,7 +197,14 @@ async def test_enqueue_empty_data_is_noop(queue: InMemoryPacketQueue) -> None:
 
 
 async def test_independent_user_queues(queue: InMemoryPacketQueue) -> None:
-    """Each user has an independent queue."""
+    """2userへ別packetを投入したとき各dequeue_allが自身のpacketだけを返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await queue.refresh_ttl(user_id=1, ttl=300)
     await queue.refresh_ttl(user_id=2, ttl=300)
     await queue.enqueue(1, b"\x01")
@@ -131,7 +218,14 @@ async def test_independent_user_queues(queue: InMemoryPacketQueue) -> None:
 
 
 async def test_refresh_ttl_activates_queue(queue: InMemoryPacketQueue) -> None:
-    """refresh_ttl enables enqueue for a user."""
+    """refresh_ttl前後でenqueue可否が変わり有効化後のpacketだけを返すことを確認する.
+
+    Args:
+        queue (InMemoryPacketQueue): 検証対象のpacket queue.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await queue.enqueue(1, b"\x01")
     assert await queue.dequeue_all(user_id=1) == b""
 
