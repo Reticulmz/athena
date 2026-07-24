@@ -374,7 +374,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/support/**_
 
-- [ ] 3.2 (P) Root fixture、factory、end-to-end testを整備する
+- [x] 3.2 (P) Root fixture、factory、end-to-end testを整備する
   - tests/*.py、tests/factories/**、tests/fixtures/**、tests/e2e/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびfactory/end-to-end testが通る
   - _Depends: 1.4_
