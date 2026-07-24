@@ -1,4 +1,4 @@
-"""Dishka app composition integration tests."""
+"""Dishka app composition の integration 契約を検証する."""
 
 from __future__ import annotations
 
@@ -138,16 +138,37 @@ if TYPE_CHECKING:
 
 
 class _FakeValkeyClient:
+    """Valkey script 呼び出しを成功値で代替する fake client を提供する."""
+
     async def invoke_script(self, *args: object, **kwargs: object) -> object:
+        """呼出を記録せず script invocation を成功値で完了する.
+
+        Args:
+            *args (object): script invocation に渡される位置引数.
+            **kwargs (object): script invocation に渡される keyword 引数.
+
+        Returns:
+            object: successful invocation を表す整数値.
+        """
         del args, kwargs
         return 1
 
 
 class _InjectedSessionCredentialsQuery:
+    """固定の legacy web 認証結果を返す query fake を提供する."""
+
     async def execute(
         self,
         input_data: SessionCredentialsQueryInput,
     ) -> SessionCredentialsQueryResult:
+        """入力に関係なく認証済み session credential を返す.
+
+        Args:
+            input_data (SessionCredentialsQueryInput): handler が解決した session credential query.
+
+        Returns:
+            SessionCredentialsQueryResult: user_id 42 の認証成功結果.
+        """
         del input_data
         return SessionCredentialsQueryResult(
             outcome=LegacyWebAuthResult(user_id=42, username="PlayerOne")
@@ -155,15 +176,30 @@ class _InjectedSessionCredentialsQuery:
 
 
 class _InjectedReplayDownloadQuery:
+    """固定 replay response を返し入力を記録する query fake を提供する.
+
+    Attributes:
+        inputs (list[ReplayDownloadQueryInput]): execute に渡された query input.
+    """
+
     inputs: list[ReplayDownloadQueryInput]
 
     def __init__(self) -> None:
+        """入力記録を空 list で初期化する."""
         self.inputs = []
 
     async def execute(
         self,
         input_data: ReplayDownloadQueryInput,
     ) -> ReplayDownloadQueryResult:
+        """入力を記録して固定の成功 response を返す.
+
+        Args:
+            input_data (ReplayDownloadQueryInput): handler が解決した replay download query.
+
+        Returns:
+            ReplayDownloadQueryResult: replay body と accounting metadata を持つ成功結果.
+        """
         self.inputs.append(input_data)
         return ReplayDownloadQueryResult(
             branch=ReplayDownloadBranch.SUCCESS,
@@ -176,21 +212,52 @@ class _InjectedReplayDownloadQuery:
 
 
 class _InjectedReplayDownloadAccountingPublisher:
+    """replay accounting input を記録する publisher fake を提供する.
+
+    Attributes:
+        inputs (list[ReplayDownloadAccountingInput]): publish に渡された accounting input.
+    """
+
     inputs: list[ReplayDownloadAccountingInput]
 
     def __init__(self) -> None:
+        """入力記録を空 list で初期化する."""
         self.inputs = []
 
     async def publish(self, input_data: ReplayDownloadAccountingInput) -> None:
+        """入力を非同期 publish の代わりに記録する.
+
+        Args:
+            input_data (ReplayDownloadAccountingInput): 記録する replay accounting input.
+
+        Returns:
+            None: 外部 publish を行わず input の記録だけを完了する.
+        """
         self.inputs.append(input_data)
 
 
 def test_public_app_entrypoint_exposes_starlette_app() -> None:
+    """前提: 公開 app entrypoint と app factory が import できる.
+
+    操作: app と create_app の生成結果を検査する.
+    結果: 両方が Starlette application を公開する.
+
+    Returns:
+        None: public app entrypoint 契約を検証する.
+    """
     assert isinstance(app, Starlette)
     assert isinstance(create_app(), Starlette)
 
 
 def test_create_app_registers_host_and_fallback_routes() -> None:
+    """前提: routing config に domain と route family が定義される.
+
+    操作: create_app の host と fallback と mount route を分類する.
+    結果: 必須 host route と health route と adapter mount が登録される.
+
+    Returns:
+        None: app route registration 契約を検証する.
+    """
     created = create_app()
     routes = list(created.routes)
     domain = load_routing_config().domain
@@ -218,6 +285,14 @@ def test_create_app_registers_host_and_fallback_routes() -> None:
 
 
 def test_create_app_registers_replay_download_primary_route_only() -> None:
+    """前提: replay download は stable web host の primary route で提供する.
+
+    操作: osu host と root route から GET path を収集する.
+    結果: osu-getreplay.php だけが存在し旧 replay path は存在しない.
+
+    Returns:
+        None: replay download route migration 契約を検証する.
+    """
     created = create_app()
     domain = load_routing_config().domain
     host_routes = [route for route in created.routes if isinstance(route, Host)]
@@ -243,6 +318,19 @@ def test_create_app_reads_route_domain_from_environment_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """前提: temporary working directory に development env file を置ける.
+
+    操作: environment を設定して create_app を生成する.
+    結果: host route は env file の DOMAIN を使用する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): process environment と working directory を
+            隔離する fixture.
+        tmp_path (Path): .env.development を配置する temporary directory.
+
+    Returns:
+        None: routing config の environment file 読み込み契約を検証する.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DOMAIN", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -266,6 +354,17 @@ def test_create_app_reads_route_domain_from_environment_file(
 
 @pytest.mark.asyncio
 async def test_app_container_resolves_common_infrastructure(tmp_path: Path) -> None:
+    """前提: test config と in-memory runtime override を生成できる.
+
+    操作: app container から共通 infrastructure dependency を解決する.
+    結果: config と engine と client と event bus が期待実装として取得できる.
+
+    Args:
+        tmp_path (Path): isolated blob storage root を作る temporary directory.
+
+    Returns:
+        None: common infrastructure DI graph 契約を検証する.
+    """
     config = make_app_config(
         environment="test",
         blob_storage_local_root=str(tmp_path / "blobs"),
@@ -294,6 +393,17 @@ async def test_app_container_resolves_common_infrastructure(tmp_path: Path) -> N
 async def test_app_container_uses_explicit_in_memory_test_overrides(
     tmp_path: Path,
 ) -> None:
+    """前提: in-memory runtime provider set を app container へ渡せる.
+
+    操作: state store と repository と unit-of-work dependency を解決する.
+    結果: 全 dependency が明示した in-memory implementation になる.
+
+    Args:
+        tmp_path (Path): isolated blob storage root を作る temporary directory.
+
+    Returns:
+        None: explicit test override 契約を検証する.
+    """
     config = make_app_config(
         environment="test",
         blob_storage_local_root=str(tmp_path / "blobs"),
@@ -347,6 +457,17 @@ async def test_app_container_uses_explicit_in_memory_test_overrides(
 
 @pytest.mark.asyncio
 async def test_app_container_resolves_identity_and_chat_graph(tmp_path: Path) -> None:
+    """前提: identity と chat 用 provider を含む test container を生成できる.
+
+    操作: service と command と query dependency を順に解決する.
+    結果: 全 dependency が要求した concrete type として取得できる.
+
+    Args:
+        tmp_path (Path): isolated blob storage root を作る temporary directory.
+
+    Returns:
+        None: identity chat DI graph 契約を検証する.
+    """
     config = make_app_config(
         environment="test",
         blob_storage_local_root=str(tmp_path / "blobs"),
@@ -388,6 +509,17 @@ async def test_app_container_resolves_identity_and_chat_graph(tmp_path: Path) ->
 
 @pytest.mark.asyncio
 async def test_app_container_resolves_transport_handler_graph(tmp_path: Path) -> None:
+    """前提: transport handler 用 provider を含む test container を生成できる.
+
+    操作: workflow と handler と replay body reader dependency を解決する.
+    結果: transport graph の各 dependency が期待 concrete type になる.
+
+    Args:
+        tmp_path (Path): isolated blob storage root を作る temporary directory.
+
+    Returns:
+        None: transport handler DI graph 契約を検証する.
+    """
     config = make_app_config(
         environment="test",
         blob_storage_local_root=str(tmp_path / "blobs"),
@@ -429,6 +561,17 @@ async def test_app_container_resolves_transport_handler_graph(tmp_path: Path) ->
 async def test_app_container_injects_replay_download_accounting_publisher_into_handler(
     tmp_path: Path,
 ) -> None:
+    """前提: replay query と accounting publisher を fake に差し替えられる.
+
+    操作: handler へ replay download request を渡して background task を実行する.
+    結果: response body と query input と accounting input が期待値になる.
+
+    Args:
+        tmp_path (Path): isolated blob storage root を作る temporary directory.
+
+    Returns:
+        None: replay accounting publisher injection 契約を検証する.
+    """
     config = make_app_config(
         environment="test",
         blob_storage_local_root=str(tmp_path / "blobs"),
@@ -493,6 +636,17 @@ async def test_app_container_injects_replay_download_accounting_publisher_into_h
 async def test_runtime_graph_provides_valkey_replay_download_accounting_gate(
     tmp_path: Path,
 ) -> None:
+    """前提: runtime graph に fake GlideClient を注入できる.
+
+    操作: ReplayDownloadAccountingGate dependency を container から解決する.
+    結果: runtime graph は Valkey implementation を提供する.
+
+    Args:
+        tmp_path (Path): isolated blob storage root を作る temporary directory.
+
+    Returns:
+        None: Valkey replay accounting gate の DI 契約を検証する.
+    """
     config = make_app_config(
         environment="test",
         blob_storage_local_root=str(tmp_path / "blobs"),
@@ -517,6 +671,17 @@ async def test_runtime_graph_provides_valkey_replay_download_accounting_gate(
 
 
 def test_in_memory_app_replay_download_route_reaches_handler(tmp_path: Path) -> None:
+    """前提: in-memory provider override を使う Starlette app を生成できる.
+
+    操作: osu host の replay download route へ認証なし GET request を送る.
+    結果: handler まで到達し unauthorized response と空 body を返す.
+
+    Args:
+        tmp_path (Path): isolated blob storage root を作る temporary directory.
+
+    Returns:
+        None: in-memory replay route の handler 到達契約を検証する.
+    """
     created = create_app(
         provider_overrides=(make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),)
     )

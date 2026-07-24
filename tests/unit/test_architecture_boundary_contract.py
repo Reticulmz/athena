@@ -1,4 +1,4 @@
-"""Architecture boundary contract regression tests."""
+"""architecture boundary contract の回帰テストを提供する."""
 
 from __future__ import annotations
 
@@ -21,6 +21,14 @@ type TomlTable = dict[str, object]
 
 @dataclass(frozen=True, slots=True)
 class BoundaryRule:
+    """source path に適用する import boundary 規則を表す.
+
+    Attributes:
+        name (str): failure message に表示する規則名.
+        source_path (Path): 規則を走査する source root.
+        forbidden_roots (tuple[str, ...]): import を禁止する module root.
+    """
+
     name: str
     source_path: Path
     forbidden_roots: tuple[str, ...]
@@ -333,26 +341,60 @@ REMOVED_DEPENDENCY_COMPOSITION_ROOTS = (
 
 
 def load_pyproject() -> TomlTable:
+    """境界 contract 用に pyproject.toml を読み込む.
+
+    Returns:
+        TomlTable: TOML 解析結果の最上位 table.
+    """
     return cast("TomlTable", tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8")))
 
 
 def require_table(value: object) -> TomlTable:
+    """値が TOML table であることを検証して返す.
+
+    Args:
+        value (object): TOML 解析結果から取得した値.
+
+    Returns:
+        TomlTable: table として扱える値.
+    """
     assert isinstance(value, dict)
     return cast("TomlTable", value)
 
 
 def require_list(value: object) -> list[object]:
+    """値が TOML list であることを検証して返す.
+
+    Args:
+        value (object): TOML 解析結果から取得した値.
+
+    Returns:
+        list[object]: list として扱える値.
+    """
     assert isinstance(value, list)
     return cast("list[object]", value)
 
 
 def require_str_list(value: object) -> list[str]:
+    """値が string だけから成る TOML list であることを返す.
+
+    Args:
+        value (object): TOML 解析結果から取得した値.
+
+    Returns:
+        list[str]: string list として扱える値.
+    """
     values = require_list(value)
     assert all(isinstance(item, str) for item in values)
     return cast("list[str]", values)
 
 
 def import_linter_contracts() -> list[TomlTable]:
+    """設定済み pyproject の import-linter contract を table として返す.
+
+    Returns:
+        list[TomlTable]: import-linter が定義する contract table.
+    """
     pyproject = load_pyproject()
     tool = require_table(pyproject["tool"])
     importlinter = require_table(tool["importlinter"])
@@ -360,6 +402,14 @@ def import_linter_contracts() -> list[TomlTable]:
 
 
 def imported_modules(path: Path) -> set[str]:
+    """対象 file 内の absolute import module 名を収集する.
+
+    Args:
+        path (Path): 解析対象の Python file path.
+
+    Returns:
+        set[str]: import 文と from import 文から得た module 名.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     modules: set[str] = set()
 
@@ -376,6 +426,14 @@ def imported_modules(path: Path) -> set[str]:
 
 
 def referenced_names(path: Path) -> set[str]:
+    """対象 file 内の name と attribute 名を収集する.
+
+    Args:
+        path (Path): 解析対象の Python file path.
+
+    Returns:
+        set[str]: AST に現れる識別子と attribute 名.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     names: set[str] = set()
 
@@ -389,10 +447,27 @@ def referenced_names(path: Path) -> set[str]:
 
 
 def module_matches_root(module: str, root: str) -> bool:
+    """対象 module が root 自身または child module か判定する.
+
+    Args:
+        module (str): 判定対象の absolute module 名.
+        root (str): 許容または禁止する module root.
+
+    Returns:
+        bool: root と一致するか root. で始まる場合は True.
+    """
     return module == root or module.startswith(f"{root}.")
 
 
 def deprecated_import_root(module: str) -> str | None:
+    """対象 module から deprecated import root を導出する.
+
+    Args:
+        module (str): 判定対象の absolute module 名.
+
+    Returns:
+        str | None: deprecated root. 該当しない場合は None.
+    """
     for root in DEPRECATED_EXACT_ROOTS:
         if module_matches_root(module, root):
             return root
@@ -410,6 +485,11 @@ def deprecated_import_root(module: str) -> str | None:
 
 
 def current_deprecated_imports() -> list[str]:
+    """現在の source tree の deprecated import を baseline 形式で返す.
+
+    Returns:
+        list[str]: relative path と deprecated root を tab で連結した entry.
+    """
     entries: set[str] = set()
     for path in SOURCE_ROOT.rglob("*.py"):
         if "__pycache__" in path.parts:
@@ -424,6 +504,11 @@ def current_deprecated_imports() -> list[str]:
 
 
 def current_removed_dependency_composition_imports() -> list[str]:
+    """削除済み dependency composition root への import を収集する.
+
+    Returns:
+        list[str]: source と test に残る forbidden import entry.
+    """
     entries: set[str] = set()
     for root in (SOURCE_ROOT, TEST_ROOT):
         for path in root.rglob("*.py"):
@@ -439,6 +524,14 @@ def current_removed_dependency_composition_imports() -> list[str]:
 
 
 def path_has_python_sources(path: Path) -> bool:
+    """対象 path が Python source または Python source を含む directory か判定する.
+
+    Args:
+        path (Path): 検査対象の file または directory path.
+
+    Returns:
+        bool: Python source が存在する場合は True.
+    """
     if path.is_file():
         return path.suffix == ".py"
     if not path.is_dir():
@@ -449,6 +542,11 @@ def path_has_python_sources(path: Path) -> bool:
 
 
 def expected_deprecated_imports() -> list[str]:
+    """承認済み fixture から期待する deprecated import baseline を返す.
+
+    Returns:
+        list[str]: 空行と comment を除外した baseline entry.
+    """
     return [
         line
         for line in DEPRECATED_IMPORT_BASELINE.read_text(encoding="utf-8").splitlines()
@@ -463,6 +561,17 @@ def format_boundary_violation(
     forbidden_root: str,
     module: str,
 ) -> str:
+    """境界違反を読みやすい failure message に整形する.
+
+    Args:
+        rule (BoundaryRule): 適用した boundary 規則.
+        path (Path): forbidden import を持つ source file.
+        forbidden_root (str): 検出した禁止 module root.
+        module (str): source file が import した module 名.
+
+    Returns:
+        str: relative path と import 関係を示す violation message.
+    """
     relative_path = path.relative_to(PROJECT_ROOT).as_posix()
     return " ".join(
         (
@@ -473,6 +582,14 @@ def format_boundary_violation(
 
 
 def test_import_linter_contracts_cover_new_architecture_boundaries() -> None:
+    """前提: pyproject に新 architecture 用の import-linter contract が定義される.
+
+    操作: contract 名と forbidden relation と independence module を収集する.
+    結果: layer と adapter と domain の必須 boundary が全て含まれる.
+
+    Returns:
+        None: import-linter configuration 契約を検証する.
+    """
     contracts = import_linter_contracts()
     contract_names = {str(contract["name"]) for contract in contracts}
     forbidden_relations = {
@@ -530,6 +647,14 @@ def test_import_linter_contracts_cover_new_architecture_boundaries() -> None:
 
 
 def test_future_path_boundary_rules_cover_architecture_map() -> None:
+    """前提: 将来の source path 用 boundary rule が定義される.
+
+    操作: rule 名の集合を architecture map の期待集合と照合する.
+    結果: 全 layer と transport family の rule が存在する.
+
+    Returns:
+        None: future boundary rule の網羅契約を検証する.
+    """
     assert {rule.name for rule in FUTURE_BOUNDARY_RULES} == {
         "command services",
         "query services",
@@ -544,6 +669,14 @@ def test_future_path_boundary_rules_cover_architecture_map() -> None:
 
 
 def test_architecture_boundary_rules_have_no_forbidden_imports() -> None:
+    """前提: architecture source と path boundary rule が存在する.
+
+    操作: 各 rule の source を走査し forbidden import を収集する.
+    結果: architecture boundary に違反する import は存在しない.
+
+    Returns:
+        None: architecture import boundary 契約を検証する.
+    """
     violations = [
         format_boundary_violation(
             rule=rule,
@@ -564,6 +697,14 @@ def test_architecture_boundary_rules_have_no_forbidden_imports() -> None:
 
 
 def test_identity_transports_use_command_or_query_use_case_boundaries() -> None:
+    """前提: identity transport 用の use-case boundary rule が存在する.
+
+    操作: 対象 transport source の forbidden import を収集する.
+    結果: transport は legacy service や session store を直接 import しない.
+
+    Returns:
+        None: identity transport use-case boundary 契約を検証する.
+    """
     violations = [
         format_boundary_violation(
             rule=rule,
@@ -584,6 +725,14 @@ def test_identity_transports_use_command_or_query_use_case_boundaries() -> None:
 
 
 def test_service_paths_do_not_encode_transport_family_names() -> None:
+    """前提: service package path を transport family 名と分離する.
+
+    操作: service source の relative path に禁止 fragment がないか調べる.
+    結果: stable や lazer 等を含む service path は存在しない.
+
+    Returns:
+        None: service naming boundary 契約を検証する.
+    """
     service_paths = [
         path.relative_to(SOURCE_ROOT / "services").as_posix()
         for path in sorted((SOURCE_ROOT / "services").rglob("*.py"))
@@ -600,6 +749,14 @@ def test_service_paths_do_not_encode_transport_family_names() -> None:
 
 
 def test_core_domain_and_services_do_not_reference_client_family_wire_concepts() -> None:
+    """前提: core domain と service は client-family wire concept から独立する.
+
+    操作: import と AST name を wire root と wire name の禁止集合に照合する.
+    結果: forbidden import と reference は共に存在しない.
+
+    Returns:
+        None: core client-family independence 契約を検証する.
+    """
     import_violations = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {module}"
         for root in CORE_DOMAIN_AND_SERVICE_ROOTS
@@ -622,6 +779,14 @@ def test_core_domain_and_services_do_not_reference_client_family_wire_concepts()
 
 
 def test_transport_regression_tests_use_transport_family_paths() -> None:
+    """前提: regression test は新 transport family path を使う.
+
+    操作: test source の import を deprecated transport root と照合する.
+    結果: deprecated transport path を import する test は存在しない.
+
+    Returns:
+        None: transport test path 契約を検証する.
+    """
     violations = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {module}"
         for path in sorted(TEST_ROOT.rglob("*.py"))
@@ -635,6 +800,14 @@ def test_transport_regression_tests_use_transport_family_paths() -> None:
 
 
 def test_stable_transport_runtime_sources_live_in_stable_family() -> None:
+    """前提: stable transport runtime source は family package へ移行済みである.
+
+    操作: 必須 file と旧 root package の Python source を調べる.
+    結果: 必須 file は存在し旧 root source と package は存在しない.
+
+    Returns:
+        None: stable transport placement 契約を検証する.
+    """
     missing_runtime_files = [
         path.relative_to(PROJECT_ROOT).as_posix()
         for path in STABLE_TRANSPORT_RUNTIME_FILES
@@ -659,6 +832,14 @@ def test_stable_transport_runtime_sources_live_in_stable_family() -> None:
 
 
 def test_removed_architecture_entrypoints_have_no_python_sources() -> None:
+    """前提: 削除対象の旧 architecture entrypoint が定義される.
+
+    操作: 各 path に Python source が残るか調べる.
+    結果: 削除済み entrypoint に Python source は存在しない.
+
+    Returns:
+        None: removed entrypoint の不在契約を検証する.
+    """
     remaining = [
         path.relative_to(PROJECT_ROOT).as_posix()
         for path in REMOVED_ARCHITECTURE_ENTRYPOINTS
@@ -669,6 +850,14 @@ def test_removed_architecture_entrypoints_have_no_python_sources() -> None:
 
 
 def test_beatmap_fetch_job_adapter_does_not_build_runtime_dependencies() -> None:
+    """前提: beatmap fetch job adapter は DI から dependency を取得する.
+
+    操作: adapter import を forbidden runtime dependency root と照合する.
+    結果: adapter が storage や repository を直接構築する import は存在しない.
+
+    Returns:
+        None: beatmap fetch job boundary 契約を検証する.
+    """
     violations = [
         f"{BEATMAP_FETCH_JOB_ADAPTER_FILE.relative_to(PROJECT_ROOT).as_posix()} imports {module}"
         for module in sorted(imported_modules(BEATMAP_FETCH_JOB_ADAPTER_FILE))
@@ -680,8 +869,24 @@ def test_beatmap_fetch_job_adapter_does_not_build_runtime_dependencies() -> None
 
 
 def test_deprecated_architecture_imports_match_baseline() -> None:
+    """前提: 承認済み deprecated import baseline fixture が存在する.
+
+    操作: current source import を baseline 形式で収集して比較する.
+    結果: deprecated import の集合は承認済み baseline と一致する.
+
+    Returns:
+        None: deprecated import migration 契約を検証する.
+    """
     assert current_deprecated_imports() == expected_deprecated_imports()
 
 
 def test_removed_dependency_composition_entrypoints_are_not_imported() -> None:
+    """前提: 削除済み dependency composition root が定義される.
+
+    操作: source と test の import を削除済み root と照合する.
+    結果: 削除済み composition entrypoint を import する file は存在しない.
+
+    Returns:
+        None: removed composition import 契約を検証する.
+    """
     assert current_removed_dependency_composition_imports() == []

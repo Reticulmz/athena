@@ -1,4 +1,4 @@
-"""Architecture package skeleton regression tests."""
+"""アーキテクチャ package skeleton の回帰契約を検証する."""
 
 from __future__ import annotations
 
@@ -110,6 +110,14 @@ INERT_TRANSPORT_ROOTS = (
 
 
 def test_new_architecture_package_roots_import_as_packages() -> None:
+    """前提: 新しい architecture package root が定義されている.
+
+    操作: 各 root を import して package metadata を検査する.
+    結果: 全 root が submodule を持つ package として import できる.
+
+    Returns:
+        None: package root の import 契約を検証する.
+    """
     for module_name in PACKAGE_ROOTS:
         module = importlib.import_module(module_name)
 
@@ -119,10 +127,26 @@ def test_new_architecture_package_roots_import_as_packages() -> None:
 
 
 def test_domain_chat_flat_module_is_not_kept_next_to_package() -> None:
+    """前提: chat domain は package へ移行済みである.
+
+    操作: 旧 flat module の path を調べる.
+    結果: package と競合する chat.py は存在しない.
+
+    Returns:
+        None: domain package 移行契約を検証する.
+    """
     assert not (SOURCE_ROOT / "domain" / "chat.py").exists()
 
 
 def test_new_package_roots_do_not_reexport_deprecated_paths() -> None:
+    """前提: 新 package root の __init__.py が存在する.
+
+    操作: 各 __init__.py の absolute import を legacy facade と照合する.
+    結果: deprecated path を再 export する import は存在しない.
+
+    Returns:
+        None: package boundary の import 契約を検証する.
+    """
     facade_imports = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {module}"
         for module_name in SKELETON_INIT_MODULES
@@ -135,6 +159,14 @@ def test_new_package_roots_do_not_reexport_deprecated_paths() -> None:
 
 
 def test_future_transport_family_roots_are_inert() -> None:
+    """前提: 将来利用する transport family root が skeleton である.
+
+    操作: 各 __init__.py を AST 解析し docstring 以外の node を収集する.
+    結果: runtime behavior を持つ node は存在しない.
+
+    Returns:
+        None: transport skeleton の inert 契約を検証する.
+    """
     behavior_nodes = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} contains {type(node).__name__}"
         for module_name in INERT_TRANSPORT_ROOTS
@@ -146,11 +178,27 @@ def test_future_transport_family_roots_are_inert() -> None:
 
 
 def _module_init_path(module_name: str) -> Path:
+    """指定 module の __init__.py path を返す.
+
+    Args:
+        module_name (str): osu_server から始まる package module 名.
+
+    Returns:
+        Path: source root 配下の __init__.py path.
+    """
     relative = Path(*module_name.split(".")[1:]) / "__init__.py"
     return SOURCE_ROOT / relative
 
 
 def _non_docstring_module_nodes(path: Path) -> list[ast.stmt]:
+    """対象 module 本文から先頭 docstring を除いた AST node を返す.
+
+    Args:
+        path (Path): 解析対象の Python module path.
+
+    Returns:
+        list[ast.stmt]: docstring 以外の module body node.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     body = list(tree.body)
     if (
@@ -164,6 +212,14 @@ def _non_docstring_module_nodes(path: Path) -> list[ast.stmt]:
 
 
 def _absolute_imports(path: Path) -> set[str]:
+    """対象 module 内の absolute import module 名を収集する.
+
+    Args:
+        path (Path): 解析対象の Python module path.
+
+    Returns:
+        set[str]: __future__ を除く absolute import module 名.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     modules: set[str] = set()
 
@@ -179,4 +235,12 @@ def _absolute_imports(path: Path) -> set[str]:
 
 
 def _is_legacy_facade_import(module: str) -> bool:
+    """対象 module が legacy facade root を指すか判定する.
+
+    Args:
+        module (str): 判定対象の absolute module 名.
+
+    Returns:
+        bool: legacy facade root またはその child なら True.
+    """
     return any(module == root or module.startswith(f"{root}.") for root in LEGACY_FACADE_ROOTS)
