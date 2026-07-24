@@ -14,7 +14,15 @@ if TYPE_CHECKING:
 
 
 class FakeGlideClient:
-    """Valkey command usageを記録するtyped Glide client fake."""
+    """Valkey command usageを記録するtyped Glide client fake.
+
+    Attributes:
+        values_by_key (dict[str, str]): key別に設定したserialized status値.
+        get_calls (list[str]): single getへ渡されたkeyの呼出履歴.
+        mget_calls (list[list[str]]): batch getへ渡されたkey列の呼出履歴.
+        set_calls (list[tuple[str, str]]): setへ渡されたkeyと値の呼出履歴.
+        expire_calls (list[tuple[str, int]]): expiryへ渡されたkeyとTTLの呼出履歴.
+    """
 
     def __init__(self) -> None:
         """key別の値と全Valkey command呼出履歴を空で初期化する."""
