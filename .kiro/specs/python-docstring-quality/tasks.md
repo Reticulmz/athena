@@ -395,7 +395,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/domain/{compatibility,identity,scores}/**_
 
-- [ ] 3.5 (P) Core authentication、chat、beatmap domain testを整備する
+- [x] 3.5 (P) Core authentication、chat、beatmap domain testを整備する
   - tests/unit/domain配下のtest_auth.py、test_bancho_bot.py、test_beatmap.py、test_blob.py、
     test_bounded_context_rehomes.py、test_channel.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および6 fileのtestが通る
