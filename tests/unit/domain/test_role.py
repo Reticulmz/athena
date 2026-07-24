@@ -110,6 +110,8 @@ class TestRoleDataclass:
     def test_slots(self) -> None:
         """Roleがslotsを持ち動的attributeを許さない表現であることを検証する.
 
+        Role型を参照して__slots__ attributeの有無を調べ,slot定義が公開されていることを確認する.
+
         Returns:
             None: slotsの存在を検証して完了し,呼び出し側へ値を返さない.
         """

@@ -20,6 +20,9 @@ class TestAuthorizationRefreshStatus:
     def test_enum_values(self) -> None:
         """各outcomeがwire/persistenceで使う文字列値を持つことを検証する.
 
+        REFRESHED, NO_ACTIVE_SESSION, FAILEDのvalueを読み取り,
+        各値が定義済み文字列と一致することを確認する.
+
         Returns:
             None: enum値を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -29,6 +32,9 @@ class TestAuthorizationRefreshStatus:
 
     def test_enum_members(self) -> None:
         """Refresh statusが定義済みの3 outcomeだけを列挙することを検証する.
+
+        enumをsetへ展開して期待する3 member集合と比較し,
+        追加または欠落したoutcomeがないことを確認する.
 
         Returns:
             None: enum member集合を検証して完了し,呼び出し側へ値を返さない.
@@ -43,6 +49,9 @@ class TestAuthorizationRefreshStatus:
     def test_is_str_enum(self) -> None:
         """Refresh statusが文字列として扱えるenumであることを検証する.
 
+        AuthorizationRefreshStatus classへissubclassを適用し,
+        strを継承してwire文字列として使えることを確認する.
+
         Returns:
             None: str継承を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -55,6 +64,9 @@ class TestSessionAuthorization:
     def test_slots(self) -> None:
         """Snapshotがslotsを持つcompactなvalue objectであることを検証する.
 
+        SessionAuthorization型を参照して__slots__ attributeの有無を調べ,
+        slot定義が公開されていることを確認する.
+
         Returns:
             None: slotsの存在を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -62,6 +74,8 @@ class TestSessionAuthorization:
 
     def test_creation_defaults(self) -> None:
         """Role IDを省略したsnapshotが空tupleを既定値にすることを検証する.
+
+        Privileges.NORMALだけを指定してsnapshotを生成し,privilegesと空のrole_idsがそれぞれ保持されることを確認する.
 
         Returns:
             None: 既定field値を検証して完了し,呼び出し側へ値を返さない.
@@ -72,6 +86,9 @@ class TestSessionAuthorization:
 
     def test_creation_with_role_ids(self) -> None:
         """Privilege集合とrole ID群がsnapshotへ保持されることを検証する.
+
+        結合したprivilege flagと3件のrole IDを渡してsnapshotを生成し,
+        両fieldが入力値と一致することを確認する.
 
         Returns:
             None: constructor inputの保持を検証して完了し,呼び出し側へ値を返さない.
@@ -86,6 +103,9 @@ class TestSessionAuthorization:
     def test_role_ids_is_always_tuple(self) -> None:
         """Listで渡したrole ID群がimmutable tupleへ正規化されることを検証する.
 
+        Listのrole ID群をconstructorへ渡し,
+        生成後のrole_idsがtuple型かつ同順の値になることを確認する.
+
         Returns:
             None: collection正規化を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -95,6 +115,9 @@ class TestSessionAuthorization:
 
     def test_role_ids_normalized_from_generator(self) -> None:
         """Generatorで渡したrole ID群もtupleへ正規化されることを検証する.
+
+        0から2をyieldするgeneratorをconstructorへ渡し,
+        role_idsが消費済みtupleの(0, 1, 2)になることを確認する.
 
         Returns:
             None: iterable正規化を検証して完了し,呼び出し側へ値を返さない.
@@ -109,6 +132,9 @@ class TestSessionAuthorization:
     def test_immutable_privileges(self) -> None:
         """生成後のprivilegesを変更できない不変性契約を検証する.
 
+        NORMAL privilegeでsnapshotを生成してADMINへの代入を試み,
+        field変更が拒否されることを確認する.
+
         Returns:
             None: attribute代入拒否を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -118,6 +144,8 @@ class TestSessionAuthorization:
     def test_immutable_role_ids(self) -> None:
         """生成後のrole_idsを変更できない不変性契約を検証する.
 
+        role_ids=(1,)のsnapshotを生成して別tupleへの代入を試み,field変更が拒否されることを確認する.
+
         Returns:
             None: attribute代入拒否を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -126,6 +154,9 @@ class TestSessionAuthorization:
 
     def test_equality_same_values(self) -> None:
         """同じprivilegesとrole_idsを持つsnapshotが等価で同じhashになることを検証する.
+
+        同じprivilegeとrole ID群で二つのsnapshotを生成して比較し,
+        等価性とhash値がともに一致することを確認する.
 
         Returns:
             None: value equalityを検証して完了し,呼び出し側へ値を返さない.
@@ -138,6 +169,9 @@ class TestSessionAuthorization:
     def test_inequality_different_privileges(self) -> None:
         """Privilegesが異なるsnapshotが非等価になることを検証する.
 
+        role IDを同じにしてNORMALとADMINのsnapshotを比較し,
+        privilege差分により非等価になることを確認する.
+
         Returns:
             None: privilege差分の比較を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -147,6 +181,9 @@ class TestSessionAuthorization:
 
     def test_inequality_different_role_ids(self) -> None:
         """Role ID群が異なるsnapshotが非等価になることを検証する.
+
+        privilegeを同じにして異なるrole ID群のsnapshotを比較し,
+        role ID差分により非等価になることを確認する.
 
         Returns:
             None: role ID差分の比較を検証して完了し,呼び出し側へ値を返さない.
@@ -158,6 +195,8 @@ class TestSessionAuthorization:
     def test_empty_privileges(self) -> None:
         """NONE privilegeと空role ID群を保持できることを検証する.
 
+        Privileges.NONEと空tupleを渡してsnapshotを生成し,空authorizationの両fieldがそのまま保持されることを確認する.
+
         Returns:
             None: 空authorizationの表現を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -167,6 +206,9 @@ class TestSessionAuthorization:
 
     def test_all_privileges_with_roles(self) -> None:
         """全 privilegeと複数role IDを同じsnapshotへ保存できることを検証する.
+
+        全Privileges memberをORで結合して3件のrole IDと渡し,
+        最大flag集合とrole ID群が保持されることを確認する.
 
         Returns:
             None: 最大flag集合の保持を検証して完了し,呼び出し側へ値を返さない.
@@ -185,6 +227,9 @@ class TestUserAuthorizationRefreshResult:
     def test_slots(self) -> None:
         """Refresh resultがslotsを持つcompactなvalue objectであることを検証する.
 
+        UserAuthorizationRefreshResult型を参照して__slots__ attributeの有無を調べ,
+        slot定義が公開されていることを確認する.
+
         Returns:
             None: slotsの存在を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -192,6 +237,9 @@ class TestUserAuthorizationRefreshResult:
 
     def test_refreshed_with_authorization(self) -> None:
         """REFRESHED resultが新しいauthorization snapshotを保持することを検証する.
+
+        user_id=42とREFRESHED statusおよびauthorizationを渡してresultを生成し,
+        全fieldが入力値を保持することを確認する.
 
         Returns:
             None: refresh成功結果を検証して完了し,呼び出し側へ値を返さない.
@@ -209,6 +257,9 @@ class TestUserAuthorizationRefreshResult:
     def test_no_active_session_without_authorization(self) -> None:
         """Active sessionがないresultがauthorizationを持たないことを検証する.
 
+        NO_ACTIVE_SESSION statusでresultを生成し,
+        user IDとstatusを保持しauthorizationがNoneになることを確認する.
+
         Returns:
             None: session不在結果を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -222,6 +273,9 @@ class TestUserAuthorizationRefreshResult:
 
     def test_failed_without_authorization(self) -> None:
         """失敗resultがauthorizationを持たないことを検証する.
+
+        FAILED statusでresultを生成し,
+        user IDとfailure statusを保持しauthorizationがNoneになることを確認する.
 
         Returns:
             None: failure resultを検証して完了し,呼び出し側へ値を返さない.
@@ -237,6 +291,9 @@ class TestUserAuthorizationRefreshResult:
     def test_refreshed_requires_authorization(self) -> None:
         """REFRESHED resultでauthorizationを省略するとValueErrorになることを検証する.
 
+        authorizationなしのREFRESHED result生成を試み,
+        必須snapshot invariantによりValueErrorが送出されることを確認する.
+
         Returns:
             None: 必須snapshot invariantの例外を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -248,6 +305,9 @@ class TestUserAuthorizationRefreshResult:
 
     def test_no_active_session_rejects_authorization(self) -> None:
         """NO_ACTIVE_SESSION resultへauthorizationを渡すとValueErrorになることを検証する.
+
+        authorizationを持つNO_ACTIVE_SESSION result生成を試み,
+        statusとsnapshotの排他条件でValueErrorになることを確認する.
 
         Returns:
             None: statusとsnapshotの排他条件を検証して完了し,呼び出し側へ値を返さない.
@@ -263,6 +323,9 @@ class TestUserAuthorizationRefreshResult:
     def test_failed_rejects_authorization(self) -> None:
         """FAILED resultへauthorizationを渡すとValueErrorになることを検証する.
 
+        authorizationを持つFAILED result生成を試み,
+        failure statusのsnapshot禁止によりValueErrorになることを確認する.
+
         Returns:
             None: failure時のsnapshot禁止を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -277,6 +340,9 @@ class TestUserAuthorizationRefreshResult:
     def test_default_authorization_is_none(self) -> None:
         """Authorization未指定時の既定値がNoneであることを検証する.
 
+        authorizationを省略してNO_ACTIVE_SESSION resultを生成し,
+        既定field値がNoneになることを確認する.
+
         Returns:
             None: 既定snapshot値を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -288,6 +354,9 @@ class TestUserAuthorizationRefreshResult:
 
     def test_immutable(self) -> None:
         """生成後のrefresh statusを変更できないことを検証する.
+
+        FAILED statusでresultを生成してREFRESHEDへの代入を試み,
+        status fieldの変更が拒否されることを確認する.
 
         Returns:
             None: resultの不変性を検証して完了し,呼び出し側へ値を返さない.
@@ -305,6 +374,9 @@ class TestRoleAuthorizationRefreshResult:
     def test_slots(self) -> None:
         """Role refresh resultがslotsを持つvalue objectであることを検証する.
 
+        RoleAuthorizationRefreshResult型を参照して__slots__ attributeの有無を調べ,
+        slot定義が公開されていることを確認する.
+
         Returns:
             None: slotsの存在を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -312,6 +384,9 @@ class TestRoleAuthorizationRefreshResult:
 
     def test_creation_no_users(self) -> None:
         """対象userがいないroleでも空tupleのresultを作れることを検証する.
+
+        role_id=1と空のuser_resultsを渡してresultを生成し,
+        role IDと空tupleがそのまま保持されることを確認する.
 
         Returns:
             None: 空の集約結果を検証して完了し,呼び出し側へ値を返さない.
@@ -322,6 +397,9 @@ class TestRoleAuthorizationRefreshResult:
 
     def test_creation_with_user_results(self) -> None:
         """複数userのrefresh結果が順序を保ってrole resultへ集約されることを検証する.
+
+        二つのuser refresh resultを順序付きtupleで渡して生成し,
+        role IDと各resultの順序が保持されることを確認する.
 
         Returns:
             None: user result集合を検証して完了し,呼び出し側へ値を返さない.
@@ -347,6 +425,9 @@ class TestRoleAuthorizationRefreshResult:
     def test_user_results_is_always_tuple(self) -> None:
         """Listで渡したuser result群がimmutable tupleへ正規化されることを検証する.
 
+        Listに入れたfailure resultをconstructorへ渡し,
+        user_resultsがtuple型かつ同じ要素になることを確認する.
+
         Returns:
             None: user resultのcollection正規化を検証して完了し,呼び出し側へ値を返さない.
         """
@@ -360,6 +441,8 @@ class TestRoleAuthorizationRefreshResult:
 
     def test_immutable(self) -> None:
         """生成後のrole_idを変更できない不変性契約を検証する.
+
+        role_id=1のresultを生成して別のrole IDへの代入を試み,field変更が拒否されることを確認する.
 
         Returns:
             None: role resultの不変性を検証して完了し,呼び出し側へ値を返さない.
