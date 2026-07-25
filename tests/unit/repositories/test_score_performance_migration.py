@@ -1,3 +1,5 @@
+"""Score performance migrationのschemaとmetadata contractを検証する."""
+
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -18,23 +20,67 @@ MIGRATION_PATH = Path("alembic/versions/20260616_0100_add_score_performance_calc
 
 
 def _column(table: Table, name: str) -> Column[object]:
+    """Tableから指定名のcolumnをtyped Columnとして取得する.
+
+    Args:
+        table (Table): columnを所有するSQLAlchemy table metadata.
+        name (str): 存在することを前提に取得するcolumn名.
+
+    Returns:
+        Column[object]: 指定名に対応するtyped column.
+
+    Raises:
+        KeyError: tableにnameのcolumnが存在しない場合.
+    """
     return cast("Column[object]", table.c[name])
 
 
 def _string_length(column: Column[object]) -> int | None:
+    """String columnの宣言済み最大長を取得する.
+
+    Args:
+        column (Column[object]): String型であることを前提にしたcolumn.
+
+    Returns:
+        int | None: String型に設定された最大長. 長さ未指定時はNone.
+    """
     return cast("String", column.type).length
 
 
 def _enum_values(column: Column[object]) -> tuple[str, ...]:
+    """PostgreSQL ENUM columnから許可値を順序付きで取得する.
+
+    Args:
+        column (Column[object]): PostgreSQL ENUM型であることを前提にしたcolumn.
+
+    Returns:
+        tuple[str, ...]: ENUMに定義された許可値の順序付きtuple.
+    """
     return tuple(cast("ENUM", column.type).enums)
 
 
 def _numeric_precision_scale(column: Column[object]) -> tuple[int | None, int | None]:
+    """Numeric columnのprecisionとscaleを取得する.
+
+    Args:
+        column (Column[object]): Numeric型であることを前提にしたcolumn.
+
+    Returns:
+        tuple[int | None, int | None]: 宣言済みprecisionとscaleのpair.
+    """
     numeric = cast("Numeric[Decimal]", column.type)
     return numeric.precision, numeric.scale
 
 
 def _check_constraints(table: Table) -> set[str]:
+    """Tableに定義されたCHECK constraint名を収集する.
+
+    Args:
+        table (Table): CHECK constraintを検証するSQLAlchemy table metadata.
+
+    Returns:
+        set[str]: tableに登録されたCHECK constraint名の集合.
+    """
     return {
         str(constraint.name)
         for constraint in table.constraints
@@ -43,6 +89,14 @@ def _check_constraints(table: Table) -> set[str]:
 
 
 def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
+    """Tableの名前付きforeign key constraintをcolumn対応表へ変換する.
+
+    Args:
+        table (Table): foreign key constraintを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, tuple[str, str]]: constraint名ごとのsource columnとtarget column.
+    """
     constraints: dict[str, tuple[str, str]] = {}
     for constraint in table.constraints:
         if isinstance(constraint, ForeignKeyConstraint) and constraint.name is not None:
@@ -54,6 +108,14 @@ def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
 
 
 def _indexes(table: Table) -> dict[str, tuple[tuple[str, ...], bool]]:
+    """Tableの名前付きindexをcolumn順序とunique設定へ変換する.
+
+    Args:
+        table (Table): indexを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, tuple[tuple[str, ...], bool]]: index名ごとのcolumn順序とunique設定.
+    """
     indexes: dict[str, tuple[tuple[str, ...], bool]] = {}
     for index in table.indexes:
         if index.name is not None:
@@ -62,6 +124,14 @@ def _indexes(table: Table) -> dict[str, tuple[tuple[str, ...], bool]]:
 
 
 def test_score_performance_migration_creates_tables_constraints_and_indexes() -> None:
+    """Score performance migrationがdurable work schemaを作成することを検証する.
+
+    固定revisionのsourceを読み込み, calculation, batch, work item tableとrequired constraint,
+    partial index, downgrade operationがobservable contractとして存在することを確認する.
+
+    Returns:
+        None: score performance migration schema contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert 'revision: str = "20260616_0100"' in migration
@@ -85,6 +155,14 @@ def test_score_performance_migration_creates_tables_constraints_and_indexes() ->
 
 
 def test_score_performance_models_are_registered_for_metadata_discovery() -> None:
+    """Score performance model群がBase metadataで発見可能なことを検証する.
+
+    各modelのtable名とBase.metadataの登録先を照合し, migration tableと同一table objectが
+    observable metadataとして公開されることを確認する.
+
+    Returns:
+        None: score performance metadata discovery contractを検証して完了する.
+    """
     assert ScorePerformanceCalculationModel.__tablename__ == "score_performance_calculations"
     assert PerformanceRecalculationBatchModel.__tablename__ == "performance_recalculation_batches"
     assert (
@@ -106,6 +184,14 @@ def test_score_performance_models_are_registered_for_metadata_discovery() -> Non
 
 
 def test_score_performance_calculation_metadata_matches_current_contract() -> None:
+    """Calculation metadataがcurrent score performance storage contractを満たすことを検証する.
+
+    現行calculation tableを条件に, required column, Numeric precision, enum value, foreign key,
+    CHECK constraint, lifecycle indexがobservable metadataとして一致することを確認する.
+
+    Returns:
+        None: score performance calculation metadata contractを検証して完了する.
+    """
     table = cast("Table", ScorePerformanceCalculationModel.__table__)
 
     assert _column(table, "id").primary_key
@@ -160,6 +246,14 @@ def test_score_performance_calculation_metadata_matches_current_contract() -> No
 
 
 def test_recalculation_batch_and_work_item_metadata_match_durable_work_contract() -> None:
+    """Recalculation batchとwork item metadataがdurable work contractを満たすことを検証する.
+
+    現行batchとwork item tableを条件に, JSONB payload, state enum, foreign key, claim index,
+    count columnがobservable metadataとして一致することを確認する.
+
+    Returns:
+        None: recalculation durable work metadata contractを検証して完了する.
+    """
     batches = cast("Table", PerformanceRecalculationBatchModel.__table__)
     work_items = cast("Table", PerformanceRecalculationWorkItemModel.__table__)
 

@@ -1,3 +1,5 @@
+"""Beatmap leaderboard migrationのschemaとmetadata contractを検証する."""
+
 from pathlib import Path
 from typing import cast
 
@@ -18,10 +20,30 @@ MIGRATION_PATH = Path("alembic/versions/20260618_0100_add_beatmap_leaderboard_pr
 
 
 def _column(table: Table, name: str) -> Column[object]:
+    """Tableから指定名のcolumnをtyped Columnとして取得する.
+
+    Args:
+        table (Table): columnを所有するSQLAlchemy table metadata.
+        name (str): 存在することを前提に取得するcolumn名.
+
+    Returns:
+        Column[object]: 指定名に対応するtyped column.
+
+    Raises:
+        KeyError: tableにnameのcolumnが存在しない場合.
+    """
     return cast("Column[object]", table.c[name])
 
 
 def _check_constraints(table: Table) -> set[str]:
+    """Tableに定義されたCHECK constraint名を収集する.
+
+    Args:
+        table (Table): CHECK constraintを検証するSQLAlchemy table metadata.
+
+    Returns:
+        set[str]: tableに登録されたCHECK constraint名の集合.
+    """
     return {
         str(constraint.name)
         for constraint in table.constraints
@@ -30,6 +52,14 @@ def _check_constraints(table: Table) -> set[str]:
 
 
 def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
+    """Tableの名前付きforeign key constraintをcolumn対応表へ変換する.
+
+    Args:
+        table (Table): foreign key constraintを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, tuple[str, str]]: constraint名ごとのsource columnとtarget column.
+    """
     constraints: dict[str, tuple[str, str]] = {}
     for constraint in table.constraints:
         if isinstance(constraint, ForeignKeyConstraint) and constraint.name is not None:
@@ -41,6 +71,14 @@ def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
 
 
 def _indexes(table: Table) -> dict[str, Index]:
+    """Tableの名前付きindexをindex object対応表へ変換する.
+
+    Args:
+        table (Table): indexを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, Index]: index名ごとのSQLAlchemy Index object.
+    """
     indexes: dict[str, Index] = {}
     for index in table.indexes:
         if index.name is not None:
@@ -49,6 +87,14 @@ def _indexes(table: Table) -> dict[str, Index]:
 
 
 def _unique_constraints(table: Table) -> dict[str, UniqueConstraint]:
+    """Tableの名前付きunique constraintをobject対応表へ変換する.
+
+    Args:
+        table (Table): unique constraintを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, UniqueConstraint]: constraint名ごとのSQLAlchemy UniqueConstraint object.
+    """
     return {
         cast("str", constraint.name): constraint
         for constraint in table.constraints
@@ -57,10 +103,26 @@ def _unique_constraints(table: Table) -> dict[str, UniqueConstraint]:
 
 
 def _index_columns(index: Index) -> tuple[str, ...]:
+    """Indexに登録されたcolumn名を宣言順に取得する.
+
+    Args:
+        index (Index): column順序を検証するSQLAlchemy index.
+
+    Returns:
+        tuple[str, ...]: indexに登録されたcolumn名の宣言順tuple.
+    """
     return tuple(column.name for column in index.columns)
 
 
 def test_beatmap_leaderboard_migration_adds_score_eligibility_and_projection_schema() -> None:
+    """Leaderboard migrationがsubmission eligibilityとprojection schemaを追加することを検証する.
+
+    固定revisionのsourceを読み込み, score eligibility snapshot, projection table, rank ordering,
+    legacy table保持, downgrade operationがobservable contractとして存在することを確認する.
+
+    Returns:
+        None: leaderboard migration schema contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert 'revision: str = "20260618_0100"' in migration
@@ -86,6 +148,14 @@ def test_beatmap_leaderboard_migration_adds_score_eligibility_and_projection_sch
 
 
 def test_legacy_personal_bests_migrate_to_all_mods_projection_from_source_scores() -> None:
+    """Legacy personal bestがsource scoreからall-mods projectionへ移行することを検証する.
+
+    固定revisionのsourceを読み込み, eligible source score, all-mods scope,
+    deterministic rank orderとwindow functionが含まれるobservable migration behaviorを確認する.
+
+    Returns:
+        None: legacy personal best backfill contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert "INSERT INTO beatmap_leaderboard_user_bests" in migration
@@ -102,6 +172,14 @@ def test_legacy_personal_bests_migrate_to_all_mods_projection_from_source_scores
 
 
 def test_legacy_personal_best_source_missing_skips_are_observable() -> None:
+    """Missing source scoreのlegacy personal best skipが観測可能なことを検証する.
+
+    固定revisionのsourceを読み込み, LEFT JOINでsource missingを検出し, NOTICEとして記録する
+    observable outcomeを確認する.
+
+    Returns:
+        None: source missing skip observability contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert "beatmap_leaderboard_legacy_personal_best_skipped" in migration
@@ -112,6 +190,14 @@ def test_legacy_personal_best_source_missing_skips_are_observable() -> None:
 
 
 def test_legacy_personal_bests_do_not_seed_selected_mods_projection() -> None:
+    """Legacy personal best backfillがselected-mods projectionをseedしないことを検証する.
+
+    固定revisionのsourceを読み込み, all-modsを表すNULL scopeだけを使用し, selected mods由来の
+    filter keyを使用しないobservable outcomeを確認する.
+
+    Returns:
+        None: all-mods migration scope contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert "NULL::integer AS mod_filter_key" in migration
@@ -121,6 +207,14 @@ def test_legacy_personal_bests_do_not_seed_selected_mods_projection() -> None:
 
 
 def test_beatmap_leaderboard_model_is_registered_for_metadata_discovery() -> None:
+    """Leaderboard projection modelがBase metadataで発見可能なことを検証する.
+
+    modelのtable名とBase.metadataの登録先を照合し, projection tableと同一table object,
+    score eligibility columnがobservable metadataとして公開されることを確認する.
+
+    Returns:
+        None: leaderboard metadata discovery contractを検証して完了する.
+    """
     assert BeatmapLeaderboardUserBestModel.__tablename__ == "beatmap_leaderboard_user_bests"
     assert (
         Base.metadata.tables["beatmap_leaderboard_user_bests"]
@@ -130,6 +224,14 @@ def test_beatmap_leaderboard_model_is_registered_for_metadata_discovery() -> Non
 
 
 def test_score_metadata_includes_submission_time_leaderboard_eligibility() -> None:
+    """Score metadataがsubmission時leaderboard eligibilityを保持することを検証する.
+
+    現行score tableを条件に, non-null Boolean snapshot, server default, rebuild candidate index,
+    obsolete mod filter index不在がobservable metadataとして一致することを確認する.
+
+    Returns:
+        None: score leaderboard eligibility metadata contractを検証して完了する.
+    """
     table = cast("Table", ScoreModel.__table__)
 
     eligibility_column = _column(table, "leaderboard_eligible_at_submission")
@@ -157,6 +259,14 @@ def test_score_metadata_includes_submission_time_leaderboard_eligibility() -> No
 
 
 def test_projection_metadata_matches_scope_and_rank_key_contract() -> None:
+    """Projection metadataがmod scopeとrank key contractを満たすことを検証する.
+
+    現行projection tableを条件に, required scope, score identity, CHECK constraint, globalとmod
+    rank indexがobservable metadataとして一致することを確認する.
+
+    Returns:
+        None: leaderboard projection metadata contractを検証して完了する.
+    """
     table = cast("Table", BeatmapLeaderboardUserBestModel.__table__)
 
     assert _column(table, "id").primary_key

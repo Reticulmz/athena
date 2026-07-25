@@ -1,9 +1,19 @@
+"""Blob migrationのschema contractを検証する."""
+
 from pathlib import Path
 
 MIGRATION_PATH = Path("alembic/versions/20260604_1846_create_blobs_table.py")
 
 
 def test_blob_migration_creates_required_columns_and_constraints() -> None:
+    """Blob table作成migrationの必須columnとconstraintを検証する.
+
+    固定revisionのsourceを読み込み, non-null column, unique key, non-negative size
+    constraintが含まれるobservable contractを確認する.
+
+    Returns:
+        None: Blob migrationのschema contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert 'revision: str = "20260604_1846"' in migration
@@ -21,6 +31,14 @@ def test_blob_migration_creates_required_columns_and_constraints() -> None:
 
 
 def test_blob_migration_downgrade_removes_blobs_table() -> None:
+    """Blob migrationのdowngradeがtableを削除することを検証する.
+
+    固定revisionのsourceを読み込み, blobs tableをdropするAlembic operationがあるという
+    observable outcomeを確認する.
+
+    Returns:
+        None: downgradeの削除contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert 'op.drop_table("blobs")' in migration

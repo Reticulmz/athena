@@ -1,3 +1,5 @@
+"""Beatmap mirror migrationのschemaとmetadata contractを検証する."""
+
 from pathlib import Path
 from typing import cast
 
@@ -15,14 +17,42 @@ MIGRATION_PATH = Path("alembic/versions/20260604_2001_create_beatmap_mirror_tabl
 
 
 def _column(table: Table, name: str) -> Column[object]:
+    """Tableから指定名のcolumnをtyped Columnとして取得する.
+
+    Args:
+        table (Table): columnを所有するSQLAlchemy table metadata.
+        name (str): 存在することを前提に取得するcolumn名.
+
+    Returns:
+        Column[object]: 指定名に対応するtyped column.
+
+    Raises:
+        KeyError: tableにnameのcolumnが存在しない場合.
+    """
     return cast("Column[object]", table.c[name])
 
 
 def _string_length(column: Column[object]) -> int | None:
+    """String columnの宣言済み最大長を取得する.
+
+    Args:
+        column (Column[object]): String型であることを前提にしたcolumn.
+
+    Returns:
+        int | None: String型に設定された最大長. 長さ未指定時はNone.
+    """
     return cast("String", column.type).length
 
 
 def _unique_constraints(table: Table) -> dict[str, tuple[str, ...]]:
+    """Tableの名前付きunique constraintをcolumn順序へ変換する.
+
+    Args:
+        table (Table): unique constraintを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, tuple[str, ...]]: constraint名ごとの対象column順序.
+    """
     constraints: dict[str, tuple[str, ...]] = {}
     for constraint in table.constraints:
         if isinstance(constraint, UniqueConstraint) and constraint.name is not None:
@@ -32,6 +62,14 @@ def _unique_constraints(table: Table) -> dict[str, tuple[str, ...]]:
 
 
 def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
+    """Tableの名前付きforeign key constraintをcolumn対応表へ変換する.
+
+    Args:
+        table (Table): foreign key constraintを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, tuple[str, str]]: constraint名ごとのsource columnとtarget column.
+    """
     constraints: dict[str, tuple[str, str]] = {}
     for constraint in table.constraints:
         if isinstance(constraint, ForeignKeyConstraint) and constraint.name is not None:
@@ -43,6 +81,14 @@ def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
 
 
 def _indexes(table: Table) -> dict[str, tuple[str, ...]]:
+    """Tableの名前付きindexを対象column順序へ変換する.
+
+    Args:
+        table (Table): indexを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, tuple[str, ...]]: index名ごとの対象column順序.
+    """
     indexes: dict[str, tuple[str, ...]] = {}
     for index in table.indexes:
         if index.name is not None:
@@ -51,6 +97,14 @@ def _indexes(table: Table) -> dict[str, tuple[str, ...]]:
 
 
 def test_beatmap_migration_creates_tables_and_core_constraints() -> None:
+    """Beatmap mirror migrationがcore tableとidentity constraintを作成することを検証する.
+
+    固定revisionのsourceを読み込み, beatmapset, beatmap, attachment, fetch state tableとunique,
+    foreign key, blob metadata分離がobservable contractとして存在することを確認する.
+
+    Returns:
+        None: beatmap mirror migration schema contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert 'revision: str = "20260604_2001"' in migration
@@ -73,6 +127,14 @@ def test_beatmap_migration_creates_tables_and_core_constraints() -> None:
 
 
 def test_beatmap_migration_creates_lookup_indexes_and_downgrade() -> None:
+    """Beatmap mirror migrationがlookup indexと完全なdowngradeを定義することを検証する.
+
+    固定revisionのsourceを読み込み, mirror lookup indexと依存順序に沿うtable dropが
+    observable contractとして存在することを確認する.
+
+    Returns:
+        None: beatmap mirror lookupとdowngrade contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert (
@@ -93,6 +155,14 @@ def test_beatmap_migration_creates_lookup_indexes_and_downgrade() -> None:
 
 
 def test_beatmap_models_are_registered_for_metadata_discovery() -> None:
+    """Beatmap mirror model群がBase metadataで発見可能なことを検証する.
+
+    各modelのtable名とBase.metadataの登録先を照合し, migration tableと同一table objectが
+    observable metadataとして公開されることを確認する.
+
+    Returns:
+        None: beatmap mirror metadata discovery contractを検証して完了する.
+    """
     assert BeatmapSetModel.__tablename__ == "beatmapsets"
     assert BeatmapModel.__tablename__ == "beatmaps"
     assert BeatmapFileAttachmentModel.__tablename__ == "beatmap_file_attachments"
@@ -104,6 +174,14 @@ def test_beatmap_models_are_registered_for_metadata_discovery() -> None:
 
 
 def test_beatmap_model_metadata_matches_mirror_identity_contract() -> None:
+    """BeatmapModel metadataがmirror identity contractを満たすことを検証する.
+
+    現行beatmap tableを条件に, primary key, required source identity, status metadata,
+    beatmapset foreign key, lookup indexがobservable metadataとして一致することを確認する.
+
+    Returns:
+        None: beatmap mirror identity metadata contractを検証して完了する.
+    """
     beatmaps = cast("Table", BeatmapModel.__table__)
     beatmapsets = cast("Table", BeatmapSetModel.__table__)
 
@@ -129,6 +207,14 @@ def test_beatmap_model_metadata_matches_mirror_identity_contract() -> None:
 
 
 def test_file_attachment_and_fetch_state_metadata_match_idempotency_contract() -> None:
+    """Attachmentとfetch state metadataがidempotency contractを満たすことを検証する.
+
+    現行attachmentとfetch state tableを条件に, checksum identity, blob reference, target scope,
+    status lookup indexがobservable metadataとして一致することを確認する.
+
+    Returns:
+        None: attachmentとfetch state idempotency contractを検証して完了する.
+    """
     attachments = cast("Table", BeatmapFileAttachmentModel.__table__)
     fetch_states = cast("Table", BeatmapFetchStateModel.__table__)
 
