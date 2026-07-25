@@ -1,3 +1,5 @@
+"""Blob storage backendの選択と非対応設定の診断契約を検証する."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -15,6 +17,17 @@ if TYPE_CHECKING:
 
 
 def test_local_backend_selection_returns_local_storage_backend(tmp_path: Path) -> None:
+    """Local設定から遅延初期化のLocalBlobStorageBackendを選択する契約を検証する.
+
+    一時rootを持つlocal設定でbackend factoryを実行する.
+    local backendが返りrootを事前作成しないことを確認する.
+
+    Args:
+        tmp_path (Path): backend rootに使うpytest一時directory.
+
+    Returns:
+        None: backend選択結果を検証して完了し値を返さない.
+    """
     root = tmp_path / "blobs"
     config = make_app_config(
         blob_storage_backend="local",
@@ -28,6 +41,14 @@ def test_local_backend_selection_returns_local_storage_backend(tmp_path: Path) -
 
 
 def test_s3_backend_selection_is_recognized_but_unsupported() -> None:
+    """S3設定を既知だが未対応のbackendとして拒否する契約を検証する.
+
+    bucketとcredentialを持つS3設定でbackend factoryを実行する.
+    backend名を保持するUnsupportedBlobStorageBackendErrorが送出されることを確認する.
+
+    Returns:
+        None: 非対応backendのerror情報を検証して完了し値を返さない.
+    """
     config = make_app_config(
         blob_storage_backend="s3",
         blob_storage_s3_bucket="athena-blobs",
@@ -49,6 +70,14 @@ def test_s3_backend_selection_is_recognized_but_unsupported() -> None:
 
 
 def test_s3_backend_selection_logs_diagnostic_without_secret_values() -> None:
+    """非対応S3設定の診断logがcredentialを露出しない契約を検証する.
+
+    access keyとsecret keyを持つS3設定でbackend factoryを実行する.
+    unsupported eventが1件出力されcredential文字列を含まないことを確認する.
+
+    Returns:
+        None: 安全な非対応backend診断を検証して完了し値を返さない.
+    """
     config = make_app_config(
         blob_storage_backend="s3",
         blob_storage_s3_bucket="athena-blobs",
