@@ -1,3 +1,5 @@
+"""in-memory Beatmap command repositoryの契約を検証するtest."""
+
 from __future__ import annotations
 
 from dataclasses import replace
@@ -43,6 +45,24 @@ def _make_beatmap(
     official_last_updated_at: datetime | None = None,
     file_attachment: BeatmapFileAttachment | None = None,
 ) -> Beatmap:
+    """Command repository testで使うBeatmap fixtureを構築する.
+
+    Args:
+        beatmap_id (int): BeatmapのID.
+        beatmapset_id (int): 親BeatmapSetのID.
+        checksum_md5 (str): Beatmap revisionを特定するMD5 checksum.
+        official_status (BeatmapRankStatus): official metadata由来のrank status.
+        local_status_override (LocalBeatmapStatus | None): local status override. Noneなら未設定.
+        local_status_override_changed_at (datetime | None): local overrideを変更した時刻.
+            Noneなら未記録.
+        official_last_updated_at (datetime | None): sourceが報告した最終更新時刻.
+            Noneなら未提供.
+        file_attachment (BeatmapFileAttachment | None): current osu file attachment.
+            Noneならfile未取得.
+
+    Returns:
+        Beatmap: fixed difficulty/metadata値を持つBeatmap fixture.
+    """
     return Beatmap(
         id=beatmap_id,
         beatmapset_id=beatmapset_id,
@@ -78,6 +98,15 @@ def _make_beatmapset(
     *beatmaps: Beatmap,
     status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
 ) -> BeatmapSet:
+    """指定Beatmap群を持つBeatmapSet snapshot fixtureを構築する.
+
+    Args:
+        beatmaps (Beatmap): snapshotへ含めるchild Beatmap.
+        status (BeatmapRankStatus): BeatmapSetのofficial rank status.
+
+    Returns:
+        BeatmapSet: fixed metadata/timestampsと指定childを持つsnapshot fixture.
+    """
     return BeatmapSet(
         id=1_000,
         artist="Camellia",
@@ -100,6 +129,16 @@ def _make_attachment(
     checksum_md5: str = _CHECKSUM,
     blob_id: int = 55,
 ) -> BeatmapFileAttachment:
+    """Beatmapのcurrent osu file attachment fixtureを構築する.
+
+    Args:
+        beatmap_id (int): attachmentを関連付けるBeatmapのID.
+        checksum_md5 (str): attachment fileを特定するMD5 checksum.
+        blob_id (int): attachmentが参照するblobのID.
+
+    Returns:
+        BeatmapFileAttachment: official sourceと検証済みtimestampsを持つattachment fixture.
+    """
     return BeatmapFileAttachment(
         beatmap_id=beatmap_id,
         blob_id=blob_id,
@@ -112,16 +151,37 @@ def _make_attachment(
 
 
 def _repo() -> InMemoryBeatmapCommandRepository:
+    """Empty stateを持つin-memory Beatmap command repositoryを構築する.
+
+    Returns:
+        InMemoryBeatmapCommandRepository: 各testで独立して利用するrepository fixture.
+    """
     return InMemoryBeatmapCommandRepository(InMemoryCommandRepositoryState())
 
 
 def test_in_memory_beatmap_repository_satisfies_contract() -> None:
+    """in-memory Beatmap repositoryがcommand portを実装する契約を検証する.
+
+    empty stateからrepositoryを構築してBeatmapCommandRepositoryとして判定する.
+    command callerがinterface型でrepositoryを利用できることを確認する.
+
+    Returns:
+        None: repository port実装のruntime contractを検証して完了する.
+    """
     repo = _repo()
 
     assert isinstance(repo, BeatmapCommandRepository)
 
 
 async def test_saves_and_resolves_beatmaps_by_id_set_id_and_checksum() -> None:
+    """snapshot保存後にBeatmap/BeatmapSetを全lookup keyで取得する契約を検証する.
+
+    一つのBeatmapを持つBeatmapSet snapshotを保存してID/checksum/set ID lookupを実行する.
+    各lookupが同じBeatmapとchildを含むBeatmapSetを返すことを確認する.
+
+    Returns:
+        None: snapshot persistenceとprimary/secondary lookupを検証して完了する.
+    """
     repo = _repo()
     beatmap = _make_beatmap()
 
@@ -135,6 +195,14 @@ async def test_saves_and_resolves_beatmaps_by_id_set_id_and_checksum() -> None:
 
 
 async def test_save_rejects_checksum_reuse_for_different_beatmap() -> None:
+    """既存Beatmapと異なるIDによるchecksum再利用を拒否する契約を検証する.
+
+    保存済みsnapshotと同じMD5 checksumを別Beatmap IDで含むsnapshotを保存する.
+    checksumと既存Beatmap IDを保持するDuplicateBeatmapChecksumErrorが発生することを確認する.
+
+    Returns:
+        None: cross-snapshot checksum一意性を検証して完了する.
+    """
     repo = _repo()
     await repo.save_beatmapset_snapshot(_make_beatmapset(_make_beatmap()))
 
@@ -148,6 +216,14 @@ async def test_save_rejects_checksum_reuse_for_different_beatmap() -> None:
 
 
 async def test_save_rejects_duplicate_checksum_inside_same_snapshot() -> None:
+    """一つのsnapshot内で異なるBeatmap IDがchecksumを共有できない契約を検証する.
+
+    同一MD5 checksumを持つ二つのchild Beatmapを含むsnapshotを保存する.
+    DuplicateBeatmapChecksumErrorが発生しpartial stateが保存されないことを確認する.
+
+    Returns:
+        None: intra-snapshot checksum一意性とatomic validationを検証して完了する.
+    """
     repo = _repo()
 
     with pytest.raises(DuplicateBeatmapChecksumError) as exc_info:
@@ -165,6 +241,15 @@ async def test_save_rejects_duplicate_checksum_inside_same_snapshot() -> None:
 
 
 async def test_official_refresh_preserves_existing_local_override() -> None:
+    """Official metadata refreshが既存local status overrideを保持する契約を検証する.
+
+    local RANKED overrideを持つPENDING Beatmapを保存後にLOVED official snapshotでrefreshする.
+    official statusはLOVEDへ更新されることを確認する.
+    local override/変更時刻/effective statusが保持されることを確認する.
+
+    Returns:
+        None: official/local statusの所有境界を検証して完了する.
+    """
     repo = _repo()
     override_changed_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
     await repo.save_beatmapset_snapshot(
@@ -193,6 +278,14 @@ async def test_official_refresh_preserves_existing_local_override() -> None:
 
 
 async def test_official_refresh_preserves_existing_last_updated_when_source_omits_it() -> None:
+    """sourceが時刻を省略するofficial refreshが既存最終更新時刻を保持する契約を検証する.
+
+    official_last_updated_atを持つsnapshotを保存して時刻なしの同一snapshotでrefreshする.
+    保存済みBeatmapが最初のofficial_last_updated_atを返すことを確認する.
+
+    Returns:
+        None: omitted source timestampに対するmetadata保持を検証して完了する.
+    """
     repo = _repo()
     official_last_updated_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
     await repo.save_beatmapset_snapshot(
@@ -207,6 +300,14 @@ async def test_official_refresh_preserves_existing_last_updated_when_source_omit
 
 
 async def test_increment_submission_counts_returns_cumulative_values() -> None:
+    """Submission count更新がplay/pass countを累積して返す契約を検証する.
+
+    未登録Beatmap IDへfailedとpassed submissionを順に記録する.
+    play countは2まで増えpass countはpassed submissionだけを数えることを確認する.
+
+    Returns:
+        None: submission countの累積計算を検証して完了する.
+    """
     repo = _repo()
 
     failed = await repo.increment_submission_counts(2_000, passed=False)
@@ -219,6 +320,14 @@ async def test_increment_submission_counts_returns_cumulative_values() -> None:
 
 
 async def test_can_set_local_override_without_changing_official_status() -> None:
+    """Local override設定がofficial statusを変更しない契約を検証する.
+
+    PENDING official Beatmapを保存してlocal RANKED overrideを設定する.
+    official statusはPENDINGのままoverride/変更時刻/effective statusが更新されることを確認する.
+
+    Returns:
+        None: local status overrideの独立した保存を検証して完了する.
+    """
     repo = _repo()
     await repo.save_beatmapset_snapshot(
         _make_beatmapset(_make_beatmap(official_status=BeatmapRankStatus.PENDING))
@@ -233,6 +342,14 @@ async def test_can_set_local_override_without_changing_official_status() -> None
 
 
 async def test_clearing_local_override_clears_changed_at() -> None:
+    """Local override解除が対応する変更時刻も消す契約を検証する.
+
+    PENDING BeatmapへRANKED overrideを設定して時刻が記録された状態を作る.
+    None overrideへ更新後にoverrideと変更時刻の両方がNoneになることを確認する.
+
+    Returns:
+        None: local override解除時のpaired state cleanupを検証して完了する.
+    """
     repo = _repo()
     await repo.save_beatmapset_snapshot(
         _make_beatmapset(_make_beatmap(official_status=BeatmapRankStatus.PENDING))
@@ -247,6 +364,15 @@ async def test_clearing_local_override_clears_changed_at() -> None:
 
 
 async def test_attachments_are_idempotent_and_update_current_file_state() -> None:
+    """Osu file attachment追加がidempotentでcurrent file stateを更新する契約を検証する.
+
+    保存済みBeatmapへattachmentを追加し同じkeyで異なるblob IDのattachmentを再追加する.
+    両操作が最初のattachmentを返すことを確認する.
+    Beatmapのfile state/current attachmentをAVAILABLEへ更新することを確認する.
+
+    Returns:
+        None: attachment idempotencyとcurrent file metadata更新を検証して完了する.
+    """
     repo = _repo()
     await repo.save_beatmapset_snapshot(_make_beatmapset(_make_beatmap()))
     attachment = _make_attachment()
@@ -264,6 +390,14 @@ async def test_attachments_are_idempotent_and_update_current_file_state() -> Non
 
 
 async def test_official_refresh_preserves_existing_file_attachment() -> None:
+    """Official refreshが既存osu file attachmentを保持する契約を検証する.
+
+    attachment付きBeatmap snapshotを保存してattachmentなしのLOVED snapshotでrefreshする.
+    refresh後もfile stateがAVAILABLEで同じattachmentを参照することを確認する.
+
+    Returns:
+        None: official metadataとlocal file stateの保持境界を検証して完了する.
+    """
     repo = _repo()
     attachment = _make_attachment()
     await repo.save_beatmapset_snapshot(
@@ -281,6 +415,14 @@ async def test_official_refresh_preserves_existing_file_attachment() -> None:
 
 
 async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
+    """Pending fetch markerがcompletionまでidempotentである契約を検証する.
+
+    同一metadata targetを連続でpending化して成功記録後に再びpending化する.
+    2回目はstateを変えず成功後はattempt countを増やしてpendingになることを確認する.
+
+    Returns:
+        None: fetch pending lifecycleとattempt countを検証して完了する.
+    """
     repo = _repo()
     target = BeatmapFetchTarget.metadata_by_beatmap_id(2_000)
 
@@ -306,6 +448,14 @@ async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
 
 
 async def test_failed_fetch_state_is_observable() -> None:
+    """Failed fetchがreasonとattempt timestampを観測可能に保存する契約を検証する.
+
+    file targetをpending化してtimeout reasonを持つfailed stateへ遷移させる.
+    get fetch stateがFAILED statusとreason/時刻を返すことを確認する.
+
+    Returns:
+        None: fetch failureのobservable stateを検証して完了する.
+    """
     repo = _repo()
     target = BeatmapFetchTarget.file_by_beatmap_id(2_000)
 
@@ -325,7 +475,14 @@ async def test_failed_fetch_state_is_observable() -> None:
 
 
 async def test_resolves_beatmap_by_exact_filename_in_beatmapset() -> None:
-    """Exact original_filename within a beatmapset returns the matching beatmap."""
+    """Exact original filenameが同じBeatmapSet内のBeatmapを返す契約を検証する.
+
+    attachmentのoriginal filenameを持つBeatmap snapshotを保存して同じset/filenameで検索する.
+    attachmentを所有するBeatmapがIDを保って返ることを確認する.
+
+    Returns:
+        None: exact filename lookupのmatching結果を検証して完了する.
+    """
     repo = _repo()
     attachment = replace(_make_attachment(beatmap_id=2_000), original_filename="my_map.osu")
     beatmap = _make_beatmap(file_attachment=attachment)
@@ -338,7 +495,14 @@ async def test_resolves_beatmap_by_exact_filename_in_beatmapset() -> None:
 
 
 async def test_filename_lookup_returns_none_when_no_match_in_set() -> None:
-    """Returns None when no beatmap in the set has the matching filename."""
+    """set内に一致filenameがないlookupがNoneを返す契約を検証する.
+
+    real.osu attachmentを持つBeatmapSetへother.osuを指定して検索する.
+    同set内にexact matchがないためresultがNoneになることを確認する.
+
+    Returns:
+        None: unknown filenameのempty lookup結果を検証して完了する.
+    """
     repo = _repo()
     attachment = replace(_make_attachment(beatmap_id=2_000), original_filename="real.osu")
     beatmap = _make_beatmap(file_attachment=attachment)
@@ -350,7 +514,14 @@ async def test_filename_lookup_returns_none_when_no_match_in_set() -> None:
 
 
 async def test_filename_lookup_returns_none_when_set_does_not_exist() -> None:
-    """Returns None when the requested beatmapset does not exist."""
+    """存在しないBeatmapSetのfilename lookupがNoneを返す契約を検証する.
+
+    snapshotを保存しないrepositoryへ未登録set IDと任意filenameを指定する.
+    lookupがexceptionを送出せずNoneを返すことを確認する.
+
+    Returns:
+        None: unknown BeatmapSetのempty lookup結果を検証して完了する.
+    """
     repo = _repo()
 
     result = await repo.get_beatmap_by_filename_in_beatmapset(999, "anything.osu")
@@ -359,7 +530,14 @@ async def test_filename_lookup_returns_none_when_set_does_not_exist() -> None:
 
 
 async def test_filename_lookup_returns_none_for_partial_filename_match() -> None:
-    """Exact match only; partial filename fragments must not resolve (requirement 4.6)."""
+    """Partial filename fragmentがBeatmapを解決しない契約を検証する.
+
+    my_map.osu attachmentを持つBeatmapSetへbasename/extension/部分文字列を指定して検索する.
+    original filenameの完全一致だけを許可し各partial lookupがNoneになることを確認する.
+
+    Returns:
+        None: exact filename matching制約を検証して完了する.
+    """
     repo = _repo()
     attachment = replace(_make_attachment(beatmap_id=2_000), original_filename="my_map.osu")
     beatmap = _make_beatmap(file_attachment=attachment)
@@ -371,7 +549,14 @@ async def test_filename_lookup_returns_none_for_partial_filename_match() -> None
 
 
 async def test_filename_lookup_scoped_to_beatmapset() -> None:
-    """Filename is resolved only within its matching beatmapset (requirement 4.3, 4.4)."""
+    """Filename lookupが一致するBeatmapSetの内部だけを検索する契約を検証する.
+
+    shared.osuを持つsetとother.osuだけを持つ別setを保存してshared.osuを両setで検索する.
+    filenameが他setに存在しても対象set内にない場合はNoneになることを確認する.
+
+    Returns:
+        None: BeatmapSetでscopeされたfilename lookupを検証して完了する.
+    """
     repo = _repo()
 
     # Beatmapset 1000: beatmap 2000 with "shared.osu"
@@ -395,7 +580,14 @@ async def test_filename_lookup_scoped_to_beatmapset() -> None:
 
 
 async def test_filename_lookup_beatmap_without_attachment_returns_none() -> None:
-    """Beatmap without a file attachment cannot be resolved by filename."""
+    """File attachmentのないBeatmapがfilenameで解決されない契約を検証する.
+
+    attachmentなしのBeatmap snapshotを保存して予想filenameで検索する.
+    file metadataがないためlookupがNoneを返すことを確認する.
+
+    Returns:
+        None: attachment不在時のfilename lookup結果を検証して完了する.
+    """
     repo = _repo()
     beatmap = _make_beatmap()  # no file_attachment
     await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
