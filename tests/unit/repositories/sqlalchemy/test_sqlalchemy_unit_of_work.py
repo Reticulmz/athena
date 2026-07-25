@@ -1,4 +1,4 @@
-"""Tests for the SQLAlchemy command Unit of Work."""
+"""SQLAlchemy command Unit of Workのtransaction境界を検証する."""
 
 from __future__ import annotations
 
@@ -71,34 +71,70 @@ _NOW = datetime(2026, 6, 14, tzinfo=UTC)
 
 
 class FakeResult:
-    """Small SQLAlchemy result double for command repository checks."""
+    """command repository readを再現するSQLAlchemy result test double.
+
+    Attributes:
+        _value (object | None): scalar_one_or_noneが返す設定値.
+        _values (list[object]): scalars().all()が返す設定値群.
+    """
 
     _value: object | None
     _values: list[object]
 
     def __init__(self, value: object | None = None, values: list[object] | None = None) -> None:
+        """scalar値とscalar collectionを持つresult test doubleを初期化する.
+
+        Args:
+            value (object | None): scalar_one_or_noneから返す値.
+            values (list[object] | None): scalars().all()から返す値群. Noneなら空list.
+        """
         self._value = value
         self._values = values or []
 
     def scalar_one_or_none(self) -> object | None:
+        """設定済みのscalar値を返す.
+
+        Returns:
+            object | None: 設定済みのscalar値. 値がない場合はNone.
+        """
         return self._value
 
     def scalars(self) -> FakeResult:
+        """Scalar collection access用にこのresultを返す.
+
+        Returns:
+            FakeResult: all()で設定済みの値群を返すこのtest double.
+        """
         return self
 
     def all(self) -> list[object]:
+        """設定済みのscalar値群を返す.
+
+        Returns:
+            list[object]: command repository readの結果として設定された値群.
+        """
         return self._values
 
 
 class FakeSession(AbstractAsyncContextManager["FakeSession"]):
-    """Transaction ownershipを記録するAsyncSession test double.
+    """transaction ownershipとcommand repository操作を記録するAsyncSession test double.
 
-    Args:
-        get_results (dict[tuple[type[object], object], object] | None): get応答値.
-        execute_results (list[FakeResult] | None): execute応答値.
+    Attributes:
+        added (list[object]): addまたはmergeで受け取ったpersistence instance群.
+        commits (int): commit呼び出し回数.
+        rollbacks (int): rollback呼び出し回数.
+        flushes (int): flush呼び出し回数.
+        refreshed (list[object]): refreshで受け取ったpersistence instance群.
+        closed (bool): closeが呼び出されたか.
+        _next_user_id (int): flush時にUserModelへ割り当てる次のID.
+        _next_channel_id (int): flush時にChannelModelへ割り当てる次のID.
+        _next_personal_best_id (int): flush時にPersonalBestModelへ割り当てる次のID.
+        _get_results (dict[tuple[type[object], object], object]): getのkey別設定結果.
+        _execute_results (list[FakeResult]): executeごとに返す設定済みresult群.
+        nested_transactions (int): begin_nestedで開始したSAVEPOINT数.
 
     Notes:
-        Repository内SAVEPOINTは記録だけ行い, commit/rollbackはUoWだけが所有する.
+        repository内SAVEPOINTは記録だけ行う. commitとrollbackはUoWだけが所有する.
     """
 
     added: list[object]
@@ -120,6 +156,12 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         get_results: dict[tuple[type[object], object], object] | None = None,
         execute_results: list[FakeResult] | None = None,
     ) -> None:
+        """Command repository test用のsession状態と設定済みread結果を初期化する.
+
+        Args:
+            get_results (dict[tuple[type[object], object], object] | None): getのkey別応答値.
+            execute_results (list[FakeResult] | None): executeごとに順番に返すresult群.
+        """
         self.added = []
         self.commits = 0
         self.rollbacks = 0
@@ -135,6 +177,11 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
 
     @override
     async def __aenter__(self) -> FakeSession:
+        """context内で使用するtest sessionを返す.
+
+        Returns:
+            FakeSession: command repository操作を記録するこのsession.
+        """
         return self
 
     @override
@@ -144,15 +191,42 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """context終了時にtest sessionを閉じる.
+
+        Args:
+            exc_type (type[BaseException] | None): context内で送出された例外の型. 正常終了時はNone.
+            exc (BaseException | None): context内で送出された例外. 正常終了時はNone.
+            traceback (TracebackType | None): context内例外のtraceback. 正常終了時はNone.
+
+        Returns:
+            None: sessionを閉じて例外を抑制せずに完了する.
+        """
         _ = exc_type
         _ = exc
         _ = traceback
         await self.close()
 
     async def get(self, model_type: type[object], identity: object) -> object | None:
+        """model型とidentityに対応する設定済みread結果を返す.
+
+        Args:
+            model_type (type[object]): 取得対象のpersistence model型.
+            identity (object): modelを識別するprimary keyまたはidentity値.
+
+        Returns:
+            object | None: keyに対応する設定値. 未設定時はNone.
+        """
         return self._get_results.get((model_type, identity))
 
     async def execute(self, statement: Executable) -> FakeResult:
+        """statementに対する次の設定済みresultを返す.
+
+        Args:
+            statement (Executable): command repositoryが実行するSQLAlchemy statement.
+
+        Returns:
+            FakeResult: 次の設定済みresult. 設定がなければ空result.
+        """
         _ = statement
         if self._execute_results:
             return self._execute_results.pop(0)
@@ -163,25 +237,68 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         """Repository statement用のSAVEPOINT contextを提供する.
 
         Yields:
-            None: nested transaction内でstatementを実行できることを示す.
+            None: nested transaction内でstatementを実行できる状態.
+
+        Notes:
+            test doubleはSAVEPOINTを実際には作成せず開始回数だけを記録する.
         """
         self.nested_transactions += 1
         yield
 
     async def merge(self, instance: object) -> object:
+        """merge対象を追加済みinstanceとして記録し同じinstanceを返す.
+
+        Args:
+            instance (object): merge対象のpersistence instance.
+
+        Returns:
+            object: addedへ記録した入力instance.
+        """
         self.added.append(instance)
         return instance
 
     def add(self, instance: object) -> None:
+        """add対象をsessionの追加済みinstanceとして記録する.
+
+        Args:
+            instance (object): 追加するpersistence instance.
+
+        Returns:
+            None: instanceをaddedへ追加して呼び出し側へ値を返さずに完了する.
+        """
         self.added.append(instance)
 
     def add_all(self, instances: Iterable[object]) -> None:
+        """複数のadd対象をsessionの追加済みinstanceとして記録する.
+
+        Args:
+            instances (Iterable[object]): 追加するpersistence instance群.
+
+        Returns:
+            None: 全instanceをaddedへ追加して呼び出し側へ値を返さずに完了する.
+        """
         self.added.extend(instances)
 
     async def delete(self, instance: object) -> None:
+        """delete対象を追加済みinstance群から取り除く.
+
+        Args:
+            instance (object): 削除するpersistence instance.
+
+        Returns:
+            None: instanceをaddedから取り除いて呼び出し側へ値を返さずに完了する.
+
+        Raises:
+            ValueError: instanceがaddedに存在しない場合.
+        """
         self.added.remove(instance)
 
     async def flush(self) -> None:
+        """追加済みmodelへtest用IDとtimestampを割り当てる.
+
+        Returns:
+            None: flush回数を記録し未採番modelを更新して呼び出し側へ値を返さずに完了する.
+        """
         self.flushes += 1
         for instance in self.added:
             if isinstance(instance, UserModel) and getattr(instance, "id", None) is None:
@@ -203,34 +320,92 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
                 instance.updated_at = _NOW
 
     async def refresh(self, instance: object) -> None:
+        """refresh対象を記録してrepositoryのreadback契約を検証可能にする.
+
+        Args:
+            instance (object): refresh対象のpersistence instance.
+
+        Returns:
+            None: instanceをrefreshedへ追加して呼び出し側へ値を返さずに完了する.
+        """
         self.refreshed.append(instance)
 
     async def commit(self) -> None:
+        """commit呼び出しを記録してUoWのtransaction ownershipを検証可能にする.
+
+        Returns:
+            None: commit回数を増加して呼び出し側へ値を返さずに完了する.
+        """
         self.commits += 1
 
     async def rollback(self) -> None:
+        """rollback呼び出しを記録してUoWのtransaction ownershipを検証可能にする.
+
+        Returns:
+            None: rollback回数を増加して呼び出し側へ値を返さずに完了する.
+        """
         self.rollbacks += 1
 
     async def close(self) -> None:
+        """sessionをclosed状態として記録する.
+
+        Returns:
+            None: closedをTrueにして呼び出し側へ値を返さずに完了する.
+        """
         self.closed = True
 
 
 class FakeSessionFactory:
+    """同じtest sessionをcommand Unit of Workへ渡すsession factory test double.
+
+    Attributes:
+        _session (FakeSession): factoryが返すcommand session.
+    """
+
     _session: FakeSession
 
     def __init__(self, session: FakeSession) -> None:
+        """返却するtest sessionを持つfactory test doubleを初期化する.
+
+        Args:
+            session (FakeSession): Unit of Workへ渡すcommand test session.
+        """
         self._session = session
 
     def __call__(self) -> AsyncSession:
+        """設定済みtest sessionをAsyncSession型として返す.
+
+        Returns:
+            AsyncSession: Unit of Workがtransactionに使用するtest session.
+        """
         return cast("AsyncSession", cast("object", self._session))
 
 
 def _factory(session: FakeSession) -> SQLAlchemyUnitOfWorkFactory:
+    """Test sessionをSQLAlchemy Unit of Work factoryへ型適合させて構築する.
+
+    Args:
+        session (FakeSession): command repository操作を記録するtest session.
+
+    Returns:
+        SQLAlchemyUnitOfWorkFactory: 指定sessionをscopeごとに返すUnit of Work factory.
+    """
     session_factory = cast("SQLAlchemyCommandSessionFactory", FakeSessionFactory(session))
     return SQLAlchemyUnitOfWorkFactory(session_factory)
 
 
 async def test_commit_persists_multi_repository_outcome_once_through_unit_of_work() -> None:
+    """複数repositoryのmutationをUoWが1回だけcommitする契約を検証する.
+
+    UserとChannelを同じscope内で作成しrepository内ではtransactionを確定せずUoW commit後に
+    sessionが閉じることを確認する.
+
+    Returns:
+        None: 1回のcommitと作成modelとsession closeを検証して完了する.
+
+    Raises:
+        AssertionError: repositoryのmutation結果またはtransaction境界が異なる場合.
+    """
     session = FakeSession()
     factory = _factory(session)
     source_latest_activity = datetime(2026, 6, 13, tzinfo=UTC)
@@ -261,6 +436,16 @@ async def test_commit_persists_multi_repository_outcome_once_through_unit_of_wor
 
 
 async def test_exception_rolls_back_uncommitted_sqlalchemy_command_changes() -> None:
+    """未commitのcommand mutation後の例外でUoWがrollbackする契約を検証する.
+
+    User作成後にRuntimeErrorを送出しcommitなしでrollbackが1回だけ実行されsessionが閉じることを確認する.
+
+    Returns:
+        None: commit未実行とrollback回数とsession closeを検証して完了する.
+
+    Raises:
+        AssertionError: 例外後のtransaction境界またはsession lifecycleが異なる場合.
+    """
     session = FakeSession()
     factory = _factory(session)
 
@@ -273,6 +458,16 @@ async def test_exception_rolls_back_uncommitted_sqlalchemy_command_changes() -> 
 
 
 async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> None:
+    """Entered UoWが全command portへ対応するSQLAlchemy repositoryを公開する契約を検証する.
+
+    factoryからscopeをenterし全repository属性が期待するconcrete adapter型であることを確認する.
+
+    Returns:
+        None: 全command repositoryの型を検証して完了する.
+
+    Raises:
+        AssertionError: repository属性が不足するか期待するadapter型と異なる場合.
+    """
     factory = _factory(FakeSession())
 
     async with factory() as uow:
@@ -300,10 +495,13 @@ async def test_unit_of_work_exposes_typed_sqlalchemy_command_repositories() -> N
 
 
 async def test_beatmap_leaderboard_repository_commits_through_sqlalchemy_unit_of_work() -> None:
-    """leaderboard repositoryの変更をUoWだけがcommitすることを確認する.
+    """Leaderboard repositoryの変更をUoWだけがcommitする契約を検証する.
+
+    既存projectionを返す設定済みsessionでupsertを実行し, repository内ではtransactionを確定せず
+    UoW commit後にsessionが閉じることを確認する.
 
     Returns:
-        None: repository内ではcommitせず、UoW commitで1回だけ確定することを示す.
+        None: repository内ではcommitせずUoW commitで1回だけ確定することを検証して完了する.
 
     Raises:
         AssertionError: repositoryがtransaction境界を所有する場合.
@@ -336,13 +534,16 @@ async def test_beatmap_leaderboard_repository_commits_through_sqlalchemy_unit_of
 
 
 async def test_beatmap_leaderboard_repository_rolls_back_with_sqlalchemy_unit_of_work() -> None:
-    """leaderboard command失敗時にUoWが全変更をrollbackすることを確認する.
+    """Leaderboard command失敗時にUoWが全変更をrollbackする契約を検証する.
+
+    既存projectionを返す設定済みsessionでupsert後にRuntimeErrorを送出し, commitなしで
+    rollbackが1回だけ実行されsessionが閉じることを確認する.
 
     Returns:
-        None: repository更新後の例外でUoW rollbackが1回実行されることを示す.
+        None: repository更新後の例外でUoW rollbackが1回実行されることを検証して完了する.
 
     Raises:
-        AssertionError: repositoryがrollbackするか、UoW rollbackが実行されない場合.
+        AssertionError: repositoryがrollbackするかUoW rollbackが実行されない場合.
     """
     scope = _leaderboard_scope()
     session = FakeSession(
@@ -364,6 +565,17 @@ async def test_beatmap_leaderboard_repository_rolls_back_with_sqlalchemy_unit_of
 
 
 async def test_beatmap_performance_best_repository_commits_through_uow() -> None:
+    """Performance best repositoryのmutationをUoWだけがcommitする契約を検証する.
+
+    performance best候補をupsertしrepository内ではcommitせずUoW commitで確定して
+    sessionが閉じることを確認する.
+
+    Returns:
+        None: created rowと1回のcommitとsession closeを検証して完了する.
+
+    Raises:
+        AssertionError: upsert結果またはtransaction境界またはsession lifecycleが異なる場合.
+    """
     scope = _performance_best_scope()
     session = FakeSession(
         execute_results=[
@@ -390,6 +602,17 @@ async def test_beatmap_performance_best_repository_commits_through_uow() -> None
 
 
 async def test_friend_command_repository_uses_returning_for_mutation_outcomes() -> None:
+    """Friend relationship mutationがRETURNINGの有無をbool結果へ変換する契約を検証する.
+
+    target存在確認とduplicate addとmissing removeを含む設定済みread結果を与え
+    各mutation outcomeを確認する.
+
+    Returns:
+        None: target確認とaddとremoveのbool結果を検証して完了する.
+
+    Raises:
+        AssertionError: RETURNING結果から導くmutation outcomeが異なる場合.
+    """
     session = FakeSession(
         execute_results=[
             FakeResult(value=2),
@@ -411,6 +634,16 @@ async def test_friend_command_repository_uses_returning_for_mutation_outcomes() 
 
 
 async def test_add_friend_use_case_commits_sqlalchemy_unit_of_work_insert() -> None:
+    """AddFriendUseCaseがSQLAlchemy UoWのfriend insertをcommitする契約を検証する.
+
+    存在するtarget userの設定結果でuse caseを実行しADDED outcomeとUoW所有のcommitを確認する.
+
+    Returns:
+        None: friend mutation statusと1回のcommitとsession closeを検証して完了する.
+
+    Raises:
+        AssertionError: use case outcomeまたはtransaction境界またはsession lifecycleが異なる場合.
+    """
     session = FakeSession(
         execute_results=[
             FakeResult(value=2),
@@ -433,6 +666,17 @@ async def test_add_friend_use_case_commits_sqlalchemy_unit_of_work_insert() -> N
 
 
 async def test_user_command_repository_updates_password_hash_without_commit() -> None:
+    """User password hash mutationがflushだけを行いrepository内でcommitしない契約を検証する.
+
+    既存UserModelを返すsessionでpassword hashを更新し更新結果とflush回数と
+    transaction未確定を確認する.
+
+    Returns:
+        None: password hashとflush回数とcommit/rollback未実行を検証して完了する.
+
+    Raises:
+        AssertionError: password hash mutationまたはrepository transaction境界が異なる場合.
+    """
     user = UserModel(
         id=3,
         username="SQLUser",
@@ -454,6 +698,16 @@ async def test_user_command_repository_updates_password_hash_without_commit() ->
 
 
 async def test_role_command_repository_replaces_roles_without_commit() -> None:
+    """Role replacementがduplicate role IDを除去しrepository内でcommitしない契約を検証する.
+
+    重複を含むrole ID列を渡し一意なUserRoleModel assignmentとflushだけが記録されることを確認する.
+
+    Returns:
+        None: role assignmentとflush回数とcommit/rollback未実行を検証して完了する.
+
+    Raises:
+        AssertionError: role assignmentまたはrepository transaction境界が異なる場合.
+    """
     session = FakeSession()
     repo = SQLAlchemyRoleCommandRepository(cast("AsyncSession", cast("object", session)))
 
@@ -470,6 +724,17 @@ async def test_role_command_repository_replaces_roles_without_commit() -> None:
 
 
 def test_sqlalchemy_command_repositories_do_not_commit_or_rollback_per_method() -> None:
+    """全SQLAlchemy command repositoryがmethod単位でcommitまたはrollbackしない契約を検証する.
+
+    commands directory内のPython ASTを走査しcommitまたはrollback attribute callを収集して
+    空であることを確認する.
+
+    Returns:
+        None: transaction境界違反がないことを検証して完了する.
+
+    Raises:
+        AssertionError: command repository sourceにcommitまたはrollback callが存在する場合.
+    """
     violations: list[str] = []
     for path in sorted(COMMAND_ROOT.glob("*.py")):
         if path.name == "__init__.py":
@@ -487,6 +752,17 @@ def test_sqlalchemy_command_repositories_do_not_commit_or_rollback_per_method() 
 
 
 async def _raise_after_command_mutation(factory: SQLAlchemyUnitOfWorkFactory) -> None:
+    """User mutation後に例外を送出してUoW rollback条件を作る.
+
+    Args:
+        factory (SQLAlchemyUnitOfWorkFactory): user repositoryを持つUoW scopeを生成するfactory.
+
+    Returns:
+        None: user mutation後に例外を送出して正常には値を返さない.
+
+    Raises:
+        RuntimeError: 未commit mutation後のrollback契約を検証するため常に送出する.
+    """
     async with factory() as uow:
         _ = await uow.users.create(
             make_user(username="Rollback SQL", email="rollback-sql@example.com")
@@ -498,6 +774,19 @@ async def _raise_after_leaderboard_mutation(
     factory: SQLAlchemyUnitOfWorkFactory,
     scope: BeatmapLeaderboardUserBestScope,
 ) -> None:
+    """Leaderboard mutation後に例外を送出してUoW rollback条件を作る.
+
+    Args:
+        factory (SQLAlchemyUnitOfWorkFactory): leaderboard repositoryを持つUoW scopeを生成する
+            factory.
+        scope (BeatmapLeaderboardUserBestScope): upsertするleaderboard projectionの完全一致scope.
+
+    Returns:
+        None: leaderboard mutation後に例外を送出して正常には値を返さない.
+
+    Raises:
+        RuntimeError: 未commit mutation後のrollback契約を検証するため常に送出する.
+    """
     async with factory() as uow:
         _ = await uow.beatmap_leaderboards.upsert_if_better(
             _leaderboard_upsert(scope=scope, score_id=91, score=1_100)
@@ -506,6 +795,11 @@ async def _raise_after_leaderboard_mutation(
 
 
 def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
+    """Leaderboard projection test用の完全一致scopeを構築する.
+
+    Returns:
+        BeatmapLeaderboardUserBestScope: 固定beatmapとuserとraw Modを持つscope.
+    """
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
         beatmap_checksum="a" * 32,
@@ -522,6 +816,16 @@ def _leaderboard_upsert(
     score_id: int,
     score: int,
 ) -> UpsertBeatmapLeaderboardUserBest:
+    """Leaderboard projectionのupsert commandをtest入力から構築する.
+
+    Args:
+        scope (BeatmapLeaderboardUserBestScope): projectionが所有する完全一致scope.
+        score_id (int): projectionへ関連付けるscore ID.
+        score (int): rank keyに使うscore値.
+
+    Returns:
+        UpsertBeatmapLeaderboardUserBest: 固定送信時刻を含むupsert command.
+    """
     return UpsertBeatmapLeaderboardUserBest(
         scope=scope,
         score_id=score_id,
@@ -535,6 +839,16 @@ def _leaderboard_model(
     score_id: int,
     score: int,
 ) -> BeatmapLeaderboardUserBestModel:
+    """Repository read結果を再現するleaderboard projection modelを構築する.
+
+    Args:
+        scope (BeatmapLeaderboardUserBestScope): modelへ設定する完全一致scope.
+        score_id (int): modelが参照するscore ID.
+        score (int): modelのrank keyに使うscore値.
+
+    Returns:
+        BeatmapLeaderboardUserBestModel: fixed timestampを含むpersistence model.
+    """
     return BeatmapLeaderboardUserBestModel(
         id=40,
         beatmap_id=scope.beatmap_id,
@@ -552,6 +866,11 @@ def _leaderboard_model(
 
 
 def _performance_best_scope() -> BeatmapPerformanceBestScope:
+    """Performance best projection test用の完全一致scopeを構築する.
+
+    Returns:
+        BeatmapPerformanceBestScope: 固定userとbeatmapとmodeを持つscope.
+    """
     return BeatmapPerformanceBestScope(
         user_id=2,
         beatmap_id=1,
@@ -566,6 +885,16 @@ def _performance_best_upsert(
     score_id: int,
     pp: Decimal,
 ) -> UpsertBeatmapPerformanceBest:
+    """Performance best projectionのupsert commandをtest入力から構築する.
+
+    Args:
+        scope (BeatmapPerformanceBestScope): projectionが所有する完全一致scope.
+        score_id (int): projectionへ関連付けるscore ID.
+        pp (Decimal): rank keyに使うperformance point.
+
+    Returns:
+        UpsertBeatmapPerformanceBest: 固定accuracyとscoreと送信時刻を含むupsert command.
+    """
     return UpsertBeatmapPerformanceBest(
         scope=scope,
         score_id=score_id,
@@ -583,6 +912,16 @@ def _performance_best_model(
     score_id: int,
     pp: Decimal,
 ) -> BeatmapPerformanceBestModel:
+    """Repository read結果を再現するperformance best projection modelを構築する.
+
+    Args:
+        scope (BeatmapPerformanceBestScope): modelへ設定する完全一致scope.
+        score_id (int): modelが参照するscore ID.
+        pp (Decimal): modelへ設定するperformance point.
+
+    Returns:
+        BeatmapPerformanceBestModel: fixed timestampを含むpersistence model.
+    """
     return BeatmapPerformanceBestModel(
         id=41,
         user_id=scope.user_id,
