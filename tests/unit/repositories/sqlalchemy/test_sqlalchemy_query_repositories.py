@@ -1,4 +1,4 @@
-"""Tests for SQLAlchemy query repository adapters."""
+"""SQLAlchemy query repository adapterのread-only契約を検証するtest."""
 
 from __future__ import annotations
 
@@ -91,27 +91,64 @@ _LATEST_ACTIVITY_AT = datetime(2026, 7, 7, 1, 2, 3, tzinfo=UTC)
 
 
 class FakeResult:
-    """Small SQLAlchemy result double for query repository checks."""
+    """SQLAlchemy query結果を再現するread-only fakeを提供する.
+
+    Attributes:
+        _value (object | None): scalar_one_or_none()が返す単一値.
+        _values (list[object]): scalars().all()が返す順序付き値.
+    """
 
     _value: object | None
     _values: list[object]
 
     def __init__(self, value: object | None = None, values: Iterable[object] = ()) -> None:
+        """query結果doubleを初期化する.
+
+        Args:
+            value (object | None): 単一値を読むqueryに返す値.
+            values (Iterable[object]): 複数値を読むqueryに返す順序付き値.
+        """
         self._value = value
         self._values = list(values)
 
     def scalar_one_or_none(self) -> object | None:
+        """設定済みの単一値を返す.
+
+        Returns:
+            object | None: queryが一致させた値. 値がない場合はNone.
+        """
         return self._value
 
     def scalars(self) -> FakeResult:
+        """複数値を読むための結果viewを返す.
+
+        Returns:
+            FakeResult: all()で設定済みの複数値を返す同じresult instance.
+        """
         return self
 
     def all(self) -> list[object]:
+        """設定済みの複数値を順序を保って返す.
+
+        Returns:
+            list[object]: queryが一致させた複数値.
+        """
         return self._values
 
 
 class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
-    """AsyncSession-shaped fake that fails on mutation APIs."""
+    """query repositoryのread-only session契約を再現するfakeを提供する.
+
+    Attributes:
+        closed (bool): close()が呼ばれたかを示す状態.
+        executed (int): execute()で受け取ったstatement数.
+        _get_handler (Callable[[type[object], object], object | None]):
+            model取得結果を決めるhandler.
+        _execute_handler (Callable[[Executable], FakeResult]): statement実行結果を決めるhandler.
+
+    Notes:
+        mutation APIはAssertionErrorを送出してquery adapterのwriteをtestで可視化する.
+    """
 
     closed: bool
     executed: int
@@ -124,6 +161,14 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
         get_handler: Callable[[type[object], object], object | None] | None = None,
         execute_handler: Callable[[Executable], FakeResult] | None = None,
     ) -> None:
+        """read-only query session fakeを初期化する.
+
+        Args:
+            get_handler (Callable[[type[object], object], object | None] | None):
+                modelとidentityから取得結果を返すhandler. Noneの場合は常にNoneを返す.
+            execute_handler (Callable[[Executable], FakeResult] | None):
+                SQL statementから結果doubleを返すhandler. Noneの場合は空結果を返す.
+        """
         self.closed = False
         self.executed = 0
         self._get_handler = get_handler or _missing_get
@@ -131,6 +176,11 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
 
     @override
     async def __aenter__(self) -> FakeQuerySession:
+        """context内で利用する同じsession fakeを返す.
+
+        Returns:
+            FakeQuerySession: query実行状態を記録するこのsession.
+        """
         return self
 
     @override
@@ -140,62 +190,171 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """context終了時にsessionを閉じる.
+
+        Args:
+            exc_type (type[BaseException] | None): 終了exception型. Noneなら正常終了.
+            exc (BaseException | None): 終了exception instance. Noneなら正常終了.
+            traceback (TracebackType | None): context内のexception traceback. 例外がない場合はNone.
+
+        Returns:
+            None: sessionをclosed状態にして呼び出し側へ値を返さずに完了する.
+        """
         _ = exc_type
         _ = exc
         _ = traceback
         await self.close()
 
     async def get(self, model_type: type[object], identity: object) -> object | None:
+        """model型とidentityに対応するread結果を返す.
+
+        Args:
+            model_type (type[object]): 取得対象のSQLAlchemy model型.
+            identity (object): modelを特定するprimary key値.
+
+        Returns:
+            object | None: get handlerが返したmodel. 一致しない場合はNone.
+        """
         return self._get_handler(model_type, identity)
 
     async def execute(self, statement: Executable) -> FakeResult:
+        """Read statementの結果を返し実行回数を記録する.
+
+        Args:
+            statement (Executable): query repositoryが発行したSQLAlchemy statement.
+
+        Returns:
+            FakeResult: execute handlerがstatementに対応させた結果double.
+        """
         self.executed += 1
         return self._execute_handler(statement)
 
     def add(self, instance: object) -> None:
+        """Query sessionでの追加操作を失敗させる.
+
+        Args:
+            instance (object): 追加しようとしたpersistence model.
+
+        Raises:
+            AssertionError: query repositoryがmutation APIを呼び出した場合.
+        """
         _ = instance
         raise AssertionError("query repository must not add instances")
 
     async def delete(self, instance: object) -> None:
+        """Query sessionでの削除操作を失敗させる.
+
+        Args:
+            instance (object): 削除しようとしたpersistence model.
+
+        Raises:
+            AssertionError: query repositoryがmutation APIを呼び出した場合.
+        """
         _ = instance
         raise AssertionError("query repository must not delete instances")
 
     async def merge(self, instance: object) -> object:
+        """Query sessionでのmerge操作を失敗させる.
+
+        Args:
+            instance (object): mergeしようとしたpersistence model.
+
+        Raises:
+            AssertionError: query repositoryがmutation APIを呼び出した場合.
+        """
         _ = instance
         raise AssertionError("query repository must not merge instances")
 
     async def flush(self) -> None:
+        """Query sessionでのflush操作を失敗させる.
+
+        Raises:
+            AssertionError: query repositoryがmutation APIを呼び出した場合.
+        """
         raise AssertionError("query repository must not flush")
 
     async def commit(self) -> None:
+        """Query sessionでのcommit操作を失敗させる.
+
+        Raises:
+            AssertionError: query repositoryがmutation APIを呼び出した場合.
+        """
         raise AssertionError("query repository must not commit")
 
     async def rollback(self) -> None:
+        """Query sessionでのrollback操作を失敗させる.
+
+        Raises:
+            AssertionError: query repositoryがmutation APIを呼び出した場合.
+        """
         raise AssertionError("query repository must not rollback")
 
     async def refresh(self, instance: object) -> None:
+        """Query sessionでのrefresh操作を失敗させる.
+
+        Args:
+            instance (object): refreshしようとしたpersistence model.
+
+        Raises:
+            AssertionError: query repositoryがmutation APIを呼び出した場合.
+        """
         _ = instance
         raise AssertionError("query repository must not refresh")
 
     async def close(self) -> None:
+        """sessionをclosed状態へ遷移させる.
+
+        Returns:
+            None: closedをTrueにして呼び出し側へ値を返さずに完了する.
+        """
         self.closed = True
 
 
 class FakeSessionFactory:
+    """同じquery sessionを返し生成回数を記録するfactory fakeを提供する.
+
+    Attributes:
+        session (FakeQuerySession): factoryが各呼び出しで返すsession fake.
+        calls (int): factoryが呼び出された回数.
+    """
+
     session: FakeQuerySession
     calls: int
 
     def __init__(self, session: FakeQuerySession) -> None:
+        """再利用するquery session fakeを設定する.
+
+        Args:
+            session (FakeQuerySession): 各factory呼び出しで返すsession.
+        """
         self.session = session
         self.calls = 0
 
     def __call__(self) -> FakeQuerySession:
+        """設定済みsessionを返し呼び出し回数を加算する.
+
+        Returns:
+            FakeQuerySession: query repositoryへ渡す同じsession fake.
+        """
         self.calls += 1
         return self.session
 
 
 @dataclass(frozen=True, slots=True)
 class ScoreBlobBeatmapQueryFixture:
+    """score/blob/beatmap query testで共有するpersistence model群を表す.
+
+    Attributes:
+        score (ScoreModel): query対象のscore model.
+        blob (BlobModel): scoreまたはattachmentが参照するblob model.
+        beatmapset (BeatmapSetModel): query対象beatmapを含むbeatmapset model.
+        beatmap (BeatmapModel): query対象のbeatmap model.
+        attachment (BeatmapFileAttachmentModel): beatmapの現在file attachment model.
+        fetch_state (BeatmapFetchStateModel): beatmap metadata取得状態model.
+        session (FakeQuerySession): read結果を返すsession fake.
+        factory (FakeSessionFactory): sessionを返すfactory fake.
+    """
+
     score: ScoreModel
     blob: BlobModel
     beatmapset: BeatmapSetModel
@@ -207,6 +366,14 @@ class ScoreBlobBeatmapQueryFixture:
 
 
 async def test_identity_and_channel_query_repositories_use_short_read_sessions() -> None:
+    """identity/channel query adapterが短命read sessionだけを使う契約を検証する.
+
+    user/role/channelとrole overrideが存在する条件で各read APIを呼び出す.
+    取得値がmappingされ13個のsession生成後にsessionが閉じることを確認する.
+
+    Returns:
+        None: read modelとsession lifecycleを検証して呼び出し側へ値を返さずに完了する.
+    """
     user_model = _user_model()
     role_model = _role_model()
     channel_model = _channel_model()
@@ -267,6 +434,14 @@ async def test_identity_and_channel_query_repositories_use_short_read_sessions()
 
 
 async def test_friend_relationship_query_repository_uses_short_read_sessions() -> None:
+    """Friend relationship query adapterがread sessionを短命に保つ契約を検証する.
+
+    ownerとtargetのrelationshipを返すSQL結果を用意して一覧と存在確認を行う.
+    tupleのfriend IDと真のrelationship判定を返し2回のsession生成後に閉じることを確認する.
+
+    Returns:
+        None: relationship read結果とsession lifecycleを検証して呼び出し側へ値を返さずに完了する.
+    """
     session = FakeQuerySession(
         execute_handler=lambda statement: _execute_from_text(
             statement,
@@ -291,6 +466,14 @@ async def test_friend_relationship_query_repository_uses_short_read_sessions() -
 
 
 async def test_score_and_blob_query_repositories_are_read_only() -> None:
+    """score/blob query adapterがread modelを返しwriteを行わない契約を検証する.
+
+    scoreとblobがprimary keyおよびchecksumで見つかる条件を用意して各read APIを呼び出す.
+    期待するmodel fieldを保持した結果を返しsessionを閉じることを確認する.
+
+    Returns:
+        None: score/blob read結果とread-only lifecycleを検証して呼び出し側へ値を返さずに完了する.
+    """
     fixture = _score_blob_beatmap_fixture()
     session_factory = cast("SQLAlchemyQuerySessionFactory", cast("object", fixture.factory))
     scores: ScoreQueryRepository = SQLAlchemyScoreQueryRepository(session_factory)
@@ -315,6 +498,14 @@ async def test_score_and_blob_query_repositories_are_read_only() -> None:
 
 
 async def test_personal_best_query_repository_returns_score_listing_read_model() -> None:
+    """Personal best query adapterがlisting read modelを組み立てる契約を検証する.
+
+    score/user/replayを結合するpersonal best結果を用意してglobal categoryのreadを行う.
+    score値とrankおよびreplay有無を保持したread modelを1回のsessionで返すことを確認する.
+
+    Returns:
+        None: personal best listingのmappingとsession lifecycleを検証して完了する.
+    """
     user = _user_model()
     score = _score_model(score_id=501, user_id=user.id, beatmap_id=7)
     replay = _replay_model(score_id=score.id)
@@ -356,6 +547,14 @@ async def test_personal_best_query_repository_returns_score_listing_read_model()
 
 
 async def test_score_performance_query_repository_reads_current_and_candidates() -> None:
+    """Score performance query adapterがcurrent値と再計算候補理由を返す契約を検証する.
+
+    未計算とcalculator/formula/file差分を持つscoreを用意してtarget profileで候補を選択する.
+    current calculationと4種類のcandidate reasonを2回のread sessionで返すことを確認する.
+
+    Returns:
+        None: performance read結果とcandidate reason集計を検証して呼び出し側へ値を返さずに完了する.
+    """
     score_without_performance = _score_model(score_id=301, user_id=10, beatmap_id=7)
     score_with_mismatch = _score_model(score_id=302, user_id=10, beatmap_id=7)
     score_with_profile_mismatch = _score_model(score_id=303, user_id=10, beatmap_id=7)
@@ -433,6 +632,14 @@ async def test_score_performance_query_repository_reads_current_and_candidates()
 
 
 async def test_score_performance_query_repository_marks_explicit_target_mismatch_stale() -> None:
+    """Explicit target checksumとの差分をstale候補にする契約を検証する.
+
+    完了済みcalculationと異なるtarget beatmap file checksumを指定して候補を選択する.
+    対象scoreだけがSTALE reasonで返されsessionが閉じることを確認する.
+
+    Returns:
+        None: explicit target mismatchのstale判定を検証して呼び出し側へ値を返さずに完了する.
+    """
     score = _score_model(score_id=305, user_id=10, beatmap_id=7)
     attachment = _attachment_model(attachment_id=8, beatmap_id=7, checksum_md5="b" * 32)
     current = _performance_model(
@@ -480,6 +687,14 @@ async def test_score_performance_query_repository_marks_explicit_target_mismatch
 
 
 async def test_score_performance_query_repository_marks_explicit_attachment_stale() -> None:
+    """Explicit attachment IDとの差分をstale候補にする契約を検証する.
+
+    完了済みcalculationと異なるtarget beatmap file attachment IDを指定して候補を選択する.
+    対象scoreだけがSTALE reasonで返されsessionが閉じることを確認する.
+
+    Returns:
+        None: explicit attachment mismatchのstale判定を検証して呼び出し側へ値を返さずに完了する.
+    """
     score = _score_model(score_id=306, user_id=10, beatmap_id=7)
     attachment = _attachment_model(attachment_id=8, beatmap_id=7, checksum_md5="b" * 32)
     current = _performance_model(
@@ -527,6 +742,14 @@ async def test_score_performance_query_repository_marks_explicit_attachment_stal
 
 
 async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
+    """beatmap/getscores query adapterがread-only lookupを提供する契約を検証する.
+
+    beatmapset/beatmap/file attachment/fetch stateが存在する条件でcurrentとlegacy APIを呼び出す.
+    ID/checksum/filename lookupが同じmodel情報を返しsessionを閉じることを確認する.
+
+    Returns:
+        None: beatmap read結果とread-only session lifecycleを検証して完了する.
+    """
     fixture = _score_blob_beatmap_fixture()
     session_factory = cast("SQLAlchemyQuerySessionFactory", cast("object", fixture.factory))
     beatmaps: BeatmapQueryRepository = SQLAlchemyBeatmapQueryRepository(session_factory)
@@ -584,6 +807,14 @@ async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
 
 
 async def test_chat_history_query_repository_returns_display_read_models() -> None:
+    """Chat history query adapterが表示用read modelを返す契約を検証する.
+
+    channel/private messageが各SQL結果に1件ずつ存在する条件で履歴read APIを呼び出す.
+    message IDとcontentを保持したread modelを返し2回のsession生成後に閉じることを確認する.
+
+    Returns:
+        None: chat history mappingとsession lifecycleを検証して呼び出し側へ値を返さずに完了する.
+    """
     channel_message = ChannelMessageModel(
         id=101,
         sender_id=1,
@@ -623,6 +854,14 @@ async def test_chat_history_query_repository_returns_display_read_models() -> No
 
 
 def test_sqlalchemy_query_repository_modules_do_not_call_mutation_methods() -> None:
+    """SQLAlchemy query moduleがmutation APIを呼ばない境界契約を検証する.
+
+    query package内の全Python moduleをASTとして読み取りsession mutation名へのcallを探索する.
+    add/commit/delete/flush/merge/refresh/rollback呼び出しが0件であることを確認する.
+
+    Returns:
+        None: read-only boundaryの静的検査を完了して呼び出し側へ値を返さない.
+    """
     violations: list[str] = []
     for path in sorted(QUERY_ROOT.glob("*.py")):
         if path.name == "__init__.py":
@@ -648,6 +887,14 @@ def test_sqlalchemy_query_repository_modules_do_not_call_mutation_methods() -> N
 
 
 def test_sqlalchemy_query_repository_modules_do_not_depend_on_command_boundaries() -> None:
+    """SQLAlchemy query moduleがcommand boundaryへ依存しない契約を検証する.
+
+    query package内の全Python moduleからabsolute importを抽出してforbidden rootと照合する.
+    command interface/implementation/Unit of Workへのimportが0件であることを確認する.
+
+    Returns:
+        None: query layer dependency boundaryの静的検査を完了して呼び出し側へ値を返さない.
+    """
     forbidden_roots = (
         "osu_server.repositories.interfaces.commands",
         "osu_server.repositories.interfaces.unit_of_work",
@@ -666,12 +913,29 @@ def test_sqlalchemy_query_repository_modules_do_not_depend_on_command_boundaries
 
 
 def _missing_get(model_type: type[object], identity: object) -> object | None:
+    """未登録model lookupの空結果を返す既定get handlerを提供する.
+
+    Args:
+        model_type (type[object]): lookup対象として渡されたmodel型.
+        identity (object): lookup対象として渡されたidentity値.
+
+    Returns:
+        object | None: 常にNone. fake sessionにfixture handlerがない場合だけ利用する.
+    """
     _ = model_type
     _ = identity
     return None
 
 
 def _empty_execute(statement: Executable) -> FakeResult:
+    """未登録statementの空結果を返す既定execute handlerを提供する.
+
+    Args:
+        statement (Executable): fake sessionが受け取ったSQLAlchemy statement.
+
+    Returns:
+        FakeResult: 値を持たないresult double. fixture handlerがない場合だけ利用する.
+    """
     _ = statement
     return FakeResult()
 
@@ -679,7 +943,26 @@ def _empty_execute(statement: Executable) -> FakeResult:
 def _identity_get_handler(
     *, user_model: UserModel, role_model: RoleModel
 ) -> Callable[[type[object], object], object | None]:
+    """user/role modelのprimary key lookupを返すhandlerを構築する.
+
+    Args:
+        user_model (UserModel): UserModel lookupに一致させるfixture.
+        role_model (RoleModel): RoleModel lookupに一致させるfixture.
+
+    Returns:
+        Callable[[type[object], object], object | None]: 一致したuserまたはroleを返すget handler.
+    """
+
     def get(model_type: type[object], identity: object) -> object | None:
+        """Fixture model型とprimary keyに一致する値を返す.
+
+        Args:
+            model_type (type[object]): session getへ渡されたmodel型.
+            identity (object): session getへ渡されたprimary key.
+
+        Returns:
+            object | None: 一致するuserまたはrole model. 一致しない場合はNone.
+        """
         if model_type is UserModel and identity == user_model.id:
             return user_model
         if model_type is RoleModel and identity == role_model.id:
@@ -696,7 +979,28 @@ def _score_blob_beatmap_get_handler(
     beatmap_model: BeatmapModel,
     beatmapset_model: BeatmapSetModel,
 ) -> Callable[[type[object], object], object | None]:
+    """score/blob/beatmap/beatmapsetのprimary key lookup handlerを構築する.
+
+    Args:
+        score_model (ScoreModel): ScoreModel lookupに一致させるfixture.
+        blob_model (BlobModel): BlobModel lookupに一致させるfixture.
+        beatmap_model (BeatmapModel): BeatmapModel lookupに一致させるfixture.
+        beatmapset_model (BeatmapSetModel): BeatmapSetModel lookupに一致させるfixture.
+
+    Returns:
+        Callable[[type[object], object], object | None]: 一致したfixture modelを返すget handler.
+    """
+
     def get(model_type: type[object], identity: object) -> object | None:
+        """Fixture model型とprimary keyに一致する値を返す.
+
+        Args:
+            model_type (type[object]): session getへ渡されたmodel型.
+            identity (object): session getへ渡されたprimary key.
+
+        Returns:
+            object | None: 一致するscore/blob/beatmap/beatmapset model. 一致しない場合はNone.
+        """
         if model_type is ScoreModel and identity == score_model.id:
             return score_model
         if model_type is BlobModel and identity == blob_model.id:
@@ -711,6 +1015,11 @@ def _score_blob_beatmap_get_handler(
 
 
 def _score_blob_beatmap_fixture() -> ScoreBlobBeatmapQueryFixture:
+    """score/blob/beatmap query test用の相互参照fixtureを構築する.
+
+    Returns:
+        ScoreBlobBeatmapQueryFixture: read handlerと一致するpersistence model群を持つfixture.
+    """
     score_model = _score_model()
     blob_model = _blob_model()
     beatmapset_model = _beatmapset_model()
@@ -745,6 +1054,14 @@ def _score_blob_beatmap_fixture() -> ScoreBlobBeatmapQueryFixture:
 
 
 def _sql_text(statement: Executable) -> str:
+    """SQLAlchemy statementをmarker照合用の空白正規化文字列へ変換する.
+
+    Args:
+        statement (Executable): fixture handlerが判別するSQLAlchemy statement.
+
+    Returns:
+        str: 連続空白を単一spaceへ正規化したSQL text.
+    """
     return " ".join(str(statement).split())
 
 
@@ -755,7 +1072,27 @@ def _identity_channel_execute_handler(
     channel_model: ChannelModel,
     override_model: ChannelRoleOverrideModel,
 ) -> Callable[[Executable], FakeResult]:
+    """identity/channel queryごとのfixture結果を返すexecute handlerを構築する.
+
+    Args:
+        user_model (UserModel): user queryに返すfixture.
+        role_model (RoleModel): role queryに返すfixture.
+        channel_model (ChannelModel): channel queryに返すfixture.
+        override_model (ChannelRoleOverrideModel): channel role override queryに返すfixture.
+
+    Returns:
+        Callable[[Executable], FakeResult]: SQL markerに対応するresult doubleを返すhandler.
+    """
+
     def execute(statement: Executable) -> FakeResult:
+        """statementのSQL markerに一致するidentity/channel結果を返す.
+
+        Args:
+            statement (Executable): query repositoryが発行したSQLAlchemy statement.
+
+        Returns:
+            FakeResult: 一致するfixture result. markerがない場合は空result.
+        """
         text = _sql_text(statement)
         fixtures: tuple[tuple[str, FakeResult], ...] = (
             ("FROM user_roles", FakeResult(values=[(user_model.id,)])),
@@ -784,7 +1121,28 @@ def _score_blob_beatmap_execute_handler(
     attachment_model: BeatmapFileAttachmentModel,
     fetch_state_model: BeatmapFetchStateModel,
 ) -> Callable[[Executable], FakeResult]:
+    """score/blob/beatmap queryごとのfixture結果を返すexecute handlerを構築する.
+
+    Args:
+        score_model (ScoreModel): score checksum queryに返すfixture.
+        blob_model (BlobModel): blob SHA-256 queryに返すfixture.
+        beatmap_model (BeatmapModel): beatmap lookup queryに返すfixture.
+        attachment_model (BeatmapFileAttachmentModel): file attachment queryに返すfixture.
+        fetch_state_model (BeatmapFetchStateModel): fetch state queryに返すfixture.
+
+    Returns:
+        Callable[[Executable], FakeResult]: SQL markerに対応するresult doubleを返すhandler.
+    """
+
     def execute(statement: Executable) -> FakeResult:
+        """statementのSQL markerに一致するscore/blob/beatmap結果を返す.
+
+        Args:
+            statement (Executable): query repositoryが発行したSQLAlchemy statement.
+
+        Returns:
+            FakeResult: 一致するfixture result. markerがない場合は空result.
+        """
         text = _sql_text(statement)
         fixtures: tuple[tuple[str, FakeResult], ...] = (
             ("FROM scores WHERE scores.online_checksum", FakeResult(score_model)),
@@ -804,6 +1162,15 @@ def _score_blob_beatmap_execute_handler(
 
 
 def _execute_from_text(statement: Executable, fixtures: dict[str, FakeResult]) -> FakeResult:
+    """SQL text内のmarkerに対応するfixture resultを返す.
+
+    Args:
+        statement (Executable): marker照合対象のSQLAlchemy statement.
+        fixtures (dict[str, FakeResult]): SQL markerからresult doubleへの対応表.
+
+    Returns:
+        FakeResult: 最初に一致したresult. 一致しない場合は空result.
+    """
     text = str(statement)
     for marker, result in fixtures.items():
         if marker in text:
@@ -812,6 +1179,14 @@ def _execute_from_text(statement: Executable, fixtures: dict[str, FakeResult]) -
 
 
 def _absolute_imports(path: Path) -> set[str]:
+    """Python moduleからabsolute import名を抽出する.
+
+    Args:
+        path (Path): AST解析するquery repository moduleのpath.
+
+    Returns:
+        set[str]: __future__を除くabsolute importとfrom importの完全名.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     modules: set[str] = set()
     for node in ast.walk(tree):
@@ -825,6 +1200,11 @@ def _absolute_imports(path: Path) -> set[str]:
 
 
 def _user_model() -> UserModel:
+    """Identity query testで使う固定user persistence modelを構築する.
+
+    Returns:
+        UserModel: username/email/activity timestampを持つQueryUser fixture.
+    """
     return UserModel(
         id=1,
         username="QueryUser",
@@ -839,10 +1219,20 @@ def _user_model() -> UserModel:
 
 
 def _role_model() -> RoleModel:
+    """Role query testで使うdefault role persistence modelを構築する.
+
+    Returns:
+        RoleModel: 読み取り対象のDefault role fixture.
+    """
     return RoleModel(id=2, name="Default", permissions=1, position=1)
 
 
 def _channel_model() -> ChannelModel:
+    """Channel query testで使うauto join public channel modelを構築する.
+
+    Returns:
+        ChannelModel: #osu名とpublic channel種別を持つfixture.
+    """
     return ChannelModel(
         id=10,
         name="#osu",
@@ -862,6 +1252,16 @@ def _score_model(
     user_id: int = 1,
     beatmap_id: int = 7,
 ) -> ScoreModel:
+    """Score query testで使う指定identityのscore persistence modelを構築する.
+
+    Args:
+        score_id (int): 構築するscoreのprimary key.
+        user_id (int): scoreを所有するuserのprimary key.
+        beatmap_id (int): scoreが記録されたbeatmapのprimary key.
+
+    Returns:
+        ScoreModel: osu vanilla score値とonline checksumを持つfixture.
+    """
     return ScoreModel(
         id=score_id,
         user_id=user_id,
@@ -891,6 +1291,14 @@ def _score_model(
 
 
 def _replay_model(*, score_id: int) -> ReplayModel:
+    """Personal best query testで使うscore連結replay modelを構築する.
+
+    Args:
+        score_id (int): replayを関連付けるscoreのprimary key.
+
+    Returns:
+        ReplayModel: 指定score IDと固定blob metadataを持つfixture.
+    """
     return ReplayModel(
         id=601,
         score_id=score_id,
@@ -911,6 +1319,20 @@ def _performance_model(
     beatmap_file_attachment_id: int = 8,
     beatmap_file_checksum_md5: str = "b" * 32,
 ) -> ScorePerformanceCalculationModel:
+    """Performance query testで使うcalculation persistence modelを構築する.
+
+    Args:
+        calculation_id (int): calculationのprimary key.
+        score_id (int): calculationが対象にするscoreのprimary key.
+        state (PerformanceCalculationState): calculationのlifecycle状態.
+        calculator_version (str): calculationを生成したcalculator version.
+        formula_profile (FormulaProfile): calculationに適用したformula profile.
+        beatmap_file_attachment_id (int): calculation時に使ったbeatmap file attachment ID.
+        beatmap_file_checksum_md5 (str): calculation時に使ったbeatmap file MD5 checksum.
+
+    Returns:
+        ScorePerformanceCalculationModel: 指定stateに応じたcurrent calculation fixture.
+    """
     return ScorePerformanceCalculationModel(
         id=calculation_id,
         score_id=score_id,
@@ -938,6 +1360,11 @@ def _performance_model(
 
 
 def _blob_model() -> BlobModel:
+    """Blob query testで使う固定content-addressed blob modelを構築する.
+
+    Returns:
+        BlobModel: SHA-256とlocal storage metadataを持つfixture.
+    """
     return BlobModel(
         id=400,
         sha256="a" * 64,
@@ -950,6 +1377,11 @@ def _blob_model() -> BlobModel:
 
 
 def _beatmapset_model() -> BeatmapSetModel:
+    """Beatmap query testで使うranked beatmapset modelを構築する.
+
+    Returns:
+        BeatmapSetModel: official metadataがverified済みのfixture.
+    """
     return BeatmapSetModel(
         id=6,
         artist="artist",
@@ -966,6 +1398,11 @@ def _beatmapset_model() -> BeatmapSetModel:
 
 
 def _beatmap_model() -> BeatmapModel:
+    """Beatmap query testで使うranked osu beatmap modelを構築する.
+
+    Returns:
+        BeatmapModel: beatmapset ID/checksum/verified statusを持つfixture.
+    """
     return BeatmapModel(
         id=7,
         beatmapset_id=6,
@@ -997,6 +1434,16 @@ def _attachment_model(
     beatmap_id: int = 7,
     checksum_md5: str = "b" * 32,
 ) -> BeatmapFileAttachmentModel:
+    """Beatmap file lookup testで使うattachment modelを構築する.
+
+    Args:
+        attachment_id (int): attachmentのprimary key.
+        beatmap_id (int): attachmentが属するbeatmapのprimary key.
+        checksum_md5 (str): attachmentとverified fileのMD5 checksum.
+
+    Returns:
+        BeatmapFileAttachmentModel: 指定identityと固定blob metadataを持つfixture.
+    """
     return BeatmapFileAttachmentModel(
         id=attachment_id,
         beatmap_id=beatmap_id,
@@ -1011,6 +1458,11 @@ def _attachment_model(
 
 
 def _fetch_state_model() -> BeatmapFetchStateModel:
+    """Beatmap metadata lookup testで使うfresh fetch state modelを構築する.
+
+    Returns:
+        BeatmapFetchStateModel: beatmap ID metadata targetがFRESHのfixture.
+    """
     return BeatmapFetchStateModel(
         target_type=BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID.value,
         target_key="7",
