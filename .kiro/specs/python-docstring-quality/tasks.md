@@ -441,14 +441,14 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/infrastructure/state/**_
 
-- [ ] 3.11 (P) Beatmap file/provider infrastructure testを整備する
+- [x] 3.11 (P) Beatmap file/provider infrastructure testを整備する
   - test_beatmap_file_providers.pyとtest_beatmap_providers.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および2 fileのtestが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/infrastructureの2 file_
 
-- [ ] 3.12 (P) Beatmap metadata/country infrastructure testを整備する
+- [x] 3.12 (P) Beatmap metadata/country infrastructure testを整備する
   - test_beatmap_metadata_providers.py、test_osu_api_metadata_provider.py、
     test_country_resolver.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および3 fileのtestが通る
@@ -456,7 +456,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/infrastructureの3 file_
 
-- [ ] 3.13 (P) Configuration/blob-storage infrastructure testを整備する
+- [x] 3.13 (P) Configuration/blob-storage infrastructure testを整備する
   - test_config.py、test_blob_storage_backend_selection.py、test_blob_storage_contracts.py、
     test_local_blob_storage.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および4 fileのtestが通る
@@ -464,7 +464,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/infrastructureの4 file_
 
-- [ ] 3.14 (P) 残りのnon-messaging infrastructure unit testを整備する
+- [x] 3.14 (P) 残りのnon-messaging infrastructure unit testを整備する
   - tests/unit/infrastructure/*.py、crypto/**、performance/**から3.11-3.13の所有fileを除き、
     messaging/**とstate/**も除外した全fileへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびdatabase、crypto、HTTP、logging、parser、performance、query、
@@ -473,7 +473,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/infrastructureからstate、messaging、3.11-3.13の所有fileを除く_
 
-- [ ] 3.15 (P) Jobとshared unit testを整備する
+- [x] 3.15 (P) Jobとshared unit testを整備する
   - tests/unit/jobs/**とtests/unit/shared/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有testが通る
   - _Depends: 1.4_
