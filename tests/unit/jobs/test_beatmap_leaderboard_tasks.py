@@ -1,4 +1,4 @@
-"""Tests for Beatmap Leaderboard rebuild taskiq job adapters."""
+"""Beatmap Leaderboard再構築Taskiq adapterのunit testを提供する."""
 
 from __future__ import annotations
 
@@ -30,6 +30,14 @@ if TYPE_CHECKING:
 
 
 class _FakeUserRebuildUseCase:
+    """user単位再構築commandを記録し、設定済み結果または例外を返すtest double.
+
+    Attributes:
+        calls (list[RebuildBeatmapLeaderboardsForUserCommand]): executeへ渡されたcommand履歴.
+        _result (RebuildBeatmapLeaderboardsResult | None): 既定結果を置き換える返却結果.
+        _error (Exception | None): executeで送出する永続化失敗の再現値.
+    """
+
     calls: list[RebuildBeatmapLeaderboardsForUserCommand]
     _result: RebuildBeatmapLeaderboardsResult | None
     _error: Exception | None
@@ -40,6 +48,13 @@ class _FakeUserRebuildUseCase:
         result: RebuildBeatmapLeaderboardsResult | None = None,
         error: Exception | None = None,
     ) -> None:
+        """再構築結果または失敗を設定したtest doubleを初期化する.
+
+        Args:
+            result (RebuildBeatmapLeaderboardsResult | None): executeで返す結果.
+                Noneなら既定成功結果.
+            error (Exception | None): executeで送出する例外. Noneなら送出しない.
+        """
         self.calls = []
         self._result = result
         self._error = error
@@ -48,6 +63,17 @@ class _FakeUserRebuildUseCase:
         self,
         command: RebuildBeatmapLeaderboardsForUserCommand,
     ) -> RebuildBeatmapLeaderboardsResult:
+        """user再構築commandを記録して設定済みの実行結果を返す.
+
+        Args:
+            command (RebuildBeatmapLeaderboardsForUserCommand): adapterが構築したuser再構築command.
+
+        Returns:
+            RebuildBeatmapLeaderboardsResult: 設定済みまたは既定の再構築結果.
+
+        Raises:
+            Exception: _errorが設定されている場合.
+        """
         self.calls.append(command)
         if self._error is not None:
             raise self._error
@@ -61,6 +87,14 @@ class _FakeUserRebuildUseCase:
 
 
 class _FakeBeatmapsetRebuildUseCase:
+    """beatmapset単位再構築commandを記録し、設定済み結果または例外を返すtest double.
+
+    Attributes:
+        calls (list[RebuildBeatmapLeaderboardsForBeatmapsetCommand]): executeへ渡されたcommand履歴.
+        _result (RebuildBeatmapLeaderboardsResult | None): 既定結果を置き換える返却結果.
+        _error (Exception | None): executeで送出する永続化失敗の再現値.
+    """
+
     calls: list[RebuildBeatmapLeaderboardsForBeatmapsetCommand]
     _result: RebuildBeatmapLeaderboardsResult | None
     _error: Exception | None
@@ -71,6 +105,13 @@ class _FakeBeatmapsetRebuildUseCase:
         result: RebuildBeatmapLeaderboardsResult | None = None,
         error: Exception | None = None,
     ) -> None:
+        """再構築結果または失敗を設定したtest doubleを初期化する.
+
+        Args:
+            result (RebuildBeatmapLeaderboardsResult | None): executeで返す結果.
+                Noneなら既定成功結果.
+            error (Exception | None): executeで送出する例外. Noneなら送出しない.
+        """
         self.calls = []
         self._result = result
         self._error = error
@@ -79,6 +120,18 @@ class _FakeBeatmapsetRebuildUseCase:
         self,
         command: RebuildBeatmapLeaderboardsForBeatmapsetCommand,
     ) -> RebuildBeatmapLeaderboardsResult:
+        """beatmapset再構築commandを記録して設定済みの実行結果を返す.
+
+        Args:
+            command (RebuildBeatmapLeaderboardsForBeatmapsetCommand): adapterが構築した
+                beatmapset再構築command.
+
+        Returns:
+            RebuildBeatmapLeaderboardsResult: 設定済みまたは既定の再構築結果.
+
+        Raises:
+            Exception: _errorが設定されている場合.
+        """
         self.calls.append(command)
         if self._error is not None:
             raise self._error
@@ -92,6 +145,14 @@ class _FakeBeatmapsetRebuildUseCase:
 
 
 def _make_context(**services: object) -> Context:
+    """指定use-caseをTaskiq stateへ登録したtest contextを構築する.
+
+    Args:
+        **services (object): state属性名と登録するuse-case doubleの対応.
+
+    Returns:
+        Context: leaderboard再構築taskを実行できるTaskiq context.
+    """
     broker = InMemoryBroker()
     for key, value in services.items():
         object.__setattr__(broker.state, key, value)
@@ -106,11 +167,35 @@ def _make_context(**services: object) -> Context:
 
 
 class _FakeEnqueueableTask:
+    """worker wakeがenqueueするpayloadと失敗を再現するtask double.
+
+    Attributes:
+        _error (Exception | None): kiqで送出する例外. Noneならenqueue成功を返す.
+        calls (list[tuple[tuple[object, ...], dict[str, object]]]): kiqへ渡されたpayload履歴.
+    """
+
     def __init__(self, *, error: Exception | None = None) -> None:
+        """enqueue失敗の有無と空のpayload履歴を設定する.
+
+        Args:
+            error (Exception | None): kiqで送出する例外. Noneなら正常に完了する.
+        """
         self._error: Exception | None = error
         self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
     async def kiq(self, *args: object, **kwargs: object) -> object:
+        """payloadを記録して成功objectを返すか、設定済み例外を送出する.
+
+        Args:
+            *args (object): taskへ渡される位置引数payload.
+            **kwargs (object): taskへ渡される名前付きpayload.
+
+        Returns:
+            object: enqueue成功を表す新しいobject.
+
+        Raises:
+            Exception: _errorが設定されている場合.
+        """
         self.calls.append((args, kwargs))
         if self._error is not None:
             raise self._error
@@ -118,23 +203,60 @@ class _FakeEnqueueableTask:
 
 
 class _FakeBroker:
+    """指定taskを返し、worker wakeのtask lookupを記録するbroker double.
+
+    Attributes:
+        _task (_FakeEnqueueableTask | None): lookup時に返すtask. Noneは未登録を表す.
+        task_names (list[str]): find_taskへ渡されたtask名の履歴.
+    """
+
     def __init__(self, task: _FakeEnqueueableTask | None) -> None:
+        """lookup結果に使うtask doubleを初期化する.
+
+        Args:
+            task (_FakeEnqueueableTask | None): 返すtask. Noneなら未登録状態を再現する.
+        """
         self._task: _FakeEnqueueableTask | None = task
         self.task_names: list[str] = []
 
     def find_task(self, task_name: str) -> _FakeEnqueueableTask | None:
+        """task名を記録して設定済みtaskを返す.
+
+        Args:
+            task_name (str): worker wakeが解決を試みるtask名.
+
+        Returns:
+            _FakeEnqueueableTask | None: 設定済みtask、または未登録を表すNone.
+        """
         self.task_names.append(task_name)
         return self._task
 
 
 class TestBeatmapLeaderboardTaskRegistration:
+    """leaderboard再構築taskのregistry登録とimport時登録契約を検証する."""
+
     def test_user_rebuild_task_is_registered(self) -> None:
+        """user再構築task名がjobs registryに存在することを検証する.
+
+        Returns:
+            None: user再構築task名が登録済みであることを確認して完了する.
+        """
         assert "rebuild_beatmap_leaderboards_for_user" in jobs.task_names
 
     def test_beatmapset_rebuild_task_is_registered(self) -> None:
+        """beatmapset再構築task名がjobs registryに存在することを検証する.
+
+        Returns:
+            None: beatmapset再構築task名が登録済みであることを確認して完了する.
+        """
         assert "rebuild_beatmap_leaderboards_for_beatmapset" in jobs.task_names
 
     def test_register_all_jobs_attaches_rebuild_tasks_to_broker(self) -> None:
+        """register_all_jobsが両再構築taskをbrokerへ接続することを検証する.
+
+        Returns:
+            None: user用とbeatmapset用のtaskをbrokerから発見できることを確認する.
+        """
         broker = InMemoryBroker()
 
         register_all_jobs(broker)
@@ -143,6 +265,11 @@ class TestBeatmapLeaderboardTaskRegistration:
         assert broker.find_task("rebuild_beatmap_leaderboards_for_beatmapset") is not None
 
     def test_register_all_jobs_loads_rebuild_tasks_in_fresh_process(self) -> None:
+        """新規processでもimport経由の再構築task登録を完了できることを検証する.
+
+        Returns:
+            None: subprocessが両taskを発見して終了status 0になることを確認する.
+        """
         code = """
 from taskiq import InMemoryBroker
 from osu_server.jobs import register_all_jobs
@@ -164,6 +291,11 @@ assert broker.find_task("rebuild_beatmap_leaderboards_for_beatmapset") is not No
 
 
 def test_beatmap_leaderboard_job_stays_queue_adapter_only() -> None:
+    """Leaderboard jobがrepositoryや低水準infrastructureを所有しないことを検証する.
+
+    Returns:
+        None: sourceにSQLAlchemy、repository、Valkey参照がないことを確認して完了する.
+    """
     source = inspect.getsource(beatmap_leaderboards)
 
     assert "sqlalchemy" not in source
@@ -172,7 +304,14 @@ def test_beatmap_leaderboard_job_stays_queue_adapter_only() -> None:
 
 
 class TestBeatmapLeaderboardTaskRuntimeUnavailable:
+    """必須use-caseがTaskiq stateにない場合の失敗契約を検証する."""
+
     async def test_user_rebuild_task_raises_when_runtime_missing(self) -> None:
+        """User use-case未登録時に例外と対象情報付きerror logを残すことを検証する.
+
+        Returns:
+            None: user IDを含むruntime unavailable eventを確認して完了する.
+        """
         context = _make_context()
 
         with (
@@ -200,6 +339,11 @@ class TestBeatmapLeaderboardTaskRuntimeUnavailable:
         assert entries[0]["log_level"] == "error"
 
     async def test_beatmapset_rebuild_task_raises_when_runtime_missing(self) -> None:
+        """Beatmapset use-case未登録時に例外と対象情報付きerror logを残すことを検証する.
+
+        Returns:
+            None: beatmapset IDを含むruntime unavailable eventを確認して完了する.
+        """
         context = _make_context()
 
         with (
@@ -227,6 +371,11 @@ class TestBeatmapLeaderboardTaskRuntimeUnavailable:
         assert entries[0]["log_level"] == "error"
 
     async def test_user_rebuild_task_does_not_call_wrong_runtime_state(self) -> None:
+        """異なるstate keyのuser use-caseをtaskが実行しないことを検証する.
+
+        Returns:
+            None: runtime未登録例外後もtest doubleのcommand履歴が空であることを確認する.
+        """
         fake = _FakeUserRebuildUseCase()
         context = _make_context(wrong_key=fake)
 
@@ -240,6 +389,11 @@ class TestBeatmapLeaderboardTaskRuntimeUnavailable:
         assert fake.calls == []
 
     async def test_beatmapset_rebuild_task_does_not_call_wrong_runtime_state(self) -> None:
+        """異なるstate keyのbeatmapset use-caseをtaskが実行しないことを検証する.
+
+        Returns:
+            None: runtime未登録例外後もtest doubleのcommand履歴が空であることを確認する.
+        """
         fake = _FakeBeatmapsetRebuildUseCase()
         context = _make_context(wrong_key=fake)
 
@@ -254,7 +408,14 @@ class TestBeatmapLeaderboardTaskRuntimeUnavailable:
 
 
 class TestBeatmapLeaderboardTaskPayloadValidation:
+    """leaderboard再構築taskが不正payloadを実行前に拒否する契約を検証する."""
+
     async def test_user_rebuild_rejects_non_int_user_id(self) -> None:
+        """文字列user IDを正の整数として受理せずuse-caseを実行しないことを検証する.
+
+        Returns:
+            None: ValueError後もuser再構築command履歴が空であることを確認する.
+        """
         fake = _FakeUserRebuildUseCase()
         context = _make_context(beatmap_leaderboard_user_rebuild_use_case=fake)
 
@@ -268,6 +429,11 @@ class TestBeatmapLeaderboardTaskPayloadValidation:
         assert fake.calls == []
 
     async def test_user_rebuild_rejects_bool_user_id(self) -> None:
+        """boolのuser IDを正の整数として受理せずuse-caseを実行しないことを検証する.
+
+        Returns:
+            None: ValueError後もuser再構築command履歴が空であることを確認する.
+        """
         fake = _FakeUserRebuildUseCase()
         context = _make_context(beatmap_leaderboard_user_rebuild_use_case=fake)
 
@@ -281,6 +447,11 @@ class TestBeatmapLeaderboardTaskPayloadValidation:
         assert fake.calls == []
 
     async def test_beatmapset_rebuild_rejects_empty_reason(self) -> None:
+        """空のreasonを受理せずbeatmapset use-caseを実行しないことを検証する.
+
+        Returns:
+            None: ValueError後もbeatmapset再構築command履歴が空であることを確認する.
+        """
         fake = _FakeBeatmapsetRebuildUseCase()
         context = _make_context(beatmap_leaderboard_beatmapset_rebuild_use_case=fake)
 
@@ -295,7 +466,14 @@ class TestBeatmapLeaderboardTaskPayloadValidation:
 
 
 class TestBeatmapLeaderboardTaskExecution:
+    """正当なpayloadを再構築commandへ変換してuse-caseへ委譲する契約を検証する."""
+
     async def test_user_rebuild_task_delegates_with_command(self) -> None:
+        """User payloadをuser IDとreasonを持つcommandとして委譲することを検証する.
+
+        Returns:
+            None: use-caseが1回呼ばれ、commandの値がpayloadと一致することを確認する.
+        """
         fake = _FakeUserRebuildUseCase()
         context = _make_context(beatmap_leaderboard_user_rebuild_use_case=fake)
 
@@ -311,6 +489,11 @@ class TestBeatmapLeaderboardTaskExecution:
         assert command.reason == "visibility_changed"
 
     async def test_beatmapset_rebuild_task_delegates_with_command(self) -> None:
+        """Beatmapset payloadをIDとreasonを持つcommandとして委譲することを検証する.
+
+        Returns:
+            None: use-caseが1回呼ばれ、commandの値がpayloadと一致することを確認する.
+        """
         fake = _FakeBeatmapsetRebuildUseCase()
         context = _make_context(beatmap_leaderboard_beatmapset_rebuild_use_case=fake)
 
@@ -326,6 +509,11 @@ class TestBeatmapLeaderboardTaskExecution:
         assert command.reason == "beatmap_checksum_changed"
 
     async def test_duplicate_user_rebuild_execution_delegates_each_job_once(self) -> None:
+        """同一user payloadの各task実行を独立したcommandとして委譲することを検証する.
+
+        Returns:
+            None: 2回のtask実行に対応する2件の同一内容command履歴を確認して完了する.
+        """
         fake = _FakeUserRebuildUseCase()
         context = _make_context(beatmap_leaderboard_user_rebuild_use_case=fake)
 
@@ -346,6 +534,11 @@ class TestBeatmapLeaderboardTaskExecution:
         ]
 
     async def test_beatmapset_missing_target_is_noop_success(self) -> None:
+        """存在しないbeatmapsetの再構築結果を成功としてinfo logへ記録することを検証する.
+
+        Returns:
+            None: use-case実行後にtarget_found=Falseを含むcompleted eventを確認して完了する.
+        """
         fake = _FakeBeatmapsetRebuildUseCase(
             result=RebuildBeatmapLeaderboardsResult(
                 target_found=False,
@@ -375,6 +568,11 @@ class TestBeatmapLeaderboardTaskExecution:
         assert entries[0]["log_level"] == "info"
 
     async def test_persistence_failure_surfaces(self) -> None:
+        """use-caseの永続化失敗をtaskが握りつぶさず呼び出し側へ伝播することを検証する.
+
+        Returns:
+            None: RuntimeErrorと失敗前に1回実行したcommand履歴を確認して完了する.
+        """
         fake = _FakeUserRebuildUseCase(error=RuntimeError("database unavailable"))
         context = _make_context(beatmap_leaderboard_user_rebuild_use_case=fake)
 
@@ -389,7 +587,14 @@ class TestBeatmapLeaderboardTaskExecution:
 
 
 class TestBeatmapLeaderboardStateGetters:
+    """Taskiq stateからleaderboard再構築use-caseを解決するgetter契約を検証する."""
+
     def test_user_rebuild_getter_returns_service(self) -> None:
+        """登録済みuser再構築use-caseを同一instanceで返すことを検証する.
+
+        Returns:
+            None: stateへ登録したtest doubleとgetter結果が同一であることを確認する.
+        """
         fake = _FakeUserRebuildUseCase()
         state = TaskiqState()
         object.__setattr__(state, "beatmap_leaderboard_user_rebuild_use_case", fake)
@@ -399,6 +604,11 @@ class TestBeatmapLeaderboardStateGetters:
         assert result is fake
 
     def test_user_rebuild_getter_returns_none_when_missing(self) -> None:
+        """user再構築use-case未登録時にgetterがNoneを返すことを検証する.
+
+        Returns:
+            None: 空のstateからのgetter結果がNoneであることを確認する.
+        """
         state = TaskiqState()
 
         result = get_beatmap_leaderboard_user_rebuild_use_case(state)
@@ -406,6 +616,11 @@ class TestBeatmapLeaderboardStateGetters:
         assert result is None
 
     def test_beatmapset_rebuild_getter_returns_service(self) -> None:
+        """登録済みbeatmapset再構築use-caseを同一instanceで返すことを検証する.
+
+        Returns:
+            None: stateへ登録したtest doubleとgetter結果が同一であることを確認する.
+        """
         fake = _FakeBeatmapsetRebuildUseCase()
         state = TaskiqState()
         object.__setattr__(state, "beatmap_leaderboard_beatmapset_rebuild_use_case", fake)
@@ -415,6 +630,11 @@ class TestBeatmapLeaderboardStateGetters:
         assert result is fake
 
     def test_beatmapset_rebuild_getter_returns_none_when_missing(self) -> None:
+        """beatmapset再構築use-case未登録時にgetterがNoneを返すことを検証する.
+
+        Returns:
+            None: 空のstateからのgetter結果がNoneであることを確認する.
+        """
         state = TaskiqState()
 
         result = get_beatmap_leaderboard_beatmapset_rebuild_use_case(state)
@@ -423,7 +643,14 @@ class TestBeatmapLeaderboardStateGetters:
 
 
 class TestTaskiqBeatmapLeaderboardRebuildWorkerWake:
+    """worker wakeが再構築taskをprimitive payloadでenqueueする契約を検証する."""
+
     async def test_wake_user_rebuild_enqueues_primitive_payload(self) -> None:
+        """user再構築wakeがtask名とprimitive ID及びreasonでenqueueすることを検証する.
+
+        Returns:
+            None: user task lookupとpayload履歴が期待値と一致することを確認する.
+        """
         task = _FakeEnqueueableTask()
         broker = _FakeBroker(task)
         wake = TaskiqBeatmapLeaderboardRebuildWorkerWake(broker)
@@ -434,6 +661,11 @@ class TestTaskiqBeatmapLeaderboardRebuildWorkerWake:
         assert task.calls == [((1000, "user_visibility_changed"), {})]
 
     async def test_wake_beatmapset_rebuild_enqueues_primitive_payload(self) -> None:
+        """beatmapset再構築wakeがtask名とprimitive ID及びreasonでenqueueすることを検証する.
+
+        Returns:
+            None: beatmapset task lookupとpayload履歴が期待値と一致することを確認する.
+        """
         task = _FakeEnqueueableTask()
         broker = _FakeBroker(task)
         wake = TaskiqBeatmapLeaderboardRebuildWorkerWake(broker)
@@ -447,6 +679,11 @@ class TestTaskiqBeatmapLeaderboardRebuildWorkerWake:
         assert task.calls == [((2000, "beatmap_checksum_changed"), {})]
 
     async def test_wake_raises_when_task_is_not_registered(self) -> None:
+        """user再構築task未登録時にworker wakeがRuntimeErrorを送出することを検証する.
+
+        Returns:
+            None: 未登録taskを示すRuntimeErrorが送出されることを確認して完了する.
+        """
         broker = _FakeBroker(None)
         wake = TaskiqBeatmapLeaderboardRebuildWorkerWake(broker)
 
@@ -457,6 +694,11 @@ class TestTaskiqBeatmapLeaderboardRebuildWorkerWake:
             await wake.wake_user_rebuild(user_id=1000, reason="user_visibility_changed")
 
     async def test_wake_surfaces_enqueue_failure(self) -> None:
+        """beatmapset再構築taskのenqueue失敗をworker wakeが伝播することを検証する.
+
+        Returns:
+            None: broker由来のRuntimeErrorが送出されることを確認して完了する.
+        """
         task = _FakeEnqueueableTask(error=RuntimeError("broker unavailable"))
         broker = _FakeBroker(task)
         wake = TaskiqBeatmapLeaderboardRebuildWorkerWake(broker)
