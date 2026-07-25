@@ -489,7 +489,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/repositories/memory/**と明記したsqlalchemyの4 test file_
 
-- [ ] 3.17 (P) SQLAlchemy beatmap leaderboard repository testを整備する
+- [x] 3.17 (P) SQLAlchemy beatmap leaderboard repository testを整備する
   - test_beatmap_leaderboard_command_repository.py、test_beatmap_leaderboard_query_repository.py、
     test_beatmap_performance_best_command_repository.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および3 fileのtestが通る
@@ -497,7 +497,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/repositories/sqlalchemyの3 file_
 
-- [ ] 3.18 (P) SQLAlchemy replay/score command repository testを整備する
+- [x] 3.18 (P) SQLAlchemy replay/score command repository testを整備する
   - test_replay_download_query_repository.py、test_score_command_repository.py、
     test_score_performance_command_repository.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および3 fileのtestが通る
@@ -505,7 +505,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/repositories/sqlalchemyの3 file_
 
-- [ ] 3.19 (P) SQLAlchemy aggregate query repository testを整備する
+- [x] 3.19 (P) SQLAlchemy aggregate query repository testを整備する
   - test_sqlalchemy_query_repositories.pyとtest_user_stats_query_repository.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および2 fileのtestが通る
   - _Depends: 1.4_
