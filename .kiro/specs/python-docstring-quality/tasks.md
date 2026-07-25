@@ -480,7 +480,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/{jobs,shared}/**_
 
-- [ ] 3.16 (P) Memoryとidentity-oriented SQLAlchemy repository testを整備する
+- [x] 3.16 (P) Memoryとidentity-oriented SQLAlchemy repository testを整備する
   - tests/unit/repositories/memory/**と、sqlalchemy配下のtest_chat_command_repository.py、
     test_current_user_stats_command_repository.py、test_user_command_repository.py、
     test_user_integrity_errors.pyへ共通条件を適用する
