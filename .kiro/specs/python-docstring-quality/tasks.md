@@ -512,28 +512,28 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/repositories/sqlalchemyの2 file_
 
-- [ ] 3.20 (P) SQLAlchemy Unit of Work testを整備する
+- [x] 3.20 (P) SQLAlchemy Unit of Work testを整備する
   - tests/unit/repositories/sqlalchemy/test_sqlalchemy_unit_of_work.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびUnit of Work testが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/repositories/sqlalchemy/test_sqlalchemy_unit_of_work.py_
 
-- [ ] 3.21 (P) Repository migration testを整備する
+- [x] 3.21 (P) Repository migration testを整備する
   - tests/unit/repositories/*migration*.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および全migration testが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/repositories/*migration*.py_
 
-- [ ] 3.22 (P) Root beatmap repository testを整備する
+- [x] 3.22 (P) Root beatmap repository testを整備する
   - tests/unit/repositories/test_beatmap*.pyからmigration fileを除いた全fileへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および全beatmap repository testが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/repositories/test_beatmap*.pyから*migration*.pyを除く_
 
-- [ ] 3.23 (P) Root blob、channel、chat repository testを整備する
+- [x] 3.23 (P) Root blob、channel、chat repository testを整備する
   - test_blob_model.py、test_blob_repository_contract.py、test_blob_repository_memory.py、
     test_channel_repository.py、test_chat_repository_contract.py、
     test_sqlalchemy_blob_repository.py、test_sqlalchemy_chat_repository.pyへ共通条件を適用する

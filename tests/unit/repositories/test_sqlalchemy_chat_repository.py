@@ -1,4 +1,4 @@
-"""Tests for SQLAlchemyChatRepository chat history persistence."""
+"""SQLAlchemy chat command repositoryの履歴保存契約を検証する."""
 
 from __future__ import annotations
 
@@ -23,20 +23,41 @@ if TYPE_CHECKING:
 
 
 class ChannelIdResult:
-    """Minimal scalar result returned by the fake session."""
+    """Channel IDを返すscalar query resultの最小fakeを表す.
+
+    Attributes:
+        _channel_id (int | None): lookupで返すchannel識別子またはNone.
+    """
 
     _channel_id: int | None
 
     def __init__(self, channel_id: int | None) -> None:
+        """Scalar lookupで返すchannel識別子を初期化する.
+
+        Args:
+            channel_id (int | None): 解決済みchannel IDまたは未解決を表すNone.
+        """
         self._channel_id = channel_id
 
     def scalar_one_or_none(self) -> int | None:
-        """Return configured channel id."""
+        """初期化時に設定したchannel識別子を返す.
+
+        Returns:
+            int | None: 解決済みchannel IDまたはNone.
+        """
         return self._channel_id
 
 
 class FakeSession(AbstractAsyncContextManager["FakeSession"]):
-    """Session fake for repository unit tests without a database driver."""
+    """Database driverなしでrepository操作を再現するsession fake.
+
+    Attributes:
+        channel_id (int | None): channel name lookupで返す識別子またはNone.
+        flush_error (SQLAlchemyError | None): flush時に送出するSQLAlchemy errorまたはNone.
+        added (list[object]): addで受け取ったORM instanceの記録.
+        execute_calls (int): execute呼出回数.
+        flushes (int): 成功したflush呼出回数.
+    """
 
     channel_id: int | None
     flush_error: SQLAlchemyError | None
@@ -50,6 +71,12 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         channel_id: int | None = None,
         flush_error: SQLAlchemyError | None = None,
     ) -> None:
+        """Lookup結果とflush failureを持つfake sessionを初期化する.
+
+        Args:
+            channel_id (int | None): channel lookupで返す識別子またはNone.
+            flush_error (SQLAlchemyError | None): flush時に送出するerrorまたはNone.
+        """
         self.channel_id = channel_id
         self.flush_error = flush_error
         self.added = []
@@ -58,6 +85,11 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
 
     @override
     async def __aenter__(self) -> FakeSession:
+        """Context内で利用するこのfake sessionを返す.
+
+        Returns:
+            FakeSession: contextに入った同一session instance.
+        """
         return self
 
     @override
@@ -67,31 +99,79 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """Context終了時のexception情報を消費して追加処理なしで完了する.
+
+        Args:
+            exc_type (type[BaseException] | None): context内で送出されたexception型またはNone.
+            exc (BaseException | None): context内で送出されたexception instanceまたはNone.
+            traceback (TracebackType | None): exception tracebackまたはNone.
+
+        Returns:
+            None: transaction cleanupを行わずcontext終了処理を完了する.
+        """
         _ = exc_type
         _ = exc
         _ = traceback
 
     async def execute(self, statement: Executable) -> ChannelIdResult:
+        """Channel lookup statementを実行した記録と設定済みID結果を返す.
+
+        Args:
+            statement (Executable): repositoryが発行したSQLAlchemy statement.
+
+        Returns:
+            ChannelIdResult: 初期化時に設定したchannel IDを包むscalar result.
+        """
         _ = statement
         self.execute_calls += 1
         return ChannelIdResult(self.channel_id)
 
     def add(self, instance: object) -> None:
+        """永続化対象ORM instanceを追加記録へ積む.
+
+        Args:
+            instance (object): sessionへ追加するORM instance.
+
+        Returns:
+            None: instanceを追加記録へ格納して完了する.
+        """
         self.added.append(instance)
 
     async def flush(self) -> None:
+        """設定済みerrorを送出するか成功したflush回数を増やす.
+
+        Returns:
+            None: 成功時にflush回数を1増やして完了する.
+
+        Raises:
+            SQLAlchemyError: 初期化時にflush_errorが設定されている場合.
+        """
         if self.flush_error is not None:
             raise self.flush_error
         self.flushes += 1
 
 
 def make_repo(session: FakeSession) -> SQLAlchemyChatCommandRepository:
-    """Create repository with a typed fake session factory."""
+    """FakeSessionを受け取るSQLAlchemy chat command repositoryを作成する.
+
+    Args:
+        session (FakeSession): AsyncSessionとして振る舞うtest double.
+
+    Returns:
+        SQLAlchemyChatCommandRepository: 指定fake sessionを使用するrepository.
+    """
     return SQLAlchemyChatCommandRepository(cast("AsyncSession", cast("object", session)))
 
 
 def make_statement_error(message: str) -> StatementError:
-    """Create a SQLAlchemy statement error with details visible in logs."""
+    """Logへ公開される詳細を持つSQLAlchemy statement errorを作成する.
+
+    Args:
+        message (str): error logで確認する主message.
+
+    Returns:
+        StatementError: SQLとparameterおよびoriginal errorを含むdatabase error.
+    """
     return StatementError(
         message,
         "insert into private_messages",
@@ -101,9 +181,14 @@ def make_statement_error(message: str) -> StatementError:
 
 
 class TestSaveChannelMessage:
-    """save_channel_message() persists accepted public chat history."""
+    """Public channel message保存の成功と未解決channel処理を検証するtest group."""
 
     async def test_adds_message_with_resolved_channel_id(self) -> None:
+        """解決済みchannel IDでpublic messageを保存することを検証する.
+
+        Returns:
+            None: 成功結果とsession操作および保存ORM modelのfieldを検証して完了する.
+        """
         session = FakeSession(channel_id=10)
         repo = make_repo(session)
 
@@ -125,6 +210,11 @@ class TestSaveChannelMessage:
         assert message.content == "hello"
 
     async def test_unresolved_channel_returns_failure_without_insert(self) -> None:
+        """未解決channel名でmessageを挿入せずfailureを返すことを検証する.
+
+        Returns:
+            None: CHANNEL_NOT_FOUND結果とinsert/flush不実行を検証して完了する.
+        """
         session = FakeSession(channel_id=None)
         repo = make_repo(session)
 
@@ -142,9 +232,14 @@ class TestSaveChannelMessage:
 
 
 class TestSavePrivateMessage:
-    """save_private_message() persists accepted private chat history."""
+    """Private message保存の成功とstorage failure処理を検証するtest group."""
 
     async def test_adds_private_message(self) -> None:
+        """Private messageをORM modelとして保存することを検証する.
+
+        Returns:
+            None: 成功結果とsession操作および保存modelの送受信者と本文を検証して完了する.
+        """
         session = FakeSession()
         repo = make_repo(session)
 
@@ -166,6 +261,11 @@ class TestSavePrivateMessage:
         assert message.content == "secret"
 
     async def test_storage_error_returns_failure(self) -> None:
+        """Storage errorをfailure結果と構造化logへ変換することを検証する.
+
+        Returns:
+            None: STORAGE_ERROR結果とflush状態およびerror log fieldを検証して完了する.
+        """
         session = FakeSession(flush_error=make_statement_error("storage failed"))
         repo = make_repo(session)
 
