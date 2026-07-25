@@ -554,7 +554,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/repositories rootの9 file_
 
-- [ ] 3.25 (P) 残りのroot repository contract testを整備する
+- [x] 3.25 (P) 残りのroot repository contract testを整備する
   - tests/unit/repositories/__init__.py、test_friend_relationship_repository_contract.py、
     test_persistence_boundary_contracts.py、test_role_repository.py、test_user_repository.pyへ
     共通条件を適用する

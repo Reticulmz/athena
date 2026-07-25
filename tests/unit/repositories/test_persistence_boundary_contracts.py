@@ -1,4 +1,4 @@
-"""Persistence boundary contract tests for command/query repositories."""
+"""command/query repositoryのpersistence boundary contractを検証するtest module."""
 
 from __future__ import annotations
 
@@ -143,6 +143,14 @@ MUTATION_METHOD_PREFIXES = (
 
 
 def test_unit_of_work_exposes_command_repositories_only() -> None:
+    """UnitOfWorkがcommand repositoryだけを公開するinterface contractを検証する.
+
+    型hintが定義済みcommand repository属性と一致し, commit/rollbackがcoroutineであることを
+    確認する.
+
+    Returns:
+        None: UnitOfWork interfaceを検証して完了し, 呼び出し側へ値を返さない.
+    """
     hints = get_type_hints(
         UnitOfWork,
         globalns=COMMAND_REPOSITORY_GLOBALS,
@@ -155,6 +163,13 @@ def test_unit_of_work_exposes_command_repositories_only() -> None:
 
 
 def test_unit_of_work_factory_opens_async_context_manager() -> None:
+    """UnitOfWorkFactoryの呼出がasync context managerを返すcontractを検証する.
+
+    解決済みtype hintがUnitOfWorkを管理するasync context managerを表すことを確認する.
+
+    Returns:
+        None: factory return contractを検証して完了し, 呼び出し側へ値を返さない.
+    """
     hints = get_type_hints(
         UnitOfWorkFactory.__call__,
         globalns={
@@ -168,6 +183,14 @@ def test_unit_of_work_factory_opens_async_context_manager() -> None:
 
 
 def test_command_repository_contracts_include_mutations_and_consistency_checks() -> None:
+    """書込みrepositoryがmutationとconsistency checkの責務を持つことを検証する.
+
+    主要repositoryのpublic async method集合を固定し, command boundaryのmutation/consistency checkを
+    確認する.
+
+    Returns:
+        None: command repository contractを検証して完了し, 呼び出し側へ値を返さない.
+    """
     assert set(COMMAND_REPOSITORY_ATTRIBUTES.values()) == {
         UserCommandRepository,
         RoleCommandRepository,
@@ -262,6 +285,14 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
 
 
 def test_query_repository_contracts_are_read_only() -> None:
+    """読取りrepositoryがread-only boundaryを保つことを検証する.
+
+    全query repositoryにmutation prefixのasync methodがないことと, 代表queryのread method集合を
+    確認する.
+
+    Returns:
+        None: query repository contractを検証して完了し, 呼び出し側へ値を返さない.
+    """
     for repository in QUERY_REPOSITORIES:
         mutation_methods = [
             name
@@ -289,6 +320,14 @@ def test_query_repository_contracts_are_read_only() -> None:
 
 
 def test_persistence_boundary_interfaces_do_not_depend_on_adapters_or_runtime() -> None:
+    """永続化interfaceがadapter/runtime dependencyを持たないことを検証する.
+
+    command/query interface moduleのabsolute importを走査し, 禁止されたadapterや
+    transport基盤への参照がないことを確認する.
+
+    Returns:
+        None: interface dependency boundaryを検証して完了し, 呼び出し側へ値を返さない.
+    """
     violations = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {forbidden_root} via {module}"
         for root in (COMMAND_INTERFACE_ROOT, QUERY_INTERFACE_ROOT)
@@ -302,6 +341,14 @@ def test_persistence_boundary_interfaces_do_not_depend_on_adapters_or_runtime() 
 
 
 def test_query_repository_interfaces_do_not_depend_on_command_boundaries() -> None:
+    """読取りrepository interfaceがcommand boundaryへ依存しないことを検証する.
+
+    query interface moduleのabsolute importを走査し, command repositoryまたはUnitOfWorkへの
+    参照がないことを確認する.
+
+    Returns:
+        None: query interfaceの依存方向を検証して完了し, 呼び出し側へ値を返さない.
+    """
     violations = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {module}"
         for path in sorted(QUERY_INTERFACE_ROOT.rglob("*.py"))
@@ -314,6 +361,14 @@ def test_query_repository_interfaces_do_not_depend_on_command_boundaries() -> No
 
 
 def test_beatmap_leaderboard_update_path_rejects_legacy_personal_bests() -> None:
+    """ランキング更新pathがlegacy personal bestを使わないことを検証する.
+
+    projection更新に関わるsourceのabsolute importを走査し, 旧personal best
+    domain/repository参照がないことを確認する.
+
+    Returns:
+        None: leaderboard projection boundaryを検証して完了し, 呼び出し側へ値を返さない.
+    """
     forbidden_roots = (
         "osu_server.domain.scores.personal_best",
         "osu_server.repositories.interfaces.commands.PersonalBestCommandRepository",
@@ -336,6 +391,14 @@ def test_beatmap_leaderboard_update_path_rejects_legacy_personal_bests() -> None
 
 
 def test_service_facing_sources_do_not_import_low_level_persistence() -> None:
+    """利用側service sourceがlow-level persistence implementationをimportしないことを検証する.
+
+    service/transport/job sourceのabsolute importを走査し, SQLAlchemy modelや
+    database基盤への直接参照がないことを確認する.
+
+    Returns:
+        None: service facing dependency boundaryを検証して完了し, 呼び出し側へ値を返さない.
+    """
     violations = [
         _format_import_violation(path, forbidden_root, module)
         for root in SERVICE_FACING_SOURCE_ROOTS
@@ -349,6 +412,13 @@ def test_service_facing_sources_do_not_import_low_level_persistence() -> None:
 
 
 def test_service_facing_tests_do_not_assert_against_persistence_models() -> None:
+    """利用側service testがpersistence modelへ直接assertしないことを検証する.
+
+    service/transport/job testのabsolute importを走査し, SQLAlchemy model参照がないことを確認する.
+
+    Returns:
+        None: test dependency boundaryを検証して完了し, 呼び出し側へ値を返さない.
+    """
     violations = [
         _format_import_violation(path, forbidden_root, module)
         for root in SERVICE_FACING_TEST_ROOTS
@@ -362,6 +432,14 @@ def test_service_facing_tests_do_not_assert_against_persistence_models() -> None
 
 
 def _public_async_methods(repository: type[object]) -> set[str]:
+    """公開async method名をrepository interfaceから抽出する.
+
+    Args:
+        repository (type[object]): 公開async methodを調べるrepository interfaceまたは実装class.
+
+    Returns:
+        set[str]: private nameを除いたasync method名の集合.
+    """
     return {
         name
         for name, _ in inspect.getmembers(repository, inspect.iscoroutinefunction)
@@ -370,6 +448,14 @@ def _public_async_methods(repository: type[object]) -> set[str]:
 
 
 def _absolute_imports(path: Path) -> set[str]:
+    """Python moduleからabsolute importされるmodule/member名を収集する.
+
+    Args:
+        path (Path): import dependencyを検査するPython source file.
+
+    Returns:
+        set[str]: future importを除いたabsolute importの完全修飾名集合.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     modules: set[str] = set()
 
@@ -385,6 +471,14 @@ def _absolute_imports(path: Path) -> set[str]:
 
 
 def _python_files(path: Path) -> tuple[Path, ...]:
+    """moduleまたはdirectory配下から検査対象のPython fileを列挙する.
+
+    Args:
+        path (Path): 単一fileまたは再帰走査するdirectory.
+
+    Returns:
+        tuple[Path, ...]: __pycache__を除外したソート済みPython file. 対象がない場合は空組.
+    """
     if path.is_file():
         return (path,) if path.suffix == ".py" else ()
     if not path.exists():
@@ -397,8 +491,27 @@ def _python_files(path: Path) -> tuple[Path, ...]:
 
 
 def _format_import_violation(path: Path, forbidden_root: str, module: str) -> str:
+    """禁止importをassert用の一貫した違反messageへ整形する.
+
+    Args:
+        path (Path): 禁止importを含むsource file.
+        forbidden_root (str): 違反判定の基準となるimport root.
+        module (str): sourceから検出したabsolute import名.
+
+    Returns:
+        str: repository rootからの相対pathを含む違反message.
+    """
     return f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {forbidden_root} via {module}"
 
 
 def _module_matches_root(module: str, root: str) -> bool:
+    """module名が指定root自身またはそのsubmoduleかを判定する.
+
+    Args:
+        module (str): 検査対象のabsolute import名.
+        root (str): 禁止または期待するimport root名.
+
+    Returns:
+        bool: moduleがrootと一致するかroot配下の場合はTrue.
+    """
     return module == root or module.startswith(f"{root}.")
