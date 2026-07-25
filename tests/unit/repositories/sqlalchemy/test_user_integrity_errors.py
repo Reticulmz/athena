@@ -1,4 +1,4 @@
-"""SQLAlchemy user repository の IntegrityError 分類を検証する."""
+"""SQLAlchemyユーザーrepositoryのIntegrityError分類を検証する."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 @final
 class _NoResult:
-    """Repository の事前存在確認で未検出を返す result double."""
+    """repositoryの事前存在確認で未検出を返すresult double."""
 
     def scalar_one_or_none(self) -> None:
         """単一行取得結果が存在しないことを返す.
@@ -28,16 +28,21 @@ class _NoResult:
 
 @final
 class _IntegrityErrorSession:
-    """flush 時に指定された IntegrityError を送出する session double."""
+    """flush時に指定されたIntegrityErrorを送出するsession double.
+
+    Attributes:
+        _error (IntegrityError): flush時に送出する永続化エラー.
+        added (list[object]): addで記録した永続化対象instance.
+    """
 
     _error: IntegrityError
     added: list[object]
 
     def __init__(self, error: IntegrityError) -> None:
-        """flush 時に送出する IntegrityError を保持する.
+        """Flush時に送出するIntegrityErrorを保持する.
 
         Args:
-            error: repository.create() の flush で送出する IntegrityError.
+            error (IntegrityError): repository.create()のflushで送出する永続化エラー.
         """
         self._error = error
         self.added = []
@@ -46,10 +51,10 @@ class _IntegrityErrorSession:
         """事前存在確認 query に対して未検出の result double を返す.
 
         Args:
-            statement: repository が発行した SQLAlchemy statement.
+            statement (object): repositoryが発行したSQLAlchemy statement.
 
         Returns:
-            scalar_one_or_none() が None を返す result double.
+            _NoResult: scalar_one_or_none()がNoneを返すresult double.
         """
         _ = statement
         return _NoResult()
@@ -58,67 +63,98 @@ class _IntegrityErrorSession:
         """追加対象 instance を記録する.
 
         Args:
-            instance: repository が session に追加する SQLAlchemy model instance.
+            instance (object): repositoryがsessionに追加するSQLAlchemy model instance.
 
         Returns:
-            None.
+            None: instanceを記録して呼び出し側へ値を返さずに完了する.
         """
         self.added.append(instance)
 
     async def flush(self) -> None:
-        """flush 失敗として設定済み IntegrityError を送出する.
+        """Flush失敗として設定済みIntegrityErrorを送出する.
 
         Raises:
-            IntegrityError: この double の初期化時に渡された永続化エラー.
+            IntegrityError: このdoubleの初期化時に渡された永続化エラー.
         """
         raise self._error
 
     async def refresh(self, instance: object) -> None:
-        """refresh 対象 instance を受け取り、何も変更せずに終了する.
+        """Refresh対象instanceを受け取り何も変更せずに終了する.
 
         Args:
-            instance: repository が refresh しようとした SQLAlchemy model instance.
+            instance (object): repositoryがrefreshしようとしたSQLAlchemy model instance.
 
         Returns:
-            None.
+            None: instanceを変更せず呼び出し側へ値を返さずに完了する.
         """
         _ = instance
 
 
 @final
 class _OriginWithConstraintError(Exception):
-    """asyncpg style の constraint_name を持つ origin error."""
+    """asyncpg形式のconstraint_nameを持つorigin error.
+
+    Attributes:
+        constraint_name (str): 一意性違反を示すdatabase制約名.
+    """
 
     constraint_name: str
 
     def __init__(self, constraint_name: str) -> None:
+        """一意性違反を表すconstraint名を持つエラーを初期化する.
+
+        Args:
+            constraint_name (str): PostgreSQLが返した一意性制約名.
+        """
         super().__init__(f'duplicate key value violates unique constraint "{constraint_name}"')
         self.constraint_name = constraint_name
 
 
 @final
 class _Diagnostic:
-    """psycopg style の diag.constraint_name を持つ diagnostic."""
+    """psycopg形式のdiag.constraint_nameを持つdiagnostic.
+
+    Attributes:
+        constraint_name (str): 一意性違反を示すdatabase制約名.
+    """
 
     constraint_name: str
 
     def __init__(self, constraint_name: str) -> None:
+        """Psycopg diagnosticが公開するconstraint名を初期化する.
+
+        Args:
+            constraint_name (str): PostgreSQLが返した一意性制約名.
+        """
         self.constraint_name = constraint_name
 
 
 @final
 class _OriginWithDiagnosticError(Exception):
-    """psycopg style の diag を持つ origin error."""
+    """psycopg形式のdiagを持つorigin error.
+
+    Attributes:
+        diag (_Diagnostic): database制約名を公開するdiagnostic.
+    """
 
     diag: _Diagnostic
 
     def __init__(self, constraint_name: str) -> None:
+        """一意性違反のconstraint名を含むpsycopg形式エラーを初期化する.
+
+        Args:
+            constraint_name (str): PostgreSQLが返した一意性制約名.
+        """
         super().__init__(f'duplicate key value violates unique constraint "{constraint_name}"')
         self.diag = _Diagnostic(constraint_name)
 
 
 async def test_primary_key_error_is_not_misclassified_as_username_conflict() -> None:
-    """INSERT 文に safe_username が含まれても pkey 衝突は username 扱いしない."""
+    """safe_usernameを含むINSERTでも主キー衝突をusername競合にしないことを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     error = IntegrityError(
         "INSERT INTO users (username, safe_username, email) VALUES ($1, $2, $3)",
         {"safe_username": "remiaaaaa"},
@@ -133,7 +169,11 @@ async def test_primary_key_error_is_not_misclassified_as_username_conflict() -> 
 
 
 async def test_safe_username_constraint_is_reported_as_username_conflict() -> None:
-    """safe_username unique constraint は username conflict に変換する."""
+    """safe_username一意制約をusername競合のValueErrorへ変換することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     error = IntegrityError(
         "INSERT INTO users (username, safe_username, email) VALUES ($1, $2, $3)",
         {"safe_username": "remiaaaaa"},
@@ -148,7 +188,11 @@ async def test_safe_username_constraint_is_reported_as_username_conflict() -> No
 
 
 async def test_email_constraint_from_diag_is_reported_as_email_conflict() -> None:
-    """diag.constraint_name 由来の email unique constraint を email conflict に変換する."""
+    """diag.constraint_name由来のemail一意制約をemail競合へ変換することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     error = IntegrityError(
         "INSERT INTO users (username, safe_username, email) VALUES ($1, $2, $3)",
         {"email": "remi@example.com"},
@@ -163,5 +207,13 @@ async def test_email_constraint_from_diag_is_reported_as_email_conflict() -> Non
 
 
 def _repository_for_error(error: IntegrityError) -> SQLAlchemyUserCommandRepository:
+    """指定IntegrityErrorをflushで送出するユーザーrepositoryを生成する.
+
+    Args:
+        error (IntegrityError): repository.createのflushで発生させる一意性エラー.
+
+    Returns:
+        SQLAlchemyUserCommandRepository: 指定エラーを送出するsessionを使用するユーザーrepository.
+    """
     session = cast("AsyncSession", cast("object", _IntegrityErrorSession(error)))
     return SQLAlchemyUserCommandRepository(session)

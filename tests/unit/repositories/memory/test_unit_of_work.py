@@ -1,4 +1,4 @@
-"""Tests for the in-memory command Unit of Work."""
+"""メモリ上コマンドUnit of Workの可視性とrepository契約を検証する."""
 
 from __future__ import annotations
 
@@ -37,6 +37,11 @@ _NOW = datetime(2026, 6, 18, tzinfo=UTC)
 
 
 async def test_commit_publishes_all_command_repository_changes() -> None:
+    """コミット済みの複数repository変更が後続Unit of Workから読めることを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     async with factory() as uow:
@@ -52,6 +57,11 @@ async def test_commit_publishes_all_command_repository_changes() -> None:
 
 
 async def test_rollback_discards_multi_repository_command_changes() -> None:
+    """ロールバックした複数repository変更が公開されないことを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     async with factory() as uow:
@@ -67,6 +77,11 @@ async def test_rollback_discards_multi_repository_command_changes() -> None:
 
 
 async def test_exception_rolls_back_uncommitted_command_changes() -> None:
+    """例外終了したUnit of Workの未コミット変更が破棄されることを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     with pytest.raises(RuntimeError, match="abort command"):
@@ -78,6 +93,11 @@ async def test_exception_rolls_back_uncommitted_command_changes() -> None:
 
 
 async def test_uncommitted_consistency_checks_are_scoped_to_active_unit_of_work() -> None:
+    """未コミット変更が実行中Unit of Workだけに可視であることを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     async with factory() as command_uow:
@@ -96,6 +116,11 @@ async def test_uncommitted_consistency_checks_are_scoped_to_active_unit_of_work(
 
 
 async def test_user_password_hash_update_commits_through_unit_of_work() -> None:
+    """パスワードハッシュ更新がコミット後のUnit of Workへ反映されることを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     async with factory() as uow:
@@ -117,6 +142,11 @@ async def test_user_password_hash_update_commits_through_unit_of_work() -> None:
 
 
 async def test_role_assignment_replacement_commits_through_unit_of_work() -> None:
+    """ロール置換がコミット後に置換後のロールだけを公開することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     factory.seed_roles(
         [
@@ -139,6 +169,11 @@ async def test_role_assignment_replacement_commits_through_unit_of_work() -> Non
 
 
 async def test_beatmap_leaderboard_projection_commit_publishes_through_unit_of_work() -> None:
+    """リーダーボード投影のコミットが後続Unit of Workへ公開されることを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     scope = _leaderboard_scope()
 
@@ -153,6 +188,11 @@ async def test_beatmap_leaderboard_projection_commit_publishes_through_unit_of_w
 
 
 async def test_beatmap_leaderboard_projection_rollback_discards_unit_of_work_changes() -> None:
+    """リーダーボード投影のロールバックが後続Unit of Workへ公開されないことを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     scope = _leaderboard_scope()
 
@@ -167,6 +207,11 @@ async def test_beatmap_leaderboard_projection_rollback_discards_unit_of_work_cha
 
 
 async def test_unit_of_work_exposes_typed_command_repositories() -> None:
+    """Unit of Workが各コマンドportに対応する具象repositoryを公開することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     async with factory() as uow:
@@ -186,6 +231,14 @@ async def test_unit_of_work_exposes_typed_command_repositories() -> None:
 
 
 async def _raise_after_command_mutation(factory: InMemoryUnitOfWorkFactory) -> None:
+    """変更後に例外を送出してコンテキスト終了時のロールバックを起動する.
+
+    Args:
+        factory (InMemoryUnitOfWorkFactory): 例外終了するUnit of Workを生成するfactory.
+
+    Raises:
+        RuntimeError: 未コミット変更を中断するため常に送出する例外.
+    """
     async with factory() as uow:
         _ = await uow.users.create(
             make_user(username="Exception User", email="exception@example.com")
@@ -195,6 +248,11 @@ async def _raise_after_command_mutation(factory: InMemoryUnitOfWorkFactory) -> N
 
 
 def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
+    """リーダーボード投影テストで共有する検索スコープを生成する.
+
+    Returns:
+        BeatmapLeaderboardUserBestScope: 固定ユーザーとビートマップに限定したベストスコアスコープ.
+    """
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
         beatmap_checksum="a" * 32,
@@ -211,6 +269,16 @@ def _leaderboard_upsert(
     score_id: int,
     score: int,
 ) -> UpsertBeatmapLeaderboardUserBest:
+    """リーダーボード投影を登録するコマンド入力を生成する.
+
+    Args:
+        scope (BeatmapLeaderboardUserBestScope): 登録先のユーザー別リーダーボードスコープ.
+        score_id (int): 登録するスコアの識別子.
+        score (int): ランク比較に使用するスコア値.
+
+    Returns:
+        UpsertBeatmapLeaderboardUserBest: 指定したランクキーを持つupsert入力.
+    """
     return UpsertBeatmapLeaderboardUserBest(
         scope=scope,
         score_id=score_id,

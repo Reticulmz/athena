@@ -1,4 +1,4 @@
-"""In-memory performance state tests."""
+"""メモリ上のパフォーマンス状態が複製とコミットで保持されることを検証する."""
 
 from __future__ import annotations
 
@@ -21,6 +21,11 @@ _NOW = datetime(2026, 6, 16, 0, 0, 0, tzinfo=UTC)
 
 
 def test_performance_state_clone_preserves_rows_batches_work_claims_and_replacements() -> None:
+    """複製後の状態が全投影を独立して保持することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     state = InMemoryCommandRepositoryState()
     current = _calculation(calculation_id=1, score_id=10, is_current=True)
     replacement = _calculation(calculation_id=2, score_id=10, is_current=False)
@@ -83,6 +88,11 @@ def test_performance_state_clone_preserves_rows_batches_work_claims_and_replacem
 
 
 def test_unit_of_work_factory_commits_performance_state() -> None:
+    """コミット済み状態が作業用スナップショットの後続変更から隔離されることを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     working = factory.snapshot()
     calculation = _calculation(calculation_id=1, score_id=10, is_current=True)
@@ -110,6 +120,16 @@ def _calculation(
     score_id: int,
     is_current: bool,
 ) -> PerformanceCalculation:
+    """パフォーマンス状態テスト用の計算結果を生成する.
+
+    Args:
+        calculation_id (int): 生成する計算結果の識別子.
+        score_id (int): 計算結果に対応するスコアの識別子.
+        is_current (bool): 現在有効な計算結果として扱うかどうか.
+
+    Returns:
+        PerformanceCalculation: 指定した状態を持つキュー済みの計算結果.
+    """
     return PerformanceCalculation(
         id=calculation_id,
         score_id=score_id,

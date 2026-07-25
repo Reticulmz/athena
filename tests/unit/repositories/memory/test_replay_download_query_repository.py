@@ -1,4 +1,4 @@
-"""In-memory replay download query repository の tests."""
+"""メモリ上のリプレイ取得候補クエリを検証する."""
 
 from __future__ import annotations
 
@@ -32,6 +32,11 @@ _VISIBLE_ROLE_ID = 1
 
 
 async def test_get_candidate_returns_score_not_found_for_missing_id_and_ruleset_mismatch() -> None:
+    """存在しないIDとルールセット不一致が未検出候補になることを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory, state, repository = _make_repository_context()
     _seed_visible_role(state, user_id=100)
     _seed_score(state, score_id=10, user_id=100, ruleset=Ruleset.TAIKO)
@@ -64,6 +69,16 @@ async def test_get_candidate_returns_hidden_when_visibility_inputs_are_false(
     leaderboard_eligible: bool,
     assign_visible_role: bool,
 ) -> None:
+    """可視性条件のいずれかが偽なら非公開候補になることを検証する.
+
+    Args:
+        passed (bool): スコアが合格済みかどうか.
+        leaderboard_eligible (bool): スコアがリーダーボード対象かどうか.
+        assign_visible_role (bool): 所有者へ可視ロールを割り当てるかどうか.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory, state, repository = _make_repository_context()
     if assign_visible_role:
         _seed_visible_role(state, user_id=100)
@@ -86,6 +101,11 @@ async def test_get_candidate_returns_hidden_when_visibility_inputs_are_false(
 
 
 async def test_get_candidate_returns_missing_replay_for_visible_score_without_attachment() -> None:
+    """可視スコアに添付リプレイがない場合の欠落候補を検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory, state, repository = _make_repository_context()
     _seed_visible_role(state, user_id=100)
     _seed_score(state, score_id=30, user_id=100)
@@ -100,6 +120,11 @@ async def test_get_candidate_returns_missing_replay_for_visible_score_without_at
 
 
 async def test_get_candidate_maps_available_replay_metadata_without_blob_state() -> None:
+    """添付済みリプレイのメタデータだけを利用可能候補へ写像することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     factory, state, repository = _make_repository_context()
     _seed_visible_role(state, user_id=100)
     _seed_score(state, score_id=40, user_id=100)
@@ -127,6 +152,11 @@ async def test_get_candidate_maps_available_replay_metadata_without_blob_state()
 
 
 async def test_get_candidate_reads_only_committed_memory_state() -> None:
+    """未コミットの作業状態をクエリが参照しないことを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     _, pending_state, repository = _make_repository_context()
     _seed_visible_role(pending_state, user_id=100)
     _seed_score(pending_state, score_id=50, user_id=100)
@@ -145,6 +175,11 @@ def _make_repository_context() -> tuple[
     InMemoryCommandRepositoryState,
     InMemoryReplayDownloadQueryRepository,
 ]:
+    """独立したリプレイ候補クエリ用の作業状態とrepositoryを生成する.
+
+    Returns:
+        tuple: Unit of Work factoryと作業用状態と候補クエリrepositoryの組.
+    """
     committed_state = InMemoryCommandRepositoryState()
     factory = InMemoryUnitOfWorkFactory(committed_state)
     repository = InMemoryReplayDownloadQueryRepository(
@@ -154,6 +189,15 @@ def _make_repository_context() -> tuple[
 
 
 def _seed_visible_role(state: InMemoryCommandRepositoryState, *, user_id: int) -> None:
+    """指定ユーザーを可視スコアの所有者として状態へ登録する.
+
+    Args:
+        state (InMemoryCommandRepositoryState): 変更対象のメモリ上コマンド状態.
+        user_id (int): 可視ロールを割り当てるユーザーの識別子.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     state.roles_by_id[_VISIBLE_ROLE_ID] = Role(
         id=_VISIBLE_ROLE_ID,
         name="Visible",
@@ -172,6 +216,19 @@ def _seed_score(
     passed: bool = True,
     leaderboard_eligible: bool = True,
 ) -> None:
+    """リプレイ候補テストで参照するスコアを状態へ登録する.
+
+    Args:
+        state (InMemoryCommandRepositoryState): 変更対象のメモリ上コマンド状態.
+        score_id (int): 登録するスコアの識別子.
+        user_id (int): スコア所有者の識別子.
+        ruleset (Ruleset): スコアに設定するルールセット.
+        passed (bool): スコアを合格済みとして登録するかどうか.
+        leaderboard_eligible (bool): スコアをリーダーボード対象として登録するかどうか.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     score = Score(
         id=score_id,
         user_id=user_id,
@@ -211,6 +268,18 @@ def _seed_replay(
     checksum: str = "a" * 64,
     byte_size: int = 4096,
 ) -> None:
+    """指定スコアに紐づくリプレイメタデータを状態へ登録する.
+
+    Args:
+        state (InMemoryCommandRepositoryState): 変更対象のメモリ上コマンド状態.
+        score_id (int): リプレイを紐づけるスコアの識別子.
+        blob_id (int): リプレイ本文を指すblobの識別子.
+        checksum (str): リプレイ本文のSHA-256チェックサム.
+        byte_size (int): リプレイ本文のバイト数.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     replay_id = len(state.replays_by_id) + 1
     state.replays_by_id[replay_id] = Replay(
         id=replay_id,

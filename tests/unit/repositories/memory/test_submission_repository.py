@@ -1,4 +1,4 @@
-"""Unit tests for InMemoryScoreSubmissionCommandRepository."""
+"""メモリ上のスコア送信コマンドrepositoryを検証する."""
 
 from __future__ import annotations
 
@@ -15,13 +15,21 @@ from osu_server.repositories.memory.commands.submissions import (
 
 @pytest.fixture
 def repository() -> InMemoryScoreSubmissionCommandRepository:
-    """Create a fresh in-memory submission repository."""
+    """各テストに独立した送信repositoryを生成する.
+
+    Returns:
+        InMemoryScoreSubmissionCommandRepository: 空のメモリ上スコア送信repository.
+    """
     return InMemoryScoreSubmissionCommandRepository(InMemoryCommandRepositoryState())
 
 
 @pytest.fixture
 def sample_submission() -> ScoreSubmission:
-    """Create a sample submission for testing."""
+    """送信登録テスト用の有効な未採番送信を生成する.
+
+    Returns:
+        ScoreSubmission: 固定fingerprintを持つ受信済み送信.
+    """
     return ScoreSubmission(
         id=None,
         fingerprint="abc123",
@@ -37,7 +45,16 @@ async def test_create_assigns_id(
     repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
-    """Test that create() assigns an id to a new submission."""
+    """新規送信登録が最初の識別子と入力fingerprintを返すことを検証する.
+
+    Args:
+        repository (InMemoryScoreSubmissionCommandRepository):
+            登録操作を実行するメモリ上repository.
+        sample_submission (ScoreSubmission): 登録する未採番送信.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     created = await repository.create(sample_submission)
     assert created.id is not None
     assert created.id == 1
@@ -48,7 +65,16 @@ async def test_create_increments_id(
     repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
-    """Test that create() increments id for subsequent submissions."""
+    """連続する送信登録が単調増加する識別子を割り当てることを検証する.
+
+    Args:
+        repository (InMemoryScoreSubmissionCommandRepository):
+            連続登録を実行するメモリ上repository.
+        sample_submission (ScoreSubmission): 最初に登録する送信.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     first = await repository.create(sample_submission)
     second = await repository.create(
         ScoreSubmission(
@@ -69,7 +95,16 @@ async def test_create_rejects_duplicate_fingerprint(
     repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
-    """Test that create() rejects duplicate fingerprint."""
+    """既存fingerprintの再登録がValueErrorで拒否されることを検証する.
+
+    Args:
+        repository (InMemoryScoreSubmissionCommandRepository):
+            重複検査を実行するメモリ上repository.
+        sample_submission (ScoreSubmission): 既存レコードとして先に登録する送信.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     _ = await repository.create(sample_submission)
     duplicate = ScoreSubmission(
         id=None,
@@ -88,7 +123,16 @@ async def test_get_by_fingerprint_returns_submission(
     repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
-    """Test that get_by_fingerprint() returns the correct submission."""
+    """登録済みfingerprintの検索が対応する送信を返すことを検証する.
+
+    Args:
+        repository (InMemoryScoreSubmissionCommandRepository):
+            検索操作を実行するメモリ上repository.
+        sample_submission (ScoreSubmission): 先に登録する送信.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     created = await repository.create(sample_submission)
     retrieved = await repository.get_by_fingerprint(sample_submission.fingerprint)
     assert retrieved is not None
@@ -99,7 +143,15 @@ async def test_get_by_fingerprint_returns_submission(
 async def test_get_by_fingerprint_returns_none_when_not_found(
     repository: InMemoryScoreSubmissionCommandRepository,
 ) -> None:
-    """Test that get_by_fingerprint() returns None when submission not found."""
+    """未登録fingerprintの検索がNoneを返すことを検証する.
+
+    Args:
+        repository (InMemoryScoreSubmissionCommandRepository):
+            検索操作を実行するメモリ上repository.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     retrieved = await repository.get_by_fingerprint("nonexistent")
     assert retrieved is None
 
@@ -108,7 +160,16 @@ async def test_update_state_changes_state(
     repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
-    """Test that update_state() changes the submission state."""
+    """登録済み送信の状態更新が後続検索へ反映されることを検証する.
+
+    Args:
+        repository (InMemoryScoreSubmissionCommandRepository):
+            状態更新を実行するメモリ上repository.
+        sample_submission (ScoreSubmission): 更新前に登録する送信.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     created = await repository.create(sample_submission)
     assert created.state is ScoreSubmissionState.RECEIVED
     assert created.id is not None
@@ -122,7 +183,15 @@ async def test_update_state_changes_state(
 async def test_update_state_raises_when_id_not_found(
     repository: InMemoryScoreSubmissionCommandRepository,
 ) -> None:
-    """Test that update_state() raises ValueError when id not found."""
+    """未登録識別子の状態更新がValueErrorを送出することを検証する.
+
+    Args:
+        repository (InMemoryScoreSubmissionCommandRepository):
+            状態更新を実行するメモリ上repository.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     with pytest.raises(ValueError, match="Submission not found"):
         await repository.update_state(999, ScoreSubmissionState.PROCESSING)
 
@@ -131,7 +200,16 @@ async def test_idempotent_retrieval(
     repository: InMemoryScoreSubmissionCommandRepository,
     sample_submission: ScoreSubmission,
 ) -> None:
-    """Test idempotent retrieval: same fingerprint returns same submission."""
+    """同じfingerprintの繰り返し検索が同じ送信を返すことを検証する.
+
+    Args:
+        repository (InMemoryScoreSubmissionCommandRepository):
+            繰り返し検索を実行するメモリ上repository.
+        sample_submission (ScoreSubmission): 先に登録する送信.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     first = await repository.create(sample_submission)
     _ = await repository.get_by_fingerprint(sample_submission.fingerprint)
     retrieved_2 = await repository.get_by_fingerprint(sample_submission.fingerprint)
