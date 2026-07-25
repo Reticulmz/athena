@@ -1,4 +1,4 @@
-"""UserStats query repository contract tests。"""
+"""UserStats query repositoryのsource read契約を検証するtests."""
 
 from __future__ import annotations
 
@@ -33,6 +33,14 @@ _HIDDEN_ROLE_ID = 2
 
 @pytest.mark.asyncio
 async def test_reads_empty_known_users_and_omits_unknown_users() -> None:
+    """既知userの空統計を返し未知userと重複入力を除く契約を検証する.
+
+    可視roleを持つ1 userだけを保存してIDを重複させたqueryを送り,
+    0値のsourceを1件だけ返すことを確認する.
+
+    Returns:
+        None: user存在判定と空統計のread結果を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_visible_role(state)
@@ -54,6 +62,14 @@ async def test_reads_empty_known_users_and_omits_unknown_users() -> None:
 
 @pytest.mark.asyncio
 async def test_reads_score_totals_and_excludes_relax_autopilot_from_initial_stats() -> None:
+    """初期UserStats集計がRelaxとAutopilot scoreを除外する契約を検証する.
+
+    passed, failed, 非eligible, Relax, Autopilot scoreを保存し,
+    play数とscore totalsとhit totalsが対象scoreだけを反映することを確認する.
+
+    Returns:
+        None: 初期統計のscore filterと集計値を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_visible_role(state)
@@ -119,6 +135,14 @@ async def test_reads_score_totals_and_excludes_relax_autopilot_from_initial_stat
 
 @pytest.mark.asyncio
 async def test_reads_scores_bests_and_rank_inputs_for_requested_ruleset_only() -> None:
+    """Requested rulesetだけのscoreとperformance bestをsourceへ読む契約を検証する.
+
+    osuとmaniaのscoreおよび複数userのbestを保存し,
+    mania queryが対象userのmania値とrank inputだけを返すことを確認する.
+
+    Returns:
+        None: ruleset scopeのsourceとrank inputを検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_visible_role(state)
@@ -179,6 +203,14 @@ async def test_reads_scores_bests_and_rank_inputs_for_requested_ruleset_only() -
 
 @pytest.mark.asyncio
 async def test_reads_best_performances_and_rank_inputs_for_visible_users_only() -> None:
+    """Performance best sourceとrank inputのvisibility境界を検証する.
+
+    visible roleとhidden roleのuserにbestを保存し,
+    sourceは各userのbestを返してrank inputはvisible userだけにすることを確認する.
+
+    Returns:
+        None: visible userだけのrank inputを検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_visible_role(state)
@@ -240,6 +272,14 @@ async def test_reads_best_performances_and_rank_inputs_for_visible_users_only() 
 
 @pytest.mark.asyncio
 async def test_reads_current_stats_projection_before_source_fallback() -> None:
+    """保存済みCurrentUserStats projectionをsource集計より優先する契約を検証する.
+
+    scoreとbestがあるuserへ異なるprojectionを保存し,
+    read結果がprojection値とprojection由来rank inputを返すことを確認する.
+
+    Returns:
+        None: projection優先のsource結果を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_visible_role(state)
@@ -306,6 +346,13 @@ async def test_reads_current_stats_projection_before_source_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_play_time_stays_unavailable_when_all_scores_are_missing_it() -> None:
+    """全scoreにplay timeがない場合は統計値を0へ補完しない契約を検証する.
+
+    play_time_secondsがNoneのscoreだけを保存し, sourceのplay timeもNoneのまま返ることを確認する.
+
+    Returns:
+        None: unavailable play timeの表現を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_visible_role(state)
@@ -321,10 +368,23 @@ async def test_missing_play_time_stays_unavailable_when_all_scores_are_missing_i
 
 
 def _factory() -> InMemoryUnitOfWorkFactory:
+    """独立したUserStats query fixture stateを持つfactoryを構築する.
+
+    Returns:
+        InMemoryUnitOfWorkFactory: testごとにsnapshotをcommitできるmemory factory.
+    """
     return InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
 
 
 def _seed_visible_role(state: InMemoryCommandRepositoryState) -> None:
+    """Rank inputに含めるvisible roleをfixture stateへ保存する.
+
+    Args:
+        state (InMemoryCommandRepositoryState): role mapを更新するmutable snapshot.
+
+    Returns:
+        None: unrestricted permissionを持つroleを保存して完了し, 呼び出し側へ値を返さない.
+    """
     state.roles_by_id[_VISIBLE_ROLE_ID] = Role(
         id=_VISIBLE_ROLE_ID,
         name="Visible",
@@ -334,6 +394,14 @@ def _seed_visible_role(state: InMemoryCommandRepositoryState) -> None:
 
 
 def _seed_hidden_role(state: InMemoryCommandRepositoryState) -> None:
+    """Rank inputから除くhidden roleをfixture stateへ保存する.
+
+    Args:
+        state (InMemoryCommandRepositoryState): role mapを更新するmutable snapshot.
+
+    Returns:
+        None: unrestricted permissionを持たないroleを保存して完了し, 呼び出し側へ値を返さない.
+    """
     state.roles_by_id[_HIDDEN_ROLE_ID] = Role(
         id=_HIDDEN_ROLE_ID,
         name="Hidden",
@@ -343,6 +411,14 @@ def _seed_hidden_role(state: InMemoryCommandRepositoryState) -> None:
 
 
 def _user(user_id: int) -> User:
+    """指定IDを持つUserStats source用User fixtureを構築する.
+
+    Args:
+        user_id (int): user名とIDに使うuser識別子.
+
+    Returns:
+        User: 固定日時とJP countryを持つuser.
+    """
     return User(
         id=user_id,
         username=f"user{user_id}",
@@ -368,6 +444,23 @@ def _score(
     ruleset: Ruleset = Ruleset.OSU,
     playstyle: Playstyle = Playstyle.VANILLA,
 ) -> Score:
+    """UserStats source集計用の保存済みScore fixtureを構築する.
+
+    Args:
+        score_id (int): state mapで使うscore ID.
+        score (int): total scoreとranked scoreに使う得点.
+        max_combo (int): sourceが返す最大combo.
+        user_id (int): scoreを提出したuser ID.
+        mods (ModCombination | None): playstyle filterを検証するmod組み合わせ. Noneならmodなし.
+        passed (bool): pass countとranked scoreに影響する成否.
+        leaderboard_eligible_at_submission (bool): ranked score対象かを表すsubmission時flag.
+        play_time_seconds (int | None): play time集計に使う秒数. Noneなら利用不可.
+        ruleset (Ruleset): source filterに使うruleset.
+        playstyle (Playstyle): source filterに使うplaystyle.
+
+    Returns:
+        Score: 指定した集計条件を持つ保存済みscore.
+    """
     return Score(
         id=score_id,
         user_id=user_id,
@@ -407,6 +500,20 @@ def _best(
     ruleset: Ruleset = Ruleset.OSU,
     playstyle: Playstyle = Playstyle.VANILLA,
 ) -> BeatmapPerformanceBest:
+    """UserStats rank input用のBeatmapPerformanceBest fixtureを構築する.
+
+    Args:
+        row_id (int): projection rowと関連scoreのID.
+        user_id (int): performance bestを所有するuser ID.
+        beatmap_id (int): bestが対象とするbeatmap ID.
+        pp (Decimal): rank inputに使うperformance point.
+        accuracy (float): performance bestのaccuracy.
+        ruleset (Ruleset): bestを絞り込むruleset.
+        playstyle (Playstyle): bestを絞り込むplaystyle.
+
+    Returns:
+        BeatmapPerformanceBest: 指定scopeとperformance値を持つbest projection.
+    """
     return BeatmapPerformanceBest(
         id=row_id,
         scope=BeatmapPerformanceBestScope(
