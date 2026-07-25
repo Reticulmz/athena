@@ -1,4 +1,4 @@
-"""Tests for SQLAlchemy Beatmap Leaderboard query persistence."""
+"""SQLAlchemy Beatmap Leaderboard query persistenceを検証する."""
 
 from __future__ import annotations
 
@@ -33,34 +33,69 @@ _CURRENT_CHECKSUM = "a" * 32
 
 
 class FakeResult:
-    """Small SQLAlchemy result double returning mapping rows."""
+    """mapping rowを返すSQLAlchemy result test double.
+
+    Attributes:
+        _rows (list[Mapping[str, object]]): mappings().all()が返すrow群.
+    """
 
     _rows: list[Mapping[str, object]]
 
     def __init__(self, rows: Iterable[Mapping[str, object]] = ()) -> None:
+        """Mapping row群を持つresult test doubleを初期化する.
+
+        Args:
+            rows (Iterable[Mapping[str, object]]): query resultとして返すmapping row群.
+        """
         self._rows = list(rows)
 
     def mappings(self) -> FakeResult:
+        """Mapping row access用にこのresultを返す.
+
+        Returns:
+            FakeResult: mappings().all()呼び出しを受け付けるこのtest double.
+        """
         return self
 
     def all(self) -> list[Mapping[str, object]]:
+        """設定済みのmapping row群を返す.
+
+        Returns:
+            list[Mapping[str, object]]: query resultとして設定されたmapping row群.
+        """
         return self._rows
 
 
 class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
-    """AsyncSession-shaped fake that fails on mutation APIs."""
+    """query repository readを再現しmutation APIを拒否するAsyncSession test double.
+
+    Attributes:
+        closed (bool): context終了後にsessionが閉じられたか.
+        statements (list[ClauseElement]): 実行されたread statement.
+        _execute_results (list[FakeResult]): executeごとに返すresult test double.
+    """
 
     closed: bool
     statements: list[ClauseElement]
     _execute_results: list[FakeResult]
 
     def __init__(self, execute_results: Iterable[FakeResult] = ()) -> None:
+        """read結果列を受け取るquery session test doubleを初期化する.
+
+        Args:
+            execute_results (Iterable[FakeResult]): executeごとに順番に返すresult群.
+        """
         self.closed = False
         self.statements = []
         self._execute_results = list(execute_results)
 
     @override
     async def __aenter__(self) -> FakeQuerySession:
+        """context内で使用するquery sessionを返す.
+
+        Returns:
+            FakeQuerySession: read statementを記録するこのsession.
+        """
         return self
 
     @override
@@ -70,60 +105,177 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """context終了時にquery sessionを閉じる.
+
+        Args:
+            exc_type (type[BaseException] | None): context内で送出された例外の型.
+                例外がない場合はNone.
+            exc (BaseException | None): context内で送出された例外. 例外がない場合はNone.
+            traceback (TracebackType | None): 例外のtraceback. 例外がない場合はNone.
+
+        Returns:
+            None: sessionを閉じて例外を抑制せずに完了する.
+        """
         _ = exc_type
         _ = exc
         _ = traceback
         await self.close()
 
     async def execute(self, statement: ClauseElement) -> FakeResult:
+        """Read statementを記録し次の設定済みresultを返す.
+
+        Args:
+            statement (ClauseElement): query repositoryが実行するread statement.
+
+        Returns:
+            FakeResult: 次の設定済みresult. 設定がなければ空result.
+        """
         self.statements.append(statement)
         if self._execute_results:
             return self._execute_results.pop(0)
         return FakeResult()
 
     def add(self, instance: object) -> None:
+        """Query repositoryによるaddを拒否する.
+
+        Args:
+            instance (object): add対象として渡されたinstance.
+
+        Returns:
+            None: mutationを実行せず例外送出で完了する.
+
+        Raises:
+            AssertionError: query repositoryがaddを呼び出した場合.
+        """
         _ = instance
         raise AssertionError("query repository must not add instances")
 
     async def delete(self, instance: object) -> None:
+        """Query repositoryによるdeleteを拒否する.
+
+        Args:
+            instance (object): delete対象として渡されたinstance.
+
+        Returns:
+            None: mutationを実行せず例外送出で完了する.
+
+        Raises:
+            AssertionError: query repositoryがdeleteを呼び出した場合.
+        """
         _ = instance
         raise AssertionError("query repository must not delete instances")
 
     async def merge(self, instance: object) -> object:
+        """Query repositoryによるmergeを拒否する.
+
+        Args:
+            instance (object): merge対象として渡されたinstance.
+
+        Returns:
+            object: mutationを拒否するため正常には返さない値.
+
+        Raises:
+            AssertionError: query repositoryがmergeを呼び出した場合.
+        """
         _ = instance
         raise AssertionError("query repository must not merge instances")
 
     async def flush(self) -> None:
+        """Query repositoryによるflushを拒否する.
+
+        Returns:
+            None: mutationを実行せず例外送出で完了する.
+
+        Raises:
+            AssertionError: query repositoryがflushを呼び出した場合.
+        """
         raise AssertionError("query repository must not flush")
 
     async def commit(self) -> None:
+        """Query repositoryによるcommitを拒否する.
+
+        Returns:
+            None: transactionを確定せず例外送出で完了する.
+
+        Raises:
+            AssertionError: query repositoryがcommitを呼び出した場合.
+        """
         raise AssertionError("query repository must not commit")
 
     async def rollback(self) -> None:
+        """Query repositoryによるrollbackを拒否する.
+
+        Returns:
+            None: transactionをrollbackせず例外送出で完了する.
+
+        Raises:
+            AssertionError: query repositoryがrollbackを呼び出した場合.
+        """
         raise AssertionError("query repository must not rollback")
 
     async def refresh(self, instance: object) -> None:
+        """Query repositoryによるrefreshを拒否する.
+
+        Args:
+            instance (object): refresh対象として渡されたinstance.
+
+        Returns:
+            None: mutationを実行せず例外送出で完了する.
+
+        Raises:
+            AssertionError: query repositoryがrefreshを呼び出した場合.
+        """
         _ = instance
         raise AssertionError("query repository must not refresh")
 
     async def close(self) -> None:
+        """sessionを閉じた状態として記録する.
+
+        Returns:
+            None: closedをTrueにして呼び出し側へ値を返さずに完了する.
+        """
         self.closed = True
 
 
 class FakeSessionFactory:
+    """同じquery sessionを返しfactory利用回数を記録するtest double.
+
+    Attributes:
+        session (FakeQuerySession): factoryが返すquery session.
+        calls (int): factoryが呼び出された回数.
+    """
+
     session: FakeQuerySession
     calls: int
 
     def __init__(self, session: FakeQuerySession) -> None:
+        """返却するquery sessionを持つfactory test doubleを初期化する.
+
+        Args:
+            session (FakeQuerySession): repositoryがcontext管理するquery session.
+        """
         self.session = session
         self.calls = 0
 
     def __call__(self) -> FakeQuerySession:
+        """factory利用回数を増やして設定済みsessionを返す.
+
+        Returns:
+            FakeQuerySession: repositoryがreadに使用する設定済みsession.
+        """
         self.calls += 1
         return self.session
 
 
 async def test_top_rows_rank_mod_scoped_projection_and_map_source_rows() -> None:
+    """Mod scopeのprojectionを順位付けしsource rowへmapするquery契約を検証する.
+
+    Returns:
+        None: row mappingとread SQLとsession closeを検証して完了する.
+
+    Raises:
+        AssertionError: visible rowまたはranking SQLまたはsession lifecycleが異なる場合.
+    """
     session = FakeQuerySession(
         [FakeResult([_row(score_id=10, user_id=20, score=2_000_000, pp=Decimal("123.456"))])]
     )
@@ -174,6 +326,14 @@ async def test_top_rows_rank_mod_scoped_projection_and_map_source_rows() -> None
 
 
 async def test_personal_best_uses_same_filtered_window_ordering_as_top_rows() -> None:
+    """Personal bestがtop rowsと同じfiltered window orderingを使う契約を検証する.
+
+    Returns:
+        None: 全体rankとtop rows共通のSQL predicateを検証して完了する.
+
+    Raises:
+        AssertionError: personal best rowまたはfiltered window SQLが異なる場合.
+    """
     session = FakeQuerySession(
         [
             FakeResult([_row(score_id=1, user_id=1, score=3_000_000, rank=1)]),
@@ -209,6 +369,14 @@ async def test_personal_best_uses_same_filtered_window_ordering_as_top_rows() ->
 
 
 async def test_only_selected_mods_category_applies_exact_raw_mods() -> None:
+    """SELECTED_MODSだけがraw Modの完全一致predicateを使うcategory契約を検証する.
+
+    Returns:
+        None: countryとfriendsとselected ModsのSQL filter差分を検証して完了する.
+
+    Raises:
+        AssertionError: category別のpredicateまたはraw Mod比較方法が異なる場合.
+    """
     country_session = FakeQuerySession()
     country_repository = _repository(country_session)
     _ = await country_repository.list_top_rows(
@@ -253,6 +421,14 @@ async def test_only_selected_mods_category_applies_exact_raw_mods() -> None:
 
 
 async def test_nullable_pp_does_not_hide_rows_and_pp_sql_is_ranked_approved_only() -> None:
+    """Nullable PPがrowを隠さずPP表示がranked/approved statusに限られる契約を検証する.
+
+    Returns:
+        None: nullable PP rowとbeatmap status SQL条件を検証して完了する.
+
+    Raises:
+        AssertionError: nullable PP rowまたはPP表示status条件が異なる場合.
+    """
     session = FakeQuerySession(
         [
             FakeResult(
@@ -281,6 +457,14 @@ async def test_nullable_pp_does_not_hide_rows_and_pp_sql_is_ranked_approved_only
 def _repository(
     session: FakeQuerySession,
 ) -> SQLAlchemyBeatmapLeaderboardQueryRepository:
+    """Test query sessionをquery repositoryへ型適合させて構築する.
+
+    Args:
+        session (FakeQuerySession): read statementとclose状態を記録するtest session.
+
+    Returns:
+        SQLAlchemyBeatmapLeaderboardQueryRepository: test session factoryを持つquery repository.
+    """
     factory = FakeSessionFactory(session)
     session_factory = cast("SQLAlchemyQuerySessionFactory", cast("object", factory))
     return SQLAlchemyBeatmapLeaderboardQueryRepository(session_factory)
@@ -293,6 +477,17 @@ def _scope(
     country: str | None = None,
     eligible_user_ids: tuple[int, ...] | None = None,
 ) -> LeaderboardReadScope:
+    """Category filterを含むleaderboard read scopeを既定値で構築する.
+
+    Args:
+        category (LeaderboardCategory): 適用するleaderboard category filter.
+        selected_mods (ModCombination | None): SELECTED_MODS categoryで完全一致比較するMod値.
+        country (str | None): COUNTRY categoryで一致させる国code.
+        eligible_user_ids (tuple[int, ...] | None): FRIENDS categoryで許可するuser ID群.
+
+    Returns:
+        LeaderboardReadScope: 指定したcategory filterを含むbeatmap read scope.
+    """
     return LeaderboardReadScope(
         beatmap_id=_BEATMAP_ID,
         beatmap_checksum=_CURRENT_CHECKSUM,
@@ -313,6 +508,18 @@ def _row(
     rank: int = 1,
     pp: Decimal | None = None,
 ) -> Mapping[str, object]:
+    """repositoryがdomain rowへ変換するSQL mapping rowを構築する.
+
+    Args:
+        score_id (int): source scoreの識別子.
+        user_id (int): source scoreを送信したuserの識別子.
+        score (int): rankingに使うscore値.
+        rank (int): rowに設定する全体順位.
+        pp (Decimal | None): 表示対象のperformance point. 非表示時はNone.
+
+    Returns:
+        Mapping[str, object]: leaderboard row conversionに必要なfieldを持つmapping.
+    """
     return {
         "score_id": score_id,
         "user_id": user_id,
@@ -338,6 +545,14 @@ def _row(
 
 
 def _compiled_sql(statement: ClauseElement) -> str:
+    """SQLAlchemy statementをliteral bind付きPostgreSQL SQLへコンパイルする.
+
+    Args:
+        statement (ClauseElement): SQL構造を検証する対象statement.
+
+    Returns:
+        str: literal bindを展開したPostgreSQL dialectのSQL文字列.
+    """
     return str(
         statement.compile(
             dialect=postgresql.dialect(),
