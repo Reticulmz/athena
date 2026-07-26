@@ -624,7 +624,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/services/queries/{beatmaps,storage}/**と3.32が所有しないscore file_
 
-- [ ] 3.34 (P) Authentication service testを整備する
+- [x] 3.34 (P) Authentication service testを整備する
   - tests/unit/services/test_auth_service.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびauthentication service testが通る
   - _Depends: 1.4_
