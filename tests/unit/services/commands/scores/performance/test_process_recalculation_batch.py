@@ -1,4 +1,4 @@
-"""Tests for durable performance recalculation batch processing."""
+"""永続化されたperformance recalculation batch処理のcontractを検証するtest module."""
 
 from __future__ import annotations
 
@@ -49,6 +49,15 @@ _CALCULATOR_VERSION = "4.1.0"
 
 @dataclass(frozen=True, slots=True)
 class _RecordedRequest:
+    """request recorderが受け取ったcalculation requestを表すrecord.
+
+    Attributes:
+        score_id (int): 再計算を要求したscoreの識別子.
+        calculator_name (str): 要求したcalculatorのname.
+        calculator_version (str): 要求したcalculatorのversion.
+        requested_at (datetime): requestを発行した時刻.
+    """
+
     score_id: int
     calculator_name: str
     calculator_version: str
@@ -57,19 +66,45 @@ class _RecordedRequest:
 
 @final
 class _CalculatorIdentity:
+    """test用に固定したcalculator identityを提供するstub."""
+
     def calculator_name(self) -> str:
+        """使用するcalculator nameを返す.
+
+        Returns:
+            str: recalculation requestに渡す固定calculator name.
+        """
         return _CALCULATOR_NAME
 
     def calculator_version(self) -> str:
+        """使用するcalculator versionを返す.
+
+        Returns:
+            str: recalculation requestに渡す固定calculator version.
+        """
         return _CALCULATOR_VERSION
 
 
 @final
 class _RequestRecorder:
+    """scoreごとのrequest resultを返し呼出しを記録するtest double.
+
+    Attributes:
+        _results_by_score_id (dict[int, RequestPerformanceCalculationResult]):
+            scoreごとに返すrequest result.
+        calls (list[_RecordedRequest]): executeで受信したrequestの順序付きrecord.
+    """
+
     def __init__(
         self,
         results_by_score_id: dict[int, RequestPerformanceCalculationResult],
     ) -> None:
+        """scoreごとの固定request resultを持つrecorderを初期化する.
+
+        Args:
+            results_by_score_id (dict[int, RequestPerformanceCalculationResult]):
+                score IDから返却resultへの対応.
+        """
         self._results_by_score_id = results_by_score_id
         self.calls: list[_RecordedRequest] = []
 
@@ -77,6 +112,15 @@ class _RequestRecorder:
         self,
         command: RequestPerformanceCalculationCommand,
     ) -> RequestPerformanceCalculationResult:
+        """requestを記録し対応する固定resultを返す.
+
+        Args:
+            command (RequestPerformanceCalculationCommand):
+                記録してscore IDでresultを選択するrequest.
+
+        Returns:
+            RequestPerformanceCalculationResult: 指定score IDに対応する固定result.
+        """
         self.calls.append(
             _RecordedRequest(
                 score_id=command.score_id,
@@ -90,6 +134,15 @@ class _RequestRecorder:
 
 @pytest.mark.asyncio
 async def test_claims_bounded_chunk_and_marks_terminal_request_results() -> None:
+    """Worker chunk上限だけをclaimしterminal resultを完了またはunavailableへ反映することを検証する.
+
+    3件のwork itemを持つbatchへchunk size 2のworkerを実行する.
+    completedとunavailableのrequest resultだけが処理され, 3件目はpendingのまま
+    batch progressがrunningになることを確認する.
+
+    Returns:
+        None: claim数とwork item stateとbatch progressとrecorded requestを検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     batch_id = await _create_batch(factory, score_ids=(101, 102, 103))
     request = _RequestRecorder(
@@ -162,6 +215,14 @@ async def test_claims_bounded_chunk_and_marks_terminal_request_results() -> None
 
 @pytest.mark.asyncio
 async def test_pending_or_temporary_conflict_request_results_are_retryable_failures() -> None:
+    """Pending replacementとtemporary conflictがretryable claimed workとして残ることを検証する.
+
+    queued replacementとtemporary conflictを返す2件のwork itemを処理し claimを解放せず期限とerrorを
+    記録してbatch progressを完了扱いにしないことを確認する.
+
+    Returns:
+        None: retryable failure数とclaim期限とerrorとbatch progressを検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     batch_id = await _create_batch(factory, score_ids=(101, 102))
     request = _RequestRecorder(
@@ -224,6 +285,14 @@ async def test_pending_or_temporary_conflict_request_results_are_retryable_failu
 
 @pytest.mark.asyncio
 async def test_retryable_failures_do_not_starve_later_work_items() -> None:
+    """Retryable failureが後続work itemのclaimと完了を妨げないことを検証する.
+
+    最初のchunkで2件のretryable replacementを残し 次のworkerが未claimの3件目を取得してcompletedへ
+    遷移できることを確認する.
+
+    Returns:
+        None: 次のworkerが未処理itemを完了できることを検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     batch_id = await _create_batch(factory, score_ids=(101, 102, 103))
     request = _RequestRecorder(
@@ -310,6 +379,14 @@ async def test_retryable_failures_do_not_starve_later_work_items() -> None:
 
 @pytest.mark.asyncio
 async def test_stale_claimed_work_is_reclaimed_by_later_processor() -> None:
+    """claim期限切れworkを後続processorがreclaimして完了できることを検証する.
+
+    worker-aがclaimした単一work itemの期限を過ぎてからworker-bを実行し attempt countを増やして
+    batchとwork itemをcompletedへ遷移することを確認する.
+
+    Returns:
+        None: attempt countとbatch completionを検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     batch_id = await _create_batch(factory, score_ids=(101,))
     claim_timeout = timedelta(minutes=5)
@@ -375,6 +452,15 @@ async def test_stale_claimed_work_is_reclaimed_by_later_processor() -> None:
 
 @pytest.mark.asyncio
 async def test_replacement_request_keeps_old_current_until_terminal_finalization() -> None:
+    """replacement計算がterminalになるまで旧current calculationを保持することを検証する.
+
+    旧calculator versionのcompleted current calculationを持つscoreを再計算する.
+    queued replacementを完了後に再処理して, currentをreplacementへ交代し
+    旧calculationをsupersededにすることを確認する.
+
+    Returns:
+        None: replacement完了後にcurrent交代と旧calculation supersedeを検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     score_id = await _persist_score(factory, _score())
     old_current_id = await _create_completed_current(
@@ -439,6 +525,16 @@ def _use_case(
     *,
     settings: PerformanceRuntimeSettings | None = None,
 ) -> ProcessPerformanceRecalculationBatchUseCase:
+    """in-memory persistenceとrequest recorderを使うbatch processorを組み立てる.
+
+    Args:
+        factory (UnitOfWorkFactory): batchとwork itemを保存するunit of work factory.
+        request (_RequestRecorder): calculation requestを記録してresultを返すtest double.
+        settings (PerformanceRuntimeSettings | None): worker behaviorを上書きするoptional setting.
+
+    Returns:
+        ProcessPerformanceRecalculationBatchUseCase: testで実行するbatch processing use case.
+    """
     return ProcessPerformanceRecalculationBatchUseCase(
         unit_of_work_factory=factory,
         request_use_case=request,
@@ -453,6 +549,16 @@ def _command(
     owner: str,
     claimed_at: datetime = _NOW,
 ) -> ProcessPerformanceRecalculationBatchCommand:
+    """指定workerがbatchを処理するcommandを組み立てる.
+
+    Args:
+        batch_id (int): 処理するrecalculation batchの識別子.
+        owner (str): claimを所有するworker識別子.
+        claimed_at (datetime): workerがclaimを試みる時刻.
+
+    Returns:
+        ProcessPerformanceRecalculationBatchCommand: batch processorへ渡すcommand.
+    """
     return ProcessPerformanceRecalculationBatchCommand(
         batch_id=batch_id,
         claim_owner=owner,
@@ -461,6 +567,15 @@ def _command(
 
 
 async def _create_batch(factory: UnitOfWorkFactory, *, score_ids: tuple[int, ...]) -> int:
+    """Stale score用work itemを持つrecalculation batchを永続化する.
+
+    Args:
+        factory (UnitOfWorkFactory): batchとwork itemを保存するunit of work factory.
+        score_ids (tuple[int, ...]): stale candidateとしてbatchへ追加するscore ID.
+
+    Returns:
+        int: 永続化済みbatchの識別子.
+    """
     async with factory() as uow:
         batch = await uow.score_performance.create_recalculation_batch(
             CreateScorePerformanceRecalculationBatch(
@@ -484,6 +599,15 @@ async def _create_batch(factory: UnitOfWorkFactory, *, score_ids: tuple[int, ...
 
 
 async def _persist_score(factory: UnitOfWorkFactory, score: Score) -> int:
+    """scoreをin-memory repositoryへ保存して識別子を返す.
+
+    Args:
+        factory (UnitOfWorkFactory): scoreを保存するunit of work factory.
+        score (Score): 永続化するtest score.
+
+    Returns:
+        int: 保存後に割り当てられたscore ID.
+    """
     async with factory() as uow:
         created = await uow.scores.create(score)
         await uow.commit()
@@ -497,6 +621,16 @@ async def _create_completed_current(
     score_id: int,
     calculator_version: str,
 ) -> int:
+    """Completed current calculationを作成してscoreへ関連付ける.
+
+    Args:
+        factory (UnitOfWorkFactory): calculationを保存して完了させるunit of work factory.
+        score_id (int): current calculationを作成するscoreの識別子.
+        calculator_version (str): 作成するcalculationのcalculator version.
+
+    Returns:
+        int: completed current calculationの識別子.
+    """
     async with factory() as uow:
         result = await uow.score_performance.create_or_reuse_calculation(
             request_calculation_command(score_id=score_id, calculator_version=calculator_version)
@@ -516,6 +650,15 @@ def request_calculation_command(
     score_id: int,
     calculator_version: str,
 ) -> CreateScorePerformanceCalculation:
+    """score用のperformance calculation作成commandを組み立てる.
+
+    Args:
+        score_id (int): calculationを関連付けるscoreの識別子.
+        calculator_version (str): calculationへ保存するcalculator version.
+
+    Returns:
+        CreateScorePerformanceCalculation: current calculation作成repository command.
+    """
     return CreateScorePerformanceCalculation(
         score_id=score_id,
         calculator_name=_CALCULATOR_NAME,
@@ -531,6 +674,16 @@ async def _complete_calculation(
     calculation_id: int,
     calculator_version: str = _CALCULATOR_VERSION,
 ) -> None:
+    """指定calculationを固定performance値でcompletedへ遷移させる.
+
+    Args:
+        factory (UnitOfWorkFactory): calculation stateを更新するunit of work factory.
+        calculation_id (int): completedへ遷移させるcalculationの識別子.
+        calculator_version (str): completion resultへ記録するcalculator version.
+
+    Returns:
+        None: completionをcommitして完了する.
+    """
     async with factory() as uow:
         _ = await uow.score_performance.mark_completed(
             CompleteScorePerformanceCalculation(
@@ -556,6 +709,19 @@ def _request_result(
     created: bool = False,
     is_replacement: bool = False,
 ) -> RequestPerformanceCalculationResult:
+    """Request use caseが返すcalculation resultを組み立てる.
+
+    Args:
+        outcome (RequestPerformanceCalculationOutcome): request処理のoutcome.
+        score_id (int): request対象scoreの識別子.
+        calculation (PerformanceCalculation | None): outcomeに関連するcalculation.
+            存在しない場合はNone.
+        created (bool): 新しいcalculationを作成したか.
+        is_replacement (bool): 新しいcalculationがreplacementか.
+
+    Returns:
+        RequestPerformanceCalculationResult: batch processorへ返すrequest result.
+    """
     return RequestPerformanceCalculationResult(
         outcome=outcome,
         score_id=score_id,
@@ -572,6 +738,17 @@ def _calculation(
     state: PerformanceCalculationState,
     unavailable_reason: str | None,
 ) -> PerformanceCalculation:
+    """指定stateを持つtest用performance calculationを組み立てる.
+
+    Args:
+        calculation_id (int): calculationの識別子.
+        score_id (int): calculationを関連付けるscoreの識別子.
+        state (PerformanceCalculationState): calculationのlifecycle state.
+        unavailable_reason (str | None): unavailable outcomeのreason. それ以外はNone.
+
+    Returns:
+        PerformanceCalculation: terminal stateに応じたperformance値を持つcalculation.
+    """
     return PerformanceCalculation(
         id=calculation_id,
         score_id=score_id,
@@ -590,6 +767,11 @@ def _calculation(
 
 
 def _score() -> Score:
+    """recalculation対象に使うpassed ranked scoreを組み立てる.
+
+    Returns:
+        Score: vanilla playstyleとranked beatmapを持つ未永続化score.
+    """
     return Score(
         id=None,
         user_id=1000,
@@ -618,6 +800,17 @@ def _score() -> Score:
 
 
 def _require_calculation_id(calculation: PerformanceCalculation) -> int:
+    """永続化済みcalculationから必須の識別子を取得する.
+
+    Args:
+        calculation (PerformanceCalculation): 識別子が割り当て済みであるべきcalculation.
+
+    Returns:
+        int: calculationの永続化済み識別子.
+
+    Raises:
+        AssertionError: calculation IDが未割り当ての場合.
+    """
     if calculation.id is None:
         msg = "calculation id must be assigned"
         raise AssertionError(msg)
