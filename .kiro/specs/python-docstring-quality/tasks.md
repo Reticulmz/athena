@@ -600,7 +600,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/services/commands/scores/performanceの4 file_
 
-- [ ] 3.31 (P) 残りのcommand use-case testを整備する
+- [x] 3.31 (P) 残りのcommand use-case testを整備する
   - tests/unit/services/commands/*.py、commands/chat/**、commands/scores/*.pyへ共通条件を適用し、
     performance/**は除外する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびpersistence、leaderboard、replay、score、projection testが通る

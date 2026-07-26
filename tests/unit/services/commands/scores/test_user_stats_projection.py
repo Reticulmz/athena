@@ -1,4 +1,4 @@
-"""Current UserStats projection command helper tests。"""
+"""current UserStats projection command helperのUnit testを検証する."""
 
 from __future__ import annotations
 
@@ -21,6 +21,14 @@ _NOW = datetime(2026, 7, 1, 0, 0, 0, tzinfo=UTC)
 
 
 def test_projection_accuracy_uses_weighted_performance_best_rows() -> None:
+    """Projection accuracyがperformance bestの加重値を使う契約を検証する.
+
+    異なるaccuracyとPPを持つ二つのscoreおよびperformance bestを渡す条件で、policyの加重accuracy、
+    hit totals、play count、total scoreがprojectionに観測できることを確認する.
+
+    Returns:
+        None: 加重accuracyとscore集計値を検証して、呼び出し側へ値を返さずに完了する.
+    """
     projection = build_current_user_stats_projection(
         user_id=1000,
         ruleset=Ruleset.OSU,
@@ -54,6 +62,18 @@ def _score(
     n100: int,
     score: int,
 ) -> Score:
+    """Current UserStats projectionに渡すtest用scoreを作成する.
+
+    Args:
+        score_id (int): scoreとbeatmapのIDに使う値.
+        accuracy (float): scoreに記録するaccuracy値.
+        n300 (int): 300 hit数.
+        n100 (int): 100 hit数.
+        score (int): total score値.
+
+    Returns:
+        Score: current stats集計対象のtest用score.
+    """
     return Score(
         id=score_id,
         user_id=1000,
@@ -83,6 +103,16 @@ def _score(
 
 
 def _best(*, score_id: int, pp: Decimal, accuracy: float) -> BeatmapPerformanceBest:
+    """Current UserStats projectionに渡すtest用performance bestを作成する.
+
+    Args:
+        score_id (int): bestとscoreの関連付けに使うID.
+        pp (Decimal): 加重PP集計に使うperformance値.
+        accuracy (float): 加重accuracy集計に使う値.
+
+    Returns:
+        BeatmapPerformanceBest: 指定scoreに対応するtest用performance best row.
+    """
     return BeatmapPerformanceBest(
         id=score_id,
         scope=BeatmapPerformanceBestScope(

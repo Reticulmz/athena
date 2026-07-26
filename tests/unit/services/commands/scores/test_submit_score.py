@@ -1,4 +1,4 @@
-"""Tests for score submission command use-case transaction boundaries."""
+"""score submission command use caseのtransaction境界をUnit testで検証する."""
 
 from __future__ import annotations
 
@@ -63,6 +63,21 @@ def _score(
     beatmap_checksum: str = _BEATMAP_CHECKSUM,
     mods: ModCombination | None = None,
 ) -> Score:
+    """Completed submissionに渡すtest用scoreを作成する.
+
+    Args:
+        online_checksum (str): scoreの一意なonline checksum.
+        score (int): 記録するtotal score値.
+        max_combo (int): 記録する最大combo数.
+        accuracy (float): 記録するaccuracy値.
+        passed (bool): scoreがpass済みか.
+        leaderboard_eligible_at_submission (bool): submission時にleaderboard対象だったか.
+        beatmap_checksum (str): score対象beatmapのchecksum.
+        mods (ModCombination | None): scoreに適用するmod組み合わせ. 未指定時はno-mod.
+
+    Returns:
+        Score: memory Unit of Workへ永続化できるtest用score.
+    """
     return Score(
         id=None,
         user_id=1000,
@@ -93,22 +108,49 @@ def _score(
 
 @final
 class FailingReplayUnitOfWorkFactory:
-    """In-memory UoW factory whose replay create fails inside the transaction."""
+    """replay作成だけがtransaction内で失敗するmemory UoW factoryを提供する.
+
+    Attributes:
+        _factory (InMemoryUnitOfWorkFactory): contextを生成するwrapped memory factory.
+    """
 
     def __init__(self) -> None:
+        """Wrapped memory Unit of Work factoryを初期化する."""
         self._factory: InMemoryUnitOfWorkFactory = InMemoryUnitOfWorkFactory()
 
     def __call__(self) -> AbstractAsyncContextManager[UnitOfWork]:
+        """Replay repositoryを失敗fakeへ差し替えるUnit of Work contextを返す.
+
+        Returns:
+            AbstractAsyncContextManager[UnitOfWork]: replay作成時に例外を送出するcontext.
+        """
         context = self._factory()
         return _FailingReplayContext(context)
 
 
 @final
 class _FailingReplayContext:
+    """enter時にreplay repositoryを失敗fakeへ置換するcontext wrapperを提供する.
+
+    Attributes:
+        _context (AbstractAsyncContextManager[UnitOfWork]): wrapped Unit of Work context.
+    """
+
     def __init__(self, context: AbstractAsyncContextManager[UnitOfWork]) -> None:
+        """Wrapped Unit of Work contextを保持する.
+
+        Args:
+            context (AbstractAsyncContextManager[UnitOfWork]): replay repositoryを差し替える対象
+                context.
+        """
         self._context: AbstractAsyncContextManager[UnitOfWork] = context
 
     async def __aenter__(self) -> UnitOfWork:
+        """Wrapped Unit of Workへ入り、replay repositoryを失敗fakeへ差し替える.
+
+        Returns:
+            UnitOfWork: replay createでRuntimeErrorを送出するUnit of Work.
+        """
         uow = await self._context.__aenter__()
         uow.replays = _FailingReplayRepository(uow.replays)
         return uow
@@ -119,24 +161,70 @@ class _FailingReplayContext:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """Wrapped contextへ例外情報を渡して退出する.
+
+        Args:
+            exc_type (type[BaseException] | None): context内で送出された例外型.
+            exc (BaseException | None): context内で送出された例外instance.
+            traceback (TracebackType | None): context内例外のtraceback.
+
+        Returns:
+            None: wrapped contextの終了処理を実行して、呼び出し側へ値を返さずに完了する.
+        """
         _ = await self._context.__aexit__(exc_type, exc, traceback)
 
 
 @final
 class _FailingReplayRepository:
+    """createだけを失敗させ、checksum照会はwrapped repositoryへ委譲するfakeを提供する.
+
+    Attributes:
+        _wrapped (ReplayCommandRepository): checksum照会に利用する実repository.
+    """
+
     def __init__(self, wrapped: ReplayCommandRepository) -> None:
+        """checksum照会を委譲するreplay repositoryを保持する.
+
+        Args:
+            wrapped (ReplayCommandRepository): create以外を委譲するrepository.
+        """
         self._wrapped: ReplayCommandRepository = wrapped
 
     async def create(self, replay: Replay) -> Replay:
+        """replay永続化障害を送出してtransaction rollbackを検証可能にする.
+
+        Args:
+            replay (Replay): 未永続化のreplay.
+
+        Raises:
+            RuntimeError: replay write failureを再現する場合.
+        """
         del replay
         raise RuntimeError("replay write failed")
 
     async def exists_by_checksum(self, checksum: str) -> bool:
+        """checksum存在照会をwrapped repositoryへ委譲する.
+
+        Args:
+            checksum (str): 存在確認するreplay checksum.
+
+        Returns:
+            bool: wrapped repositoryが返すchecksum存在結果.
+        """
         return await self._wrapped.exists_by_checksum(checksum)
 
 
 @pytest.mark.asyncio
 async def test_replay_create_failure_rolls_back_submission_score_and_replay() -> None:
+    """replay作成障害がsubmission、score、replayを全てrollbackする契約を検証する.
+
+    replay createがRuntimeErrorを送出するUnit of Work factoryで
+    completed submissionを実行する条件で、例外が伝播し、fingerprint、score checksum、
+    replay checksumの永続stateが空であることを確認する.
+
+    Returns:
+        None: transaction rollback後の永続stateを検証して、呼び出し側へ値を返さずに完了する.
+    """
     factory = FailingReplayUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
 
@@ -165,6 +253,16 @@ async def test_replay_create_failure_rolls_back_submission_score_and_replay() ->
 
 @pytest.mark.asyncio
 async def test_completed_submission_commits_one_snapshot() -> None:
+    """Completed submissionが一つのresult snapshotをcommitしretryで再利用する契約を検証する.
+
+    replay metadataとscore詳細を持つcompleted commandを実行し、同じfingerprintでretryする条件で、
+    submission snapshot、current user stats、初回result、
+    および既存submission resultが一致することを確認する.
+
+    Returns:
+        None: committed snapshotとidempotent retryの観測結果を検証して、呼び出し側へ値を返さずに
+            完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
     beatmap_approved_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
@@ -269,6 +367,15 @@ async def test_completed_submission_commits_one_snapshot() -> None:
 
 @pytest.mark.asyncio
 async def test_completed_submission_returns_cumulative_beatmap_play_and_pass_counts() -> None:
+    """Completed submissionが累積beatmap play数とpass数を返す契約を検証する.
+
+    failed scoreとpassed scoreを同じbeatmapへ順にsubmitする条件で、各resultが累積play countと
+    passed scoreだけを反映した累積pass countを返すことを確認する.
+
+    Returns:
+        None: 二つのsubmission resultに含まれる累積countを検証して、呼び出し側へ値を返さずに
+            完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
 
@@ -305,6 +412,15 @@ async def test_completed_submission_returns_cumulative_beatmap_play_and_pass_cou
 
 @pytest.mark.asyncio
 async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_delta() -> None:
+    """Eligible submissionがleaderboard projectionとpersonal best snapshotを更新する契約を検証する.
+
+    最初のmod付きscore、より低いno-mod score、同じfingerprintのretryをsubmitする条件で、mod scopeと
+    global scopeのbest、personal best delta snapshot、idempotent retryが既存resultを保持することを
+    確認する.
+
+    Returns:
+        None: projection、snapshot delta、retry後stateを検証して、呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
     first_mods = ModCombination(Mod.HIDDEN | Mod.NIGHTCORE)
@@ -461,6 +577,14 @@ async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_d
 
 @pytest.mark.asyncio
 async def test_submission_persists_leaderboard_eligibility_snapshot() -> None:
+    """submission時のleaderboard eligibilityがscoreとsnapshotへ固定される契約を検証する.
+
+    eligibilityがFalseのcompleted scoreをsubmitする条件で、永続scoreとscore eligibility snapshotが
+    どちらもFalseとして観測できることを確認する.
+
+    Returns:
+        None: submission時eligibilityの永続化を検証して、呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
 
@@ -504,6 +628,18 @@ async def test_ineligible_submission_does_not_update_submit_personal_best_delta(
     candidate_passed: bool,
     candidate_eligible: bool,
 ) -> None:
+    """Ineligible submissionがpersonal best deltaとbest rowを更新しない契約を検証する.
+
+    既存eligible bestの後にfailedまたはsubmission時ineligibleな高scoreをsubmitする条件で、
+    候補resultのpersonal best deltaがNoneとなり、既存all-mod bestが保持されることを確認する.
+
+    Args:
+        candidate_passed (bool): 候補scoreがpass済みかを表すparameterized条件.
+        candidate_eligible (bool): 候補scoreがsubmission時にleaderboard対象かを表す条件.
+
+    Returns:
+        None: ineligible候補後のpersonal best非更新を検証して、呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
 
@@ -565,6 +701,14 @@ async def test_ineligible_submission_does_not_update_submit_personal_best_delta(
 
 @pytest.mark.asyncio
 async def test_stored_but_ineligible_submission_is_not_returned_from_leaderboard_rows() -> None:
+    """保存済みでもineligibleなscoreをleaderboard queryが返さない契約を検証する.
+
+    submission時eligibilityがFalseのscoreに可視user、beatmap、best rowを後から設定する条件で、
+    score自体は保持されつつglobal leaderboard rowが空になることを確認する.
+
+    Returns:
+        None: eligibility snapshotに基づくquery除外を検証して、呼び出し側へ値を返さずに完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
     beatmap_checksum = "a" * 32
