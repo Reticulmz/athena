@@ -1,4 +1,4 @@
-"""Regression tests for PP calculation future-scope boundaries."""
+"""PP計算pathが将来scopeへ書き込まない境界契約を検証する."""
 
 from pathlib import Path
 
@@ -19,6 +19,14 @@ _PROJECTION_SCOPE_TERMS = (
 
 
 def test_performance_paths_do_not_update_unowned_projection_scopes() -> None:
+    """計算performance pathが所有外projection scope用語を含まない契約を検証する.
+
+    commandとcalculator interfaceのsourceを読む.
+    leaderboardまたはrank projectionを示す用語がないことを確認する.
+
+    Returns:
+        None: 所有外scope用語の検出結果を検証して完了する.
+    """
     matches: list[str] = []
     for relative_path in _BOUNDARY_FILES:
         source = (_PROJECT_ROOT / relative_path).read_text()
