@@ -1,4 +1,4 @@
-"""Tests for active online session query use-case."""
+"""active online session query use-caseの契約を検証するtest module."""
 
 from __future__ import annotations
 
@@ -29,6 +29,13 @@ _SESSION = SessionData(
 
 
 async def test_list_active_sessions_returns_empty_tuple_when_no_sessions() -> None:
+    """sessionがない場合に空tupleを返すlist query契約を検証する.
+
+    空のmemory session storeでqueryを実行してsession snapshotが空であることを確認する.
+
+    Returns:
+        None: sessionなし状態の空tuple結果を検証して完了する.
+    """
     store = InMemorySessionStore()
     use_case = ListActiveSessionsQueryUseCase(session_store=store)
 
@@ -38,6 +45,13 @@ async def test_list_active_sessions_returns_empty_tuple_when_no_sessions() -> No
 
 
 async def test_list_active_sessions_returns_snapshot_tuple_sorted_by_user_id() -> None:
+    """Active session snapshotをuser ID順に返すlist query契約を検証する.
+
+    順不同で2 sessionを登録してquery結果が昇順のsnapshot tupleになることを確認する.
+
+    Returns:
+        None: sort済みsession snapshotの内容を検証して完了する.
+    """
     store = InMemorySessionStore()
     use_case = ListActiveSessionsQueryUseCase(session_store=store)
     session_2 = replace(_SESSION, user_id=2, username="cookiezi", country="US", utc_offset=-5)
@@ -66,6 +80,13 @@ async def test_list_active_sessions_returns_snapshot_tuple_sorted_by_user_id() -
 
 
 async def test_list_active_sessions_does_not_synthesize_banchobot() -> None:
+    """Active session queryが未接続BanchoBotを合成しない契約を検証する.
+
+    空のsession storeでqueryを実行してBanchoBot identityが結果へ含まれないことを確認する.
+
+    Returns:
+        None: system userを合成しないsession snapshotを検証して完了する.
+    """
     store = InMemorySessionStore()
     use_case = ListActiveSessionsQueryUseCase(session_store=store)
 
@@ -75,6 +96,13 @@ async def test_list_active_sessions_does_not_synthesize_banchobot() -> None:
 
 
 async def test_list_active_sessions_reflects_deleted_sessions() -> None:
+    """削除済みsessionをlist query結果から除外する契約を検証する.
+
+    2 sessionを登録して一方をuser単位で削除し残るsnapshotだけが返ることを確認する.
+
+    Returns:
+        None: 削除後のactive session ID列を検証して完了する.
+    """
     store = InMemorySessionStore()
     use_case = ListActiveSessionsQueryUseCase(session_store=store)
     session_2 = replace(_SESSION, user_id=2, username="cookiezi")
@@ -89,6 +117,14 @@ async def test_list_active_sessions_reflects_deleted_sessions() -> None:
 
 
 async def test_get_active_sessions_by_user_ids_returns_requested_online_sessions() -> None:
+    """指定順のonline sessionだけをID queryが返す契約を検証する.
+
+    online userとmissing userを含むID列でqueryを実行し、登録済みsnapshotだけが指定順で返ることを
+    確認する.
+
+    Returns:
+        None: requested online session snapshotの順序と内容を検証して完了する.
+    """
     store = InMemorySessionStore()
     use_case = GetActiveSessionsByUserIdsQueryUseCase(session_store=store)
     session_2 = replace(_SESSION, user_id=2, username="cookiezi", country="US", utc_offset=-5)
@@ -117,6 +153,13 @@ async def test_get_active_sessions_by_user_ids_returns_requested_online_sessions
 
 
 async def test_get_active_sessions_by_user_ids_deduplicates_lookup_order() -> None:
+    """重複user IDを1件のonline session snapshotへ集約する契約を検証する.
+
+    同一online user IDを繰り返し指定してquery結果が重複しないことを確認する.
+
+    Returns:
+        None: deduplicate済みsession snapshot ID列を検証して完了する.
+    """
     store = InMemorySessionStore()
     use_case = GetActiveSessionsByUserIdsQueryUseCase(session_store=store)
 

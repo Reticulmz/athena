@@ -631,7 +631,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/services/test_auth_service.py_
 
-- [ ] 3.35 (P) Identity mutation/relationship service testを整備する
+- [x] 3.35 (P) Identity mutation/relationship service testを整備する
   - test_change_user_password.py、test_change_user_role.py、
     test_friend_relationship_use_cases.py、test_identity_use_cases.py、
     test_online_sessions.pyへ共通条件を適用する
