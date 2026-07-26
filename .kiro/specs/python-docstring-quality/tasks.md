@@ -570,21 +570,21 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/services/bancho_bot/test_command_service.py_
 
-- [ ] 3.27 (P) 残りのBanchoBot testを整備する
+- [x] 3.27 (P) 残りのBanchoBot testを整備する
   - tests/unit/services/bancho_bot/**からtest_command_service.pyを除いた全fileへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有BanchoBot testが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/services/bancho_bot/**からtest_command_service.pyを除く_
 
-- [ ] 3.28 (P) Beatmap command use-case testを整備する
+- [x] 3.28 (P) Beatmap command use-case testを整備する
   - tests/unit/services/commands/beatmaps/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および全beatmap command testが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/services/commands/beatmaps/**_
 
-- [ ] 3.29 (P) Score performance provider/create/execute testを整備する
+- [x] 3.29 (P) Score performance provider/create/execute testを整備する
   - test_beatmap_file_provider.py、test_create_recalculation_batch.py、
     test_execute_calculation.py、test_future_scope_boundaries.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および4 fileのtestが通る
@@ -592,7 +592,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/services/commands/scores/performanceの4 file_
 
-- [ ] 3.30 (P) Score performance process/projection/request/runtime testを整備する
+- [x] 3.30 (P) Score performance process/projection/request/runtime testを整備する
   - test_process_recalculation_batch.py、test_projection_refresh.py、
     test_request_calculation.py、test_runtime_settings.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および4 fileのtestが通る
