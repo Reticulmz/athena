@@ -1,4 +1,4 @@
-"""Replay download query use-case の tests."""
+"""replay download query use-caseのunit testを定義する."""
 
 from __future__ import annotations
 
@@ -42,6 +42,14 @@ _PRIVATE_SENTINELS: Final[tuple[str, ...]] = (
 
 
 async def test_score_not_found_candidate_returns_hidden_score_without_blob_read() -> None:
+    """score不在candidateがblob readなしでhidden scoreになる契約を検証する.
+
+    score-not-found candidateを返すrepositoryでqueryを実行し、client-visible detailを含まない
+    hidden score結果と未呼び出しのcollaboratorを確認する.
+
+    Returns:
+        None: branch、非公開failure結果、collaborator非呼び出しを検証して完了する.
+    """
     harness = _make_harness(candidate=ReplayDownloadScoreNotFoundCandidate())
     input_data = _input(score_id=910, ruleset=Ruleset.TAIKO)
 
@@ -60,6 +68,14 @@ async def test_score_not_found_candidate_returns_hidden_score_without_blob_read(
 
 
 async def test_hidden_score_candidate_returns_hidden_score_without_blob_read() -> None:
+    """Hidden score candidateがblob readなしでhidden scoreになる契約を検証する.
+
+    hidden-score candidateを返すrepositoryでqueryを実行し、client-visible detailを含まない
+    hidden score結果と未呼び出しのcollaboratorを確認する.
+
+    Returns:
+        None: branch、非公開failure結果、collaborator非呼び出しを検証して完了する.
+    """
     harness = _make_harness(candidate=ReplayDownloadHiddenScoreCandidate())
     input_data = _input(score_id=303)
 
@@ -75,6 +91,14 @@ async def test_hidden_score_candidate_returns_hidden_score_without_blob_read() -
 
 
 async def test_missing_replay_candidate_returns_provisional_branch_without_blob_read() -> None:
+    """Missing replay candidateがblob readなしでprovisional branchになる契約を検証する.
+
+    missing-replay candidateを返すrepositoryでqueryを実行し、client-visible detailを含まない
+    provisional結果と未呼び出しのcollaboratorを確認する.
+
+    Returns:
+        None: provisional branch、非公開failure結果、collaborator非呼び出しを検証して完了する.
+    """
     harness = _make_harness(candidate=ReplayDownloadMissingReplayCandidate())
     input_data = _input(score_id=404)
 
@@ -90,6 +114,15 @@ async def test_missing_replay_candidate_returns_provisional_branch_without_blob_
 
 
 async def test_available_replay_with_blob_unavailable_returns_storage_missing() -> None:
+    """Blob readerのunavailableがstorage missing結果になる契約を検証する.
+
+    利用可能なreplay candidateに内部storage errorを設定し、blob read後にprivate detailを
+    露出しないstorage missing結果を返すことを確認する.
+
+    Returns:
+        None: storage missing branch、非公開failure結果、body assembler非呼び出しを
+            検証して完了する.
+    """
     storage_detail = BackendStorageDetailError(" ".join(_PRIVATE_SENTINELS))
     harness = _make_harness(
         candidate=_available_replay(blob_id=707),
@@ -105,6 +138,14 @@ async def test_available_replay_with_blob_unavailable_returns_storage_missing() 
 
 
 async def test_available_replay_with_default_strategy_returns_body_strategy_blocked() -> None:
+    """Default body strategyがaccountingなしのblocked結果になる契約を検証する.
+
+    stored replay bytesを持つcandidateでdefault strategyを使い、blocked branchを返し
+    view/activity mutationを行わないことを確認する.
+
+    Returns:
+        None: blocked branch、非公開failure結果、assembler入力、mutation不在を検証して完了する.
+    """
     stored_blob_payload = b"bk"
     harness = _make_harness(
         candidate=_available_replay(blob_id=808, payload=stored_blob_payload),
@@ -125,6 +166,14 @@ async def test_available_replay_with_default_strategy_returns_body_strategy_bloc
 
 
 async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() -> None:
+    """Direct blob bytes strategyが成功bodyとaccounting metadataを返す契約を検証する.
+
+    利用可能なreplay candidateと一致するblob bytesでqueryを実行し、payload、byte size、
+    score accounting metadataを持つ成功結果を確認する.
+
+    Returns:
+        None: success branch、response body、accounting metadata、mutation不在を検証して完了する.
+    """
     replay_payload = b"rd"
     harness = _make_harness(
         candidate=_available_replay(
@@ -159,6 +208,14 @@ async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() 
 
 
 def test_success_result_rejects_missing_accounting_metadata() -> None:
+    """Success replay resultがaccounting metadataを必須とする不変条件を検証する.
+
+    success branchとresponse bodyだけでresultを構築し、accounting metadata欠落をValueErrorとして
+    拒否することを確認する.
+
+    Returns:
+        None: constructorが不正なsuccess resultを拒否することを検証して完了する.
+    """
     with pytest.raises(
         ValueError,
         match="success replay download query result requires accounting metadata",
@@ -170,6 +227,14 @@ def test_success_result_rejects_missing_accounting_metadata() -> None:
 
 
 def test_non_success_result_rejects_accounting_metadata() -> None:
+    """非success replay resultがaccounting metadataを拒否する不変条件を検証する.
+
+    hidden score branchへaccounting metadataを与えてresultを構築し、client accountingの混入を
+    ValueErrorとして拒否することを確認する.
+
+    Returns:
+        None: constructorが不正なnon-success resultを拒否することを検証して完了する.
+    """
     with pytest.raises(
         ValueError,
         match="non-success replay download query result must not include accounting metadata",
@@ -184,6 +249,14 @@ def test_non_success_result_rejects_accounting_metadata() -> None:
 
 
 async def test_available_replay_with_assemble_strategy_remains_blocked() -> None:
+    """Assemble body strategyがlocal decisionなしでblockedのままになる契約を検証する.
+
+    利用可能なreplayとassemble strategyでqueryを実行し、bodyを組み立てずblocked結果を
+    返すことを確認する.
+
+    Returns:
+        None: blocked branch、非公開failure結果、assembler strategyを検証して完了する.
+    """
     stored_blob_payload = b"as"
     harness = _make_harness(
         candidate=_available_replay(blob_id=1001, payload=stored_blob_payload),
@@ -202,6 +275,14 @@ async def test_available_replay_with_assemble_strategy_remains_blocked() -> None
 
 
 async def test_available_replay_with_byte_size_mismatch_returns_storage_missing() -> None:
+    """Stored blobのbyte size不一致がstorage missing結果になる契約を検証する.
+
+    candidateの期待byte sizeをpayloadと不一致にしてqueryを実行し、body assemblerを呼ばず
+    storage missing結果を返すことを確認する.
+
+    Returns:
+        None: storage missing branch、非公開failure結果、assembler非呼び出しを検証して完了する.
+    """
     replay_payload = b"size-mismatch"
     harness = _make_harness(
         candidate=_available_replay(
@@ -222,6 +303,14 @@ async def test_available_replay_with_byte_size_mismatch_returns_storage_missing(
 
 
 async def test_available_replay_with_checksum_mismatch_returns_storage_missing() -> None:
+    """Stored blobのchecksum不一致がstorage missing結果になる契約を検証する.
+
+    candidateの期待checksumをpayloadと不一致にしてqueryを実行し、body assemblerを呼ばず
+    storage missing結果を返すことを確認する.
+
+    Returns:
+        None: storage missing branch、非公開failure結果、assembler非呼び出しを検証して完了する.
+    """
     replay_payload = b"checksum-mismatch"
     harness = _make_harness(
         candidate=_available_replay(
@@ -243,14 +332,26 @@ async def test_available_replay_with_checksum_mismatch_returns_storage_missing()
 
 @final
 class BackendStorageDetailError(FileNotFoundError):
-    """Storage backend の内部 detail を模した test-only error."""
+    """storage backendの非公開detailを模したtest-only errorを表す."""
 
 
 @final
 class ReplayDownloadQueryRepositoryStub:
-    """Replay download candidate repository の typed test double."""
+    """replay download candidate repositoryのtyped test doubleを提供する.
+
+    Attributes:
+        _candidate (ReplayDownloadCandidate): get_candidateで返す固定candidate.
+        requests (list[ReplayDownloadCandidateQuery]): repositoryへ渡されたcandidate queryの記録.
+        replay_view_update_count (int): record_replay_viewの呼び出し回数.
+        latest_activity_update_count (int): touch_latest_activityの呼び出し回数.
+    """
 
     def __init__(self, candidate: ReplayDownloadCandidate) -> None:
+        """固定candidateを返すrepository stubを初期化する.
+
+        Args:
+            candidate (ReplayDownloadCandidate): get_candidateで返すsynthetic candidate.
+        """
         self._candidate: ReplayDownloadCandidate = candidate
         self.requests: list[ReplayDownloadCandidateQuery] = []
         self.replay_view_update_count = 0
@@ -260,22 +361,43 @@ class ReplayDownloadQueryRepositoryStub:
         self,
         query: ReplayDownloadCandidateQuery,
     ) -> ReplayDownloadCandidate:
-        """Replay download candidate query を記録して candidate を返す."""
+        """Candidate queryを記録して固定candidateを返す.
+
+        Args:
+            query (ReplayDownloadCandidateQuery): replay download候補を取得するquery条件.
+
+        Returns:
+            ReplayDownloadCandidate: 初期化時に指定されたsynthetic candidate.
+        """
         self.requests.append(query)
         return self._candidate
 
     async def record_replay_view(self) -> None:
-        """将来の replay view mutation が呼ばれた場合に記録する."""
+        """Replay view mutationの呼び出し回数を記録する.
+
+        Returns:
+            None: 呼び出し回数を増やし、呼び出し側へ値を返さずに完了する.
+        """
         self.replay_view_update_count += 1
 
     async def touch_latest_activity(self) -> None:
-        """将来の latest activity mutation が呼ばれた場合に記録する."""
+        """Latest activity mutationの呼び出し回数を記録する.
+
+        Returns:
+            None: 呼び出し回数を増やし、呼び出し側へ値を返さずに完了する.
+        """
         self.latest_activity_update_count += 1
 
 
 @final
 class BlobByteReaderStub:
-    """Replay blob bytes reader の typed test double."""
+    """replay blob bytes readerのtyped test doubleを提供する.
+
+    Attributes:
+        _payload (bytes): read_bytesが成功時に返すsynthetic blob bytes.
+        _unavailable_cause (Exception | None): read時にunavailableとして変換する任意の原因例外.
+        read_blob_ids (list[int]): read_bytesへ渡されたblob識別子.
+    """
 
     def __init__(
         self,
@@ -283,12 +405,29 @@ class BlobByteReaderStub:
         payload: bytes = b"synthetic-stored-replay",
         unavailable_cause: Exception | None = None,
     ) -> None:
+        """成功payloadまたはunavailable原因を持つreader stubを初期化する.
+
+        Args:
+            payload (bytes): 原因例外がない場合に返すstored replay bytes.
+            unavailable_cause (Exception | None): 指定時にBlobBytesUnavailableErrorのcauseに
+                する例外.
+        """
         self._payload: bytes = payload
         self._unavailable_cause: Exception | None = unavailable_cause
         self.read_blob_ids: list[int] = []
 
     async def read_bytes(self, blob_id: int) -> bytes:
-        """blob id を記録し, 設定済み bytes または unavailable error を返す."""
+        """Blob IDを記録してpayloadを返すかunavailable errorを送出する.
+
+        Args:
+            blob_id (int): 読み込むstored blobの識別子.
+
+        Returns:
+            bytes: 原因例外がない場合のsynthetic stored replay bytes.
+
+        Raises:
+            BlobBytesUnavailableError: unavailable_causeが指定されている場合.
+        """
         self.read_blob_ids.append(blob_id)
         if self._unavailable_cause is not None:
             raise BlobBytesUnavailableError(blob_id) from self._unavailable_cause
@@ -297,9 +436,15 @@ class BlobByteReaderStub:
 
 @final
 class RecordingReplayDownloadBodyAssembler:
-    """Replay download body assembler の typed recording test double."""
+    """replay download body assemblerのtyped recording test doubleを提供する.
+
+    Attributes:
+        _assembler (ReplayDownloadBodyAssembler): buildを委譲するproduction assembler.
+        inputs (list[ReplayDownloadBodyBuildInput]): buildへ渡されたinputの記録.
+    """
 
     def __init__(self) -> None:
+        """Production assemblerと空のbuild input記録を初期化する."""
         self._assembler = ReplayDownloadBodyAssembler()
         self.inputs: list[ReplayDownloadBodyBuildInput] = []
 
@@ -307,14 +452,28 @@ class RecordingReplayDownloadBodyAssembler:
         self,
         input_data: ReplayDownloadBodyBuildInput,
     ) -> ReplayDownloadBodyBuildResult:
-        """build input を記録して production assembler へ委譲する."""
+        """Build inputを記録してproduction assemblerへ委譲する.
+
+        Args:
+            input_data (ReplayDownloadBodyBuildInput): replay response bodyを構築するinput.
+
+        Returns:
+            ReplayDownloadBodyBuildResult: production assemblerが返すbody構築結果.
+        """
         self.inputs.append(input_data)
         return self._assembler.build(input_data)
 
 
 @dataclass(slots=True, frozen=True)
 class ReplayDownloadQueryHarness:
-    """Replay download query test collaborators をまとめる."""
+    """replay download query testのcollaboratorをまとめる.
+
+    Attributes:
+        query (ReplayDownloadQuery): test対象のquery use-case.
+        repository (ReplayDownloadQueryRepositoryStub): candidateを返すrepository stub.
+        blob_reader (BlobByteReaderStub): stored blob bytesを返すreader stub.
+        body_assembler (RecordingReplayDownloadBodyAssembler): build inputを記録するassembler stub.
+    """
 
     query: ReplayDownloadQuery
     repository: ReplayDownloadQueryRepositoryStub
@@ -329,6 +488,17 @@ def _make_harness(
     blob_error: Exception | None = None,
     body_strategy: ReplayDownloadBodyStrategy = ReplayDownloadBodyStrategy.BLOCKED,
 ) -> ReplayDownloadQueryHarness:
+    """Replay download queryのtest harnessを構築する.
+
+    Args:
+        candidate (ReplayDownloadCandidate): repository stubが返すcandidate.
+        blob_payload (bytes): blob readerが成功時に返すstored replay bytes.
+        blob_error (Exception | None): blob readerがunavailableとして変換する任意の原因例外.
+        body_strategy (ReplayDownloadBodyStrategy): queryがbody assemblerへ渡すstrategy.
+
+    Returns:
+        ReplayDownloadQueryHarness: queryと観測用collaboratorを保持するharness.
+    """
     repository = ReplayDownloadQueryRepositoryStub(candidate)
     blob_reader = BlobByteReaderStub(
         payload=blob_payload,
@@ -354,6 +524,15 @@ def _input(
     score_id: int = 101,
     ruleset: Ruleset = Ruleset.OSU,
 ) -> ReplayDownloadQueryInput:
+    """Authenticated replay download query inputを構築する.
+
+    Args:
+        score_id (int): 取得対象scoreの識別子.
+        ruleset (Ruleset): scoreを検索するruleset.
+
+    Returns:
+        ReplayDownloadQueryInput: 固定authenticated user IDを含むquery input.
+    """
     return ReplayDownloadQueryInput(
         authenticated_user_id=202,
         score_id=score_id,
@@ -370,6 +549,21 @@ def _available_replay(
     checksum: str | None = None,
     byte_size: int | None = None,
 ) -> ReplayDownloadAvailableReplayCandidate:
+    """利用可能なreplay candidateを構築する.
+
+    Args:
+        score_id (int): replayを所有するscoreの識別子.
+        score_owner_user_id (int): score ownerの識別子.
+        blob_id (int): stored replay blobの識別子.
+        payload (bytes): checksumと既定byte sizeの算出元にするsynthetic bytes.
+        checksum (str | None): candidateへ明示設定するchecksum.
+            指定しない場合はpayloadのSHA-256を使う.
+        byte_size (int | None): candidateへ明示設定するbyte size. 指定しない場合はpayload長を使う.
+
+    Returns:
+        ReplayDownloadAvailableReplayCandidate: checksumとbyte sizeを持つ利用可能なreplay
+            candidate.
+    """
     return ReplayDownloadAvailableReplayCandidate(
         score_id=score_id,
         score_owner_user_id=score_owner_user_id,
@@ -382,6 +576,14 @@ def _available_replay(
 def _assert_available_replay_collaborators_not_called(
     harness: ReplayDownloadQueryHarness,
 ) -> None:
+    """Available replay専用collaboratorが未呼び出しであることを検証する.
+
+    Args:
+        harness (ReplayDownloadQueryHarness): 呼び出し記録を確認するquery test harness.
+
+    Returns:
+        None: blob read、body build、view/activity mutationがないことを検証して完了する.
+    """
     assert harness.blob_reader.read_blob_ids == []
     assert harness.body_assembler.inputs == []
     assert harness.repository.replay_view_update_count == 0
@@ -392,6 +594,15 @@ def _assert_failure_result_has_no_client_visible_details(
     result: ReplayDownloadQueryResult,
     *private_values: object,
 ) -> None:
+    """Failure resultがclient-visibleなprivate detailを含まないことを検証する.
+
+    Args:
+        result (ReplayDownloadQueryResult): failure branchとして検証するquery結果.
+        private_values (object): reprから除外されるべき追加の非公開値.
+
+    Returns:
+        None: 非成功状態、response body不在、private detail非露出を検証して完了する.
+    """
     assert result.is_success is False
     assert result.response_body is None
     result_repr = repr(result)
