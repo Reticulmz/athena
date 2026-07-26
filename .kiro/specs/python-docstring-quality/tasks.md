@@ -608,7 +608,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/services/commandsのroot、chat、performance外のscore file_
 
-- [ ] 3.32 (P) Primary score query testを整備する
+- [x] 3.32 (P) Primary score query testを整備する
   - test_beatmap_leaderboards.py、test_current_user_stats_query.py、
     test_legacy_getscores.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および3 fileのtestが通る
