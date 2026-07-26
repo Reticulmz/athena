@@ -563,13 +563,12 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/repositories rootの5 file_
 
-- [ ] 3.26 (P) BanchoBot command service testを整備する
+- [x] 3.26 (P) BanchoBot command service testを整備する
   - tests/unit/services/bancho_bot/test_command_service.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびcommand service testが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/services/bancho_bot/test_command_service.py_
-  - _Blocked: 必須docstring追加がnested handlerの既存`return None`をRuff RET501違反にし、runtime statement不変条件と両立しない。_
 
 - [ ] 3.27 (P) 残りのBanchoBot testを整備する
   - tests/unit/services/bancho_bot/**からtest_command_service.pyを除いた全fileへ共通条件を適用する
@@ -867,3 +866,4 @@
 
 - `__init__`は`Returns:`を記載しない例外であり、それ以外の`None` return callableは`Returns: None`を記載する.
 - 全corpus taskはRuff Dとinterrogateに加え、ASTでdocstring token中のnon-ASCII punctuationが0件であることを確認する. `。`と`、`はASCII `.`と`,`へ置換し、runtime stringは変更しない.
+- Task 3.26では、nested handlerの`return None`をuser承認済みのruntime-equivalent bare `return`へ変更した. AST監査はこの正規化以外のruntime statement差分がないことを確認した.
