@@ -1,16 +1,4 @@
-"""Tests for S2C login packet builders.
-
-Validates:
-- Req 6.1: LoginReply (int32: userId or error code)
-- Req 6.2: ProtocolVersion (int32)
-- Req 6.3: LoginPermissions (int32: permission bitmask)
-- Req 6.4: Notification (BanchoString)
-- Req 6.7: FriendsList (IntList)
-- Req 6.8: ChannelAvailable / ChannelAvailableAutojoin (Channel payload)
-- Req 6.9: ChannelInfoComplete (empty payload)
-- Req 6.10: SilenceInfo (int32: remaining seconds)
-- Req 6.12: All S2C packets use correct ServerPacketID
-"""
+"""login後に送るS2C packet builderのwire contractを検証する."""
 
 import struct as pystruct
 from typing import cast
@@ -30,12 +18,32 @@ from osu_server.transports.stable.bancho.protocol.s2c.login import (
 
 
 def _extract_packet_id(data: bytes) -> int:
-    """Extract the ServerPacketID from the first 2 bytes of a packet."""
+    """Bancho packet header先頭のlittle-endian ServerPacketIDを取得する.
+
+    Args:
+        data (bytes): 先頭2 byteにpacket IDを持つBancho packet.
+
+    Returns:
+        int: headerから復元したServerPacketIDの整数値.
+
+    Notes:
+        呼び出し側は少なくとも2 byteのpacketを渡すこと.
+    """
     return cast("int", pystruct.unpack_from("<H", data, 0)[0])
 
 
 def _extract_payload(data: bytes) -> bytes:
-    """Extract the payload (after 7-byte header) from a packet."""
+    """7 byte Bancho headerの後ろにあるpayloadを取得する.
+
+    Args:
+        data (bytes): headerとpayloadを連結したBancho packet.
+
+    Returns:
+        bytes: offset 7以降の未加工payload.
+
+    Notes:
+        呼び出し側は標準の7 byte headerを含むpacketを渡すこと.
+    """
     return data[7:]
 
 
@@ -43,99 +51,194 @@ def _extract_payload(data: bytes) -> bytes:
 
 
 class TestLoginReply:
-    """Req 6.1: LoginReply — int32 (positive=userId, negative=error)."""
+    """LOGIN_REPLYのsigned int32 login result contractを検証する."""
 
     def test_packet_id(self) -> None:
+        """login_replyがLOGIN_REPLYのpacket IDをheaderへ書く契約を検証する.
+
+        Returns:
+            None: headerのpacket IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         assert _extract_packet_id(login_reply(100)) == ServerPacketID.LOGIN_REPLY
 
     def test_positive_user_id(self) -> None:
+        """login_replyが成功時user IDをsigned int32 payloadへ書く契約を検証する.
+
+        Returns:
+            None: 正のuser IDのwire値を検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(login_reply(100))
         assert pystruct.unpack("<i", payload)[0] == 100
 
     def test_negative_error_code(self) -> None:
+        """login_replyが失敗時error codeを負のsigned int32で書く契約を検証する.
+
+        Returns:
+            None: 負のerror codeのwire値を検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(login_reply(-1))
         assert pystruct.unpack("<i", payload)[0] == -1
 
     def test_known_bytes(self) -> None:
+        """login_replyがknown user IDに対する固定wire bytesを維持する契約を検証する.
+
+        Returns:
+            None: headerとpayloadを含むexact bytesを検証して完了し, 呼び出し側へ値を返さない.
+        """
         result = login_reply(100)
         expected = b"\x05\x00\x00\x04\x00\x00\x00\x64\x00\x00\x00"
         assert result == expected
 
 
 class TestProtocolVersion:
-    """Req 6.2: ProtocolVersion — int32."""
+    """PROTOCOL_VERSIONのsigned int32 payload contractを検証する."""
 
     def test_packet_id(self) -> None:
+        """protocol_versionがPROTOCOL_VERSIONのpacket IDをheaderへ書く契約を検証する.
+
+        Returns:
+            None: headerのpacket IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         assert _extract_packet_id(protocol_version(19)) == ServerPacketID.PROTOCOL_VERSION
 
     def test_version_value(self) -> None:
+        """protocol_versionがversionをsigned int32 payloadへ書く契約を検証する.
+
+        Returns:
+            None: protocol versionのwire値を検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(protocol_version(19))
         assert pystruct.unpack("<i", payload)[0] == 19
 
 
 class TestLoginPermissions:
-    """Req 6.3: LoginPermissions — int32 (bitmask)."""
+    """LOGIN_PERMISSIONSのpermission bitmask payload contractを検証する."""
 
     def test_packet_id(self) -> None:
+        """login_permissionsがLOGIN_PERMISSIONSのpacket IDをheaderへ書く契約を検証する.
+
+        Returns:
+            None: headerのpacket IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         assert _extract_packet_id(login_permissions(4)) == ServerPacketID.LOGIN_PERMISSIONS
 
     def test_bitmask_value(self) -> None:
+        """login_permissionsがbitmaskをsigned int32 payloadへ書く契約を検証する.
+
+        Returns:
+            None: permission bitmaskのwire値を検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(login_permissions(4))
         assert pystruct.unpack("<i", payload)[0] == 4
 
 
 class TestNotification:
-    """Req 6.4: Notification — BanchoString."""
+    """ANNOUNCEのBanchoString notification payload contractを検証する."""
 
     def test_packet_id(self) -> None:
+        """notificationがANNOUNCEのpacket IDをheaderへ書く契約を検証する.
+
+        Returns:
+            None: headerのpacket IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         assert _extract_packet_id(notification("hello")) == ServerPacketID.ANNOUNCE
 
     def test_empty_notification(self) -> None:
+        """notificationが空messageをempty BanchoStringとして書く契約を検証する.
+
+        Returns:
+            None: 空文字列のpayload markerを検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(notification(""))
         assert payload == b"\x00"
 
     def test_non_empty_notification(self) -> None:
+        """notificationがnon-empty messageをlength付きBanchoStringで書く契約を検証する.
+
+        Returns:
+            None: marker, length, message bytesを検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(notification("hi"))
         # 0x0b 0x02 "hi"
         assert payload == b"\x0b\x02hi"
 
 
 class TestChannelInfoComplete:
-    """Req 6.9: ChannelInfoComplete — empty payload."""
+    """CHANNEL_INFO_COMPLETEのempty payload contractを検証する."""
 
     def test_packet_id(self) -> None:
+        """channel_info_completeが完了通知のpacket IDをheaderへ書く契約を検証する.
+
+        Returns:
+            None: headerのpacket IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         assert _extract_packet_id(channel_info_complete()) == ServerPacketID.CHANNEL_INFO_COMPLETE
 
     def test_empty_payload(self) -> None:
+        """channel_info_completeがheader以外のpayloadを持たない契約を検証する.
+
+        Returns:
+            None: payloadが空であることを検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(channel_info_complete())
         assert payload == b""
 
     def test_total_length(self) -> None:
+        """channel_info_completeが7 byte headerだけを返す契約を検証する.
+
+        Returns:
+            None: packet total lengthを検証して完了し, 呼び出し側へ値を返さない.
+        """
         assert len(channel_info_complete()) == 7
 
 
 class TestSilenceInfo:
-    """Req 6.10: SilenceInfo — int32 (remaining seconds)."""
+    """SILENCE_INFOのremaining seconds payload contractを検証する."""
 
     def test_packet_id(self) -> None:
+        """silence_infoがSILENCE_INFOのpacket IDをheaderへ書く契約を検証する.
+
+        Returns:
+            None: headerのpacket IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         assert _extract_packet_id(silence_info(300)) == ServerPacketID.SILENCE_INFO
 
     def test_silence_value(self) -> None:
+        """silence_infoがremaining secondsをsigned int32 payloadへ書く契約を検証する.
+
+        Returns:
+            None: secondsのwire値を検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(silence_info(300))
         assert pystruct.unpack("<i", payload)[0] == 300
 
     def test_zero_silence(self) -> None:
+        """silence_infoが0秒をsigned int32 payloadで保持する契約を検証する.
+
+        Returns:
+            None: 0のwire値を検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(silence_info(0))
         assert pystruct.unpack("<i", payload)[0] == 0
 
 
 class TestFriendsList:
-    """Req 6.7: FriendsList — IntList."""
+    """FRIENDS_LISTのcount-prefixed user ID list contractを検証する."""
 
     def test_packet_id(self) -> None:
+        """friends_listがFRIENDS_LISTのpacket IDをheaderへ書く契約を検証する.
+
+        Returns:
+            None: headerのpacket IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         assert _extract_packet_id(friends_list([1, 2, 3])) == ServerPacketID.FRIENDS_LIST
 
     def test_friend_ids(self) -> None:
+        """friends_listがcountとsigned int32 user IDをwire順で書く契約を検証する.
+
+        Returns:
+            None: list countと各user IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(friends_list([10, 20]))
         count: int = cast("int", pystruct.unpack_from("<H", payload, 0)[0])
         assert count == 2
@@ -143,29 +246,53 @@ class TestFriendsList:
         assert vals == (10, 20)
 
     def test_empty_friends(self) -> None:
+        """friends_listがempty listをcount=0で書く契約を検証する.
+
+        Returns:
+            None: empty list countを検証して完了し, 呼び出し側へ値を返さない.
+        """
         payload = _extract_payload(friends_list([]))
         count: int = cast("int", pystruct.unpack_from("<H", payload, 0)[0])
         assert count == 0
 
 
 class TestChannelAvailable:
-    """Req 6.8: ChannelAvailable — Channel payload."""
+    """CHANNEL_AVAILABLE系の共通Channel payload contractを検証する."""
 
     def test_packet_id(self) -> None:
+        """channel_availableがCHANNEL_AVAILABLEのpacket IDをheaderへ書く契約を検証する.
+
+        Returns:
+            None: headerのpacket IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         result = channel_available(name="#osu", topic="General", user_count=100)
         assert _extract_packet_id(result) == ServerPacketID.CHANNEL_AVAILABLE
 
     def test_autojoin_packet_id(self) -> None:
+        """channel_available_autojoinがauto-join packet IDをheaderへ書く契約を検証する.
+
+        Returns:
+            None: autojoin packet IDを検証して完了し, 呼び出し側へ値を返さない.
+        """
         result = channel_available_autojoin(name="#osu", topic="General", user_count=100)
         assert _extract_packet_id(result) == ServerPacketID.CHANNEL_AVAILABLE_AUTOJOIN
 
     def test_different_packet_ids(self) -> None:
+        """通常channelとautojoin channelが異なるpacket IDを使う契約を検証する.
+
+        Returns:
+            None: 2 packet IDの差異を検証して完了し, 呼び出し側へ値を返さない.
+        """
         r1 = channel_available(name="#a", topic="", user_count=0)
         r2 = channel_available_autojoin(name="#a", topic="", user_count=0)
         assert _extract_packet_id(r1) != _extract_packet_id(r2)
 
     def test_same_payload(self) -> None:
-        """Both share the same Channel payload format."""
+        """通常channelとautojoin channelが同一のChannel payload formatを使う契約を検証する.
+
+        Returns:
+            None: packet IDを除くpayloadの一致を検証して完了し, 呼び出し側へ値を返さない.
+        """
         r1 = channel_available(name="#osu", topic="chat", user_count=50)
         r2 = channel_available_autojoin(name="#osu", topic="chat", user_count=50)
         assert _extract_payload(r1) == _extract_payload(r2)
