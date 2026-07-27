@@ -1,4 +1,4 @@
-"""Unit tests for ProcessScoreSubmissionUseCase playstyle validation (Task 17.1)."""
+"""ProcessScoreSubmissionUseCaseのplaystyle検証契約を確認する unit test module."""
 
 from dataclasses import dataclass, replace
 
@@ -37,6 +37,11 @@ AUTOPILOT = 1 << 13  # 8192
 
 
 def _eligible_beatmap() -> BeatmapEligibility:
+    """Score submissionを受理するranked beatmap用eligibilityを作成する.
+
+    Returns:
+        BeatmapEligibility: vanilla scoreを受理しranked PPを付与するbeatmapのeligibility.
+    """
     return BeatmapEligibility(
         accepts_scores=True,
         has_leaderboard=True,
@@ -55,6 +60,11 @@ def _eligible_beatmap() -> BeatmapEligibility:
 
 
 def _resolved_beatmap() -> Beatmap:
+    """playstyle検証で解決済みとして返すranked beatmapを作成する.
+
+    Returns:
+        Beatmap: file未取得だがsubmission可否を判定できるosu! modeのranked beatmap.
+    """
     return Beatmap(
         id=1,
         beatmapset_id=10,
@@ -84,6 +94,12 @@ def _resolved_beatmap() -> Beatmap:
 
 @dataclass(slots=True)
 class FakeBeatmapResolver:
+    """playstyle検証用に一定のbeatmap解決結果を返すfake resolver.
+
+    Attributes:
+        eligibility (BeatmapEligibility | None): checksum解決結果へ含めるsubmission eligibility.
+    """
+
     eligibility: BeatmapEligibility | None = None
 
     async def resolve_by_beatmap_id(
@@ -91,6 +107,15 @@ class FakeBeatmapResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Beatmap IDによる解決要求へmetadataのみの結果を返す.
+
+        Args:
+            beatmap_id (int): 呼び出し側が指定するbeatmap ID. fakeでは結果を変えない.
+            options (BeatmapResolveOptions | None): 解決option. fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: beatmap本体を含まず,設定済みeligibilityを含むfreshな解決結果.
+        """
         del beatmap_id, options
         return BeatmapResolveResult(
             beatmap=None,
@@ -110,6 +135,15 @@ class FakeBeatmapResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """checksumによる解決要求へranked beatmapを含む結果を返す.
+
+        Args:
+            checksum_md5 (str): 呼び出し側が指定するbeatmap checksum MD5. fakeでは結果を変えない.
+            options (BeatmapResolveOptions | None): 解決option. fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: 設定済みeligibilityと固定ranked beatmapを含むfreshな解決結果.
+        """
         del checksum_md5, options
         return BeatmapResolveResult(
             beatmap=_resolved_beatmap(),
@@ -127,11 +161,21 @@ class FakeBeatmapResolver:
 
 @pytest.fixture
 def uow_factory() -> InMemoryUnitOfWorkFactory:
+    """Submission testで共有するin-memory Unit of Work factoryを提供する fixture.
+
+    Returns:
+        InMemoryUnitOfWorkFactory: score保存を外部DBなしで検証するfactory.
+    """
     return InMemoryUnitOfWorkFactory()
 
 
 @pytest.fixture
 def beatmap_resolver() -> FakeBeatmapResolver:
+    """score受理可能なbeatmapを返すresolverを提供する fixture.
+
+    Returns:
+        FakeBeatmapResolver: ranked vanilla scoreを受理するeligibilityを返すresolver.
+    """
     return FakeBeatmapResolver(_eligible_beatmap())
 
 
@@ -140,7 +184,16 @@ def service(
     uow_factory: InMemoryUnitOfWorkFactory,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> ProcessScoreSubmissionUseCase:
-    """Create service with in-memory repositories."""
+    """playstyle検証に必要なin-memory依存を持つsubmission use-caseを提供する fixture.
+
+    Args:
+        uow_factory (InMemoryUnitOfWorkFactory): score状態を保持するin-memory Unit of Work factory.
+        beatmap_resolver (FakeBeatmapResolver): submission可否を返すfake beatmap resolver.
+
+    Returns:
+        ProcessScoreSubmissionUseCase: credential, storage, beatmap解決をtest doubleへ接続した
+            use-case.
+    """
     auth_service = make_score_authorization_service()
     return ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
@@ -152,7 +205,11 @@ def service(
 
 @pytest.fixture
 def valid_input() -> ParsedSubmissionInput:
-    """Valid submission input."""
+    """Vanilla playstyleの成功submissionを表す正規化済みinputを提供する fixture.
+
+    Returns:
+        ParsedSubmissionInput: 有効なcredentialとscore payloadを含むsubmission input.
+    """
     return make_test_submission_input(password_md5=fixed_test_password_md5())
 
 
@@ -161,8 +218,18 @@ async def test_relax_mod_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """Requirement 1.3: Relax mod submissions are rejected."""
+    """Relax mod付きsubmissionをterminalに拒否するplaystyle契約を検証する.
 
+    有効なscore inputへRelax bitを設定し,
+    score保存前にterminal rejectionとplaystyle由来の理由が返ることを確認する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): playstyle検証を実行するsubmission use-case.
+        valid_input (ParsedSubmissionInput): 正常なvanilla submissionを表す基準input.
+
+    Returns:
+        None: Relax submissionの拒否結果を検証して完了し,呼び出し側へ値を返さない.
+    """
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
@@ -182,8 +249,18 @@ async def test_autopilot_mod_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """Requirement 1.3: Autopilot mod submissions are rejected."""
+    """Autopilot mod付きsubmissionをterminalに拒否するplaystyle契約を検証する.
 
+    有効なscore inputへAutopilot bitを設定し,
+    score保存前にterminal rejectionとplaystyle由来の理由が返ることを確認する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): playstyle検証を実行するsubmission use-case.
+        valid_input (ParsedSubmissionInput): 正常なvanilla submissionを表す基準input.
+
+    Returns:
+        None: Autopilot submissionの拒否結果を検証して完了し,呼び出し側へ値を返さない.
+    """
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
@@ -203,8 +280,18 @@ async def test_relax_and_autopilot_combined_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """Requirement 1.3: Combined Relax + Autopilot is rejected."""
+    """RelaxとAutopilotを併用したsubmissionをterminalに拒否する契約を検証する.
 
+    2つの禁止playstyle bitを同時に設定し,
+    単独の検出結果ではなくplaystyle不正としてterminal rejectionになることを確認する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): playstyle検証を実行するsubmission use-case.
+        valid_input (ParsedSubmissionInput): 正常なvanilla submissionを表す基準input.
+
+    Returns:
+        None: 併用modの拒否結果を検証して完了し,呼び出し側へ値を返さない.
+    """
     combined_mods = RELAX | AUTOPILOT
     input_data = replace(
         valid_input,
@@ -225,8 +312,18 @@ async def test_vanilla_mod_accepted(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """Requirement 1.2: Vanilla gameplay is accepted."""
+    """modなしのvanilla submissionを受理するplaystyle契約を検証する.
 
+    mod bitを0にした有効inputを実行し,
+    completed outcomeとscore IDが返り拒否理由を持たないことを確認する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): playstyle検証を実行するsubmission use-case.
+        valid_input (ParsedSubmissionInput): 正常なvanilla submissionを表す基準input.
+
+    Returns:
+        None: vanilla submissionの受理結果を検証して完了し,呼び出し側へ値を返さない.
+    """
     input_data = replace(
         valid_input,
         parsed_score=make_test_parsed_score(
@@ -246,8 +343,18 @@ async def test_other_mods_accepted(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """Requirement 1.2: Other mods (HD, HR, DT, etc.) are accepted."""
+    """RelaxとAutopilot以外のmodを含むsubmissionを受理する契約を検証する.
 
+    HD, HR, DTのbitを組み合わせた有効inputを実行し,
+    completed outcomeとscore IDが返り拒否理由を持たないことを確認する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): playstyle検証を実行するsubmission use-case.
+        valid_input (ParsedSubmissionInput): 正常なvanilla submissionを表す基準input.
+
+    Returns:
+        None: 許可modを含むsubmissionの受理結果を検証して完了し,呼び出し側へ値を返さない.
+    """
     other_mods = 8 | 16 | 64
     input_data = replace(
         valid_input,
