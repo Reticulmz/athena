@@ -648,7 +648,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/services rootの4 file_
 
-- [ ] 3.37 (P) Chat/blob-storage service testを整備する
+- [x] 3.37 (P) Chat/blob-storage service testを整備する
   - test_channel_use_cases.py、test_chat_service.py、test_private_message_service.py、
     test_blob_storage_service.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および4 fileのtestが通る
