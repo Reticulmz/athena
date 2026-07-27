@@ -671,7 +671,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/services/__init__.py, tests/unit/services/test_score_*.py_
 
-- [ ] 3.40 (P) Bancho protocol C2S/core testを整備する
+- [x] 3.40 (P) Bancho protocol C2S/core testを整備する
   - test_beatmap_info_fixtures.py、test_c2s_*.py、test_enums.py、test_header.py、
     test_reader.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有protocol testが通る
@@ -679,14 +679,14 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/transports/bancho/protocol file_
 
-- [ ] 3.41 (P) Bancho protocol S2C/fixture testを整備する
+- [x] 3.41 (P) Bancho protocol S2C/fixture testを整備する
   - test_s2c_*.py、test_presence_fixtures.py、test_stats_fixtures.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有protocol testが通る
   - _Depends: 1.4_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/transports/bancho/protocol/test_s2c_*.pyと明記した2 fixture file_
 
-- [ ] 3.42 (P) Bancho protocol type/writer testを整備する
+- [x] 3.42 (P) Bancho protocol type/writer testを整備する
   - protocol/__init__.py、test_types.py、test_writer.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有protocol testが通る
   - _Depends: 1.4_
