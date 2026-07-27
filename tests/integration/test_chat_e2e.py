@@ -1,11 +1,7 @@
-"""E2E chat + C2S regression tests (Task 5.3).
+"""Chat C2SのHTTP end-to-end契約を検証する.
 
-Tests the full login -> poll -> C2S dispatch -> S2C drain flow through
-the refactored BanchoEndpoint + DI container, preserving all existing
-packet behavior assertions for channel lifecycle, private messages,
-and login channel list.
-
-Uses the DI-registered ChatHandlers — no manual handler construction.
+ログインからpollとC2S dispatchを経てS2C packetを受信する流れを確認する.
+DIに登録されたhandlerを用いchannelとprivate messageの可視結果を検証する.
 """
 
 from __future__ import annotations
@@ -78,19 +74,37 @@ _ = os.environ.setdefault("VALKEY_URL", "redis://localhost:6379")
 
 
 def _make_test_app() -> Starlette:
-    """Create the Starlette app with full DI container and BanchoEndpoint."""
+    """BanchoEndpointを含むDI構成済みのtest appを生成する.
+
+    Returns:
+        Starlette: test環境とathena.localhost domainを設定したapplication.
+    """
     os.environ["ENVIRONMENT"] = "test"
     os.environ["DOMAIN"] = "athena.localhost"
     return create_app()
 
 
 async def _seed_default_role(app: Starlette) -> None:
-    """Seed the Default role into command-side in-memory persistence."""
+    """Default roleをcommand側のin-memory persistenceへ登録する.
+
+    Args:
+        app (Starlette): dependencyを解決するlifespan開始済みapplication.
+
+    Returns:
+        None: roleの登録を完了して値を返さない.
+    """
     await seed_role(app, _DEFAULT_ROLE)
 
 
 async def _seed_channels(app: Starlette) -> None:
-    """Seed channels and role overrides into command-side in-memory persistence."""
+    """channelとrole overrideをcommand側のin-memory persistenceへ登録する.
+
+    Args:
+        app (Starlette): dependencyを解決するlifespan開始済みapplication.
+
+    Returns:
+        None: #osuと#announceの可視性設定を登録して値を返さない.
+    """
     osu_channel = await seed_channel(
         app,
         make_channel(name="#osu", topic="General discussion", auto_join=True),
@@ -120,7 +134,14 @@ async def _seed_channels(app: Starlette) -> None:
 async def _resolve_services(
     app: Starlette,
 ) -> tuple[AuthService, SessionStore, ChannelStateStore]:
-    """Resolve test-facing services from the container after lifespan."""
+    """testで利用するserviceとstate storeをcontainerから解決する.
+
+    Args:
+        app (Starlette): dependencyを解決するlifespan開始済みapplication.
+
+    Returns:
+        tuple[AuthService, SessionStore, ChannelStateStore]: roleとchannelをseed済みのservice群.
+    """
     await _seed_default_role(app)
     await _seed_channels(app)
     return (
@@ -134,18 +155,52 @@ async def _resolve_services(
 
 
 def _login_body(username: str) -> bytes:
+    """Stable login request用のbodyを構築する.
+
+    Args:
+        username (str): loginする利用者名.
+
+    Returns:
+        bytes: 利用者名と固定credential/client情報を改行で連結したrequest body.
+    """
     return f"{username}\n{_PASSWORD_MD5}\n{_CLIENT_INFO}\n".encode()
 
 
 def _c2s_packet(packet_id: ClientPacketID, payload: bytes) -> bytes:
+    """C2S packet headerとpayloadを連結する.
+
+    Args:
+        packet_id (ClientPacketID): headerへ設定するC2S packet ID.
+        payload (bytes): headerの後ろへ連結するwire payload.
+
+    Returns:
+        bytes: compressionなしのBancho C2S packet.
+    """
     return struct.pack("<HBI", packet_id.value, 0, len(payload)) + payload
 
 
 def _channel_payload(channel_name: str) -> bytes:
+    """channel名をBanchoString payloadへ符号化する.
+
+    Args:
+        channel_name (str): JOIN_CHANNELで指定するchannel名.
+
+    Returns:
+        bytes: CaterpillarでpackしたBanchoString payload.
+    """
     return pack(channel_name, BanchoString)
 
 
 def _stable_client_message_payload(*, content: str, target: str) -> bytes:
+    """Stable client送信形式のMessage payloadを構築する.
+
+    Args:
+        content (str): channelまたはprivate messageへ送る本文.
+        target (str): 宛先channel名または利用者名.
+
+    Returns:
+        bytes: 空senderとsender ID 0を持つC2S Message payload.
+    """
     return c2s_message_payload(
         sender=_STABLE_CLIENT_EMPTY_SENDER,
         content=content,
@@ -155,6 +210,19 @@ def _stable_client_message_payload(*, content: str, target: str) -> bytes:
 
 
 async def _register_user(auth_service: AuthService, username: str, email: str) -> None:
+    """test利用者を登録して成功結果を検証する.
+
+    Args:
+        auth_service (AuthService): registration commandを実行するservice.
+        username (str): 登録する利用者名.
+        email (str): 登録するemail address.
+
+    Returns:
+        None: registration成功を検証して値を返さない.
+
+    Raises:
+        AssertionError: registration resultが成功を示さない場合.
+    """
     result = await auth_service.register(
         RegistrationForm(username=username, email=email, password=_PASSWORD),
     )
@@ -162,18 +230,55 @@ async def _register_user(auth_service: AuthService, username: str, email: str) -
 
 
 def _login(client: TestClient, username: str) -> str:
+    """Stable loginを実行して発行されたsession tokenを取得する.
+
+    Args:
+        client (TestClient): Bancho endpointへrequestを送るtest client.
+        username (str): loginする登録済み利用者名.
+
+    Returns:
+        str: successful login responseのcho-token header.
+
+    Raises:
+        AssertionError: login responseがHTTP 200でない場合.
+    """
     response = client.post(_BANCHO_URL, content=_login_body(username))
     assert response.status_code == HTTPStatus.OK
     return response.headers["cho-token"]
 
 
 def _poll(client: TestClient, token: str, content: bytes = b"") -> bytes:
+    """Session tokenでBancho poll requestを送信する.
+
+    Args:
+        client (TestClient): Bancho endpointへrequestを送るtest client.
+        token (str): osu-token headerへ設定する有効なsession token.
+        content (bytes): poll requestに含める任意のC2S packet stream.
+
+    Returns:
+        bytes: HTTP 200 responseに含まれるS2C packet stream.
+
+    Raises:
+        AssertionError: poll responseがHTTP 200でない場合.
+    """
     response = client.post(_BANCHO_URL, headers={"osu-token": token}, content=content)
     assert response.status_code == HTTPStatus.OK
     return response.content
 
 
 async def _user_id_for_token(session_store: SessionStore, token: str) -> int:
+    """Session tokenに対応する利用者IDを取得する.
+
+    Args:
+        session_store (SessionStore): tokenから接続状態を取得するstore.
+        token (str): 解決対象のsession token.
+
+    Returns:
+        int: tokenに紐付く接続利用者のID.
+
+    Raises:
+        AssertionError: tokenに対応するsessionが存在しない場合.
+    """
     session = await session_store.get(token)
     assert session is not None
     return session.user_id
@@ -185,11 +290,19 @@ async def _user_id_for_token(session_store: SessionStore, token: str) -> int:
 
 
 class TestChannelLifecycleE2E:
-    """JOIN_CHANNEL then SEND_MESSAGE reaches target via S2C drain (Req 5.1, 6.2)."""
+    """channel参加後のC2S message delivery契約を検証する."""
 
     async def test_http_join_then_channel_message_reaches_target_poll_response(
         self,
     ) -> None:
+        """channel参加済みrecipientが次のpollでmessageを受信することを検証する.
+
+        senderとtargetを登録して両者を#osuへ参加させる.
+        観測結果としてsenderの送信pollは空でtargetの次のpollはS2C messageになる.
+
+        Returns:
+            None: channel message deliveryのHTTP可視結果を検証して終了する.
+        """
         app = _make_test_app()
 
         with TestClient(app) as client:
@@ -246,9 +359,17 @@ class TestChannelLifecycleE2E:
 
 
 class TestPrivateMessageE2E:
-    """SEND_PRIVATE_MESSAGE reaches target via S2C drain (Req 5.1, 6.2)."""
+    """private messageのC2S delivery契約を検証する."""
 
     async def test_http_private_message_reaches_target_poll_response(self) -> None:
+        """Online targetが次のpollでprivate messageを受信することを検証する.
+
+        senderとtargetを登録してログイン後の初期packetをdrainする.
+        観測結果としてsenderの送信pollは空でtargetの次のpollはS2C messageになる.
+
+        Returns:
+            None: private message deliveryのHTTP可視結果を検証して終了する.
+        """
         app = _make_test_app()
 
         with TestClient(app) as client:
@@ -291,9 +412,17 @@ class TestPrivateMessageE2E:
 
 
 class TestLoginChannelListE2E:
-    """Login response contains DB-backed channel list (Req 1.5, 2.1, 2.2, 2.4)."""
+    """login responseのchannel catalog構築契約を検証する."""
 
     async def test_login_response_contains_db_backed_channel_list(self) -> None:
+        """Login responseがseed済みchannelの可視性と人数を含むことを検証する.
+
+        #osuと#announceへ異なるmemberを追加して利用者をログインさせる.
+        観測結果として両channel packetと#osuのautojoin packetと完了packetがstreamに入る.
+
+        Returns:
+            None: login channel catalogのS2C packet構成を検証して終了する.
+        """
         app = _make_test_app()
 
         with TestClient(app) as client:
@@ -338,10 +467,17 @@ class TestLoginChannelListE2E:
 
 
 class TestBanchoBotIdentityE2E:
-    """Login-to-command BanchoBot identity consistency (Req 1.1-2.3, 3.1-3.2)."""
+    """login responseとcommand responseのBanchoBot identity契約を検証する."""
 
     async def test_login_response_contains_banchobot_presence(self) -> None:
-        """Login response has BanchoBot USER_PRESENCE with correct identity."""
+        """Login responseがBanchoBotのUSER_PRESENCEを含むことを検証する.
+
+        channelとroleをseedしたapplicationへ登録済み利用者がログインする.
+        観測結果として固定IDと利用者名を持つBanchoBot presence packetがstreamに含まれる.
+
+        Returns:
+            None: login時のBanchoBot presence契約を検証して終了する.
+        """
         app = _make_test_app()
 
         with TestClient(app) as client:
@@ -365,8 +501,14 @@ class TestBanchoBotIdentityE2E:
         assert banchobot_presence in response.content
 
     async def test_login_response_contains_banchobot_bundle(self) -> None:
-        """USER_PRESENCE_BUNDLE includes BanchoBot ID and the connecting user,
-        with no duplicate entries."""
+        """Login rosterがBanchoBotと接続利用者を重複なく含むことを検証する.
+
+        登録済み利用者をログインして発行tokenから利用者IDを取得する.
+        観測結果としてUSER_PRESENCE_BUNDLEはBanchoBot IDと利用者IDを一度ずつ含む.
+
+        Returns:
+            None: login rosterのidentity集合を検証して終了する.
+        """
         app = _make_test_app()
 
         with TestClient(app) as client:
@@ -382,8 +524,14 @@ class TestBanchoBotIdentityE2E:
         assert expected_bundle in response.content
 
     async def test_banchobot_presence_before_bundle(self) -> None:
-        """BanchoBot USER_PRESENCE appears before USER_PRESENCE_BUNDLE
-        so the client knows BanchoBot identity before processing roster."""
+        """BanchoBot presenceがroster bundleより先に出力されることを検証する.
+
+        登録済み利用者をログインしてresponse stream内のpacket位置を比較する.
+        観測結果としてUSER_PRESENCEの位置はUSER_PRESENCE_BUNDLEより小さい.
+
+        Returns:
+            None: clientがroster処理前にbot identityを得る順序を検証して終了する.
+        """
         app = _make_test_app()
 
         with TestClient(app) as client:
@@ -412,8 +560,14 @@ class TestBanchoBotIdentityE2E:
         )
 
     async def test_human_user_in_roster_with_banchobot(self) -> None:
-        """Human user is present in roster alongside BanchoBot (Req 3.1, 3.2).
-        The USER_PRESENCE_BUNDLE contains both IDs without duplicates."""
+        """Login rosterがBanchoBotと人間利用者の双方を保持することを検証する.
+
+        登録済み利用者をログインしてresponse tokenから利用者IDを取得する.
+        観測結果としてrosterには両IDが含まれ異なるIDなら要素数は2になる.
+
+        Returns:
+            None: botが人間利用者を置換しないroster契約を検証して終了する.
+        """
         app = _make_test_app()
 
         with TestClient(app) as client:
@@ -435,8 +589,14 @@ class TestBanchoBotIdentityE2E:
             assert len(roster_ids) == 2
 
     async def test_command_response_uses_banchobot_identity(self) -> None:
-        """After login, !help command response uses the same BanchoBot identity
-        exposed in the login roster (Req 2.1, 2.2, 2.3, 4.1, 4.3)."""
+        """!help command responseがlogin rosterと同じBanchoBot identityを使うことを検証する.
+
+        senderをログインして#osuへ参加させた後に!helpを送る.
+        観測結果としてpoll responseに固定のBanchoBot sender IDと利用者名を持つmessageが入る.
+
+        Returns:
+            None: loginとcommand間のbot identity一貫性を検証して終了する.
+        """
         app = _make_test_app()
 
         with TestClient(app) as client:

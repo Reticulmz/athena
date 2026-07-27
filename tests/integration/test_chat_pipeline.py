@@ -1,3 +1,9 @@
+"""Chat C2S pipelineの統合契約を検証する.
+
+実メモリのrepositoryとstate storeでchat handlerを構成する.
+delivery packetとpersistence taskとdisconnect cleanupの観測結果を確認する.
+"""
+
 from __future__ import annotations
 
 import random
@@ -72,18 +78,50 @@ _STABLE_CLIENT_EMPTY_SENDER_ID = 0
 
 
 class SpyTask:
+    """persistence taskへの呼び出しを記録するtest double.
+
+    Attributes:
+        calls (list[tuple[tuple[object, ...], dict[str, object]]]): kiqへ渡された位置引数と
+            keyword引数.
+    """
+
     def __init__(self) -> None:
+        """空のtask呼び出し履歴を初期化する."""
         self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
     async def kiq(self, *args: object, **kwargs: object) -> None:
+        """Task enqueue呼び出しを実行せずに記録する.
+
+        Args:
+            *args (object): persistence taskへ渡された位置引数.
+            **kwargs (object): persistence taskへ渡されたkeyword引数.
+
+        Returns:
+            None: 呼び出し履歴へ追加して値を返さない.
+        """
         self.calls.append((args, kwargs))
 
 
 class SpyBroker:
+    """task名ごとにSpyTaskを返すbroker test double.
+
+    Attributes:
+        tasks (dict[str, SpyTask]): task名をkeyにした作成済みSpyTask.
+    """
+
     def __init__(self) -> None:
+        """空のtask registryを初期化する."""
         self.tasks: dict[str, SpyTask] = {}
 
     def find_task(self, name: str) -> SpyTask:
+        """task名に対応する記録用taskを取得または生成する.
+
+        Args:
+            name (str): persistence publisherが要求するtask名.
+
+        Returns:
+            SpyTask: 同じtask名では同じ呼び出し履歴を共有するtest double.
+        """
         task = self.tasks.get(name)
         if task is None:
             task = SpyTask()
@@ -93,6 +131,18 @@ class SpyBroker:
 
 @dataclass(slots=True)
 class ChatPipeline:
+    """chat integration testで共有する構成済みcomponentを保持する.
+
+    Attributes:
+        dispatcher (PacketDispatcher): C2S packetをhandlerへ配送するdispatcher.
+        packet_queue (InMemoryPacketQueue): S2C packetを利用者ごとに保持するqueue.
+        channel_state (InMemoryChannelStateStore): process-local channel membershipを保持するstore.
+        broker (SpyBroker): persistence taskの呼び出しを記録するbroker.
+        sender_id (int): messageを送信するonline利用者のID.
+        target_id (int): messageを受信するonline利用者のID.
+        offline_id (int): sessionを持たないprivate message宛先のID.
+    """
+
     dispatcher: PacketDispatcher
     packet_queue: InMemoryPacketQueue
     channel_state: InMemoryChannelStateStore
@@ -103,6 +153,15 @@ class ChatPipeline:
 
 
 def _session(user_id: int, username: str) -> SessionData:
+    """chat送信を許可するtest用sessionを構築する.
+
+    Args:
+        user_id (int): sessionに設定する利用者ID.
+        username (str): sessionに設定する利用者名.
+
+    Returns:
+        SessionData: channel ACLをbypassできる固定属性の接続状態.
+    """
     return SessionData(
         user_id=user_id,
         username=username,
@@ -117,6 +176,15 @@ def _session(user_id: int, username: str) -> SessionData:
 
 
 def _stable_client_message_payload(*, content: str, target: str) -> bytes:
+    """Stable clientが送るMessage payloadを構築する.
+
+    Args:
+        content (str): channelまたはprivate messageの本文.
+        target (str): 宛先channel名または利用者名.
+
+    Returns:
+        bytes: 空senderとsender ID 0を持つC2S message payload.
+    """
     return c2s_message_payload(
         sender=_STABLE_CLIENT_EMPTY_SENDER,
         content=content,
@@ -126,10 +194,26 @@ def _stable_client_message_payload(*, content: str, target: str) -> bytes:
 
 
 def _channel_payload(channel_name: str) -> bytes:
+    """channel名をC2S packet用payloadへ符号化する.
+
+    Args:
+        channel_name (str): JOIN_CHANNELで指定するchannel名.
+
+    Returns:
+        bytes: CaterpillarでpackしたBanchoString payload.
+    """
     return pack(channel_name, BanchoString)
 
 
 async def _setup_pipeline() -> ChatPipeline:
+    """Chat handler統合test用のin-memory pipelineを構築する.
+
+    Returns:
+        ChatPipeline: senderとtargetのsessionとchat/friend handlerを登録済みの構成.
+
+    Notes:
+        targetだけを#osuへ参加させるためsenderのJOIN_CHANNEL結果も検証できる.
+    """
     command_state = InMemoryCommandRepositoryState()
     uow_factory = InMemoryUnitOfWorkFactory(command_state)
     user_repo = InMemoryUserCommandRepository(command_state)
@@ -235,7 +319,17 @@ async def _setup_pipeline() -> ChatPipeline:
 
 
 class TestChannelMessagePipeline:
+    """channel messageのdeliveryとpersistence task契約を検証する."""
+
     async def test_join_then_channel_message_reaches_other_member_and_fires_event(self) -> None:
+        """参加後のchannel messageが他memberとpersistence taskへ届くことを検証する.
+
+        senderを#osuへ参加させてtargetが既に参加するchannelへmessageを送る.
+        観測結果としてtarget queueのS2C messageとpersist_channel_message task引数が一致する.
+
+        Returns:
+            None: channel deliveryと非同期persistence依頼を検証して終了する.
+        """
         pipeline = await _setup_pipeline()
 
         await pipeline.dispatcher.dispatch(
@@ -272,7 +366,17 @@ class TestChannelMessagePipeline:
 
 
 class TestPrivateMessagePipeline:
+    """private messageのdeliveryとfriend-only DM契約を検証する."""
+
     async def test_online_private_message_reaches_target_and_fires_event(self) -> None:
+        """Online private messageがtargetとpersistence taskへ届くことを検証する.
+
+        sessionを持つsenderからsessionを持つtargetへprivate messageを送る.
+        観測結果としてtarget queueのS2C messageとpersist_private_message task引数が一致する.
+
+        Returns:
+            None: online private message deliveryを検証して終了する.
+        """
         pipeline = await _setup_pipeline()
 
         await pipeline.dispatcher.dispatch(
@@ -301,6 +405,14 @@ class TestPrivateMessagePipeline:
         )
 
     async def test_offline_private_message_does_not_enqueue_but_fires_event(self) -> None:
+        """offline宛private messageがqueueに入らずpersistence taskへ渡ることを検証する.
+
+        sessionを持たない利用者へsenderがprivate messageを送る.
+        観測結果としてoffline queueは空だがpersist_private_message taskは呼ばれる.
+
+        Returns:
+            None: offline private messageのdeliveryとpersistence分離を検証して終了する.
+        """
         pipeline = await _setup_pipeline()
 
         await pipeline.dispatcher.dispatch(
@@ -324,6 +436,14 @@ class TestPrivateMessagePipeline:
         )
 
     async def test_friend_only_dms_block_non_friend_and_notify_sender(self) -> None:
+        """friend-only DMが非friend送信を拒否してsenderへ通知することを検証する.
+
+        targetのfriend-only DMを有効化してfriend関係のないsenderがmessageを送る.
+        観測結果としてtarget queueは空でsenderはuser_dm_blockedを受けtaskは呼ばれない.
+
+        Returns:
+            None: friend-only DMの拒否と通知契約を検証して終了する.
+        """
         pipeline = await _setup_pipeline()
 
         await pipeline.dispatcher.dispatch(
@@ -348,6 +468,14 @@ class TestPrivateMessagePipeline:
         assert task.calls == []
 
     async def test_friend_only_dms_allow_sender_friended_by_target(self) -> None:
+        """friend-only DMがtargetからfriend登録済みのsenderを許可することを検証する.
+
+        targetがsenderをfriend登録してfriend-only DMを有効化した後にmessageを送る.
+        観測結果としてtargetはS2C messageを受けpersist_private_message taskも呼ばれる.
+
+        Returns:
+            None: friend関係によるprivate message許可契約を検証して終了する.
+        """
         pipeline = await _setup_pipeline()
 
         await pipeline.dispatcher.dispatch(
@@ -389,9 +517,32 @@ class TestPrivateMessagePipeline:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        """BanchoBotのprivate command responseがsenderのfriend-only設定を迂回することを検証する.
+
+        random.randintを固定しsender自身のfriend-only DMを有効化して!rollをBanchoBotへ送る.
+        観測結果としてsender queueは固定値50を含むBanchoBot responseを受ける.
+
+        Args:
+            monkeypatch (pytest.MonkeyPatch): roll commandの乱数sourceを固定するfixture.
+
+        Returns:
+            None: sender向けbot responseのdelivery契約を検証して終了する.
+        """
         pipeline = await _setup_pipeline()
 
         def fixed_randint(minimum: int, maximum: int) -> int:
+            """Roll command用の乱数を固定値へ置き換える.
+
+            Args:
+                minimum (int): commandが要求する下限値.
+                maximum (int): commandが要求する上限値.
+
+            Returns:
+                int: 再現可能なroll結果として返す50.
+
+            Raises:
+                AssertionError: commandが0から100以外の範囲を要求した場合.
+            """
             assert minimum == 0
             assert maximum == 100
             return 50
@@ -421,13 +572,39 @@ class TestPrivateMessagePipeline:
 
 
 class TestCommandPipeline:
+    """channel commandとBanchoBot responseのdelivery契約を検証する."""
+
     async def test_roll_command_delivers_message_and_banchobot_response(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        """channelの!rollが利用者messageとBanchoBot responseを配信することを検証する.
+
+        random.randintを固定してsenderを#osuへ参加させ!rollを送る.
+        観測結果としてtargetは利用者messageとbot responseを順に受ける.
+        senderはbot responseだけを受ける.
+
+        Args:
+            monkeypatch (pytest.MonkeyPatch): roll commandの乱数sourceを固定するfixture.
+
+        Returns:
+            None: channel command responseのrecipient別deliveryを検証して終了する.
+        """
         pipeline = await _setup_pipeline()
 
         def fixed_randint(minimum: int, maximum: int) -> int:
+            """Roll command用の乱数を固定値へ置き換える.
+
+            Args:
+                minimum (int): commandが要求する下限値.
+                maximum (int): commandが要求する上限値.
+
+            Returns:
+                int: 再現可能なroll結果として返す50.
+
+            Raises:
+                AssertionError: commandが0から100以外の範囲を要求した場合.
+            """
             assert minimum == 0
             assert maximum == 100
             return 50
@@ -472,7 +649,17 @@ class TestCommandPipeline:
 
 
 class TestDisconnectCleanupPipeline:
+    """disconnect eventによるchannel membership cleanup契約を検証する."""
+
     async def test_user_disconnected_removes_user_from_all_channels(self) -> None:
+        """UserDisconnectedが利用者を全channel membershipから除去することを検証する.
+
+        senderを複数channelへ追加してChatListenersをevent busへ登録する.
+        観測結果としてsenderの所属channel集合はevent fire後に空になる.
+
+        Returns:
+            None: disconnect時のprocess-local state cleanupを検証して終了する.
+        """
         pipeline = await _setup_pipeline()
         await pipeline.channel_state.add_member("#announce", pipeline.sender_id)
         await pipeline.channel_state.add_member("#osu", pipeline.sender_id)
