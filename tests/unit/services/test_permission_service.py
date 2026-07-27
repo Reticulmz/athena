@@ -1,3 +1,9 @@
+"""PermissionServiceのrole由来authorization計算契約を検証するmodule.
+
+in-memory role repositoryを用いてPrivileges,SessionAuthorization,関連logの
+observable outcomeを対象にする.
+"""
+
 from __future__ import annotations
 
 from structlog.testing import capture_logs
@@ -26,12 +32,32 @@ ALL_ROLES = [ROLE_DEFAULT, ROLE_SUPPORTER, ROLE_MODERATOR, ROLE_ADMIN, ROLE_DEVE
 
 
 class RoleAssignmentHarness:
+    """in-memory role assignmentをcommitしてtest状態を準備するharness.
+
+    Attributes:
+        _uow_factory (InMemoryUnitOfWorkFactory): role assignmentを保存するUnit of Work factory.
+    """
+
     _uow_factory: InMemoryUnitOfWorkFactory
 
     def __init__(self, uow_factory: InMemoryUnitOfWorkFactory) -> None:
+        """Role assignment用のUnit of Work factoryを設定する.
+
+        Args:
+            uow_factory (InMemoryUnitOfWorkFactory): seed済みroleを持つfactory.
+        """
         self._uow_factory = uow_factory
 
     async def assign_role(self, *, user_id: int, role_id: int) -> None:
+        """指定userへroleを割り当ててtransactionをcommitする.
+
+        Args:
+            user_id (int): roleを割り当てるuserの識別子.
+            role_id (int): 割り当てるroleの識別子.
+
+        Returns:
+            None: role assignmentをcommitして完了し,呼び出し側へ値を返さない.
+        """
         async with self._uow_factory() as uow:
             await uow.roles.assign_role(user_id=user_id, role_id=role_id)
             await uow.commit()
@@ -40,6 +66,14 @@ class RoleAssignmentHarness:
 def _make_service(
     roles: list[Role] | None = None,
 ) -> tuple[PermissionService, RoleAssignmentHarness]:
+    """seed済みPermissionServiceとrole assignment harnessを作成する.
+
+    Args:
+        roles (list[Role] | None): seedするrole集合. Noneの場合は標準の全roleを使う.
+
+    Returns:
+        tuple[PermissionService, RoleAssignmentHarness]: 権限計算serviceとassignment helper.
+    """
     uow_factory = InMemoryUnitOfWorkFactory()
     uow_factory.seed_roles(ALL_ROLES if roles is None else roles)
     repo = InMemoryRoleQueryRepository(uow_factory)
@@ -50,9 +84,14 @@ def _make_service(
 
 
 class TestComputePermissionsSingleRole:
-    """単一ロールの permissions がそのまま返される。"""
+    """単一roleのPrivileges集約契約を検証する."""
 
     async def test_single_default_role(self) -> None:
+        """Default roleだけのPrivilegesがそのまま返る契約を検証する.
+
+        Returns:
+            None: default roleのPrivileges結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
 
@@ -61,6 +100,11 @@ class TestComputePermissionsSingleRole:
         assert result == ROLE_DEFAULT.permissions
 
     async def test_single_supporter_role(self) -> None:
+        """Supporter roleだけのPrivilegesが返る契約を検証する.
+
+        Returns:
+            None: supporter roleのPrivileges結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=2, role_id=ROLE_SUPPORTER.id)
 
@@ -70,9 +114,14 @@ class TestComputePermissionsSingleRole:
 
 
 class TestComputePermissionsMultipleRoles:
-    """複数ロールの permissions が OR 結合される。"""
+    """複数roleのPrivileges OR集約契約を検証する."""
 
     async def test_default_plus_supporter(self) -> None:
+        """defaultとsupporterのPrivilegesをOR結合する契約を検証する.
+
+        Returns:
+            None: 2つのroleからの集約結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
         await repo.assign_role(user_id=1, role_id=ROLE_SUPPORTER.id)
@@ -83,6 +132,11 @@ class TestComputePermissionsMultipleRoles:
         assert result == expected
 
     async def test_all_roles_combined(self) -> None:
+        """全seed roleのPrivilegesをOR結合する契約を検証する.
+
+        Returns:
+            None: 全roleからの集約結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         for role in ALL_ROLES:
             await repo.assign_role(user_id=1, role_id=role.id)
@@ -95,6 +149,11 @@ class TestComputePermissionsMultipleRoles:
         assert result == expected
 
     async def test_moderator_plus_admin(self) -> None:
+        """moderatorとadminのPrivilegesをOR結合する契約を検証する.
+
+        Returns:
+            None: 2つの管理roleからの集約結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=3, role_id=ROLE_MODERATOR.id)
         await repo.assign_role(user_id=3, role_id=ROLE_ADMIN.id)
@@ -105,9 +164,14 @@ class TestComputePermissionsMultipleRoles:
 
 
 class TestComputePermissionsNoRoles:
-    """ロールなしのユーザーは Privileges.NONE を返す。"""
+    """role未割当userのPrivileges既定値契約を検証する."""
 
     async def test_no_roles_returns_none(self) -> None:
+        """roleのないuserにPrivileges.NONEを返す契約を検証する.
+
+        Returns:
+            None: 未割当userの既定Privilegesを検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, _repo = _make_service()
 
         result = await svc.compute_permissions(user_id=999)
@@ -119,10 +183,14 @@ class TestComputePermissionsNoRoles:
 
 
 class TestPermissionsComputedLog:
-    """compute_permissions() の permissions_computed ログイベント検証。"""
+    """compute_permissions時のpermissions_computed log契約を検証する."""
 
     async def test_emits_log_with_user_id_and_privileges(self) -> None:
-        """計算完了時に user_id と privileges を含むログが出力される。"""
+        """単一roleの計算logがuser IDとPrivilegesを含む契約を検証する.
+
+        Returns:
+            None: 計算結果とpermissions_computed logを検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
 
@@ -137,7 +205,12 @@ class TestPermissionsComputedLog:
         assert events[0]["log_level"] == "info"
 
     async def test_emits_log_with_combined_privileges(self) -> None:
-        """複数ロールの OR 結合結果がログに含まれる。"""
+        """複数roleのOR集約結果がlogに記録される契約を検証する.
+
+        Returns:
+            None: 集約Privilegesとpermissions_computed logを検証して完了する.
+                呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=2, role_id=ROLE_DEFAULT.id)
         await repo.assign_role(user_id=2, role_id=ROLE_MODERATOR.id)
@@ -153,7 +226,11 @@ class TestPermissionsComputedLog:
         assert events[0]["privileges"] == expected
 
     async def test_emits_log_for_no_roles(self) -> None:
-        """ロールなしユーザーでも permissions_computed が出力される。"""
+        """roleのないuserでもpermissions_computed logを出す契約を検証する.
+
+        Returns:
+            None: Privileges.NONEと対応logを検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, _repo = _make_service()
 
         with capture_logs() as cap_logs:
@@ -170,9 +247,14 @@ class TestPermissionsComputedLog:
 
 
 class TestComputeSessionAuthorizationNoRole:
-    """ロールなしユーザーは NONE 権限と空 role_ids の snapshot を返す。"""
+    """role未割当userのSessionAuthorization snapshot契約を検証する."""
 
     async def test_no_roles_returns_empty_snapshot(self) -> None:
+        """roleのないuserに空role IDとPrivileges.NONEを返す契約を検証する.
+
+        Returns:
+            None: 空snapshotのPrivilegesとrole IDを検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, _repo = _make_service()
 
         result = await svc.compute_session_authorization(user_id=999)
@@ -182,9 +264,14 @@ class TestComputeSessionAuthorizationNoRole:
 
 
 class TestComputeSessionAuthorizationSingleRole:
-    """単一ロールの権限と role_id が snapshot に反映される。"""
+    """単一roleのSessionAuthorization snapshot反映契約を検証する."""
 
     async def test_single_default_role(self) -> None:
+        """Default roleのPrivilegesとrole IDをsnapshotへ反映する契約を検証する.
+
+        Returns:
+            None: default roleのsnapshot内容を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
 
@@ -194,6 +281,11 @@ class TestComputeSessionAuthorizationSingleRole:
         assert result.role_ids == (ROLE_DEFAULT.id,)
 
     async def test_single_moderator_role(self) -> None:
+        """Moderator roleのPrivilegesとrole IDをsnapshotへ反映する契約を検証する.
+
+        Returns:
+            None: moderator roleのsnapshot内容を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=2, role_id=ROLE_MODERATOR.id)
 
@@ -204,9 +296,14 @@ class TestComputeSessionAuthorizationSingleRole:
 
 
 class TestComputeSessionAuthorizationMultipleRoles:
-    """複数ロールで permission OR と全 role_id を含む snapshot。"""
+    """複数roleのSessionAuthorization snapshot集約契約を検証する."""
 
     async def test_default_plus_supporter(self) -> None:
+        """defaultとsupporterのPrivilegesおよびrole IDを集約する契約を検証する.
+
+        Returns:
+            None: 2つのroleによるsnapshot内容を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
         await repo.assign_role(user_id=1, role_id=ROLE_SUPPORTER.id)
@@ -218,6 +315,11 @@ class TestComputeSessionAuthorizationMultipleRoles:
         assert set(result.role_ids) == {ROLE_DEFAULT.id, ROLE_SUPPORTER.id}
 
     async def test_all_roles_combined(self) -> None:
+        """全seed roleのPrivilegesおよびrole IDを集約する契約を検証する.
+
+        Returns:
+            None: 全roleによるsnapshot内容を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         for role in ALL_ROLES:
             await repo.assign_role(user_id=1, role_id=role.id)
@@ -231,6 +333,11 @@ class TestComputeSessionAuthorizationMultipleRoles:
         assert set(result.role_ids) == {r.id for r in ALL_ROLES}
 
     async def test_moderator_plus_admin(self) -> None:
+        """moderatorとadminのPrivilegesおよびrole IDを集約する契約を検証する.
+
+        Returns:
+            None: 管理roleによるsnapshot内容を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=3, role_id=ROLE_MODERATOR.id)
         await repo.assign_role(user_id=3, role_id=ROLE_ADMIN.id)
@@ -242,9 +349,14 @@ class TestComputeSessionAuthorizationMultipleRoles:
 
 
 class TestComputeSessionAuthorizationRoleOrdering:
-    """role_ids は get_roles_for_user の返す位置順を保持する。"""
+    """SessionAuthorizationのrole ID順序保持契約を検証する."""
 
     async def test_role_ids_in_position_order(self) -> None:
+        """割当順ではなくrole position昇順でrole IDを返す契約を検証する.
+
+        Returns:
+            None: position順のrole ID列を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         # Assign in reverse position order
         await repo.assign_role(user_id=1, role_id=ROLE_ADMIN.id)  # position=3
@@ -258,9 +370,14 @@ class TestComputeSessionAuthorizationRoleOrdering:
 
 
 class TestComputeSessionAuthorizationSnapshotType:
-    """戻り値は SessionAuthorization の frozen dataclass。"""
+    """SessionAuthorizationの戻り値型契約を検証する."""
 
     async def test_returns_session_authorization_instance(self) -> None:
+        """計算結果がSessionAuthorization instanceである契約を検証する.
+
+        Returns:
+            None: 戻り値のinstance型を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc, repo = _make_service()
         await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
 

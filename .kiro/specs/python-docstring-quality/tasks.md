@@ -640,7 +640,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/services rootの5 file_
 
-- [ ] 3.36 (P) Identity authorization/credential service testを整備する
+- [x] 3.36 (P) Identity authorization/credential service testを整備する
   - test_password_service.py、test_permission_service.py、
     test_session_authorization_service.py、test_session_credentials_query.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および4 fileのtestが通る
