@@ -1,8 +1,7 @@
-"""Regression tests for beatmap-mirror downstream boundary separation.
+"""Beatmap mirrorの下流境界分離契約を検証する.
 
-Verifies that beatmap-mirror components remain independent from
-score-submission, leaderboard, WebUI, BanchoBot rank commands, and
-Bancho transports per requirements 15.1-15.5 and 9.1/9.3.
+score submission. leaderboard. WebUI. Bancho transportからの独立性と.
+official status/local overrideの分離を対象にする.
 """
 
 from __future__ import annotations
@@ -125,6 +124,18 @@ def _make_beatmap(
     source_verification: BeatmapSourceVerification = BeatmapSourceVerification.VERIFIED,
     file_attachment: BeatmapFileAttachment | None = None,
 ) -> Beatmap:
+    """境界検証に必要な属性を持つbeatmapを生成する.
+
+    Args:
+        official_status (BeatmapRankStatus): 外部sourceが示す公式状態.
+        local_status_override (LocalBeatmapStatus | None): localで上書きする状態.
+        source (BeatmapMetadataSource): metadataを提供したsource.
+        source_verification (BeatmapSourceVerification): source metadataの検証状態.
+        file_attachment (BeatmapFileAttachment | None): 関連付けるfile metadata.
+
+    Returns:
+        Beatmap: freshnessとfile状態を固定した検証用beatmap.
+    """
     return Beatmap(
         id=2_000,
         beatmapset_id=1_000,
@@ -155,7 +166,15 @@ def _make_beatmap(
 
 
 def _module_imports_forbidden(module_name: str, forbidden_prefixes: tuple[str, ...]) -> list[str]:
-    """Return list of forbidden imports found in *module_name*."""
+    """Module namespace内の禁止package由来objectを収集する.
+
+    Args:
+        module_name (str): 検査対象のimport可能なmodule名.
+        forbidden_prefixes (tuple[str. ...]): 参照を禁止するpackage prefix群.
+
+    Returns:
+        list[str]: 禁止prefixからimportしたobjectを示す違反一覧.
+    """
     for prefix in forbidden_prefixes:
         if prefix not in sys.modules:
             continue
@@ -185,12 +204,26 @@ def _module_imports_forbidden(module_name: str, forbidden_prefixes: tuple[str, .
 
 
 def _domain_field_names(cls: type) -> frozenset[str]:
-    """Return the set of field names declared on a dataclass."""
+    """dataclassに宣言されたfield名を収集する.
+
+    Args:
+        cls (type): fieldを検査するdataclass型.
+
+    Returns:
+        frozenset[str]: dataclassが直接宣言するfield名の集合.
+    """
     return frozenset(f.name for f in fields(cls))
 
 
 def _public_method_names(cls: type) -> frozenset[str]:
-    """Return the set of public method names defined directly on *cls*."""
+    """型が公開するcallable名を収集する.
+
+    Args:
+        cls (type): public APIを検査する型.
+
+    Returns:
+        frozenset[str]: underscoreで始まらないcallable属性名の集合.
+    """
     return frozenset(
         name
         for name in dir(cls)
@@ -204,17 +237,25 @@ def _public_method_names(cls: type) -> frozenset[str]:
 
 
 class TestBeatmapMirrorImportBoundaries:
-    """Verify beatmap-mirror modules do not import from downstream packages."""
+    """Beatmap mirror moduleが下流packageをimportしない境界を検証する."""
 
     def test_domain_module_no_transport_imports(self) -> None:
-        """Domain module must not import from any transport package."""
+        """Domain moduleがtransport packageをimportしないことを検証する.
+
+        Returns:
+            None: forbidden transport importがないことを検証して完了する.
+        """
         violations = _module_imports_forbidden(
             "osu_server.domain.beatmaps", _FORBIDDEN_IMPORT_PREFIXES
         )
         assert violations == [], f"domain.beatmaps has forbidden imports: {violations}"
 
     def test_service_module_no_transport_imports(self) -> None:
-        """Service modules must not import from any transport package."""
+        """Service moduleがtransport packageをimportしないことを検証する.
+
+        Returns:
+            None: service領域のforbidden importがないことを検証して完了する.
+        """
         for module_name in _BEATMAP_MODULES:
             if not module_name.startswith("osu_server.services"):
                 continue
@@ -222,7 +263,11 @@ class TestBeatmapMirrorImportBoundaries:
             assert violations == [], f"{module_name} has forbidden imports: {violations}"
 
     def test_infrastructure_module_no_transport_imports(self) -> None:
-        """Infrastructure modules must not import from any transport package."""
+        """Infrastructure moduleがtransport packageをimportしないことを検証する.
+
+        Returns:
+            None: infrastructure領域のforbidden importがないことを検証して完了する.
+        """
         for module_name in _BEATMAP_MODULES:
             if not module_name.startswith("osu_server.infrastructure"):
                 continue
@@ -230,7 +275,11 @@ class TestBeatmapMirrorImportBoundaries:
             assert violations == [], f"{module_name} has forbidden imports: {violations}"
 
     def test_repository_module_no_transport_imports(self) -> None:
-        """Repository modules must not import from any transport package."""
+        """Repository moduleがtransport packageをimportしないことを検証する.
+
+        Returns:
+            None: repository領域のforbidden importがないことを検証して完了する.
+        """
         for module_name in _BEATMAP_MODULES:
             if not module_name.startswith("osu_server.repositories"):
                 continue
@@ -238,14 +287,22 @@ class TestBeatmapMirrorImportBoundaries:
             assert violations == [], f"{module_name} has forbidden imports: {violations}"
 
     def test_job_module_no_transport_imports(self) -> None:
-        """Job module must not import from any transport package."""
+        """Beatmap fetch jobがtransport packageをimportしないことを検証する.
+
+        Returns:
+            None: job moduleのforbidden importがないことを検証して完了する.
+        """
         violations = _module_imports_forbidden(
             "osu_server.jobs.beatmap_fetch", _FORBIDDEN_IMPORT_PREFIXES
         )
         assert violations == [], f"jobs.beatmap_fetch has forbidden imports: {violations}"
 
     def test_all_beatmap_modules_importable(self) -> None:
-        """All beatmap-mirror modules should be importable without errors."""
+        """全Beatmap mirror moduleが例外なくimport可能なことを検証する.
+
+        Returns:
+            None: feature boundary内のmodule importを検証して完了する.
+        """
         for module_name in _BEATMAP_MODULES:
             try:
                 __import__(module_name)
@@ -253,7 +310,11 @@ class TestBeatmapMirrorImportBoundaries:
                 pytest.fail(f"Failed to import {module_name}: {exc}")
 
     def test_removed_provider_modules_not_importable(self) -> None:
-        """削除済み provider module path を互換 facade として復活させない。"""
+        """削除済みprovider module pathを互換facadeとして復活させないことを検証する.
+
+        Returns:
+            None: removed pathにmodule specがないことを検証して完了する.
+        """
         for module_name in _REMOVED_BEATMAP_PROVIDER_MODULES:
             missing_error = False
             missing_module_name: str | None = None
@@ -278,10 +339,14 @@ class TestBeatmapMirrorImportBoundaries:
 
 
 class TestBeatmapDomainBoundarySeparation:
-    """Verify beatmap domain types do not carry score/PP/leaderboard fields."""
+    """Beatmap domain型がscore/PP/leaderboard fieldを持たないことを検証する."""
 
     def test_beatmap_has_no_score_payload_fields(self) -> None:
-        """Beatmap must not contain score payload-related fields (15.1)."""
+        """Beatmapがscore payload fieldを持たないことを検証する.
+
+        Returns:
+            None: 許可済みfield以外に下流concernがないことを検証して完了する.
+        """
         field_names = _domain_field_names(Beatmap)
         for pattern in _FORBIDDEN_DOMAIN_FIELD_PATTERNS:
             for name in field_names:
@@ -292,7 +357,11 @@ class TestBeatmapDomainBoundarySeparation:
                 )
 
     def test_beatmapset_has_no_score_payload_fields(self) -> None:
-        """BeatmapSet must not contain score payload-related fields (15.1)."""
+        """BeatmapSetがscore payload fieldを持たないことを検証する.
+
+        Returns:
+            None: 許可済みfield以外に下流concernがないことを検証して完了する.
+        """
         field_names = _domain_field_names(BeatmapSet)
         for pattern in _FORBIDDEN_DOMAIN_FIELD_PATTERNS:
             for name in field_names:
@@ -303,7 +372,11 @@ class TestBeatmapDomainBoundarySeparation:
                 )
 
     def test_beatmap_file_attachment_has_no_score_payload_fields(self) -> None:
-        """BeatmapFileAttachment must not contain score payload-related fields (15.1)."""
+        """BeatmapFileAttachmentがscore payload fieldを持たないことを検証する.
+
+        Returns:
+            None: attachmentに下流concernがないことを検証して完了する.
+        """
         field_names = _domain_field_names(BeatmapFileAttachment)
         for pattern in _FORBIDDEN_DOMAIN_FIELD_PATTERNS:
             for name in field_names:
@@ -314,7 +387,11 @@ class TestBeatmapDomainBoundarySeparation:
                 )
 
     def test_beatmap_file_attachment_no_body_bytes(self) -> None:
-        """BeatmapFileAttachment references blob storage, does not embed file bytes."""
+        """BeatmapFileAttachmentがfile bodyではなくblob metadataを参照することを検証する.
+
+        Returns:
+            None: body. content. data属性を持たないことを検証して完了する.
+        """
         attachment = BeatmapFileAttachment(
             beatmap_id=2_000,
             blob_id=42,
@@ -329,7 +406,11 @@ class TestBeatmapDomainBoundarySeparation:
         assert not hasattr(attachment, "data")
 
     def test_beatmap_evaluation_has_no_pp_or_score_fields(self) -> None:
-        """BeatmapEligibility is about eligibility projection, not PP calculation (15.2)."""
+        """BeatmapEligibilityがPP計算値やscore fieldを持たないことを検証する.
+
+        Returns:
+            None: eligibility flagだけを公開することを検証して完了する.
+        """
         field_names = _domain_field_names(BeatmapEligibility)
         # Eligibility must not expose actual PP values or score data
         for name in field_names:
@@ -340,7 +421,11 @@ class TestBeatmapDomainBoundarySeparation:
         assert "has_leaderboard" in field_names
 
     def test_beatmap_evaluation_does_not_return_score_objects(self) -> None:
-        """BeatmapEligibility.evaluate returns BeatmapEligibility, not score objects."""
+        """Eligibility serviceがscore objectではなくprojectionを返すことを検証する.
+
+        Returns:
+            None: BeatmapEligibility型とscore属性の不在を検証して完了する.
+        """
         # Verify evaluate method exists and returns BeatmapEligibility
         assert hasattr(BeatmapEligibilityService, "evaluate")
         result = BeatmapEligibilityService().evaluate(
@@ -358,10 +443,14 @@ class TestBeatmapDomainBoundarySeparation:
 
 
 class TestLocalOverrideSeparation:
-    """Verify local_status_override and official_status remain independent."""
+    """local status overrideとofficial statusの独立性を検証する."""
 
     def test_local_override_does_not_change_official_status(self) -> None:
-        """Setting local_status_override does not affect official_status (9.3, 15.5)."""
+        """Local overrideがofficial statusを変更しないことを検証する.
+
+        Returns:
+            None: effective statusだけがlocal overrideになることを検証して完了する.
+        """
         beatmap = _make_beatmap(
             official_status=BeatmapRankStatus.GRAVEYARD,
             local_status_override=LocalBeatmapStatus.RANKED,
@@ -372,7 +461,11 @@ class TestLocalOverrideSeparation:
         assert beatmap.effective_status is BeatmapRankStatus.RANKED
 
     def test_official_status_unchanged_when_local_override_is_ranked(self) -> None:
-        """Ranked local override leaves official Pending unchanged (9.3)."""
+        """RANKED local overrideがPENDING official statusを変更しないことを検証する.
+
+        Returns:
+            None: officialとeffective statusの分離を検証して完了する.
+        """
         beatmap = _make_beatmap(
             official_status=BeatmapRankStatus.PENDING,
             local_status_override=LocalBeatmapStatus.RANKED,
@@ -383,7 +476,11 @@ class TestLocalOverrideSeparation:
         assert beatmap.effective_status is BeatmapRankStatus.RANKED
 
     def test_official_status_unchanged_when_local_override_is_loved(self) -> None:
-        """Loved local override leaves official Qualified unchanged (9.3)."""
+        """LOVED local overrideがQUALIFIED official statusを変更しないことを検証する.
+
+        Returns:
+            None: officialとeffective statusの分離を検証して完了する.
+        """
         beatmap = _make_beatmap(
             official_status=BeatmapRankStatus.QUALIFIED,
             local_status_override=LocalBeatmapStatus.LOVED,
@@ -394,7 +491,11 @@ class TestLocalOverrideSeparation:
         assert beatmap.effective_status is BeatmapRankStatus.LOVED
 
     def test_official_status_unchanged_when_local_override_is_graveyard(self) -> None:
-        """Local override to Graveyard does not change official Ranked status (9.3)."""
+        """GRAVEYARD local overrideがRANKED official statusを変更しないことを検証する.
+
+        Returns:
+            None: officialとeffective statusの分離を検証して完了する.
+        """
         beatmap = _make_beatmap(
             official_status=BeatmapRankStatus.RANKED,
             local_status_override=LocalBeatmapStatus.GRAVEYARD,
@@ -405,7 +506,11 @@ class TestLocalOverrideSeparation:
         assert beatmap.effective_status is BeatmapRankStatus.GRAVEYARD
 
     def test_effective_status_is_readonly_property(self) -> None:
-        """effective_status is a computed property, not writable."""
+        """Effective statusが書き込み不可のcomputed propertyであることを検証する.
+
+        Returns:
+            None: assignmentがAttributeErrorまたはTypeErrorになることを検証して完了する.
+        """
         beatmap = _make_beatmap(official_status=BeatmapRankStatus.APPROVED)
 
         # effective_status is a computed property; attempting to assign should fail
@@ -413,7 +518,11 @@ class TestLocalOverrideSeparation:
             beatmap.effective_status = BeatmapRankStatus.RANKED  # pyright: ignore[reportAttributeAccessIssue]
 
     def test_no_local_override_means_official_status_is_effective(self) -> None:
-        """When local_status_override is None, effective == official (9.4)."""
+        """Local overrideがNoneならofficial statusがeffectiveになることを検証する.
+
+        Returns:
+            None: APPROVEDの公式状態をそのまま返すことを検証して完了する.
+        """
         beatmap = _make_beatmap(
             official_status=BeatmapRankStatus.APPROVED,
             local_status_override=None,
@@ -424,7 +533,11 @@ class TestLocalOverrideSeparation:
         assert beatmap.effective_status is BeatmapRankStatus.APPROVED
 
     def test_local_override_present_means_override_takes_effect(self) -> None:
-        """When local_status_override is set, effective uses override (9.5)."""
+        """Local overrideが設定済みならeffective statusに採用することを検証する.
+
+        Returns:
+            None: QUALIFIED overrideを返すことを検証して完了する.
+        """
         beatmap = _make_beatmap(
             official_status=BeatmapRankStatus.WIP,
             local_status_override=LocalBeatmapStatus.QUALIFIED,
@@ -434,10 +547,13 @@ class TestLocalOverrideSeparation:
         assert beatmap.effective_status is BeatmapRankStatus.QUALIFIED
 
     def test_approved_preserved_as_official_but_not_allowed_as_local(self) -> None:
-        """Approved is valid as official_status but rejected as local_status_override.
+        """APPROVEDをofficial statusとして許可しlocal overrideとして拒否することを検証する.
 
-        See requirements 10.1 (official status includes Approved) and 10.3
-        (local override excludes Approved).
+        Requirements 10.1ではAPPROVEDが公式状態に含まれる. Requirements 10.3では
+        local overrideからAPPROVEDを除外する.
+
+        Returns:
+            None: official statusの保持と不正overrideのValueErrorを検証して完了する.
         """
         # Official Approved is fine
         beatmap = _make_beatmap(
@@ -453,7 +569,11 @@ class TestLocalOverrideSeparation:
             )
 
     def test_beatmap_is_immutable(self) -> None:
-        """Beatmap is a frozen dataclass - fields cannot be mutated after creation."""
+        """Beatmapが生成後にfieldを変更できないfrozen dataclassであることを検証する.
+
+        Returns:
+            None: official statusのassignmentがFrozenInstanceErrorになることを検証して完了する.
+        """
         beatmap = _make_beatmap(official_status=BeatmapRankStatus.GRAVEYARD)
 
         with pytest.raises(FrozenInstanceError):
@@ -466,10 +586,17 @@ class TestLocalOverrideSeparation:
 
 
 class TestBeatmapMirrorServiceApiBoundary:
-    """Verify BeatmapMirrorService public API does not imply downstream ownership."""
+    """BeatmapMirrorServiceの公開APIが下流責務を持たないことを検証する."""
 
     def test_public_methods_are_only_resolve_operations(self) -> None:
-        """Service API is resolution-only; no score or queuing methods (15.4)."""
+        """Service公開APIが解決操作だけを提供する境界契約を検証する.
+
+        BeatmapMirrorServiceのpublic callable名を収集し,3種のresolve操作だけを公開して,
+        score処理やqueue操作を公開しないことを確認する.
+
+        Returns:
+            None: resolution-onlyのpublic API集合を検証して完了する.
+        """
         public_names = _public_method_names(BeatmapMirrorService)
         resolve_methods = {
             "resolve_by_beatmap_id",
@@ -495,7 +622,14 @@ class TestBeatmapMirrorServiceApiBoundary:
         assert not overlap, f"Service exposes forbidden downstream methods: {overlap}"
 
     def test_beatmap_resolve_result_has_no_score_fields(self) -> None:
-        """BeatmapResolveResult is a resolution output, not a score result."""
+        """BeatmapResolveResultがscore resultではなく解決出力であることを検証する.
+
+        result dataclassのfieldを走査し,許可済みbeatmap属性以外にscore,PP,leaderboard由来の
+        field名がないことを確認する.
+
+        Returns:
+            None: score payloadを含まない解決結果のfield集合を検証して完了する.
+        """
         field_names = _domain_field_names(BeatmapResolveResult)
         for pattern in _FORBIDDEN_DOMAIN_FIELD_PATTERNS:
             for name in field_names:
@@ -506,7 +640,14 @@ class TestBeatmapMirrorServiceApiBoundary:
                 )
 
     def test_beatmap_set_resolve_result_has_no_score_fields(self) -> None:
-        """BeatmapSetResolveResult is a resolution output, not a score result."""
+        """BeatmapSetResolveResultがscore resultではなくset解決出力であることを検証する.
+
+        result dataclassのfieldを走査し,許可済みbeatmap属性以外にscore,PP,leaderboard由来の
+        field名がないことを確認する.
+
+        Returns:
+            None: score payloadを含まないset解決結果のfield集合を検証して完了する.
+        """
         field_names = _domain_field_names(BeatmapSetResolveResult)
         for pattern in _FORBIDDEN_DOMAIN_FIELD_PATTERNS:
             for name in field_names:
@@ -517,7 +658,14 @@ class TestBeatmapMirrorServiceApiBoundary:
                 )
 
     def test_resolve_options_are_resolution_only(self) -> None:
-        """BeatmapResolveOptions controls resolution, not score processing."""
+        """BeatmapResolveOptionsがscore処理ではなく解決条件だけを持つことを検証する.
+
+        file要件,wait上限,強制refreshを持つことと,score,PP,leaderboard,mods用の
+        optionを持たないことを確認する.
+
+        Returns:
+            None: resolution-onlyのoption field集合を検証して完了する.
+        """
         field_names = _domain_field_names(BeatmapResolveOptions)
         assert "require_osu_file" in field_names
         assert "wait_timeout_seconds" in field_names
@@ -536,10 +684,18 @@ class TestBeatmapMirrorServiceApiBoundary:
 
 
 class TestStatusResolverBoundary:
-    """Verify BeatmapStatusResolver preserves local/official separation."""
+    """BeatmapStatusResolverがlocal/official statusの分離を保つことを検証する."""
 
     def test_effective_status_derived_from_beatmap_via_property(self) -> None:
-        """StatusResolver delegates to Beatmap.effective_status property."""
+        """StatusResolverがBeatmap.effective_statusをそのまま採用する契約を検証する.
+
+        PENDINGの公式状態とRANKEDのlocal overrideを持つbeatmapを解決し,RANKEDを返しつつ
+        official_statusをPENDINGのまま保持することを確認する.
+
+        Returns:
+            None: resolverがeffective statusの読み取りでsource状態を変更しないことを
+                検証して完了する.
+        """
         resolver = BeatmapStatusResolver()
         beatmap = _make_beatmap(
             official_status=BeatmapRankStatus.PENDING,
@@ -553,20 +709,39 @@ class TestStatusResolverBoundary:
         assert beatmap.official_status is BeatmapRankStatus.PENDING
 
     def test_validate_local_override_rejects_approved(self) -> None:
-        """StatusResolver rejects Approved as local override (10.3)."""
+        """StatusResolverがAPPROVEDをlocal overrideとして拒否する契約を検証する.
+
+        official status専用のAPPROVEDをvalidate_local_overrideへ渡し,ValueErrorになることを
+        確認する.
+
+        Returns:
+            None: APPROVEDをlocal overrideに使えない入力制約を検証して完了する.
+        """
         resolver = BeatmapStatusResolver()
 
         with pytest.raises(ValueError, match="Approved cannot be used as a local override"):
             resolver.validate_local_override(BeatmapRankStatus.APPROVED)
 
     def test_validate_local_override_accepts_none(self) -> None:
-        """None is a valid local override (meaning no override)."""
+        """StatusResolverがoverride未設定を表すNoneを許可する契約を検証する.
+
+        validate_local_overrideへNoneを渡し,例外なく完了することを確認する.
+
+        Returns:
+            None: overrideなしの有効な入力を検証して完了する.
+        """
         resolver = BeatmapStatusResolver()
         # Should not raise
         resolver.validate_local_override(None)
 
     def test_validate_local_override_accepts_valid_local_statuses(self) -> None:
-        """All LocalBeatmapStatus values are acceptable local overrides."""
+        """StatusResolverが全LocalBeatmapStatus値をlocal overrideとして許可する契約を検証する.
+
+        LocalBeatmapStatusの全memberを検証し,いずれも例外なく受け付けることを確認する.
+
+        Returns:
+            None: 許可されたlocal override集合を検証して完了する.
+        """
         resolver = BeatmapStatusResolver()
         for status in LocalBeatmapStatus:
             # Should not raise
@@ -579,14 +754,21 @@ class TestStatusResolverBoundary:
 
 
 class TestDownstreamBoundaryIntegration:
-    """Integration-level boundary verification for downstream separation.
+    """下流機能がbeatmap mirrorの下流責務を取り込まないことを統合的に検証する.
 
-    These tests verify that downstream features can consume beatmap-mirror
-    results without the mirror owning downstream concerns.
+    local override,file attachment,eligibility projectionを通じて,downstream consumerが
+    mirrorの解決結果を使ってもscore,PP,leaderboardの所有権を持ち込まないことを対象にする.
     """
 
     def test_local_override_does_not_leak_into_official_status_through_service(self) -> None:
-        """Downstream rank changes via local override do not mutate official (15.5)."""
+        """下流のlocal override利用が公式状態を変更しない統合契約を検証する.
+
+        PENDINGの公式状態とRANKEDのlocal overrideを持つbeatmapをresolverに渡し,effective statusは
+        RANKEDでもofficial_statusはPENDING,overrideは明示的なlocal判断のままであることを確認する.
+
+        Returns:
+            None: service経由でもofficial/local statusが分離されることを検証して完了する.
+        """
         beatmap = _make_beatmap(
             official_status=BeatmapRankStatus.PENDING,
             local_status_override=LocalBeatmapStatus.RANKED,
@@ -604,10 +786,13 @@ class TestDownstreamBoundaryIntegration:
         assert beatmap.local_status_override is LocalBeatmapStatus.RANKED
 
     def test_beatmap_file_attachment_does_not_embed_score_osu_parsing(self) -> None:
-        """BeatmapFileAttachment keeps file metadata, not parsed beatmap content.
+        """BeatmapFileAttachmentが解析済みosu contentではなくfile metadataを保持する契約を検証する.
 
-        The .osu file body is stored in blob-storage.  BeatmapFileAttachment
-        tracks provenance metadata, not parsed timing points or hit objects.
+        attachmentを生成し,osu file bodyがblob storageに置かれ,timing pointやhit objectなどの
+        解析済みcontent fieldをattachmentへ埋め込まないことを確認する.
+
+        Returns:
+            None: file provenanceだけを持つattachmentの境界を検証して完了する.
         """
         attachment = BeatmapFileAttachment(
             beatmap_id=75,
@@ -626,12 +811,13 @@ class TestDownstreamBoundaryIntegration:
             )
 
     def test_eligibility_does_not_calculate_pp_or_update_leaderboard(self) -> None:
-        """BeatmapEligibility is a projection, not a PP calculator.
+        """BeatmapEligibilityがPP計算器やleaderboard更新器ではない契約を検証する.
 
-        Requirement 15.2: the mirror does not calculate PP or update
-        leaderboards.  BeatmapEligibilityService.evaluate() returns
-        boolean projections without computing numeric PP or mutating
-        leaderboard state.
+        RANKED beatmapをevaluateし,数値PPやscore countではなくboolean eligibility projectionを
+        返し,leaderboard positionのような下流状態を持たないことを確認する.
+
+        Returns:
+            None: PP計算やleaderboard更新を含まないeligibility projectionを検証して完了する.
         """
         service = BeatmapEligibilityService()
         beatmap = _make_beatmap(official_status=BeatmapRankStatus.RANKED)
