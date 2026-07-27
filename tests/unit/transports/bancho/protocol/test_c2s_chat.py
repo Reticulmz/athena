@@ -1,4 +1,4 @@
-"""Tests for stable C2S chat packet payloads."""
+"""stable C2S chat packet payload の wire contract を検証する."""
 
 import pytest
 
@@ -15,10 +15,19 @@ _STABLE_CLIENT_EMPTY_SENDER_ID = 0
 
 
 def _hex_payload(*parts: str) -> bytes:
+    """16進数 field 断片を連結して payload bytes に変換する.
+
+    Args:
+        *parts (str): 連結する各 wire field の hexadecimal 表現.
+
+    Returns:
+        bytes: 各断片を input order で連結した payload.
+    """
     return b"".join(bytes.fromhex(part) for part in parts)
 
 
 def test_message_payload_round_trips_channel_message() -> None:
+    """Channel 宛て SEND_MESSAGE payload が全 Message field を復元することを検証する."""
     payload = message_payload(
         sender="sender",
         content="hello",
@@ -35,6 +44,7 @@ def test_message_payload_round_trips_channel_message() -> None:
 
 
 def test_message_payload_round_trips_private_message() -> None:
+    """Private message payload が全 Message field を復元することを検証する."""
     payload = message_payload(
         sender="sender",
         content="secret",
@@ -51,6 +61,7 @@ def test_message_payload_round_trips_private_message() -> None:
 
 
 def test_message_payload_accepts_stable_client_empty_sender_encoding() -> None:
+    """Stable client の空 sender 互換表現を SEND_MESSAGE として許容することを検証する."""
     payload = _hex_payload(
         "0b00",  # sender: stable client empty string compatibility encoding
         "0b0e6177646177646177646177646177",  # content: awdawdawdawdaw
@@ -68,6 +79,7 @@ def test_message_payload_accepts_stable_client_empty_sender_encoding() -> None:
 
 
 def test_private_message_payload_accepts_stable_client_empty_sender_encoding() -> None:
+    """Stable client の空 sender 互換表現を private message として許容することを検証する."""
     payload = _hex_payload(
         "0b00",  # sender: stable client empty string compatibility encoding
         "0b0474657374",  # content: test
@@ -85,6 +97,7 @@ def test_private_message_payload_accepts_stable_client_empty_sender_encoding() -
 
 
 def test_message_payload_builds_stable_client_empty_sender_encoding() -> None:
+    """Builder が空 sender を stable client 互換の 2 byte 表現で符号化することを検証する."""
     payload = message_payload(
         sender=_STABLE_CLIENT_EMPTY_SENDER,
         content="test",
@@ -96,11 +109,13 @@ def test_message_payload_builds_stable_client_empty_sender_encoding() -> None:
 
 
 def test_message_payload_rejects_too_small_payload() -> None:
+    """最低 wire size 未満の message payload を拒否することを検証する."""
     with pytest.raises(PacketReadError, match="SEND_MESSAGE payload must be at least"):
         _ = parse_message_payload(b"\x00\x00", packet_name="SEND_MESSAGE")
 
 
 def test_message_payload_rejects_trailing_bytes() -> None:
+    """Canonical message payload に続く余分な byte を拒否することを検証する."""
     payload = message_payload(sender="s", content="c", target="#osu", sender_id=1)
 
     with pytest.raises(PacketReadError, match="trailing or non-canonical bytes"):
@@ -108,6 +123,7 @@ def test_message_payload_rejects_trailing_bytes() -> None:
 
 
 def test_channel_name_payload_round_trips_join_and_leave_channel() -> None:
+    """JOIN_CHANNEL と LEAVE_CHANNEL が同じ channel name payload を復元することを検証する."""
     payload = channel_name_payload("#osu")
 
     assert parse_channel_name_payload(payload, packet_name="JOIN_CHANNEL") == "#osu"
@@ -115,11 +131,13 @@ def test_channel_name_payload_round_trips_join_and_leave_channel() -> None:
 
 
 def test_channel_name_payload_rejects_invalid_string_payload() -> None:
+    """不正な BanchoString marker を持つ channel payload を拒否することを検証する."""
     with pytest.raises(PacketReadError):
         _ = parse_channel_name_payload(b"\x0c", packet_name="JOIN_CHANNEL")
 
 
 def test_channel_name_payload_rejects_trailing_bytes() -> None:
+    """Canonical channel name payload に続く余分な byte を拒否することを検証する."""
     payload = channel_name_payload("#osu")
 
     with pytest.raises(PacketReadError, match="trailing or non-canonical bytes"):

@@ -24,7 +24,7 @@ from osu_server.transports.stable.bancho.protocol.s2c.beatmap_info import (
 
 
 def _canonical_request() -> BeatmapInfoRequest:
-    """mixed filename / ID request の typed canonical value を返す.
+    """混在 filename / ID request の typed canonical value を返す.
 
     Returns:
         BeatmapInfoRequest: filename 2件と beatmap ID 2件を入力順で持つ request.
@@ -45,7 +45,7 @@ def _canonical_request() -> BeatmapInfoRequest:
 
 
 def _canonical_reply() -> BeatmapInfoReply:
-    """filename row と ID row を持つ typed canonical reply を返す.
+    """Filename row と ID row を持つ typed canonical reply を返す.
 
     Returns:
         BeatmapInfoReply: request index 1 の filename row と index -1 の ID row を
@@ -90,7 +90,7 @@ def _canonical_reply() -> BeatmapInfoReply:
 
 
 def test_beatmap_info_request_matches_independent_golden_payload_and_decodes() -> None:
-    """mixed request が fixed payload と一致し, list順序を復元することを検証する.
+    """混在 request が fixed payload と一致し, list順序を復元することを検証する.
 
     Returns:
         None: encoder と decoder の contract assertion が成立したことを示す.
@@ -131,7 +131,7 @@ def test_beatmap_info_request_matches_independent_golden_payload_and_decodes() -
 
 
 def test_beatmap_info_request_empty_collection_matches_isolated_golden_payload() -> None:
-    """empty request が 8 zero bytes として pack / unpack されることを検証する.
+    """空の request が 8 zero bytes として pack / unpack されることを検証する.
 
     Returns:
         None: empty collection の固定境界 assertion が成立したことを示す.
@@ -246,7 +246,7 @@ def test_beatmap_info_reply_matches_independent_golden_payload_and_decodes() -> 
 
 
 def test_beatmap_info_reply_empty_collection_matches_isolated_golden_payload() -> None:
-    """empty reply が 4 zero bytes として pack / unpack されることを検証する.
+    """空の reply が 4 zero bytes として pack / unpack されることを検証する.
 
     Returns:
         None: empty collection の固定境界 assertion が成立したことを示す.
