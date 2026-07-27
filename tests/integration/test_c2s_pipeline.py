@@ -1,12 +1,7 @@
-"""Integration tests for C2S handler pipeline (Task 5.1, Req 9.2).
+"""C2S handler pipelineの統合契約を検証する.
 
-Tests the full handler/listener integration with real (in-memory)
-implementations — no mocks.
-
-1. EXIT pipeline: LifecycleHandlers.handle_exit -> InMemoryLocalEventBus
-   -> LifecycleListeners.on_user_disconnected -> InMemoryPacketQueue
-2. HandlerGroup + PacketDispatcher: register_all -> dispatch
-3. ListenerGroup + LocalEventBus: register_all -> fire
+実メモリ実装でEXIT処理とhandler/listener登録を接続する.
+packet配信と未登録入力の取り扱いを確認する.
 """
 
 from __future__ import annotations
@@ -36,7 +31,14 @@ _PACKET_QUEUE_TTL = 300
 
 
 def _make_session_data(user_id: int) -> SessionData:
-    """Create minimal SessionData for testing."""
+    """テスト用の最小接続状態を生成する.
+
+    Args:
+        user_id (int): 生成する接続状態の利用者ID.
+
+    Returns:
+        SessionData: 指定した利用者IDと固定のstable client属性を持つ接続状態.
+    """
     return SessionData(
         user_id=user_id,
         username=f"user_{user_id}",
@@ -51,7 +53,14 @@ def _make_session_data(user_id: int) -> SessionData:
 
 
 def _parse_s2c_header(data: bytes) -> tuple[int, int]:
-    """Parse S2C header -> (packet_id, payload_size). Skip compression byte."""
+    """S2C packet headerからpacket IDとpayload sizeを取り出す.
+
+    Args:
+        data (bytes): S2C packet headerで始まるbyte列.
+
+    Returns:
+        tuple[int, int]: compression flagを除いたpacket IDとpayload size.
+    """
     unpacked: tuple[int, bool, int] = _HEADER_FMT.unpack_from(data)
     packet_id, _, size = unpacked
     return packet_id, size
@@ -63,11 +72,17 @@ def _parse_s2c_header(data: bytes) -> tuple[int, int]:
 
 
 class TestExitPipelineIntegration:
-    """EXIT handler -> LocalEventBus -> Listener -> PacketQueue (Req 9.2)."""
+    """EXIT処理からS2C切断通知までの統合契約を検証する."""
 
     async def test_exit_broadcasts_user_quit_to_other_users(self) -> None:
-        """When user 1 exits, user 2 and user 3 receive USER_QUIT packets
-        with user 1's ID. User 1's queue receives nothing."""
+        """EXIT処理が他の接続利用者だけへUSER_QUITを配信することを検証する.
+
+        3利用者のsessionとpacket queueを構築して利用者1のEXITを処理する.
+        観測結果として利用者2と3だけが利用者1のIDを持つpacketを受信する.
+
+        Returns:
+            None: recipientごとのpacket配信契約を検証して終了する.
+        """
         # Arrange: wire real components
         session_store = InMemorySessionStore()
         event_bus = InMemoryLocalEventBus()
@@ -110,7 +125,14 @@ class TestExitPipelineIntegration:
         assert user1_data == b""
 
     async def test_exit_deletes_session(self) -> None:
-        """EXIT handler deletes the disconnecting user's session."""
+        """EXIT処理が切断利用者のsessionを削除することを検証する.
+
+        接続済み利用者に対してlistener登録済みのhandlerを実行する.
+        観測結果としてsession storeから対象利用者を取得できなくなる.
+
+        Returns:
+            None: session削除契約を検証して終了する.
+        """
         session_store = InMemorySessionStore()
         event_bus = InMemoryLocalEventBus()
         packet_queue = InMemoryPacketQueue()
@@ -135,7 +157,14 @@ class TestExitPipelineIntegration:
         assert await session_store.get_by_user(1) is None
 
     async def test_exit_user_excluded_from_online_list_after_disconnect(self) -> None:
-        """After EXIT, the disconnected user no longer appears in online users."""
+        """EXIT後に切断利用者がonline session一覧から除かれることを検証する.
+
+        2利用者を接続させた後に片方のEXITを処理する.
+        観測結果として切断利用者だけがactive session queryの結果から消える.
+
+        Returns:
+            None: disconnect後のonline session可視性を検証して終了する.
+        """
         session_store = InMemorySessionStore()
         event_bus = InMemoryLocalEventBus()
         packet_queue = InMemoryPacketQueue()
@@ -170,10 +199,17 @@ class TestExitPipelineIntegration:
 
 
 class TestHandlerGroupDispatcherIntegration:
-    """register_all wires handlers so PacketDispatcher.dispatch calls them."""
+    """handler登録とPacketDispatcherの接続契約を検証する."""
 
     async def test_dispatch_calls_registered_handler(self) -> None:
-        """After register_all, dispatching PONG and EXIT calls the correct handlers."""
+        """登録済みPONGとEXITが対応するhandlerへdispatchされることを検証する.
+
+        sessionを持つ利用者にLifecycleHandlersを登録して両packetをdispatchする.
+        観測結果としてPONGは完了しEXITは対象sessionを削除する.
+
+        Returns:
+            None: 登録済みhandlerのdispatch結果を検証して終了する.
+        """
         session_store = InMemorySessionStore()
         event_bus = InMemoryLocalEventBus()
         dispatcher = PacketDispatcher()
@@ -196,7 +232,14 @@ class TestHandlerGroupDispatcherIntegration:
         assert await session_store.get_by_user(42) is None
 
     async def test_unregistered_packet_is_ignored(self) -> None:
-        """Dispatching a packet with no registered handler does not raise."""
+        """未登録packetが例外なしで無視されることを検証する.
+
+        lifecycle handlerだけを登録したdispatcherへSEND_MESSAGEを渡す.
+        観測結果として登録されていないpacketは処理されず正常に完了する.
+
+        Returns:
+            None: 未登録packetのno-op契約を検証して終了する.
+        """
         session_store = InMemorySessionStore()
         event_bus = InMemoryLocalEventBus()
         dispatcher = PacketDispatcher()
@@ -211,7 +254,14 @@ class TestHandlerGroupDispatcherIntegration:
         await dispatcher.dispatch(ClientPacketID.SEND_MESSAGE, b"\x00", user_id=1)
 
     async def test_all_lifecycle_handlers_registered(self) -> None:
-        """register_all registers exactly PONG and EXIT."""
+        """register_allがPONGとEXITだけを登録することを検証する.
+
+        LifecycleHandlersを空のdispatcherへ登録する.
+        観測結果としてregistryは両packet IDを持ち期待する件数になる.
+
+        Returns:
+            None: lifecycle handler registryの内容を検証して終了する.
+        """
         session_store = InMemorySessionStore()
         event_bus = InMemoryLocalEventBus()
         dispatcher = PacketDispatcher()
@@ -234,10 +284,17 @@ class TestHandlerGroupDispatcherIntegration:
 
 
 class TestListenerGroupLocalEventBusIntegration:
-    """register_all wires listeners so LocalEventBus.fire calls them."""
+    """listener登録とLocalEventBusの接続契約を検証する."""
 
     async def test_fire_calls_registered_listener(self) -> None:
-        """After register_all, firing UserDisconnected triggers the listener."""
+        """登録済みUserDisconnected listenerがUSER_QUITを配信することを検証する.
+
+        packetを受信できるonline利用者を用意して切断eventをfireする.
+        観測結果としてrecipient queueに切断利用者IDを持つUSER_QUITが入る.
+
+        Returns:
+            None: listenerによるS2C fan-out契約を検証して終了する.
+        """
         session_store = InMemorySessionStore()
         packet_queue = InMemoryPacketQueue()
         event_bus = InMemoryLocalEventBus()
@@ -268,14 +325,28 @@ class TestListenerGroupLocalEventBusIntegration:
         assert quit_user_id == 99
 
     async def test_unsubscribed_event_type_is_ignored(self) -> None:
-        """Firing an event type with no listener does not raise."""
+        """購読者のないeventが例外なしで無視されることを検証する.
+
+        listenerを登録しないevent busへUserDisconnectedをfireする.
+        観測結果としてevent busは副作用なく正常に完了する.
+
+        Returns:
+            None: 未購読eventのno-op契約を検証して終了する.
+        """
         event_bus = InMemoryLocalEventBus()
 
         # No listeners registered — fire should be a no-op
         await event_bus.fire(UserDisconnected(user_id=1))
 
     async def test_listener_not_triggered_by_wrong_event_type(self) -> None:
-        """LifecycleListeners only responds to UserDisconnected, not others."""
+        """LifecycleListenersがUserDisconnected以外へ反応しないことを検証する.
+
+        online利用者を用意してbare Eventをfireする.
+        観測結果としてrecipient queueにS2C packetは追加されない.
+
+        Returns:
+            None: event型によるlistener絞り込み契約を検証して終了する.
+        """
         session_store = InMemorySessionStore()
         packet_queue = InMemoryPacketQueue()
         event_bus = InMemoryLocalEventBus()
