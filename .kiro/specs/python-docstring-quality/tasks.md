@@ -656,7 +656,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/services rootの4 file_
 
-- [ ] 3.38 (P) Beatmap service/boundary testを整備する
+- [x] 3.38 (P) Beatmap service/boundary testを整備する
   - test_beatmap_boundary_separation.py、test_beatmap_eligibility.py、
     test_beatmap_freshness_policy.py、test_beatmap_mirror_service.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および4 fileのtestが通る
@@ -664,7 +664,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/services rootの4 file_
 
-- [ ] 3.39 (P) Score service testとservices test packageを整備する
+- [x] 3.39 (P) Score service testとservices test packageを整備する
   - tests/unit/services/__init__.pyとtests/unit/services/test_score_*.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および全score service testが通る
   - _Depends: 1.4_
