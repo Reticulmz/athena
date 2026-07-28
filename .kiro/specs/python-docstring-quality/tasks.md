@@ -808,7 +808,7 @@
   - _Boundary: gitlint_rules/**/*.py, athena-crypto/tests/**/*.py, tracked .agents/**/*.py_
 
 - [ ] 5. Gate activation、Sphinx readiness、final validationを行う
-- [ ] 5.1 Repository-wide docstring gateを有効化する
+- [x] 5.1 Repository-wide docstring gateを有効化する
   - 既存のnon-docstring ruleを維持したままRuff global selectへDを追加し、Google conventionの
     documented exclusion以外のdocstring ignoreを追加しない
   - Configuration testを完成させ、global D、D417、interrogate 100%、pydoclint dependency/configの不在、
