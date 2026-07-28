@@ -709,7 +709,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/transports/banchoの5 file_
 
-- [ ] 3.45 (P) Bancho workflow/listener testを整備する
+- [x] 3.45 (P) Bancho workflow/listener testを整備する
   - bancho test package module、listeners/**、test_chat_listeners.py、
     test_login_response_builder.py、test_login_workflow.py、test_polling_workflow.py、
     test_workflow_contracts.pyへ共通条件を適用する
