@@ -198,6 +198,14 @@ def _projection_is_canonical(inspector: Inspector) -> bool:
 
 
 def _column_defaults_are_canonical(columns: dict[str, ReflectedColumn]) -> bool:
+    """Projection columnのdefaultとidentity設定がcanonicalか判定する.
+
+    Args:
+        columns (dict[str, ReflectedColumn]): column名からPostgreSQL reflection結果へのmapping.
+
+    Returns:
+        bool: ID生成とtimestamp defaultが正しく, 他columnにdefaultがなければTrue.
+    """
     id_column = columns.get("id")
     created_at_column = columns.get("created_at")
     updated_at_column = columns.get("updated_at")
@@ -216,16 +224,40 @@ def _column_defaults_are_canonical(columns: dict[str, ReflectedColumn]) -> bool:
 
 
 def _is_nextval_default(column: ReflectedColumn) -> bool:
+    """Column defaultがPostgreSQL sequenceのnextval呼び出しか判定する.
+
+    Args:
+        column (ReflectedColumn): PostgreSQL inspectorが返したcolumn metadata.
+
+    Returns:
+        bool: normalized defaultが`nextval(`で始まる場合はTrue.
+    """
     normalized = _normalized_default(column)
     return normalized is not None and normalized.startswith("nextval(")
 
 
 def _is_current_timestamp_default(column: ReflectedColumn) -> bool:
+    """Column defaultがcanonicalなcurrent timestamp expressionか判定する.
+
+    Args:
+        column (ReflectedColumn): PostgreSQL inspectorが返したcolumn metadata.
+
+    Returns:
+        bool: normalized defaultが許可するnowまたはcurrent_timestamp表現ならTrue.
+    """
     normalized = _normalized_default(column)
     return normalized in {"now()", "(now())", "current_timestamp", "(current_timestamp)"}
 
 
 def _normalized_default(column: ReflectedColumn) -> str | None:
+    """Reflection defaultを比較可能な小文字空白なし文字列へ正規化する.
+
+    Args:
+        column (ReflectedColumn): default値を含む可能性があるPostgreSQL column metadata.
+
+    Returns:
+        str | None: defaultがあればcasefoldと空白除去済み文字列, なければNone.
+    """
     default = column.get("default")
     if default is None:
         return None
@@ -337,7 +369,7 @@ def _replace_projection_table(staging_table: str, *, live_table_exists: bool) ->
 
 
 def lock_projection_updates() -> None:
-    """fallback repairをruntime submitとtransaction内で直列化する.
+    """Fallback repairをruntime submitとtransaction内で直列化する.
 
     Returns:
         None: transaction終了までexclusive maintenance lockを保持したことを示す.
@@ -353,7 +385,7 @@ def lock_projection_updates() -> None:
 
 
 def _projection_rebuild_lock_key() -> int:
-    """projection maintenance用のsigned 64-bit advisory lock keyを返す.
+    """Projection maintenance用のsigned 64-bit advisory lock keyを返す.
 
     Returns:
         int: runtime submit/rebuildと共有するPostgreSQL advisory lock key.
@@ -512,6 +544,14 @@ def _recreate_score_candidate_index() -> None:
 
 
 def _drop_score_candidate_index() -> None:
+    """Score candidate indexを存在時だけconcurrently削除する.
+
+    Returns:
+        None: indexが存在した場合にonline削除を完了したことを示す.
+
+    Notes:
+        callerはPostgreSQLの`DROP INDEX CONCURRENTLY`に必要なautocommit blockを所有する.
+    """
     op.drop_index(
         _SCORE_CANDIDATE_INDEX,
         table_name="scores",

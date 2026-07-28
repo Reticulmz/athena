@@ -1,4 +1,4 @@
-"""create channels messages tables
+"""channelとmessage保存用schemaを作成するmigration.
 
 Revision ID: 20260525_2100
 Revises: 20260522_0811
@@ -17,6 +17,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """channel, access control, message tableと初期channelを作成する.
+
+    Returns:
+        None: chat保存schema, lookup index, 初期channel設定を作成したことを示す.
+
+    Notes:
+        `sa.text("true")`と`sa.text("false")`はtable作成時のdatabase側boolean defaultを
+        表す局所的なDDL expressionとして使用する.
+    """
     # channels
     op.create_table(
         "channels",
@@ -152,6 +161,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """chat保存schemaとseed済みchannelを依存順で削除する.
+
+    Returns:
+        None: message indexとmessage table, channel access control, channel tableを削除したことを
+            示す.
+
+    Notes:
+        seed済みchannelとoverrideはforeign keyの依存順を維持して削除する.
+        text DELETEはchannel table削除前に全overrideと初期channelを削除するために使用する.
+    """
     op.drop_index("idx_private_messages_sender_created", table_name="private_messages")
     op.drop_index("idx_private_messages_target_created", table_name="private_messages")
     op.drop_table("private_messages")

@@ -1,4 +1,4 @@
-"""Rename replays table to replay_file_attachments.
+"""replays tableをreplay_file_attachmentsへrenameするmigration.
 
 Revision ID: 20260612_0021
 Revises: 20260612_0016
@@ -17,6 +17,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """Replay table, index, constraintをattachment terminologyへrenameする.
+
+    Returns:
+        None: replay_file_attachments用のtable名とdatabase object名へ移行したことを示す.
+
+    Notes:
+        PostgreSQLの`ALTER ... RENAME`と条件付き`DO $$` blockは, 存在しない自動命名
+        constraintを安全に扱いながらrenameするAlembic operation APIがないため使用する.
+    """
     op.rename_table("replays", "replay_file_attachments")
     op.execute(
         "ALTER INDEX IF EXISTS idx_replays_score_id RENAME TO idx_replay_file_attachments_score_id"
@@ -45,6 +54,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Replay attachmentのtable, index, constraintを旧名称へ戻す.
+
+    Returns:
+        None: replays用のtable名とdatabase object名を復元したことを示す.
+
+    Notes:
+        PostgreSQLの`ALTER ... RENAME`と条件付き`DO $$` blockは, 環境ごとに異なり得る
+        自動命名constraintの存在を確認してから復元するために使用する.
+    """
     op.execute(
         """
         DO $$

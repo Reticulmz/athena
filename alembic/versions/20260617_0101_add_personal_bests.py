@@ -1,4 +1,4 @@
-"""Add personal best projection table.
+"""personal best projection保存用tableを作成するmigration.
 
 Revision ID: 20260617_0101
 Revises: 20260616_0100
@@ -22,6 +22,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """userごとのpersonal best projectionとlookup indexを作成する.
+
+    Returns:
+        None: score foreign keyとscope unique indexを持つpersonal_bestsを作成したことを示す.
+    """
     op.create_table(
         "personal_bests",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
@@ -66,6 +71,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Personal best projectionのindexとtableを削除する.
+
+    Returns:
+        None: personal_bestsとそのlookup indexを削除したことを示す.
+    """
     op.drop_index("idx_personal_bests_beatmap_category", table_name="personal_bests")
     op.drop_index("idx_personal_bests_score_id", table_name="personal_bests")
     op.drop_index("idx_personal_bests_scope_unique", table_name="personal_bests")

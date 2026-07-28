@@ -1,4 +1,4 @@
-"""Add score submission diagnostic fields.
+"""score submission diagnostic fieldを追加するmigration.
 
 Revision ID: 20260613_0023
 Revises: 20260612_0022
@@ -18,6 +18,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """submission時のbeatmap statusを保存するnullable columnを追加する.
+
+    Returns:
+        None: scoresへbeatmap_status_at_submissionを追加したことを示す.
+    """
     op.add_column(
         "scores",
         sa.Column("beatmap_status_at_submission", sa.String(32), nullable=True),
@@ -25,4 +30,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """submission時のbeatmap status columnを削除する.
+
+    Returns:
+        None: scoresからbeatmap_status_at_submissionを削除したことを示す.
+    """
     op.drop_column("scores", "beatmap_status_at_submission")

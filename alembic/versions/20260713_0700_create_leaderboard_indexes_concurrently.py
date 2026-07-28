@@ -72,6 +72,15 @@ def downgrade() -> None:
 
 
 def _repair_score_candidate_index() -> None:
+    """Score candidate indexがcurrent definitionでなければonline置換する.
+
+    Returns:
+        None: currentかつvalidなcandidate indexを確保したことを示す.
+
+    Notes:
+        indexが不足, 誤定義, INVALIDのときだけ`DROP INDEX CONCURRENTLY`と
+        `CREATE INDEX CONCURRENTLY`を実行する.
+    """
     if _score_candidate_index_is_current():
         return
 
@@ -103,6 +112,11 @@ def _repair_score_candidate_index() -> None:
 
 
 def _score_candidate_index_is_current() -> bool:
+    """Score candidate indexのcolumn, sort, predicate定義がcurrentか判定する.
+
+    Returns:
+        bool: indexの非一意性, column順, sort順, predicate, validityがすべて一致すればTrue.
+    """
     inspector = sa.inspect(op.get_bind())
     candidate_index = next(
         (
@@ -134,6 +148,11 @@ def _score_candidate_index_is_current() -> bool:
 
 
 def _score_candidate_index_is_valid() -> bool:
+    """PostgreSQL catalogからscore candidate indexの使用可能状態を確認する.
+
+    Returns:
+        bool: current schemaのindexが存在し, indisvalidとindisreadyがともにTrueならTrue.
+    """
     pg_index = sa.table(
         "pg_index",
         sa.column("indexrelid", sa.BigInteger()),
@@ -174,6 +193,17 @@ def _score_candidate_index_is_valid() -> bool:
 def _score_candidate_sorting_is_compatible(
     column_sorting: dict[str, tuple[str, ...]],
 ) -> bool:
+    """Reflected index sort optionがleaderboard rankingと互換か判定する.
+
+    Args:
+        column_sorting (dict[str, tuple[str, ...]]): index column名ごとのPostgreSQL sort option.
+
+    Returns:
+        bool: scoreがDESCで他のkeyがDESCでなければTrue.
+
+    Notes:
+        index keyはNOT NULLのため, NULLS FIRST/LASTの差異はranking contractを変えない.
+    """
     score_options = frozenset(column_sorting.get("score", ()))
     if "desc" not in score_options or "asc" in score_options:
         return False
@@ -187,6 +217,15 @@ def _score_candidate_sorting_is_compatible(
 
 
 def _score_candidate_predicate_columns(expression: object) -> frozenset[str] | None:
+    """Partial index predicateからtrueを要求するcolumn集合を抽出する.
+
+    Args:
+        expression (object): PostgreSQL inspectorが返すpredicate表現.
+
+    Returns:
+        frozenset[str] | None: passedとeligibilityだけのAND条件ならそのcolumn集合,
+            正規形が異なればNone.
+    """
     normalized = " ".join(str(expression).casefold().replace('"', "").split())
     normalized = normalized.replace("(", "").replace(")", "")
     normalized = normalized.replace(f"{_SCORE_TABLE}.", "")
@@ -204,6 +243,14 @@ def _score_candidate_predicate_columns(expression: object) -> frozenset[str] | N
 
 
 def _true_boolean_predicate_column(term: str) -> str | None:
+    """Boolean trueを表すpredicate termから対象column名を解決する.
+
+    Args:
+        term (str): 空白と型castを含む可能性がある正規化済みpredicate term.
+
+    Returns:
+        str | None: 対応するcandidate predicate column名, 解決できなければNone.
+    """
     compact = term.replace(" ", "").replace("::boolean", "")
     for column_name in _SCORE_CANDIDATE_PREDICATE_COLUMNS:
         if compact in {
@@ -220,6 +267,14 @@ def _true_boolean_predicate_column(term: str) -> str | None:
 
 
 def _drop_rank_indexes() -> None:
+    """GlobalとMod scopeのrank indexを存在時だけonline削除する.
+
+    Returns:
+        None: 2つのrank indexを削除または不在のまま確認したことを示す.
+
+    Notes:
+        callerはPostgreSQL concurrent DDLに必要なautocommit blockを所有する.
+    """
     op.drop_index(
         _MOD_RANK_INDEX,
         table_name=_PROJECTION_TABLE,
@@ -235,6 +290,14 @@ def _drop_rank_indexes() -> None:
 
 
 def _create_rank_indexes() -> None:
+    """GlobalとMod scopeのleaderboard read indexをonline作成する.
+
+    Returns:
+        None: rank queryのorderを支える2つのconcurrent indexを作成したことを示す.
+
+    Notes:
+        callerはPostgreSQLの`CREATE INDEX CONCURRENTLY`に必要なautocommit blockを所有する.
+    """
     op.create_index(
         _GLOBAL_RANK_INDEX,
         _PROJECTION_TABLE,

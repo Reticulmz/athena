@@ -1,4 +1,4 @@
-"""Use blob_id for replay file attachments.
+"""replay file attachmentをblob ID参照へ移行するmigration.
 
 Revision ID: 20260612_0022
 Revises: 20260612_0021
@@ -18,6 +18,18 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """Replay attachmentのblob_keyをblob_id foreign keyへ置換する.
+
+    Returns:
+        None: blob_idのbackfill, 検証, index, foreign key追加を完了したことを示す.
+
+    Raises:
+        SQLAlchemyError: blob storage keyに対応するrowがない場合, またはschema変更に失敗した場合.
+
+    Notes:
+        text UPDATEはattachmentとblobのjoin backfillを表し, `DO $$` blockはNULL mappingを
+        transaction内で検出してmigrationを中断するPostgreSQL固有の検証に使用する.
+    """
     op.add_column("replay_file_attachments", sa.Column("blob_id", sa.Integer(), nullable=True))
     op.execute(
         """
@@ -64,6 +76,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Replay attachmentのblob_idをblob_key参照へ戻す.
+
+    Returns:
+        None: blob_keyのbackfill, 検証, foreign keyとindexの削除を完了したことを示す.
+
+    Raises:
+        SQLAlchemyError: blob IDに対応するrowがない場合, またはschema変更に失敗した場合.
+
+    Notes:
+        text UPDATEはblob IDからstorage keyを復元し, `DO $$` blockは復元不能なrowを
+        table変更前に検出するPostgreSQL固有の検証に使用する.
+    """
     op.add_column(
         "replay_file_attachments",
         sa.Column("blob_key", sa.String(255), nullable=True),
