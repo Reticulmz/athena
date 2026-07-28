@@ -739,7 +739,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/transports/web_legacy/{__init__,test_replay_download_*,test_score_*}.py_
 
-- [ ] 3.49 (P) Database、migration、SQLAlchemy integration testを整備する
+- [x] 3.49 (P) Database、migration、SQLAlchemy integration testを整備する
   - test_database.py、test_enum_scope_migration_postgresql.py、test_sqlalchemy_*.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有integration testが通る
   - _Depends: 1.4_
