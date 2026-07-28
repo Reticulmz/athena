@@ -1,4 +1,4 @@
-"""安定版 legacy score submit mapper の unit test。"""
+"""Stable score submit mapperのmultipart decodeとchart response contractを検証する."""
 
 from __future__ import annotations
 
@@ -50,6 +50,14 @@ _OVERALL_CHART_REQUIRED_FIELDS = (
 
 
 def _valid_multipart_body(password_md5: bytes = b"password_md5_hash") -> bytes:
+    """Stable score submit mapperへ渡すvalid multipart request bodyを構築する.
+
+    Args:
+        password_md5 (bytes): pass fieldへ設定するsynthetic password MD5 bytes.
+
+    Returns:
+        bytes: encrypted payload, IV, credential, metadata, replayを含むmultipart body.
+    """
     encrypted_payload = base64.b64encode(b"encrypted_payload_data")
     iv = base64.b64encode(b"0" * 32)
 
@@ -88,19 +96,13 @@ def _valid_multipart_body(password_md5: bytes = b"password_md5_hash") -> bytes:
 
 
 def test_score_submit_mapper_converts_multipart_to_request_mapping() -> None:
-    """安定版 multipart body を復号前 request mapping に変換する。
-
-    Args:
-        なし。
+    """Stable multipart bodyをpre-decode request mappingへ変換するcontractを検証する.
 
     Returns:
-        None。
+        None: encrypted payload, IV, credential, metadata fieldのmappingを確認して完了する.
 
-    Raises:
-        AssertionError: encrypted payload, IV, metadata の mapping が期待と異なる場合。
-
-    Constraints:
-        replay binary と opaque metadata の生値は transport mapping 内だけで検証する。
+    Notes:
+        replay binaryとopaque metadataのraw valueはtransport mapping内だけで検証する.
     """
     mapper = StableScoreSubmitMapper()
     submitted_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
@@ -122,19 +124,13 @@ def test_score_submit_mapper_converts_multipart_to_request_mapping() -> None:
 
 
 def test_score_submit_decoder_converts_request_mapping_to_command_input() -> None:
-    """要求 mapping を command input へ変換する。
-
-    Args:
-        なし。
+    """Request mappingをdecoded command inputへ変換するcontractを検証する.
 
     Returns:
-        None。
+        None: parsed score, request hash, opaque hash, replay dataのmappingを確認して完了する.
 
-    Raises:
-        AssertionError: parsed score, request hash, opaque hash の変換結果が異なる場合。
-
-    Constraints:
-        token は SHA-256 hash として command input に入ることだけを検証する。
+    Notes:
+        tokenはSHA-256 hashとしてcommand inputへ入ることだけを検証する.
     """
     mapper = StableScoreSubmitMapper()
     submitted_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
@@ -160,19 +156,13 @@ def test_score_submit_decoder_converts_request_mapping_to_command_input() -> Non
 
 
 def test_score_submit_request_hash_ignores_password_md5_hex_case() -> None:
-    """Password MD5 hex の大小文字差は request hash と command input に残さない.
-
-    Args:
-        なし.
+    """Password MD5 hex case differenceがrequest hashを分岐させないcontractを検証する.
 
     Returns:
-        None.
+        None: canonicalized credentialとequal request hashを確認して完了する.
 
-    Raises:
-        AssertionError: 大小文字だけが異なる password MD5 hex で request hash が分岐する場合.
-
-    Constraints:
-        32文字 hex credential だけを canonicalize し, その他の credential は対象外とする.
+    Notes:
+        32文字hex credentialだけをcanonicalizeし他のcredentialは対象外とする.
     """
     mapper = StableScoreSubmitMapper()
     submitted_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
@@ -197,19 +187,13 @@ def test_score_submit_request_hash_ignores_password_md5_hex_case() -> None:
 
 
 def test_score_submit_decoder_rejects_invalid_crypto_checksum() -> None:
-    """検査 checksum 不一致を stable decode error に変換する。
-
-    Args:
-        なし。
+    """Crypto checksum mismatchをstable decode errorへ変換するcontractを検証する.
 
     Returns:
-        None。
+        None: crypto_checksum_invalid reasonとterminal resultを確認して完了する.
 
-    Raises:
-        AssertionError: decode error の reason と response result が期待と異なる場合。
-
-    Constraints:
-        checksum 不一致では payload parse に進まない。
+    Notes:
+        checksum mismatchではpayload parseへ進まない.
     """
     mapper = StableScoreSubmitMapper()
     request_mapping = mapper.to_request_mapping(
@@ -228,19 +212,13 @@ def test_score_submit_decoder_rejects_invalid_crypto_checksum() -> None:
 
 
 def test_score_submit_decoder_rejects_unparseable_payload() -> None:
-    """解析不能 payload を sanitized decode error に変換する。
-
-    Args:
-        なし。
+    """Unparseable payloadをsanitized stable decode errorへ変換するcontractを検証する.
 
     Returns:
-        None。
+        None: parse_failed reasonとraw ParseError detailの非露出を確認して完了する.
 
-    Raises:
-        AssertionError: raw ParseError details が error に含まれる場合。
-
-    Constraints:
-        client response と log 用 error は固定ラベルだけを保持する。
+    Notes:
+        client responseとlog用errorはfixed labelだけを保持する.
     """
     mapper = StableScoreSubmitMapper()
     request_mapping = mapper.to_request_mapping(
@@ -261,6 +239,11 @@ def test_score_submit_decoder_rejects_unparseable_payload() -> None:
 
 
 def test_score_submit_mapper_formats_completed_response() -> None:
+    """Completed submissionをstable beatmapとoverall chart responseへformatするcontractを検証する.
+
+    Returns:
+        None: metadata line, required chart field, sensitive value非露出を確認して完了する.
+    """
     mapper = StableScoreSubmitMapper(stable_web_base_url="https://osu.athena.localhost")
 
     response = mapper.to_response(
@@ -325,6 +308,11 @@ def test_score_submit_mapper_formats_completed_response() -> None:
 
 
 def test_score_submit_mapper_formats_overall_stats_delta() -> None:
+    """Overall stats before/afterをstable overall chart deltaへformatするcontractを検証する.
+
+    Returns:
+        None: rank, score, combo, accuracy, PPのbefore/after fieldを確認して完了する.
+    """
     mapper = StableScoreSubmitMapper()
 
     response = mapper.to_response(
@@ -380,6 +368,11 @@ def test_score_submit_mapper_formats_overall_stats_delta() -> None:
 
 
 def test_score_submit_mapper_formats_personal_best_delta_values() -> None:
+    """Personal best deltaをstable beatmap chart before/after fieldへformatするcontractを検証する.
+
+    Returns:
+        None: score, combo, accuracy, PP, online score IDのfieldを確認して完了する.
+    """
     mapper = StableScoreSubmitMapper()
 
     response = mapper.to_response(
@@ -425,6 +418,11 @@ def test_score_submit_mapper_formats_personal_best_delta_values() -> None:
 
 
 def test_score_submit_mapper_formats_beatmap_rank_delta() -> None:
+    """Beatmap rank deltaをstable beatmap chartのrank fieldへformatするcontractを検証する.
+
+    Returns:
+        None: rankBeforeとrankAfterがexpected rankを持つことを確認して完了する.
+    """
     mapper = StableScoreSubmitMapper()
 
     response = mapper.to_response(
@@ -451,6 +449,11 @@ def test_score_submit_mapper_formats_beatmap_rank_delta() -> None:
 
 
 def test_score_submit_mapper_formats_failed_score_passcount_as_zero() -> None:
+    """Failed scoreがbeatmap passcount 0とachieved falseへformatされるcontractを検証する.
+
+    Returns:
+        None: metadata passcountとbeatmap chart achieved fieldを確認して完了する.
+    """
     mapper = StableScoreSubmitMapper()
 
     response = mapper.to_response(
@@ -480,6 +483,11 @@ def test_score_submit_mapper_formats_failed_score_passcount_as_zero() -> None:
 
 
 def test_score_submit_mapper_formats_completed_response_without_pp_as_zero() -> None:
+    """Unavailable performance pointがcompleted responseで0へformatされるcontractを検証する.
+
+    Returns:
+        None: ppAfter 0とinternal performance error detailの非露出を確認して完了する.
+    """
     mapper = StableScoreSubmitMapper()
 
     response = mapper.to_response(
@@ -502,6 +510,11 @@ def test_score_submit_mapper_formats_completed_response_without_pp_as_zero() -> 
 
 
 def test_score_submit_mapper_formats_rejection_and_retry_responses() -> None:
+    """Retryableとterminal rejectionがlegacy error bodyへformatされるcontractを検証する.
+
+    Returns:
+        None: error: yesとerror: no bodyおよびinternal reasonの非露出を確認して完了する.
+    """
     mapper = StableScoreSubmitMapper()
 
     retryable = mapper.to_response(
