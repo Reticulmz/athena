@@ -1,9 +1,4 @@
-"""Getscores response formatter unit tests.
-
-TDD RED -> GREEN -> REFACTOR.
-Validates response body formatting: short bodies, header bodies,
-delimiter sanitization, and fixture compatibility.
-"""
+"""Getscores response formatterのshort body, header body, sanitization contractを検証する."""
 
 from __future__ import annotations
 
@@ -46,6 +41,14 @@ _BODY_ROOT = _FIXTURE_ROOT / "web_legacy" / "getscores" / "completion"
 
 
 def _response_body(response: Response) -> bytes:
+    """Starlette responseからformatter検証用のbody bytesを取得する.
+
+    Args:
+        response (Response): Getscores formatterが返したHTTP response.
+
+    Returns:
+        bytes: response bodyのimmutable bytes copy.
+    """
     return bytes(response.body)
 
 
@@ -55,6 +58,16 @@ def _make_beatmap(
     beatmapset_id: int = 1,
     official_status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
 ) -> Beatmap:
+    """Getscores header formatting用のbeatmap fixtureを構築する.
+
+    Args:
+        beatmap_id (int): header first lineへ入れるbeatmap ID.
+        beatmapset_id (int): header first lineへ入れるbeatmapset ID.
+        official_status (BeatmapRankStatus): formatterがstatusを導出するofficial status.
+
+    Returns:
+        Beatmap: fresh metadataとmissing osu file stateを持つbeatmap fixture.
+    """
     return Beatmap(
         id=beatmap_id,
         beatmapset_id=beatmapset_id,
@@ -88,6 +101,16 @@ def _make_beatmapset(
     artist: str = "Camellia",
     title: str = "Exit This Earth's Atomosphere",
 ) -> BeatmapSet:
+    """Getscores display line用のbeatmapset fixtureを構築する.
+
+    Args:
+        beatmapset_id (int): beatmapset identityとして設定するID.
+        artist (str): display lineへ設定するartist text.
+        title (str): display lineへ設定するtitle text.
+
+    Returns:
+        BeatmapSet: 指定artistとtitleを持つranked beatmapset fixture.
+    """
     return BeatmapSet(
         id=beatmapset_id,
         artist=artist,
@@ -123,6 +146,29 @@ def _make_personal_best(
     rank: int = 3,
     submitted_at: datetime = _NOW,
 ) -> GetscoresPersonalBest:
+    """Getscores personal bestまたはscore row fixtureを構築する.
+
+    Args:
+        score_id (int): score row identityとして設定するID.
+        user_id (int): scoreを所有するuser ID.
+        username (str): wire rowへ設定するusername.
+        score (int): legacy score fieldへ設定するscore値.
+        max_combo (int): rowへ設定する最大combo値.
+        n50 (int): 50 hit count.
+        n100 (int): 100 hit count.
+        n300 (int): 300 hit count.
+        miss (int): miss count.
+        katu (int): katu count.
+        geki (int): geki count.
+        perfect (bool): full combo flag.
+        mods (int): legacy mod bitmask.
+        has_replay (bool): replay availability flag.
+        rank (int): leaderboard rank.
+        submitted_at (datetime): score submission timestamp.
+
+    Returns:
+        GetscoresPersonalBest: stable score listing formatへ変換可能なfixture.
+    """
     return GetscoresPersonalBest(
         score_id=score_id,
         user_id=user_id,
@@ -147,6 +193,14 @@ def _make_personal_best(
 
 
 def _expected_score_row(row: GetscoresPersonalBest) -> bytes:
+    """Personal bestをexpected stable score row bytesへencodeする.
+
+    Args:
+        row (GetscoresPersonalBest): expected wire fieldを提供するpersonal best fixture.
+
+    Returns:
+        bytes: pipe-delimited stable score row bytes.
+    """
     return (
         f"{row.score_id}|{row.username}|{row.score}|{row.max_combo}|{row.n50}|"
         f"{row.n100}|{row.n300}|{row.miss}|{row.katu}|{row.geki}|"
@@ -161,13 +215,21 @@ def _expected_score_row(row: GetscoresPersonalBest) -> bytes:
 
 
 def test_format_unavailable_returns_short_body() -> None:
-    """Unavailable outcome formats as '-1|false'."""
+    """Unavailable outcomeが-1|false short bodyへformatされるcontractを検証する.
+
+    Returns:
+        None: exact unavailable bodyを確認して完了する.
+    """
     body = _response_body(format_getscores_unavailable_response())
     assert body == b"-1|false"
 
 
 def test_format_update_available_returns_short_body() -> None:
-    """UpdateAvailable outcome formats as '1|false'."""
+    """UpdateAvailable outcomeが1|false short bodyへformatされるcontractを検証する.
+
+    Returns:
+        None: exact update-available bodyを確認して完了する.
+    """
     body = _response_body(format_getscores_update_available_response())
     assert body == b"1|false"
 
@@ -178,7 +240,11 @@ def test_format_update_available_returns_short_body() -> None:
 
 
 def test_header_first_line_format() -> None:
-    """First line: <status>|false|<beatmap_id>|<beatmapset_id>|0||"""
+    """Header first lineがstatusとbeatmap identityをwire順に持つcontractを検証する.
+
+    Returns:
+        None: exact pipe-delimited first lineを確認して完了する.
+    """
     beatmap = _make_beatmap(beatmap_id=75, beatmapset_id=1)
     beatmapset = _make_beatmapset(beatmapset_id=1)
 
@@ -194,7 +260,11 @@ def test_header_first_line_format() -> None:
 
 
 def test_header_score_count_is_zero_without_rows() -> None:
-    """Score count is 0 when there are no returned rows."""
+    """Score rowがないheaderのscore countを0にするcontractを検証する.
+
+    Returns:
+        None: first lineのscore count fieldが0であることを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -208,6 +278,11 @@ def test_header_score_count_is_zero_without_rows() -> None:
 
 
 def test_header_score_count_uses_returned_rows_not_personal_best() -> None:
+    """Header score countがpersonal bestではなくreturned row数を使うcontractを検証する.
+
+    Returns:
+        None: score count fieldがreturned row数と一致することを確認して完了する.
+    """
     personal_best = _make_personal_best(score_id=99, rank=99)
     rows = (
         _make_personal_best(score_id=101, user_id=11, username="Top 1", rank=1),
@@ -303,7 +378,11 @@ def test_header_with_rows_matches_exact_fixture_after_sanitization() -> None:
 
 
 def test_header_failed_flag_is_false() -> None:
-    """Failed flag must be 'false' (requirement 8.6)."""
+    """Header failed flagをfalseへ固定するcontractを検証する.
+
+    Returns:
+        None: first lineのfailed fieldがfalseであることを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -322,7 +401,11 @@ def test_header_failed_flag_is_false() -> None:
 
 
 def test_header_body_line_count() -> None:
-    """Header body has exactly 6 lines (4 data + 2 blank sections, ending with newline)."""
+    """Header bodyが4 data lineと2 blank sectionを持つcontractを検証する.
+
+    Returns:
+        None: terminal newlineを含むsplit entry数とblank sectionを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -339,6 +422,11 @@ def test_header_body_line_count() -> None:
 
 
 def test_header_only_listing_has_empty_personal_best_and_rows_sections() -> None:
+    """Header-only listingがpersonal bestとscore row sectionをemptyにするcontractを検証する.
+
+    Returns:
+        None: 2つのblank sectionとterminal newline entryを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -351,7 +439,11 @@ def test_header_only_listing_has_empty_personal_best_and_rows_sections() -> None
 
 
 def test_header_second_line_is_beatmap_offset() -> None:
-    """Second line is the beatmap offset (integer, '0' in MVP) (requirement 11.3)."""
+    """Header second lineがMVP beatmap offset 0となるcontractを検証する.
+
+    Returns:
+        None: second lineのexact byte値を確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -364,7 +456,11 @@ def test_header_second_line_is_beatmap_offset() -> None:
 
 
 def test_header_third_line_is_display_title() -> None:
-    """Third line is [bold:0,size:20]artist|title (requirement 11.4)."""
+    """Header third lineがbbcode prefix付きartist|titleとなるcontractを検証する.
+
+    Returns:
+        None: display lineのexact byte値を確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -377,7 +473,11 @@ def test_header_third_line_is_display_title() -> None:
 
 
 def test_header_fourth_line_is_rating() -> None:
-    """Fourth line is the rating (0 in MVP) (requirement 11.5)."""
+    """Header fourth lineがMVP rating 0となるcontractを検証する.
+
+    Returns:
+        None: fourth lineのexact byte値を確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -390,7 +490,11 @@ def test_header_fourth_line_is_rating() -> None:
 
 
 def test_header_response_ends_with_newline() -> None:
-    """Header body terminates with a newline."""
+    """Header responseがterminal newlineで終わるcontractを検証する.
+
+    Returns:
+        None: body末尾がnewline byteであることを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -402,7 +506,11 @@ def test_header_response_ends_with_newline() -> None:
 
 
 def test_header_personal_best_row_uses_stable_score_listing_format() -> None:
-    """Personal best row follows Bancho score row field order."""
+    """Personal best rowがstable score listing field orderを保つcontractを検証する.
+
+    Returns:
+        None: personal best sectionのexpected score row bytesを確認して完了する.
+    """
     personal_best = _make_personal_best()
     body = _response_body(
         format_getscores_header_response(
@@ -420,6 +528,11 @@ def test_header_personal_best_row_uses_stable_score_listing_format() -> None:
 
 
 def test_personal_best_can_duplicate_a_returned_row() -> None:
+    """Personal bestがreturned score rowと同一でも両sectionへ出るcontractを検証する.
+
+    Returns:
+        None: personal bestとscore rowに同じscore bytesが存在することを確認して完了する.
+    """
     personal_best = _make_personal_best(score_id=42, rank=3)
 
     body = _response_body(
@@ -439,6 +552,11 @@ def test_personal_best_can_duplicate_a_returned_row() -> None:
 
 
 def test_personal_best_outside_returned_rows_keeps_its_actual_rank() -> None:
+    """Returned row外のpersonal bestが実際のrankを保つcontractを検証する.
+
+    Returns:
+        None: personal bestとtop rowがそれぞれのrankを保持することを確認して完了する.
+    """
     personal_best = _make_personal_best(score_id=200, user_id=20, score=100_000, rank=51)
     top_row = _make_personal_best(score_id=100, user_id=10, username="Top", score=999_999, rank=1)
 
@@ -461,6 +579,11 @@ def test_personal_best_outside_returned_rows_keeps_its_actual_rank() -> None:
 
 
 def test_personal_best_username_is_sanitized() -> None:
+    """Personal best username内のwire delimiterとnewlineをsanitizeするcontractを検証する.
+
+    Returns:
+        None: unsanitized delimiterがなくreplay flagが保たれることを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -481,7 +604,11 @@ def test_personal_best_username_is_sanitized() -> None:
 
 
 def test_pipe_delimiter_in_artist_is_replaced() -> None:
-    """Pipe in artist is replaced to avoid breaking delimited format (requirement 11.7)."""
+    """Artist内のpipe delimiterを置換してwire formatを保つcontractを検証する.
+
+    Returns:
+        None: display lineにunsanitized pipeがないことを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -495,7 +622,11 @@ def test_pipe_delimiter_in_artist_is_replaced() -> None:
 
 
 def test_pipe_delimiter_in_title_is_replaced() -> None:
-    """Pipe in title is replaced (requirement 11.7)."""
+    """Title内のpipe delimiterを置換してwire formatを保つcontractを検証する.
+
+    Returns:
+        None: display lineにunsanitized titleがないことを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -508,7 +639,11 @@ def test_pipe_delimiter_in_title_is_replaced() -> None:
 
 
 def test_line_break_in_artist_is_replaced() -> None:
-    """Line breaks in artist are replaced (requirement 11.8)."""
+    """Artist内のline breakを置換してwire lineを保つcontractを検証する.
+
+    Returns:
+        None: display lineにartistのunsanitized newlineがないことを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -521,7 +656,11 @@ def test_line_break_in_artist_is_replaced() -> None:
 
 
 def test_line_break_in_title_is_replaced() -> None:
-    """Line breaks in title are replaced (requirement 11.8)."""
+    """Title内のline breakを置換してwire lineを保つcontractを検証する.
+
+    Returns:
+        None: display lineにtitleのunsanitized newlineがないことを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -539,7 +678,11 @@ def test_line_break_in_title_is_replaced() -> None:
 
 
 def test_header_body_has_no_provenance_fields() -> None:
-    """Header body must not expose internal provenance fields (requirement 12.5)."""
+    """Header bodyがinternal provenance fieldを露出しないcontractを検証する.
+
+    Returns:
+        None: source, verification, fetch state fieldがないことを確認して完了する.
+    """
     body = _response_body(
         format_getscores_header_response(
             status=2,
@@ -554,7 +697,11 @@ def test_header_body_has_no_provenance_fields() -> None:
 
 
 def test_short_body_has_no_provenance_fields() -> None:
-    """Short bodies must not expose provenance fields."""
+    """Short bodyがinternal provenance fieldを露出しないcontractを検証する.
+
+    Returns:
+        None: unavailableとupdate bodyにforbidden fieldがないことを確認して完了する.
+    """
     for body in (
         _response_body(format_getscores_unavailable_response()),
         _response_body(format_getscores_update_available_response()),
@@ -571,7 +718,11 @@ def test_short_body_has_no_provenance_fields() -> None:
 
 
 def test_formatter_output_is_plain_text_no_chunk_framing() -> None:
-    """All formatter output must be plain text without chunk framing (requirement 11.9)."""
+    """Formatter outputがHTTP chunk framingなしのplain textとなるcontractを検証する.
+
+    Returns:
+        None: short bodyとheader bodyにchunk markerがないことを確認して完了する.
+    """
     bodies = [
         _response_body(format_getscores_unavailable_response()),
         _response_body(format_getscores_update_available_response()),
@@ -595,6 +746,11 @@ def test_formatter_output_is_plain_text_no_chunk_framing() -> None:
 
 
 def test_module_formatter_helpers_have_expected_interface() -> None:
+    """Getscores formatter moduleがrequired helper interfaceを公開するcontractを検証する.
+
+    Returns:
+        None: 3つのformatter helperがcallableであることを確認して完了する.
+    """
     assert callable(format_getscores_unavailable_response)
     assert callable(format_getscores_update_available_response)
     assert callable(format_getscores_header_response)
