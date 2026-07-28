@@ -1,4 +1,4 @@
-"""Add score submit timing fields.
+"""score submit timing fieldを追加するmigration.
 
 Revision ID: 20260628_0100
 Revises: 20260618_0100
@@ -27,6 +27,11 @@ _PLAY_TIME_SOURCE_CHECK = "play_time_source IS NULL OR play_time_source IN ({})"
 
 
 def upgrade() -> None:
+    """Score submit時刻とplay timeの補助fieldおよびvalidationを追加する.
+
+    Returns:
+        None: timing columnと非負値およびsource値のCHECK constraintを追加したことを示す.
+    """
     op.add_column("scores", sa.Column("fail_time_ms", sa.Integer(), nullable=True))
     op.add_column("scores", sa.Column("play_time_seconds", sa.Integer(), nullable=True))
     op.add_column("scores", sa.Column("play_time_source", sa.String(length=32), nullable=True))
@@ -52,6 +57,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Score submit timing fieldとvalidationを削除する.
+
+    Returns:
+        None: timing関連CHECK constraintとscores columnを削除したことを示す.
+    """
     op.drop_constraint("ck_scores_play_time_source_known", "scores", type_="check")
     op.drop_constraint("ck_scores_play_time_seconds_non_negative", "scores", type_="check")
     op.drop_constraint("ck_scores_fail_time_ms_non_negative", "scores", type_="check")

@@ -1,4 +1,4 @@
-"""Add beatmap performance best projection.
+"""beatmap performance best projectionを追加するmigration.
 
 Revision ID: 20260628_0200
 Revises: 20260628_0100
@@ -24,6 +24,15 @@ _EXCLUDED_INITIAL_STATS_MODS = 8320
 
 
 def upgrade() -> None:
+    """Score performanceからuser別beatmap best projectionを作成してbackfillする.
+
+    Returns:
+        None: projection table, rank index, 初期winner rowを作成したことを示す.
+
+    Notes:
+        `sa.text("pp DESC")`はdescending keyを含むPostgreSQL index expressionをAlembicへ
+        渡す局所的なtextual DDL fragmentとして使用する.
+    """
     _ = op.create_table(
         "beatmap_performance_bests",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
@@ -93,6 +102,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Beatmap performance best projectionを削除する.
+
+    Returns:
+        None: projectionのindexとbeatmap_performance_bests tableを削除したことを示す.
+    """
     op.drop_index(
         "idx_beatmap_performance_bests_user_rebuild",
         table_name="beatmap_performance_bests",
@@ -109,6 +123,15 @@ def downgrade() -> None:
 
 
 def _backfill_beatmap_performance_bests() -> None:
+    """初期performance projectionをcurrent score calculationからbackfillする.
+
+    Returns:
+        None: user, beatmap, ruleset, playstyleごとの最高PP rowを保存したことを示す.
+
+    Notes:
+        text SQLはwindow ranking, current calculation条件, bitmask filterを単一の
+        `INSERT ... SELECT`で実行するために使用する.
+    """
     op.execute(
         sa.text(
             """

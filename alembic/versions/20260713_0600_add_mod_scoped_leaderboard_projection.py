@@ -97,7 +97,7 @@ def downgrade() -> None:
 
 
 def _create_mod_scoped_projection_table(table_name: str) -> None:
-    """raw Mod別projection用の空staging tableを作成する.
+    """Raw Mod別projection用の空staging tableを作成する.
 
     Args:
         table_name (str): live tableと競合しないstaging table名.
@@ -198,7 +198,7 @@ def _replace_projection_table(staging_table: str) -> None:
 
 
 def lock_projection_updates() -> None:
-    """migration rebuildをruntime submitとtransaction内で直列化する.
+    """Migration rebuildをruntime submitとtransaction内で直列化する.
 
     Returns:
         None: transaction終了までexclusive maintenance lockを保持したことを示す.
@@ -214,7 +214,7 @@ def lock_projection_updates() -> None:
 
 
 def _projection_rebuild_lock_key() -> int:
-    """projection maintenance用のsigned 64-bit advisory lock keyを返す.
+    """Projection maintenance用のsigned 64-bit advisory lock keyを返す.
 
     Returns:
         int: runtime submit/rebuildと共有するPostgreSQL advisory lock key.
@@ -231,7 +231,7 @@ def _rebuild_projection(
     *,
     partition_by_mods: bool,
 ) -> None:
-    """source ScoresからGlobalまたはraw Mod別winnerをstaging tableへ保存する.
+    """Source ScoresからGlobalまたはraw Mod別winnerをstaging tableへ保存する.
 
     Args:
         projection_table (str): backfill対象のstaging table名.

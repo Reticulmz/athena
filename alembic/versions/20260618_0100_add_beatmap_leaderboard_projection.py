@@ -1,4 +1,4 @@
-"""Add beatmap leaderboard projection schema.
+"""beatmap leaderboard projection schemaを追加するmigration.
 
 Revision ID: 20260618_0100
 Revises: 20260617_0102
@@ -22,6 +22,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """Score eligibility snapshotとlegacy personal best由来projectionを作成する.
+
+    Returns:
+        None: leaderboard候補indexとuser best projectionを作成してbackfillしたことを示す.
+
+    Notes:
+        text SQLはlegacy personal bestのwindow rankingとsource欠損の`RAISE NOTICE`を
+        PostgreSQL内で実行するために使用する. `COALESCE` index expressionもAlembic APIが
+        要求するPostgreSQL textual DDL fragmentとして保持する.
+        `server_default=sa.text("false")`はdatabase側の初期eligibility値を定義するために残す.
+    """
     op.add_column(
         "scores",
         sa.Column(
@@ -191,6 +202,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Leaderboard projectionとscore eligibility snapshotを削除する.
+
+    Returns:
+        None: projection table, 関連index, scoresのeligibility columnを削除したことを示す.
+    """
     op.drop_index(
         "idx_beatmap_leaderboard_user_bests_user_rebuild",
         table_name="beatmap_leaderboard_user_bests",

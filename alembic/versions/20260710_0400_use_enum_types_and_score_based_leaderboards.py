@@ -51,6 +51,19 @@ def _checked_string_enum(
     name: str,
     length: int,
 ) -> sa.Enum:
+    """CHECK constraintを持つnon-native string Enumを構築する.
+
+    Args:
+        *values (str): migration時点で許可する閉集合の文字列値.
+        name (str): EnumとCHECK constraintに使用する固定名.
+        length (int): 保存する文字列の最大長.
+
+    Returns:
+        sa.Enum: native enumを使わずnamed CHECK constraintを生成するSQLAlchemy型.
+
+    Notes:
+        accepted valueはrevision内にsnapshotし, mutableなdomain Enumをimportしない.
+    """
     return sa.Enum(
         *values,
         name=name,
@@ -345,7 +358,7 @@ def _replace_projection_table(staging_table: str) -> None:
 
 
 def lock_projection_updates() -> None:
-    """migration rebuildをruntime submitとtransaction内で直列化する.
+    """Migration rebuildをruntime submitとtransaction内で直列化する.
 
     Returns:
         None: transaction終了までexclusive maintenance lockを保持したことを示す.
@@ -361,7 +374,7 @@ def lock_projection_updates() -> None:
 
 
 def _projection_rebuild_lock_key() -> int:
-    """projection maintenance用のsigned 64-bit advisory lock keyを返す.
+    """Projection maintenance用のsigned 64-bit advisory lock keyを返す.
 
     Returns:
         int: runtime submit/rebuildと共有するPostgreSQL advisory lock key.
@@ -737,6 +750,11 @@ def _restore_legacy_leaderboard_projection(projection_table: str) -> None:
 
 
 def _upgrade_score_enums() -> None:
+    """scoreとsubmissionの閉集合columnへCHECK付きEnum constraintを追加する.
+
+    Returns:
+        None: grade, beatmap status, play time source, submission stateの検証を完了したことを示す.
+    """
     _create_enum_constraint("scores", "grade", SCORE_GRADE_ENUM)
     _create_enum_constraint(
         "scores",
@@ -752,6 +770,11 @@ def _upgrade_score_enums() -> None:
 
 
 def _downgrade_score_enums() -> None:
+    """scoreとsubmissionのEnum constraintを削除する.
+
+    Returns:
+        None: downgradeで不要になるscore関連CHECK constraintを削除したことを示す.
+    """
     _drop_enum_constraint(
         "score_submissions",
         SCORE_SUBMISSION_STATE_ENUM,
@@ -764,6 +787,11 @@ def _downgrade_score_enums() -> None:
 
 
 def _upgrade_beatmap_enums() -> None:
+    """Beatmap mirrorの閉集合値をnormaliseしてEnum constraintを追加する.
+
+    Returns:
+        None: legacy modeとfetch targetを変換し, beatmap関連columnの検証を完了したことを示す.
+    """
     beatmaps = sa.table("beatmaps", sa.column("mode", sa.String(length=16)))
     fetch_states = sa.table(
         "beatmap_fetch_states",
@@ -833,6 +861,11 @@ def _upgrade_beatmap_enums() -> None:
 
 
 def _downgrade_beatmap_enums() -> None:
+    """Beatmap mirrorのEnum constraintを削除して旧fetch target値へ戻す.
+
+    Returns:
+        None: beatmap関連CHECK constraintを削除し, fetch targetのlegacy表現を復元したことを示す.
+    """
     _drop_enum_constraint(
         "beatmap_fetch_states",
         BEATMAP_FETCH_STATE_ENUM,
@@ -887,6 +920,11 @@ def _downgrade_beatmap_enums() -> None:
 
 
 def _upgrade_blob_enums() -> None:
+    """Blob storage backendへ閉集合constraintを追加する.
+
+    Returns:
+        None: blobs.storage_backendの許可値検証を完了したことを示す.
+    """
     _create_enum_constraint(
         "blobs",
         "storage_backend",
@@ -895,6 +933,11 @@ def _upgrade_blob_enums() -> None:
 
 
 def _downgrade_blob_enums() -> None:
+    """Blob storage backendの閉集合constraintを削除する.
+
+    Returns:
+        None: blobs.storage_backendのCHECK constraintを削除したことを示す.
+    """
     _drop_enum_constraint(
         "blobs",
         BLOB_STORAGE_BACKEND_ENUM,
@@ -902,6 +945,11 @@ def _downgrade_blob_enums() -> None:
 
 
 def _upgrade_channel_enums() -> None:
+    """Channel typeへ閉集合constraintを追加する.
+
+    Returns:
+        None: channels.channel_typeの許可値検証を完了したことを示す.
+    """
     _create_enum_constraint(
         "channels",
         "channel_type",
@@ -910,6 +958,11 @@ def _upgrade_channel_enums() -> None:
 
 
 def _downgrade_channel_enums() -> None:
+    """Channel typeの閉集合constraintを削除する.
+
+    Returns:
+        None: channels.channel_typeのCHECK constraintを削除したことを示す.
+    """
     _drop_enum_constraint(
         "channels",
         CHANNEL_TYPE_ENUM,
@@ -917,6 +970,11 @@ def _downgrade_channel_enums() -> None:
 
 
 def _upgrade_personal_best_enums() -> None:
+    """Personal best categoryへ閉集合constraintを追加する.
+
+    Returns:
+        None: personal_bests.categoryの許可値検証を完了したことを示す.
+    """
     _create_enum_constraint(
         "personal_bests",
         "category",
@@ -925,6 +983,11 @@ def _upgrade_personal_best_enums() -> None:
 
 
 def _downgrade_personal_best_enums() -> None:
+    """Personal best categoryの閉集合constraintを削除する.
+
+    Returns:
+        None: personal_bests.categoryのCHECK constraintを削除したことを示す.
+    """
     _drop_enum_constraint(
         "personal_bests",
         LEADERBOARD_CATEGORY_ENUM,
@@ -932,6 +995,11 @@ def _downgrade_personal_best_enums() -> None:
 
 
 def _upgrade_performance_enums() -> None:
+    """Performance workflowのstateとclaim metadataへ制約を追加する.
+
+    Returns:
+        None: performance calculation, batch, work itemの閉集合値とclaim整合性を検証したことを示す.
+    """
     state = sa.column("state", sa.String(length=32))
     claim_owner = sa.column("claim_owner", sa.String(length=128))
     claim_expires_at = sa.column("claim_expires_at", sa.DateTime(timezone=True))
@@ -1020,6 +1088,11 @@ def _upgrade_performance_enums() -> None:
 
 
 def _downgrade_performance_enums() -> None:
+    """Performance workflowのEnumとclaim metadata constraintを削除する.
+
+    Returns:
+        None: 0400で追加したperformance関連CHECK constraintを削除したことを示す.
+    """
     op.drop_constraint(
         "ck_performance_recalculation_work_item_claim_metadata",
         "performance_recalculation_work_items",
@@ -1059,6 +1132,23 @@ def _create_enum_constraint(
     column_name: str,
     enum_type: sa.Enum,
 ) -> None:
+    """既存値を検査してcolumnへCHECK付きstring Enum constraintを追加する.
+
+    Args:
+        table_name (str): 検証対象columnを持つtable名.
+        column_name (str): 閉集合値を保存するcolumn名.
+        enum_type (sa.Enum): constraint名, 許可値, 最大長を持つnon-native Enum定義.
+
+    Returns:
+        None: NOT VALID CHECKの追加と既存値の明示検査を完了したことを示す.
+
+    Raises:
+        RuntimeError: 既存のnon-null valueがenum_typeの許可値外である場合.
+
+    Notes:
+        `postgresql_not_valid=True`により既存row scan前の長いexclusive lockを避け,
+        新規writeを先にconstraintで保護する.
+    """
     column = sa.column(
         column_name,
         sa.String(length=enum_type.length),
@@ -1074,6 +1164,15 @@ def _create_enum_constraint(
 
 
 def _drop_enum_constraint(table_name: str, enum_type: sa.Enum) -> None:
+    """指定tableからEnumに対応するCHECK constraintを削除する.
+
+    Args:
+        table_name (str): 削除対象constraintを持つtable名.
+        enum_type (sa.Enum): 削除するconstraint名を持つnon-native Enum定義.
+
+    Returns:
+        None: enum_typeに対応するCHECK constraintを削除したことを示す.
+    """
     op.drop_constraint(
         _enum_constraint_name(enum_type),
         table_name,
@@ -1082,6 +1181,17 @@ def _drop_enum_constraint(table_name: str, enum_type: sa.Enum) -> None:
 
 
 def _enum_constraint_name(enum_type: sa.Enum) -> str:
+    """Enum定義から必須のCHECK constraint名を取得する.
+
+    Args:
+        enum_type (sa.Enum): 明示的なnameを持つことを前提にしたnon-native Enum定義.
+
+    Returns:
+        str: EnumのCHECK constraintに使用する固定名.
+
+    Raises:
+        RuntimeError: enum_type.nameが設定されていない場合.
+    """
     constraint_name = enum_type.name
     if constraint_name is None:
         msg = "checked string Enum requires an explicit constraint name"
@@ -1094,6 +1204,19 @@ def _validate_enum_column(
     column_name: str,
     enum_type: sa.Enum,
 ) -> None:
+    """既存column値がEnumの閉集合内にあることを検証する.
+
+    Args:
+        table_name (str): 検証対象columnを持つtable名.
+        column_name (str): 許可値を検査するcolumn名.
+        enum_type (sa.Enum): 許可値とconstraint名を持つnon-native Enum定義.
+
+    Returns:
+        None: null以外の既存値がすべて許可値内であることを示す.
+
+    Raises:
+        RuntimeError: 許可値外の既存値を最大10件検出した場合.
+    """
     column = sa.column(column_name, sa.String())
     table = sa.table(table_name, column)
     statement = (
@@ -1120,7 +1243,7 @@ def _validate_enum_column(
 
 
 def _validate_unique_projection_score_ids(projection_table: str) -> None:
-    """staging projection内のscore_id重複を検出する.
+    """Staging projection内のscore_id重複を検出する.
 
     Args:
         projection_table (str): unique constraint追加前のstaging table名.

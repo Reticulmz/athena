@@ -1,4 +1,4 @@
-"""Add score submission tables
+"""score submissionとreplay保存用schemaを作成するmigration.
 
 Revision ID: 20260612_0016
 Revises: 20260604_2001
@@ -19,6 +19,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """score, submission, replayの保存tableとindexを作成する.
+
+    Returns:
+        None: score submission workflowが必要とするdurable schemaを作成したことを示す.
+    """
     op.create_table(
         "scores",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
@@ -90,6 +95,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Score submission保存schemaを依存順で削除する.
+
+    Returns:
+        None: replay, score_submissions, scores tableを削除したことを示す.
+    """
     op.drop_table("replays")
     op.drop_table("score_submissions")
     op.drop_table("scores")

@@ -1,4 +1,4 @@
-"""sync users id sequence
+"""users.id sequenceを既存userと同期するmigration.
 
 Revision ID: 20260710_0100
 Revises: 20260630_0300
@@ -18,18 +18,19 @@ _BANCHO_BOT_RESERVED_USER_ID = 1
 
 
 def upgrade() -> None:
-    """users.id sequence を既存最大 id と同期する.
+    """users.id sequenceを既存最大IDまたはBanchoBot予約IDと同期する.
 
     Returns:
-        None: Alembic migration として永続的な schema/data repair を行う.
+        None: 永続的なsequence repairを完了したことを示す.
 
     Raises:
-        Exception: SQL 実行時に Alembic/SQLAlchemy 由来の例外が送出される可能性がある.
+        SQLAlchemyError: PostgreSQL sequence更新に失敗した場合.
 
     Notes:
-        PostgreSQL の pg_get_serial_sequence と setval に依存する.
-        setval(..., 1, true) は次の nextval() を 2 にするため、
-        users が空でも BanchoBot 予約 id の 1 を再割り当てしない.
+        PostgreSQLのpg_get_serial_sequenceとsetvalに依存する.
+        text SQLはsequence名の解決とMAX値のfallbackをdatabase内で原子的に実行するために使用する.
+        `setval(..., 1, true)`は次のnextval()を2にするため, usersが空でもBanchoBot予約IDの1を
+        再割り当てしない.
     """
     op.execute(
         f"""
@@ -44,4 +45,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Sequence 同期は data repair のため downgrade では戻さない."""
+    """Sequence repairをrollbackせず意図的なno-opとして完了する.
+
+    Returns:
+        None: users.id sequenceを変更せずdowngradeを完了したことを示す.
+
+    Notes:
+        sequence repairは既存dataに対する前方修復であり, 安全に以前のcounter値を復元できない.
+    """
