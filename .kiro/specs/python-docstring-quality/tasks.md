@@ -746,7 +746,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/integration root file_
 
-- [ ] 3.50 (P) Application、authorization、Valkey integration testを整備する
+- [x] 3.50 (P) Application、authorization、Valkey integration testを整備する
   - tests/integration/__init__.py、test_app_startup.py、test_authorization_refresh.py、
     test_valkey*.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有integration testが通る
