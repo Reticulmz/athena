@@ -1,4 +1,4 @@
-"""Tests for UserStatsListeners."""
+"""UserStatsListenersのUSER_STATS packet fan-out contractを検証する."""
 
 from __future__ import annotations
 
@@ -27,21 +27,44 @@ if TYPE_CHECKING:
 
 @final
 class FakePacketQueue:
-    """Fake PacketQueue that records enqueued packets."""
+    """enqueueされたUSER_STATS packetを記録するPacketQueue fakeを提供する.
+
+    Attributes:
+        enqueued (list[tuple[int, bytes]]): recipient user IDとpacketの記録順序.
+    """
 
     def __init__(self) -> None:
+        """空のenqueue記録を持つpacket queue fakeを初期化する."""
         self.enqueued: list[tuple[int, bytes]] = []
 
     async def enqueue(self, user_id: int, *data: bytes) -> None:
+        """recipientごとにpacketを記録する.
+
+        Args:
+            user_id (int): packetを受け取るstable userのID.
+            *data (bytes): queueへ渡されたS2C packet群.
+
+        Returns:
+            None: 全packetを記録して完了し, 呼び出し側へ値を返さない.
+        """
         for packet in data:
             self.enqueued.append((user_id, packet))
 
 
 @final
 class FakeCurrentUserStatsQuery:
-    """Fake CurrentUserStatsQuery that records inputs."""
+    """設定済みstatsを返しquery inputを記録するCurrentUserStatsQuery fakeを提供する.
+
+    Attributes:
+        inputs (list[CurrentUserStatsQueryInput]): executeへ渡されたquery inputの順序.
+    """
 
     def __init__(self, stats: tuple[UserCurrentStats, ...] = ()) -> None:
+        """返却するcurrent stats snapshotを設定する.
+
+        Args:
+            stats (tuple[UserCurrentStats, ...]): executeが返すcurrent stats一覧.
+        """
         self._stats = stats
         self.inputs: list[CurrentUserStatsQueryInput] = []
 
@@ -49,27 +72,52 @@ class FakeCurrentUserStatsQuery:
         self,
         input_data: CurrentUserStatsQueryInput,
     ) -> CurrentUserStatsQueryResult:
+        """inputを記録して設定済みcurrent stats resultを返す.
+
+        Args:
+            input_data (CurrentUserStatsQueryInput): user, ruleset, playstyleを指定するquery input.
+
+        Returns:
+            CurrentUserStatsQueryResult: 設定済みstatsを含むquery result.
+        """
         self.inputs.append(input_data)
         return CurrentUserStatsQueryResult(stats=self._stats)
 
 
 @final
 class FailingCurrentUserStatsQuery:
-    """Fake CurrentUserStatsQuery that records inputs and raises."""
+    """inputを記録して意図的に失敗するCurrentUserStatsQuery fakeを提供する.
+
+    Attributes:
+        inputs (list[CurrentUserStatsQueryInput]): 失敗前に記録するquery inputの順序.
+    """
 
     def __init__(self) -> None:
+        """空のquery input記録を持つ失敗fakeを初期化する."""
         self.inputs: list[CurrentUserStatsQueryInput] = []
 
     async def execute(
         self,
         input_data: CurrentUserStatsQueryInput,
     ) -> CurrentUserStatsQueryResult:
+        """inputを記録してfallback query failureを送出する.
+
+        Args:
+            input_data (CurrentUserStatsQueryInput): listenerが補完用に渡すquery input.
+
+        Raises:
+            RuntimeError: fallback stats query failureを再現する場合.
+        """
         self.inputs.append(input_data)
         raise RuntimeError("stats query failed")
 
 
 async def test_current_stats_event_enqueues_user_stats_packet_with_current_status() -> None:
-    """event payload の current stats と保存済み status から USER_STATS を組み立てる。"""
+    """Event snapshotと保存済みstatusからUSER_STATS packetをenqueueする契約を検証する.
+
+    Returns:
+        None: query未使用とcurrent statusを含むexact packetを確認して完了する.
+    """
     packet_queue = FakePacketQueue()
     stats_query = FakeCurrentUserStatsQuery()
     status_store = InMemoryStableUserStatusStore()
@@ -132,7 +180,11 @@ async def test_current_stats_event_enqueues_user_stats_packet_with_current_statu
 
 
 async def test_current_stats_event_queries_stats_when_payload_has_no_snapshot() -> None:
-    """event が stats snapshot を持たない場合は Bancho listener 側で補完する。"""
+    """Event snapshotがない場合にlistenerがqueryでstatsを補完する契約を検証する.
+
+    Returns:
+        None: query inputとdefault statusを使うpacketを検証して完了し, 呼び出し側へ値を返さない.
+    """
     packet_queue = FakePacketQueue()
     current_stats = UserCurrentStats(user_id=20, pp=Decimal("100"), global_rank=3)
     stats_query = FakeCurrentUserStatsQuery((current_stats,))
@@ -176,7 +228,11 @@ async def test_current_stats_event_queries_stats_when_payload_has_no_snapshot() 
 
 
 async def test_current_stats_event_skips_packet_when_fallback_query_fails() -> None:
-    """fallback query が失敗した場合は 0 stats packet で上書きしない。"""
+    """Fallback queryが失敗した場合にzero stats packetをenqueueしない契約を検証する.
+
+    Returns:
+        None: query inputと空queueを検証して完了し, 呼び出し側へ値を返さない.
+    """
     packet_queue = FakePacketQueue()
     stats_query = FailingCurrentUserStatsQuery()
     listeners = _listeners(packet_queue=packet_queue, stats_query=stats_query)
@@ -205,6 +261,17 @@ def _listeners(
     stats_query: FakeCurrentUserStatsQuery | FailingCurrentUserStatsQuery,
     status_store: InMemoryStableUserStatusStore | None = None,
 ) -> UserStatsListeners:
+    """Typed fakeを注入したUserStatsListenersを構築する.
+
+    Args:
+        packet_queue (FakePacketQueue): enqueue結果を記録するqueue fake.
+        stats_query (FakeCurrentUserStatsQuery | FailingCurrentUserStatsQuery): current stats
+            query fake.
+        status_store (InMemoryStableUserStatusStore | None): optional stable status fixture.
+
+    Returns:
+        UserStatsListeners: eventをUSER_STATS packetへ適応するlistener.
+    """
     return UserStatsListeners(
         packet_queue=typing.cast("PacketQueue", typing.cast("object", packet_queue)),
         current_user_stats_query=typing.cast(
