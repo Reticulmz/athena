@@ -771,7 +771,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/integration/test_getscores_*.py_
 
-- [ ] 3.53 (P) Chat、C2S、friend、replay-download integration testを整備する
+- [x] 3.53 (P) Chat、C2S、friend、replay-download integration testを整備する
   - test_c2s_pipeline.py、test_chat_e2e.py、test_chat_pipeline.py、
     test_friend_relationship_pipeline.py、transports/web_legacy/test_replay_download_endpoint.pyへ
     共通条件を適用する
