@@ -85,6 +85,29 @@ def _run_ci_command(
     )
 
 
+def _shell_function_body(script: str, function_name: str) -> str:
+    """Bash scriptから指定functionのbodyを取得する.
+
+    Args:
+        script (str): function定義を含むBash source全体.
+        function_name (str): bodyを取得するfunction名.
+
+    Returns:
+        str: opening braceとclosing braceを除いたfunction body.
+
+    Raises:
+        AssertionError: 指定functionの定義をsource内に見つけられない場合.
+    """
+    function_pattern = re.compile(
+        rf"^{re.escape(function_name)}\(\) \{{\n(?P<body>.*?)^\}}$",
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    match = function_pattern.search(script)
+
+    assert match is not None
+    return match["body"]
+
+
 def _git_indexed_python_files(repository_root: Path) -> list[str]:
     """Git indexにあるPython source pathをNUL区切りで取得する.
 
@@ -320,14 +343,15 @@ def test_declares_only_active_docstring_tool_versions() -> None:
     assert "pydoclint" not in locked_versions
 
 
-def test_configures_non_blocking_google_docstring_toolchain() -> None:
-    """RuffとinterrogateのGoogle Style対応設定を検証する.
+def test_configures_repository_wide_google_docstring_toolchain() -> None:
+    """Ruffとinterrogateのrepository-wide Google Style設定を検証する.
 
-    migration step 1ではcorpus整備前のglobal Ruff `D`有効化を禁止しつつ後続gateの
-    Google conventionと全definition coverage契約を固定する.
+    Global `D` selectionがD417を含むGoogle Style rule群を有効にし、interrogateが対象definitionの
+    100% coverageを要求することを固定する.
 
     Returns:
-        None: conventionまたはcoverage設定が期待値と異なる場合はassertionで失敗する.
+        None: docstring ruleの有効化、convention、またはcoverage設定が期待値と異なる場合は
+            assertionで失敗する.
     """
     pyproject = _load_toml(PYPROJECT_PATH)
     tool = _require_table(pyproject["tool"])
@@ -336,13 +360,19 @@ def test_configures_non_blocking_google_docstring_toolchain() -> None:
     pydocstyle = _require_table(ruff_lint["pydocstyle"])
     interrogate = _require_table(tool["interrogate"])
 
+    select = _require_string_list(ruff_lint["select"])
+    ignored_rules = _require_string_list(ruff_lint["ignore"])
+
     assert pydocstyle["convention"] == "google"
-    assert not any(
-        _contains_docstring_rule(rule) for rule in _require_string_list(ruff_lint["select"])
-    )
+    assert "D" in select
+    assert "D417" not in ignored_rules
     assert not any(
         _contains_docstring_rule(rule)
         for rule in _require_string_list(ruff_lint.get("extend-select", []))
+    )
+    assert not any(
+        _contains_docstring_rule(rule)
+        for rule in _require_string_list(ruff_lint.get("extend-ignore", []))
     )
     assert interrogate["fail-under"] == 100
     assert interrogate["style"] == "sphinx"
@@ -411,6 +441,35 @@ def test_docstrings_command_runs_only_active_quality_tools() -> None:
     assert 'uv run ruff check --select D "${python_files[@]}"' in script
     assert 'uv run interrogate --config pyproject.toml "${python_files[@]}"' in script
     assert "uv run pydoclint" not in script
+
+
+def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> None:
+    """Qualityとfixがdocstring gateと同じfirst-party Python inventoryを使うことを検証する.
+
+    Ruff format/lint/fixの対象を`src/ tests/`に限定せず、Git indexから収集した`.py`へ統一する.
+    BasedPyrightとimport-linterの既存scopeは変更しない.
+
+    Returns:
+        None: qualityまたはfixが異なるinventoryを使うか、qualityにinterrogateが含まれない場合は
+            assertionで失敗する.
+    """
+    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
+    quality_body = _shell_function_body(script, "run_quality")
+    fix_body = _shell_function_body(script, "run_fix")
+
+    assert (
+        "collect_first_party_python_files python_files repository_root || return 1" in quality_body
+    )
+    assert 'uv run ruff format --check "${python_files[@]}"' in quality_body
+    assert 'uv run ruff check "${python_files[@]}"' in quality_body
+    assert 'uv run interrogate --config pyproject.toml "${python_files[@]}"' in quality_body
+    assert "uv run basedpyright src/ tests/" in quality_body
+    assert "uv run lint-imports" in quality_body
+    assert "uv run ruff format --check src/ tests/" not in quality_body
+    assert "uv run ruff check src/ tests/" not in quality_body
+    assert "collect_first_party_python_files python_files repository_root || return 1" in fix_body
+    assert 'uv run ruff format "${python_files[@]}"' in fix_body
+    assert 'uv run ruff check --fix "${python_files[@]}"' in fix_body
 
 
 def test_python_files_matches_the_git_index() -> None:

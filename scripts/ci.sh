@@ -4,42 +4,62 @@ set -euo pipefail
 # athena Local CI Script
 
 # Subcommands:
-#   quality - Run linters and type checkers
+#   quality - Run quality checks for all tracked first-party Python files
 #   fix     - Apply automatic fixes (formatting, lint)
 #   test    - Run tests
 #   python-files - List tracked first-party Python source files
-#   docstrings - Run the non-blocking docstring quality checks
+#   docstrings - Run the docstring quality checks
 #   all     - Run quality followed by test
 
 usage() {
     echo "Usage: $0 {quality|fix|test|python-files|docstrings|all}"
-    echo "  quality - Run linters and type checkers"
+    echo "  quality - Run quality checks for all tracked first-party Python files"
     echo "  fix     - Apply automatic fixes (formatting, lint)"
     echo "  test    - Run tests"
     echo "  python-files - List tracked first-party Python source files"
-    echo "  docstrings - Run the non-blocking docstring quality checks"
+    echo "  docstrings - Run the docstring quality checks"
     echo "  all     - Run quality followed by test"
     exit 1
 }
 
 run_quality() {
-    echo "=== Running quality checks ==="
-    echo "--> Ruff format check"
-    uv run ruff format --check src/ tests/
-    echo "--> Ruff lint check"
-    uv run ruff check src/ tests/
-    echo "--> Basedpyright type check"
-    uv run basedpyright src/ tests/
-    echo "--> Import linter"
-    uv run lint-imports
+    local -a python_files
+    local repository_root
+
+    collect_first_party_python_files python_files repository_root || return 1
+
+    (
+        cd "${repository_root}" || exit 1
+
+        echo "=== Running quality checks ==="
+        echo "--> Ruff format check"
+        uv run ruff format --check "${python_files[@]}"
+        echo "--> Ruff lint check"
+        uv run ruff check "${python_files[@]}"
+        echo "--> Interrogate docstring coverage"
+        uv run interrogate --config pyproject.toml "${python_files[@]}"
+        echo "--> Basedpyright type check"
+        uv run basedpyright src/ tests/
+        echo "--> Import linter"
+        uv run lint-imports
+    )
 }
 
 run_fix() {
-    echo "=== Applying fixes ==="
-    echo "--> Ruff format"
-    uv run ruff format src/ tests/
-    echo "--> Ruff lint fix"
-    uv run ruff check --fix src/ tests/
+    local -a python_files
+    local repository_root
+
+    collect_first_party_python_files python_files repository_root || return 1
+
+    (
+        cd "${repository_root}" || exit 1
+
+        echo "=== Applying fixes ==="
+        echo "--> Ruff format"
+        uv run ruff format "${python_files[@]}"
+        echo "--> Ruff lint fix"
+        uv run ruff check --fix "${python_files[@]}"
+    )
 }
 
 run_test() {
