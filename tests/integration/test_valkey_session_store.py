@@ -1,8 +1,7 @@
-"""Integration tests for ValkeySessionStore against a real Valkey instance.
+"""ValkeySessionStoreのsession lifecycleとpatch behavior integration contractを検証する.
 
-These tests mirror the unit tests for InMemorySessionStore but run against
-real Valkey.  They can also be parameterized to run both implementations
-through the same test matrix.
+Notes:
+    InMemorySessionStoreと共通のtest matrixに加え, 実Valkey固有のTTL behaviorを検証する.
 """
 
 from __future__ import annotations
@@ -43,11 +42,30 @@ _SESSION = SessionData(
 
 
 def _get_valkey_url() -> str:
+    """Integration testで使用するValkey connection URLを取得する.
+
+    Returns:
+        str: TCP接続可能なVALKEY_URL.
+
+    Raises:
+        pytest.skip.Exception: VALKEY_URLが未設定またはValkey serviceが利用不能な場合.
+    """
     return require_tcp_service_url("VALKEY_URL", default_port=6379)
 
 
 @pytest.fixture
 async def valkey_client() -> AsyncGenerator[GlideClient]:
+    """実Valkey instanceへ接続するGlide clientを提供する.
+
+    Yields:
+        GlideClient: session keyを操作するValkey client.
+
+    Raises:
+        pytest.skip.Exception: VALKEY_URLまたはValkey serviceが利用不能な場合.
+
+    Notes:
+        fixture終了時にsessionとuser-to-token mappingのtest keyをcleanupする.
+    """
     client = await create_valkey_client(_get_valkey_url())
     yield client
     # Clean up all test keys
@@ -65,11 +83,24 @@ async def valkey_client() -> AsyncGenerator[GlideClient]:
 
 @pytest.fixture
 def valkey_store(valkey_client: GlideClient) -> ValkeySessionStore:
+    """Default TTLを持つValkey-backed session storeを構築する.
+
+    Args:
+        valkey_client (GlideClient): session storageへ接続したValkey client.
+
+    Returns:
+        ValkeySessionStore: 3600 seconds TTLとtest key prefixを持つsession store.
+    """
     return ValkeySessionStore(valkey_client, ttl=3600, key_prefix=_KEY_PREFIX)
 
 
 @pytest.fixture
 def memory_store() -> InMemorySessionStore:
+    """Comparison用のin-memory session storeを構築する.
+
+    Returns:
+        InMemorySessionStore: Valkeyを使わないSessionStore implementation.
+    """
     return InMemorySessionStore()
 
 
@@ -80,6 +111,14 @@ def memory_store() -> InMemorySessionStore:
 
 @pytest.fixture(params=["valkey", "memory"])
 def store(request: pytest.FixtureRequest) -> SessionStore:
+    """Parametrized SessionStore implementationを選択して提供する.
+
+    Args:
+        request (pytest.FixtureRequest): implementationを選択するfixture request.
+
+    Returns:
+        SessionStore: request parameterに対応するsession store implementation.
+    """
     param = cast("str", request.param)
     if param == "valkey":
         return cast("SessionStore", request.getfixturevalue("valkey_store"))
@@ -92,19 +131,35 @@ def store(request: pytest.FixtureRequest) -> SessionStore:
 
 
 class TestSessionStoreProtocolCompliance:
-    """ValkeySessionStore satisfies the SessionStore Protocol."""
+    """ValkeySessionStoreがSessionStore protocolを満たすcontractを検証する."""
 
     def test_valkey_session_store_is_session_store(
         self,
         valkey_store: ValkeySessionStore,
     ) -> None:
+        """ValkeySessionStoreがruntime Protocol instance checkを通るcontractを検証する.
+
+        Args:
+            valkey_store (ValkeySessionStore): 実Valkey-backed session store fixture.
+
+        Returns:
+            None: storeがSessionStore instanceとして認識されることを確認して完了する.
+        """
         assert isinstance(valkey_store, SessionStore)
 
 
 class TestCreateAndGet:
-    """create stores session data; get retrieves it by token."""
+    """Session createとtoken-based get contractを検証する."""
 
     async def test_create_and_get(self, store: SessionStore) -> None:
+        """Create後のgetがstored session dataを返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: username, privilege, role IDがstored valueと一致することを確認する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         result = await store.get("abc-123")
@@ -115,15 +170,31 @@ class TestCreateAndGet:
         assert result.role_ids == (1, 2)
 
     async def test_get_nonexistent_returns_none(self, store: SessionStore) -> None:
+        """Missing tokenのgetがNoneを返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: 未保存tokenのget resultがNoneであることを確認して完了する.
+        """
         result = await store.get("nonexistent-token")
 
         assert result is None
 
 
 class TestGetByUser:
-    """get_by_user retrieves session data by user_id."""
+    """User ID-based session lookup contractを検証する."""
 
     async def test_get_by_user(self, store: SessionStore) -> None:
+        """Create後のget_by_userがstored session dataを返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: user IDからstored usernameを取得できることを確認して完了する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         result = await store.get_by_user(user_id=1)
@@ -132,15 +203,31 @@ class TestGetByUser:
         assert result.username == "peppy"
 
     async def test_get_by_user_nonexistent_returns_none(self, store: SessionStore) -> None:
+        """Unknown user IDのget_by_userがNoneを返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: 未保存user IDのlookup resultがNoneであることを確認して完了する.
+        """
         result = await store.get_by_user(user_id=9999)
 
         assert result is None
 
 
 class TestDelete:
-    """delete removes the session; subsequent get returns None."""
+    """Session deleteとpost-delete lookup contractを検証する."""
 
     async def test_delete(self, store: SessionStore) -> None:
+        """Deleteがtokenとuser mappingのsession dataを削除するcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: token lookupとuser lookupがNoneになることを確認して完了する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         await store.delete("abc-123")
@@ -149,26 +236,58 @@ class TestDelete:
         assert await store.get_by_user(user_id=1) is None
 
     async def test_delete_nonexistent_is_noop(self, store: SessionStore) -> None:
+        """Missing tokenのdeleteがno-opで完了するcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: 未保存tokenのdeleteがexceptionなしで完了する.
+        """
         # Should not raise
         await store.delete("nonexistent-token")
 
 
 class TestExists:
-    """exists checks for token presence."""
+    """Session token existence check contractを検証する."""
 
     async def test_exists_true(self, store: SessionStore) -> None:
+        """Created sessionのexistsがTrueを返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: stored tokenのexistence resultがTrueであることを確認して完了する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         assert await store.exists("abc-123") is True
 
     async def test_exists_false(self, store: SessionStore) -> None:
+        """Missing session tokenのexistsがFalseを返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: 未保存tokenのexistence resultがFalseであることを確認して完了する.
+        """
         assert await store.exists("nonexistent-token") is False
 
 
 class TestOverwrite:
-    """Same user_id with a new token replaces the old session entirely."""
+    """Same user IDのnew tokenがold sessionをreplaceするcontractを検証する."""
 
     async def test_create_overwrites_previous_session(self, store: SessionStore) -> None:
+        """Same userのsecond createがold tokenとdataをreplaceするcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: old token削除とnew tokenのuser lookupを確認して完了する.
+        """
         data_old = replace(_SESSION, country="US")
         data_new = replace(_SESSION, country="JP")
 
@@ -191,14 +310,30 @@ class TestOverwrite:
 
 
 class TestListActiveSessions:
-    """list_active_sessions returns only active session data."""
+    """Active session listing contractを検証する."""
 
     async def test_empty_store_returns_empty_list(self, store: SessionStore) -> None:
+        """Empty storeのlist_active_sessionsがempty listを返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: session未作成時のresultがempty listであることを確認して完了する.
+        """
         result = await store.list_active_sessions()
 
         assert result == []
 
     async def test_returns_active_sessions(self, store: SessionStore) -> None:
+        """Active session listingがcreated sessionを全件返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: two created user IDがlistingに含まれることを確認して完了する.
+        """
         session_2 = replace(_SESSION, user_id=2, username="cookiezi")
 
         await store.create(user_id=1, token="abc-123", data=_SESSION)
@@ -209,6 +344,14 @@ class TestListActiveSessions:
         assert sorted(session.user_id for session in result) == [1, 2]
 
     async def test_excludes_deleted_sessions(self, store: SessionStore) -> None:
+        """Active session listingがdeleted sessionを除外するcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: deleted userを除くactive sessionだけがlistingに残ることを確認する.
+        """
         session_2 = replace(_SESSION, user_id=2, username="cookiezi")
 
         await store.create(user_id=1, token="abc-123", data=_SESSION)
@@ -226,14 +369,20 @@ class TestListActiveSessions:
 
 
 class TestUpdateAuthorization:
-    """update_authorization patches privileges and role_ids while preserving
-    all other fields and the user-to-token mapping."""
+    """Authorization patchがsession dataとtoken mappingを保持するcontractを検証する."""
 
     async def test_update_authorization_patches_session(
         self,
         store: SessionStore,
     ) -> None:
-        """privileges and role_ids are updated to the new values."""
+        """Authorization patchがsession privilegeとrole IDを更新するcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: stored authorizationがrequested privilegeとrole IDになることを確認する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         new_auth = SessionAuthorization(
@@ -253,7 +402,14 @@ class TestUpdateAuthorization:
         self,
         store: SessionStore,
     ) -> None:
-        """user-to-token mapping still references the same token."""
+        """Authorization patchがuser-to-token mappingを保持するcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: original tokenとuser lookupがupdated sessionを返すことを確認する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         _ = await store.update_authorization(
@@ -278,7 +434,14 @@ class TestUpdateAuthorization:
         self,
         store: SessionStore,
     ) -> None:
-        """username, country, osu_version, and other fields are unchanged."""
+        """Authorization patchがnon-authorization session fieldを保持するcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: profileとclient metadataがpatch前のvalueを保持することを確認する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         _ = await store.update_authorization(
@@ -303,7 +466,14 @@ class TestUpdateAuthorization:
         self,
         store: SessionStore,
     ) -> None:
-        """Returns False when the user has no active session."""
+        """Missing active sessionへのauthorization patchがFalseを返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: patchがnew sessionを作らずFalseを返すことを確認して完了する.
+        """
         result = await store.update_authorization(
             user_id=9999,
             authorization=SessionAuthorization(
@@ -321,7 +491,14 @@ class TestUpdateAuthorization:
         self,
         store: SessionStore,
     ) -> None:
-        """Repeated calls with the same authorization produce the same result."""
+        """Same authorizationのrepeated patchがidempotentなcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: two patchがTrueとなりstored authorizationがstableであることを確認する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         auth = SessionAuthorization(
@@ -344,9 +521,17 @@ class TestUpdateAuthorization:
         valkey_client: GlideClient,
         valkey_store: ValkeySessionStore,
     ) -> None:
-        """TTL is not reset after update_authorization.
+        """Authorization patchがexisting Valkey session TTLをresetしないcontractを検証する.
 
-        Valkey-specific test because the in-memory store has no TTL concept.
+        Args:
+            valkey_client (GlideClient): session keyのTTLを設定して読むValkey client.
+            valkey_store (ValkeySessionStore): 実Valkey-backed session store fixture.
+
+        Returns:
+            None: patch後のsessionとuser mapping TTLがconstructor defaultへ戻らないことを確認する.
+
+        Notes:
+            In-memory storeにはTTL conceptがないため, Valkey固有のtestである.
         """
         await valkey_store.create(
             user_id=1,
@@ -382,12 +567,20 @@ class TestUpdateAuthorization:
 
 
 class TestUpdatePmPrivate:
-    """update_pm_private patches pm_private while preserving session state."""
+    """PM privacy patchがsession stateを保持するcontractを検証する."""
 
     async def test_update_pm_private_patches_session(
         self,
         store: SessionStore,
     ) -> None:
+        """PM privacy patchがstored pm_private flagを更新するcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: enabledとdisabled patch後のstored flagを確認して完了する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         enabled = await store.update_pm_private(user_id=1, enabled=True)
@@ -403,6 +596,14 @@ class TestUpdatePmPrivate:
         self,
         store: SessionStore,
     ) -> None:
+        """PM privacy patchがtokenとuser mappingを保持するcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: original tokenとuser lookupがupdated privacy flagを返すことを確認する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         _ = await store.update_pm_private(user_id=1, enabled=True)
@@ -420,6 +621,14 @@ class TestUpdatePmPrivate:
         self,
         store: SessionStore,
     ) -> None:
+        """PM privacy patchがnon-privacy session fieldを保持するcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: identity, authorization, client metadataがpatch前のvalueを保持することを確認する.
+        """
         await store.create(user_id=1, token="abc-123", data=_SESSION)
 
         _ = await store.update_pm_private(user_id=1, enabled=True)
@@ -441,6 +650,14 @@ class TestUpdatePmPrivate:
         self,
         store: SessionStore,
     ) -> None:
+        """Missing active sessionへのPM privacy patchがFalseを返すcontractを検証する.
+
+        Args:
+            store (SessionStore): valkeyまたはmemoryのparametrized session store.
+
+        Returns:
+            None: patchがnew sessionを作らずFalseを返すことを確認して完了する.
+        """
         result = await store.update_pm_private(user_id=9999, enabled=True)
 
         assert result is False
@@ -451,6 +668,15 @@ class TestUpdatePmPrivate:
         valkey_client: GlideClient,
         valkey_store: ValkeySessionStore,
     ) -> None:
+        """PM privacy patchがexisting Valkey session TTLをresetしないcontractを検証する.
+
+        Args:
+            valkey_client (GlideClient): session keyのTTLを設定して読むValkey client.
+            valkey_store (ValkeySessionStore): 実Valkey-backed session store fixture.
+
+        Returns:
+            None: patch後のsessionとuser mapping TTLがconstructor defaultへ戻らないことを確認する.
+        """
         await valkey_store.create(
             user_id=1,
             token="abc-123",
@@ -475,6 +701,15 @@ class TestUpdatePmPrivate:
         valkey_client: GlideClient,
         valkey_store: ValkeySessionStore,
     ) -> None:
+        """Missing session keyへのPM privacy patchがFalseとなるcontractを検証する.
+
+        Args:
+            valkey_client (GlideClient): session keyを意図的に削除するValkey client.
+            valkey_store (ValkeySessionStore): 実Valkey-backed session store fixture.
+
+        Returns:
+            None: stale user mappingが削除されuser lookupがNoneになることを確認して完了する.
+        """
         await valkey_store.create(
             user_id=1,
             token="abc-123",

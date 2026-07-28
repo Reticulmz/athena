@@ -1,7 +1,7 @@
-"""Integration tests for Valkey connection infrastructure.
+"""Valkey connection infrastructureの実service integration contractを検証する.
 
-These tests require a running Valkey instance. The connection URL is read
-from the ``VALKEY_URL`` environment variable.
+Notes:
+    VALKEY_URL environment variableで指定する実Valkey instanceへの接続を必要とする.
 """
 
 from collections.abc import AsyncGenerator
@@ -20,11 +20,30 @@ _KEY_PREFIX = "athena_test:"
 
 
 def _get_valkey_url() -> str:
+    """Integration testで使用するValkey connection URLを取得する.
+
+    Returns:
+        str: TCP接続可能なVALKEY_URL.
+
+    Raises:
+        pytest.skip.Exception: VALKEY_URLが未設定またはValkey serviceが利用不能な場合.
+    """
     return require_tcp_service_url("VALKEY_URL", default_port=6379)
 
 
 @pytest.fixture
 async def valkey_client() -> AsyncGenerator[GlideClient]:
+    """実Valkey instanceへ接続するGlide clientを提供する.
+
+    Yields:
+        GlideClient: test keyのread/writeに使用するValkey client.
+
+    Raises:
+        pytest.skip.Exception: VALKEY_URLまたはValkey serviceが利用不能な場合.
+
+    Notes:
+        fixture終了時にathena_test prefixのkeyをcleanupしてconnectionをcloseする.
+    """
     client = await create_valkey_client(_get_valkey_url())
     yield client
     # Clean up any test keys
@@ -40,29 +59,53 @@ async def valkey_client() -> AsyncGenerator[GlideClient]:
 
 
 class TestValkeyConnection:
-    """Tests for Valkey client creation and connectivity."""
+    """Valkey clientの生成とconnection contractを検証する."""
 
     async def test_create_valkey_client_returns_glide_instance(
         self,
         valkey_client: GlideClient,
     ) -> None:
+        """Valkey client fixtureがGlideClient instanceを返すcontractを検証する.
+
+        Args:
+            valkey_client (GlideClient): 実Valkeyへ接続したfixture client.
+
+        Returns:
+            None: fixture clientのruntime type確認を完了する.
+        """
         assert isinstance(valkey_client, GlideClient)
 
     async def test_valkey_client_connects_to_server(
         self,
         valkey_client: GlideClient,
     ) -> None:
+        """Glide clientが実Valkey serverへPINGできるcontractを検証する.
+
+        Args:
+            valkey_client (GlideClient): 実Valkeyへ接続したfixture client.
+
+        Returns:
+            None: PING resultがbinary responseであることを確認して完了する.
+        """
         result = await valkey_client.ping()
         assert isinstance(result, bytes)
 
 
 class TestValkeyOperations:
-    """Tests for basic async Valkey operations (set/get/delete)."""
+    """Valkeyのbasic async key operation contractを検証する."""
 
     async def test_set_and_get(
         self,
         valkey_client: GlideClient,
     ) -> None:
+        """SET後のGETが同じbinary valueを返すcontractを検証する.
+
+        Args:
+            valkey_client (GlideClient): 実Valkeyへ接続したfixture client.
+
+        Returns:
+            None: test keyに書いたvalueをGETできることを確認して完了する.
+        """
         key = f"{_KEY_PREFIX}test_set_get"
         _ = await valkey_client.set(key, "hello")
         value = await valkey_client.get(key)
@@ -72,6 +115,14 @@ class TestValkeyOperations:
         self,
         valkey_client: GlideClient,
     ) -> None:
+        """Missing keyのGETがNoneを返すcontractを検証する.
+
+        Args:
+            valkey_client (GlideClient): 実Valkeyへ接続したfixture client.
+
+        Returns:
+            None: 未保存test keyのGET resultがNoneであることを確認して完了する.
+        """
         value = await valkey_client.get(f"{_KEY_PREFIX}nonexistent")
         assert value is None
 
@@ -79,6 +130,14 @@ class TestValkeyOperations:
         self,
         valkey_client: GlideClient,
     ) -> None:
+        """DELETEがstored keyを削除してsubsequent GETをNoneにするcontractを検証する.
+
+        Args:
+            valkey_client (GlideClient): 実Valkeyへ接続したfixture client.
+
+        Returns:
+            None: delete countとmissing GET resultを確認して完了する.
+        """
         key = f"{_KEY_PREFIX}test_delete"
         _ = await valkey_client.set(key, "to_delete")
         deleted_count = await valkey_client.delete([key])
@@ -90,6 +149,14 @@ class TestValkeyOperations:
         self,
         valkey_client: GlideClient,
     ) -> None:
+        """SET expiryがtest keyへpositive TTLを設定するcontractを検証する.
+
+        Args:
+            valkey_client (GlideClient): 実Valkeyへ接続したfixture client.
+
+        Returns:
+            None: expiry設定後のTTLが正のintegerであることを確認して完了する.
+        """
         key = f"{_KEY_PREFIX}test_expiry"
         _ = await valkey_client.set(key, "expires", expiry=ExpirySet(ExpiryType.SEC, 3600))
         ttl = await valkey_client.ttl(key)
@@ -98,9 +165,17 @@ class TestValkeyOperations:
 
 
 class TestValkeyClose:
-    """Tests for Valkey client close behaviour."""
+    """Valkey client close behaviorを検証する."""
 
     async def test_close_closes_connection(self) -> None:
+        """Connected Valkey clientがexplicit closeを完了できるcontractを検証する.
+
+        Returns:
+            None: PING成功後にclient closeを完了する.
+
+        Raises:
+            pytest.skip.Exception: VALKEY_URLまたはValkey serviceが利用不能な場合.
+        """
         client = await create_valkey_client(_get_valkey_url())
         # Verify connectivity first
         result = await client.ping()
