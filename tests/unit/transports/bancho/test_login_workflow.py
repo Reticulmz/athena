@@ -1,4 +1,4 @@
-"""Tests for Starlette-independent login workflow orchestration."""
+"""Starlette非依存LoginWorkflowのparse, auth, response contractを検証する."""
 
 from __future__ import annotations
 
@@ -55,29 +55,58 @@ TEvent = TypeVar("TEvent", bound=object)
 
 @final
 class _RecordingCountryResolver:
-    """Country resolver that records the header mapping it received."""
+    """resolveへ渡されたheader mappingを記録するcountry resolver fakeを提供する.
+
+    Attributes:
+        _country (str): resolveが返す固定country code.
+        headers (Mapping[str, str] | None): 直近のresolve input. 未呼出時はNone.
+    """
 
     _country: str
     headers: Mapping[str, str] | None
 
     def __init__(self, country: str = "JP") -> None:
+        """resolveが返すcountry codeを設定する.
+
+        Args:
+            country (str): request headerの代わりに返すcountry code.
+        """
         self._country = country
         self.headers = None
 
     def resolve(self, headers: Mapping[str, str]) -> str:
+        """Header mappingを記録して設定済みcountryを返す.
+
+        Args:
+            headers (Mapping[str, str]): LoginWorkflowがcountry解決に渡すHTTP header.
+
+        Returns:
+            str: 初期化時に設定したcountry code.
+        """
         self.headers = headers
         return self._country
 
 
 @final
 class _RecordingLoginCommand:
-    """Login command fake that records parsed login input."""
+    """parsed login inputを記録して設定済み認証resultを返すLoginCommand fakeを提供する.
+
+    Attributes:
+        _result (LoginResponse | LoginResult): executeが返すauthentication outcome.
+        login_request (LoginRequest | None): command inputから受け取ったparsed request.
+        country (str | None): command inputから受け取ったresolved country.
+    """
 
     _result: LoginResponse | LoginResult
     login_request: LoginRequest | None
     country: str | None
 
     def __init__(self, result: LoginResponse | LoginResult) -> None:
+        """executeが返すauthentication outcomeを設定する.
+
+        Args:
+            result (LoginResponse | LoginResult): successful responseまたはlogin rejection result.
+        """
         self._result = result
         self.login_request = None
         self.country = None
@@ -86,6 +115,14 @@ class _RecordingLoginCommand:
         self,
         input_data: LoginCommandInput,
     ) -> LoginCommandResult:
+        """Parsed login inputを記録して設定済みoutcomeで包んで返す.
+
+        Args:
+            input_data (LoginCommandInput): LoginWorkflowが作るparsed requestとcountryのinput.
+
+        Returns:
+            LoginCommandResult: 設定済みauthentication outcomeを持つcommand result.
+        """
         self.login_request = input_data.login_request
         self.country = input_data.country
         return LoginCommandResult(outcome=self._result)
@@ -93,16 +130,37 @@ class _RecordingLoginCommand:
 
 @final
 class _RecordingLocalEventBus:
-    """Local event bus fake that records fired events."""
+    """fireされたeventを記録しoptional failureを再現するLocalEventBus fakeを提供する.
+
+    Attributes:
+        events (list[object]): 成功したfire callのevent順序.
+        raise_on_fire (bool): Trueならfire時にRuntimeErrorを送出する設定.
+    """
 
     events: list[object]
     raise_on_fire: bool
 
     def __init__(self, *, raise_on_fire: bool = False) -> None:
+        """Optional event fan-out failure設定を初期化する.
+
+        Args:
+            raise_on_fire (bool): fire時にfailureを再現するか.
+        """
         self.events = []
         self.raise_on_fire = raise_on_fire
 
     async def fire(self, event: object) -> None:
+        """eventを記録するか,設定時はevent fan-out failureを送出する.
+
+        Args:
+            event (object): LocalEventBusへfireするdomain event.
+
+        Returns:
+            None: 成功時にeventを記録して完了し, 呼び出し側へ値を返さない.
+
+        Raises:
+            RuntimeError: raise_on_fireがTrueの場合.
+        """
         if self.raise_on_fire:
             raise RuntimeError("event fan-out failed")
         self.events.append(event)
@@ -112,41 +170,95 @@ class _RecordingLocalEventBus:
         event_type: type[TEvent],
         handler: Callable[[TEvent], Awaitable[None]],
     ) -> None:
+        """protocol充足のためsubscription引数を受け取る.
+
+        Args:
+            event_type (type[TEvent]): subscription対象eventの型.
+            handler (Callable[[TEvent], Awaitable[None]]): eventを処理するasync handler.
+
+        Returns:
+            None: fakeではsubscriptionを保持せずに完了し, 呼び出し側へ値を返さない.
+        """
         _ = event_type
         _ = handler
 
 
 @final
 class _EmptyChannelCatalogQuery:
+    """常にempty channel catalogを返すquery fakeを提供する."""
+
     async def execute(self, _input_data: object) -> ChannelCatalogQueryResult:
+        """Channel catalog inputを受け取りempty resultを返す.
+
+        Args:
+            _input_data (object): protocol充足のため受け取るquery input.
+
+        Returns:
+            ChannelCatalogQueryResult: channelを含まないresult.
+        """
         return ChannelCatalogQueryResult(channels=())
 
 
 @final
 class _EmptyFriendIdsQuery:
+    """常にempty friend ID resultを返すquery fakeを提供する."""
+
     async def execute(self, _input_data: object) -> ListFriendIdsQueryResult:
+        """Friend ID query inputを受け取りempty resultを返す.
+
+        Args:
+            _input_data (object): protocol充足のため受け取るquery input.
+
+        Returns:
+            ListFriendIdsQueryResult: friend user IDを含まないresult.
+        """
         return ListFriendIdsQueryResult(friend_user_ids=())
 
 
 @final
 class _EmptyActiveSessionsQuery:
+    """常にempty active session resultを返すquery fakeを提供する."""
+
     async def execute(self, _input_data: object) -> ListActiveSessionsQueryResult:
+        """Active session query inputを受け取りempty resultを返す.
+
+        Args:
+            _input_data (object): protocol充足のため受け取るquery input.
+
+        Returns:
+            ListActiveSessionsQueryResult: active sessionを含まないresult.
+        """
         return ListActiveSessionsQueryResult(sessions=())
 
 
 @final
 class _EmptyCurrentUserStatsQuery:
+    """常にempty current stats resultを返すquery fakeを提供する."""
+
     async def execute(
         self,
         input_data: CurrentUserStatsQueryInput,
     ) -> CurrentUserStatsQueryResult:
+        """Current stats query inputを受け取りempty resultを返す.
+
+        Args:
+            input_data (CurrentUserStatsQueryInput): protocol充足のため受け取るquery input.
+
+        Returns:
+            CurrentUserStatsQueryResult: current statsを含まないresult.
+        """
         _ = input_data
         return CurrentUserStatsQueryResult(stats=())
 
 
 @final
 class _RecordingLoginResponseBuilder(LoginResponseBuilder):
-    """Login response builder fake that records successful responses."""
+    """successful LoginResponseを記録して固定streamを返すLoginResponseBuilder fakeを提供する.
+
+    Attributes:
+        _content (bytes): buildが返す固定S2C stream.
+        login_response (LoginResponse | None): buildへ渡されたsuccessful response.
+    """
 
     _content: bytes
     login_response: LoginResponse | None
@@ -156,6 +268,11 @@ class _RecordingLoginResponseBuilder(LoginResponseBuilder):
         *,
         content: bytes = _SUCCESS_STREAM,
     ) -> None:
+        """Empty query fakeと固定S2C streamを設定する.
+
+        Args:
+            content (bytes): successful login時にbuildが返すS2C stream.
+        """
         empty_query = _EmptyChannelCatalogQuery()
         friend_ids_query = _EmptyFriendIdsQuery()
         active_sessions_query = _EmptyActiveSessionsQuery()
@@ -187,6 +304,14 @@ class _RecordingLoginResponseBuilder(LoginResponseBuilder):
 
     @override
     async def build(self, login_response: LoginResponse) -> bytes:
+        """Successful responseを記録して固定S2C streamを返す.
+
+        Args:
+            login_response (LoginResponse): LoginWorkflowが認証成功後に渡すresponse.
+
+        Returns:
+            bytes: 初期化時に設定したS2C stream.
+        """
         self.login_response = login_response
         return self._content
 
@@ -201,11 +326,30 @@ def _build_login_body(
     client_hashes: str = "hash1:hash2:hash3",
     pm_private: int = 0,
 ) -> bytes:
+    """Stable client形式のraw login request bodyを構築する.
+
+    Args:
+        username (str): request 1行目に書くusername.
+        password_md5 (str): request 2行目に書くpassword MD5.
+        osu_version (str): client infoへ書くosu version.
+        utc_offset (int): client infoへ書くUTC offset.
+        display_city (int): client infoへ書くdisplay city flag.
+        client_hashes (str): client infoへ書くcolon区切りhash値.
+        pm_private (int): client infoへ書くprivate message flag.
+
+    Returns:
+        bytes: newline区切りlogin bodyのUTF-8 bytes.
+    """
     client_info = f"{osu_version}|{utc_offset}|{display_city}|{client_hashes}|{pm_private}"
     return f"{username}\n{password_md5}\n{client_info}\n".encode()
 
 
 def _login_response() -> LoginResponse:
+    """authentication成功を表す既定LoginResponseを作る.
+
+    Returns:
+        LoginResponse: token, user, privileges, session dataを持つsuccessful response fixture.
+    """
     user = make_user(id=_USER_ID, username="TestUser", country="JP")
     privileges = Privileges.NORMAL | Privileges.VERIFIED
     return LoginResponse(
@@ -241,6 +385,17 @@ def _make_workflow(
     _RecordingLoginResponseBuilder,
     _RecordingLocalEventBus,
 ]:
+    """Recording fake依存を注入したLoginWorkflowと依存を構築する.
+
+    Args:
+        auth_result (LoginResponse | LoginResult): login commandが返すauthentication outcome.
+        country_resolver (_RecordingCountryResolver | None): optional country resolver fake.
+        response_builder (_RecordingLoginResponseBuilder | None): optional response builder fake.
+        event_bus (_RecordingLocalEventBus | None): optional local event bus fake.
+
+    Returns:
+        tuple: workflowと実際に注入したrecording fake群.
+    """
     login_command = _RecordingLoginCommand(auth_result)
     resolver = country_resolver or _RecordingCountryResolver()
     builder = response_builder or _RecordingLoginResponseBuilder()
@@ -255,11 +410,23 @@ def _make_workflow(
 
 
 def _contextvars() -> Mapping[str, object]:
+    """現在のstructlog contextvarsを型付きmappingとして取得する.
+
+    Returns:
+        Mapping[str, object]: ログcontextにbind済みのkeyとvalue.
+    """
     return cast("Mapping[str, object]", structlog.contextvars.get_contextvars())
 
 
 class TestLoginWorkflow:
+    """LoginWorkflowのparse failure, rejection, success, event failureを検証する."""
+
     async def test_parse_failure_returns_auth_failed_packet_without_token_and_logs(self) -> None:
+        """Malformed bodyがcommand呼出前にauth failureとwarning logを返す契約を検証する.
+
+        Returns:
+            None: failure packet, 未呼出依存, log, 空contextvarsを確認して完了する.
+        """
         workflow, login_command, country_resolver, response_builder, event_bus = _make_workflow(
             auth_result=_login_response()
         )
@@ -289,6 +456,11 @@ class TestLoginWorkflow:
         assert "user_id" not in _contextvars()
 
     async def test_auth_rejection_returns_login_result_packet_without_token(self) -> None:
+        """Authentication rejectionがtokenなしのlogin result packetを返す契約を検証する.
+
+        Returns:
+            None: parsed request, resolved country, 未呼出builderとevent busを確認して完了する.
+        """
         headers = {"x-real-ip": "203.0.113.10"}
         country_resolver = _RecordingCountryResolver(country="US")
         workflow, login_command, resolver, response_builder, event_bus = _make_workflow(
@@ -315,6 +487,11 @@ class TestLoginWorkflow:
         assert "user_id" not in _contextvars()
 
     async def test_success_delegates_response_building_and_returns_issued_token(self) -> None:
+        """Authentication successがresponse builderとUserConnected eventを実行する契約を検証する.
+
+        Returns:
+            None: issued token, built stream, event, bound contextvarsを確認して完了する.
+        """
         login_response = _login_response()
         headers = {"x-real-ip": "203.0.113.20"}
         response_builder = _RecordingLoginResponseBuilder(
@@ -348,6 +525,11 @@ class TestLoginWorkflow:
             structlog.contextvars.clear_contextvars()
 
     async def test_success_still_returns_login_result_when_connected_event_fails(self) -> None:
+        """UserConnected event failure後もsuccessful login resultを返す契約を検証する.
+
+        Returns:
+            None: event bus failureにかかわらないstreamとissued tokenを確認して完了する.
+        """
         login_response = _login_response()
         event_bus = _RecordingLocalEventBus(raise_on_fire=True)
         workflow, _, _, _, _ = _make_workflow(
