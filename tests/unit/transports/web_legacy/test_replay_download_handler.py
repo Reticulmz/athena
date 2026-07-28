@@ -1,4 +1,4 @@
-"""Replay download handler auth mapping and orchestration tests."""
+"""Replay download handlerのauthorization, query, accounting contractを検証する."""
 
 from __future__ import annotations
 
@@ -59,7 +59,19 @@ _ACCOUNTING_OCCURRED_AT = datetime(2026, 7, 9, 12, 0, 0, tzinfo=UTC)
 
 @final
 class _AuthQuery:
+    """設定済みlegacy authentication outcomeを返すquery fakeを提供する.
+
+    Attributes:
+        result (LegacyWebAuthResult): executeが返すauthentication outcome.
+        inputs (list[SessionCredentialsQueryInput]): executeへ渡されたcredential inputの順序.
+    """
+
     def __init__(self, result: LegacyWebAuthResult) -> None:
+        """返却するlegacy authentication outcomeを設定する.
+
+        Args:
+            result (LegacyWebAuthResult): handlerへ返すsuccessfulまたはfailed auth result.
+        """
         self.result = result
         self.inputs: list[SessionCredentialsQueryInput] = []
 
@@ -67,17 +79,45 @@ class _AuthQuery:
         self,
         input_data: SessionCredentialsQueryInput,
     ) -> SessionCredentialsQueryResult:
+        """Credential inputを記録して設定済みauthentication outcomeを返す.
+
+        Args:
+            input_data (SessionCredentialsQueryInput): legacy credentialを持つquery input.
+
+        Returns:
+            SessionCredentialsQueryResult: 設定済みauth outcomeを包むquery result.
+        """
         self.inputs.append(input_data)
         return SessionCredentialsQueryResult(outcome=self.result)
 
 
 @final
 class _RecordingReplayDownloadQueryParser:
+    """設定済みparse resultを返しparse call数を記録するparser fakeを提供する.
+
+    Attributes:
+        result (ReplayDownloadParseResult): parseが返すpreconfigured result.
+        call_count (int): parseが呼ばれた回数.
+    """
+
     def __init__(self, result: ReplayDownloadParseResult) -> None:
+        """返却するreplay download parse resultを設定する.
+
+        Args:
+            result (ReplayDownloadParseResult): requestまたはmalformed branchを持つparser result.
+        """
         self.result = result
         self.call_count = 0
 
     def parse(self, query: Mapping[str, str]) -> ReplayDownloadParseResult:
+        """Query mappingを消費せずcall数だけ記録して設定済みresultを返す.
+
+        Args:
+            query (Mapping[str, str]): handlerから渡されるlegacy replay download query.
+
+        Returns:
+            ReplayDownloadParseResult: constructorで設定したparser result.
+        """
         _ = query
         self.call_count += 1
         return self.result
@@ -85,7 +125,19 @@ class _RecordingReplayDownloadQueryParser:
 
 @final
 class _ReplayDownloadQuery:
+    """設定済みreplay download query resultを返すquery fakeを提供する.
+
+    Attributes:
+        result (ReplayDownloadQueryResult): executeが返すbranchまたはresponse bodyを持つresult.
+        inputs (list[ReplayDownloadQueryInput]): executeへ渡されたtyped query inputの順序.
+    """
+
     def __init__(self, result: ReplayDownloadQueryResult) -> None:
+        """返却するreplay download query resultを設定する.
+
+        Args:
+            result (ReplayDownloadQueryResult): successfulまたはunavailable branchを持つresult.
+        """
         self.result = result
         self.inputs: list[ReplayDownloadQueryInput] = []
 
@@ -93,23 +145,61 @@ class _ReplayDownloadQuery:
         self,
         input_data: ReplayDownloadQueryInput,
     ) -> ReplayDownloadQueryResult:
+        """Typed query inputを記録して設定済みreplay resultを返す.
+
+        Args:
+            input_data (ReplayDownloadQueryInput): authenticated viewerとparsed replay targetを
+                持つinput.
+
+        Returns:
+            ReplayDownloadQueryResult: constructorで設定したreplay availability result.
+        """
         self.inputs.append(input_data)
         return self.result
 
 
 @final
 class _RecordingReplayDownloadAccounting:
+    """Accounting inputを記録し必要時にfailureを送出するpublisher fakeを提供する.
+
+    Attributes:
+        raises (bool): Trueならpublish時にRuntimeErrorを送出するflag.
+        inputs (list[ReplayDownloadAccountingInput]): publishへ渡されたaccounting inputの順序.
+    """
+
     def __init__(self, *, raises: bool = False) -> None:
+        """Accounting failureを再現するかどうかを設定する.
+
+        Args:
+            raises (bool): Trueならpublish後にRuntimeErrorを送出する. デフォルトはFalse.
+        """
         self.raises = raises
         self.inputs: list[ReplayDownloadAccountingInput] = []
 
     async def publish(self, input_data: ReplayDownloadAccountingInput) -> None:
+        """Accounting inputを記録し設定時だけsanitized failureを送出する.
+
+        Args:
+            input_data (ReplayDownloadAccountingInput): downloaded replayを表すaccounting command
+                input.
+
+        Returns:
+            None: inputの記録またはfailure送出を完了する.
+
+        Raises:
+            RuntimeError: raisesがTrueでaccounting failureを再現する場合.
+        """
         self.inputs.append(input_data)
         if self.raises:
             raise RuntimeError("raw query token=secret /tmp/replay.osr")
 
 
 async def test_auth_failure_returns_empty_401_without_parse_or_query() -> None:
+    """Authentication failureがparseとqueryを開始せずempty 401を返すcontractを検証する.
+
+    Returns:
+        None: authentication inputだけが記録されresponseがraw credentialを露出しないことを確認する.
+    """
     auth_query = _AuthQuery(
         LegacyWebAuthResult(failure=LegacyWebAuthFailure.INVALID_CREDENTIALS),
     )
@@ -146,6 +236,11 @@ async def test_auth_failure_returns_empty_401_without_parse_or_query() -> None:
 async def test_auth_success_shape_without_user_id_returns_empty_401_without_parse_or_query() -> (
     None
 ):
+    """User IDを欠くauth success shapeがparseとqueryを開始せずempty 401を返すcontractを検証する.
+
+    Returns:
+        None: incomplete authentication outcomeでsubsequent collaboratorが呼ばれないことを確認する.
+    """
     auth_query = _AuthQuery(LegacyWebAuthResult(username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     replay_query = _ReplayDownloadQuery(_hidden_score_result())
@@ -169,6 +264,11 @@ async def test_auth_success_shape_without_user_id_returns_empty_401_without_pars
 
 
 async def test_auth_success_calls_parser_and_malformed_request_returns_empty_404() -> None:
+    """Authenticated malformed requestがparser後にqueryを呼ばずempty 404を返すcontractを検証する.
+
+    Returns:
+        None: malformed branchとreasonをresponseへ漏らさないことを確認する.
+    """
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_malformed_parse_result())
     replay_query = _ReplayDownloadQuery(_hidden_score_result())
@@ -202,6 +302,11 @@ async def test_auth_success_calls_parser_and_malformed_request_returns_empty_404
 
 
 async def test_valid_request_calls_query_with_authenticated_user_and_parsed_values() -> None:
+    """Valid requestがauthenticated userとparsed replay targetでqueryを呼ぶcontractを検証する.
+
+    Returns:
+        None: unavailable responseとtyped query inputが期待どおりであることを確認する.
+    """
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     replay_query = _ReplayDownloadQuery(_hidden_score_result())
@@ -248,6 +353,14 @@ async def test_valid_request_calls_query_with_authenticated_user_and_parsed_valu
 async def test_unavailable_query_result_returns_empty_404_without_branch_leak(
     branch: ReplayDownloadBranch,
 ) -> None:
+    """Unavailable replay branchがbranch名を漏らさないempty 404を返すcontractを検証する.
+
+    Args:
+        branch (ReplayDownloadBranch): parameterizationで渡すunavailable replay branch.
+
+    Returns:
+        None: accountingを開始せずresponseからbranch valueを除外することを確認する.
+    """
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     replay_query = _ReplayDownloadQuery(ReplayDownloadQueryResult(branch=branch))
@@ -272,6 +385,11 @@ async def test_unavailable_query_result_returns_empty_404_without_branch_leak(
 
 
 async def test_success_query_result_returns_response_body() -> None:
+    """Successful replay queryがdownload bodyを返しbackground accountingを登録する.
+
+    Returns:
+        None: zip response headerとbackground accounting inputを確認して完了する.
+    """
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     accounting = _RecordingReplayDownloadAccounting()
@@ -314,6 +432,11 @@ async def test_success_query_result_returns_response_body() -> None:
 
 
 async def test_accounting_failure_preserves_success_response_and_logs_sanitized_failure() -> None:
+    """Background accounting failureがsuccess responseを変えずsanitized logを残す.
+
+    Returns:
+        None: response bodyとheaderを維持しraw query valueをlogへ出さないことを確認する.
+    """
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     accounting = _RecordingReplayDownloadAccounting(raises=True)
@@ -361,6 +484,11 @@ async def test_accounting_failure_preserves_success_response_and_logs_sanitized_
 
 
 async def test_accounting_input_failure_preserves_success_response() -> None:
+    """Invalid accounting timestampがsuccess responseを変えずfailureを記録するcontractを検証する.
+
+    Returns:
+        None: accounting inputをpublishせずsanitized ValueError logを残すことを確認する.
+    """
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     accounting = _RecordingReplayDownloadAccounting()
@@ -409,6 +537,11 @@ async def test_accounting_input_failure_preserves_success_response() -> None:
 
 
 async def test_unhandled_query_result_branch_fails_loudly() -> None:
+    """Unknown replay query branchがsilent fallbackではなくAssertionErrorとなるcontractを検証する.
+
+    Returns:
+        None: handlerがunhandled branchを明示的に拒否することを確認する.
+    """
     auth_query = _AuthQuery(LegacyWebAuthResult(user_id=42, username="PlayerOne"))
     parser = _RecordingReplayDownloadQueryParser(_valid_parse_result())
     replay_query = _ReplayDownloadQuery(
@@ -437,6 +570,20 @@ def _make_handler(
     accounting: _RecordingReplayDownloadAccounting | None = None,
     now_func: Callable[[], datetime] | None = None,
 ) -> ReplayDownloadHandler:
+    """Typed fake dependencyを注入したReplayDownloadHandlerを構築する.
+
+    Args:
+        auth_query (_AuthQuery): legacy credentialを判定するauthentication query fake.
+        parser (_RecordingReplayDownloadQueryParser): replay queryをparseするparser fake.
+        replay_query (_ReplayDownloadQuery): availability resultを返すreplay query fake.
+        accounting (_RecordingReplayDownloadAccounting | None): optional download accounting
+            publisher.
+        now_func (Callable[[], datetime] | None): accounting timestampを返すoptional clock.
+            Noneならfixed clock.
+
+    Returns:
+        ReplayDownloadHandler: replay download endpointを処理するhandler fixture.
+    """
     return ReplayDownloadHandler(
         auth_query=cast("SessionCredentialsQuery", auth_query),
         replay_download_parser=cast("ReplayDownloadQueryParser", cast("object", parser)),
@@ -450,12 +597,31 @@ def _make_handler(
 
 
 async def _run_background(response: Response) -> None:
+    """Responseへ登録されたbackground taskをawaitして実行する.
+
+    Args:
+        response (Response): background taskを持つreplay download response.
+
+    Returns:
+        None: registered background taskの実行を完了する.
+
+    Raises:
+        AssertionError: responseにbackground taskが登録されていない場合.
+    """
     if response.background is None:
         raise AssertionError("expected response background task")
     await response.background()
 
 
 def _request(params: Mapping[str, str]) -> Request:
+    """Replay download endpointへ送るStarlette GET requestを構築する.
+
+    Args:
+        params (Mapping[str, str]): query stringへ設定するlegacy replay download parameter mapping.
+
+    Returns:
+        Request: osu-getreplay.php pathを持つStarlette request.
+    """
     return make_starlette_request(
         method="GET",
         path="/web/osu-getreplay.php",
@@ -464,6 +630,11 @@ def _request(params: Mapping[str, str]) -> Request:
 
 
 def _query() -> dict[str, str]:
+    """Valid replay download requestを表すsynthetic query parameter mappingを構築する.
+
+    Returns:
+        dict[str, str]: score ID, mode, username, password hashを持つlegacy query mapping.
+    """
     return {
         "c": _RAW_SCORE_ID,
         "m": _RAW_MODE,
@@ -473,12 +644,22 @@ def _query() -> dict[str, str]:
 
 
 def _valid_parse_result() -> ReplayDownloadParseResult:
+    """Parsed score IDとrulesetを持つvalid replay download resultを構築する.
+
+    Returns:
+        ReplayDownloadParseResult: Mania scoreを表すtyped replay requestを持つresult.
+    """
     return ReplayDownloadParseResult(
         request=ReplayDownloadRequest(score_id=8675309, ruleset=Ruleset.MANIA),
     )
 
 
 def _malformed_parse_result() -> ReplayDownloadParseResult:
+    """Missing score IDを表すprovisional malformed resultを構築する.
+
+    Returns:
+        ReplayDownloadParseResult: malformed branchとsanitized reasonを持つresult.
+    """
     return ReplayDownloadParseResult(
         branch=ReplayDownloadBranch.MALFORMED_REQUEST_PROVISIONAL,
         reason=ReplayDownloadMalformedReason.MISSING_SCORE_ID,
@@ -486,6 +667,11 @@ def _malformed_parse_result() -> ReplayDownloadParseResult:
 
 
 def _hidden_score_result() -> ReplayDownloadQueryResult:
+    """Replayを閲覧できないhidden score query resultを構築する.
+
+    Returns:
+        ReplayDownloadQueryResult: HIDDEN_SCORE branchを持つunavailable result.
+    """
     return ReplayDownloadQueryResult(branch=ReplayDownloadBranch.HIDDEN_SCORE)
 
 
@@ -495,6 +681,19 @@ def _assert_response_excludes_raw_inputs(
     *,
     extra_values: tuple[str, ...] = (),
 ) -> None:
+    """Response bodyとheaderがraw replay request valueを露出しないことを検証する.
+
+    Args:
+        response (Response): raw value leakageを検査するhandler response.
+        query (Mapping[str, str]): raw username, credential, score IDを含むrequest query.
+        extra_values (tuple[str, ...]): responseへ漏れてはならないadditional internal value.
+
+    Returns:
+        None: bodyとheaderのleakage検証を完了する.
+
+    Raises:
+        AssertionError: raw queryまたはinternal valueがbodyかheaderで見つかった場合.
+    """
     body = bytes(response.body)
     header_block = "\n".join(
         f"{header_name}: {header_value}" for header_name, header_value in response.headers.items()
@@ -508,6 +707,14 @@ def _assert_response_excludes_raw_inputs(
 
 
 def _logs_do_not_expose_sensitive_values(logs: object) -> bool:
+    """Captured logがraw query, token, local pathなどのsensitive fragmentを含まないか判定する.
+
+    Args:
+        logs (object): structlog captureが返すrender可能なlog collection.
+
+    Returns:
+        bool: forbidden fragmentが一つもなければTrue. 一つでもあればFalse.
+    """
     rendered = repr(logs)
     forbidden_fragments = (
         "raw query",

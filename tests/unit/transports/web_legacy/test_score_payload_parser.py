@@ -1,4 +1,4 @@
-"""Unit tests for stable score payload mapper."""
+"""Stable score payload parserのlegacy, stable, validation contractを検証する."""
 
 import pytest
 
@@ -10,11 +10,26 @@ _UNSUPPORTED_STABLE_MOD_BITMASK = 1 << 31
 
 
 def _parse(payload: str) -> ParsedScore:
+    """Colon-delimited score payloadをStableScorePayloadParserでparseする.
+
+    Args:
+        payload (str): legacyまたはstable clientが送るraw score payload.
+
+    Returns:
+        ParsedScore: validated fieldとModCombinationを持つparsed score.
+
+    Raises:
+        ParseError: field count, integer field, mod bitmaskが無効な場合.
+    """
     return StableScorePayloadParser().parse(payload)
 
 
 def test_parse_valid_payload() -> None:
-    """Valid colon-separated payloadを正しくparseする。"""
+    """Valid colon-delimited legacy payloadを全fieldへparseするcontractを検証する.
+
+    Returns:
+        None: score, hit count, ruleset, ModCombinationの値を確認して完了する.
+    """
     # Format: user_id:username:beatmap_checksum:online_checksum:ruleset:mods
     #         :n300:n100:n50:geki:katu:miss:score:max_combo:perfect:passed
     payload = "100:testuser:abc123:xyz789:0:0:300:50:10:0:0:5:500000:350:0:1"
@@ -41,7 +56,11 @@ def test_parse_valid_payload() -> None:
 
 
 def test_parse_stable_client_payload() -> None:
-    """Stable client 19-field payload を正しくparseする。"""
+    """Stable clientの19-field payloadをscore metadataまでparseするcontractを検証する.
+
+    Returns:
+        None: grade, timestamp, client version, checksumを含むfieldを確認して完了する.
+    """
     payload = (
         "8119fb28af74b9445f4a685f8b09eec2:PlayerOne:"
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:552:2:1:1066:53:4:"
@@ -73,7 +92,11 @@ def test_parse_stable_client_payload() -> None:
 
 
 def test_parse_with_perfect_flag() -> None:
-    """Perfect flag (1) を正しくparseする。"""
+    """Perfect flag 1をTrueとしてparseするcontractを検証する.
+
+    Returns:
+        None: parsed scoreのperfect fieldがTrueであることを確認して完了する.
+    """
     payload = "100:user:abc:xyz:0:0:300:0:0:0:0:0:500000:300:1:1"
 
     result = _parse(payload)
@@ -82,7 +105,11 @@ def test_parse_with_perfect_flag() -> None:
 
 
 def test_parse_failed_score() -> None:
-    """Failed score (passed=0) を正しくparseする。"""
+    """Passed flag 0をFalseとしてparseするcontractを検証する.
+
+    Returns:
+        None: parsed scoreのpassed fieldがFalseであることを確認して完了する.
+    """
     payload = "100:user:abc:xyz:0:0:100:50:30:0:0:20:200000:150:0:0"
 
     result = _parse(payload)
@@ -91,7 +118,11 @@ def test_parse_failed_score() -> None:
 
 
 def test_parse_with_mods() -> None:
-    """Mods値を正しくparseする。"""
+    """Legacy mod bitmaskをModCombinationへparseするcontractを検証する.
+
+    Returns:
+        None: HDとDTを表すexpected ModCombinationを確認して完了する.
+    """
     payload = "100:user:abc:xyz:0:72:300:0:0:0:0:0:500000:300:0:1"
 
     result = _parse(payload)
@@ -107,16 +138,16 @@ def test_parse_with_mods() -> None:
     ],
 )
 def test_unsupported_mod_bitmask_reports_mod_validation_error(payload: str) -> None:
-    """unsupported stable Mod bitをinteger parse失敗と区別する.
+    """Unsupported stable mod bitをinteger parse failureと区別するcontractを検証する.
 
     Args:
-        payload (str): unsupported bitを含むlegacyまたはstable payload.
+        payload (str): unsupported bitを含むlegacyまたはstable score payload.
 
     Returns:
-        None: Mod validation専用のParseErrorになることを示す.
+        None: mod validation専用のParseErrorになることを確認して完了する.
 
     Raises:
-        AssertionError: unsupported Modがinteger field失敗へ誤分類された場合.
+        AssertionError: unsupported modがinteger field failureへ誤分類された場合.
     """
     with pytest.raises(ParseError, match="Invalid stable mod bitmask") as exc_info:
         _ = _parse(payload)
@@ -125,7 +156,11 @@ def test_unsupported_mod_bitmask_reports_mod_validation_error(payload: str) -> N
 
 
 def test_parse_different_rulesets() -> None:
-    """各rulesetを正しくparseする。"""
+    """All supported ruleset IDを同じnumeric valueへparseするcontractを検証する.
+
+    Returns:
+        None: osu, taiko, catch, maniaのruleset valueを確認して完了する.
+    """
     for ruleset_id in [0, 1, 2, 3]:
         payload = f"100:user:abc:xyz:{ruleset_id}:0:100:50:10:0:0:5:300000:200:0:1"
 
@@ -135,7 +170,11 @@ def test_parse_different_rulesets() -> None:
 
 
 def test_parse_invalid_field_count() -> None:
-    """フィールド数が不正な場合ParseErrorを発生させる。"""
+    """Invalid field countがParseErrorとなるcontractを検証する.
+
+    Returns:
+        None: error messageがfield count failureを示すことを確認して完了する.
+    """
     payload = "100:user:abc:xyz:0:0"  # Too few fields
 
     with pytest.raises(ParseError) as exc_info:
@@ -145,7 +184,11 @@ def test_parse_invalid_field_count() -> None:
 
 
 def test_parse_invalid_integer() -> None:
-    """整数フィールドが不正な場合ParseErrorを発生させる。"""
+    """Invalid integer fieldがParseErrorとなるcontractを検証する.
+
+    Returns:
+        None: error messageがuser IDまたはinteger failureを示すことを確認して完了する.
+    """
     payload = "invalid:user:abc:xyz:0:0:300:50:10:0:0:5:500000:350:0:1"
 
     with pytest.raises(ParseError) as exc_info:
@@ -155,13 +198,21 @@ def test_parse_invalid_integer() -> None:
 
 
 def test_parse_empty_payload() -> None:
-    """Empty payloadでParseErrorを発生させる。"""
+    """Empty payloadがParseErrorとなるcontractを検証する.
+
+    Returns:
+        None: parserがempty inputを受理しないことを確認して完了する.
+    """
     with pytest.raises(ParseError):
         _ = _parse("")
 
 
 def test_parse_username_with_special_characters() -> None:
-    """特殊文字を含むusernameを正しくparseする。"""
+    """Underscoreとhyphenを含むusernameを変えずにparseするcontractを検証する.
+
+    Returns:
+        None: parsed scoreのusernameがinput valueと一致することを確認して完了する.
+    """
     payload = "100:test_user-123:abc:xyz:0:0:300:50:10:0:0:5:500000:350:0:1"
 
     result = _parse(payload)
