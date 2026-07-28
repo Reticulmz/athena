@@ -28,6 +28,12 @@ coverageを検査する。Args:/Returns:/Yields:/Raises:/Attributes:の型と意
 call site、relevant testを照合するreviewで確認する。pydoclintはTyperの`Annotated` metadataを
 基底型として比較する公式対応が確認できるまでactive gateへ含めない。
 
+`./scripts/ci.sh quality`はGit indexにあるtracked first-party `.py`全体へRuffとinterrogateを
+適用し、BasedPyrightとimport-linterは従来どおり`src/ tests/`だけを対象にする。`flake.nix`が
+generated pre-commit configの唯一のownerであり、uv lock版Ruff format/lintを変更された`.py`だけへ
+実行した後、filenameを渡さずfull `./scripts/ci.sh docstrings` gateを1回実行する。`.pyi`だけの
+変更はdocstring gateを起動しない。
+
 Sphinxのdependency、config、theme、generated artifact、公開workflowはAthenaでは所有せず、
 external documentation repositoryの責務とする。Sphinx autodocはmoduleをimportするため、その
 repositoryがAthenaと必要dependencyをinstallし、runtime environmentと対象moduleを選択する。

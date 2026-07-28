@@ -134,6 +134,13 @@ Style presence and format, while interrogate checks definition coverage. Section
 types and meanings are reviewed against the canonical standard, implementation,
 call sites, and relevant tests.
 
+`./scripts/ci.sh quality` runs the same Ruff and interrogate checks over every
+tracked first-party `.py` file, while basedpyright and import-linter retain their
+`src/ tests/` scope. The generated pre-commit configuration is owned by
+`flake.nix`: it runs the uv lockfile's Ruff formatter and linter for changed `.py`
+files, then invokes the full docstring gate once. Changes limited to `.pyi` stubs
+do not trigger the docstring gate.
+
 Sphinx configuration, themes, generated output, and publishing belong to an
 external documentation repository. Because Sphinx autodoc imports modules, that
 repository owns Athena dependency installation, runtime environment, and module
