@@ -780,7 +780,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/integrationの5 file_
 
-- [ ] 3.54 (P) Login、registration、polling integration testを整備する
+- [x] 3.54 (P) Login、registration、polling integration testを整備する
   - test_login_flow.py、test_registration_flow.py、test_polling_e2e.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および3 fileのintegration testが通る
   - _Depends: 1.4_
