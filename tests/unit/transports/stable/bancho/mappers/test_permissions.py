@@ -1,4 +1,4 @@
-"""Stable bancho authorization output mapper tests."""
+"""Stable Bancho authorization output mapperのunit testを提供する."""
 
 from __future__ import annotations
 
@@ -26,6 +26,11 @@ CAPTURED_FULL_PRIVILEGES_MASK = 0x1FF
 
 
 def test_stable_client_permission_values_match_bancho_reference() -> None:
+    """Bancho referenceと一致するclient permission wire値を検証する.
+
+    Returns:
+        None: 各permissionのcanonical integer値を確認して完了する.
+    """
     assert BanchoClientPermission.NORMAL == 1
     assert BanchoClientPermission.NOMINATOR == 2
     assert BanchoClientPermission.SUPPORTER == 4
@@ -37,6 +42,11 @@ def test_stable_client_permission_values_match_bancho_reference() -> None:
 
 
 def test_stable_bancho_authorization_output_is_derived_from_privileges() -> None:
+    """Internal Privilegesからstable authorization outputを導出する契約を検証する.
+
+    Returns:
+        None: loginとpresence permissionの変換結果を確認して完了する.
+    """
     output = map_stable_bancho_authorization(
         Privileges.SUPPORTER | Privileges.MODERATOR | Privileges.UNRESTRICTED
     )
@@ -51,6 +61,11 @@ def test_stable_bancho_authorization_output_is_derived_from_privileges() -> None
 
 
 def test_stable_bancho_authorization_maps_all_supported_privileges() -> None:
+    """全ての公開stable privilege mappingを検証する.
+
+    Returns:
+        None: moderator, supporter, admin, developer, tournamentの出力を確認して完了する.
+    """
     output = map_stable_bancho_authorization(
         Privileges.MODERATOR
         | Privileges.SUPPORTER
@@ -70,6 +85,11 @@ def test_stable_bancho_authorization_maps_all_supported_privileges() -> None:
 
 
 def test_stable_bancho_authorization_maps_captured_full_privileges_to_peppy_presence() -> None:
+    """Captureしたfull privilege maskをPEPPY presenceへ変換する契約を検証する.
+
+    Returns:
+        None: full maskのlogin permissionとpresence permissionを確認して完了する.
+    """
     output = map_stable_bancho_authorization(Privileges(CAPTURED_FULL_PRIVILEGES_MASK))
 
     assert output.login_permissions == (
@@ -83,6 +103,11 @@ def test_stable_bancho_authorization_maps_captured_full_privileges_to_peppy_pres
 
 
 def test_stable_bancho_authorization_maps_admin_and_developer_to_peppy() -> None:
+    """ADMINとDEVELOPERをPEPPY client permissionへ変換する契約を検証する.
+
+    Returns:
+        None: loginとpresenceにPEPPY permissionが設定されることを確認して完了する.
+    """
     output = map_stable_bancho_authorization(Privileges.ADMIN | Privileges.DEVELOPER)
 
     expected = BanchoClientPermission.NORMAL | BanchoClientPermission.PEPPY
@@ -91,6 +116,11 @@ def test_stable_bancho_authorization_maps_admin_and_developer_to_peppy() -> None
 
 
 def test_stable_bancho_authorization_keeps_tournament_staff_out_of_presence() -> None:
+    """TOURNAMENT permissionをpresence permissionへ含めない契約を検証する.
+
+    Returns:
+        None: tournament staffはloginだけに出力されることを確認して完了する.
+    """
     output = map_stable_bancho_authorization(Privileges.TOURNAMENT)
 
     assert output.login_permissions == (
@@ -100,6 +130,11 @@ def test_stable_bancho_authorization_keeps_tournament_staff_out_of_presence() ->
 
 
 def test_stable_bancho_authorization_output_ignores_internal_only_privileges() -> None:
+    """Internal-only Privilegesをstable client outputへ漏らさない契約を検証する.
+
+    Returns:
+        None: normal permission以外が出力されないことを確認して完了する.
+    """
     output = map_stable_bancho_authorization(
         Privileges.VERIFIED
         | Privileges.UNRESTRICTED
@@ -112,6 +147,11 @@ def test_stable_bancho_authorization_output_ignores_internal_only_privileges() -
 
 
 def test_stable_bancho_authorization_full_privileges_set() -> None:
+    """Privileges enum全体を変換した出力の上限を検証する.
+
+    Returns:
+        None: stable clientが表現可能なpermission集合だけを確認して完了する.
+    """
     all_privileges = Privileges.NONE
     for privilege in Privileges:
         all_privileges |= privilege
@@ -129,6 +169,11 @@ def test_stable_bancho_authorization_full_privileges_set() -> None:
 
 
 def test_stable_client_permissions_are_not_internal_authorization_inputs() -> None:
+    """Internal authorization moduleがstable client permissionを入力にしないことを検証する.
+
+    Returns:
+        None: 禁止importを持つmodule一覧が空であることを確認して完了する.
+    """
     offenders = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {name}"
         for path in INTERNAL_AUTHORIZATION_MODULES
@@ -142,6 +187,11 @@ def test_stable_client_permissions_are_not_internal_authorization_inputs() -> No
 
 
 def test_stable_bancho_mapper_does_not_accept_client_permissions_as_input() -> None:
+    """Stable mapperがBanchoClientPermissionをfunction inputに使わないことを検証する.
+
+    Returns:
+        None: mapper AST内に禁止annotationがないことを確認して完了する.
+    """
     mapper_path = SOURCE_ROOT / "transports" / "stable" / "bancho" / "mappers" / "permissions.py"
     tree = ast.parse(mapper_path.read_text(encoding="utf-8"), filename=mapper_path.as_posix())
 
@@ -157,6 +207,14 @@ def test_stable_bancho_mapper_does_not_accept_client_permissions_as_input() -> N
 
 
 def _imported_names(path: Path) -> set[str]:
+    """Module ASTからabsolute import名とimport対象名を収集する.
+
+    Args:
+        path (Path): 読み取るPython source fileのpath.
+
+    Returns:
+        set[str]: absolute importとfrom importのfully qualified name集合.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     names: set[str] = set()
 
@@ -171,6 +229,14 @@ def _imported_names(path: Path) -> set[str]:
 
 
 def _annotation_name(annotation: ast.expr | None) -> str | None:
+    """Annotation AST nodeから比較用の最終型名を取得する.
+
+    Args:
+        annotation (ast.expr | None): function parameterに書かれたannotation node.
+
+    Returns:
+        str | None: Name, Attribute, string literalの型名. 対応しないnodeはNone.
+    """
     if isinstance(annotation, ast.Name):
         return annotation.id
     if isinstance(annotation, ast.Attribute):

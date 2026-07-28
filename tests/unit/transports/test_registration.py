@@ -1,11 +1,4 @@
-"""RegistrationHandler (POST /users) unit tests.
-
-TDD RED -> GREEN -> REFACTOR.
-Tests: successful registration, validation errors, check=1 mode (validate only).
-
-Uses Starlette TestClient with a minimal app that routes POST /users to the handler.
-Real AuthService with InMemoryUserRepository, InMemoryRoleRepository, real PasswordService.
-"""
+"""Stable web legacy RegistrationHandlerのunit testを提供する."""
 
 from __future__ import annotations
 
@@ -53,7 +46,11 @@ def _make_app() -> tuple[
     InMemoryUserQueryRepository,
     InMemoryRoleQueryRepository,
 ]:
-    """Build a Starlette app with RegistrationHandler wired to POST /users."""
+    """RegistrationHandlerをPOST /usersへ配線したin-memory test appを構築する.
+
+    Returns:
+        tuple: Starlette app, registration command, user query repository, role query repository.
+    """
     uow_factory = InMemoryUnitOfWorkFactory()
     uow_factory.seed_roles([_ROLE_DEFAULT])
 
@@ -89,7 +86,17 @@ def _registration_form(
     password: str = "SecurePass1234",
     check: str = "0",
 ) -> dict[str, str]:
-    """Build form data matching osu! client registration format."""
+    """Stable client registration formatに一致するform dataを構築する.
+
+    Args:
+        username (str): user[username]へ設定する表示名.
+        email (str): user[user_email]へ設定するemail address.
+        password (str): user[password]へ設定するplain text password.
+        check (str): validate-only modeを示すcheck field値.
+
+    Returns:
+        dict[str, str]: legacy endpointへ渡すregistration form mapping.
+    """
     return {
         "user[username]": username,
         "user[user_email]": email,
@@ -104,9 +111,14 @@ def _registration_form(
 
 
 class TestRegistrationSuccess:
-    """POST /users with valid data and check=0 creates an account."""
+    """Valid formとcheck=0によるaccount作成を検証する."""
 
     async def test_returns_ok_with_body(self) -> None:
+        """Successful registrationがok bodyを持つHTTP 200を返すcontractを検証する.
+
+        Returns:
+            None: response statusとexact bodyを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             resp = client.post("/users", data=_registration_form())
@@ -114,6 +126,11 @@ class TestRegistrationSuccess:
             assert resp.content == b"ok"
 
     async def test_user_persisted_in_repository(self) -> None:
+        """Successful registrationがuser query repositoryへ保存されるcontractを検証する.
+
+        Returns:
+            None: normalized lookup後のusernameを確認して完了する.
+        """
         app, _, user_repo, _ = _make_app()
         with TestClient(app) as client:
             _ = client.post("/users", data=_registration_form())
@@ -122,6 +139,11 @@ class TestRegistrationSuccess:
         assert user.username == "TestUser"
 
     async def test_default_role_assigned(self) -> None:
+        """Successful registrationがDefault roleをuserへ割り当てるcontractを検証する.
+
+        Returns:
+            None: 作成userがDefault roleを1件だけ持つことを確認して完了する.
+        """
         app, _, user_repo, role_repo = _make_app()
         with TestClient(app) as client:
             _ = client.post("/users", data=_registration_form())
@@ -139,9 +161,14 @@ class TestRegistrationSuccess:
 
 
 class TestRegistrationValidationError:
-    """POST /users with invalid data returns 400 with form_error JSON."""
+    """Invalid registration formがform_error JSONを持つHTTP 400となることを検証する."""
 
     async def test_bad_username_returns_400(self) -> None:
+        """短すぎるusernameをHTTP 400で拒否するcontractを検証する.
+
+        Returns:
+            None: invalid username responseのstatusを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             resp = client.post(
@@ -151,6 +178,11 @@ class TestRegistrationValidationError:
             assert resp.status_code == _BAD_REQUEST
 
     async def test_bad_username_error_format(self) -> None:
+        """Invalid username errorがlegacy form_error JSON shapeを保つcontractを検証する.
+
+        Returns:
+            None: user.username errorがlistとして存在することを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             resp = client.post(
@@ -166,6 +198,11 @@ class TestRegistrationValidationError:
             assert isinstance(user_err["username"], list)
 
     async def test_bad_password_returns_400(self) -> None:
+        """短すぎるpasswordをHTTP 400とpassword errorで拒否するcontractを検証する.
+
+        Returns:
+            None: form_error内にpassword field errorがあることを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             resp = client.post(
@@ -179,6 +216,11 @@ class TestRegistrationValidationError:
             assert "password" in user_err
 
     async def test_bad_email_returns_400(self) -> None:
+        """Invalid email addressをHTTP 400とemail errorで拒否するcontractを検証する.
+
+        Returns:
+            None: form_error内にemail field errorがあることを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             resp = client.post(
@@ -192,7 +234,11 @@ class TestRegistrationValidationError:
             assert "email" in user_err
 
     async def test_multiple_errors_accumulated(self) -> None:
-        """All field errors returned in a single response."""
+        """複数のinvalid field errorを1つのresponseへ集約するcontractを検証する.
+
+        Returns:
+            None: username, password, emailの全errorが同時に存在することを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             resp = client.post(
@@ -212,6 +258,11 @@ class TestRegistrationValidationError:
             assert "email" in errors
 
     async def test_duplicate_username_returns_400(self) -> None:
+        """既存usernameによる2回目のregistrationをHTTP 400で拒否するcontractを検証する.
+
+        Returns:
+            None: form_error内にusername field errorがあることを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             # First registration succeeds
@@ -228,6 +279,11 @@ class TestRegistrationValidationError:
             assert "username" in user_err
 
     async def test_duplicate_email_returns_400(self) -> None:
+        """既存emailによる2回目のregistrationをHTTP 400で拒否するcontractを検証する.
+
+        Returns:
+            None: form_error内にemail field errorがあることを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             _ = client.post("/users", data=_registration_form())
@@ -248,9 +304,14 @@ class TestRegistrationValidationError:
 
 
 class TestRegistrationCheckOnly:
-    """check=1 validates without creating an account."""
+    """check=1がaccountを作らないvalidate-only modeとなることを検証する."""
 
     async def test_check_only_valid_returns_ok(self) -> None:
+        """Valid check-only requestがok bodyを持つHTTP 200を返すcontractを検証する.
+
+        Returns:
+            None: response statusとexact bodyを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             resp = client.post(
@@ -261,6 +322,11 @@ class TestRegistrationCheckOnly:
             assert resp.content == b"ok"
 
     async def test_check_only_does_not_create_user(self) -> None:
+        """Check-only requestがuser recordを作成しないcontractを検証する.
+
+        Returns:
+            None: request後のuser lookupがNoneであることを確認して完了する.
+        """
         app, _, user_repo, _ = _make_app()
         with TestClient(app) as client:
             _ = client.post(
@@ -271,6 +337,11 @@ class TestRegistrationCheckOnly:
         assert user is None
 
     async def test_check_only_invalid_returns_400(self) -> None:
+        """Invalid check-only requestがvalidation errorを返すcontractを検証する.
+
+        Returns:
+            None: form_error内にusername field errorがあることを確認して完了する.
+        """
         app, *_ = _make_app()
         with TestClient(app) as client:
             resp = client.post(
