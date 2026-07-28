@@ -693,7 +693,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/transports/bancho/protocol/{__init__,test_types,test_writer}.py_
 
-- [ ] 3.43 (P) Bancho message/presence handler testを整備する
+- [x] 3.43 (P) Bancho message/presence handler testを整備する
   - test_chat_handlers.py、test_friend_handlers.py、test_presence_handlers.py、
     test_stats_request_handler.py、test_status_handlers.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および5 fileのhandler testが通る
