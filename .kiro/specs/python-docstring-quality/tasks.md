@@ -867,3 +867,4 @@
 - `__init__`は`Returns:`を記載しない例外であり、それ以外の`None` return callableは`Returns: None`を記載する.
 - 全corpus taskはRuff Dとinterrogateに加え、ASTでdocstring token中のnon-ASCII punctuationが0件であることを確認する. `。`と`、`はASCII `.`と`,`へ置換し、runtime stringは変更しない.
 - Task 3.26では、nested handlerの`return None`をuser承認済みのruntime-equivalent bare `return`へ変更した. AST監査はこの正規化以外のruntime statement差分がないことを確認した.
+- Task 3のfile partitionから`tests/unit/repositories/test_sqlalchemy_beatmap_repository.py`が漏れていたため、Task 4開始前の補正でdocstring coverage 2.1%から100%へ回復した.
