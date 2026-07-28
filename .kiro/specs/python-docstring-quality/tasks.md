@@ -754,7 +754,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/integration file_
 
-- [ ] 3.51 (P) Beatmap、blob、score、score-submit integration testを整備する
+- [x] 3.51 (P) Beatmap、blob、score、score-submit integration testを整備する
   - tests/integration/services/**、test_beatmap_leaderboard_reconciliation.py、
     test_blob_storage_sqlalchemy.py、test_score_submission_integration.py、
     test_user_stats_game_flow.py、transports/web_legacy/__init__.py、
