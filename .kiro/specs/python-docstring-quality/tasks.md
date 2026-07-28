@@ -732,7 +732,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: tests/unit/transports/web_legacy/test_getscores_*.py_
 
-- [ ] 3.48 (P) Legacy replay/score-submit unit testを整備する
+- [x] 3.48 (P) Legacy replay/score-submit unit testを整備する
   - web_legacy test package module、test_replay_download_*.py、test_score_*.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有replay/score-submit testが通る
   - _Depends: 1.4_
