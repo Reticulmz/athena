@@ -1,4 +1,7 @@
-"""安定版 score submit PP response の integration scenario。"""
+"""Stable score submitのPP response scenarioを検証するintegration test.
+
+performance completion, retry, unavailable responseのlegacy互換性を確認する.
+"""
 
 from __future__ import annotations
 
@@ -52,6 +55,12 @@ _SUBMITTED_AT = datetime(2026, 6, 16, 12, 0, 0, tzinfo=UTC)
 
 @dataclass(slots=True)
 class _BeatmapResolver:
+    """指定rank statusを返すscore submit用beatmap resolver fake.
+
+    Attributes:
+        rank_status (BeatmapRankStatus): resolve resultへ設定するbeatmap rank status.
+    """
+
     rank_status: BeatmapRankStatus
 
     async def resolve_by_beatmap_id(
@@ -59,6 +68,15 @@ class _BeatmapResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Beatmap識別子を指定rank statusの結果へ解決する.
+
+        Args:
+            beatmap_id (int): 解決結果のbeatmapへ設定する識別子.
+            options (BeatmapResolveOptions | None): 解決option, fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: 指定識別子と設定済みrank statusを持つ解決結果.
+        """
         _ = options
         return _resolve_result(beatmap_id=beatmap_id, rank_status=self.rank_status)
 
@@ -67,6 +85,18 @@ class _BeatmapResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """固定checksumを指定rank statusの結果へ解決する.
+
+        Args:
+            checksum_md5 (str): `_BEATMAP_CHECKSUM`と一致すべきMD5 checksum.
+            options (BeatmapResolveOptions | None): 解決option, fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: fixed beatmap識別子と設定済みrank statusを持つ解決結果.
+
+        Raises:
+            AssertionError: checksum_md5がtest用固定checksumと一致しない場合.
+        """
         _ = options
         assert checksum_md5 == _BEATMAP_CHECKSUM
         return _resolve_result(beatmap_id=1, rank_status=self.rank_status)
@@ -74,13 +104,29 @@ class _BeatmapResolver:
 
 @final
 class _PerformanceCalculationRequest:
+    """Performance calculation requestを記録してcreated結果を返すfake.
+
+    Attributes:
+        commands (list[RequestPerformanceCalculationCommand]): executeへ渡されたrequest command列.
+    """
+
     def __init__(self) -> None:
+        """空のperformance request記録列を初期化する."""
         self.commands: list[RequestPerformanceCalculationCommand] = []
 
     async def execute(
         self,
         command: RequestPerformanceCalculationCommand,
     ) -> RequestPerformanceCalculationResult:
+        """Request commandを記録してcreated resultを返す.
+
+        Args:
+            command (RequestPerformanceCalculationCommand): 作成済みとして記録するcalculation
+                request.
+
+        Returns:
+            RequestPerformanceCalculationResult: commandのscore識別子を持つcreated result.
+        """
         self.commands.append(command)
         return RequestPerformanceCalculationResult(
             outcome=RequestPerformanceCalculationOutcome.CREATED,
@@ -91,7 +137,22 @@ class _PerformanceCalculationRequest:
 
 @final
 class _PerformanceResponses:
+    """順番にperformance submit responseを返すquery fake.
+
+    Attributes:
+        _responses (tuple[PerformanceSubmitResponse, ...]): 呼び出し順に返すresponse列.
+        queries (list[PerformanceSubmitResponseQuery]): wait/getへ渡されたqueryの記録列.
+    """
+
     def __init__(self, *responses: PerformanceSubmitResponse) -> None:
+        """返却順序のperformance response列と空のquery記録列を設定する.
+
+        Args:
+            responses (PerformanceSubmitResponse): wait/get呼び出しで順に返すresponse.
+
+        Notes:
+            response数を超える呼び出しでは最後のresponseを繰り返し返す.
+        """
         self._responses: tuple[PerformanceSubmitResponse, ...] = responses
         self.queries: list[PerformanceSubmitResponseQuery] = []
 
@@ -99,6 +160,14 @@ class _PerformanceResponses:
         self,
         query: PerformanceSubmitResponseQuery,
     ) -> PerformanceSubmitResponse:
+        """Submit response queryを記録して次のconfigured responseを返す.
+
+        Args:
+            query (PerformanceSubmitResponseQuery): scoreのperformance responseを待つquery.
+
+        Returns:
+            PerformanceSubmitResponse: 呼び出し位置に対応するconfigured response.
+        """
         response_index = min(len(self.queries), len(self._responses) - 1)
         self.queries.append(query)
         return self._responses[response_index]
@@ -107,6 +176,14 @@ class _PerformanceResponses:
         self,
         query: PerformanceSubmitResponseQuery,
     ) -> PerformanceSubmitResponse:
+        """Submit response queryを記録して現在のconfigured responseを返す.
+
+        Args:
+            query (PerformanceSubmitResponseQuery): scoreのperformance responseを取得するquery.
+
+        Returns:
+            PerformanceSubmitResponse: 呼び出し位置に対応するconfigured response.
+        """
         response_index = min(len(self.queries), len(self._responses) - 1)
         self.queries.append(query)
         return self._responses[response_index]
@@ -114,10 +191,22 @@ class _PerformanceResponses:
 
 @final
 class _CalculatorIdentity:
+    """Performance requestに渡す固定calculator identityを提供するfake."""
+
     def calculator_name(self) -> str:
+        """Test calculatorの固定名を返す.
+
+        Returns:
+            str: score submit performance requestへ設定するcalculator名.
+        """
         return "test-calculator"
 
     def calculator_version(self) -> str:
+        """Test calculatorの固定versionを返す.
+
+        Returns:
+            str: score submit performance requestへ設定するcalculator version.
+        """
         return "1.2.3"
 
 
@@ -129,19 +218,20 @@ class _CalculatorIdentity:
 async def test_ranked_or_approved_submit_returns_pp_when_performance_completes(
     rank_status: BeatmapRankStatus,
 ) -> None:
-    """ランク対象 submit が性能計算完了後に pp を返すことを検証する。
+    """Rankedまたはapproved submitがperformance completion後にPPを返すことを検証する.
 
     Args:
-        rank_status: 検証対象の ranked 系 beatmap status。
+        rank_status (BeatmapRankStatus): 検証対象のranked系beatmap status.
 
     Returns:
-        None。
+        None: stable response, score保存, performance queryをassertして終了する.
 
     Raises:
-        AssertionError: response body、score 保存、性能応答 query が期待と異なる場合。
+        AssertionError: response body, score保存,
+            またはperformance response queryが期待と異なる場合.
 
-    Constraints:
-        性能計算 request が成功した場合だけ submit response の ppAfter を検証する。
+    Notes:
+        performance calculation requestが成功した場合だけsubmit responseのppAfterを検証する.
     """
     performance_request = _PerformanceCalculationRequest()
     performance_response = _PerformanceResponses(
@@ -172,19 +262,16 @@ async def test_ranked_or_approved_submit_returns_pp_when_performance_completes(
 
 @pytest.mark.asyncio
 async def test_pending_submit_returns_retryable_then_same_fingerprint_retry_returns_pp() -> None:
-    """保留 submit 後の同一 fingerprint retry が pp を返すことを検証する。
-
-    Args:
-        なし。
+    """Pending submit後の同一fingerprint retryがPPを返すことを検証する.
 
     Returns:
-        None。
+        None: retryable response, completed retry, score重複なしをassertして終了する.
 
     Raises:
-        AssertionError: retryable response と retry 後の completed response が期待と異なる場合。
+        AssertionError: retryable responseまたはretry後のcompleted responseが期待と異なる場合.
 
-    Constraints:
-        同一 fingerprint retry は score を重複作成せず、既存 score の性能応答を読む。
+    Notes:
+        同一fingerprint retryはscoreを重複作成せず, 既存scoreのperformance responseを読む.
     """
     performance_request = _PerformanceCalculationRequest()
     performance_response = _PerformanceResponses(
@@ -218,19 +305,16 @@ async def test_pending_submit_returns_retryable_then_same_fingerprint_retry_retu
 
 @pytest.mark.asyncio
 async def test_unavailable_performance_returns_accepted_response_with_zero_pp() -> None:
-    """性能値 unavailable の場合に ppAfter:0 の accepted response を返す。
-
-    Args:
-        なし。
+    """Performance値unavailable時にppAfter:0のaccepted responseを返すことを検証する.
 
     Returns:
-        None。
+        None: stable responseのzero PPと内部状態非露出をassertして終了する.
 
     Raises:
-        AssertionError: response body が stable legacy 互換の期待値と異なる場合。
+        AssertionError: response bodyがstable legacy互換の期待値と異なる場合.
 
-    Constraints:
-        calculator 内部状態や unavailable label は client response に露出しない。
+    Notes:
+        calculator内部状態やunavailable labelはclient responseに露出しない.
     """
     performance_response = _PerformanceResponses(
         PerformanceSubmitResponse(
@@ -259,6 +343,20 @@ def _make_handler(
     performance_request: _PerformanceCalculationRequest | None = None,
     performance_response: _PerformanceResponses,
 ) -> tuple[ScoreSubmitHandler, bytes, str, InMemoryUnitOfWorkFactory]:
+    """Performance responseを統合したscore submit handlerとrequest部品を構築する.
+
+    Args:
+        online_checksum (str): stable payloadに設定するscoreのonline checksum.
+        rank_status (BeatmapRankStatus): resolver fakeが返すbeatmap rank status.
+        performance_request (_PerformanceCalculationRequest | None): request記録fake,
+            未指定時は新規fakeを使う.
+        performance_response (_PerformanceResponses): handlerが待機または取得する
+            performance response fake.
+
+    Returns:
+        tuple[ScoreSubmitHandler, bytes, str, InMemoryUnitOfWorkFactory]:
+            handler, multipart body, content type, assertion用factory.
+    """
     uow_factory = InMemoryUnitOfWorkFactory()
     service = ProcessScoreSubmissionUseCase(
         submit_score_use_case=make_submit_score_use_case(uow_factory),
@@ -275,6 +373,11 @@ def _make_handler(
 
 
 def _multipart_body() -> tuple[bytes, str]:
+    """Performance scenario用のstable multipart bodyを作成する.
+
+    Returns:
+        tuple[bytes, str]: score, replay, client fieldを含むbodyとContent-Type value.
+    """
     boundary = "----AthenaScoreSubmitBoundary"
     content_type = f"multipart/form-data; boundary={boundary}"
     encrypted_payload = base64.b64encode(b"stable-submit-performance")
@@ -314,6 +417,15 @@ def _multipart_body() -> tuple[bytes, str]:
 
 
 def _request(body: bytes, content_type: str) -> Request:
+    """Stable score submit endpoint用のStarlette requestを作成する.
+
+    Args:
+        body (bytes): POST requestへ設定するmultipart body.
+        content_type (str): request headerへ設定するmultipart content type.
+
+    Returns:
+        Request: ScoreSubmitHandlerへ直接渡せるPOST request.
+    """
     return make_starlette_request(
         method="POST",
         path="/web/osu-submit-modular-selector.php",
@@ -323,6 +435,14 @@ def _request(body: bytes, content_type: str) -> Request:
 
 
 def _stable_payload(online_checksum: str) -> str:
+    """Performance scenarioのstable score plaintext payloadを作成する.
+
+    Args:
+        online_checksum (str): scoreを一意にするonline checksum.
+
+    Returns:
+        str: stable score decoderが復号後に返すcolon区切りpayload.
+    """
     return (
         f"{_BEATMAP_CHECKSUM}:test_user:{online_checksum}:"
         "300:50:0:10:5:0:500000:99:1:A:0:1:0:260616120000:20241201:client"
@@ -334,6 +454,15 @@ def _resolve_result(
     beatmap_id: int,
     rank_status: BeatmapRankStatus,
 ) -> BeatmapResolveResult:
+    """指定識別子とrank statusを持つeligible beatmap resolve resultを作成する.
+
+    Args:
+        beatmap_id (int): result内beatmapへ設定する識別子.
+        rank_status (BeatmapRankStatus): beatmapとeligibilityの判断に使うrank status.
+
+    Returns:
+        BeatmapResolveResult: ranked eligibilityとfile未取得状態を持つ解決結果.
+    """
     beatmap = Beatmap(
         id=beatmap_id,
         beatmapset_id=10,

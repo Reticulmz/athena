@@ -1,3 +1,8 @@
+"""Score timingからstable user stats packetまでのgame flowを検証するintegration test.
+
+rulesetごとのcurrent statsとstatus change後のplay mode反映をin-memory境界で確認する.
+"""
+
 from __future__ import annotations
 
 import struct
@@ -90,6 +95,14 @@ _MANIA_SCORE_ACCURACY = 0.99
 
 @pytest.mark.asyncio
 async def test_current_stats_flow_from_score_timing_to_stable_packets() -> None:
+    """Score timing集計がloginとpollingのstable stats packetへ反映されることを検証する.
+
+    Returns:
+        None: current stats値と2経路のstable packetをassertして終了する.
+
+    Raises:
+        AssertionError: stats集計, login stream, またはpolling responseが期待と異なる場合.
+    """
     factory = InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
     _seed_visible_user(factory)
     low_score_id = await _persist_score(
@@ -174,6 +187,14 @@ async def test_current_stats_flow_from_score_timing_to_stable_packets() -> None:
 
 @pytest.mark.asyncio
 async def test_current_stats_existing_scores_are_scoped_by_ruleset() -> None:
+    """Current statsがrulesetごとに既存scoreを分離して集計することを検証する.
+
+    Returns:
+        None: OSUとMANIAのPP, accuracy, play count, ranked scoreをassertして終了する.
+
+    Raises:
+        AssertionError: いずれかのrulesetに別rulesetのscoreが混入する場合.
+    """
     factory = InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
     _seed_visible_user(factory)
     osu_score_id = await _persist_score(
@@ -226,6 +247,14 @@ async def test_current_stats_existing_scores_are_scoped_by_ruleset() -> None:
 
 @pytest.mark.asyncio
 async def test_stats_request_after_status_change_uses_current_play_mode() -> None:
+    """Status change後のstats requestが現在のplay modeでscoreを集計することを検証する.
+
+    Returns:
+        None: MANIA status payload後のstable stats packetをassertして終了する.
+
+    Raises:
+        AssertionError: status change後のplay modeまたはcurrent stats packetが期待と異なる場合.
+    """
     factory = InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
     _seed_visible_user(factory)
     osu_score_id = await _persist_score(
@@ -297,6 +326,14 @@ async def test_stats_request_after_status_change_uses_current_play_mode() -> Non
 
 
 def _seed_visible_user(factory: InMemoryUnitOfWorkFactory) -> None:
+    """Leaderboard可視roleを持つtest userをin-memory状態へ保存する.
+
+    Args:
+        factory (InMemoryUnitOfWorkFactory): userとrole状態を保持するin-memory factory.
+
+    Returns:
+        None: 可視user, role, user-role関連をcommitした後に値を返さない.
+    """
     state = factory.snapshot()
     state.roles_by_id[_VISIBLE_ROLE_ID] = Role(
         id=_VISIBLE_ROLE_ID,
@@ -310,6 +347,18 @@ def _seed_visible_user(factory: InMemoryUnitOfWorkFactory) -> None:
 
 
 async def _persist_score(factory: InMemoryUnitOfWorkFactory, score: Score) -> int:
+    """Test scoreを永続化して割り当てられた識別子を返す.
+
+    Args:
+        factory (InMemoryUnitOfWorkFactory): scoreを作成してcommitするin-memory factory.
+        score (Score): 永続化するscore値.
+
+    Returns:
+        int: 永続化後のscore識別子.
+
+    Raises:
+        AssertionError: repositoryがscore識別子を割り当てない場合.
+    """
     async with factory() as uow:
         created = await uow.scores.create(score)
         await uow.commit()
@@ -323,6 +372,20 @@ async def _execute_current_performance(
     score_id: int,
     pp: Decimal,
 ) -> int:
+    """Scoreのperformance calculationを実行してcurrent状態へ反映する.
+
+    Args:
+        factory (InMemoryUnitOfWorkFactory): calculationを作成し実行するin-memory factory.
+        score_id (int): performance calculationを紐付けるscore識別子.
+        pp (Decimal): fixed calculatorが返すperformance points.
+
+    Returns:
+        int: completed calculationの識別子.
+
+    Raises:
+        AssertionError: calculation識別子, execution outcome,
+            またはcompleted calculationが期待と異なる場合.
+    """
     async with factory() as uow:
         created = await uow.score_performance.create_or_reuse_calculation(
             CreateScorePerformanceCalculation(
@@ -359,10 +422,24 @@ async def _execute_current_performance(
 
 @final
 class _ReadyBeatmapFileProvider:
+    """固定osu file bytesとprovenanceを返すperformance用provider fake.
+
+    Notes:
+        score executionがfile取得待ちにならないよう常にready resultを返す.
+    """
+
     async def provide(
         self,
         query: PerformanceBeatmapFileQuery,
     ) -> PerformanceBeatmapFileResult:
+        """要求されたbeatmap識別子に対応するready file resultを返す.
+
+        Args:
+            query (PerformanceBeatmapFileQuery): osu fileとprovenanceを要求するquery.
+
+        Returns:
+            PerformanceBeatmapFileResult: queryのbeatmap識別子を持つready file result.
+        """
         return PerformanceBeatmapFileReady(
             beatmap_id=query.beatmap_id,
             osu_file_bytes=b"osu file bytes",
@@ -377,26 +454,66 @@ class _ReadyBeatmapFileProvider:
 
 @final
 class _FixedPerformanceCalculator:
+    """入力に関係なく固定PPを返すperformance calculator fake.
+
+    Attributes:
+        _pp (Decimal): calculate時に返す固定performance points.
+    """
+
     def __init__(self, pp: Decimal) -> None:
+        """固定performance pointsを設定する.
+
+        Args:
+            pp (Decimal): calculate時に返すperformance points.
+        """
         self._pp = pp
 
     def calculator_name(self) -> str:
+        """Test calculatorの固定名を返す.
+
+        Returns:
+            str: performance calculationへ保存するcalculator名.
+        """
         return _CALCULATOR_NAME
 
     def calculator_version(self) -> str:
+        """Test calculatorの固定versionを返す.
+
+        Returns:
+            str: performance calculationへ保存するcalculator version.
+        """
         return _CALCULATOR_VERSION
 
     def calculate(self, input_data: PerformanceCalculatorInput) -> PerformanceCalculatorCompleted:
+        """入力を使わず固定PPとstar ratingのcompleted resultを作成する.
+
+        Args:
+            input_data (PerformanceCalculatorInput): calculatorへ渡されるperformance入力,
+                fakeでは使用しない.
+
+        Returns:
+            PerformanceCalculatorCompleted: 設定済みPPと固定star ratingを持つcompleted result.
+        """
         _ = input_data
         return PerformanceCalculatorCompleted(pp=self._pp, star_rating=Decimal("5.0"))
 
 
 @final
 class _NoopBeatmapFileWarmupUseCase:
+    """Beatmap file warmupを行わずskip結果を返すuse-case fake."""
+
     async def execute(
         self,
         request: BeatmapFileWarmupRequest,
     ) -> BeatmapFileWarmupResult:
+        """Warmup requestをskipした結果へ変換する.
+
+        Args:
+            request (BeatmapFileWarmupRequest): status handlerから渡されるfile warmup要求.
+
+        Returns:
+            BeatmapFileWarmupResult: requestの識別情報を保持したSKIPPED_NO_IDENTITY結果.
+        """
         return BeatmapFileWarmupResult(
             outcome=BeatmapFileWarmupOutcome.SKIPPED_NO_IDENTITY,
             entrance=request.entrance,
@@ -412,6 +529,16 @@ def _login_response_builder(
     session_store: InMemorySessionStore,
     query: CurrentUserStatsQuery,
 ) -> LoginResponseBuilder:
+    """Current statsを含むstable login response builderを構築する.
+
+    Args:
+        factory (InMemoryUnitOfWorkFactory): channelとfriend query repositoryを作るfactory.
+        session_store (InMemorySessionStore): active session queryに使うin-memory store.
+        query (CurrentUserStatsQuery): login responseへstatsを載せるquery use-case.
+
+    Returns:
+        LoginResponseBuilder: stable login streamを構築する依存設定済みbuilder.
+    """
     channel_state = InMemoryChannelStateStore()
     channel_repository = InMemoryChannelQueryRepository(factory)
     friend_query_repository = InMemoryFriendRelationshipQueryRepository(factory)
@@ -431,6 +558,11 @@ def _login_response_builder(
 
 
 def _login_response() -> LoginResponse:
+    """Stable login response builderへ渡す認証済みresponseを作成する.
+
+    Returns:
+        LoginResponse: test user, session data, verified privilegeを持つlogin response.
+    """
     user = _user()
     return LoginResponse(
         token=_TOKEN,
@@ -443,6 +575,11 @@ def _login_response() -> LoginResponse:
 
 
 def _session_data() -> SessionData:
+    """Stable session storeへ保存するtest userのsession dataを作成する.
+
+    Returns:
+        SessionData: StatsUserのcountry, client version, privacy設定を持つsession data.
+    """
     return SessionData(
         user_id=_USER_ID,
         username="StatsUser",
@@ -457,6 +594,11 @@ def _session_data() -> SessionData:
 
 
 def _user() -> User:
+    """Current stats queryで可視にするtest userを作成する.
+
+    Returns:
+        User: fixed user識別子とJP countryを持つtest user.
+    """
     return User(
         id=_USER_ID,
         username="StatsUser",
@@ -477,6 +619,18 @@ def _score(
     play_time_seconds: int,
     ruleset: Ruleset = Ruleset.OSU,
 ) -> Score:
+    """Current stats集計に使用するleaderboard適格scoreを作成する.
+
+    Args:
+        score_id (int): score識別子とonline checksumの元になる整数.
+        score (int): ranked scoreとtotal scoreへ加算するscore値.
+        accuracy (float): current statsへ集計するaccuracy値.
+        play_time_seconds (int): current statsへ加算するplay時間.
+        ruleset (Ruleset): scoreを所属させるruleset, 既定値はOSU.
+
+    Returns:
+        Score: visible userが送信したranked leaderboard適格score.
+    """
     return Score(
         id=score_id,
         user_id=_USER_ID,
@@ -507,6 +661,14 @@ def _score(
 
 
 def _status_payload(*, play_mode: int) -> bytes:
+    """指定play modeを含むstable status change payloadを構築する.
+
+    Args:
+        play_mode (int): stable status updateへ設定するprotocol play mode値.
+
+    Returns:
+        bytes: status change handlerへ渡すC2S payload bytes.
+    """
     return status_change_payload(
         StatusUpdate(
             status=2,
@@ -520,4 +682,13 @@ def _status_payload(*, play_mode: int) -> bytes:
 
 
 def _c2s_packet(packet_id: ClientPacketID, payload: bytes) -> bytes:
+    """C2S packet headerとpayloadをstable protocol形式で連結する.
+
+    Args:
+        packet_id (ClientPacketID): packet headerへ設定するclient packet識別子.
+        payload (bytes): header後ろへ連結するpacket payload.
+
+    Returns:
+        bytes: little-endian headerとpayloadからなるcomplete C2S packet.
+    """
     return _HEADER.pack(packet_id.value, 0, len(payload)) + payload
