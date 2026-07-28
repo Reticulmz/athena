@@ -791,7 +791,7 @@
   - 4.*の共通完了条件: production/testの該当する共通条件を適用し、Google Style sectionの型と意味を
     implementationとrelevant testまたはexecution probeに照らして手動確認する。Ruff D、interrogate
     100%、focused validation以外のruntime behaviorは変更しない
-- [ ] 4.1 (P) Alembic Python moduleを整備する
+- [x] 4.1 (P) Alembic Python moduleを整備する
   - alembic/env.pyとalembic/versions/**へproduction共通条件を適用し、migration identifier、
     schema operation、upgrade/downgrade behavior、textual DDL justificationを維持する
   - 完了条件: scoped Ruff Dとinterrogate 100%およびmigration testがschema operation差分なしで通る
