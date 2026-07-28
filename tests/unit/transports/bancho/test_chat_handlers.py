@@ -1,11 +1,4 @@
-"""Tests for ChatHandlers — C2S packet handlers 4種.
-
-Validates:
-- handle_send_message: Message struct パース → SendChannelMessageUseCase
-- handle_send_private_message: Message struct パース → SendPrivateMessageUseCase
-- handle_join_channel: BanchoString パース → JoinChannelUseCase
-- handle_leave_channel: BanchoString パース → LeaveChannelUseCase
-"""
+"""ChatHandlersがC2S payloadをchat commandへ変換しsession認可を使うことを検証する."""
 
 from __future__ import annotations
 
@@ -40,9 +33,15 @@ from osu_server.transports.stable.bancho.protocol.s2c.chat import send_message, 
 
 
 class StubSendChannelMessageUseCase:
-    """SendChannelMessageUseCase spy."""
+    """Channel message commandを記録して設定済みresultを返すtest stub.
+
+    Attributes:
+        calls (list[dict[str, object]]): commandから抽出したfieldの呼出順list.
+        channel_result (ChannelMessageResult | None): executeが返すchannel message result.
+    """
 
     def __init__(self) -> None:
+        """既定のdelivered resultと空の呼出し記録でstubを初期化する."""
         self.calls: list[dict[str, object]] = []
         self.channel_result: ChannelMessageResult | None = ChannelMessageResult(
             delivered_to={2, 3}, content="hello", command_responses=()
@@ -52,6 +51,14 @@ class StubSendChannelMessageUseCase:
         self,
         command: SendChannelMessageCommand,
     ) -> SendChannelMessageResult:
+        """Channel message commandのfieldを記録して設定済みresultを返す.
+
+        Args:
+            command (SendChannelMessageCommand): handlerが構築したchannel message command.
+
+        Returns:
+            SendChannelMessageResult: channel_resultを包むuse-case result.
+        """
         message = command.message
         self.calls.append(
             {
@@ -68,9 +75,15 @@ class StubSendChannelMessageUseCase:
 
 
 class StubSendPrivateMessageUseCase:
-    """SendPrivateMessageUseCase spy."""
+    """Private message commandを記録して設定済みresultを返すtest stub.
+
+    Attributes:
+        calls (list[dict[str, object]]): commandから抽出したfieldの呼出順list.
+        private_result (PrivateMessageResult | None): executeが返すprivate message result.
+    """
 
     def __init__(self) -> None:
+        """既定のonline delivery resultと空の呼出し記録でstubを初期化する."""
         self.calls: list[dict[str, object]] = []
         self.private_result: PrivateMessageResult | None = PrivateMessageResult(
             target_id=2, is_online=True, content="secret", command_responses=()
@@ -80,6 +93,14 @@ class StubSendPrivateMessageUseCase:
         self,
         command: SendPrivateMessageCommand,
     ) -> SendPrivateMessageResult:
+        """Private message commandのfieldを記録して設定済みresultを返す.
+
+        Args:
+            command (SendPrivateMessageCommand): handlerが構築したprivate message command.
+
+        Returns:
+            SendPrivateMessageResult: private_resultを包むuse-case result.
+        """
         message = command.message
         self.calls.append(
             {
@@ -94,15 +115,28 @@ class StubSendPrivateMessageUseCase:
 
 
 class StubJoinChannelUseCase:
-    """JoinChannelUseCase spy."""
+    """Join channel commandを記録して成功を返すtest stub.
+
+    Attributes:
+        calls (list[dict[str, object]]): commandから抽出したfieldの呼出順list.
+    """
 
     def __init__(self) -> None:
+        """空のcommand記録を持つstubを初期化する."""
         self.calls: list[dict[str, object]] = []
 
     async def execute(
         self,
         command: JoinChannelCommand,
     ) -> JoinChannelResult:
+        """Join channel commandを記録してjoined resultを返す.
+
+        Args:
+            command (JoinChannelCommand): handlerが構築したchannel join command.
+
+        Returns:
+            JoinChannelResult: joinedがTrueの成功result.
+        """
         self.calls.append(
             {
                 "method": "join",
@@ -116,15 +150,28 @@ class StubJoinChannelUseCase:
 
 
 class StubLeaveChannelUseCase:
-    """LeaveChannelUseCase spy."""
+    """Leave channel commandを記録するtest stub.
+
+    Attributes:
+        calls (list[dict[str, object]]): commandから抽出したfieldの呼出順list.
+    """
 
     def __init__(self) -> None:
+        """空のcommand記録を持つstubを初期化する."""
         self.calls: list[dict[str, object]] = []
 
     async def execute(
         self,
         command: LeaveChannelCommand,
     ) -> None:
+        """Leave channel commandのfieldを記録する.
+
+        Args:
+            command (LeaveChannelCommand): handlerが構築したchannel leave command.
+
+        Returns:
+            None: commandのfieldを呼出し記録へ追加して完了する.
+        """
         self.calls.append(
             {
                 "method": "leave",
@@ -135,11 +182,20 @@ class StubLeaveChannelUseCase:
 
 
 class StubSessionStore:
-    """SessionStore スタブ。"""
+    """指定userに固定sessionを返すSessionStore test stub.
+
+    Attributes:
+        session (SessionData | None): get_by_userが返すcurrent session. Noneなら未ログインを表す.
+    """
 
     session: SessionData | None
 
     def __init__(self, session: SessionData | None = None) -> None:
+        """指定sessionまたは既定のauthorized sessionでstubを初期化する.
+
+        Args:
+            session (SessionData | None): get_by_userで返すsession. None時は既定sessionを生成する.
+        """
         self.session = session or SessionData(
             user_id=1,
             username="test_user",
@@ -153,6 +209,14 @@ class StubSessionStore:
         )
 
     async def get_by_user(self, _user_id: int) -> SessionData | None:
+        """指定user IDにかかわらず設定済みsessionを返す.
+
+        Args:
+            _user_id (int): sessionを検索するstable user ID. stubでは使用しない.
+
+        Returns:
+            SessionData | None: 設定済みsession. Noneならsession未発見を表す.
+        """
         return self.session
 
 
@@ -165,6 +229,17 @@ def _build_message_payload(
     target: str = "#osu",
     sender_id: int = 1,
 ) -> bytes:
+    """Channelまたはprivate message用のserialized payloadを構築する.
+
+    Args:
+        sender (str): payloadへ設定する送信者名.
+        content (str): payloadへ設定するmessage本文.
+        target (str): payloadへ設定するchannel名またはtarget user名.
+        sender_id (int): payloadへ設定する送信者stable user ID.
+
+    Returns:
+        bytes: C2S message protocol definitionでserializeしたpayload.
+    """
     return message_payload(
         sender=sender,
         content=content,
@@ -174,6 +249,14 @@ def _build_message_payload(
 
 
 def _build_banchostring_payload(value: str) -> bytes:
+    """Joinまたはleave channel用のBanchoString payloadを構築する.
+
+    Args:
+        value (str): payloadへ設定するchannel名.
+
+    Returns:
+        bytes: C2S channel name protocol definitionでserializeしたpayload.
+    """
     return channel_name_payload(value)
 
 
@@ -182,31 +265,61 @@ def _build_banchostring_payload(value: str) -> bytes:
 
 @pytest.fixture
 def send_channel_message() -> StubSendChannelMessageUseCase:
+    """Channel message commandを記録するstubを提供する.
+
+    Returns:
+        StubSendChannelMessageUseCase: testごとに独立したchannel message use-case stub.
+    """
     return StubSendChannelMessageUseCase()
 
 
 @pytest.fixture
 def send_private_message() -> StubSendPrivateMessageUseCase:
+    """Private message commandを記録するstubを提供する.
+
+    Returns:
+        StubSendPrivateMessageUseCase: testごとに独立したprivate message use-case stub.
+    """
     return StubSendPrivateMessageUseCase()
 
 
 @pytest.fixture
 def join_channel() -> StubJoinChannelUseCase:
+    """Join channel commandを記録するstubを提供する.
+
+    Returns:
+        StubJoinChannelUseCase: testごとに独立したjoin channel use-case stub.
+    """
     return StubJoinChannelUseCase()
 
 
 @pytest.fixture
 def leave_channel() -> StubLeaveChannelUseCase:
+    """Leave channel commandを記録するstubを提供する.
+
+    Returns:
+        StubLeaveChannelUseCase: testごとに独立したleave channel use-case stub.
+    """
     return StubLeaveChannelUseCase()
 
 
 @pytest.fixture
 def session_store() -> StubSessionStore:
+    """既定のauthorized sessionを返すstore stubを提供する.
+
+    Returns:
+        StubSessionStore: testごとに独立したsession store stub.
+    """
     return StubSessionStore()
 
 
 @pytest.fixture
 def packet_queue() -> InMemoryPacketQueue:
+    """Stable response packetを観測できるin-memory queueを提供する.
+
+    Returns:
+        InMemoryPacketQueue: testごとに独立したpacket queue.
+    """
     return InMemoryPacketQueue()
 
 
@@ -219,6 +332,19 @@ def handlers(
     session_store: StubSessionStore,
     packet_queue: InMemoryPacketQueue,
 ) -> ChatHandlers:
+    """Fixture stubを注入したChatHandlersを構築する.
+
+    Args:
+        send_channel_message (StubSendChannelMessageUseCase): channel message用stub.
+        send_private_message (StubSendPrivateMessageUseCase): private message用stub.
+        join_channel (StubJoinChannelUseCase): channel join用stub.
+        leave_channel (StubLeaveChannelUseCase): channel leave用stub.
+        session_store (StubSessionStore): current sessionを返すstore stub.
+        packet_queue (InMemoryPacketQueue): handler responseを観測するqueue.
+
+    Returns:
+        ChatHandlers: chat commandとsession dependencyを持つhandler集合.
+    """
     return ChatHandlers(
         send_channel_message=send_channel_message,  # pyright: ignore[reportArgumentType]
         send_private_message=send_private_message,  # pyright: ignore[reportArgumentType]
@@ -236,6 +362,18 @@ async def test_malformed_chat_payloads_are_dropped_without_use_case_calls(
     join_channel: StubJoinChannelUseCase,
     leave_channel: StubLeaveChannelUseCase,
 ) -> None:
+    """Malformed chat payloadがいずれのuse caseも呼ばないことを検証する.
+
+    Args:
+        handlers (ChatHandlers): malformed payloadを処理するhandler集合.
+        send_channel_message (StubSendChannelMessageUseCase): channel command記録を観測するstub.
+        send_private_message (StubSendPrivateMessageUseCase): private command記録を観測するstub.
+        join_channel (StubJoinChannelUseCase): join command記録を観測するstub.
+        leave_channel (StubLeaveChannelUseCase): leave command記録を観測するstub.
+
+    Returns:
+        None: 4種のstubが空の呼出し記録を保つことを確認して完了する.
+    """
     await handlers.handle_send_message(b"\x00\x00", user_id=1)
     await handlers.handle_send_private_message(b"\x00\x00", user_id=1)
     await handlers.handle_join_channel(b"\x0c", user_id=1)
@@ -251,12 +389,24 @@ async def test_malformed_chat_payloads_are_dropped_without_use_case_calls(
 
 
 class TestSendMessage:
+    """Channel message handlerのpayload変換とsession認可伝播を検証する."""
+
     async def test_parses_message_and_calls_send_channel_message(
         self,
         handlers: ChatHandlers,
         send_channel_message: StubSendChannelMessageUseCase,
         session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> None:
+        """Message payloadのfieldをchannel commandへ変換することを検証する.
+
+        Args:
+            handlers (ChatHandlers): channel messageを処理するhandler集合.
+            send_channel_message (StubSendChannelMessageUseCase): command fieldを記録するstub.
+            session_store (StubSessionStore): 既定sessionを提供するfixture.
+
+        Returns:
+            None: sender, channel, content, session認可を持つcommand記録を確認して完了する.
+        """
         payload = _build_message_payload(
             sender="test_user", content="hello", target="#osu", sender_id=1
         )
@@ -279,6 +429,16 @@ class TestSendMessage:
         send_channel_message: StubSendChannelMessageUseCase,
         session_store: StubSessionStore,
     ) -> None:
+        """Action時点のsession privilegesとrole IDsをchannel commandへ渡すことを検証する.
+
+        Args:
+            handlers (ChatHandlers): channel messageを処理するhandler集合.
+            send_channel_message (StubSendChannelMessageUseCase): command fieldを記録するstub.
+            session_store (StubSessionStore): 認可値を差し替えるsession store stub.
+
+        Returns:
+            None: 更新したprivilegesとrole IDsを持つcommand記録を確認して完了する.
+        """
         session_store.session = SessionData(
             user_id=1,
             username="test_user",
@@ -305,7 +465,18 @@ class TestSendMessage:
         packet_queue: InMemoryPacketQueue,
         session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> None:
-        """PM guidance from a channel command is visible only to the sender."""
+        """Channel commandのprivate guidanceがsenderだけへ配送されることを検証する.
+
+        Args:
+            handlers (ChatHandlers): channel messageを処理するhandler集合.
+            send_channel_message (StubSendChannelMessageUseCase): command responseを返すstub.
+            packet_queue (InMemoryPacketQueue): recipientごとのpacketを観測するqueue.
+            session_store (StubSessionStore): senderとrecipientのsessionを有効化するfixture.
+
+        Returns:
+            None: channel responseはmemberへ送りprivate guidanceはsenderだけへ送ることを
+            確認して完了する.
+        """
         await packet_queue.refresh_ttl(1, ttl=60)
         await packet_queue.refresh_ttl(2, ttl=60)
         await packet_queue.refresh_ttl(3, ttl=60)
@@ -359,6 +530,20 @@ class TestSendMessage:
         session_store: StubSessionStore,
         packet_queue: InMemoryPacketQueue,
     ) -> None:
+        """Session未発見のchannel messageがuse caseを呼ばないことを検証する.
+
+        Args:
+            send_channel_message (StubSendChannelMessageUseCase): channel command記録を
+            観測するstub.
+            send_private_message (StubSendPrivateMessageUseCase): private dependencyを満たすstub.
+            join_channel (StubJoinChannelUseCase): join dependencyを満たすstub.
+            leave_channel (StubLeaveChannelUseCase): leave dependencyを満たすstub.
+            session_store (StubSessionStore): Noneを返すよう設定するstore stub.
+            packet_queue (InMemoryPacketQueue): handler作成に必要なqueue.
+
+        Returns:
+            None: channel command記録が空であることを確認して完了する.
+        """
         session_store.session = None
         handlers = ChatHandlers(
             send_channel_message=send_channel_message,  # pyright: ignore[reportArgumentType]
@@ -380,12 +565,24 @@ class TestSendMessage:
 
 
 class TestSendPrivateMessage:
+    """Private message handlerのpayload変換とdelivery failure packetを検証する."""
+
     async def test_parses_message_and_calls_send_private_message(
         self,
         handlers: ChatHandlers,
         send_private_message: StubSendPrivateMessageUseCase,
         session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> None:
+        """Message payloadのfieldをprivate message commandへ変換することを検証する.
+
+        Args:
+            handlers (ChatHandlers): private messageを処理するhandler集合.
+            send_private_message (StubSendPrivateMessageUseCase): command fieldを記録するstub.
+            session_store (StubSessionStore): 既定sessionを提供するfixture.
+
+        Returns:
+            None: sender, target, contentを持つprivate command記録を確認して完了する.
+        """
         payload = _build_message_payload(
             sender="test_user", content="secret", target="target", sender_id=1
         )
@@ -406,6 +603,16 @@ class TestSendPrivateMessage:
         send_private_message: StubSendPrivateMessageUseCase,
         session_store: StubSessionStore,
     ) -> None:
+        """Session未発見のprivate messageがuse caseを呼ばないことを検証する.
+
+        Args:
+            handlers (ChatHandlers): private messageを処理するhandler集合.
+            send_private_message (StubSendPrivateMessageUseCase): command記録を観測するstub.
+            session_store (StubSessionStore): Noneを返すよう設定するstore stub.
+
+        Returns:
+            None: private command記録が空であることを確認して完了する.
+        """
         session_store.session = None
 
         payload = _build_message_payload()
@@ -421,6 +628,17 @@ class TestSendPrivateMessage:
         packet_queue: InMemoryPacketQueue,
         session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> None:
+        """Friend only block時にsenderへuser_dm_blockedだけを送ることを検証する.
+
+        Args:
+            handlers (ChatHandlers): private messageを処理するhandler集合.
+            send_private_message (StubSendPrivateMessageUseCase): block delivery resultを返すstub.
+            packet_queue (InMemoryPacketQueue): senderとtargetのpacketを観測するqueue.
+            session_store (StubSessionStore): senderとtargetのsessionを有効化するfixture.
+
+        Returns:
+            None: senderだけがblocked packetを受けtarget queueは空であることを確認して完了する.
+        """
         await packet_queue.refresh_ttl(1, ttl=60)
         await packet_queue.refresh_ttl(2, ttl=60)
         send_private_message.private_result = PrivateMessageResult(
@@ -447,12 +665,24 @@ class TestSendPrivateMessage:
 
 
 class TestJoinChannel:
+    """Join channel handlerがBanchoStringとsession認可をcommandへ変換することを検証する."""
+
     async def test_parses_channel_name_and_calls_join(
         self,
         handlers: ChatHandlers,
         join_channel: StubJoinChannelUseCase,
         session_store: StubSessionStore,
     ) -> None:
+        """Channel nameとsession認可をjoin commandへ変換することを検証する.
+
+        Args:
+            handlers (ChatHandlers): join requestを処理するhandler集合.
+            join_channel (StubJoinChannelUseCase): join command fieldを記録するstub.
+            session_store (StubSessionStore): 認可値を差し替えるsession store stub.
+
+        Returns:
+            None: channel名とsession privilegesおよびrole IDsを確認して完了する.
+        """
         session_store.session = SessionData(
             user_id=1,
             username="test_user",
@@ -483,6 +713,16 @@ class TestJoinChannel:
         join_channel: StubJoinChannelUseCase,
         session_store: StubSessionStore,
     ) -> None:
+        """Session未発見のjoin requestがuse caseを呼ばないことを検証する.
+
+        Args:
+            handlers (ChatHandlers): join requestを処理するhandler集合.
+            join_channel (StubJoinChannelUseCase): command記録を観測するstub.
+            session_store (StubSessionStore): Noneを返すよう設定するstore stub.
+
+        Returns:
+            None: join command記録が空であることを確認して完了する.
+        """
         session_store.session = None
 
         payload = _build_banchostring_payload("#osu")
@@ -496,7 +736,7 @@ class TestJoinChannel:
 
 
 class TestAuthorizationRefreshObservation:
-    """handler は login-time のキャッシュ値ではなく action-time の session 認可を読む。"""
+    """Handlerがlogin時のcacheではなくaction時のsession認可を読むことを検証する."""
 
     async def test_updated_session_authorization_reflected_in_next_action(
         self,
@@ -506,7 +746,20 @@ class TestAuthorizationRefreshObservation:
         leave_channel: StubLeaveChannelUseCase,
         packet_queue: InMemoryPacketQueue,
     ) -> None:
-        """session 認可が更新された後、次の C2S action で新しい値が観測される。"""
+        """Session認可の更新が次のC2S actionへ反映されることを検証する.
+
+        Args:
+            send_channel_message (StubSendChannelMessageUseCase): authorization fieldを
+            記録するstub.
+            send_private_message (StubSendPrivateMessageUseCase): handler作成に必要なprivate stub.
+            join_channel (StubJoinChannelUseCase): handler作成に必要なjoin stub.
+            leave_channel (StubLeaveChannelUseCase): handler作成に必要なleave stub.
+            packet_queue (InMemoryPacketQueue): handler作成に必要なqueue.
+
+        Returns:
+            None: refresh前後のactionがそれぞれ対応するprivilegesとrole IDsを使うことを
+            確認して完了する.
+        """
         store = StubSessionStore(
             session=SessionData(
                 user_id=1,
@@ -559,12 +812,24 @@ class TestAuthorizationRefreshObservation:
 
 
 class TestLeaveChannel:
+    """Leave channel handlerがBanchoStringをleave commandへ変換することを検証する."""
+
     async def test_parses_channel_name_and_calls_leave(
         self,
         handlers: ChatHandlers,
         leave_channel: StubLeaveChannelUseCase,
         session_store: StubSessionStore,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> None:
+        """Channel nameをleave commandへ変換することを検証する.
+
+        Args:
+            handlers (ChatHandlers): leave requestを処理するhandler集合.
+            leave_channel (StubLeaveChannelUseCase): leave command fieldを記録するstub.
+            session_store (StubSessionStore): 既定sessionを提供するfixture.
+
+        Returns:
+            None: user IDとchannel名を持つleave command記録を確認して完了する.
+        """
         payload = _build_banchostring_payload("#osu")
 
         await handlers.handle_leave_channel(payload, user_id=1)
@@ -581,6 +846,16 @@ class TestLeaveChannel:
         leave_channel: StubLeaveChannelUseCase,
         session_store: StubSessionStore,
     ) -> None:
+        """Session未発見のleave requestがuse caseを呼ばないことを検証する.
+
+        Args:
+            handlers (ChatHandlers): leave requestを処理するhandler集合.
+            leave_channel (StubLeaveChannelUseCase): command記録を観測するstub.
+            session_store (StubSessionStore): Noneを返すよう設定するstore stub.
+
+        Returns:
+            None: leave command記録が空であることを確認して完了する.
+        """
         session_store.session = None
 
         payload = _build_banchostring_payload("#osu")
