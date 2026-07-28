@@ -66,6 +66,7 @@ line-length = 99
 
 [tool.ruff.lint]
 select = [
+    "D",      # pydocstyle (Google convention, including D417)
     "F",      # pyflakes
     "E", "W", # pycodestyle
     "I",      # isort
