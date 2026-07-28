@@ -1,14 +1,6 @@
-"""End-to-end integration test: read_packets → PacketDispatcher.dispatch.
+"""C2S byte stream の read_packets から PacketDispatcher.dispatch までを検証する.
 
-Validates the full C2S packet reception flow described in design.md:
-  1. Binary byte stream → read_packets() → list of (ClientPacketID, payload)
-  2. For each packet → dispatcher.dispatch() → correct handler called
-
-Requirements coverage:
-- Req 4.1: Read C2S packets from byte stream
-- Req 4.2: Read multiple concatenated packets
-- Req 5.2: Dispatch calls registered handler for matching ClientPacketID
-- Req 5.3: Dispatch ignores unregistered ClientPacketID (no error)
+packet stream の parse, wire順 dispatch, handler routing, 未登録 packet の無視を確認する.
 """
 
 import struct as pystruct
@@ -19,20 +11,29 @@ from osu_server.transports.stable.bancho.protocol.reader import read_packets
 
 
 def _build_packet(packet_id: int, payload: bytes = b"") -> bytes:
-    """Build a raw packet: header (7 bytes) + payload."""
+    """Test 用 raw Bancho packet を header と payload から構築する.
+
+    Args:
+        packet_id (int): uint16 header field に入れる packet ID.
+        payload (bytes): header の直後に連結する payload bytes.
+
+    Returns:
+        bytes: 7 byte little-endian header と payload を連結した raw packet.
+    """
     return pystruct.pack("<HBI", packet_id, 0, len(payload)) + payload
 
 
 class TestReadPacketsToDispatch:
-    """End-to-end: byte stream → read_packets → dispatch → handler calls."""
+    """C2S byte stream が parse 後に対応する handler へ dispatch されることを検証する."""
 
     async def test_single_packet_dispatches_to_correct_handler(self) -> None:
-        """A single-packet stream calls only the matching handler."""
+        """単一 packet stream が対応する handler だけを呼び出すことを検証する."""
         dp = PacketDispatcher()
         called_with: list[tuple[ClientPacketID, bytes]] = []
 
         @dp.register(ClientPacketID.PONG)
         async def handle_pong(payload: bytes, _user_id: int) -> None:
+            """PONG packet と受信 payload を call record に追加する."""
             called_with.append((ClientPacketID.PONG, payload))
 
         _ = handle_pong
@@ -47,24 +48,27 @@ class TestReadPacketsToDispatch:
         assert called_with[0] == (ClientPacketID.PONG, b"")
 
     async def test_multiple_packets_dispatch_in_order(self) -> None:
-        """Multiple concatenated packets dispatch to their respective handlers in order."""
+        """連結した複数 packet が wire順に対応する handler へ dispatch されることを検証する."""
         dp = PacketDispatcher()
         call_log: list[tuple[ClientPacketID, bytes]] = []
 
         @dp.register(ClientPacketID.PONG)
         async def handle_pong(payload: bytes, _user_id: int) -> None:
+            """PONG packet と受信 payload を call log に追加する."""
             call_log.append((ClientPacketID.PONG, payload))
 
         _ = handle_pong
 
         @dp.register(ClientPacketID.SEND_MESSAGE)
         async def handle_msg(payload: bytes, _user_id: int) -> None:
+            """SEND_MESSAGE packet と受信 payload を call log に追加する."""
             call_log.append((ClientPacketID.SEND_MESSAGE, payload))
 
         _ = handle_msg
 
         @dp.register(ClientPacketID.EXIT)
         async def handle_exit(payload: bytes, _user_id: int) -> None:
+            """EXIT packet と受信 payload を call log に追加する."""
             call_log.append((ClientPacketID.EXIT, payload))
 
         _ = handle_exit
@@ -86,12 +90,13 @@ class TestReadPacketsToDispatch:
         assert call_log[2] == (ClientPacketID.EXIT, b"\x01")
 
     async def test_unregistered_packet_id_silently_skipped(self) -> None:
-        """Packets with no registered handler are silently skipped during dispatch."""
+        """未登録 packet ID が dispatch 中に無視されることを検証する."""
         dp = PacketDispatcher()
         called_ids: list[ClientPacketID] = []
 
         @dp.register(ClientPacketID.PONG)
         async def handle_pong(_payload: bytes, _user_id: int) -> None:
+            """PONG dispatch を packet ID list に記録する."""
             called_ids.append(ClientPacketID.PONG)
 
         _ = handle_pong
@@ -110,7 +115,7 @@ class TestReadPacketsToDispatch:
         assert called_ids == [ClientPacketID.PONG, ClientPacketID.PONG]
 
     async def test_handler_receives_correct_payload(self) -> None:
-        """Each handler receives exactly the payload bytes from its packet."""
+        """各 handler が対応する packet の original payload bytes を受け取ることを検証する."""
         dp = PacketDispatcher()
         received_payloads: dict[ClientPacketID, list[bytes]] = {
             ClientPacketID.SEND_MESSAGE: [],
@@ -119,12 +124,14 @@ class TestReadPacketsToDispatch:
 
         @dp.register(ClientPacketID.SEND_MESSAGE)
         async def handle_msg(payload: bytes, _user_id: int) -> None:
+            """SEND_MESSAGE payload を packet ID ごとの list に記録する."""
             received_payloads[ClientPacketID.SEND_MESSAGE].append(payload)
 
         _ = handle_msg
 
         @dp.register(ClientPacketID.STATUS_CHANGE)
         async def handle_status(payload: bytes, _user_id: int) -> None:
+            """STATUS_CHANGE payload を packet ID ごとの list に記録する."""
             received_payloads[ClientPacketID.STATUS_CHANGE].append(payload)
 
         _ = handle_status
@@ -143,13 +150,13 @@ class TestReadPacketsToDispatch:
         assert received_payloads[ClientPacketID.STATUS_CHANGE] == [payload_b]
 
     async def test_unknown_packet_ids_filtered_before_dispatch(self) -> None:
-        """Unknown packet IDs (not in ClientPacketID) are filtered by read_packets,
-        so the dispatcher never sees them."""
+        """未知 packet ID が read_packets により dispatch 前に除外されることを検証する."""
         dp = PacketDispatcher()
         dispatched_ids: list[ClientPacketID] = []
 
         @dp.register(ClientPacketID.PONG)
         async def handle_pong(_payload: bytes, _user_id: int) -> None:
+            """PONG dispatch を packet ID list に記録する."""
             dispatched_ids.append(ClientPacketID.PONG)
 
         _ = handle_pong
@@ -168,12 +175,13 @@ class TestReadPacketsToDispatch:
         assert dispatched_ids == [ClientPacketID.PONG]
 
     async def test_empty_stream_dispatches_nothing(self) -> None:
-        """An empty byte stream produces no packets and no dispatch calls."""
+        """空 byte stream が packet も handler dispatch も発生させないことを検証する."""
         dp = PacketDispatcher()
         called = False
 
         @dp.register(ClientPacketID.PONG)
         async def handle_pong(_payload: bytes, _user_id: int) -> None:
+            """PONG handler が呼び出されたことを boolean flag に記録する."""
             nonlocal called
             called = True
 
