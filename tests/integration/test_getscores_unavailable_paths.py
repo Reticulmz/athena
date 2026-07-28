@@ -1,20 +1,7 @@
-"""E2E validation for getscores unavailable / update / auth / parse-only paths.
+"""legacy getscores endpointのunavailable pathをend-to-endで統合検証する.
 
-Task 5.2 closure — exercises every short-response and update-available branch
-end-to-end and confirms that parse-only controls (m, mods, s, v, vv) do not
-vary the MVP header output, including converted-mode fixture requests.
-
-Coverage complements ``test_getscores_endpoint.py`` (routing, auth basics,
-known checksum) and ``test_getscores_status_fixtures.py`` (submitted-status
-header bodies) by adding:
-
-* NotSubmitted official status -> ``-1|false``
-* mirror returns PENDING_FETCH -> ``-1|false``
-* mirror returns FAILED metadata -> ``-1|false``
-* UpdateAvailable end-to-end body bytes (``1|false``)
-* Parse-only control invariance over the known-header response
-* Converted-mode fixture iteration produces the same wire status
-* Invalid credentials and no-session 401 with empty body (regression guard)
+short responseとupdate available branch, parse only controlのheader invariance,
+converted mode fixtureのwire status, authorization failure時のempty bodyを検証する.
 """
 
 from __future__ import annotations
@@ -110,6 +97,14 @@ _CONVERTED_FIXTURE_PATH = (
 
 @contextmanager
 def _test_env() -> Generator[None]:
+    """Integration test実行中だけ必要な環境変数を設定する.
+
+    Yields:
+        None: test用の環境変数が設定されたblockを実行する.
+
+    Notes:
+        終了時にENVIRONMENTとDOMAINを呼出前の値へ復元する.
+    """
     old_env = os.environ.get("ENVIRONMENT")
     old_domain = os.environ.get("DOMAIN")
     os.environ["ENVIRONMENT"] = "test"
@@ -130,6 +125,14 @@ def _test_env() -> Generator[None]:
 
 
 async def _seed_user_with_session(app: Starlette) -> int:
+    """Getscores request用のactive sessionを持つUserをseedする.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+
+    Returns:
+        int: 永続化したUser ID.
+    """
     password_service = await resolve_dependency(app, PasswordService)
     session_store = await resolve_dependency(app, SessionStore)
 
@@ -172,6 +175,17 @@ def _build_beatmap(
     checksum: str,
     official_status: BeatmapRankStatus,
 ) -> Beatmap:
+    """指定statusを持つsynthetic Beatmapを構築する.
+
+    Args:
+        beatmap_id (int): 作成するBeatmap ID.
+        beatmapset_id (int): 所属するBeatmapset ID.
+        checksum (str): Beatmapへ設定するMD5 checksum.
+        official_status (BeatmapRankStatus): persistするofficial canonical status.
+
+    Returns:
+        Beatmap: file未取得でmetadataがfreshなsynthetic Beatmap.
+    """
     return Beatmap(
         id=beatmap_id,
         beatmapset_id=beatmapset_id,
@@ -207,6 +221,18 @@ def _build_beatmapset(
     beatmap: Beatmap,
     official_status: BeatmapRankStatus,
 ) -> BeatmapSet:
+    """指定Beatmapを含むsynthetic BeatmapSetを構築する.
+
+    Args:
+        beatmapset_id (int): 作成するBeatmapSet ID.
+        artist (str): response display titleに使うartist.
+        title (str): response display titleに使うtitle.
+        beatmap (Beatmap): 作成するBeatmapSetに含めるBeatmap.
+        official_status (BeatmapRankStatus): persistするofficial canonical status.
+
+    Returns:
+        BeatmapSet: 1件のBeatmapを持つsynthetic BeatmapSet.
+    """
     return BeatmapSet(
         id=beatmapset_id,
         artist=artist,
@@ -224,6 +250,14 @@ def _build_beatmapset(
 
 
 async def _seed_known_ranked_beatmap(app: Starlette) -> None:
+    """Known checksumで解決するRanked Beatmapをseedする.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+
+    Returns:
+        None: ranked header response用BeatmapSetを永続化して完了する.
+    """
     beatmap = _build_beatmap(
         beatmap_id=75,
         beatmapset_id=1,
@@ -241,6 +275,14 @@ async def _seed_known_ranked_beatmap(app: Starlette) -> None:
 
 
 async def _seed_not_submitted_beatmap(app: Starlette) -> None:
+    """NotSubmitted statusのBeatmapをseedする.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+
+    Returns:
+        None: unavailable short body用BeatmapSetを永続化して完了する.
+    """
     beatmap = _build_beatmap(
         beatmap_id=999,
         beatmapset_id=99,
@@ -258,6 +300,14 @@ async def _seed_not_submitted_beatmap(app: Starlette) -> None:
 
 
 async def _seed_converted_mode_ranked_beatmap(app: Starlette) -> None:
+    """Converted mode fixture用のRanked Beatmapをseedする.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+
+    Returns:
+        None: converted mode requestで解決するBeatmapSetを永続化して完了する.
+    """
     beatmap = _build_beatmap(
         beatmap_id=75,
         beatmapset_id=_FIXTURE_SET_ID,
@@ -275,16 +325,13 @@ async def _seed_converted_mode_ranked_beatmap(app: Starlette) -> None:
 
 
 async def _seed_update_candidate_beatmap(app: Starlette) -> None:
-    """Same-set filename checksum mismatch用のbeatmapとfile attachmentを作成する。
+    """Same set filenameのchecksum mismatch用Beatmapとfile attachmentをseedする.
 
     Args:
-        app (Starlette): In-memory provider graphを持つintegration test app。
+        app (Starlette): dependency graphを持つtest application.
 
     Returns:
-        None: Update candidateがquery repositoryから解決可能になったことを表す。
-
-    Raises:
-        Exception: Beatmap seedまたはfile attachment作成が失敗した場合。
+        None: update availableを選択できるBeatmapSetとfile attachmentを永続化して完了する.
     """
     beatmap = _build_beatmap(
         beatmap_id=75,
@@ -321,6 +368,17 @@ def _query(
     password_md5: str | None = _TEST_PASSWORD_MD5,
     extra: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    """Getscores endpointへ送るbaseline query parameterを構築する.
+
+    Args:
+        checksum (str | None): c fieldへ設定するbeatmap checksum. Noneならfieldを省略する.
+        username (str | None): us fieldへ設定するusername. Noneならfieldを省略する.
+        password_md5 (str | None): ha fieldへ設定するpassword MD5. Noneならfieldを省略する.
+        extra (dict[str, str] | None): baselineへ上書きまたは追加するquery parameter.
+
+    Returns:
+        dict[str, str]: stable client互換のbaseline fieldを含むquery parameter.
+    """
     params: dict[str, str] = {}
     if checksum is not None:
         params["c"] = checksum
@@ -342,18 +400,18 @@ def _assert_getscores_contract_response(
     response: httpx2.Response,
     shape_id: GetscoresWireShapeId,
 ) -> None:
-    """Runtime responseをcanonical wire shape fixtureへ照合する。
+    """Runtime responseをcanonical wire shape fixtureへ照合する.
 
     Args:
-        response (httpx2.Response): Integration endpointから返されたresponse。
-        shape_id (GetscoresWireShapeId): 期待するcanonical response shape ID。
+        response (httpx2.Response): integration endpointから返されたresponse.
+        shape_id (GetscoresWireShapeId): 期待するcanonical response shape ID.
 
     Returns:
-        None: Status、header、body、terminal LFが全て一致したことを表す。
+        None: status, header, body, terminal LFを検証して完了する.
 
     Raises:
-        KeyError: Known shape IDがtyped evidence bundleに存在しない場合。
-        AssertionError: Client-visible response contractがfixtureと異なる場合。
+        KeyError: known shape IDがtyped evidence bundleに存在しない場合.
+        AssertionError: client visible response contractがfixtureと異なる場合.
     """
     fixture = _GETSCORES_SHAPES[shape_id]
     expected_headers = dict(fixture.required_headers)
@@ -375,7 +433,15 @@ async def _override_mirror_resolve(
     *,
     metadata_status: BeatmapFetchState,
 ) -> None:
-    """Seed the new query-side fetch-state seam for an unknown checksum."""
+    """Unknown checksumのquery side metadata fetch stateを設定する.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+        metadata_status (BeatmapFetchState): mirror resolveへ返させるmetadata fetch state.
+
+    Returns:
+        None: unknown checksum用fetch stateを永続化して完了する.
+    """
     target = BeatmapFetchTarget.metadata_by_checksum(_UNKNOWN_CHECKSUM)
     await seed_beatmap_fetch_state(app, target, metadata_status, _NOW)
 
@@ -386,9 +452,14 @@ async def _override_mirror_resolve(
 
 
 class TestUnavailableShortBodies:
-    """Every UNAVAILABLE outcome path returns the ``-1|false`` short body."""
+    """unavailable outcome pathが-1|false short bodyを返すことを検証する."""
 
     def test_not_submitted_status_returns_short_body(self) -> None:
+        """NotSubmitted statusがcanonical unavailable shapeを返すことを検証する.
+
+        Returns:
+            None: status, header, bodyがunavailable fixtureと一致することを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -398,6 +469,11 @@ class TestUnavailableShortBodies:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized UserとNotSubmitted Beatmapをseedする.
+
+                    Returns:
+                        None: unavailable responseを取得できるtest dataを永続化して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_not_submitted_beatmap(app)
 
@@ -420,17 +496,17 @@ class TestUnavailableShortBodies:
         ],
     )
     def test_symbolic_unavailable_case_matches_canonical_shape(self, case_id: str) -> None:
-        """Symbolic unavailable caseをexact response fixtureへ照合する。
+        """Symbolic unavailable caseをexact response fixtureへ照合する.
 
         Args:
-            case_id (str): Canonical branch catalogのunavailable case ID。
+            case_id (str): canonical branch catalogのunavailable case ID.
 
         Returns:
-            None: Status、header、body、terminal LFが一致したことを表す。
+            None: status, header, body, terminal LFを検証して完了する.
 
         Raises:
-            KeyError: Canonical branch caseがtyped evidence bundleに存在しない場合。
-            AssertionError: Runtime responseがunavailable fixtureと異なる場合。
+            KeyError: canonical branch caseがtyped evidence bundleに存在しない場合.
+            AssertionError: runtime responseがunavailable fixtureと異なる場合.
         """
         case = _GETSCORES_CASES[case_id]
         with _test_env():
@@ -448,7 +524,11 @@ class TestUnavailableShortBodies:
                 _assert_getscores_contract_response(response, case.expected_shape_id)
 
     def test_pending_after_wait_returns_short_body(self) -> None:
-        """Mirror returns PENDING_FETCH -> resolver UNAVAILABLE(pending_fetch)."""
+        """Pending metadata fetchがunavailable short bodyを返すことを検証する.
+
+        Returns:
+            None: PENDING_FETCHがunavailable fixtureと一致することを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -458,6 +538,11 @@ class TestUnavailableShortBodies:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized Userとpending metadata fetch stateをseedする.
+
+                    Returns:
+                        None: pending fetch pathを実行できるtest dataを永続化して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _override_mirror_resolve(
                         app, metadata_status=BeatmapFetchState.PENDING_FETCH
@@ -474,7 +559,11 @@ class TestUnavailableShortBodies:
                 )
 
     def test_failed_metadata_returns_short_body(self) -> None:
-        """Mirror returns FAILED -> resolver UNAVAILABLE(failed_metadata)."""
+        """Failed metadata fetchがunavailable short bodyを返すことを検証する.
+
+        Returns:
+            None: FAILED metadata stateがunavailable fixtureと一致することを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -484,6 +573,11 @@ class TestUnavailableShortBodies:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized Userとfailed metadata fetch stateをseedする.
+
+                    Returns:
+                        None: failed metadata pathを実行できるtest dataを永続化して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _override_mirror_resolve(app, metadata_status=BeatmapFetchState.FAILED)
 
@@ -504,9 +598,14 @@ class TestUnavailableShortBodies:
 
 
 class TestUpdateAvailableBody:
-    """Checksum miss with same set+filename and different stored checksum -> ``1|false``."""
+    """checksum mismatchがsame set filenameでupdate availableになることを検証する."""
 
     def test_update_available_returns_short_body(self) -> None:
+        """Update candidateがcanonical update available shapeを返すことを検証する.
+
+        Returns:
+            None: status, header, bodyがupdate available fixtureと一致することを確認して完了する.
+        """
         case = _GETSCORES_CASES["update-candidate"]
         with _test_env():
             app = create_app()
@@ -517,6 +616,11 @@ class TestUpdateAvailableBody:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized Userとupdate candidate Beatmapをseedする.
+
+                    Returns:
+                        None: update available responseを取得できるtest dataを永続化して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_update_candidate_beatmap(app)
 
@@ -542,22 +646,22 @@ class TestUpdateAvailableBody:
 
 
 class TestShortResponseFailureInvariance:
-    """Preparation/warmup例外後も選択済みshort responseを維持する。"""
+    """preparationまたはwarmup例外後も選択済みshort responseを維持することを検証する."""
 
     def test_metadata_preparation_exception_preserves_update_shape(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Metadata preparation例外後もcanonical update responseを返す。
+        """Metadata preparation例外後もcanonical update responseを返すことを検証する.
 
         Args:
-            monkeypatch (pytest.MonkeyPatch): Public resolver methodを一時置換するfixture。
+            monkeypatch (pytest.MonkeyPatch): public resolver methodを一時置換するfixture.
 
         Returns:
-            None: 選択済みupdate shapeが例外で置換されないことを表す。
+            None: 選択済みupdate shapeが例外で置換されないことを確認して完了する.
 
         Raises:
-            AssertionError: Runtime responseがcanonical update fixtureと異なる場合。
+            AssertionError: runtime responseがcanonical update fixtureと異なる場合.
         """
         metadata_calls: list[BeatmapResolveOptions | None] = []
 
@@ -566,6 +670,16 @@ class TestShortResponseFailureInvariance:
             _checksum_md5: str,
             _options: BeatmapResolveOptions | None = None,
         ) -> BeatmapResolveResult:
+            """Metadata resolveを記録後にsynthetic failureへ置換する.
+
+            Args:
+                _service (BeatmapMirrorService): monkeypatch対象のmirror service instance.
+                _checksum_md5 (str): resolve対象のbeatmap checksum.
+                _options (BeatmapResolveOptions | None): resolve option. 未指定時はNone.
+
+            Raises:
+                RuntimeError: post selection failure invarianceを検証するsynthetic failure.
+            """
             metadata_calls.append(_options)
             raise RuntimeError("synthetic getscores metadata preparation failure")
 
@@ -585,6 +699,12 @@ class TestShortResponseFailureInvariance:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized Userとupdate candidate Beatmapをseedする.
+
+                    Returns:
+                        None: selected response後のfailure pathを実行できるtest dataを
+                        永続化して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_update_candidate_beatmap(app)
 
@@ -604,16 +724,16 @@ class TestShortResponseFailureInvariance:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Beatmap file warmup例外後もcanonical unavailable responseを返す。
+        """Beatmap file warmup例外後もcanonical unavailable responseを返すことを検証する.
 
         Args:
-            monkeypatch (pytest.MonkeyPatch): Public warmup use-case methodを一時置換するfixture。
+            monkeypatch (pytest.MonkeyPatch): public warmup use-case methodを一時置換するfixture.
 
         Returns:
-            None: 選択済みunavailable shapeが例外で置換されないことを表す。
+            None: 選択済みunavailable shapeが例外で置換されないことを確認して完了する.
 
         Raises:
-            AssertionError: Runtime responseがcanonical unavailable fixtureと異なる場合。
+            AssertionError: runtime responseがcanonical unavailable fixtureと異なる場合.
         """
         warmup_requests: list[BeatmapFileWarmupRequest] = []
 
@@ -621,6 +741,15 @@ class TestShortResponseFailureInvariance:
             _use_case: RequestBeatmapFileWarmupUseCase,
             request: BeatmapFileWarmupRequest,
         ) -> BeatmapFileWarmupResult:
+            """File warmupを記録後にsynthetic failureへ置換する.
+
+            Args:
+                _use_case (RequestBeatmapFileWarmupUseCase): monkeypatch対象のwarmup use case.
+                request (BeatmapFileWarmupRequest): warmup対象を表すrequest.
+
+            Raises:
+                RuntimeError: post selection failure invarianceを検証するsynthetic failure.
+            """
             warmup_requests.append(request)
             raise RuntimeError("synthetic getscores beatmap file warmup failure")
 
@@ -654,9 +783,14 @@ class TestShortResponseFailureInvariance:
 
 
 class TestAuthDisclosureRegression:
-    """Auth failures must return 401 with no body — even when beatmap is seeded."""
+    """Beatmapをseed済みでもauthentication failureがempty HTTP 401を返すことを検証する."""
 
     def test_invalid_credentials_returns_empty_401(self) -> None:
+        """Invalid credentialがbeatmap dataを開示しないことを検証する.
+
+        Returns:
+            None: auth failure fixtureと一致するempty HTTP 401を確認して完了する.
+        """
         case = _GETSCORES_CASES["auth-invalid"]
         with _test_env():
             app = create_app()
@@ -667,6 +801,12 @@ class TestAuthDisclosureRegression:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized UserとRanked Beatmapをseedする.
+
+                    Returns:
+                        None: invalid credentialのdisclosure防止を検証できるtest dataを
+                        永続化して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_known_ranked_beatmap(app)
 
@@ -678,6 +818,11 @@ class TestAuthDisclosureRegression:
                 _assert_getscores_contract_response(response, case.expected_shape_id)
 
     def test_no_session_returns_empty_401(self) -> None:
+        """Active sessionなしのUserがbeatmap dataを開示しないことを検証する.
+
+        Returns:
+            None: auth failure fixtureと一致するempty HTTP 401を確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -687,6 +832,11 @@ class TestAuthDisclosureRegression:
             ) as client:
 
                 async def _seed_user_and_map_no_session() -> None:
+                    """sessionなしUserとRanked Beatmapをseedする.
+
+                    Returns:
+                        None: no session disclosure防止を検証できるtest dataを永続化して完了する.
+                    """
                     password_service = await resolve_dependency(app, PasswordService)
                     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
                     _ = await seed_user(
@@ -722,6 +872,13 @@ class TestAuthDisclosureRegression:
 
 @dataclass(frozen=True)
 class _ParseOnlyCase:
+    """parse only fieldのoverrideとparameter IDを保持する.
+
+    Attributes:
+        name (str): pytest parameter IDに使うcase名.
+        overrides (dict[str, str]): baseline queryへ上書きするparse only field.
+    """
+
     name: str
     overrides: dict[str, str]
 
@@ -740,9 +897,17 @@ _PARSE_ONLY_IDS = tuple(c.name for c in _PARSE_ONLY_CASES)
 
 
 class TestParseOnlyInvariance:
-    """``m``, ``mods``, ``s``, ``v``, ``vv`` do not vary MVP header output."""
+    """parse only fieldがMVP header outputを変えないことを検証する."""
 
     def _exercise(self, overrides: dict[str, str]) -> bytes:
+        """Parse only overrideを指定してknown header response bodyを取得する.
+
+        Args:
+            overrides (dict[str, str]): baseline queryへ適用するparse only field.
+
+        Returns:
+            bytes: endpointが返したexact header response body.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -752,6 +917,11 @@ class TestParseOnlyInvariance:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized Userとknown Ranked Beatmapをseedする.
+
+                    Returns:
+                        None: known header responseを取得できるtest dataを永続化して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_known_ranked_beatmap(app)
 
@@ -765,6 +935,14 @@ class TestParseOnlyInvariance:
 
     @pytest.mark.parametrize("case", _PARSE_ONLY_CASES, ids=_PARSE_ONLY_IDS)
     def test_parse_only_field_does_not_vary_header(self, case: _ParseOnlyCase) -> None:
+        """Parse only overrideがbaseline header bodyを変えないことを検証する.
+
+        Args:
+            case (_ParseOnlyCase): baseline queryへ適用するparse only case.
+
+        Returns:
+            None: override後bodyがbaseline bodyと完全一致することを確認して完了する.
+        """
         baseline = self._exercise({})
         observed = self._exercise(case.overrides)
         assert observed == baseline, (
@@ -778,6 +956,14 @@ class TestParseOnlyInvariance:
 
 
 def _load_converted_mode_fixture() -> tuple[dict[str, object], ...]:
+    """Converted mode request fixtureをJSONから読み込む.
+
+    Returns:
+        tuple[dict[str, object], ...]: queryとexpected statusを持つfixture entry.
+
+    Raises:
+        AssertionError: JSON rootまたはentryが期待するobject shapeでない場合.
+    """
     with _CONVERTED_FIXTURE_PATH.open(encoding="utf-8") as handle:
         data: object = json.load(handle)  # pyright: ignore[reportAny]
     assert isinstance(data, list)
@@ -800,7 +986,7 @@ _CONVERTED_FIXTURE_IDS = tuple(
 
 
 class TestConvertedModeFixture:
-    """Each converted-mode fixture request produces the same wire status."""
+    """converted mode fixture requestが期待するwire statusを返すことを検証する."""
 
     @pytest.mark.parametrize(
         "entry",
@@ -808,6 +994,17 @@ class TestConvertedModeFixture:
         ids=_CONVERTED_FIXTURE_IDS,
     )
     def test_converted_mode_request_yields_expected_status(self, entry: dict[str, object]) -> None:
+        """Converted mode fixture requestのheader statusを検証する.
+
+        Args:
+            entry (dict[str, object]): queryとexpected statusを持つfixture entry.
+
+        Returns:
+            None: fixture requestのheader fieldがexpected statusと一致することを確認して完了する.
+
+        Raises:
+            AssertionError: fixture entryまたはresponse headerがexpected contractと異なる場合.
+        """
         raw_query = entry["query"]
         expected_status = entry["expected_status"]
         assert isinstance(raw_query, dict)
@@ -833,6 +1030,11 @@ class TestConvertedModeFixture:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized Userとconverted mode用Ranked Beatmapをseedする.
+
+                    Returns:
+                        None: converted mode requestを解決できるtest dataを永続化して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_converted_mode_ranked_beatmap(app)
 

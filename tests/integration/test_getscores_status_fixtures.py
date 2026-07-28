@@ -68,6 +68,14 @@ _UNAVAILABLE_SHAPE = _WIRE_SHAPES_BY_ID[GetscoresWireShapeId.UNAVAILABLE]
 
 @contextmanager
 def _test_env() -> Generator[None]:
+    """Integration test実行中だけ必要な環境変数を設定する.
+
+    Yields:
+        None: test用の環境変数が設定されたblockを実行する.
+
+    Notes:
+        終了時にENVIRONMENTとDOMAINを呼出前の値へ復元する.
+    """
     old_env = os.environ.get("ENVIRONMENT")
     old_domain = os.environ.get("DOMAIN")
     os.environ["ENVIRONMENT"] = "test"
@@ -251,6 +259,14 @@ _BELOW_RANKED_IDS = tuple(f.name for f in _BELOW_RANKED_FIXTURES)
 
 
 async def _seed_user_with_session(app: Starlette) -> int:
+    """Getscores request用のactive sessionを持つUserをseedする.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+
+    Returns:
+        int: 永続化したUser ID.
+    """
     password_service = await resolve_dependency(app, PasswordService)
     session_store = await resolve_dependency(app, SessionStore)
 
@@ -345,6 +361,14 @@ async def _seed_beatmap_for_fixture(app: Starlette, fixture: _StatusFixture) -> 
 
 
 def _query_for_fixture(fixture: _StatusFixture) -> dict[str, str]:
+    """Status fixtureを取得するbaseline query parameterを構築する.
+
+    Args:
+        fixture (_StatusFixture): checksumを持つcanonical status fixture.
+
+    Returns:
+        dict[str, str]: stable client互換fieldを含むquery parameter.
+    """
     return {
         "c": fixture.checksum,
         "us": _TEST_USERNAME,
@@ -381,6 +405,11 @@ def _exercise_endpoint_response(
         ) as client:
 
             async def _setup() -> None:
+                """Authenticated Userとfixture Beatmapをseedする.
+
+                Returns:
+                    None: status responseを取得できるtest dataを永続化して完了する.
+                """
                 _ = await _seed_user_with_session(app)
                 await _seed_beatmap_for_fixture(app, fixture)
 
@@ -416,7 +445,7 @@ def _exercise_endpoint(fixture: _StatusFixture) -> bytes:
 
 
 class TestSubmittedStatusFixtures:
-    """Each submitted status produces a header response with the expected fields."""
+    """submitted statusごとのheader fieldがcrosswalkと一致することを検証する."""
 
     @pytest.mark.parametrize("fixture", _FIXTURES, ids=_FIXTURE_IDS)
     def test_status_line_fields(self, fixture: _StatusFixture) -> None:
@@ -450,12 +479,28 @@ class TestSubmittedStatusFixtures:
 
     @pytest.mark.parametrize("fixture", _FIXTURES, ids=_FIXTURE_IDS)
     def test_offset_line_is_zero(self, fixture: _StatusFixture) -> None:
+        """Submitted statusのoffset lineが0であることを検証する.
+
+        Args:
+            fixture (_StatusFixture): header responseを返すsubmitted status fixture.
+
+        Returns:
+            None: offset lineがMVP contractどおり0であることを確認して完了する.
+        """
         body = _exercise_endpoint(fixture)
         lines = body.split(b"\n")
         assert lines[1] == b"0", "Beatmap offset line must be '0' in MVP"
 
     @pytest.mark.parametrize("fixture", _FIXTURES, ids=_FIXTURE_IDS)
     def test_display_title_line_format(self, fixture: _StatusFixture) -> None:
+        """Submitted statusのdisplay title line formatを検証する.
+
+        Args:
+            fixture (_StatusFixture): artistとtitleを持つsubmitted status fixture.
+
+        Returns:
+            None: BBCode prefixを含むartistとtitleのlineを確認して完了する.
+        """
         body = _exercise_endpoint(fixture)
         lines = body.split(b"\n")
         display = lines[2]
@@ -464,12 +509,28 @@ class TestSubmittedStatusFixtures:
 
     @pytest.mark.parametrize("fixture", _FIXTURES, ids=_FIXTURE_IDS)
     def test_rating_line_is_zero(self, fixture: _StatusFixture) -> None:
+        """Submitted statusのrating lineが0であることを検証する.
+
+        Args:
+            fixture (_StatusFixture): header responseを返すsubmitted status fixture.
+
+        Returns:
+            None: rating lineがMVP contractどおり0であることを確認して完了する.
+        """
         body = _exercise_endpoint(fixture)
         lines = body.split(b"\n")
         assert lines[3] == b"0", "Rating line must be '0' in MVP"
 
     @pytest.mark.parametrize("fixture", _FIXTURES, ids=_FIXTURE_IDS)
     def test_no_score_rows_or_personal_best(self, fixture: _StatusFixture) -> None:
+        """score未seedのsubmitted statusがempty score sectionを返すことを検証する.
+
+        Args:
+            fixture (_StatusFixture): scoreを持たないsubmitted status fixture.
+
+        Returns:
+            None: Personal Bestとscore row用のtrailing placeholderを確認して完了する.
+        """
         body = _exercise_endpoint(fixture)
         lines = body.split(b"\n")
         # Header body shape: 4 data lines + 2 blank trailing lines (placeholder
@@ -580,7 +641,7 @@ class TestEffectiveLocalStatusOverride:
 
 
 class TestOfficialPrecedenceOverBanchopy:
-    """Pending/WIP/Graveyard return full header bodies, never short bodies."""
+    """Pending, WIP, Graveyardがshort bodyではなくheader bodyを返すことを検証する."""
 
     @pytest.mark.parametrize(
         "fixture",
@@ -588,6 +649,14 @@ class TestOfficialPrecedenceOverBanchopy:
         ids=_BELOW_RANKED_IDS,
     )
     def test_below_ranked_returns_header_body_not_short(self, fixture: _StatusFixture) -> None:
+        """Below ranked statusがdisplay titleを含むheader bodyを返すことを検証する.
+
+        Args:
+            fixture (_StatusFixture): wire statusが0となるsubmitted status fixture.
+
+        Returns:
+            None: unavailableまたはupdate available short bodyではないことを確認して完了する.
+        """
         body = _exercise_endpoint(fixture)
         # Short bodies are exactly b"-1|false" or b"1|false"; header bodies
         # are multi-line and contain the display title with the bbcode prefix.
@@ -604,7 +673,11 @@ class TestOfficialPrecedenceOverBanchopy:
 
 
 class TestStableResponsePurity:
-    """Header bodies must not include any internal provenance fields."""
+    """header bodyがinternal provenance fieldを含まないことを検証する.
+
+    Attributes:
+        _BANNED_TOKENS (tuple[bytes, ...]): response bodyへ現れてはならないinternal field名.
+    """
 
     _BANNED_TOKENS: tuple[bytes, ...] = (
         b"_source",
@@ -620,6 +693,14 @@ class TestStableResponsePurity:
 
     @pytest.mark.parametrize("fixture", _FIXTURES, ids=_FIXTURE_IDS)
     def test_no_provenance_tokens_in_body(self, fixture: _StatusFixture) -> None:
+        """Submitted status bodyからinternal provenance tokenを除外することを検証する.
+
+        Args:
+            fixture (_StatusFixture): header bodyを返すsubmitted status fixture.
+
+        Returns:
+            None: 禁止tokenがresponse bodyに含まれないことを確認して完了する.
+        """
         body = _exercise_endpoint(fixture)
         for token in self._BANNED_TOKENS:
             assert token not in body, (

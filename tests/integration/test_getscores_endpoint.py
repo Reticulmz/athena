@@ -1,8 +1,7 @@
-"""E2E integration tests for the legacy getscores endpoint.
+"""legacy getscores endpointをend-to-endで統合検証する.
 
-Validates routing on osu.$DOMAIN, auth gating (401 with no beatmap data
-disclosure), and stable text/plain response bodies for unavailable,
-update-available, and header outcomes.
+osu.$DOMAIN上のrouting, authentication failure時のbeatmap data disclosure防止,
+unavailable, update available, header outcomeのstableなtext/plain response bodyを検証する.
 """
 
 from __future__ import annotations
@@ -109,6 +108,15 @@ _SELECTION_CASE_IDS = (
 
 @dataclass(frozen=True, slots=True)
 class _SeededLeaderboardScore:
+    """seed済みleaderboard scoreの識別情報を保持する.
+
+    Attributes:
+        score_id (int): 永続化されたscore ID.
+        user_id (int): scoreを所有するUser ID.
+        score (int): leaderboard順位に使用するscore値.
+        mods (int): 永続化時のMod bitmask.
+    """
+
     score_id: int
     user_id: int
     score: int
@@ -117,6 +125,17 @@ class _SeededLeaderboardScore:
 
 @dataclass(frozen=True, slots=True)
 class _StableScoreRow:
+    """stable getscores rowから抽出した検証用の値を保持する.
+
+    Attributes:
+        score_id (int): response rowに含まれるscore ID.
+        username (str): response rowに含まれるusername.
+        score (int): response rowに含まれるscore値.
+        mods (int): response rowに含まれるMod bitmask.
+        user_id (int): response rowに含まれるUser ID.
+        rank (int): response rowに含まれるleaderboard順位.
+    """
+
     score_id: int
     username: str
     score: int
@@ -127,6 +146,14 @@ class _StableScoreRow:
 
 @dataclass(frozen=True, slots=True)
 class _SelectionExpectation:
+    """selection branchに期待するrowとPersonal Bestを保持する.
+
+    Attributes:
+        row_usernames (tuple[str, ...]): response rowに現れるusernameの順位順一覧.
+        personal_best_username (str | None): Personal Best rowのusername. 存在しない場合はNone.
+        selected_mods (int | None): 全rowに期待するMod bitmask. 検証しない場合はNone.
+    """
+
     row_usernames: tuple[str, ...]
     personal_best_username: str | None
     selected_mods: int | None = None
@@ -140,7 +167,14 @@ _HEADER_ONLY_EXPECTATION = _SelectionExpectation(
 
 @contextmanager
 def _test_env() -> Generator[None]:
-    """Temporarily set ENVIRONMENT=test for the duration of the block."""
+    """Integration test実行中だけ必要な環境変数を設定する.
+
+    Yields:
+        None: test用の環境変数が設定されたblockを実行する.
+
+    Notes:
+        終了時にENVIRONMENTとDOMAINを呼出前の値へ復元する.
+    """
     old_env = os.environ.get("ENVIRONMENT")
     old_domain = os.environ.get("DOMAIN")
     os.environ["ENVIRONMENT"] = "test"
@@ -161,7 +195,15 @@ def _test_env() -> Generator[None]:
 
 
 async def _seed_user_with_session(app: Starlette, *, country: str = "JP") -> int:
-    """Seed an active user + session, returning the user id."""
+    """Active sessionを持つleaderboard表示可能なUserをseedする.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+        country (str): sessionとUserへ設定するcountry code.
+
+    Returns:
+        int: 永続化したUser ID.
+    """
     password_service = await resolve_dependency(app, PasswordService)
     session_store = await resolve_dependency(app, SessionStore)
 
@@ -200,6 +242,15 @@ async def _seed_user_with_session(app: Starlette, *, country: str = "JP") -> int
 
 
 async def _assign_leaderboard_visible_role(app: Starlette, user_id: int) -> None:
+    """指定Userへleaderboard表示用Roleを割り当てる.
+
+    Args:
+        app (Starlette): Unit of Work dependencyを解決するtest application.
+        user_id (int): Roleを割り当てるUser ID.
+
+    Returns:
+        None: Role assignmentをcommitして完了する.
+    """
     await seed_role(app, _LEADERBOARD_VISIBLE_ROLE)
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
@@ -213,6 +264,16 @@ async def _seed_visible_user(
     username: str,
     country: str = "JP",
 ) -> int:
+    """Leaderboard rowへ表示するsynthetic Userをseedする.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+        username (str): response rowに使うusername.
+        country (str): Userへ設定するcountry code.
+
+    Returns:
+        int: 永続化したUser ID.
+    """
     user = await seed_user(
         app,
         User(
@@ -231,13 +292,13 @@ async def _seed_visible_user(
 
 
 async def _seed_known_beatmap(app: Starlette) -> None:
-    """submitted済みの既知Beatmapをcommand-side persistenceへ作成する.
+    """submitted済みの既知Beatmapをcommand-side persistenceへseedする.
 
     Args:
         app (Starlette): Unit of Work dependencyを解決するtest application.
 
     Returns:
-        None: 既知Beatmapの永続化が完了したことを示す.
+        None: known checksumで解決できるBeatmapsetを永続化して完了する.
     """
     beatmap = Beatmap(
         id=75,
@@ -282,7 +343,7 @@ async def _seed_known_beatmap(app: Starlette) -> None:
 
 
 async def _seed_leaderboard_best(app: Starlette, *, user_id: int) -> int:
-    """getscoresのPersonal Best確認に使用するscoreとprojectionを作成する.
+    """getscoresのPersonal Best確認用leaderboard scoreをseedする.
 
     Args:
         app (Starlette): Unit of Work dependencyを解決するtest application.
@@ -293,7 +354,6 @@ async def _seed_leaderboard_best(app: Starlette, *, user_id: int) -> int:
 
     Raises:
         AssertionError: repositoryが永続化済みScore IDを返さない場合.
-
     """
     seeded = await _seed_leaderboard_score(
         app,
@@ -312,10 +372,10 @@ async def _seed_leaderboard_score(
     mods: ModCombination | None = None,
     submitted_offset_seconds: int = 0,
 ) -> _SeededLeaderboardScore:
-    """Beatmap Leaderboard readで使用するsource scoreを作成する.
+    """Beatmap Leaderboard readで使用するsource scoreをseedする.
 
     Args:
-        app (Starlette): dependencyを解決するtest application.
+        app (Starlette): dependency graphを持つtest application.
         user_id (int): scoreを所有するUser ID.
         score_value (int): 永続化するscore値.
         mods (ModCombination | None): scoreへ適用するMod. NoneはNo Modを示す.
@@ -393,6 +453,15 @@ async def _add_friend_relationships(
     app: Starlette,
     relationships: tuple[tuple[int, int], ...],
 ) -> None:
+    """getscoresのfriends category用relationshipを永続化する.
+
+    Args:
+        app (Starlette): Unit of Work dependencyを解決するtest application.
+        relationships (tuple[tuple[int, int], ...]): owner User IDとtarget User IDの組.
+
+    Returns:
+        None: 全relationshipをcommitして完了する.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         for owner_user_id, target_user_id in relationships:
@@ -401,6 +470,14 @@ async def _add_friend_relationships(
 
 
 async def _seed_selected_mod_scenario(app: Starlette) -> None:
+    """Selected modsの完全一致を検証するscore集合をseedする.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+
+    Returns:
+        None: No Mod, SD, PF, Mirror, NC, DTのscoreを永続化して完了する.
+    """
     viewer_id = await _seed_user_with_session(app)
     await _seed_known_beatmap(app)
     sd_user_id = await _seed_visible_user(app, username="SuddenDeath")
@@ -449,6 +526,18 @@ async def _seed_selection_contract_case(
     app: Starlette,
     branch_case: GetscoresBranchCase,
 ) -> _SelectionExpectation:
+    """Canonical selection branchに対応するseed dataと期待値を構築する.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+        branch_case (GetscoresBranchCase): seed profileと期待wire shapeを持つbranch case.
+
+    Returns:
+        _SelectionExpectation: response rowとPersonal Bestに期待する値.
+
+    Raises:
+        AssertionError: 対応しないseed profileが指定された場合.
+    """
     match branch_case.seed_profile:
         case GetscoresSeedProfile.RANKED_NO_SCORES:
             _ = await _seed_user_with_session(app)
@@ -554,6 +643,15 @@ async def _seed_global_contract_rows(
     *,
     viewer_country: str = "JP",
 ) -> _SelectionExpectation:
+    """Global categoryのviewerとrival scoreをseedして期待値を返す.
+
+    Args:
+        app (Starlette): dependency graphを持つtest application.
+        viewer_country (str): viewer Userへ設定するcountry code.
+
+    Returns:
+        _SelectionExpectation: global rowとPersonal Bestに期待するusername.
+    """
     viewer_id = await _seed_user_with_session(app, country=viewer_country)
     await _seed_known_beatmap(app)
     rival_id = await _seed_visible_user(
@@ -578,7 +676,7 @@ async def _seed_global_contract_rows(
 
 
 async def _seed_legacy_personal_best(app: Starlette, *, user_id: int) -> int:
-    """retired Personal Best projectionだけをfallback回帰確認用に作成する.
+    """Legacy Personal Best projectionだけをfallback回帰確認用にseedする.
 
     Args:
         app (Starlette): Unit of Work dependencyを解決するtest application.
@@ -591,7 +689,7 @@ async def _seed_legacy_personal_best(app: Starlette, *, user_id: int) -> int:
         AssertionError: repositoryが永続化済みScore IDを返さない場合.
 
     Notes:
-        source scoreはleaderboard対象外とし、projectionがscore rowへ混入しないか検証する.
+        source scoreはleaderboard対象外とし, projectionがscore rowへ混入しないか検証する.
     """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
@@ -648,6 +746,17 @@ def _query(
     password_md5: str | None = _TEST_PASSWORD_MD5,
     extra: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    """Getscores endpointへ送るbaseline query parameterを構築する.
+
+    Args:
+        checksum (str | None): c fieldへ設定するbeatmap checksum. Noneならfieldを省略する.
+        username (str | None): us fieldへ設定するusername. Noneならfieldを省略する.
+        password_md5 (str | None): ha fieldへ設定するpassword MD5. Noneならfieldを省略する.
+        extra (dict[str, str] | None): baselineへ上書きまたは追加するquery parameter.
+
+    Returns:
+        dict[str, str]: stable client互換のbaseline fieldを含むquery parameter.
+    """
     params: dict[str, str] = {}
     if checksum is not None:
         params["c"] = checksum
@@ -667,6 +776,17 @@ def _query(
 
 
 def _parse_header(body: bytes) -> GetscoresHeader:
+    """Header response bodyをGetscoresHeaderへparseする.
+
+    Args:
+        body (bytes): getscores endpointから受け取ったresponse body.
+
+    Returns:
+        GetscoresHeader: header responseとしてparseした値.
+
+    Raises:
+        AssertionError: bodyがerrorまたはheader以外のresponseを表す場合.
+    """
     parsed = parse_getscores_response(body)
     assert parsed.error is None
     assert parsed.response is not None
@@ -676,16 +796,44 @@ def _parse_header(body: bytes) -> GetscoresHeader:
 
 
 def _parse_personal_best_row(header: GetscoresHeader) -> _StableScoreRow | None:
+    """headerからPersonal Best rowを抽出する.
+
+    Args:
+        header (GetscoresHeader): parse済みgetscores header.
+
+    Returns:
+        _StableScoreRow | None: Personal Best row. rowがない場合はNone.
+    """
     if header.personal_best_row is None:
         return None
     return _parse_score_row(header.personal_best_row)
 
 
 def _parse_score_rows(header: GetscoresHeader) -> tuple[_StableScoreRow, ...]:
+    """header内のscore rowを検証用value objectへ変換する.
+
+    Args:
+        header (GetscoresHeader): parse済みgetscores header.
+
+    Returns:
+        tuple[_StableScoreRow, ...]: score rowをresponse順に変換した値.
+    """
     return tuple(_parse_score_row(row) for row in header.score_rows)
 
 
 def _parse_score_row(row: str) -> _StableScoreRow:
+    """Stable getscoresの1行を検証対象fieldへ分解する.
+
+    Args:
+        row (str): vertical bar区切りのstable score row.
+
+    Returns:
+        _StableScoreRow: score ID, username, score, mods, User ID, rankを持つrow.
+
+    Raises:
+        AssertionError: rowのfield数がstable score row contractと異なる場合.
+        ValueError: 数値fieldをintへ変換できない場合.
+    """
     fields = row.split("|")
     assert len(fields) == 16
     return _StableScoreRow(
@@ -703,6 +851,20 @@ def _assert_selection_contract_response(
     branch_case: GetscoresBranchCase,
     expectation: _SelectionExpectation,
 ) -> None:
+    """Selection branch responseをcanonical shapeとseed期待値へ照合する.
+
+    Args:
+        response (httpx2.Response): getscores endpointから返されたresponse.
+        branch_case (GetscoresBranchCase): 期待wire shapeを持つcanonical branch case.
+        expectation (_SelectionExpectation): rowとPersonal Bestの期待値.
+
+    Returns:
+        None: shape, row, Personal Best, selected modsを検証して完了する.
+
+    Raises:
+        KeyError: branch caseのshapeがevidence bundleに存在しない場合.
+        AssertionError: responseがcanonical contractまたはseed期待値と異なる場合.
+    """
     fixture = _GETSCORES_SHAPES[branch_case.expected_shape_id]
     assert fixture.shape_id in {
         GetscoresWireShapeId.HEADER_ONLY,
@@ -739,10 +901,14 @@ def _assert_selection_contract_response(
 
 
 class TestRouting:
-    """`/web/osu-osz2-getscores.php` is reachable on osu.$DOMAIN only."""
+    """osu.$DOMAIN上だけでlegacy getscores routeへ到達できることを検証する."""
 
     def test_route_is_reachable_on_osu_host(self) -> None:
-        """Routed via Host(osu.$DOMAIN); request reaches handler (200)."""
+        """osu.$DOMAIN requestがhandlerまで到達するrouting contractを検証する.
+
+        Returns:
+            None: credential未指定requestがHTTP 401を返すことを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -758,7 +924,11 @@ class TestRouting:
                 assert response.status_code == HTTPStatus.UNAUTHORIZED
 
     def test_route_is_not_reachable_via_path_fallback(self) -> None:
-        """No path-based fallback on the default (non-osu) host."""
+        """Default hostにpath based fallbackがないことを検証する.
+
+        Returns:
+            None: osu以外のhostでHTTP 404を返すことを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -775,9 +945,14 @@ class TestRouting:
 
 
 class TestAuthorization:
-    """Auth failures return 401 without beatmap data disclosure."""
+    """authentication failure時にbeatmap dataを開示しないことを検証する."""
 
     def test_missing_credentials_returns_401_empty(self) -> None:
+        """credential未指定requestがempty HTTP 401を返すことを検証する.
+
+        Returns:
+            None: response bodyを空にしたHTTP 401を確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -793,6 +968,11 @@ class TestAuthorization:
                 assert response.content == b""
 
     def test_invalid_credentials_returns_401_empty(self) -> None:
+        """不正credential requestがempty HTTP 401を返すことを検証する.
+
+        Returns:
+            None: response bodyを空にしたHTTP 401を確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -809,7 +989,11 @@ class TestAuthorization:
                 assert response.content == b""
 
     def test_no_session_returns_401_empty(self) -> None:
-        """Valid credentials but no active session → 401."""
+        """Active sessionなしのvalid credentialがempty HTTP 401になることを検証する.
+
+        Returns:
+            None: response bodyを空にしたHTTP 401を確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -819,6 +1003,11 @@ class TestAuthorization:
             ) as client:
                 # Seed the user without creating a session
                 async def _seed_user_only() -> None:
+                    """sessionを作らないauthentication済みUserをseedする.
+
+                    Returns:
+                        None: password hashを持つUserを永続化して完了する.
+                    """
                     password_service = await resolve_dependency(app, PasswordService)
                     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
                     _ = await seed_user(
@@ -850,10 +1039,14 @@ class TestAuthorization:
 
 
 class TestStableResponse:
-    """Authorized requests receive 200 text/plain stable bodies."""
+    """authorized requestがstableなtext/plain bodyを返すことを検証する."""
 
     def test_known_checksum_returns_header_body(self) -> None:
-        """Authorized request with known checksum returns header body."""
+        """Known checksumのauthorized requestがheader bodyを返すことを検証する.
+
+        Returns:
+            None: empty leaderboardを持つHTTP 200 header responseを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -863,6 +1056,11 @@ class TestStableResponse:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized Userとknown Beatmapをseedする.
+
+                    Returns:
+                        None: header responseを取得できるtest dataを永続化して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
 
@@ -885,7 +1083,12 @@ class TestStableResponse:
                 assert parsed.response.header.empty_leaderboard
 
     def test_known_checksum_returns_personal_best_and_top_rows_separately(self) -> None:
-        """Authorized request returns PB separately from leaderboard rows."""
+        """Personal Bestとleaderboard rowを別sectionで返すことを検証する.
+
+        Returns:
+            None: 同一scoreがPersonal Best sectionとscore row sectionへ別個に現れることを
+            確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -895,6 +1098,11 @@ class TestStableResponse:
             ) as client:
 
                 async def _setup() -> tuple[int, int]:
+                    """Personal Best用のauthorized Userとscoreをseedする.
+
+                    Returns:
+                        tuple[int, int]: 永続化したScore IDとUser ID.
+                    """
                     user_id = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
                     score_id = await _seed_leaderboard_best(app, user_id=user_id)
@@ -924,7 +1132,12 @@ class TestStableResponse:
                 assert not parsed.response.header.empty_leaderboard
 
     def test_legacy_personal_best_projection_is_not_used_as_score_row(self) -> None:
-        """Old PB projection does not create fallback leaderboard rows."""
+        """Legacy Personal Best projectionがfallback score rowを作らないことを検証する.
+
+        Returns:
+            None: legacy projectionだけではPersonal Bestとscore rowが空になることを
+            確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -934,6 +1147,11 @@ class TestStableResponse:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authorized Userとlegacy Personal Best projectionをseedする.
+
+                    Returns:
+                        None: fallback projectionだけを持つtest dataを永続化して完了する.
+                    """
                     user_id = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
                     _ = await _seed_legacy_personal_best(app, user_id=user_id)
@@ -989,6 +1207,11 @@ class TestStableResponse:
                 _assert_selection_contract_response(response, branch_case, expectation)
 
     def test_global_local_and_country_categories_return_expected_scope_rows(self) -> None:
+        """global, local, country categoryが期待するcandidate scopeを返すことを検証する.
+
+        Returns:
+            None: categoryごとのrow, rank, Personal Bestが期待値と一致することを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -998,6 +1221,11 @@ class TestStableResponse:
             ) as client:
 
                 async def _setup() -> None:
+                    """複数countryとModを持つcategory比較用scoreをseedする.
+
+                    Returns:
+                        None: localとcountry scopeを比較できるtest dataを永続化して完了する.
+                    """
                     viewer_id = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
                     japan_rival_id = await _seed_visible_user(
@@ -1082,6 +1310,11 @@ class TestStableResponse:
                 assert country_pb.rank == 2
 
     def test_friends_category_includes_self_and_excludes_reverse_only(self) -> None:
+        """Friends categoryがviewerとoutbound friendだけを含むことを検証する.
+
+        Returns:
+            None: reverse only relationshipと無関係Userを除外することを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -1091,6 +1324,12 @@ class TestStableResponse:
             ) as client:
 
                 async def _setup() -> None:
+                    """directionが異なるfriend relationshipとscoreをseedする.
+
+                    Returns:
+                        None: friends categoryのcandidate集合を検証できるtest dataを
+                        永続化して完了する.
+                    """
                     viewer_id = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
                     friend_id = await _seed_visible_user(app, username="FriendTarget")
@@ -1261,6 +1500,11 @@ class TestStableResponse:
                 ]
 
     def test_global_top_50_limit_keeps_personal_best_with_actual_rank(self) -> None:
+        """Global top 50外のPersonal Bestが実際のrankを保持することを検証する.
+
+        Returns:
+            None: rowを50件に制限してもPersonal Best rankが51のままであることを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -1270,6 +1514,11 @@ class TestStableResponse:
             ) as client:
 
                 async def _setup() -> _SeededLeaderboardScore:
+                    """viewerより上位の50 scoreとviewer scoreをseedする.
+
+                    Returns:
+                        _SeededLeaderboardScore: rank 51となるviewer scoreの識別情報.
+                    """
                     viewer_id = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
                     for index in range(50):
@@ -1310,6 +1559,11 @@ class TestStableResponse:
                 assert personal_best.rank == 51
 
     def test_category_specific_empty_results_keep_header_without_rows_or_pb(self) -> None:
+        """Empty categoryがrowとPersonal Bestなしのheaderを維持することを検証する.
+
+        Returns:
+            None: country mismatchとunsupported categoryがempty headerを返すことを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -1319,6 +1573,11 @@ class TestStableResponse:
             ) as client:
 
                 async def _setup() -> None:
+                    """Country categoryで一致しないviewerとrival scoreをseedする.
+
+                    Returns:
+                        None: empty category responseを検証できるtest dataを永続化して完了する.
+                    """
                     viewer_id = await _seed_user_with_session(app, country="XX")
                     await _seed_known_beatmap(app)
                     rival_id = await _seed_visible_user(
@@ -1360,7 +1619,11 @@ class TestStableResponse:
                 assert unsupported_header.score_rows == ()
 
     def test_unknown_checksum_returns_unavailable_short_body(self) -> None:
-        """Unknown checksum returns 200 -1|false."""
+        """Unknown checksumがHTTP 200のunavailable short bodyを返すことを検証する.
+
+        Returns:
+            None: response kindがNOT_SUBMITTEDでbodyが-1|falseとなることを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -1382,7 +1645,11 @@ class TestStableResponse:
                 assert parsed.response.kind is GetscoresResponseKind.NOT_SUBMITTED
 
     def test_missing_identity_returns_unavailable_short_body(self) -> None:
-        """Missing identity (no c, no f+i) returns 200 -1|false."""
+        """Beatmap identity未指定requestがunavailable short bodyを返すことを検証する.
+
+        Returns:
+            None: response kindがNOT_SUBMITTEDでbodyが-1|falseとなることを確認して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
