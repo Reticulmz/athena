@@ -718,7 +718,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/transports/banchoのworkflow/listener file_
 
-- [ ] 3.46 (P) Transport root/stable mapper unit testを整備する
+- [x] 3.46 (P) Transport root/stable mapper unit testを整備する
   - tests/unit/transports/*.pyとtests/unit/transports/stable/**へ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および所有transport testが通る
   - _Depends: 1.4_
