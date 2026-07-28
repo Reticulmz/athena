@@ -799,7 +799,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: alembic/env.py, alembic/versions/**_
 
-- [ ] 4.2 (P) 残りのtracked first-party Python assetを整備する
+- [x] 4.2 (P) 残りのtracked first-party Python assetを整備する
   - gitlint_rules/**、athena-crypto/tests/**、tracked .agents/**/*.pyへproductionまたはtest共通条件を
     適用し、skill example behaviorとgitlint rule semanticsを維持する
   - 完了条件: scoped Ruff Dとinterrogate 100%および各assetのfocused testまたはexecution probeが通る
