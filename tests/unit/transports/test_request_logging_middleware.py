@@ -1,14 +1,4 @@
-"""Tests for RequestLoggingMiddleware.
-
-Validates:
-- Req 4.1: HTTP requests are logged with method, path, status, duration_ms
-- Req 5.1: structlog is used for all logging
-- Req 5.3: Sensitive contextvars are cleared between requests
-- Req 7.1: contextvars user info appears in log entries after binding
-
-Uses a minimal Starlette app with the middleware applied and
-structlog.testing.capture_logs() for log assertions.
-"""
+"""RequestLoggingMiddlewareのrequest logとcontextvars contractを検証する."""
 
 from __future__ import annotations
 
@@ -34,23 +24,51 @@ if TYPE_CHECKING:
 
 
 async def _ok_endpoint(_request: Request) -> PlainTextResponse:
-    """Simple 200 OK endpoint."""
+    """HTTP 200とok bodyを返すtest endpointを提供する.
+
+    Args:
+        _request (Request): Starletteから渡されるHTTP request.
+
+    Returns:
+        PlainTextResponse: status code 200を持つok response.
+    """
     return PlainTextResponse("ok")
 
 
 async def _error_endpoint(_request: Request) -> PlainTextResponse:
-    """Returns 500 Internal Server Error."""
+    """HTTP 500とerror bodyを返すtest endpointを提供する.
+
+    Args:
+        _request (Request): Starletteから渡されるHTTP request.
+
+    Returns:
+        PlainTextResponse: status code 500を持つerror response.
+    """
     return PlainTextResponse("error", status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 async def _raise_endpoint(_request: Request) -> PlainTextResponse:
-    """Endpoint that raises an unhandled exception."""
+    """Unhandled RuntimeErrorを送出するtest endpointを提供する.
+
+    Args:
+        _request (Request): Starletteから渡されるHTTP request.
+
+    Raises:
+        RuntimeError: middlewareのexception logを検証するため常に送出する.
+    """
     msg = "unhandled"
     raise RuntimeError(msg)
 
 
 async def _bind_user_endpoint(_request: Request) -> PlainTextResponse:
-    """Endpoint that binds user info to structlog contextvars."""
+    """User情報をstructlog contextvarsへbindするtest endpointを提供する.
+
+    Args:
+        _request (Request): Starletteから渡されるHTTP request.
+
+    Returns:
+        PlainTextResponse: user contextをbindした後のok response.
+    """
     _ = structlog.contextvars.bind_contextvars(user="TestUser", user_id=42)
     return PlainTextResponse("ok")
 
@@ -58,7 +76,14 @@ async def _bind_user_endpoint(_request: Request) -> PlainTextResponse:
 def _make_app(
     routes: list[Route] | None = None,
 ) -> Starlette:
-    """Build a minimal Starlette app with RequestLoggingMiddleware."""
+    """RequestLoggingMiddlewareを持つminimal Starlette appを構築する.
+
+    Args:
+        routes (list[Route] | None): 使用するroute一覧. Noneなら既定test routeを使う.
+
+    Returns:
+        Starlette: request logging middlewareを適用したtest app.
+    """
     if routes is None:
         routes = [
             Route("/", endpoint=_ok_endpoint, methods=["GET", "POST"]),
@@ -78,10 +103,14 @@ def _make_app(
 
 
 class TestRequestLoggingMiddleware:
-    """Middleware logs every HTTP request with expected fields."""
+    """HTTP requestのmethod, path, status, durationをlogへ記録するcontractを検証する."""
 
     def test_logs_get_request(self) -> None:
-        """GET request produces an http_request log entry."""
+        """GET requestがhttp_request logを1件生成するcontractを検証する.
+
+        Returns:
+            None: captureしたhttp_request log数を確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -93,7 +122,11 @@ class TestRequestLoggingMiddleware:
         assert len(http_logs) == 1
 
     def test_logs_post_request(self) -> None:
-        """POST request produces an http_request log entry."""
+        """POST requestがhttp_request logを1件生成するcontractを検証する.
+
+        Returns:
+            None: captureしたhttp_request log数を確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -105,7 +138,11 @@ class TestRequestLoggingMiddleware:
         assert len(http_logs) == 1
 
     def test_log_contains_method(self) -> None:
-        """Log entry includes the HTTP method."""
+        """Request logがGET methodを保持するcontractを検証する.
+
+        Returns:
+            None: method fieldがGETとなることを確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -117,7 +154,11 @@ class TestRequestLoggingMiddleware:
         assert http_logs[0]["method"] == "GET"
 
     def test_log_contains_post_method(self) -> None:
-        """POST method is correctly recorded."""
+        """Request logがPOST methodを保持するcontractを検証する.
+
+        Returns:
+            None: method fieldがPOSTとなることを確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -129,7 +170,11 @@ class TestRequestLoggingMiddleware:
         assert http_logs[0]["method"] == "POST"
 
     def test_log_contains_path(self) -> None:
-        """Log entry includes the request path."""
+        """Request logがrequest pathを保持するcontractを検証する.
+
+        Returns:
+            None: path fieldがroot pathとなることを確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -141,7 +186,11 @@ class TestRequestLoggingMiddleware:
         assert http_logs[0]["path"] == "/"
 
     def test_log_contains_status_code(self) -> None:
-        """Log entry includes the response status code."""
+        """Request logがsuccessful responseのstatus codeを保持するcontractを検証する.
+
+        Returns:
+            None: status fieldがHTTP 200となることを確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -153,7 +202,11 @@ class TestRequestLoggingMiddleware:
         assert http_logs[0]["status"] == HTTPStatus.OK
 
     def test_log_contains_error_status_code(self) -> None:
-        """Error status codes are correctly recorded."""
+        """Request logがerror responseのstatus codeを保持するcontractを検証する.
+
+        Returns:
+            None: status fieldがHTTP 500となることを確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -165,7 +218,11 @@ class TestRequestLoggingMiddleware:
         assert http_logs[0]["status"] == HTTPStatus.INTERNAL_SERVER_ERROR
 
     def test_log_contains_duration_ms(self) -> None:
-        """Log entry includes duration_ms as a non-negative number."""
+        """Request logがnon-negative floatのduration_msを保持するcontractを検証する.
+
+        Returns:
+            None: duration_ms fieldの型と下限を確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -179,7 +236,11 @@ class TestRequestLoggingMiddleware:
         assert http_logs[0]["duration_ms"] >= 0
 
     def test_log_level_is_info(self) -> None:
-        """HTTP request log entries are logged at INFO level."""
+        """HTTP request logがinfo levelで出力されるcontractを検証する.
+
+        Returns:
+            None: log_level fieldがinfoとなることを確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -191,7 +252,11 @@ class TestRequestLoggingMiddleware:
         assert http_logs[0]["log_level"] == "info"
 
     def test_multiple_requests_produce_multiple_logs(self) -> None:
-        """Each request produces its own log entry."""
+        """複数requestが独立したrequest logを生成するcontractを検証する.
+
+        Returns:
+            None: GETとPOSTに対応するlogが2件あることを確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -204,7 +269,11 @@ class TestRequestLoggingMiddleware:
         assert len(http_logs) == 2
 
     def test_health_2xx_request_is_not_logged(self) -> None:
-        """Successful health probes do not produce access log noise."""
+        """Successful health probeをaccess logへ出さないcontractを検証する.
+
+        Returns:
+            None: GET /healthのHTTP 200時にrequest logがないことを確認して完了する.
+        """
         app = _make_app(routes=[Route("/health", endpoint=_ok_endpoint, methods=["GET"])])
         with (
             structlog.testing.capture_logs() as logs,
@@ -216,7 +285,11 @@ class TestRequestLoggingMiddleware:
         assert http_logs == []
 
     def test_health_error_request_is_logged(self) -> None:
-        """Failed health probes remain visible in request logs."""
+        """Failed health probeをaccess logへ残すcontractを検証する.
+
+        Returns:
+            None: GET /healthのHTTP 500時にpathとstatusを持つlogを確認して完了する.
+        """
         app = _make_app(routes=[Route("/health", endpoint=_error_endpoint, methods=["GET"])])
         with (
             structlog.testing.capture_logs() as logs,
@@ -236,10 +309,14 @@ class TestRequestLoggingMiddleware:
 
 
 class TestRequestLoggingContextvars:
-    """Middleware clears contextvars between requests to prevent leaking."""
+    """Request間のcontextvars leak防止とrequest内bindingを検証する."""
 
     def test_contextvars_cleared_between_requests(self) -> None:
-        """User context bound in one request does not leak to the next."""
+        """前requestでbindしたuser contextが次requestへleakしないcontractを検証する.
+
+        Returns:
+            None: 2件目のrequest logにuser fieldがないことを確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
@@ -260,15 +337,25 @@ class TestRequestLoggingContextvars:
         assert "user_id" not in second_log
 
     def test_contextvars_present_during_request(self) -> None:
-        """User context bound during a request is accessible within that request.
+        """Request内でbindしたuser contextがendpointから参照できるcontractを検証する.
 
-        capture_logs() replaces the processor chain so merge_contextvars
-        does not run, but we can verify the binding happened by inspecting
-        structlog.contextvars state from the endpoint itself.
+        Returns:
+            None: endpoint内でcaptureしたuserとuser_idを確認して完了する.
+
+        Notes:
+            capture_logsはprocessor chainを置換するためendpoint内のcontextvarsを直接検査する.
         """
         captured_ctx: dict[str, object] = {}
 
         async def _capture_ctx_endpoint(_request: Request) -> PlainTextResponse:
+            """User contextをbindしてcapture mappingへ保存するnested test endpointを提供する.
+
+            Args:
+                _request (Request): Starletteから渡されるHTTP request.
+
+            Returns:
+                PlainTextResponse: context capture後のok response.
+            """
             _ = structlog.contextvars.bind_contextvars(user="TestUser", user_id=42)
             captured_ctx.update(structlog.contextvars.get_contextvars())
             return PlainTextResponse("ok")
@@ -289,10 +376,14 @@ class TestRequestLoggingContextvars:
 
 
 class TestRequestLoggingOnException:
-    """Middleware logs the request even when the endpoint raises."""
+    """Endpoint exception時にもrequest logを残すcontractを検証する."""
 
     def test_logs_with_status_500_on_unhandled_exception(self) -> None:
-        """Unhandled endpoint exception still produces an http_request log with status=500."""
+        """Unhandled endpoint exceptionがHTTP 500 request logを生成するcontractを検証する.
+
+        Returns:
+            None: status, method, path, durationを持つerror logを確認して完了する.
+        """
         app = _make_app()
         with (
             structlog.testing.capture_logs() as logs,
