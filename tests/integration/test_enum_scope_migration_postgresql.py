@@ -1,3 +1,10 @@
+"""PostgreSQL enum migrationとleaderboard projection repairのintegration contractを検証する.
+
+Notes:
+    各testは隔離schemaへtarget revisionを適用し, enum storage, projection integrity,
+    concurrent lock, index repairを実PostgreSQLで検証する.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -244,17 +251,53 @@ _CHECKED_ENUM_COLUMNS = (
 
 
 class _MigrationModule(Protocol):
+    """Testで動的に読み込むAlembic migration moduleの最小contractを表す.
+
+    Attributes:
+        op (Operations): test helperが差し替えるAlembic operation dispatcher.
+
+    Notes:
+        upgrade, downgrade, lock_projection_updatesはmigration fileが提供するentry pointである.
+    """
+
     op: Operations
 
-    def upgrade(self) -> None: ...
+    def upgrade(self) -> None:
+        """Migrationをupgrade方向に実行する.
 
-    def downgrade(self) -> None: ...
+        Returns:
+            None: schemaをtarget revisionへ進める処理を完了する.
 
-    def lock_projection_updates(self) -> None: ...
+        Notes:
+            callerは実行前にopを対象connection用のOperationsへ設定する.
+        """
+        ...
+
+    def downgrade(self) -> None:
+        """Migrationをdowngrade方向に実行する.
+
+        Returns:
+            None: schemaをprevious revisionへ戻す処理を完了する.
+
+        Notes:
+            callerは実行前にopを対象connection用のOperationsへ設定する.
+        """
+        ...
+
+    def lock_projection_updates(self) -> None:
+        """Leaderboard projection updateをmigration lockで直列化する.
+
+        Returns:
+            None: projection updateを保護するmigration lockの取得を完了する.
+
+        Notes:
+            lock実装を持つmigrationだけがこのentry pointを提供する.
+        """
+        ...
 
 
 def _load_migration_module(module_name: str, path: Path) -> _MigrationModule:
-    """migration fileを独立moduleとして読み込む.
+    """Migration fileを独立moduleとして読み込む.
 
     Args:
         module_name (str): importlibへ渡す一意なmodule名.
@@ -279,6 +322,14 @@ _MIGRATION = _load_migration_module("enum_scope_migration", _MIGRATION_PATH)
 
 
 def _load_leaderboard_repair_migration() -> _MigrationModule:
+    """Leaderboard projection repair migrationをtest moduleとして読み込む.
+
+    Returns:
+        _MigrationModule: repair migrationのupgrade, downgrade, lock entry pointを持つmodule.
+
+    Raises:
+        RuntimeError: migration fileのmodule specまたはloaderを構築できない場合.
+    """
     return _load_migration_module(
         "leaderboard_projection_repair_migration",
         _LEADERBOARD_REPAIR_MIGRATION_PATH,
@@ -296,6 +347,14 @@ _ONLINE_INDEX_MIGRATION = _load_migration_module(
 
 
 def _get_database_url() -> str:
+    """Integration testで使用するPostgreSQL connection URLを取得する.
+
+    Returns:
+        str: DATABASE_URL environment variableで指定されたPostgreSQL URL.
+
+    Raises:
+        pytest.skip: DATABASE_URLが未設定の場合.
+    """
     url = os.environ.get("DATABASE_URL")
     if not url:
         pytest.skip("DATABASE_URL not set")
@@ -463,10 +522,10 @@ async def test_postgresql_enum_columns_use_checked_strings(
         postgres_connection (AsyncConnection): 専用schemaへ接続した非同期接続.
 
     Returns:
-        None: 全対象列の文字列型、長さ、CHECK拒否を検証したことを示す.
+        None: 全対象列の文字列型, 長さ, CHECK拒否を検証したことを示す.
 
     Raises:
-        AssertionError: native Enum、CHECK欠落、長さ不一致、または不正値受理の場合.
+        AssertionError: native Enum, CHECK欠落, 長さ不一致, または不正値受理の場合.
     """
     await _seed_fixture(postgres_connection)
     await postgres_connection.run_sync(_assert_checked_enum_storage)
@@ -622,7 +681,7 @@ async def test_postgresql_migration_rejects_preexisting_unknown_enum_value(
 async def test_postgresql_exact_selected_mod_predicates_and_projection_ranking(
     postgres_connection: AsyncConnection,
 ) -> None:
-    """raw Mod完全一致とprojection起点のrankingを確認する.
+    """Raw Mod完全一致とprojection起点のrankingを確認する.
 
     Args:
         postgres_connection (AsyncConnection): 専用schemaへ接続した非同期接続.
@@ -875,7 +934,7 @@ async def test_postgresql_score_id_lock_serializes_concurrent_projection_upserts
         postgres_engine (AsyncEngine): 独立transactionを作成するtest engine.
 
     Returns:
-        None: 後続upsertが先行commitを待ち、ValueErrorで拒否されたことを示す.
+        None: 後続upsertが先行commitを待ち, ValueErrorで拒否されたことを示す.
 
     Raises:
         AssertionError: 後続upsertが待機せず重複rowを作成できる場合.
@@ -1066,7 +1125,7 @@ async def test_postgresql_rebuild_lock_blocks_concurrent_scope_update(
 async def test_postgresql_scope_update_blocks_concurrent_rebuild(
     postgres_engine: AsyncEngine,
 ) -> None:
-    """submit scope更新中はprojection rebuildが待機することを確認する.
+    """Submit scope更新中はprojection rebuildが待機することを確認する.
 
     Args:
         postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
@@ -1132,7 +1191,7 @@ async def test_postgresql_migration_lock_blocks_concurrent_scope_update(
     module_name: str,
     migration_path: Path,
 ) -> None:
-    """migration rebuild lockがruntime submit更新をswap完了まで待機させる.
+    """Migration rebuild lockがruntime submit更新をswap完了まで待機させる.
 
     Args:
         postgres_engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
@@ -1194,7 +1253,7 @@ async def test_postgresql_claimed_replacement_completion_clears_claims_before_fl
     """claim中のreplacementを制約違反なしで完了できることを確認する.
 
     Args:
-        postgres_connection (AsyncConnection): 専用schemaへ接続した非同期接続.
+        postgres_connection (AsyncConnection): head適用済みの専用schema接続.
 
     Returns:
         None: replacementと旧currentのclaim pairがterminal化前に解除されたことを示す.
@@ -1307,7 +1366,7 @@ async def test_postgresql_migration_round_trip_restores_legacy_projection(
     """migration往復後にlegacy projectionと現行projectionを復元できるか確認する.
 
     Args:
-        postgres_connection (AsyncConnection): 専用schemaへ接続した非同期接続.
+        postgres_connection_at_enum_revision (AsyncConnection): 0400適用済みの専用schema接続.
 
     Returns:
         None: downgradeと再upgrade後のprojectionが期待値と一致したことを示す.
@@ -1417,7 +1476,7 @@ async def test_successor_migration_repairs_duplicate_legacy_projection_rows(
     """同一score_idの旧Global/Selected Mods行をGlobal 1行へ修復する.
 
     Args:
-        postgres_connection (AsyncConnection): 0400適用済みの専用schema接続.
+        postgres_connection_at_enum_revision (AsyncConnection): 0400適用済みの専用schema接続.
 
     Returns:
         None: 後続migrationが旧2行構造をcanonical projectionへ修復したことを示す.
@@ -1460,7 +1519,7 @@ async def test_successor_migration_preserves_canonical_projection(
     """Canonicalな0400 projectionを後続migrationが再作成しないことを確認する.
 
     Args:
-        postgres_connection (AsyncConnection): 0400適用済みの専用schema接続.
+        postgres_connection_at_enum_revision (AsyncConnection): 0400適用済みの専用schema接続.
 
     Returns:
         None: canonical rowのidentityが維持されたことを示す.
@@ -1618,10 +1677,30 @@ async def test_online_index_migration_preserves_equivalent_score_candidate_index
 
 
 def _upgrade_schema_to_head(connection: Connection) -> None:
+    """Alembic schemaをhead revisionまでupgradeする.
+
+    Args:
+        connection (Connection): 隔離schemaへ接続した同期PostgreSQL connection.
+
+    Returns:
+        None: _HEAD_REVISIONまでのmigration適用を完了する.
+    """
     _upgrade_schema_to_revision(connection, _HEAD_REVISION)
 
 
 def _upgrade_schema_to_revision(connection: Connection, revision_id: str) -> None:
+    """Alembic schemaを指定revisionまでupgradeする.
+
+    Args:
+        connection (Connection): 隔離schemaへ接続した同期PostgreSQL connection.
+        revision_id (str): baseから適用するtarget Alembic revision ID.
+
+    Returns:
+        None: target revisionまでの各migration適用を完了する.
+
+    Notes:
+        各migrationへ同一connectionのOperationsを差し替え, migration単位でtransactionを開始する.
+    """
     migration_context = MigrationContext.configure(
         connection,
         opts={"transaction_per_migration": True},
@@ -1637,21 +1716,53 @@ def _upgrade_schema_to_revision(connection: Connection, revision_id: str) -> Non
 
 
 def _run_downgrade(connection: Connection) -> None:
+    """Enum scope migrationをdowngrade方向に実行する.
+
+    Args:
+        connection (Connection): migration対象の同期PostgreSQL connection.
+
+    Returns:
+        None: enum scope migrationのdowngradeを完了する.
+    """
     _MIGRATION.op = Operations(MigrationContext.configure(connection))
     _MIGRATION.downgrade()
 
 
 def _run_upgrade(connection: Connection) -> None:
+    """Enum scope migrationをupgrade方向に実行する.
+
+    Args:
+        connection (Connection): migration対象の同期PostgreSQL connection.
+
+    Returns:
+        None: enum scope migrationのupgradeを完了する.
+    """
     _MIGRATION.op = Operations(MigrationContext.configure(connection))
     _MIGRATION.upgrade()
 
 
 def _run_mod_scoped_downgrade(connection: Connection) -> None:
+    """Mod scoped leaderboard projection migrationをdowngrade方向に実行する.
+
+    Args:
+        connection (Connection): migration対象の同期PostgreSQL connection.
+
+    Returns:
+        None: mod scoped projection migrationのdowngradeを完了する.
+    """
     _MOD_SCOPED_MIGRATION.op = Operations(MigrationContext.configure(connection))
     _MOD_SCOPED_MIGRATION.downgrade()
 
 
 def _run_mod_scoped_upgrade(connection: Connection) -> None:
+    """Mod scoped leaderboard projection migrationをupgrade方向に実行する.
+
+    Args:
+        connection (Connection): migration対象の同期PostgreSQL connection.
+
+    Returns:
+        None: mod scoped projection migrationのupgradeを完了する.
+    """
     _MOD_SCOPED_MIGRATION.op = Operations(MigrationContext.configure(connection))
     _MOD_SCOPED_MIGRATION.upgrade()
 
@@ -1660,11 +1771,31 @@ def _acquire_migration_projection_lock(
     connection: Connection,
     migration: _MigrationModule,
 ) -> None:
+    """Migrationが定義するleaderboard projection update lockを取得する.
+
+    Args:
+        connection (Connection): lockを保持する同期PostgreSQL connection.
+        migration (_MigrationModule): lock_projection_updatesを提供するmigration module.
+
+    Returns:
+        None: projection updateを直列化するmigration lockの取得を完了する.
+    """
     migration.op = Operations(MigrationContext.configure(connection))
     migration.lock_projection_updates()
 
 
 def _run_online_index_downgrade(connection: Connection) -> None:
+    """Concurrent leaderboard index migrationをdowngrade方向に実行する.
+
+    Args:
+        connection (Connection): migration対象の同期PostgreSQL connection.
+
+    Returns:
+        None: online index migrationのdowngradeを完了する.
+
+    Notes:
+        concurrent DDLの前にactive transactionをcommitする.
+    """
     if connection.in_transaction():
         connection.commit()
     migration_context = MigrationContext.configure(
@@ -1677,6 +1808,17 @@ def _run_online_index_downgrade(connection: Connection) -> None:
 
 
 def _run_online_index_upgrade(connection: Connection) -> None:
+    """Concurrent leaderboard index migrationをupgrade方向に実行する.
+
+    Args:
+        connection (Connection): migration対象の同期PostgreSQL connection.
+
+    Returns:
+        None: online index migrationのupgradeを完了する.
+
+    Notes:
+        concurrent DDLの前にactive transactionをcommitする.
+    """
     if connection.in_transaction():
         connection.commit()
     migration_context = MigrationContext.configure(
@@ -1692,6 +1834,18 @@ def _run_migration_upgrade(
     connection: Connection,
     migration: _MigrationModule,
 ) -> None:
+    """指定migrationをtransaction境界付きでupgrade方向に実行する.
+
+    Args:
+        connection (Connection): migration対象の同期PostgreSQL connection.
+        migration (_MigrationModule): upgrade entry pointを提供するmigration module.
+
+    Returns:
+        None: target migrationのupgradeを完了する.
+
+    Notes:
+        concurrent DDLを持つmigrationのためにactive transactionを先にcommitする.
+    """
     if connection.in_transaction():
         connection.commit()
     migration_context = MigrationContext.configure(
@@ -1704,6 +1858,17 @@ def _run_migration_upgrade(
 
 
 def _replace_score_candidate_index_with_wrong_definition(connection: Connection) -> None:
+    """Score candidate indexを意図的に不完全なdefinitionへ置き換える.
+
+    Args:
+        connection (Connection): 隔離schemaへ接続した同期PostgreSQL connection.
+
+    Returns:
+        None: beatmap_idだけを対象にする誤ったindex作成を完了する.
+
+    Notes:
+        online index migrationがdefinition mismatchをrepairするtest fixtureである.
+    """
     operations = Operations(MigrationContext.configure(connection))
     operations.drop_index(
         _SCORE_CANDIDATE_INDEX,
@@ -1718,6 +1883,17 @@ def _replace_score_candidate_index_with_wrong_definition(connection: Connection)
 
 
 def _replace_score_candidate_index_with_invalid_definition(connection: Connection) -> None:
+    """Score candidate indexを意図的にinvalidなconcurrent indexへ置き換える.
+
+    Args:
+        connection (Connection): 隔離schemaへ接続した同期PostgreSQL connection.
+
+    Returns:
+        None: duplicate値で失敗したinvalid indexを残す操作を完了する.
+
+    Notes:
+        unique concurrent index作成失敗後にinvalid indexが残るPostgreSQL behaviorを利用する.
+    """
     if connection.in_transaction():
         connection.commit()
     migration_context = MigrationContext.configure(
@@ -1750,6 +1926,17 @@ def _replace_score_candidate_index_with_invalid_definition(connection: Connectio
 
 
 def _replace_score_candidate_index_with_equivalent_definition(connection: Connection) -> None:
+    """Score candidate indexをcanonicalと意味的に同値なdefinitionへ置き換える.
+
+    Args:
+        connection (Connection): 隔離schemaへ接続した同期PostgreSQL connection.
+
+    Returns:
+        None: predicate順序とNULL sort表現が異なる同値index作成を完了する.
+
+    Notes:
+        online index migrationが同値indexを不要に再構築しないことを検証するfixtureである.
+    """
     operations = Operations(MigrationContext.configure(connection))
     operations.drop_index(
         _SCORE_CANDIDATE_INDEX,
@@ -1777,6 +1964,17 @@ def _replace_score_candidate_index_with_equivalent_definition(connection: Connec
 
 
 def _assert_score_candidate_index_is_current(connection: Connection) -> None:
+    """Score candidate indexがcurrent canonical definitionと一致することを検証する.
+
+    Args:
+        connection (Connection): index metadataを読む同期PostgreSQL connection.
+
+    Returns:
+        None: score candidate indexのcolumn, predicate, validityを確認して完了する.
+
+    Raises:
+        AssertionError: index definitionまたはPostgreSQL catalog validityが期待と異なる場合.
+    """
     inspector = sa.inspect(connection)
     candidate_index = next(
         (
@@ -1814,6 +2012,14 @@ def _assert_score_candidate_index_is_current(connection: Connection) -> None:
 
 
 def _read_score_candidate_index_oid(connection: Connection) -> int:
+    """Current schemaのscore candidate index OIDを取得する.
+
+    Args:
+        connection (Connection): PostgreSQL system catalogを読む同期connection.
+
+    Returns:
+        int: current schemaに存在するscore candidate indexのobject ID.
+    """
     pg_class = sa.table(
         "pg_class",
         sa.column("oid", sa.BigInteger()),
@@ -1844,6 +2050,14 @@ def _read_score_candidate_index_oid(connection: Connection) -> int:
 
 
 def _read_score_candidate_index_validity(connection: Connection) -> tuple[bool, bool] | None:
+    """Score candidate indexのvalidityとreadinessをPostgreSQL catalogから取得する.
+
+    Args:
+        connection (Connection): PostgreSQL system catalogを読む同期connection.
+
+    Returns:
+        tuple[bool, bool] | None: indexがあればindisvalidとindisready, なければNone.
+    """
     pg_index = sa.table(
         "pg_index",
         sa.column("indexrelid", sa.BigInteger()),
@@ -1884,6 +2098,18 @@ def _read_score_candidate_index_validity(connection: Connection) -> tuple[bool, 
 
 
 def _replace_projection_with_legacy_duplicate_rows(connection: Connection) -> None:
+    """Global/mod scopeが重複するlegacy leaderboard projection tableへ置き換える.
+
+    Args:
+        connection (Connection): 隔離schemaへ接続した同期PostgreSQL connection.
+
+    Returns:
+        None: duplicate global projection rowを含むlegacy table作成を完了する.
+
+    Notes:
+        repair migrationがnullable mod_filter_keyのlegacy schemaをcanonical global scopeへ修復する
+        contractを検証するfixtureである.
+    """
     operations = Operations(MigrationContext.configure(connection))
     operations.drop_table("beatmap_leaderboard_user_bests")
     mod_filter_key = sa.Column("mod_filter_key", sa.Integer(), nullable=True)
@@ -1960,7 +2186,7 @@ def _replace_projection_with_legacy_duplicate_rows(connection: Connection) -> No
 
 
 def _replace_projection_with_structurally_incompatible_schema(connection: Connection) -> None:
-    """projection tableを同名だが構造非互換なschemaへ置き換える.
+    """Projection tableを同名だが構造非互換なschemaへ置き換える.
 
     Args:
         connection (Connection): migration transaction内の同期PostgreSQL接続.
@@ -2029,7 +2255,7 @@ def _assert_global_projection_schema_is_canonical(connection: Connection) -> Non
         SQLAlchemyError: PostgreSQL schema introspectionに失敗した場合.
 
     Notes:
-        `beatmap_leaderboard_user_bests`が存在し、0500 migration適用後であることを
+        `beatmap_leaderboard_user_bests`が存在し, 0500 migration適用後であることを
         前提とする.
     """
     inspector = sa.inspect(connection)
@@ -2124,6 +2350,14 @@ def _assert_global_projection_schema_is_canonical(connection: Connection) -> Non
 def _read_projection_schema(
     connection: Connection,
 ) -> tuple[frozenset[str], frozenset[str]]:
+    """Global leaderboard projectionのcolumnとunique constraint名を取得する.
+
+    Args:
+        connection (Connection): projection schemaを読む同期PostgreSQL connection.
+
+    Returns:
+        tuple[frozenset[str], frozenset[str]]: projection column名とunique constraint名の集合.
+    """
     inspector = sa.inspect(connection)
     columns = frozenset(
         str(column["name"]) for column in inspector.get_columns("beatmap_leaderboard_user_bests")
@@ -2144,6 +2378,14 @@ def _read_mod_scoped_projection_schema(
     frozenset[str],
     frozenset[str],
 ]:
+    """Mod scoped leaderboard projectionのcanonical schema metadataを取得する.
+
+    Args:
+        connection (Connection): projection schemaを読む同期PostgreSQL connection.
+
+    Returns:
+        tuple: column名, unique constraint mapping, CHECK constraint名, index名を順に含むmetadata.
+    """
     inspector = sa.inspect(connection)
     columns = frozenset(
         str(column["name"]) for column in inspector.get_columns("beatmap_leaderboard_user_bests")
@@ -2167,6 +2409,17 @@ def _read_mod_scoped_projection_schema(
 
 
 def _assert_checked_enum_storage(connection: Connection) -> None:
+    """Enum persistence columnがchecked stringとして保存されることを検証する.
+
+    Args:
+        connection (Connection): enum schema metadataを読む同期PostgreSQL connection.
+
+    Returns:
+        None: 全対象columnのVARCHAR type, length, named CHECK constraint確認を完了する.
+
+    Raises:
+        AssertionError: native enum, length, またはnamed CHECK constraintが期待と異なる場合.
+    """
     inspector = sa.inspect(connection)
     for table_name, column_name, constraint_name, expected_length in _CHECKED_ENUM_COLUMNS:
         reflected_column = next(
@@ -2185,6 +2438,17 @@ def _assert_checked_enum_storage(connection: Connection) -> None:
 
 
 async def _seed_fixture(connection: AsyncConnection) -> None:
+    """Migration integration testで共有するrole, user, beatmap, score fixtureをseedする.
+
+    Args:
+        connection (AsyncConnection): 隔離schemaへ接続した非同期PostgreSQL connection.
+
+    Returns:
+        None: 既存fixture cleanup後にvisibilityとleaderboard用rowのinsertを完了する.
+
+    Notes:
+        callerがtransaction commitまたはrollbackを所有するため, このhelperはcommitしない.
+    """
     await _delete_fixture(connection)
     _ = await connection.execute(
         sa.insert(RoleModel),
@@ -2261,6 +2525,17 @@ async def _seed_fixture(connection: AsyncConnection) -> None:
 
 
 async def _delete_fixture(connection: AsyncConnection) -> None:
+    """Migration integration fixture rowをforeign key依存順に削除する.
+
+    Args:
+        connection (AsyncConnection): 隔離schemaへ接続した非同期PostgreSQL connection.
+
+    Returns:
+        None: projection, score, role assignment, user, beatmap rowのdeletionを完了する.
+
+    Notes:
+        callerがtransaction commitまたはrollbackを所有するため, このhelperはcommitしない.
+    """
     _ = await connection.execute(
         sa.delete(BeatmapLeaderboardUserBestModel).where(
             BeatmapLeaderboardUserBestModel.beatmap_id == _BEATMAP_ID
@@ -2281,6 +2556,11 @@ async def _delete_fixture(connection: AsyncConnection) -> None:
 
 
 def _score_rows() -> list[dict[str, object]]:
+    """Leaderboard scopeとmod filteringを検証するscore persistence rowを構築する.
+
+    Returns:
+        list[dict[str, object]]: no-mod, modded, stale, mirrorを含むtest score row mapping.
+    """
     return [
         _score_values(
             score_id=_NO_MOD_SCORE_ID,
@@ -2358,6 +2638,19 @@ def _score_values(
     submitted_at: datetime,
     beatmap_checksum: str = _CURRENT_CHECKSUM,
 ) -> dict[str, object]:
+    """ScoreModel insertへ渡すcomplete score persistence rowを構築する.
+
+    Args:
+        score_id (int): fixture scoreのprimary key.
+        user_id (int): scoreを所有するfixture user ID.
+        mods (int): canonical mod bitmaskとして保存するinteger value.
+        score (int): leaderboard rank comparisonへ使うnumeric score.
+        submitted_at (datetime): scoreのsubmitted timestamp.
+        beatmap_checksum (str): scoreが参照するcurrentまたはstale beatmap checksum.
+
+    Returns:
+        dict[str, object]: ScoreModelの必須columnを満たすinsert row mapping.
+    """
     return {
         "id": score_id,
         "user_id": user_id,
@@ -2392,6 +2685,15 @@ def _read_scope(
     *,
     selected_mods: ModCombination | None = None,
 ) -> LeaderboardReadScope:
+    """Fixture beatmapのleaderboard query scopeを構築する.
+
+    Args:
+        category (LeaderboardCategory): globalまたはmod filtered leaderboard category.
+        selected_mods (ModCombination | None): mod categoryで選択するcanonical mod combination.
+
+    Returns:
+        LeaderboardReadScope: fixture beatmap, ruleset, playstyle, categoryを持つread scope.
+    """
     return LeaderboardReadScope(
         beatmap_id=_BEATMAP_ID,
         beatmap_checksum=_CURRENT_CHECKSUM,
@@ -2409,6 +2711,17 @@ def _projection_upsert(
     score: int,
     submitted_at: datetime,
 ) -> UpsertBeatmapLeaderboardUserBest:
+    """Fixture userのglobal leaderboard bestをupsertするcommandを構築する.
+
+    Args:
+        beatmap_checksum (str): upsert scopeに設定するbeatmap checksum.
+        score_id (int): projectionが参照するfixture score ID.
+        score (int): ranking comparisonへ使うnumeric score.
+        submitted_at (datetime): score rank keyに設定するsubmitted timestamp.
+
+    Returns:
+        UpsertBeatmapLeaderboardUserBest: fixture userとno-mod scopeを持つupsert command.
+    """
     return UpsertBeatmapLeaderboardUserBest(
         scope=BeatmapLeaderboardUserBestScope(
             beatmap_id=_BEATMAP_ID,
@@ -2430,6 +2743,14 @@ def _projection_upsert(
 async def _legacy_projection_rows(
     connection: AsyncConnection,
 ) -> Sequence[tuple[int, int | None, int]]:
+    """Legacy leaderboard projectionからfixture scopeのrowを取得する.
+
+    Args:
+        connection (AsyncConnection): legacy projection schemaを読む非同期PostgreSQL connection.
+
+    Returns:
+        Sequence[tuple[int, int | None, int]]: user ID, nullable mod filter key, score IDのrow列.
+    """
     projection = sa.table(
         "beatmap_leaderboard_user_bests",
         sa.column("beatmap_id", sa.Integer()),
@@ -2456,6 +2777,14 @@ async def _legacy_projection_rows(
 async def _replace_legacy_global_with_stale_score(
     connection: AsyncConnection,
 ) -> None:
+    """Legacy global projection rowをstale beatmap checksumのscoreへ差し替える.
+
+    Args:
+        connection (AsyncConnection): legacy projection schemaを更新するasync connection.
+
+    Returns:
+        None: fixture userのnullable mod scopeがstale scoreを参照する更新を完了する.
+    """
     projection = sa.table(
         "beatmap_leaderboard_user_bests",
         sa.column("beatmap_id", sa.Integer()),
@@ -2487,6 +2816,14 @@ async def _replace_legacy_global_with_stale_score(
 async def _global_projection_rows(
     connection: AsyncConnection,
 ) -> Sequence[tuple[int, str, int]]:
+    """Canonical global leaderboard projectionからfixture scopeのrowを取得する.
+
+    Args:
+        connection (AsyncConnection): global projection schemaを読む非同期PostgreSQL connection.
+
+    Returns:
+        Sequence[tuple[int, str, int]]: user ID, beatmap checksum, score IDのrow列.
+    """
     projection = sa.table(
         "beatmap_leaderboard_user_bests",
         sa.column("beatmap_id", sa.Integer()),
@@ -2507,6 +2844,14 @@ async def _global_projection_rows(
 async def _mod_scoped_projection_rows(
     connection: AsyncConnection,
 ) -> Sequence[tuple[int, str, int, int]]:
+    """Mod scoped leaderboard projectionからfixture scopeのrowを取得する.
+
+    Args:
+        connection (AsyncConnection): mod scoped projection schemaを読むasync connection.
+
+    Returns:
+        Sequence[tuple[int, str, int, int]]: user ID, beatmap checksum, mods, score IDのrow列.
+    """
     projection = sa.table(
         "beatmap_leaderboard_user_bests",
         sa.column("beatmap_id", sa.Integer()),

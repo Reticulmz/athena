@@ -1,4 +1,4 @@
-"""Integration tests for the SQLAlchemy replay download query repository."""
+"""SQLAlchemy replay download query repositoryのvisibilityとreplay metadata contractを検証する."""
 
 from __future__ import annotations
 
@@ -54,6 +54,14 @@ _HIDDEN_REPLAY_ID: Final = 910_002
 
 
 def _get_database_url() -> str:
+    """Integration testで使用するPostgreSQL connection URLを取得する.
+
+    Returns:
+        str: DATABASE_URL environment variableのPostgreSQL URL.
+
+    Raises:
+        pytest.skip: DATABASE_URLが未設定の場合.
+    """
     url = os.environ.get("DATABASE_URL")
     if not url:
         pytest.skip("DATABASE_URL not set")
@@ -62,6 +70,17 @@ def _get_database_url() -> str:
 
 @pytest.fixture
 async def engine() -> AsyncGenerator[AsyncEngine]:
+    """Replay download repository integration test用engineを提供する.
+
+    Yields:
+        AsyncEngine: 接続確認済みのPostgreSQL engine.
+
+    Raises:
+        pytest.skip: DATABASE_URLが未設定またはdatabase serviceが利用不能な場合.
+
+    Notes:
+        fixture終了時にengine poolをdisposeする.
+    """
     eng = create_engine(_get_database_url())
     try:
         async with eng.connect() as conn:
@@ -77,6 +96,17 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
 async def session_factory(
     engine: AsyncEngine,
 ) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
+    """Visibility fixture rowを隔離するPostgreSQL session factoryを提供する.
+
+    Args:
+        engine (AsyncEngine): 接続確認済みのPostgreSQL engine.
+
+    Yields:
+        async_sessionmaker[AsyncSession]: replay download query用session factory.
+
+    Notes:
+        fixture前後でtest prefixを持つrowをcleanupする.
+    """
     factory = create_session_factory(engine)
     await _cleanup_rows(factory)
     yield factory
@@ -90,6 +120,15 @@ async def test_get_candidate_uses_real_role_visibility_and_replay_metadata(
     session_factory: async_sessionmaker[AsyncSession],
     query_budget: QueryBudget,
 ) -> None:
+    """Role visibilityに従いavailable replayとhidden scoreを返すcontractを検証する.
+
+    Args:
+        session_factory (async_sessionmaker[AsyncSession]): seeded rowを読むsession factory.
+        query_budget (QueryBudget): query countとduplicate queryを検査するbudget helper.
+
+    Returns:
+        None: visible candidateのreplay metadataとhidden candidate kindを確認して完了する.
+    """
     visible_score_id, hidden_score_id, blob_id, checksum = await _seed_visibility_rows(
         session_factory
     )
@@ -127,6 +166,14 @@ async def test_get_candidate_uses_real_role_visibility_and_replay_metadata(
 async def _seed_visibility_rows(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> tuple[int, int, int, str]:
+    """Visible/hidden user, score, blob, replay rowをPostgreSQLへseedする.
+
+    Args:
+        session_factory (async_sessionmaker[AsyncSession]): seed transactionを開くsession factory.
+
+    Returns:
+        tuple[int, int, int, str]: visible score ID, hidden score ID, blob ID, visible checksum.
+    """
     visible_checksum = _checksum("visible-replay")
     async with session_factory() as session:
         _ = await session.execute(
@@ -217,6 +264,16 @@ async def _seed_visibility_rows(
 
 
 def _score_row(*, score_id: int, user_id: int, online_checksum: str) -> dict[str, object]:
+    """Replay download visibility test用のscore persistence rowを構築する.
+
+    Args:
+        score_id (int): inserted scoreのprimary key.
+        user_id (int): scoreを所有するvisibleまたはhidden user ID.
+        online_checksum (str): test cleanupとscore identityに使うonline checksum.
+
+    Returns:
+        dict[str, object]: ScoreModel insertへ渡すcomplete row mapping.
+    """
     return {
         "id": score_id,
         "user_id": user_id,
@@ -245,6 +302,15 @@ def _score_row(*, score_id: int, user_id: int, online_checksum: str) -> dict[str
 
 
 def _blob_row(*, label: str, blob_id: int) -> dict[str, object]:
+    """Replay download visibility test用のblob persistence rowを構築する.
+
+    Args:
+        label (str): storage keyとchecksumを区別するvisible/hidden label.
+        blob_id (int): inserted blobのprimary key.
+
+    Returns:
+        dict[str, object]: BlobModel insertへ渡すcomplete row mapping.
+    """
     return {
         "id": blob_id,
         "sha256": _checksum(f"blob-{label}"),
@@ -256,10 +322,26 @@ def _blob_row(*, label: str, blob_id: int) -> dict[str, object]:
 
 
 def _checksum(label: str) -> str:
+    """Test labelからdeterministic SHA-256 checksumを生成する.
+
+    Args:
+        label (str): hash inputとして使用するASCII test label.
+
+    Returns:
+        str: lower-case hexadecimal SHA-256 digest.
+    """
     return hashlib.sha256(label.encode()).hexdigest()
 
 
 async def _cleanup_rows(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    """Replay download visibility testが作成したrowをdependency順に削除する.
+
+    Args:
+        session_factory (async_sessionmaker[AsyncSession]): cleanup用session factory.
+
+    Returns:
+        None: replay, score, role, user, blob rowのdeletionをcommitして完了する.
+    """
     score_ids = select(ScoreModel.id).where(ScoreModel.online_checksum.like(f"{_TEST_PREFIX}%"))
     user_ids = select(UserModel.id).where(UserModel.safe_username.like(f"{_TEST_PREFIX}%"))
     role_ids = select(RoleModel.id).where(RoleModel.name.like(f"{_TEST_PREFIX}%"))

@@ -1,6 +1,7 @@
-"""Integration tests for the SQLAlchemy replay command repository.
+"""SQLAlchemy replay command repositoryのCRUDとchecksum uniqueness contractを検証する.
 
-Tests CRUD operations and unique constraint handling against real PostgreSQL.
+Notes:
+    各testは実PostgreSQLへ接続してrow persistenceを検証する.
 """
 
 from __future__ import annotations
@@ -29,6 +30,14 @@ if TYPE_CHECKING:
 
 
 def _get_database_url() -> str:
+    """Integration testで使用するPostgreSQL connection URLを取得する.
+
+    Returns:
+        str: DATABASE_URL environment variableのPostgreSQL URL.
+
+    Raises:
+        pytest.skip: DATABASE_URLが未設定の場合.
+    """
     url = os.environ.get("DATABASE_URL")
     if not url:
         pytest.skip("DATABASE_URL not set")
@@ -37,6 +46,17 @@ def _get_database_url() -> str:
 
 @pytest.fixture
 async def engine() -> AsyncGenerator[AsyncEngine]:
+    """Replay repository integration test用engineを提供する.
+
+    Yields:
+        AsyncEngine: 接続確認済みのPostgreSQL engine.
+
+    Raises:
+        pytest.skip: DATABASE_URLが未設定またはdatabase serviceが利用不能な場合.
+
+    Notes:
+        fixture終了時にengine poolをdisposeする.
+    """
     eng = create_engine(_get_database_url())
     try:
         async with eng.connect() as conn:
@@ -52,6 +72,17 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
 async def session_factory(
     engine: AsyncEngine,
 ) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
+    """Replay persistence test rowをcleanupするPostgreSQL session factoryを提供する.
+
+    Args:
+        engine (AsyncEngine): 接続確認済みのPostgreSQL engine.
+
+    Yields:
+        async_sessionmaker[AsyncSession]: replay repository用session factory.
+
+    Notes:
+        fixture終了時にreplay, score, blob rowをdependency順に削除する.
+    """
     factory = create_session_factory(engine)
     yield factory
     try:
@@ -75,6 +106,14 @@ async def session_factory(
 def uow_factory(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> SQLAlchemyUnitOfWorkFactory:
+    """Replay command repositoryを解決するSQLAlchemy Unit of Work factoryを構築する.
+
+    Args:
+        session_factory (async_sessionmaker[AsyncSession]): test用PostgreSQL session factory.
+
+    Returns:
+        SQLAlchemyUnitOfWorkFactory: replay, score, blob command repositoryを持つfactory.
+    """
     return SQLAlchemyUnitOfWorkFactory(session_factory)
 
 
@@ -84,7 +123,16 @@ def _make_score(
     user_id: int = 1000,
     beatmap_id: int = 2000,
 ) -> Score:
-    """Create a valid Score for testing."""
+    """Replay rowに紐づけるvalid score domain objectを構築する.
+
+    Args:
+        online_checksum (str): score uniquenessとcleanupに使うonline checksum.
+        user_id (int): scoreを所有するtest user ID.
+        beatmap_id (int): scoreが参照するtest beatmap ID.
+
+    Returns:
+        Score: replay repositoryへ保存可能なvalid score.
+    """
     return Score(
         id=None,
         user_id=user_id,
@@ -117,7 +165,16 @@ def _make_replay(
     score_id: int = 1,
     blob_id: int = 1,
 ) -> Replay:
-    """Create a valid Replay for testing."""
+    """Scoreとblobを結び付けるvalid replay domain objectを構築する.
+
+    Args:
+        checksum (str): replay identityとして設定するSHA-256 checksum label.
+        score_id (int): replayを所有するpersisted score ID.
+        blob_id (int): replay payloadを保持するpersisted blob ID.
+
+    Returns:
+        Replay: command repositoryへ保存可能なvalid replay.
+    """
     return Replay(
         id=None,
         score_id=score_id,
@@ -132,6 +189,15 @@ async def _create_blob(
     *,
     checksum: str,
 ) -> int:
+    """Replay payloadを表すblobを作成してIDを返す.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): blob command repositoryを持つUoW factory.
+        checksum (str): storage keyとSHA-256 inputに使うtest checksum label.
+
+    Returns:
+        int: persisted blobのprimary key.
+    """
     sha256 = hashlib.sha256(checksum.encode()).hexdigest()
     async with uow_factory() as uow:
         blob = await uow.blobs.create(
@@ -150,6 +216,14 @@ async def _create_blob(
 async def test_sqlalchemy_replay_repository_creates_replay(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Replay command repositoryがscoreとblobに紐づくreplayを作成するcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): replay, score, blob repositoryを持つfactory.
+
+    Returns:
+        None: created replayのidentity, score, blob, byte sizeを確認して完了する.
+    """
     score = _make_score(online_checksum="test_replay_score_001")
     async with uow_factory() as uow:
         created_score = await uow.scores.create(score)
@@ -176,6 +250,14 @@ async def test_sqlalchemy_replay_repository_creates_replay(
 async def test_sqlalchemy_replay_repository_exists_by_checksum(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Replay repositoryがpersistedとmissing checksumを区別するcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): replay, score, blob repositoryを持つfactory.
+
+    Returns:
+        None: persisted checksumでTrue, unknown checksumでFalseとなることを確認する.
+    """
     score = _make_score(online_checksum="test_replay_score_002")
     async with uow_factory() as uow:
         created_score = await uow.scores.create(score)
@@ -200,6 +282,14 @@ async def test_sqlalchemy_replay_repository_exists_by_checksum(
 async def test_sqlalchemy_replay_repository_rejects_duplicate_checksum(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Replay repositoryがduplicate checksumをValueErrorで拒否するcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): replay, score, blob repositoryを持つfactory.
+
+    Returns:
+        None: second replay createがchecksum uniqueness errorとなることを確認する.
+    """
     score1 = _make_score(online_checksum="test_replay_score_003")
     async with uow_factory() as uow:
         created_score1 = await uow.scores.create(score1)
