@@ -41,6 +41,14 @@ _STATUS_CROSSWALK_IDS = tuple(entry.canonical_status.value for entry in _STATUS_
 
 
 def _make_beatmap(*, official_status: BeatmapRankStatus) -> Beatmap:
+    """指定official statusを持つGetscores status mapping用beatmapを構築する.
+
+    Args:
+        official_status (BeatmapRankStatus): mapperへ渡すofficial beatmap status.
+
+    Returns:
+        Beatmap: fresh metadataと指定statusを持つtest beatmap.
+    """
     return Beatmap(
         id=2_000,
         beatmapset_id=1_000,
@@ -74,14 +82,22 @@ def _make_beatmap(*, official_status: BeatmapRankStatus) -> Beatmap:
 
 
 def test_not_submitted_maps_to_none() -> None:
-    """NotSubmitted returns None (no header, mapped to -1 by caller)."""
+    """NOT_SUBMITTEDをheaderなしのNoneへmapするcontractを検証する.
+
+    Returns:
+        None: callerが-1 short responseへ変換するNone結果を確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(official_status=BeatmapRankStatus.NOT_SUBMITTED)
     assert mapper.map_header_status(beatmap) is None
 
 
 def test_unknown_maps_to_none() -> None:
-    """Unknown returns None."""
+    """UNKNOWN statusをheaderなしのNoneへmapするcontractを検証する.
+
+    Returns:
+        None: numeric statusがないことを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(official_status=BeatmapRankStatus.UNKNOWN)
     assert mapper.map_header_status(beatmap) is None
@@ -246,49 +262,88 @@ def test_status_mapper_ownership_remains_endpoint_local() -> None:
 
 
 def test_pending_maps_to_0() -> None:
+    """PENDING statusをGetscores wire status 0へmapするcontractを検証する.
+
+    Returns:
+        None: mapper resultが0であることを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(official_status=BeatmapRankStatus.PENDING)
     assert mapper.map_header_status(beatmap) == 0
 
 
 def test_wip_maps_to_0() -> None:
+    """WIP statusをGetscores wire status 0へmapするcontractを検証する.
+
+    Returns:
+        None: mapper resultが0であることを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(official_status=BeatmapRankStatus.WIP)
     assert mapper.map_header_status(beatmap) == 0
 
 
 def test_graveyard_maps_to_0() -> None:
+    """GRAVEYARD statusをGetscores wire status 0へmapするcontractを検証する.
+
+    Returns:
+        None: mapper resultが0であることを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(official_status=BeatmapRankStatus.GRAVEYARD)
     assert mapper.map_header_status(beatmap) == 0
 
 
 def test_ranked_maps_to_2() -> None:
+    """RANKED statusをGetscores wire status 2へmapするcontractを検証する.
+
+    Returns:
+        None: mapper resultが2であることを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(official_status=BeatmapRankStatus.RANKED)
     assert mapper.map_header_status(beatmap) == 2
 
 
 def test_approved_maps_to_3() -> None:
+    """APPROVED statusをGetscores wire status 3へmapするcontractを検証する.
+
+    Returns:
+        None: mapper resultが3であることを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(official_status=BeatmapRankStatus.APPROVED)
     assert mapper.map_header_status(beatmap) == 3
 
 
 def test_qualified_maps_to_4() -> None:
+    """QUALIFIED statusをGetscores wire status 4へmapするcontractを検証する.
+
+    Returns:
+        None: mapper resultが4であることを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(official_status=BeatmapRankStatus.QUALIFIED)
     assert mapper.map_header_status(beatmap) == 4
 
 
 def test_loved_maps_to_5() -> None:
+    """LOVED statusをGetscores wire status 5へmapするcontractを検証する.
+
+    Returns:
+        None: mapper resultが5であることを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(official_status=BeatmapRankStatus.LOVED)
     assert mapper.map_header_status(beatmap) == 5
 
 
 def test_all_mapped_statuses_are_unique() -> None:
-    """Each visible status maps to a distinct wire value (requirement 9.8)."""
+    """Visible statusの正wire valueが0以外で重複しないcontractを検証する.
+
+    Returns:
+        None: Ranked, Approved, Qualified, Lovedのwire値がdistinctであることを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     visible_statuses = [
         BeatmapRankStatus.PENDING,
@@ -312,7 +367,11 @@ def test_all_mapped_statuses_are_unique() -> None:
 
 
 def test_local_override_takes_precedence() -> None:
-    """local_status_override changes effective_status which maps to wire value."""
+    """Local status overrideがofficial statusより優先されるcontractを検証する.
+
+    Returns:
+        None: effective_statusとwire statusがRANKEDへ変わることを確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     beatmap = _make_beatmap(
         official_status=BeatmapRankStatus.PENDING,
@@ -330,6 +389,11 @@ def test_local_override_takes_precedence() -> None:
 
 
 def test_mapper_has_expected_interface() -> None:
+    """GetscoresStatusMapperがmap_header_status interfaceを公開するcontractを検証する.
+
+    Returns:
+        None: methodの存在とcallable性を確認して完了する.
+    """
     mapper = GetscoresStatusMapper()
     assert hasattr(mapper, "map_header_status")
     assert callable(mapper.map_header_status)

@@ -1,11 +1,4 @@
-"""Baseline compatibility tests for decoded stable getscores response fixtures.
-
-Validates that official response fixtures conform to the expected stable
-getscores wire format: proper status values, header shape, short response
-shape, no HTTP chunk framing, and official-fixture precedence over
-reference implementation differences (Pending/WIP/Graveyard return headers,
-not short responses as bancho.py does).
-"""
+"""Stable Getscores response fixtureのwire compatibility contractを検証する."""
 
 from __future__ import annotations
 
@@ -43,6 +36,11 @@ _ALL_FIXTURE_FILES = [*_SUBMITTED_FIXTURES, "not_submitted_response.txt"]
 
 
 def _header_fixture_paths() -> Iterator[tuple[str, Path, int]]:
+    """Submitted status fixtureのfile名, path, expected statusをyieldする.
+
+    Yields:
+        tuple[str, Path, int]: fixture filename, fixture path, expected Getscores status.
+    """
     for filename, expected_status in _SUBMITTED_FIXTURES.items():
         yield filename, _FIXTURE_DIR / filename, expected_status
 
@@ -62,7 +60,16 @@ def test_header_fixture_exists_and_is_nonempty(
     fixture_path: Path,
     expected_status: int,  # noqa: ARG001  # pyright: ignore[reportUnusedParameter]
 ) -> None:
-    """Every submitted-status fixture file must exist and contain content."""
+    """Submitted status fixture fileが存在しnon-emptyであるcontractを検証する.
+
+    Args:
+        filename (str): test caseを識別するfixture filename.
+        fixture_path (Path): 読み取るfixture file path.
+        expected_status (int): parameterizationで渡すexpected status. 本testでは未使用.
+
+    Returns:
+        None: fixture fileの存在とcontent lengthを確認して完了する.
+    """
     assert fixture_path.is_file(), f"Missing fixture: {fixture_path}"
     content = fixture_path.read_text(encoding="utf-8")
     assert len(content) > 0, f"Empty fixture: {fixture_path}"
@@ -78,7 +85,16 @@ def test_header_fixture_first_line_format(
     fixture_path: Path,
     expected_status: int,
 ) -> None:
-    """First line must be ``<status>|false|<beatmap_id>|<beatmapset_id>|0||``."""
+    """Header fixtureのfirst lineがstable Getscores formatを保つcontractを検証する.
+
+    Args:
+        filename (str): error messageへ含めるfixture filename.
+        fixture_path (Path): 読み取るfixture file path.
+        expected_status (int): first fieldへ期待するGetscores status.
+
+    Returns:
+        None: status, failed flag, beatmap ID, beatmapset ID, score countを確認して完了する.
+    """
     content = fixture_path.read_text(encoding="utf-8")
     first_line, _, _ = content.partition("\n")
 
@@ -111,11 +127,15 @@ def test_header_fixture_line_structure(
     fixture_path: Path,
     expected_status: int,  # noqa: ARG001  # pyright: ignore[reportUnusedParameter]
 ) -> None:
-    """Header fixtures must have exactly 4 application data lines.
+    """Header fixtureが4 data lineとterminal blank entryを持つcontractを検証する.
 
-    Lines are: status, offset, display, rating.  Blank personal-best
-    and score-rows placeholders are trailing body content; the fixture
-    represents the formatter output that end-of-file-fixer preserves.
+    Args:
+        filename (str): test caseを識別するfixture filename.
+        fixture_path (Path): 読み取るfixture file path.
+        expected_status (int): parameterizationで渡すexpected status. 本testでは未使用.
+
+    Returns:
+        None: status, offset, display, rating, trailing placeholderを確認して完了する.
     """
     content = fixture_path.read_text(encoding="utf-8")
     lines = content.split("\n")
@@ -153,7 +173,16 @@ def test_header_fixture_display_line_has_artist_title(
     fixture_path: Path,
     expected_status: int,  # noqa: ARG001  # pyright: ignore[reportUnusedParameter]
 ) -> None:
-    """Line 3 display line must contain ``artist|title`` after the bbcode prefix."""
+    """Header fixtureのdisplay lineがartistとtitleを持つcontractを検証する.
+
+    Args:
+        filename (str): test caseを識別するfixture filename.
+        fixture_path (Path): 読み取るfixture file path.
+        expected_status (int): parameterizationで渡すexpected status. 本testでは未使用.
+
+    Returns:
+        None: bbcode prefix後のartistとtitleがnon-emptyであることを確認して完了する.
+    """
     content = fixture_path.read_text(encoding="utf-8")
     lines = content.splitlines()
     display = lines[2]
@@ -175,7 +204,11 @@ def test_header_fixture_display_line_has_artist_title(
 
 
 def test_not_submitted_fixture_is_short_response() -> None:
-    """NotSubmitted must return ``-1|false`` (short response, no header)."""
+    """NotSubmitted fixtureがheaderなしのshort responseとなるcontractを検証する.
+
+    Returns:
+        None: bodyがexact -1|falseであることを確認して完了する.
+    """
     fixture_path = _FIXTURE_DIR / "not_submitted_response.txt"
     content = fixture_path.read_text(encoding="utf-8").rstrip("\n")
 
@@ -185,6 +218,11 @@ def test_not_submitted_fixture_is_short_response() -> None:
 
 
 def test_fixtures_are_referenced_by_stable_verification_catalog() -> None:
+    """Getscores fixture testがstable verification catalogから参照されるcontractを検証する.
+
+    Returns:
+        None: mandatory golden fixture evidenceが本fileを参照することを確認して完了する.
+    """
     evidence = list_evidence(StableSurface.GETSCORES)
 
     assert any(
@@ -197,6 +235,14 @@ def test_fixtures_are_referenced_by_stable_verification_catalog() -> None:
 
 @pytest.mark.parametrize("fixture_filename", _ALL_FIXTURE_FILES)
 def test_fixture_parses_with_stable_verification_parser(fixture_filename: str) -> None:
+    """各Getscores fixtureがstable verification parserでdecodeできるcontractを検証する.
+
+    Args:
+        fixture_filename (str): decodeするfixture filename.
+
+    Returns:
+        None: parse errorなしでresponseが得られることを確認して完了する.
+    """
     fixture_path = _FIXTURE_DIR / fixture_filename
 
     parsed = parse_getscores_response(fixture_path.read_bytes())
@@ -212,7 +258,14 @@ def test_fixture_parses_with_stable_verification_parser(fixture_filename: str) -
 
 @pytest.mark.parametrize("fixture_filename", _ALL_FIXTURE_FILES)
 def test_fixture_has_no_chunk_framing(fixture_filename: str) -> None:
-    """No fixture may contain HTTP chunk framing markers (chunk size hex, final '0')."""
+    """FixtureがHTTP chunk framing markerを含まないcontractを検証する.
+
+    Args:
+        fixture_filename (str): framing absenceを検証するfixture filename.
+
+    Returns:
+        None: chunk size lineとterminal chunk markerがないことを確認して完了する.
+    """
     fixture_path = _FIXTURE_DIR / fixture_filename
     content = fixture_path.read_text(encoding="utf-8")
 
@@ -231,13 +284,13 @@ def test_fixture_has_no_chunk_framing(fixture_filename: str) -> None:
 
 
 def _looks_like_chunk_header(line: str) -> bool:
-    """Return True if the line looks like an HTTP chunk size in hex.
+    """LineがHTTP chunk size markerに見えるかを判定する.
 
-    A chunk size line is a standalone hex number followed by CRLF.
-    The beatmap offset line (e.g. ``0``) is a normal part of the response
-    body and must not be flagged.  Only flag hex values that are longer
-    than 1 character (0, 1, ..., 9, a-f cannot be chunk sizes in practice
-    since response bodies are longer, but ``1a`` or ``ff`` could be).
+    Args:
+        line (str): CRLFを除去したfixture line.
+
+    Returns:
+        bool: 2文字以上のhex-only lineならTrue. offsetの単一文字0はFalse.
     """
     if not line:
         return False
@@ -256,11 +309,10 @@ def _looks_like_chunk_header(line: str) -> bool:
 
 
 def test_pending_wip_graveyard_are_header_responses_not_short() -> None:
-    """Pending/WIP/Graveyard must be header responses (multi-line), not short.
+    """Pending, WIP, Graveyardがshortではなくheader responseとなるcontractを検証する.
 
-    bancho.py returns short ``<status>|false`` for ranked-below maps, but official
-    fixtures return full headers for Pending, WIP, and Graveyard.  This test
-    encodes the design decision to follow official behavior (requirement 13.3).
+    Returns:
+        None: official fixtureのmulti-line bodyとstatus 0を確認して完了する.
     """
     for fixture_filename in ("pending_response.txt", "wip_response.txt", "graveyard_response.txt"):
         fixture_path = _FIXTURE_DIR / fixture_filename
@@ -280,10 +332,10 @@ def test_pending_wip_graveyard_are_header_responses_not_short() -> None:
 
 
 def test_ranked_status_is_2_not_4() -> None:
-    """Ranked maps to getscores status 2 (not 4 as in some other mappings).
+    """RankedがGetscores status 2へmapされるcontractを検証する.
 
-    Per the getscores status mapping: Ranked=2, Approved=3, Qualified=4, Loved=5.
-    This is distinct from other legacy endpoint mappings.
+    Returns:
+        None: ranked fixtureのfirst fieldが2であることを確認して完了する.
     """
     content = (_FIXTURE_DIR / "ranked_response.txt").read_text(encoding="utf-8")
     status = int(content.split("|")[0])
@@ -296,7 +348,11 @@ def test_ranked_status_is_2_not_4() -> None:
 
 
 def test_converted_mode_requests_fixture_exists_and_valid() -> None:
-    """converted_mode_requests.json must be a valid JSON array of request examples."""
+    """Converted mode request fixtureがvalid JSON request arrayとなるcontractを検証する.
+
+    Returns:
+        None: required description, query, status, identity fieldを確認して完了する.
+    """
     fixture_path = _FIXTURE_DIR / "converted_mode_requests.json"
     assert fixture_path.is_file(), "converted_mode_requests.json is missing"
 
@@ -313,7 +369,11 @@ def test_converted_mode_requests_fixture_exists_and_valid() -> None:
 
 
 def test_converted_mode_requests_cover_all_modes() -> None:
-    """Converted mode fixtures must document m=0 (osu), m=1 (taiko), m=2 (catch), m=3 (mania)."""
+    """Converted mode fixtureがm=0からm=3の全rulesetをcoverするcontractを検証する.
+
+    Returns:
+        None: osu, taiko, catch, maniaのmode setを確認して完了する.
+    """
     fixture_path = _FIXTURE_DIR / "converted_mode_requests.json"
     data = cast("list[dict[str, object]]", json.loads(fixture_path.read_text(encoding="utf-8")))
 
@@ -329,9 +389,10 @@ def test_converted_mode_requests_cover_all_modes() -> None:
 
 
 def test_converted_mode_requests_same_status() -> None:
-    """All converted mode requests for the same beatmap must have the same expected_status.
+    """同一beatmapのconverted mode requestが同じexpected statusを持つcontractを検証する.
 
-    The header identity must remain stable across m=0..3 (requirement 10.4).
+    Returns:
+        None: 全fixture entryのstatus集合が1値だけであることを確認して完了する.
     """
     fixture_path = _FIXTURE_DIR / "converted_mode_requests.json"
     data = cast("list[dict[str, object]]", json.loads(fixture_path.read_text(encoding="utf-8")))
@@ -358,7 +419,15 @@ def test_short_response_has_no_beatmap_identity_leak(
     filename: str,
     fixture_path: Path,
 ) -> None:
-    """Short responses must not contain beatmap_id or beatmapset_id fields."""
+    """Short responseがbeatmap identity fieldを漏らさないcontractを検証する.
+
+    Args:
+        filename (str): error messageへ含めるfixture filename.
+        fixture_path (Path): 読み取るshort response fixture path.
+
+    Returns:
+        None: failed flag後にidentity fieldがないことを確認して完了する.
+    """
     content = fixture_path.read_text(encoding="utf-8")
     assert "|false|" not in content.rstrip("\n"), (
         f"Short response {filename} must not contain beatmap identity fields"
@@ -372,7 +441,14 @@ def test_short_response_has_no_beatmap_identity_leak(
 
 @pytest.mark.parametrize("fixture_filename", _ALL_FIXTURE_FILES)
 def test_fixture_has_no_provenance_fields(fixture_filename: str) -> None:
-    """No fixture may expose internal source, verification, or fetch-state fields."""
+    """Fixtureがinternal provenance fieldをwire bodyへ露出しないcontractを検証する.
+
+    Args:
+        fixture_filename (str): provenance absenceを検証するfixture filename.
+
+    Returns:
+        None: source, verification, fetch state fieldがないことを確認して完了する.
+    """
     content = (_FIXTURE_DIR / fixture_filename).read_text(encoding="utf-8")
     forbidden = ("_source:", "_verified:", "_policy:", "_fetch_state:", "_override:")
     for field in forbidden:
@@ -396,7 +472,16 @@ def test_header_fixture_has_no_score_rows(
     fixture_path: Path,
     expected_status: int,  # noqa: ARG001  # pyright: ignore[reportUnusedParameter]
 ) -> None:
-    """MVP must have empty score rows section (requirement 8.8)."""
+    """MVP header fixtureがempty score row sectionを持つcontractを検証する.
+
+    Args:
+        filename (str): error messageへ含めるfixture filename.
+        fixture_path (Path): 読み取るheader fixture path.
+        expected_status (int): parameterizationで渡すexpected status. 本testでは未使用.
+
+    Returns:
+        None: personal bestとscore row placeholderがemptyであることを確認して完了する.
+    """
     content = fixture_path.read_text(encoding="utf-8")
     lines = content.split("\n")
     # Entry at index 4 is the trailing empty from terminal LF,

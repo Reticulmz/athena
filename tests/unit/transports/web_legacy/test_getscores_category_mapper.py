@@ -1,3 +1,5 @@
+"""Getscores selection catalogをdomain categoryへmapするcontractを検証する."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -82,6 +84,11 @@ def test_selection_catalog_query_maps_to_expected_domain_contract(
 
 
 def _base_query() -> dict[str, str]:
+    """Getscores parserへ渡す最低限のvalid identity queryを構築する.
+
+    Returns:
+        dict[str, str]: checksum, username, credentialを持つsynthetic query mapping.
+    """
     return {
         "c": "0123456789abcdef0123456789abcdef",
         "us": "SyntheticViewer",

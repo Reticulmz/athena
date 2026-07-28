@@ -1,4 +1,4 @@
-"""Getscores handler metadata fetch and warmup behavior tests."""
+"""GetscoresHandlerのmetadata resolve, authorization, file warmup contractを検証する."""
 
 from __future__ import annotations
 
@@ -59,7 +59,19 @@ _MENU_METADATA_AVAILABLE_AFTER_SECONDS = 1.0
 
 @final
 class _AuthQuery:
+    """設定済みlegacy authentication outcomeを返すquery fakeを提供する.
+
+    Attributes:
+        result (LegacyWebAuthResult): executeが返すauthentication outcome.
+        inputs (list[SessionCredentialsQueryInput]): executeへ渡されたcredential inputの順序.
+    """
+
     def __init__(self, result: LegacyWebAuthResult) -> None:
+        """返却するlegacy authentication outcomeを設定する.
+
+        Args:
+            result (LegacyWebAuthResult): handlerへ返すsuccessfulまたはfailed auth result.
+        """
         self.result = result
         self.inputs: list[SessionCredentialsQueryInput] = []
 
@@ -67,17 +79,41 @@ class _AuthQuery:
         self,
         input_data: SessionCredentialsQueryInput,
     ) -> SessionCredentialsQueryResult:
+        """Credential inputを記録して設定済みauthentication outcomeを返す.
+
+        Args:
+            input_data (SessionCredentialsQueryInput): legacy credentialを持つquery input.
+
+        Returns:
+            SessionCredentialsQueryResult: 設定済みauth outcomeを包むquery result.
+        """
         self.inputs.append(input_data)
         return SessionCredentialsQueryResult(outcome=self.result)
 
 
 @final
 class _ScoreListingRepository:
+    """Checksumとbeatmapset IDでtest beatmap dataを保持するscore listing fakeを提供する.
+
+    Attributes:
+        beatmaps_by_checksum (dict[str, Beatmap]): checksumから解決するbeatmap mapping.
+        beatmapsets_by_id (dict[int, BeatmapSet]): IDから解決するbeatmapset mapping.
+    """
+
     def __init__(self) -> None:
+        """Empty beatmapとbeatmapset mappingを初期化する."""
         self.beatmaps_by_checksum: dict[str, Beatmap] = {}
         self.beatmapsets_by_id: dict[int, BeatmapSet] = {}
 
     async def find_by_checksum(self, checksum_md5: str) -> Beatmap | None:
+        """Checksumで保存済みbeatmapを取得する.
+
+        Args:
+            checksum_md5 (str): lookupするbeatmap checksum.
+
+        Returns:
+            Beatmap | None: 保存済みbeatmap. 不在ならNone.
+        """
         return self.beatmaps_by_checksum.get(checksum_md5)
 
     async def find_by_filename_in_beatmapset(
@@ -85,25 +121,61 @@ class _ScoreListingRepository:
         beatmapset_id: int,
         original_filename: str,
     ) -> Beatmap | None:
+        """Filename fallbackを常にnot foundとして返す.
+
+        Args:
+            beatmapset_id (int): lookupを制限するbeatmapset ID.
+            original_filename (str): lookupするoriginal osu file名.
+
+        Returns:
+            Beatmap | None: 常にNone. 本fakeはfilename indexを保持しない.
+        """
         _ = (beatmapset_id, original_filename)
         return None
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
+        """IDで保存済みbeatmapsetを取得する.
+
+        Args:
+            beatmapset_id (int): lookupするbeatmapset ID.
+
+        Returns:
+            BeatmapSet | None: 保存済みbeatmapset. 不在ならNone.
+        """
         return self.beatmapsets_by_id.get(beatmapset_id)
 
     async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        """Fetch state lookupを常にnot foundとして返す.
+
+        Args:
+            target (BeatmapFetchTarget): fetch stateを要求するbeatmap target.
+
+        Returns:
+            BeatmapFetchRecord | None: 常にNone. fetch stateを持たない状態を再現する.
+        """
         _ = target
         return None
 
 
 @final
 class _EmptyBeatmapLeaderboardRepository:
+    """Top rowとpersonal bestを返さないleaderboard repository fakeを提供する."""
+
     async def list_top_rows(
         self,
         scope: LeaderboardReadScope,
         *,
         limit: int,
     ) -> tuple[BeatmapLeaderboardRow, ...]:
+        """Leaderboard top rowをempty tupleとして返す.
+
+        Args:
+            scope (LeaderboardReadScope): query対象のleaderboard scope.
+            limit (int): 返却を要求する最大row数.
+
+        Returns:
+            tuple[BeatmapLeaderboardRow, ...]: 常にempty tuple. score rowなしを再現する.
+        """
         _ = (scope, limit)
         return ()
 
@@ -113,11 +185,30 @@ class _EmptyBeatmapLeaderboardRepository:
         *,
         viewer_user_id: int,
     ) -> BeatmapLeaderboardRow | None:
+        """Viewerのpersonal bestをnot foundとして返す.
+
+        Args:
+            scope (LeaderboardReadScope): query対象のleaderboard scope.
+            viewer_user_id (int): personal bestを要求するviewer user ID.
+
+        Returns:
+            BeatmapLeaderboardRow | None: 常にNone. personal bestなしを再現する.
+        """
         _ = (scope, viewer_user_id)
         return None
 
 
 class _RecordingBeatmapResolver:
+    """Resolve callを記録して設定済みfresh beatmap resultを返すmirror resolver fakeを提供する.
+
+    Attributes:
+        repository (_ScoreListingRepository): resolve結果を保存するquery repository fake.
+        beatmap (Beatmap): successful resolveで返すbeatmap.
+        beatmapset (BeatmapSet): successful resolveで返すbeatmapset.
+        calls (list[tuple[str, str, bool, float]]): resolve method, target, file requirement,
+            wait値の順序.
+    """
+
     repository: _ScoreListingRepository
     beatmap: Beatmap
     beatmapset: BeatmapSet
@@ -129,6 +220,13 @@ class _RecordingBeatmapResolver:
         beatmap: Beatmap,
         beatmapset: BeatmapSet,
     ) -> None:
+        """Successful resolveで使うrepositoryとbeatmap dataを設定する.
+
+        Args:
+            repository (_ScoreListingRepository): resultを保存するrepository fake.
+            beatmap (Beatmap): checksumまたはID resolveで返すbeatmap.
+            beatmapset (BeatmapSet): checksumまたはID resolveで返すbeatmapset.
+        """
         self.repository = repository
         self.beatmap = beatmap
         self.beatmapset = beatmapset
@@ -139,6 +237,16 @@ class _RecordingBeatmapResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Checksum resolveを記録してfresh beatmap resultを返す.
+
+        Args:
+            checksum_md5 (str): resolveするbeatmap checksum.
+            options (BeatmapResolveOptions | None): file requirementとwaitを指定する
+                optional resolve options.
+
+        Returns:
+            BeatmapResolveResult: 設定済みbeatmapとbeatmapsetを持つfresh result.
+        """
         opts = options or BeatmapResolveOptions()
         self.calls.append(
             (
@@ -157,6 +265,16 @@ class _RecordingBeatmapResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Beatmap ID resolveを記録してfresh beatmap resultを返す.
+
+        Args:
+            beatmap_id (int): resolveするbeatmap ID.
+            options (BeatmapResolveOptions | None): file requirementとwaitを指定する
+                optional resolve options.
+
+        Returns:
+            BeatmapResolveResult: 設定済みbeatmapとbeatmapsetを持つfresh result.
+        """
         opts = options or BeatmapResolveOptions()
         self.calls.append(
             (
@@ -173,6 +291,16 @@ class _RecordingBeatmapResolver:
         beatmapset_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapSetResolveResult:
+        """Beatmapset ID resolveを記録してpending metadata resultを返す.
+
+        Args:
+            beatmapset_id (int): resolveするbeatmapset ID.
+            options (BeatmapResolveOptions | None): file requirementとwaitを指定する
+                optional resolve options.
+
+        Returns:
+            BeatmapSetResolveResult: beatmapsetなしのpending metadata result.
+        """
         opts = options or BeatmapResolveOptions()
         self.calls.append(
             (
@@ -195,7 +323,15 @@ class _RecordingBeatmapResolver:
 
 @final
 class _UnavailableBeatmapResolver:
+    """Resolve callを記録してmetadata pending resultを返すmirror resolver fakeを提供する.
+
+    Attributes:
+        calls (list[tuple[str, str, bool, float]]): resolve method, target, file requirement,
+            wait値の順序.
+    """
+
     def __init__(self) -> None:
+        """Empty resolve call記録を初期化する."""
         self.calls: list[tuple[str, str, bool, float]] = []
 
     async def resolve_by_checksum(
@@ -203,6 +339,16 @@ class _UnavailableBeatmapResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Checksum resolveを記録してmetadata pending resultを返す.
+
+        Args:
+            checksum_md5 (str): resolveするbeatmap checksum.
+            options (BeatmapResolveOptions | None): file requirementとwaitを指定する
+                optional resolve options.
+
+        Returns:
+            BeatmapResolveResult: beatmapなしのpending metadata result.
+        """
         opts = options or BeatmapResolveOptions()
         self.calls.append(
             (
@@ -219,6 +365,16 @@ class _UnavailableBeatmapResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Beatmap ID resolveを記録してmetadata pending resultを返す.
+
+        Args:
+            beatmap_id (int): resolveするbeatmap ID.
+            options (BeatmapResolveOptions | None): file requirementとwaitを指定する
+                optional resolve options.
+
+        Returns:
+            BeatmapResolveResult: beatmapなしのpending metadata result.
+        """
         opts = options or BeatmapResolveOptions()
         self.calls.append(
             (
@@ -235,6 +391,16 @@ class _UnavailableBeatmapResolver:
         beatmapset_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapSetResolveResult:
+        """Beatmapset ID resolveを記録してpending metadata resultを返す.
+
+        Args:
+            beatmapset_id (int): resolveするbeatmapset ID.
+            options (BeatmapResolveOptions | None): file requirementとwaitを指定する
+                optional resolve options.
+
+        Returns:
+            BeatmapSetResolveResult: beatmapsetなしのpending metadata result.
+        """
         opts = options or BeatmapResolveOptions()
         self.calls.append(
             (
@@ -257,6 +423,12 @@ class _UnavailableBeatmapResolver:
 
 @final
 class _DelayedBeatmapResolver(_RecordingBeatmapResolver):
+    """Wait budgetが十分な場合だけfresh resultを返すdelayed resolver fakeを提供する.
+
+    Attributes:
+        available_after_seconds (float): metadataが利用可能になるまでの待機秒数.
+    """
+
     def __init__(
         self,
         repository: _ScoreListingRepository,
@@ -265,6 +437,14 @@ class _DelayedBeatmapResolver(_RecordingBeatmapResolver):
         *,
         available_after_seconds: float,
     ) -> None:
+        """Successful dataとmetadata availability thresholdを設定する.
+
+        Args:
+            repository (_ScoreListingRepository): resultを保存するrepository fake.
+            beatmap (Beatmap): metadata利用可能時に返すbeatmap.
+            beatmapset (BeatmapSet): metadata利用可能時に返すbeatmapset.
+            available_after_seconds (float): successful resolveに必要なwait秒数.
+        """
         super().__init__(repository, beatmap, beatmapset)
         self.available_after_seconds = available_after_seconds
 
@@ -274,6 +454,15 @@ class _DelayedBeatmapResolver(_RecordingBeatmapResolver):
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Checksum resolveのwait budgetに応じてpendingまたはfresh resultを返す.
+
+        Args:
+            checksum_md5 (str): resolveするbeatmap checksum.
+            options (BeatmapResolveOptions | None): wait budgetを指定するoptional resolve options.
+
+        Returns:
+            BeatmapResolveResult: wait不足ならpending result. 十分ならfresh beatmap result.
+        """
         opts = options or BeatmapResolveOptions()
         self.calls.append(
             (
@@ -293,7 +482,19 @@ class _DelayedBeatmapResolver(_RecordingBeatmapResolver):
 
 @final
 class _RecordingWarmupUseCase:
+    """Warmup requestを記録して設定済みoutcomeを返すuse case fakeを提供する.
+
+    Attributes:
+        outcome (BeatmapFileWarmupOutcome): executeが返すwarmup outcome.
+        requests (list[BeatmapFileWarmupRequest]): executeへ渡されたwarmup requestの順序.
+    """
+
     def __init__(self, outcome: BeatmapFileWarmupOutcome) -> None:
+        """返却するwarmup outcomeを設定する.
+
+        Args:
+            outcome (BeatmapFileWarmupOutcome): requestごとに返すwarmup outcome.
+        """
         self.outcome = outcome
         self.requests: list[BeatmapFileWarmupRequest] = []
 
@@ -301,6 +502,14 @@ class _RecordingWarmupUseCase:
         self,
         request: BeatmapFileWarmupRequest,
     ) -> BeatmapFileWarmupResult:
+        """Warmup requestを記録して設定済みoutcomeのresultを返す.
+
+        Args:
+            request (BeatmapFileWarmupRequest): stable Getscoresから発行されたwarmup request.
+
+        Returns:
+            BeatmapFileWarmupResult: request contextと設定済みoutcomeを持つresult.
+        """
         self.requests.append(request)
         return BeatmapFileWarmupResult(
             outcome=self.outcome,
@@ -313,6 +522,11 @@ class _RecordingWarmupUseCase:
 
 
 async def test_getscores_resolves_metadata_before_returning_not_found() -> None:
+    """Getscoresがnot found response前にmetadata resolveとfile warmupを行うcontractを検証する.
+
+    Returns:
+        None: header response, checksum resolve, beatmap ID warmup requestを確認して完了する.
+    """
     repository = _ScoreListingRepository()
     beatmap = _make_beatmap()
     beatmapset = _make_beatmapset(beatmap=beatmap)
@@ -342,6 +556,11 @@ async def test_getscores_resolves_metadata_before_returning_not_found() -> None:
 
 
 async def test_getscores_auth_failure_does_not_request_metadata_fetch() -> None:
+    """Authentication failureがmetadata resolveとwarmupを開始しないcontractを検証する.
+
+    Returns:
+        None: HTTP 401, empty body, empty resolveとwarmup callを確認して完了する.
+    """
     repository = _ScoreListingRepository()
     beatmap = _make_beatmap()
     beatmapset = _make_beatmapset(beatmap=beatmap)
@@ -363,6 +582,11 @@ async def test_getscores_auth_failure_does_not_request_metadata_fetch() -> None:
 
 
 async def test_getscores_parse_failure_does_not_request_warmup() -> None:
+    """Parse failureがmetadata resolveとwarmupを開始しないcontractを検証する.
+
+    Returns:
+        None: -1|false body, empty resolveとwarmup callを確認して完了する.
+    """
     repository = _ScoreListingRepository()
     beatmap = _make_beatmap()
     beatmapset = _make_beatmapset(beatmap=beatmap)
@@ -388,6 +612,11 @@ async def test_getscores_parse_failure_does_not_request_warmup() -> None:
 
 
 async def test_getscores_unavailable_uses_parsed_checksum_for_warmup() -> None:
+    """Unavailable metadata resultがparsed checksumをwarmupへ渡すcontractを検証する.
+
+    Returns:
+        None: -1|false bodyとchecksum scoped warmup requestを確認して完了する.
+    """
     repository = _ScoreListingRepository()
     resolver = _UnavailableBeatmapResolver()
     warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.METADATA_PENDING)
@@ -415,6 +644,11 @@ async def test_getscores_unavailable_uses_parsed_checksum_for_warmup() -> None:
 
 
 async def test_getscores_warmup_failure_does_not_change_response_body() -> None:
+    """Warmup failureがsuccessful Getscores response bodyを変えないcontractを検証する.
+
+    Returns:
+        None: header responseと記録済みfailed warmup requestを確認して完了する.
+    """
     repository = _ScoreListingRepository()
     beatmap = _make_beatmap()
     beatmapset = _make_beatmapset(beatmap=beatmap)
@@ -441,6 +675,11 @@ async def test_getscores_warmup_failure_does_not_change_response_body() -> None:
 
 
 async def test_getscores_default_wait_covers_menu_transition_metadata_fetch() -> None:
+    """Default metadata waitがmenu transition中のavailability thresholdをcoverする.
+
+    Returns:
+        None: delayed resolverがfresh header responseを返すことを確認して完了する.
+    """
     repository = _ScoreListingRepository()
     beatmap = _make_beatmap()
     beatmapset = _make_beatmapset(beatmap=beatmap)
@@ -475,6 +714,19 @@ def _make_handler(
     auth_result: LegacyWebAuthResult,
     beatmap_metadata_wait_seconds: float | None = None,
 ) -> GetscoresHandler:
+    """Typed fake依存を注入したGetscoresHandlerを構築する.
+
+    Args:
+        repository (_ScoreListingRepository): score listing queryへ渡すrepository fake.
+        resolver (object): BeatmapMirrorServiceとしてcastするresolver fake.
+        warmup (_RecordingWarmupUseCase): file warmup requestを記録するuse case fake.
+        auth_result (LegacyWebAuthResult): handler auth queryが返すauthentication outcome.
+        beatmap_metadata_wait_seconds (float | None): optional bounded metadata wait.
+            Noneならconfig既定値.
+
+    Returns:
+        GetscoresHandler: legacy Getscores requestを処理するhandler fixture.
+    """
     return GetscoresHandler(
         auth_query=_AuthQuery(auth_result),
         getscores_parser=GetscoresQueryParser(),
@@ -499,10 +751,23 @@ def _make_handler(
 
 
 def _default_metadata_wait_seconds() -> float:
+    """AppConfigからGetscores metadata resolve用の既定wait秒数を取得する.
+
+    Returns:
+        float: bounded beatmap metadata waitの設定値.
+    """
     return make_app_config().beatmap_default_bounded_wait_seconds
 
 
 def _request(params: dict[str, str]) -> Request:
+    """Getscores endpointへ送るStarlette GET requestを構築する.
+
+    Args:
+        params (dict[str, str]): query stringへ設定するlegacy Getscores parameter mapping.
+
+    Returns:
+        Request: osu-osz2-getscores.php pathを持つStarlette request.
+    """
     return make_starlette_request(
         method="GET",
         path="/web/osu-osz2-getscores.php",
@@ -511,6 +776,11 @@ def _request(params: dict[str, str]) -> Request:
 
 
 def _query() -> dict[str, str]:
+    """Successful Getscores requestを表す既定query parameter mappingを構築する.
+
+    Returns:
+        dict[str, str]: checksum, filename, mode, credentialを含むlegacy query mapping.
+    """
     return {
         "s": "0",
         "vv": "4",
@@ -528,6 +798,11 @@ def _query() -> dict[str, str]:
 
 
 def _make_beatmap() -> Beatmap:
+    """Fresh ranked metadataを持つGetscores handler用beatmap fixtureを構築する.
+
+    Returns:
+        Beatmap: checksumとmissing osu file stateを持つranked beatmap.
+    """
     return Beatmap(
         id=75,
         beatmapset_id=955866,
@@ -556,6 +831,14 @@ def _make_beatmap() -> Beatmap:
 
 
 def _make_beatmapset(*, beatmap: Beatmap) -> BeatmapSet:
+    """指定beatmapを含むGetscores handler用beatmapset fixtureを構築する.
+
+    Args:
+        beatmap (Beatmap): beatmapsetのbeatmapsへ設定するresolved beatmap.
+
+    Returns:
+        BeatmapSet: ranked metadataと指定beatmapを持つbeatmapset.
+    """
     return BeatmapSet(
         id=955866,
         artist="KIRA & Heartbreaker",
@@ -573,6 +856,15 @@ def _make_beatmapset(*, beatmap: Beatmap) -> BeatmapSet:
 
 
 def _resolve_result(beatmap: Beatmap, beatmapset: BeatmapSet) -> BeatmapResolveResult:
+    """Fresh metadataが利用可能なsuccessful beatmap resolve resultを構築する.
+
+    Args:
+        beatmap (Beatmap): successful resultへ設定するresolved beatmap.
+        beatmapset (BeatmapSet): successful resultへ設定するresolved beatmapset.
+
+    Returns:
+        BeatmapResolveResult: eligibleでfresh metadataを持つresolve result.
+    """
     return BeatmapResolveResult(
         beatmap=beatmap,
         beatmapset=beatmapset,
@@ -602,6 +894,11 @@ def _resolve_result(beatmap: Beatmap, beatmapset: BeatmapSet) -> BeatmapResolveR
 
 
 def _metadata_pending_result() -> BeatmapResolveResult:
+    """Beatmap dataなしのmetadata pending resolve resultを構築する.
+
+    Returns:
+        BeatmapResolveResult: pending fetch stateとmissing file stateを持つresult.
+    """
     return BeatmapResolveResult(
         beatmap=None,
         beatmapset=None,
