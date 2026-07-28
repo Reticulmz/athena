@@ -1,4 +1,4 @@
-"""Tests for PacketDispatcher provider registration and stable bancho public API."""
+"""PacketDispatcher の provider registration と stable Bancho public API を検証する."""
 
 import pytest
 
@@ -10,14 +10,16 @@ from tests.factories.config import make_app_config
 
 
 class TestDispatcherModuleInstance:
-    """Module-level dispatcher instance exists and is PacketDispatcher."""
+    """module-level dispatcher instance の型と singleton 性を検証する."""
 
     def test_module_level_dispatcher_exists(self) -> None:
+        """Dispatch module が PacketDispatcher instance を公開することを検証する."""
         from osu_server.transports.stable.bancho.dispatch import dispatcher
 
         assert isinstance(dispatcher, PacketDispatcher)
 
     def test_module_level_dispatcher_is_singleton_instance(self) -> None:
+        """Dispatch module の dispatcher attribute が同一 instance を参照することを検証する."""
         from osu_server.transports.stable.bancho import dispatch
 
         assert hasattr(dispatch, "dispatcher")
@@ -25,20 +27,23 @@ class TestDispatcherModuleInstance:
 
 
 class TestBanchoPublicAPI:
-    """stable/bancho/__init__.py re-exports PacketDispatcher and dispatcher."""
+    """stable.bancho package が dispatcher public API を再公開することを検証する."""
 
     def test_reexports_packet_dispatcher_class(self) -> None:
+        """Package が PacketDispatcher class を同じ object として再公開することを検証する."""
         from osu_server.transports.stable.bancho import PacketDispatcher as ReExported
 
         assert ReExported is PacketDispatcher
 
     def test_reexports_dispatcher_instance(self) -> None:
+        """Package が module-level dispatcher instance を再公開することを検証する."""
         from osu_server.transports.stable.bancho import dispatcher as re_exported
         from osu_server.transports.stable.bancho.dispatch import dispatcher
 
         assert re_exported is dispatcher
 
     def test_all_includes_dispatcher_names(self) -> None:
+        """Package の __all__ が dispatcher public API 名を含むことを検証する."""
         from osu_server.transports.stable import bancho
 
         assert "PacketDispatcher" in bancho.__all__
@@ -46,10 +51,11 @@ class TestBanchoPublicAPI:
 
 
 class TestDIRegistration:
-    """PacketDispatcher can be resolved via the Dishka app container."""
+    """Dishka app container が registration 済み PacketDispatcher を解決することを検証する."""
 
     @pytest.mark.asyncio
     async def test_resolve_packet_dispatcher(self) -> None:
+        """in-memory app container が PacketDispatcher を解決することを検証する."""
         config = make_app_config(environment="test")
         container = make_app_container(
             config,
@@ -64,6 +70,7 @@ class TestDIRegistration:
 
     @pytest.mark.asyncio
     async def test_resolve_returns_same_singleton(self) -> None:
+        """同じ app container の PacketDispatcher が singleton であることを検証する."""
         config = make_app_config(environment="test")
         container = make_app_container(
             config,
@@ -79,6 +86,7 @@ class TestDIRegistration:
 
     @pytest.mark.asyncio
     async def test_resolved_dispatcher_registers_status_change_handler(self) -> None:
+        """Container が解決した dispatcher に STATUS_CHANGE handler が登録されることを検証する."""
         config = make_app_config(environment="test")
         container = make_app_container(
             config,
@@ -93,6 +101,7 @@ class TestDIRegistration:
 
     @pytest.mark.asyncio
     async def test_resolved_dispatcher_registers_presence_handlers(self) -> None:
+        """Container が解決した dispatcher に両方の presence handler が登録されることを検証する."""
         config = make_app_config(environment="test")
         container = make_app_container(
             config,
