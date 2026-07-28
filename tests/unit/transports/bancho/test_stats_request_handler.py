@@ -1,3 +1,5 @@
+"""Bancho stats request handlerがsession可視性とcurrent statusを反映することを検証する."""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -38,6 +40,12 @@ if TYPE_CHECKING:
 
 @final
 class FakeCurrentUserStatsQuery:
+    """固定のcurrent user statsを返すquery fake.
+
+    Attributes:
+        inputs (list[CurrentUserStatsQueryInput]): executeへ渡された検索inputの呼出順list.
+    """
+
     def __init__(
         self,
         *,
@@ -45,6 +53,14 @@ class FakeCurrentUserStatsQuery:
         stats_by_ruleset: dict[Ruleset, tuple[UserCurrentStats, ...]] | None = None,
         error: Exception | None = None,
     ) -> None:
+        """固定resultまたは読出し失敗を設定する.
+
+        Args:
+            stats (tuple[UserCurrentStats, ...]): ruleset未指定時に返すstats.
+            stats_by_ruleset (dict[Ruleset, tuple[UserCurrentStats, ...]] | None):
+                Ruleset別の返却値.
+            error (Exception | None): execute時に送出する読出し失敗. None時は送出しない.
+        """
         self._stats = stats
         self._stats_by_ruleset = stats_by_ruleset or {}
         self._error = error
@@ -54,6 +70,17 @@ class FakeCurrentUserStatsQuery:
         self,
         input_data: CurrentUserStatsQueryInput,
     ) -> CurrentUserStatsQueryResult:
+        """検索inputを記録して対応する固定statsを返す.
+
+        Args:
+            input_data (CurrentUserStatsQueryInput): handlerが構築したstats検索input.
+
+        Returns:
+            CurrentUserStatsQueryResult: 指定rulesetまたは既定値のstatsを持つresult.
+
+        Raises:
+            Exception: 初期化時に設定されたerrorが存在する場合.
+        """
         self.inputs.append(input_data)
         if self._error is not None:
             raise self._error
@@ -66,27 +93,72 @@ class FakeCurrentUserStatsQuery:
 
 @final
 class FakePacketQueue:
+    """enqueueしたstable stats packetを記録するPacketQueue fake.
+
+    Attributes:
+        enqueued (list[tuple[int, tuple[bytes, ...]]]): 宛先user IDとpacket群の呼出順list.
+    """
+
     def __init__(self) -> None:
+        """空のenqueue記録を持つfakeを初期化する."""
         self.enqueued: list[tuple[int, tuple[bytes, ...]]] = []
 
     async def enqueue(self, user_id: int, *data: bytes) -> None:
+        """宛先とserialized packetを記録する.
+
+        Args:
+            user_id (int): packetを配送するstable user ID.
+            *data (bytes): 配送順を保って記録するserialized packet.
+
+        Returns:
+            None: enqueue記録を追加して完了する.
+        """
         self.enqueued.append((user_id, data))
 
     async def dequeue_all(self, user_id: int) -> bytes:
+        """Protocol互換の空queue読出し結果を返す.
+
+        Args:
+            user_id (int): 読出し対象user ID. fakeでは使用しない.
+
+        Returns:
+            bytes: 常に空bytes. このtestはenqueue記録だけを観測する.
+        """
         _ = user_id
         return b""
 
     async def refresh_ttl(self, user_id: int, ttl: int) -> None:
+        """Protocol互換のTTL更新要求を受け入れる.
+
+        Args:
+            user_id (int): TTL更新対象user ID. fakeでは使用しない.
+            ttl (int): 更新後TTL秒数. fakeでは使用しない.
+
+        Returns:
+            None: 状態を変更せずTTL要求を受理して完了する.
+        """
         _ = (user_id, ttl)
 
 
 @final
 class FakeStableUserStatusStore:
+    """Current statusとplay modeをin-memoryで保持するstore fake.
+
+    Attributes:
+        refreshed (list[tuple[int, int]]): refresh_ttlへ渡されたuser IDとTTL秒数の呼出順list.
+    """
+
     def __init__(
         self,
         play_modes: dict[int, int] | None = None,
         statuses: dict[int, StableUserStatus] | None = None,
     ) -> None:
+        """初期statusまたはplay modeからstore状態を構築する.
+
+        Args:
+            play_modes (dict[int, int] | None): user IDごとの初期play mode. status未指定時に使う.
+            statuses (dict[int, StableUserStatus] | None): user IDごとの初期stable status.
+        """
         self._statuses = statuses or {
             user_id: DEFAULT_STABLE_USER_STATUS.with_play_mode(mode)
             for user_id, mode in (play_modes or {}).items()
@@ -94,12 +166,29 @@ class FakeStableUserStatusStore:
         self.refreshed: list[tuple[int, int]] = []
 
     async def set_status(self, user_id: int, status: StableUserStatus) -> None:
+        """指定userのcurrent stable statusを保存する.
+
+        Args:
+            user_id (int): 更新対象のstable user ID.
+            status (StableUserStatus): 保存するcurrent statusとplay mode.
+
+        Returns:
+            None: statusをin-memory状態へ反映して完了する.
+        """
         self._statuses[user_id] = status
 
     async def get_statuses(
         self,
         user_ids: tuple[int, ...],
     ) -> dict[int, StableUserStatus]:
+        """要求IDに存在するcurrent statusだけを返す.
+
+        Args:
+            user_ids (tuple[int, ...]): statusを取得するstable user ID群.
+
+        Returns:
+            dict[int, StableUserStatus]: 既知userだけを含むstatus mapping.
+        """
         return {
             user_id: status
             for user_id in user_ids
@@ -107,14 +196,39 @@ class FakeStableUserStatusStore:
         }
 
     async def set_play_mode(self, user_id: int, play_mode: int) -> None:
+        """指定userのplay modeを現在statusへ反映する.
+
+        Args:
+            user_id (int): 更新対象のstable user ID.
+            play_mode (int): 保存するstable play mode値.
+
+        Returns:
+            None: 既存statusまたは既定statusへplay modeを反映して完了する.
+        """
         current = self._statuses.get(user_id, DEFAULT_STABLE_USER_STATUS)
         self._statuses[user_id] = current.with_play_mode(play_mode)
 
     async def get_play_mode(self, user_id: int) -> int | None:
+        """指定userのplay modeを返す.
+
+        Args:
+            user_id (int): play modeを取得するstable user ID.
+
+        Returns:
+            int | None: 既知userのplay mode. 未登録時はNone.
+        """
         status = self._statuses.get(user_id)
         return None if status is None else status.play_mode
 
     async def get_play_modes(self, user_ids: tuple[int, ...]) -> dict[int, int]:
+        """要求IDに存在するplay modeだけを返す.
+
+        Args:
+            user_ids (tuple[int, ...]): play modeを取得するstable user ID群.
+
+        Returns:
+            dict[int, int]: 既知userだけを含むplay mode mapping.
+        """
         return {
             user_id: status.play_mode
             for user_id in user_ids
@@ -122,12 +236,33 @@ class FakeStableUserStatusStore:
         }
 
     async def refresh_ttl(self, user_id: int, ttl: int) -> None:
+        """TTL更新要求を記録する.
+
+        Args:
+            user_id (int): TTL更新対象のstable user ID.
+            ttl (int): 更新後TTL秒数.
+
+        Returns:
+            None: user IDとTTL秒数の組を記録して完了する.
+        """
         self.refreshed.append((user_id, ttl))
 
 
 @final
 class FakeActiveSessionsByUserIdsQuery:
+    """指定user IDに一致するonline sessionを返すquery fake.
+
+    Attributes:
+        inputs (list[GetActiveSessionsByUserIdsQueryInput]): executeへ渡された検索inputの
+            呼出順list.
+    """
+
     def __init__(self, sessions: tuple[OnlineSessionSnapshot, ...]) -> None:
+        """ID検索の候補にするonline sessionを固定する.
+
+        Args:
+            sessions (tuple[OnlineSessionSnapshot, ...]): 既知online session snapshot.
+        """
         self._sessions = sessions
         self.inputs: list[GetActiveSessionsByUserIdsQueryInput] = []
 
@@ -135,6 +270,14 @@ class FakeActiveSessionsByUserIdsQuery:
         self,
         input_data: GetActiveSessionsByUserIdsQueryInput,
     ) -> GetActiveSessionsByUserIdsQueryResult:
+        """検索inputを記録して一致するsessionだけを返す.
+
+        Args:
+            input_data (GetActiveSessionsByUserIdsQueryInput): handlerが構築したsession検索input.
+
+        Returns:
+            GetActiveSessionsByUserIdsQueryResult: 要求IDに一致するonline sessionを持つresult.
+        """
         self.inputs.append(input_data)
         requested = set(input_data.user_ids)
         return GetActiveSessionsByUserIdsQueryResult(
@@ -143,6 +286,11 @@ class FakeActiveSessionsByUserIdsQuery:
 
 
 async def test_stats_request_returns_current_stats_for_available_users() -> None:
+    """Available userのcurrent statsをstable packetへ変換することを検証する.
+
+    Returns:
+        None: query inputとserialized user stats packetを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery(
         stats=(
             UserCurrentStats(
@@ -187,6 +335,11 @@ async def test_stats_request_returns_current_stats_for_available_users() -> None
 
 
 async def test_stats_request_deduplicates_requested_user_ids() -> None:
+    """重複したrequested user IDを一度だけ検索してpacket化することを検証する.
+
+    Returns:
+        None: 重複なしquery inputとuserごとに1件のpacketを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery(
         stats=(
             UserCurrentStats(user_id=20, pp=Decimal("50"), global_rank=2),
@@ -239,6 +392,11 @@ async def test_stats_request_deduplicates_requested_user_ids() -> None:
 
 
 async def test_stats_request_omits_unavailable_users_without_default_packet() -> None:
+    """Statsが存在しないuserに既定packetを返さないことを検証する.
+
+    Returns:
+        None: unavailable userのquery実行後もqueue記録が空であることを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery(stats=())
     packet_queue = FakePacketQueue()
     handler = _handler(stats_query, packet_queue)
@@ -250,6 +408,11 @@ async def test_stats_request_omits_unavailable_users_without_default_packet() ->
 
 
 async def test_stats_request_drops_malformed_payload_without_enqueue() -> None:
+    """Malformed stats request payloadがqueryもpacket配送も行わないことを検証する.
+
+    Returns:
+        None: query inputとqueue記録がともに空であることを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery(
         stats=(UserCurrentStats(user_id=20, pp=Decimal("50"), global_rank=2),)
     )
@@ -263,6 +426,11 @@ async def test_stats_request_drops_malformed_payload_without_enqueue() -> None:
 
 
 async def test_stats_request_uses_target_user_current_play_mode() -> None:
+    """Target userのcurrent play modeでruleset別statsを検索することを検証する.
+
+    Returns:
+        None: targetのplay modeに対応するquery inputとstats packetを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery(
         stats_by_ruleset={
             Ruleset.MANIA: (
@@ -316,6 +484,11 @@ async def test_stats_request_uses_target_user_current_play_mode() -> None:
 
 
 async def test_stats_request_preserves_target_user_current_status_fields() -> None:
+    """Target userのcurrent status fieldをstats packetへ保持することを検証する.
+
+    Returns:
+        None: status text, beatmap, mods, play modeを含むpacketを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery(
         stats_by_ruleset={
             Ruleset.MANIA: (
@@ -370,6 +543,11 @@ async def test_stats_request_preserves_target_user_current_status_fields() -> No
 
 
 async def test_stats_request_filters_offline_and_hidden_users_before_stats_read() -> None:
+    """Offlineまたはhidden userをstats検索前に除外することを検証する.
+
+    Returns:
+        None: visible online userだけがqueryとpacketへ現れることを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery(
         stats=(
             UserCurrentStats(user_id=20, pp=Decimal("50"), global_rank=2),
@@ -421,6 +599,11 @@ async def test_stats_request_filters_offline_and_hidden_users_before_stats_read(
 
 
 async def test_stats_request_does_not_return_requesting_users_own_stats() -> None:
+    """Requesting user自身のstatsを返さないことを検証する.
+
+    Returns:
+        None: requesterを除くonline userだけが検索とpacket化の対象になることを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery(
         stats=(
             UserCurrentStats(user_id=20, pp=Decimal("50"), global_rank=2),
@@ -469,6 +652,11 @@ async def test_stats_request_does_not_return_requesting_users_own_stats() -> Non
 
 
 async def test_stats_request_returns_bot_stats_without_reading_user_stats() -> None:
+    """BanchoBot requestがuser statsを読まずbot packetを返すことを検証する.
+
+    Returns:
+        None: empty session queryとbot user stats packetを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery()
     packet_queue = FakePacketQueue()
     active_sessions_query = FakeActiveSessionsByUserIdsQuery(())
@@ -494,6 +682,11 @@ async def test_stats_request_returns_bot_stats_without_reading_user_stats() -> N
 
 
 async def test_stats_request_returns_bot_stats_in_requester_current_mode() -> None:
+    """BanchoBot stats packetがrequesterのcurrent play modeを使うことを検証する.
+
+    Returns:
+        None: requesterの保存済みplay modeを持つbot packetを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery()
     packet_queue = FakePacketQueue()
     active_sessions_query = FakeActiveSessionsByUserIdsQuery(())
@@ -521,6 +714,11 @@ async def test_stats_request_returns_bot_stats_in_requester_current_mode() -> No
 
 
 async def test_stats_request_read_failure_does_not_enqueue_partial_stats() -> None:
+    """Stats query失敗時にpartial packetをenqueueしないことを検証する.
+
+    Returns:
+        None: query inputは記録されてもqueue記録が空であることを確認して完了する.
+    """
     stats_query = FakeCurrentUserStatsQuery(error=RuntimeError("stats unavailable"))
     packet_queue = FakePacketQueue()
     handler = _handler(stats_query, packet_queue)
@@ -532,6 +730,11 @@ async def test_stats_request_read_failure_does_not_enqueue_partial_stats() -> No
 
 
 def test_stats_request_handler_registers_stats_request_packet() -> None:
+    """Stats request handlerがClientPacketID.STATS_REQUESTを登録することを検証する.
+
+    Returns:
+        None: dispatcherがstats request packetのhandlerを持つことを確認して完了する.
+    """
     dispatcher = PacketDispatcher()
     handler = _handler(FakeCurrentUserStatsQuery(), FakePacketQueue())
 
@@ -547,6 +750,19 @@ def _handler(
     stable_user_status_store: FakeStableUserStatusStore | None = None,
     active_sessions_by_user_ids_query: FakeActiveSessionsByUserIdsQuery | None = None,
 ) -> StatsRequestHandler:
+    """指定fakeを注入したStatsRequestHandlerを構築する.
+
+    Args:
+        stats_query (FakeCurrentUserStatsQuery): current statsを返すquery fake.
+        packet_queue (FakePacketQueue): serialized packetを記録するqueue fake.
+        stable_user_status_store (FakeStableUserStatusStore | None): statusとplay modeを返す
+            store fake.
+        active_sessions_by_user_ids_query (FakeActiveSessionsByUserIdsQuery | None):
+            可視sessionを返すquery fake.
+
+    Returns:
+        StatsRequestHandler: stable protocol用dependencyを持つstats handler.
+    """
     return StatsRequestHandler(
         current_user_stats_query=cast(
             "CurrentUserStatsQuery",
@@ -569,6 +785,15 @@ def _session(
     *,
     privileges: Privileges = Privileges.NORMAL | Privileges.UNRESTRICTED,
 ) -> OnlineSessionSnapshot:
+    """Stats可視性判定用のonline session snapshotを構築する.
+
+    Args:
+        user_id (int): snapshotへ設定するstable user ID.
+        privileges (Privileges): 可視性判定に使うprivilege集合.
+
+    Returns:
+        OnlineSessionSnapshot: 日本のUTC+9 sessionとして初期化したsnapshot.
+    """
     return OnlineSessionSnapshot(
         user_id=user_id,
         username=f"user-{user_id}",

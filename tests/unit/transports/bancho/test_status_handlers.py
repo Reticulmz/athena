@@ -1,4 +1,4 @@
-"""Tests for STATUS_CHANGE beatmap file warmup handling."""
+"""Bancho STATUS_CHANGE handlerのbeatmap warmupとstatus packet配送を検証する."""
 
 from __future__ import annotations
 
@@ -53,7 +53,15 @@ _CHECKSUM = "3b0aecd99eba50ffc7bff8da117d0e06"
 
 @final
 class RecordingWarmupUseCase:
+    """Beatmap file warmup requestを記録するuse-case fake.
+
+    Attributes:
+        requests (list[BeatmapFileWarmupRequest]): executeへ渡されたwarmup requestの呼出順list.
+        raise_on_execute (Exception | None): execute時に送出するsynthetic failure.
+    """
+
     def __init__(self) -> None:
+        """空のrequest記録とfailure未設定状態でfakeを初期化する."""
         self.requests: list[BeatmapFileWarmupRequest] = []
         self.raise_on_execute: Exception | None = None
 
@@ -61,6 +69,17 @@ class RecordingWarmupUseCase:
         self,
         request: BeatmapFileWarmupRequest,
     ) -> BeatmapFileWarmupResult:
+        """Warmup requestを記録してrequested resultを返す.
+
+        Args:
+            request (BeatmapFileWarmupRequest): handlerが構築したbeatmap file warmup request.
+
+        Returns:
+            BeatmapFileWarmupResult: REQUESTED outcomeを持つ記録済みrequestのresult.
+
+        Raises:
+            Exception: raise_on_executeに設定されたfailureが存在する場合.
+        """
         self.requests.append(request)
         if self.raise_on_execute is not None:
             raise self.raise_on_execute
@@ -76,11 +95,28 @@ class RecordingWarmupUseCase:
 
 @final
 class RecordingStableUserStatusStore:
+    """Status handlerが保存するstable statusとplay modeを記録するstore fake.
+
+    Attributes:
+        statuses (list[tuple[int, StableUserStatus]]): set_statusのuser IDとstatusの呼出順list.
+        play_modes (list[tuple[int, int]]): 保存されたuser IDとplay modeの呼出順list.
+    """
+
     def __init__(self) -> None:
+        """空のstatusおよびplay mode記録を持つfakeを初期化する."""
         self.statuses: list[tuple[int, StableUserStatus]] = []
         self.play_modes: list[tuple[int, int]] = []
 
     async def set_status(self, user_id: int, status: StableUserStatus) -> None:
+        """Userのstable statusとplay modeを記録する.
+
+        Args:
+            user_id (int): 更新対象のstable user ID.
+            status (StableUserStatus): handlerが保存するcurrent stable status.
+
+        Returns:
+            None: statusと含まれるplay modeを記録して完了する.
+        """
         self.statuses.append((user_id, status))
         self.play_modes.append((user_id, status.play_mode))
 
@@ -88,6 +124,14 @@ class RecordingStableUserStatusStore:
         self,
         user_ids: tuple[int, ...],
     ) -> dict[int, StableUserStatus]:
+        """要求IDに記録済みのstatusだけを返す.
+
+        Args:
+            user_ids (tuple[int, ...]): statusを取得するstable user ID群.
+
+        Returns:
+            dict[int, StableUserStatus]: 最後まで記録された一致statusを含むmapping.
+        """
         return {
             user_id: status
             for stored_user_id, status in self.statuses
@@ -96,23 +140,64 @@ class RecordingStableUserStatusStore:
         }
 
     async def set_play_mode(self, user_id: int, play_mode: int) -> None:
+        """Userのplay mode更新を記録する.
+
+        Args:
+            user_id (int): 更新対象のstable user ID.
+            play_mode (int): handlerが保存するstable play mode値.
+
+        Returns:
+            None: user IDとplay modeの組を記録して完了する.
+        """
         self.play_modes.append((user_id, play_mode))
 
     async def get_play_mode(self, user_id: int) -> int | None:
+        """Protocol互換の未設定play modeを返す.
+
+        Args:
+            user_id (int): play modeを取得するstable user ID. fakeでは使用しない.
+
+        Returns:
+            int | None: 常にNone. 複数mode読出しはこのfakeで扱わない.
+        """
         _ = user_id
         return None
 
     async def get_play_modes(self, user_ids: tuple[int, ...]) -> dict[int, int]:
+        """Protocol互換の空play mode mappingを返す.
+
+        Args:
+            user_ids (tuple[int, ...]): play modeを取得するstable user ID群. fakeでは使用しない.
+
+        Returns:
+            dict[int, int]: 常に空mapping. 複数mode読出しはこのfakeで扱わない.
+        """
         _ = user_ids
         return {}
 
     async def refresh_ttl(self, user_id: int, ttl: int) -> None:
+        """Protocol互換のTTL更新要求を受け入れる.
+
+        Args:
+            user_id (int): TTL更新対象user ID. fakeでは使用しない.
+            ttl (int): 更新後TTL秒数. fakeでは使用しない.
+
+        Returns:
+            None: 状態を変更せずTTL要求を受理して完了する.
+        """
         _ = (user_id, ttl)
 
 
 @final
 class RecordingUserStatsQueryRepository:
+    """Current user stats repository inputを記録して固定sourceを返すfake.
+
+    Attributes:
+        inputs (list[CurrentUserStatsQueryInput]): stats source読出しへ渡されたinputの呼出順list.
+    """
+
     def __init__(self) -> None:
+        """空のstats source読出し記録を持つfakeを初期化する."""
         self.inputs: list[CurrentUserStatsQueryInput] = []
 
     async def read_current_stats_sources(
@@ -122,6 +207,16 @@ class RecordingUserStatsQueryRepository:
         ruleset: Ruleset = Ruleset.OSU,
         playstyle: Playstyle = Playstyle.VANILLA,
     ) -> UserStatsSourceRead:
+        """Stats source読出しinputを記録して固定performance sourceを返す.
+
+        Args:
+            user_ids (tuple[int, ...]): statsを読むstable user ID群.
+            ruleset (Ruleset): performance集計に使うruleset.
+            playstyle (Playstyle): performance集計に使うplaystyle.
+
+        Returns:
+            UserStatsSourceRead: _USER_IDのperformanceとrank inputを持つ固定source read.
+        """
         self.inputs.append(
             CurrentUserStatsQueryInput(
                 user_ids=user_ids,
@@ -152,23 +247,67 @@ class RecordingUserStatsQueryRepository:
 
 @final
 class RecordingPacketQueue:
+    """Status handlerがenqueueするstable packetを記録するqueue fake.
+
+    Attributes:
+        enqueued (list[tuple[int, tuple[bytes, ...]]]): 宛先user IDとpacket群の呼出順list.
+    """
+
     def __init__(self) -> None:
+        """空のenqueue記録を持つfakeを初期化する."""
         self.enqueued: list[tuple[int, tuple[bytes, ...]]] = []
 
     async def enqueue(self, user_id: int, *data: bytes) -> None:
+        """宛先とserialized packet群を記録する.
+
+        Args:
+            user_id (int): packetを配送するstable user ID.
+            *data (bytes): 配送順を保って記録するserialized packet.
+
+        Returns:
+            None: enqueue記録を追加して完了する.
+        """
         self.enqueued.append((user_id, data))
 
     async def dequeue_all(self, user_id: int) -> bytes:
+        """Protocol互換の空queue読出し結果を返す.
+
+        Args:
+            user_id (int): 読出し対象user ID. fakeでは使用しない.
+
+        Returns:
+            bytes: 常に空bytes. このtestはenqueue記録だけを観測する.
+        """
         _ = user_id
         return b""
 
     async def refresh_ttl(self, user_id: int, ttl: int) -> None:
+        """Protocol互換のTTL更新要求を受け入れる.
+
+        Args:
+            user_id (int): TTL更新対象user ID. fakeでは使用しない.
+            ttl (int): 更新後TTL秒数. fakeでは使用しない.
+
+        Returns:
+            None: 状態を変更せずTTL要求を受理して完了する.
+        """
         _ = (user_id, ttl)
 
 
 @final
 class RecordingActiveSessionsQuery:
+    """固定のonline session一覧を返すquery fake.
+
+    Attributes:
+        inputs (list[ListActiveSessionsQueryInput]): executeへ渡された検索inputの呼出順list.
+    """
+
     def __init__(self, sessions: tuple[OnlineSessionSnapshot, ...]) -> None:
+        """全session検索で返すonline snapshotを固定する.
+
+        Args:
+            sessions (tuple[OnlineSessionSnapshot, ...]): status fan-out先にするonline session群.
+        """
         self.sessions = sessions
         self.inputs: list[ListActiveSessionsQueryInput] = []
 
@@ -176,13 +315,29 @@ class RecordingActiveSessionsQuery:
         self,
         input_data: ListActiveSessionsQueryInput,
     ) -> ListActiveSessionsQueryResult:
+        """検索inputを記録して固定session一覧を返す.
+
+        Args:
+            input_data (ListActiveSessionsQueryInput): handlerが構築した全session検索input.
+
+        Returns:
+            ListActiveSessionsQueryResult: 初期化時のsessionを含むquery result.
+        """
         self.inputs.append(input_data)
         return ListActiveSessionsQueryResult(sessions=self.sessions)
 
 
 @final
 class RecordingWarmupResolver:
+    """Beatmap warmupが参照するidentityとoptionを記録するresolver fake.
+
+    Attributes:
+        calls (list[tuple[str, int | str, BeatmapResolveOptions | None]]): resolve種別と入力の
+            呼出順list.
+    """
+
     def __init__(self) -> None:
+        """空のresolve呼出し記録を持つfakeを初期化する."""
         self.calls: list[tuple[str, int | str, BeatmapResolveOptions | None]] = []
 
     async def resolve_by_beatmap_id(
@@ -190,6 +345,15 @@ class RecordingWarmupResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Beatmap IDによるresolve呼出しを記録してpending resultを返す.
+
+        Args:
+            beatmap_id (int): 解決対象のpositive beatmap ID.
+            options (BeatmapResolveOptions | None): resolve時の追加option. 未指定時はNone.
+
+        Returns:
+            BeatmapResolveResult: metadata pendingとfile missingを表す固定result.
+        """
         self.calls.append(("beatmap_id", beatmap_id, options))
         return _pending_result()
 
@@ -198,6 +362,15 @@ class RecordingWarmupResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Checksumによるresolve呼出しを記録してpending resultを返す.
+
+        Args:
+            checksum_md5 (str): 解決対象の32桁MD5 checksum.
+            options (BeatmapResolveOptions | None): resolve時の追加option. 未指定時はNone.
+
+        Returns:
+            BeatmapResolveResult: metadata pendingとfile missingを表す固定result.
+        """
         self.calls.append(("checksum", checksum_md5, options))
         return _pending_result()
 
@@ -209,6 +382,17 @@ def _status_payload(
     status_text: str = "playing",
     play_mode: int = 0,
 ) -> bytes:
+    """Status change handlerへ渡すserialized payloadを構築する.
+
+    Args:
+        beatmap_id (int): status updateへ設定するbeatmap ID.
+        beatmap_md5 (str): status updateへ設定するbeatmap MD5 checksum.
+        status_text (str): stable clientへ表示するstatus text.
+        play_mode (int): status updateへ設定するstable play mode値.
+
+    Returns:
+        bytes: STATUS_CHANGE protocol definitionでserializeしたpayload.
+    """
     return status_change_payload(
         StatusUpdate(
             status=2,
@@ -222,6 +406,11 @@ def _status_payload(
 
 
 def _pending_result() -> BeatmapResolveResult:
+    """Metadata pendingとfile missingを表すwarmup resolve resultを構築する.
+
+    Returns:
+        BeatmapResolveResult: beatmap identityを解決できないpending fetch result.
+    """
     return BeatmapResolveResult(
         beatmap=None,
         beatmapset=None,
@@ -237,10 +426,23 @@ def _pending_result() -> BeatmapResolveResult:
 
 
 def _warmup_logs(logs: list[EventDict]) -> list[EventDict]:
+    """Captured structlog entryからbeatmap file warmup eventだけを抽出する.
+
+    Args:
+        logs (list[EventDict]): status handler実行中にcaptureしたstructlog entry.
+
+    Returns:
+        list[EventDict]: event fieldがbeatmap_file_warmupのentryを保つ出現順list.
+    """
     return [entry for entry in logs if entry.get("event") == "beatmap_file_warmup"]
 
 
 async def test_status_change_positive_beatmap_id_takes_priority_over_checksum() -> None:
+    """Positive beatmap IDがchecksumより優先してwarmup identityになることを検証する.
+
+    Returns:
+        None: beatmap IDだけを持つstable status change warmup requestを確認して完了する.
+    """
     warmup = RecordingWarmupUseCase()
     handlers = StatusChangeHandlers(beatmap_file_warmup=warmup)
 
@@ -260,6 +462,11 @@ async def test_status_change_positive_beatmap_id_takes_priority_over_checksum() 
 
 
 async def test_status_change_stores_current_play_mode() -> None:
+    """Status changeがcurrent play modeをstable status storeへ保存することを検証する.
+
+    Returns:
+        None: user IDとpayloadのplay modeが記録されることを確認して完了する.
+    """
     warmup = RecordingWarmupUseCase()
     status_store = RecordingStableUserStatusStore()
     handlers = StatusChangeHandlers(
@@ -276,6 +483,11 @@ async def test_status_change_stores_current_play_mode() -> None:
 
 
 async def test_status_change_returns_own_user_stats_for_current_play_mode() -> None:
+    """Status changeが自身のcurrent play modeでstats packetを返すことを検証する.
+
+    Returns:
+        None: MANIA ruleset検索と自身宛てuser stats packetを確認して完了する.
+    """
     warmup = RecordingWarmupUseCase()
     status_store = RecordingStableUserStatusStore()
     stats_repository = RecordingUserStatsQueryRepository()
@@ -325,6 +537,11 @@ async def test_status_change_returns_own_user_stats_for_current_play_mode() -> N
 
 
 async def test_status_change_fans_out_user_stats_to_online_sessions() -> None:
+    """Status changeのuser stats packetを自身とonline sessionへfan-outすることを検証する.
+
+    Returns:
+        None: active session queryと同一packetの宛先群を確認して完了する.
+    """
     warmup = RecordingWarmupUseCase()
     status_store = RecordingStableUserStatusStore()
     stats_repository = RecordingUserStatsQueryRepository()
@@ -367,6 +584,11 @@ async def test_status_change_fans_out_user_stats_to_online_sessions() -> None:
 
 
 async def test_request_status_returns_own_user_stats_for_stored_play_mode() -> None:
+    """Request statusが保存済みplay modeで自身のstats packetを返すことを検証する.
+
+    Returns:
+        None: MANIA ruleset検索とwarmupなしの自身宛てpacketを確認して完了する.
+    """
     warmup = RecordingWarmupUseCase()
     status_store = RecordingStableUserStatusStore()
     await status_store.set_status(
@@ -425,6 +647,11 @@ async def test_request_status_returns_own_user_stats_for_stored_play_mode() -> N
 
 
 async def test_status_change_checksum_fallback_uses_32_hex_when_id_is_not_positive() -> None:
+    """Non-positive beatmap ID時に32桁checksumをwarmup identityとして使うことを検証する.
+
+    Returns:
+        None: beatmap IDなしでpayloadのchecksumを持つwarmup requestを確認して完了する.
+    """
     warmup = RecordingWarmupUseCase()
     handlers = StatusChangeHandlers(beatmap_file_warmup=warmup)
 
@@ -444,6 +671,11 @@ async def test_status_change_checksum_fallback_uses_32_hex_when_id_is_not_positi
 
 
 async def test_status_change_without_beatmap_identity_logs_skip_without_fetch() -> None:
+    """Beatmap identityなしのstatus changeがfetchせずskip eventを記録することを検証する.
+
+    Returns:
+        None: resolver未呼出しとskipped_no_identity eventのfieldを確認して完了する.
+    """
     resolver = RecordingWarmupResolver()
     handlers = StatusChangeHandlers(beatmap_file_warmup=RequestBeatmapFileWarmupUseCase(resolver))
 
@@ -462,6 +694,11 @@ async def test_status_change_without_beatmap_identity_logs_skip_without_fetch() 
 
 
 async def test_status_change_decode_failure_is_logged_without_warmup_call() -> None:
+    """Malformed status payloadがwarmupせずdecode failure eventを記録することを検証する.
+
+    Returns:
+        None: warmup未呼出しとraw payloadを含まないdiagnostic eventを確認して完了する.
+    """
     warmup = RecordingWarmupUseCase()
     handlers = StatusChangeHandlers(beatmap_file_warmup=warmup)
 
@@ -480,6 +717,11 @@ async def test_status_change_decode_failure_is_logged_without_warmup_call() -> N
 
 
 async def test_status_change_warmup_failure_is_logged_without_raising() -> None:
+    """Warmup failureが呼出し元へ送出されずredacted eventになることを検証する.
+
+    Returns:
+        None: request記録とexception typeだけを含むfailure eventを確認して完了する.
+    """
     warmup = RecordingWarmupUseCase()
     warmup.raise_on_execute = RuntimeError("downstream failure with token=secret")
     handlers = StatusChangeHandlers(beatmap_file_warmup=warmup)
@@ -498,6 +740,11 @@ async def test_status_change_warmup_failure_is_logged_without_raising() -> None:
 
 
 async def test_status_change_repeated_reference_uses_consistent_warmup_identity() -> None:
+    """同一status payloadの反復が同一warmup identityを使うことを検証する.
+
+    Returns:
+        None: 2回のrequestが同じbeatmap IDとchecksumなしを持つことを確認して完了する.
+    """
     warmup = RecordingWarmupUseCase()
     handlers = StatusChangeHandlers(beatmap_file_warmup=warmup)
     payload = _status_payload(beatmap_id=555, beatmap_md5=_CHECKSUM)
@@ -522,6 +769,11 @@ async def test_status_change_repeated_reference_uses_consistent_warmup_identity(
 
 
 def test_status_change_handler_registers_status_change_packet() -> None:
+    """StatusChangeHandlersがSTATUS_CHANGEとREQUEST_STATUS packetを登録することを検証する.
+
+    Returns:
+        None: dispatcherが2つのclient packet IDのhandlerを持つことを確認して完了する.
+    """
     dispatcher = PacketDispatcher()
     handlers = StatusChangeHandlers(beatmap_file_warmup=RecordingWarmupUseCase())
 
