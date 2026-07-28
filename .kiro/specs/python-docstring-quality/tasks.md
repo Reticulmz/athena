@@ -701,7 +701,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/unit/transports/banchoの5 file_
 
-- [ ] 3.44 (P) Bancho dispatch/endpoint testを整備する
+- [x] 3.44 (P) Bancho dispatch/endpoint testを整備する
   - test_di_registration.py、test_dispatch.py、test_e2e_flow.py、test_endpoint.py、
     test_errors.pyへ共通条件を適用する
   - 完了条件: scoped Ruff Dとinterrogate 100%および5 fileのtestが通る
