@@ -123,6 +123,7 @@ cd my-monorepo
     "release": "changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "2.31.1",
     "turbo": "^2.10.6",
     "prettier": "^3.0.0",
     "typescript": "^5.0.0"
@@ -152,17 +153,31 @@ const artifactDirectories = [
   ".turbo",
 ];
 
-const workspaceDirectories = (
-  await Promise.all(
-    workspaceParents.map(async (parent) => {
-      const parentDirectory = new URL(`../${parent}/`, import.meta.url);
-      const entries = await readdir(parentDirectory, { withFileTypes: true });
+async function findWorkspaceDirectories(parent) {
+  const parentDirectory = new URL(`../${parent}/`, import.meta.url);
 
-      return entries
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => new URL(`${entry.name}/`, parentDirectory));
-    }),
-  )
+  try {
+    const entries = await readdir(parentDirectory, { withFileTypes: true });
+
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => new URL(`${entry.name}/`, parentDirectory));
+  } catch (error) {
+    if (
+      error !== null &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+const workspaceDirectories = (
+  await Promise.all(workspaceParents.map(findWorkspaceDirectories))
 ).flat();
 
 const targets = [
@@ -247,7 +262,7 @@ Detailed pattern documentation lives in `references/details.md`. Read that file 
 
 ```bash
 # Using Changesets
-pnpm add -Dw @changesets/cli
+pnpm add -Dw --save-exact @changesets/cli@2.31.1
 pnpm changeset init
 
 # Create changeset

@@ -191,7 +191,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/monorepo-management/SKILL.md",
-      "computedHash": "6e63bc34573f2fee001038ec6193ccc57cbaed1300a000cb15c66f9d4b5c6d32"
+      "computedHash": "0fff47fe66593ddde4d7ad30dd632f766cd3632afd5b95c8ba5688e105d32655"
     },
     "multi-reviewer-patterns": {
       "source": "wshobson/agents",
