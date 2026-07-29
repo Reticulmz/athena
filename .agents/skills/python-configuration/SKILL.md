@@ -160,8 +160,8 @@ Create a `.env` file for local development (never commit this):
 
 ```bash
 # .env (add to .gitignore)
-DB_PASSWORD=local_dev_password
-API_SECRET_KEY=dev-secret-key
+DB_PASSWORD=REPLACE_ME_FROM_SECRET_MANAGER
+API_SECRET_KEY=REPLACE_ME_FROM_SECRET_MANAGER
 DEBUG=true
 ```
 
@@ -175,14 +175,14 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=myapp
 DB_USER=admin
-DB_PASSWORD=secret
+DB_PASSWORD=REPLACE_ME_FROM_SECRET_MANAGER
 
 # Redis configuration
 REDIS_URL=redis://localhost:6379
 REDIS_MAX_CONNECTIONS=10
 
 # Authentication
-AUTH_SECRET_KEY=your-secret-key
+AUTH_SECRET_KEY=REPLACE_ME_FROM_SECRET_MANAGER
 AUTH_TOKEN_EXPIRY_SECONDS=3600
 AUTH_ALGORITHM=HS256
 

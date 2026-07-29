@@ -86,7 +86,7 @@ async def check_temporal_health():
     """Verify Temporal server is accessible"""
     try:
         client = await Client.connect("localhost:7233")
-        print("✓ Connected to Temporal server")
+        print("[OK] Connected to Temporal server")
 
         # Test workflow execution
         from temporalio.worker import Worker
@@ -107,12 +107,12 @@ async def check_temporal_health():
                 id="health-check",
                 task_queue="health-check",
             )
-            print(f"✓ Workflow execution successful: {result}")
+            print(f"[OK] Workflow execution successful: {result}")
 
         return True
 
     except Exception as e:
-        print(f"✗ Health check failed: {e}")
+        print(f"[ERROR] Health check failed: {e}")
         return False
 
 if __name__ == "__main__":

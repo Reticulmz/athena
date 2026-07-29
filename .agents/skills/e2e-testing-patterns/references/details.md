@@ -158,15 +158,15 @@ test("user can update profile", async ({ page, testUser }) => {
 ### Pattern 3: Waiting Strategies
 
 ```typescript
-// ❌ Bad: Fixed timeouts
+// BAD: Fixed timeouts
 await page.waitForTimeout(3000); // Flaky!
 
-// ✅ Good: Wait for specific conditions
+// GOOD: Wait for specific conditions
 await page.waitForLoadState("networkidle");
 await page.waitForURL("/dashboard");
 await page.waitForSelector('[data-testid="user-profile"]');
 
-// ✅ Better: Auto-waiting with assertions
+// BETTER: Auto-waiting with assertions
 await expect(page.getByText("Welcome")).toBeVisible();
 await expect(page.getByRole("button", { name: "Submit" })).toBeEnabled();
 

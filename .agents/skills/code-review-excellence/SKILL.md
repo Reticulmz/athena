@@ -49,16 +49,16 @@ Transform code reviews from gatekeeping to knowledge sharing through constructiv
 - Prioritized (critical vs nice-to-have)
 
 ```markdown
-❌ Bad: "This is wrong."
-✅ Good: "This could cause a race condition when multiple users
+BAD: "This is wrong."
+GOOD: "This could cause a race condition when multiple users
 access simultaneously. Consider using a mutex here."
 
-❌ Bad: "Why didn't you use X pattern?"
-✅ Good: "Have you considered the Repository pattern? It would
+BAD: "Why didn't you use X pattern?"
+GOOD: "Have you considered the Repository pattern? It would
 make this easier to test. Here's an example: [link]"
 
-❌ Bad: "Rename this variable."
-✅ Good: "[nit] Consider `userCount` instead of `uc` for
+BAD: "Rename this variable."
+GOOD: "[nit] Consider `userCount` instead of `uc` for
 clarity. Not blocking if you prefer to keep it."
 ```
 
@@ -152,9 +152,9 @@ For each file:
 1. Summarize key concerns
 2. Highlight what you liked
 3. Make clear decision:
-   - ✅ Approve
-   - 💬 Comment (minor suggestions)
-   - 🔄 Request Changes (must address)
+   - Approve
+   - Comment (minor suggestions)
+   - Request changes (must address)
 4. Offer to pair if complex
 ```
 
@@ -193,14 +193,14 @@ For each file:
 Instead of stating problems, ask questions to encourage thinking:
 
 ```markdown
-❌ "This will fail if the list is empty."
-✅ "What happens if `items` is an empty array?"
+BAD: "This will fail if the list is empty."
+GOOD: "What happens if `items` is an empty array?"
 
-❌ "You need error handling here."
-✅ "How should this behave if the API call fails?"
+BAD: "You need error handling here."
+GOOD: "How should this behave if the API call fails?"
 
-❌ "This is inefficient."
-✅ "I see this loops through all users. Have we considered
+BAD: "This is inefficient."
+GOOD: "I see this loops through all users. Have we considered
 the performance impact with 100k users?"
 ```
 
@@ -209,8 +209,8 @@ the performance impact with 100k users?"
 ````markdown
 ## Use Collaborative Language
 
-❌ "You must change this to use async/await"
-✅ "Suggestion: async/await might make this more readable:
+BAD: "You must change this to use async/await"
+GOOD: "Suggestion: async/await might make this more readable:
 `typescript
     async function fetchUser(id: string) {
         const user = await db.query('SELECT * FROM users WHERE id = ?', id);
@@ -219,8 +219,8 @@ the performance impact with 100k users?"
     `
 What do you think?"
 
-❌ "Extract this into a function"
-✅ "This logic appears in 3 places. Would it make sense to
+BAD: "Extract this into a function"
+GOOD: "This logic appears in 3 places. Would it make sense to
 extract it into a shared utility function?"
 ````
 
@@ -229,20 +229,20 @@ extract it into a shared utility function?"
 ```markdown
 Use labels to indicate priority:
 
-🔴 [blocking] - Must fix before merge
-🟡 [important] - Should fix, discuss if disagree
-🟢 [nit] - Nice to have, not blocking
-💡 [suggestion] - Alternative approach to consider
-📚 [learning] - Educational comment, no action needed
-🎉 [praise] - Good work, keep it up!
+[BLOCKER] - Must fix before merge
+[IMPORTANT] - Should fix, discuss if disagree
+[NIT] - Nice to have, not blocking
+[SUGGESTION] - Alternative approach to consider
+[LEARNING] - Educational comment, no action needed
+[PRAISE] - Good work, keep it up!
 
 Example:
-"🔴 [blocking] This SQL query is vulnerable to injection.
+"[BLOCKER] This SQL query is vulnerable to injection.
 Please use parameterized queries."
 
-"🟢 [nit] Consider renaming `data` to `userData` for clarity."
+"[NIT] Consider renaming `data` to `userData` for clarity."
 
-"🎉 [praise] Excellent test coverage! This will catch edge cases."
+"[PRAISE] Excellent test coverage. This will catch edge cases."
 ```
 
 ## Language-Specific Patterns
@@ -252,36 +252,36 @@ Please use parameterized queries."
 ```python
 # Check for Python-specific issues
 
-# ❌ Mutable default arguments
+# BAD: Mutable default arguments
 def add_item(item, items=[]):  # Bug! Shared across calls
     items.append(item)
     return items
 
-# ✅ Use None as default
+# GOOD: Use None as default
 def add_item(item, items=None):
     if items is None:
         items = []
     items.append(item)
     return items
 
-# ❌ Catching too broad
+# BAD: Catching too broad
 try:
     result = risky_operation()
 except:  # Catches everything, even KeyboardInterrupt!
     pass
 
-# ✅ Catch specific exceptions
+# GOOD: Catch specific exceptions
 try:
     result = risky_operation()
 except ValueError as e:
     logger.error(f"Invalid value: {e}")
     raise
 
-# ❌ Using mutable class attributes
+# BAD: Using mutable class attributes
 class User:
     permissions = []  # Shared across all instances!
 
-# ✅ Initialize in __init__
+# GOOD: Initialize in __init__
 class User:
     def __init__(self):
         self.permissions = []
@@ -292,12 +292,12 @@ class User:
 ```typescript
 // Check for TypeScript-specific issues
 
-// ❌ Using any defeats type safety
+// BAD: Using any defeats type safety
 function processData(data: any) {  // Avoid any
     return data.value;
 }
 
-// ✅ Use proper types
+// GOOD: Use proper types
 interface DataPayload {
     value: string;
 }
@@ -305,13 +305,13 @@ function processData(data: DataPayload) {
     return data.value;
 }
 
-// ❌ Not handling async errors
+// BAD: Not handling async errors
 async function fetchUser(id: string) {
     const response = await fetch(`/api/users/${id}`);
     return response.json();  // What if network fails?
 }
 
-// ✅ Handle errors properly
+// GOOD: Handle errors properly
 async function fetchUser(id: string): Promise<User> {
     try {
         const response = await fetch(`/api/users/${id}`);
@@ -325,13 +325,13 @@ async function fetchUser(id: string): Promise<User> {
     }
 }
 
-// ❌ Mutation of props
+// BAD: Mutation of props
 function UserProfile({ user }: Props) {
     user.lastViewed = new Date();  // Mutating prop!
     return <div>{user.name}</div>;
 }
 
-// ✅ Don't mutate props
+// GOOD: Don't mutate props
 function UserProfile({ user, onView }: Props) {
     useEffect(() => {
         onView(user.id);  // Notify parent to update
@@ -367,7 +367,7 @@ When reviewing significant changes:
 ### Pattern 2: Test Quality Review
 
 ```typescript
-// ❌ Poor test: Implementation detail testing
+// BAD: Implementation detail testing
 test('increments counter variable', () => {
     const component = render(<Counter />);
     const button = component.getByRole('button');
@@ -375,7 +375,7 @@ test('increments counter variable', () => {
     expect(component.state.counter).toBe(1);  // Testing internal state
 });
 
-// ✅ Good test: Behavior testing
+// GOOD: Behavior testing
 test('displays incremented count when clicked', () => {
     render(<Counter />);
     const button = screen.getByRole('button', { name: /increment/i });
@@ -510,20 +510,20 @@ When author disagrees with your feedback:
 
 ## Required Changes
 
-🔴 [Blocking issue 1]
-🔴 [Blocking issue 2]
+- [BLOCKER] Blocking issue 1
+- [BLOCKER] Blocking issue 2
 
 ## Suggestions
 
-💡 [Improvement 1]
-💡 [Improvement 2]
+- [SUGGESTION] Improvement 1
+- [SUGGESTION] Improvement 2
 
 ## Questions
 
-❓ [Clarification needed on X]
-❓ [Alternative approach consideration]
+- [QUESTION] Clarification needed on X
+- [QUESTION] Alternative approach consideration
 
 ## Verdict
 
-✅ Approve after addressing required changes
+[APPROVAL] Approve after addressing required changes
 ```

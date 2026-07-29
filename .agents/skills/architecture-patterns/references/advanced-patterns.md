@@ -339,9 +339,15 @@ class PostgresOutboxPublisher:
 
 # use_cases/place_order.py — aggregate saves, events are extracted and stored
 class PlaceOrderUseCase:
-    def __init__(self, order_repo: OrderRepository, event_publisher: PostgresOutboxPublisher):
+    def __init__(
+        self,
+        order_repo: OrderRepository,
+        event_publisher: PostgresOutboxPublisher,
+        db,
+    ):
         self.orders = order_repo
         self.publisher = event_publisher
+        self.db = db
 
     async def execute(self, request: PlaceOrderRequest) -> PlaceOrderResponse:
         order = Order(id=str(uuid.uuid4()), customer_id=request.customer_id)

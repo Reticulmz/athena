@@ -204,7 +204,7 @@ SET status = 'active'
 WHERE id IN (1, 2, 3, 4, 5, ...);
 
 -- Better: Use temporary table for large batches
-CREATE TEMP TABLE temp_user_updates (id INT, new_status VARCHAR);
+CREATE TEMP TABLE temp_user_updates (id INT, new_status TEXT);
 INSERT INTO temp_user_updates VALUES (1, 'active'), (2, 'active'), ...;
 
 UPDATE users u
@@ -254,10 +254,10 @@ Split large tables for better performance.
 ```sql
 -- Range partitioning by date (PostgreSQL)
 CREATE TABLE orders (
-    id SERIAL,
+    id BIGINT GENERATED ALWAYS AS IDENTITY,
     user_id INT,
     total DECIMAL,
-    created_at TIMESTAMP
+    created_at TIMESTAMPTZ
 ) PARTITION BY RANGE (created_at);
 
 -- Create partitions

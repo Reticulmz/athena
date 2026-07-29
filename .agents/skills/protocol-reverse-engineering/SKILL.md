@@ -167,7 +167,7 @@ MongoDB     - BSON documents with specific header
 
 // Length-prefixed message
 struct Message {
-    uint32_t length;      // Total message length
+    uint32_t length;      // Payload length in bytes
     uint16_t msg_type;    // Message type identifier
     uint8_t  flags;       // Flags/options
     uint8_t  reserved;    // Padding/alignment
@@ -197,6 +197,9 @@ struct Packet {
 import struct
 from dataclasses import dataclass
 
+HEADER_FORMAT = ">4sHHI"
+HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
+
 @dataclass
 class MessageHeader:
     magic: bytes
@@ -206,8 +209,11 @@ class MessageHeader:
 
     @classmethod
     def from_bytes(cls, data: bytes):
+        if len(data) < HEADER_SIZE:
+            raise ValueError("Truncated message header")
+
         magic, version, msg_type, length = struct.unpack(
-            ">4sHHI", data[:12]
+            HEADER_FORMAT, data[:HEADER_SIZE]
         )
         return cls(magic, version, msg_type, length)
 
@@ -217,9 +223,14 @@ def parse_messages(data: bytes):
 
     while offset < len(data):
         header = MessageHeader.from_bytes(data[offset:])
-        payload = data[offset+12:offset+12+header.length]
+        payload_start = offset + HEADER_SIZE
+        message_end = payload_start + header.length
+        if message_end > len(data):
+            raise ValueError("Declared payload length exceeds available data")
+
+        payload = data[payload_start:message_end]
         messages.append((header, payload))
-        offset += 12 + header.length
+        offset = message_end
 
     return messages
 
@@ -229,11 +240,19 @@ def parse_tlv(data: bytes):
     offset = 0
 
     while offset < len(data):
+        if len(data) - offset < 3:
+            raise ValueError("Truncated TLV header")
+
         field_type = data[offset]
         length = struct.unpack(">H", data[offset+1:offset+3])[0]
-        value = data[offset+3:offset+3+length]
+        value_start = offset + 3
+        field_end = value_start + length
+        if field_end > len(data):
+            raise ValueError("Declared TLV length exceeds available data")
+
+        value = data[value_start:field_end]
         fields.append((field_type, value))
-        offset += 3 + length
+        offset = field_end
 
     return fields
 ```
@@ -326,7 +345,7 @@ export SSLKEYLOGFILE=/tmp/keys.log
 
 ### Protocol Specification Template
 
-```markdown
+````markdown
 # Protocol Name Specification
 
 ## Overview
@@ -387,6 +406,7 @@ Server -> Client: HELLO_ACK (Status=OK)
 Client -> Server: DATA (payload)
 
 ```
+````
 
 ### Wireshark Dissector (Lua)
 
@@ -415,6 +435,12 @@ function proto.dissector(buffer, pinfo, tree)
     pinfo.cols.protocol = "CUSTOM"
 
     local subtree = tree:add(proto, buffer())
+    local header_length = 12
+
+    if buffer:len() < header_length then
+        pinfo.cols.info = "Malformed: truncated header"
+        return
+    end
 
     -- Parse header
     subtree:add(f_magic, buffer(0, 4))
@@ -428,8 +454,13 @@ function proto.dissector(buffer, pinfo, tree)
     local length = buffer(8, 4):uint()
     subtree:add(f_length, buffer(8, 4))
 
+    if length > buffer:len() - header_length then
+        pinfo.cols.info = "Malformed: payload length exceeds captured data"
+        return
+    end
+
     if length > 0 then
-        subtree:add(f_payload, buffer(12, length))
+        subtree:add(f_payload, buffer(header_length, length))
     end
 end
 
@@ -442,13 +473,38 @@ tcp_table:add(8888, proto)
 
 ### Fuzzing with Boofuzz
 
+Warning: Protocol fuzzing can crash or corrupt targets. Run this example only against an explicitly authorized service in an isolated lab or sandbox.
+
 ```python
+import os
+
 from boofuzz import *
 
+def get_authorized_target() -> tuple[str, int]:
+    if os.environ.get("FUZZ_TARGET_AUTHORIZED") != "yes":
+        raise RuntimeError(
+            "Set FUZZ_TARGET_AUTHORIZED=yes only for an authorized lab target"
+        )
+
+    host = os.environ.get("FUZZ_TARGET_HOST")
+    port_value = os.environ.get("FUZZ_TARGET_PORT")
+    if not host or not port_value:
+        raise RuntimeError("Set FUZZ_TARGET_HOST and FUZZ_TARGET_PORT")
+
+    try:
+        port = int(port_value)
+    except ValueError as error:
+        raise RuntimeError("FUZZ_TARGET_PORT must be an integer") from error
+
+    if not 1 <= port <= 65535:
+        raise RuntimeError("FUZZ_TARGET_PORT must be between 1 and 65535")
+    return host, port
+
 def main():
+    target_host, target_port = get_authorized_target()
     session = Session(
         target=Target(
-            connection=TCPSocketConnection("target", 8888)
+            connection=TCPSocketConnection(target_host, target_port)
         )
     )
 

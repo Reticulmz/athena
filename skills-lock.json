@@ -17,7 +17,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/backend-development/skills/architecture-patterns/SKILL.md",
-      "computedHash": "ba9dbacd7bdf00a1ea6913497f83190ba1b7ea5da53ac99b92f76940405314f5"
+      "computedHash": "cc7d9765ef41a34eccf3e15632279f8f72fd0e4d9e593aba2baedf6a7cd257b0"
     },
     "ask-matt": {
       "source": "mattpocock/skills",
@@ -65,7 +65,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/code-review-excellence/SKILL.md",
-      "computedHash": "0f585a4ad2f6d8353069ca9051c6f0e8865abb9d3a6a268d423784c3c3852962"
+      "computedHash": "bb101d5b4120fc084926279ae370595dd85fdf4660bfcb35e5ffaa75ee4a3a9a"
     },
     "codebase-design": {
       "source": "mattpocock/skills",
@@ -83,7 +83,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/framework-migration/skills/database-migration/SKILL.md",
-      "computedHash": "d7f1b8bf1b1bf8e8d3c8b064416432937a2331c8e333dad676b227f636462bbe"
+      "computedHash": "10061cf238945fc61a2c5b2189cd99c7fd22b6be84044f650abfbfa65b6f7b8c"
     },
     "debugging-strategies": {
       "source": "wshobson/agents",
@@ -119,7 +119,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/e2e-testing-patterns/SKILL.md",
-      "computedHash": "6dc0f85438514468de96d26fca6d072bd21e390d20c50f658137ff577e58d7f9"
+      "computedHash": "23666aa813d0fec4b49f5e7b6f154d122e1fd43fd5f02eb44de3b563011ba477"
     },
     "error-handling-patterns": {
       "source": "wshobson/agents",
@@ -131,7 +131,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/backend-development/skills/event-store-design/SKILL.md",
-      "computedHash": "498cebc804affa1b5f8dd83c9f2818ec348479e9c7c58c2a2650ea456a39d59a"
+      "computedHash": "fa79ee6037a2fa91175082a5f351d70824b7a13acaedf67e37b70c2e7fbb223e"
     },
     "fastapi-templates": {
       "source": "wshobson/agents",
@@ -227,7 +227,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/reverse-engineering/skills/protocol-reverse-engineering/SKILL.md",
-      "computedHash": "fbec06f0af66bd2c4118751f7dda1a748b7116082697fbb9083a64d7cb1bb5ce"
+      "computedHash": "e3208ed4a52c9fcc052b06a59dfc56639f0cdc081d8c673b37b23658b5453aed"
     },
     "prototype": {
       "source": "mattpocock/skills",
@@ -239,7 +239,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-anti-patterns/SKILL.md",
-      "computedHash": "8e74897cec815465d7155205af15ae9e096667bbf0d1ac034050e400991095df"
+      "computedHash": "f54dc63d68d9df43cf450fd0860d78a0c253e74dfc248d83292cd9a7e46fa36e"
     },
     "python-background-jobs": {
       "source": "wshobson/agents",
@@ -257,7 +257,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-configuration/SKILL.md",
-      "computedHash": "4c5a9bb3ba5100379c57e773372eeafb45601a159c8a2f523bc30a4f3686ce30"
+      "computedHash": "c7f0e81d4beecbd91c6bdd8f9d8900e26931b7235e2a32464191024daf45d963"
     },
     "python-design-patterns": {
       "source": "wshobson/agents",
@@ -365,7 +365,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/sql-optimization-patterns/SKILL.md",
-      "computedHash": "26621a0f907c9b637ae1ce4a8acd35a6ae8a79f6c40b7f4afa6014e875835797"
+      "computedHash": "05114b2d846fac1d397e0aec73bcc1a19087d88c520600a9737751a4b9c8a089"
     },
     "tdd": {
       "source": "mattpocock/skills",
@@ -383,7 +383,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/backend-development/skills/temporal-python-testing/SKILL.md",
-      "computedHash": "e07cb287e4404cc96f0317cd5299a94d9ddb48599e15bb19f738c812b9881489"
+      "computedHash": "1945bf3cb7b51a59b1691717895de9afd9c575766c005f79bb0e7ef0680c3696"
     },
     "threat-mitigation-mapping": {
       "source": "wshobson/agents",

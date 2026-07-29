@@ -71,12 +71,12 @@ export class CreateUsers1701234567 implements MigrationInterface {
           },
           {
             name: "email",
-            type: "varchar",
+            type: "text",
             isUnique: true,
           },
           {
             name: "created_at",
-            type: "timestamp",
+            type: "timestamptz",
             default: "CURRENT_TIMESTAMP",
           },
         ],

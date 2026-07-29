@@ -63,7 +63,7 @@ def call_service():
 ```python
 # BAD: Secrets and config in code
 DB_HOST = "prod-db.example.com"
-API_KEY = "sk-12345"
+API_KEY = "<DO_NOT_HARDCODE_SECRETS>"
 
 def connect():
     return psycopg.connect(f"host={DB_HOST}...")

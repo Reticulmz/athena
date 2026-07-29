@@ -8,13 +8,13 @@
 -- Events table
 CREATE TABLE events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    stream_id VARCHAR(255) NOT NULL,
-    stream_type VARCHAR(255) NOT NULL,
-    event_type VARCHAR(255) NOT NULL,
+    stream_id TEXT NOT NULL,
+    stream_type TEXT NOT NULL,
+    event_type TEXT NOT NULL,
     event_data JSONB NOT NULL,
     metadata JSONB DEFAULT '{}',
     version BIGINT NOT NULL,
-    global_position BIGSERIAL,
+    global_position BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
 
     CONSTRAINT unique_stream_version UNIQUE (stream_id, version)
@@ -34,8 +34,8 @@ CREATE INDEX idx_events_created_at ON events(created_at);
 
 -- Snapshots table
 CREATE TABLE snapshots (
-    stream_id VARCHAR(255) PRIMARY KEY,
-    stream_type VARCHAR(255) NOT NULL,
+    stream_id TEXT PRIMARY KEY,
+    stream_type TEXT NOT NULL,
     snapshot_data JSONB NOT NULL,
     version BIGINT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -43,7 +43,7 @@ CREATE TABLE snapshots (
 
 -- Subscriptions checkpoint table
 CREATE TABLE subscription_checkpoints (
-    subscription_id VARCHAR(255) PRIMARY KEY,
+    subscription_id TEXT PRIMARY KEY,
     last_position BIGINT NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
