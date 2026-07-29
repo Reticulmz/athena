@@ -126,9 +126,6 @@ class ErrorRaisingUserRepository:
 
         Returns:
             User | None: armedでない場合にinner repositoryが返すuser. 未登録の場合はNone.
-
-        Raises:
-            Exception: arm後に設定済みのfailure injectionを送出する場合.
         """
         if self._armed:
             raise self._error

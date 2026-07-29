@@ -26,7 +26,7 @@ class LocalEventBus(Protocol):
             event (object): 配信するイベント値です.
 
         Returns:
-            None: 通知処理が完了したことを表します.
+            None: 通知処理を完了し, 呼び出し側へ値を返さずに終了します.
         """
         ...
 
@@ -43,6 +43,6 @@ class LocalEventBus(Protocol):
                 非同期で処理する handler です.
 
         Returns:
-            None: handler の登録が完了したことを表します.
+            None: handlerの登録を完了し, 呼び出し側へ値を返さずに終了します.
         """
         ...

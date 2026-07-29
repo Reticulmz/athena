@@ -216,9 +216,6 @@ class _MetadataProviderMockHandler:
 
         Returns:
             httpx.Response: mock handlerがrequestへ返すHTTP response.
-
-        Raises:
-            Exception: 設定済みtoken_errorまたはapi_errorがrequest処理時に存在する場合.
         """
         url_str, method = _request_url_and_method(request)
 

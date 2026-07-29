@@ -28,11 +28,7 @@ class InMemorySessionStore:
     """
 
     def __init__(self) -> None:
-        """空の token/User ID 索引を初期化する.
-
-        Returns:
-            None: 新しい session state を持つ store を構築する.
-        """
+        """空の token/User ID 索引を初期化する."""
         self._by_token: dict[str, SessionData] = {}
         self._user_to_token: dict[int, str] = {}
         self._token_to_user: dict[str, int] = {}

@@ -29,9 +29,6 @@ class ValkeyChannelStateStore:
         Args:
             client (GlideClient): Set 操作と batch 実行を提供する Valkey client.
             key_prefix (str): key 名前空間を分離する任意の prefix.
-
-        Returns:
-            None: state store instance を初期化したことを表す.
         """
         self._client: GlideClient = client
         self._prefix: str = key_prefix

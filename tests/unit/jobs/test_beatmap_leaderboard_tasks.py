@@ -70,9 +70,6 @@ class _FakeUserRebuildUseCase:
 
         Returns:
             RebuildBeatmapLeaderboardsResult: 設定済みまたは既定の再構築結果.
-
-        Raises:
-            Exception: _errorが設定されている場合.
         """
         self.calls.append(command)
         if self._error is not None:
@@ -128,9 +125,6 @@ class _FakeBeatmapsetRebuildUseCase:
 
         Returns:
             RebuildBeatmapLeaderboardsResult: 設定済みまたは既定の再構築結果.
-
-        Raises:
-            Exception: _errorが設定されている場合.
         """
         self.calls.append(command)
         if self._error is not None:
@@ -192,9 +186,6 @@ class _FakeEnqueueableTask:
 
         Returns:
             object: enqueue成功を表す新しいobject.
-
-        Raises:
-            Exception: _errorが設定されている場合.
         """
         self.calls.append((args, kwargs))
         if self._error is not None:

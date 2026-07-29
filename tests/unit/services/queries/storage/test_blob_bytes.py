@@ -64,9 +64,6 @@ class FailingBlobByteReader:
 
         Args:
             blob_id (int): production interfaceと互換に受け取るblob識別子.
-
-        Raises:
-            Exception: 初期化時に指定されたbackend error.
         """
         _ = blob_id
         raise self._error

@@ -36,9 +36,6 @@ class ReplayDownloadAccountingExecutor(Protocol):
         Returns:
             ReplayDownloadAccountingResult: replay view count と latest activity branch の結果.
 
-        Raises:
-            Exception: use-case の処理に失敗した場合.
-
         Notes:
             job adapter は runtime state を解決して command を委譲するだけである.
         """
@@ -57,9 +54,6 @@ class _EnqueueableTask(Protocol):
 
         Returns:
             object: broker 実装が返す enqueue 結果.
-
-        Raises:
-            Exception: broker 実装が enqueue に失敗した場合.
         """
         ...
 
@@ -75,9 +69,6 @@ class _TaskBroker(Protocol):
 
         Returns:
             _EnqueueableTask | None: 対応する task または未登録時の None.
-
-        Raises:
-            Exception: broker 実装が検索に失敗した場合.
         """
         ...
 
@@ -100,9 +91,6 @@ class TaskiqReplayDownloadAccountingPublisher:
 
         Args:
             broker (_TaskBroker): task の検索と enqueue を担う broker.
-
-        Returns:
-            None: broker を instance に保持する.
         """
         self._broker = broker
 
@@ -114,9 +102,6 @@ class TaskiqReplayDownloadAccountingPublisher:
 
         Returns:
             None: primitive payload を enqueue するか失敗をログに記録して完了する.
-
-        Raises:
-            Exception: broker で task の検索に失敗した場合.
 
         Notes:
             task 未登録または enqueue 失敗はログに記録し response path へ送出しない.

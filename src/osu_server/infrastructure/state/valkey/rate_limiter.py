@@ -26,9 +26,6 @@ class ValkeyRateLimiter:
         Args:
             client (GlideClient): INCR と EXPIRE を実行する Valkey client.
             key_prefix (str): key 名前空間を分離する任意の prefix.
-
-        Returns:
-            None: rate limiter instance を初期化したことを表す.
         """
         self._client: GlideClient = client
         self._prefix: str = key_prefix

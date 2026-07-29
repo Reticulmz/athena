@@ -16,11 +16,7 @@ class InMemoryChannelStateStore:
     """
 
     def __init__(self) -> None:
-        """空の双方向チャンネル参加 index を初期化する.
-
-        Returns:
-            None: 空の state store instance を初期化したことを表す.
-        """
+        """空の双方向チャンネル参加 index を初期化する."""
         self._channel_members: dict[str, set[int]] = {}
         self._user_channels: dict[int, set[str]] = {}
 
@@ -32,7 +28,7 @@ class InMemoryChannelStateStore:
             user_id (int): 参加させる user id.
 
         Returns:
-            None: 両方の参加 index を更新したことを表す.
+            None: 両方の参加indexを更新し, 呼び出し側へ値を返さずに終了する.
 
         Notes:
             既に参加済みの場合は状態を変えず成功する.
@@ -48,7 +44,7 @@ class InMemoryChannelStateStore:
             user_id (int): 退会させる user id.
 
         Returns:
-            None: 両方の参加 index を更新したことを表す.
+            None: 両方の参加indexを更新し, 呼び出し側へ値を返さずに終了する.
 
         Notes:
             未参加の場合は状態を変えず成功し,空になった index entry は削除する.

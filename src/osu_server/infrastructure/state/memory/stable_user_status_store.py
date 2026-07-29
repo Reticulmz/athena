@@ -19,11 +19,7 @@ class InMemoryStableUserStatusStore:
     """
 
     def __init__(self) -> None:
-        """空の stable status storage を初期化する.
-
-        Returns:
-            None: 空の state store instance を初期化したことを表す.
-        """
+        """空の stable status storage を初期化する."""
         self._statuses_by_user_id: dict[int, StableUserStatus] = {}
 
     async def set_status(self, user_id: int, status: StableUserStatus) -> None:

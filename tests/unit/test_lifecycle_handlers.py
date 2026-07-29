@@ -209,9 +209,6 @@ class FakeLocalEventBus:
 
         Returns:
             None: 正常時にeventをfired_eventsへ追加して完了する.
-
-        Raises:
-            Exception: raise_on_fireに設定された例外がある場合.
         """
         if self.raise_on_fire:
             raise self.raise_on_fire

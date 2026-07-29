@@ -96,10 +96,6 @@ async def startup(state: TaskiqState) -> None:
 
     Returns:
         None: logging,Dishka integration,job use-caseをstateへ設定したことを示す.
-
-    Raises:
-        Exception: containerまたは依存use-caseの解決に失敗した場合. 途中まで設定した
-            stateを消去し,作成済みcontainerをcloseしてから元の例外を伝播する.
     """
     setup_logging(_config)
     worker_container: AsyncContainer | None = None

@@ -7,8 +7,4 @@ from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
-    """全SQLAlchemy ORM modelが継承するdeclarative base.
-
-    Attributes:
-        なし: SQLAlchemyが継承先modelのmetadataを管理する.
-    """
+    """全SQLAlchemy ORM modelが継承するdeclarative base."""

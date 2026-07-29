@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+declare -a FIRST_PARTY_PYTHON_FILES=()
+FIRST_PARTY_REPOSITORY_ROOT=""
+
 # athena Local CI Script
 
 # Subcommands:
@@ -23,21 +26,18 @@ usage() {
 }
 
 run_quality() {
-    local -a python_files
-    local repository_root
-
-    collect_first_party_python_files python_files repository_root || return 1
+    collect_first_party_python_files || return 1
 
     (
-        cd "${repository_root}" || exit 1
+        cd "${FIRST_PARTY_REPOSITORY_ROOT}" || exit 1
 
         echo "=== Running quality checks ==="
         echo "--> Ruff format check"
-        uv run ruff format --check "${python_files[@]}"
+        uv run ruff format --check "${FIRST_PARTY_PYTHON_FILES[@]}"
         echo "--> Ruff lint check"
-        uv run ruff check "${python_files[@]}"
+        uv run ruff check "${FIRST_PARTY_PYTHON_FILES[@]}"
         echo "--> Interrogate docstring coverage"
-        uv run interrogate --config pyproject.toml "${python_files[@]}"
+        uv run interrogate --config pyproject.toml "${FIRST_PARTY_PYTHON_FILES[@]}"
         echo "--> Basedpyright type check"
         uv run basedpyright src/ tests/
         echo "--> Import linter"
@@ -46,19 +46,16 @@ run_quality() {
 }
 
 run_fix() {
-    local -a python_files
-    local repository_root
-
-    collect_first_party_python_files python_files repository_root || return 1
+    collect_first_party_python_files || return 1
 
     (
-        cd "${repository_root}" || exit 1
+        cd "${FIRST_PARTY_REPOSITORY_ROOT}" || exit 1
 
         echo "=== Applying fixes ==="
-        echo "--> Ruff format"
-        uv run ruff format "${python_files[@]}"
         echo "--> Ruff lint fix"
-        uv run ruff check --fix "${python_files[@]}"
+        uv run ruff check --fix "${FIRST_PARTY_PYTHON_FILES[@]}"
+        echo "--> Ruff format"
+        uv run ruff format "${FIRST_PARTY_PYTHON_FILES[@]}"
     )
 }
 
@@ -79,8 +76,6 @@ run_test() {
 }
 
 collect_first_party_python_files() {
-    local -n destination_files="$1"
-    local -n destination_repository_root="$2"
     local worktree_status
     local source_path
 
@@ -90,48 +85,43 @@ collect_first_party_python_files() {
         return 1
     fi
 
-    if ! destination_repository_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+    if ! FIRST_PARTY_REPOSITORY_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
         echo "python-files could not determine the Git worktree root" >&2
         return 1
     fi
 
-    destination_files=()
+    FIRST_PARTY_PYTHON_FILES=()
     while IFS= read -r -d '' source_path; do
-        destination_files+=("${source_path}")
-    done < <(git -C "${destination_repository_root}" ls-files --cached -z -- '*.py')
+        FIRST_PARTY_PYTHON_FILES+=("${source_path}")
+    done < <(git -C "${FIRST_PARTY_REPOSITORY_ROOT}" ls-files --cached -z -- '*.py')
 
-    if [ "${#destination_files[@]}" -eq 0 ]; then
+    if [ "${#FIRST_PARTY_PYTHON_FILES[@]}" -eq 0 ]; then
         echo "Git index contains no tracked first-party Python files" >&2
         return 1
     fi
 }
 
 run_python_files() {
-    local -a python_files
-    local repository_root
-
-    collect_first_party_python_files python_files repository_root || return 1
-    printf '%s\n' "${python_files[@]}"
+    collect_first_party_python_files || return 1
+    printf '%s\n' "${FIRST_PARTY_PYTHON_FILES[@]}"
 }
 
 run_docstrings() {
-    local -a python_files
-    local repository_root
     local status=0
 
-    collect_first_party_python_files python_files repository_root || return 1
+    collect_first_party_python_files || return 1
 
     (
-        cd "${repository_root}" || exit 1
+        cd "${FIRST_PARTY_REPOSITORY_ROOT}" || exit 1
 
         echo "=== Running docstring quality checks ==="
         echo "--> Ruff docstring lint"
-        if ! uv run ruff check --select D "${python_files[@]}"; then
+        if ! uv run ruff check --select D "${FIRST_PARTY_PYTHON_FILES[@]}"; then
             status=1
         fi
 
         echo "--> interrogate docstring coverage"
-        if ! uv run interrogate --config pyproject.toml "${python_files[@]}"; then
+        if ! uv run interrogate --config pyproject.toml "${FIRST_PARTY_PYTHON_FILES[@]}"; then
             status=1
         fi
 

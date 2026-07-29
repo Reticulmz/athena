@@ -24,7 +24,7 @@ def to_asyncpg_url(database_url: str) -> URL:
     Raises:
         sqlalchemy.exc.ArgumentError: ``database_url``が空または不正で,
             ``make_url``が解析できない場合.
-        ValueError: PostgreSQL以外のdriverを含むURLが渡された場合.
+        ValueError: asyncpg以外の対応していないdriverを含むURLが渡された場合.
     """
     url = make_url(database_url)
     if url.drivername in {"postgres", "postgresql"}:

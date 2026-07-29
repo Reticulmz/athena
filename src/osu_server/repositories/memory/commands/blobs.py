@@ -28,9 +28,6 @@ class InMemoryBlobCommandRepository:
 
         Args:
             state (InMemoryCommandRepositoryState): repository が直接読み書きする state.
-
-        Returns:
-            None: state への参照を保持したことを示す.
         """
         self._state: InMemoryCommandRepositoryState = state
 

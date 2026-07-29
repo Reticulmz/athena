@@ -35,7 +35,6 @@ class StubAsyncClient:
             httpx.Response: responseに設定されたHTTP response.
 
         Raises:
-            Exception: responseに設定されたexceptionを送出する場合.
             ValueError: responseが未設定の場合.
         """
         self.called_url = url

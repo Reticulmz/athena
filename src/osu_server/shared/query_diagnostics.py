@@ -43,9 +43,6 @@ class _AsyncDiagnosticLogger(Protocol):
 
         Returns:
             object: logger 実装が返す記録結果.
-
-        Raises:
-            Exception: logger 実装が記録に失敗した場合.
         """
         ...
 
@@ -58,9 +55,6 @@ class _AsyncDiagnosticLogger(Protocol):
 
         Returns:
             object: logger 実装が返す記録結果.
-
-        Raises:
-            Exception: logger 実装が記録に失敗した場合.
         """
         ...
 

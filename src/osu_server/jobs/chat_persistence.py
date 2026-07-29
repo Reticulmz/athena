@@ -32,9 +32,6 @@ class ChannelMessagePersistenceUseCase(Protocol):
 
         Returns:
             ChatPersistenceResult: persistence の結果.
-
-        Raises:
-            Exception: use-case の処理に失敗した場合.
         """
         ...
 
@@ -50,9 +47,6 @@ class PrivateMessagePersistenceUseCase(Protocol):
 
         Returns:
             ChatPersistenceResult: persistence の結果.
-
-        Raises:
-            Exception: use-case の処理に失敗した場合.
         """
         ...
 

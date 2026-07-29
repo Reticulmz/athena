@@ -49,10 +49,6 @@ class SQLAlchemyScorePerformanceQueryRepository:
         Args:
             session_factory (SQLAlchemyQuerySessionFactory): query用の非同期read session factory.
 
-        Returns:
-            None: session factoryとdefault eligibility policyを保持したrepository instanceを
-                初期化する.
-
         Notes:
             policyはdefault設定で生成し,初期化時にはsessionを生成しない.
         """

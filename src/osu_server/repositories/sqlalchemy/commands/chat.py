@@ -38,9 +38,6 @@ class SQLAlchemyChatCommandRepository:
         Args:
             session (AsyncSession): chat履歴の保存に使うsession.
 
-        Returns:
-            None: repositoryの初期化完了を示す.
-
         Notes:
             commitとrollbackは呼び出し側のUnit of Workが所有する.
         """

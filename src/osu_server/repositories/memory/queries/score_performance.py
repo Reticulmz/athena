@@ -44,9 +44,6 @@ class InMemoryScorePerformanceQueryRepository:
 
         Args:
             uow_factory (InMemoryUnitOfWorkFactory): read に使用する committed state factory.
-
-        Returns:
-            None: factory と PerformanceEligibilityPolicy を保持する repository を構築する.
         """
         self._factory: InMemoryUnitOfWorkFactory = uow_factory
         self._eligibility: PerformanceEligibilityPolicy = PerformanceEligibilityPolicy()

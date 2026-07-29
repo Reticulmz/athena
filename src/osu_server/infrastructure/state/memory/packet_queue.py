@@ -20,9 +20,6 @@ class InMemoryPacketQueue:
 
         Args:
             max_size (int): user ごとに保持する packet 数の上限.
-
-        Returns:
-            None: 空の packet queue instance を初期化したことを表す.
         """
         self._queues: dict[int, list[bytes]] = {}
         self._max_size: int = max_size

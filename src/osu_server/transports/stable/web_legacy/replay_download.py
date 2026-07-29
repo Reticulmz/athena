@@ -108,8 +108,9 @@ class StableReplayDownloadExchange:
             query (Mapping[str, str]): Starlette QueryParams互換またはplain mappingのquery values.
 
         Returns:
-            Response: 認証失敗には空のHTTP 401, malformedまたはunavailableには空のHTTP 404,
-                成功時にはdownload headerを持つresponse.
+            Response: Athenaは認証失敗をUnauthorizedとしてbodyなしHTTP 401で返す. malformedまたは
+                unavailableなreplayはNot FoundとしてbodyなしHTTP 404で返し, 成功時はdownload
+                headerを持つresponseを返す.
 
         Notes:
             raw query value, credential, storage detailはresponseに含めない.

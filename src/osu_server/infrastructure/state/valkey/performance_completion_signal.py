@@ -127,9 +127,6 @@ class ValkeyPerformanceCompletionSignal:
                 factory.
             key_prefix (str): channel 名前空間を分離する任意の prefix.
             subscription_timeout_ms (int): subscribe と unsubscribe に使う timeout ミリ秒数.
-
-        Returns:
-            None: signal adapter instance を初期化したことを表す.
         """
         self._publisher: ValkeyPerformanceCompletionPublisher = publisher
         self._pubsub_client_factory: ValkeyPubSubClientFactory = pubsub_client_factory

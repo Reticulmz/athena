@@ -73,9 +73,6 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
 
         Returns:
             TaskiqMessage: Taskiqへ渡す元のmessage. Athenaでは変更しない.
-
-        Raises:
-            Exception: diagnostics scopeの開始に失敗した場合.
         """
         if not self._config.query_diagnostics_effective_enabled:
             return message
@@ -106,9 +103,6 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
 
         Returns:
             None: 対応するscopeを終了し,必要なwarningを記録したことを示す.
-
-        Raises:
-            Exception: diagnostics scopeの終了またはwarning記録が失敗した場合.
         """
         _ = result
         await self._finish_scope(message)
@@ -129,9 +123,6 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
 
         Returns:
             None: 対応するscopeを終了し,必要なwarningを記録したことを示す.
-
-        Raises:
-            Exception: diagnostics scopeの終了またはwarning記録が失敗した場合.
         """
         _ = (result, exception)
         await self._finish_scope(message)
@@ -144,9 +135,6 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
 
         Returns:
             None: scopeがない場合は何もせず,存在した場合はwarning記録まで完了したことを示す.
-
-        Raises:
-            Exception: diagnostics scopeの終了またはwarning記録が失敗した場合.
         """
         active_scope = self._active_scopes.pop(message.task_id, None)
         if active_scope is None:

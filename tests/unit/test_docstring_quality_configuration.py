@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import subprocess
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CI_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "ci.sh"
+FLAKE_PATH = PROJECT_ROOT / "flake.nix"
 PYPROJECT_PATH = PROJECT_ROOT / "pyproject.toml"
 UV_LOCK_PATH = PROJECT_ROOT / "uv.lock"
 FIRST_PARTY_PYTHON_ROOTS = (
@@ -135,6 +137,36 @@ def _git_indexed_python_files(repository_root: Path) -> list[str]:
     assert completed_process.returncode == 0, stderr.decode(encoding="utf-8")
 
     return [path.decode(encoding="utf-8") for path in stdout.split(b"\0") if path]
+
+
+def _docstring_section_entries(docstring: str, section_name: str) -> list[str]:
+    """Google Style docstringの指定sectionからtop-level entryを取得する.
+
+    Args:
+        docstring (str): ASTから取得した未正規化docstring本文.
+        section_name (str): trailing colonを含まないsection名.
+
+    Returns:
+        list[str]: section内で最小indentを持つentry. sectionがない場合は空list.
+    """
+    lines = docstring.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != f"{section_name}:":
+            continue
+        header_indent = len(line) - len(line.lstrip())
+        section_lines: list[tuple[int, str]] = []
+        for candidate in lines[index + 1 :]:
+            stripped = candidate.strip()
+            indent = len(candidate) - len(candidate.lstrip())
+            if stripped and indent <= header_indent:
+                break
+            if stripped:
+                section_lines.append((indent, stripped))
+        if not section_lines:
+            return []
+        entry_indent = min(indent for indent, _ in section_lines)
+        return [entry for indent, entry in section_lines if indent == entry_indent]
+    return []
 
 
 def _initialize_temporary_git_repository(repository_root: Path) -> None:
@@ -430,6 +462,51 @@ def test_does_not_hide_docstring_debt_with_configuration_or_noqa() -> None:
     assert _docstring_noqa_locations() == []
 
 
+def test_docstrings_follow_semantic_section_contracts() -> None:
+    """Constructor, exception, attribute sectionの意味規約を全Python定義で検証する.
+
+    `__init__`の`Returns:`, 具体性のない`Raises: Exception`, 擬似attributeの`Attributes: なし`を
+    repository-wideで拒否する.
+
+    Returns:
+        None: 意味規約に反するsectionを持つdefinitionが存在する場合はassertionで失敗する.
+    """
+    constructor_returns: list[str] = []
+    broad_exceptions: list[str] = []
+    pseudo_attributes: list[str] = []
+
+    for source_path in _git_indexed_python_files(PROJECT_ROOT):
+        path = PROJECT_ROOT / source_path
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=source_path)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.AsyncFunctionDef, ast.ClassDef, ast.FunctionDef)):
+                continue
+            docstring = ast.get_docstring(node, clean=False)
+            if docstring is None:
+                continue
+            location = f"{source_path}:{node.lineno}"
+            if (
+                isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
+                and node.name == "__init__"
+                and _docstring_section_entries(docstring, "Returns")
+            ):
+                constructor_returns.append(location)
+            if any(
+                entry.startswith("Exception:")
+                for entry in _docstring_section_entries(docstring, "Raises")
+            ):
+                broad_exceptions.append(location)
+            if any(
+                entry.startswith("なし:")
+                for entry in _docstring_section_entries(docstring, "Attributes")
+            ):
+                pseudo_attributes.append(location)
+
+    assert constructor_returns == []
+    assert broad_exceptions == []
+    assert pseudo_attributes == []
+
+
 def test_docstrings_command_runs_only_active_quality_tools() -> None:
     """Docstrings commandがRuffとinterrogateだけを起動することを検証する.
 
@@ -438,8 +515,8 @@ def test_docstrings_command_runs_only_active_quality_tools() -> None:
     """
     script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert 'uv run ruff check --select D "${python_files[@]}"' in script
-    assert 'uv run interrogate --config pyproject.toml "${python_files[@]}"' in script
+    assert 'uv run ruff check --select D "${FIRST_PARTY_PYTHON_FILES[@]}"' in script
+    assert 'uv run interrogate --config pyproject.toml "${FIRST_PARTY_PYTHON_FILES[@]}"' in script
     assert "uv run pydoclint" not in script
 
 
@@ -457,19 +534,60 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
     quality_body = _shell_function_body(script, "run_quality")
     fix_body = _shell_function_body(script, "run_fix")
 
+    assert "collect_first_party_python_files || return 1" in quality_body
+    assert 'uv run ruff format --check "${FIRST_PARTY_PYTHON_FILES[@]}"' in quality_body
+    assert 'uv run ruff check "${FIRST_PARTY_PYTHON_FILES[@]}"' in quality_body
     assert (
-        "collect_first_party_python_files python_files repository_root || return 1" in quality_body
+        'uv run interrogate --config pyproject.toml "${FIRST_PARTY_PYTHON_FILES[@]}"'
+        in quality_body
     )
-    assert 'uv run ruff format --check "${python_files[@]}"' in quality_body
-    assert 'uv run ruff check "${python_files[@]}"' in quality_body
-    assert 'uv run interrogate --config pyproject.toml "${python_files[@]}"' in quality_body
     assert "uv run basedpyright src/ tests/" in quality_body
     assert "uv run lint-imports" in quality_body
     assert "uv run ruff format --check src/ tests/" not in quality_body
     assert "uv run ruff check src/ tests/" not in quality_body
-    assert "collect_first_party_python_files python_files repository_root || return 1" in fix_body
-    assert 'uv run ruff format "${python_files[@]}"' in fix_body
-    assert 'uv run ruff check --fix "${python_files[@]}"' in fix_body
+    assert "collect_first_party_python_files || return 1" in fix_body
+    lint_fix_command = 'uv run ruff check --fix "${FIRST_PARTY_PYTHON_FILES[@]}"'
+    format_command = 'uv run ruff format "${FIRST_PARTY_PYTHON_FILES[@]}"'
+    assert lint_fix_command in fix_body
+    assert format_command in fix_body
+    assert fix_body.index(lint_fix_command) < fix_body.index(format_command)
+
+
+def test_first_party_python_inventory_does_not_require_bash_nameref() -> None:
+    """Python inventory収集がBash 4.3以降のnamerefへ依存しないことを検証する.
+
+    Returns:
+        None: `local -n`が再導入されるか共有inventory変数が使われない場合はassertionで失敗する.
+    """
+    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
+    collection_body = _shell_function_body(script, "collect_first_party_python_files")
+
+    assert "local -n" not in collection_body
+    assert "FIRST_PARTY_PYTHON_FILES" in collection_body
+    assert "FIRST_PARTY_REPOSITORY_ROOT" in collection_body
+
+
+def test_precommit_runs_ruff_fixes_before_ruff_format() -> None:
+    """Pre-commitがRuffのlint fix後にformatterを実行することを検証する.
+
+    Returns:
+        None: hook priorityが逆転してlint fix後の未format状態を許す場合はassertionで失敗する.
+    """
+    flake = FLAKE_PATH.read_text(encoding="utf-8")
+    ruff_fix = re.search(
+        r'ruff = \{.*?entry = "uv run ruff check --fix";.*?priority = (?P<priority>\d+);',
+        flake,
+        flags=re.DOTALL,
+    )
+    ruff_format = re.search(
+        r'ruff-format = \{.*?entry = "uv run ruff format";.*?priority = (?P<priority>\d+);',
+        flake,
+        flags=re.DOTALL,
+    )
+
+    assert ruff_fix is not None
+    assert ruff_format is not None
+    assert int(ruff_fix["priority"]) < int(ruff_format["priority"])
 
 
 def test_python_files_matches_the_git_index() -> None:

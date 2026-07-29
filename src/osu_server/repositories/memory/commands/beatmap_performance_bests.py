@@ -39,9 +39,6 @@ class InMemoryBeatmapPerformanceBestCommandRepository:
         Args:
             state (InMemoryCommandRepositoryState): repository が直接読み書きする state.
 
-        Returns:
-            None: state への参照を保持したことを示す.
-
         Notes:
             state は clone せずに保持する. caller は state の排他所有を保証する必要がある.
         """

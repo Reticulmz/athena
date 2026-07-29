@@ -42,9 +42,6 @@ class ValkeyStableUserStatusStore:
             client (GlideClient): JSON status の保存と取得を行う Valkey client.
             ttl (int): set_status で設定する status の TTL 秒数.
             key_prefix (str): key 名前空間を分離する任意の prefix.
-
-        Returns:
-            None: state store instance を初期化したことを表す.
         """
         self._client: GlideClient = client
         self._ttl: int = ttl

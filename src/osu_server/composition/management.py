@@ -49,9 +49,6 @@ async def change_user_password(
     Returns:
         ChangeUserPasswordCommandResult: password変更use-caseの実行結果.
 
-    Raises:
-        Exception: database graphの構築またはpassword変更use-caseの実行が失敗した場合.
-
     Notes:
         このhelperが作成したdatabase engineは処理結果または例外にかかわらずdisposeする.
     """
@@ -85,9 +82,6 @@ async def change_user_role(
 
     Returns:
         ChangeUserRoleCommandResult: role変更use-caseの実行結果.
-
-    Raises:
-        Exception: database/Valkey graphの構築またはrole変更use-caseの実行が失敗した場合.
 
     Notes:
         このhelperが作成したValkey clientとdatabase engineは処理結果または例外にかかわらず

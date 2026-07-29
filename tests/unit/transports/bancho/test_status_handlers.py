@@ -76,9 +76,6 @@ class RecordingWarmupUseCase:
 
         Returns:
             BeatmapFileWarmupResult: REQUESTED outcomeを持つ記録済みrequestのresult.
-
-        Raises:
-            Exception: raise_on_executeに設定されたfailureが存在する場合.
         """
         self.requests.append(request)
         if self.raise_on_execute is not None:

@@ -63,9 +63,6 @@ class SQLQueryDiagnosticsMiddleware(BaseHTTPMiddleware):
 
         Returns:
             Response: 後続処理が返したresponse.
-
-        Raises:
-            Exception: 後続処理またはdiagnostics warningの記録が送出した例外を伝播する場合.
         """
         config = _get_request_config(request)
         if config is None or not config.query_diagnostics_effective_enabled:
@@ -106,9 +103,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         Returns:
             Response: 後続処理が返したresponse.
-
-        Raises:
-            Exception: 後続処理が送出した例外. status 500のlogを記録した後に伝播する.
         """
         structlog.contextvars.clear_contextvars()
 

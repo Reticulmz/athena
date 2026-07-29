@@ -92,9 +92,6 @@ class _StubTask:
 
         Returns:
             object: enqueue成功を表す新しいobject.
-
-        Raises:
-            Exception: _errorに設定したenqueue失敗を再現する場合.
         """
         self.calls.append((args, kwargs))
         if self._error is not None:

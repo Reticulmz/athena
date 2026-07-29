@@ -78,9 +78,6 @@ class PacketDispatcher:
         Returns:
             None: handler を完了させるか未登録 packet を記録して値を返さない.
 
-        Raises:
-            Exception: 登録済み handler が送出する例外を呼び出し側へ伝播する場合.
-
         Notes:
             handler 成功後だけ c2s_packet を記録する. QUIET_C2S_PACKETS の packet と
             未登録 packet は debug level で記録する.

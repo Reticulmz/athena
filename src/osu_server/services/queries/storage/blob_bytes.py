@@ -96,7 +96,6 @@ class BlobByteReaderAdapter:
         Raises:
             BlobBytesUnavailableError: readerがunavailable errorまたは設定済みexceptionを
                 送出した場合.
-            Exception: 設定済みunavailable exception以外を変換せず再送出した場合.
 
         Notes:
             causeの詳細は保持してもquery-layer errorのmessageには混ぜない.

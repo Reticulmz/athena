@@ -20,7 +20,8 @@ def upgrade() -> None:
     """Replay table, index, constraintをattachment terminologyへrenameする.
 
     Returns:
-        None: replay_file_attachments用のtable名とdatabase object名へ移行したことを示す.
+        None: replay_file_attachments用のtable名とdatabase object名への移行を完了し,
+            呼び出し側へ値を返さずに終了する.
 
     Notes:
         PostgreSQLの`ALTER ... RENAME`と条件付き`DO $$` blockは, 存在しない自動命名
@@ -57,7 +58,8 @@ def downgrade() -> None:
     """Replay attachmentのtable, index, constraintを旧名称へ戻す.
 
     Returns:
-        None: replays用のtable名とdatabase object名を復元したことを示す.
+        None: replays用のtable名とdatabase object名の復元を完了し, 呼び出し側へ値を返さずに
+            終了する.
 
     Notes:
         PostgreSQLの`ALTER ... RENAME`と条件付き`DO $$` blockは, 環境ごとに異なり得る

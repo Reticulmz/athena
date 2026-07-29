@@ -1,6 +1,6 @@
 """CloudflareのCF-IPCountry headerから国コードを取得するmodule.
 
-reverse proxyが付与するheaderを, Athena内部で使う2文字の国コードへ適応する.
+reverse proxyが付与するheaderを, Athena内部で使う2文字の国コードへ適用する.
 """
 
 from __future__ import annotations

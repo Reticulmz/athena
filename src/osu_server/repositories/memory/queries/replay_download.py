@@ -41,9 +41,6 @@ class InMemoryReplayDownloadQueryRepository:
             snapshot_provider (InMemoryQueryStateSnapshotProvider): query ごとに committed state の
                 clone を返す provider.
 
-        Returns:
-            None: provider を保持する repository を構築する.
-
         Notes:
             Command Unit of Work factory には依存せず, snapshot は各 query 実行時に取得する.
         """

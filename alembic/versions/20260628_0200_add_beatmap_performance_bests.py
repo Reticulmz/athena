@@ -27,7 +27,8 @@ def upgrade() -> None:
     """Score performanceからuser別beatmap best projectionを作成してbackfillする.
 
     Returns:
-        None: projection table, rank index, 初期winner rowを作成したことを示す.
+        None: projection table, rank index, 初期winner rowの作成を完了し,
+            呼び出し側へ値を返さずに終了する.
 
     Notes:
         `sa.text("pp DESC")`はdescending keyを含むPostgreSQL index expressionをAlembicへ
@@ -105,7 +106,8 @@ def downgrade() -> None:
     """Beatmap performance best projectionを削除する.
 
     Returns:
-        None: projectionのindexとbeatmap_performance_bests tableを削除したことを示す.
+        None: projectionのindexとbeatmap_performance_bests tableの削除を完了し,
+            呼び出し側へ値を返さずに終了する.
     """
     op.drop_index(
         "idx_beatmap_performance_bests_user_rebuild",
@@ -126,7 +128,8 @@ def _backfill_beatmap_performance_bests() -> None:
     """初期performance projectionをcurrent score calculationからbackfillする.
 
     Returns:
-        None: user, beatmap, ruleset, playstyleごとの最高PP rowを保存したことを示す.
+        None: user, beatmap, ruleset, playstyleごとの最高PP row保存を完了し,
+            呼び出し側へ値を返さずに終了する.
 
     Notes:
         text SQLはwindow ranking, current calculation条件, bitmask filterを単一の

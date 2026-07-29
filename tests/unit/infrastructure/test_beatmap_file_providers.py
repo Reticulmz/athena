@@ -75,9 +75,6 @@ def _make_handler(
 
         Returns:
             httpx.Response: request sourceのstatusとbodyとheadersを持つresponse.
-
-        Raises:
-            Exception: 対応sourceにerror型が設定されている場合.
         """
         url = str(request.url)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue, reportUnknownArgumentType]
         if _PRIMARY_URL in url:

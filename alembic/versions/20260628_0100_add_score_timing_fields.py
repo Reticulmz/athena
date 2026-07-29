@@ -30,7 +30,8 @@ def upgrade() -> None:
     """Score submit時刻とplay timeの補助fieldおよびvalidationを追加する.
 
     Returns:
-        None: timing columnと非負値およびsource値のCHECK constraintを追加したことを示す.
+        None: timing columnと非負値およびsource値のCHECK constraint追加を完了し,
+            呼び出し側へ値を返さずに終了する.
     """
     op.add_column("scores", sa.Column("fail_time_ms", sa.Integer(), nullable=True))
     op.add_column("scores", sa.Column("play_time_seconds", sa.Integer(), nullable=True))
@@ -60,7 +61,8 @@ def downgrade() -> None:
     """Score submit timing fieldとvalidationを削除する.
 
     Returns:
-        None: timing関連CHECK constraintとscores columnを削除したことを示す.
+        None: timing関連CHECK constraintとscores columnの削除を完了し,
+            呼び出し側へ値を返さずに終了する.
     """
     op.drop_constraint("ck_scores_play_time_source_known", "scores", type_="check")
     op.drop_constraint("ck_scores_play_time_seconds_non_negative", "scores", type_="check")

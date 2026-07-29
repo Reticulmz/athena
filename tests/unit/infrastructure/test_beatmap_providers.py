@@ -1389,9 +1389,6 @@ class _RaisingProvider:
 
         Args:
             beatmap_id (int): failure pathへ渡されるbeatmap識別子.
-
-        Raises:
-            Exception: 初期化時に設定したexceptionを常に送出する.
         """
         raise self.exception
 
@@ -1403,9 +1400,6 @@ class _RaisingProvider:
 
         Args:
             beatmapset_id (int): failure pathへ渡されるbeatmapset識別子.
-
-        Raises:
-            Exception: 初期化時に設定したexceptionを常に送出する.
         """
         raise self.exception
 
@@ -1417,9 +1411,6 @@ class _RaisingProvider:
 
         Args:
             checksum_md5 (str): failure pathへ渡されるbeatmap checksum.
-
-        Raises:
-            Exception: 初期化時に設定したexceptionを常に送出する.
         """
         raise self.exception
 

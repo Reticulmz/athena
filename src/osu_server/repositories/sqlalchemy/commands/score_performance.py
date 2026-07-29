@@ -63,9 +63,6 @@ class SQLAlchemyScorePerformanceCommandRepository:
 
         Args:
             session (AsyncSession): command transaction を共有する非同期 session.
-
-        Returns:
-            None: repository の初期化だけを行い transaction を開始または確定しないことを示す.
         """
         self._session: AsyncSession = session
 

@@ -87,9 +87,6 @@ class StubMetadataProvider:
 
         Returns:
             BeatmapsetSnapshot | None: 設定済みsnapshot. 未設定の場合はNone.
-
-        Raises:
-            Exception: exception属性に設定された例外がある場合.
         """
         self.calls.append(f"beatmap_id:{beatmap_id}")
         if self.delay > 0:
@@ -106,9 +103,6 @@ class StubMetadataProvider:
 
         Returns:
             BeatmapsetSnapshot | None: 設定済みsnapshot. 未設定の場合はNone.
-
-        Raises:
-            Exception: exception属性に設定された例外がある場合.
         """
         self.calls.append(f"beatmapset_id:{beatmapset_id}")
         if self.delay > 0:
@@ -125,9 +119,6 @@ class StubMetadataProvider:
 
         Returns:
             BeatmapsetSnapshot | None: 設定済みsnapshot. 未設定の場合はNone.
-
-        Raises:
-            Exception: exception属性に設定された例外がある場合.
         """
         self.calls.append(f"checksum:{checksum_md5}")
         if self.delay > 0:
@@ -1056,7 +1047,6 @@ class StubFileProvider:
             OsuFileFetchResult: 設定済みのfile取得結果.
 
         Raises:
-            Exception: exception属性に設定された例外がある場合.
             ValueError: 指定beatmap IDのfile結果が未設定の場合.
         """
         self.calls.append(beatmap_id)

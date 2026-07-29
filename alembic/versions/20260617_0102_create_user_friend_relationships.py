@@ -25,7 +25,8 @@ def upgrade() -> None:
     """ownerからtargetへ向かうfriend relationship schemaを作成する.
 
     Returns:
-        None: self relationship禁止とCASCADE foreign keyを持つtableを作成したことを示す.
+        None: self relationship禁止とCASCADE foreign keyを持つtableの作成を完了し,
+            呼び出し側へ値を返さずに終了する.
     """
     op.create_table(
         "user_friend_relationships",
@@ -61,6 +62,6 @@ def downgrade() -> None:
     """Directed user friend relationship tableを削除する.
 
     Returns:
-        None: user_friend_relationshipsを削除したことを示す.
+        None: user_friend_relationshipsの削除を完了し, 呼び出し側へ値を返さずに終了する.
     """
     op.drop_table("user_friend_relationships")

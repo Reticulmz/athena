@@ -120,9 +120,6 @@ def _make_transport(
 
         Returns:
             httpx.Response: mock handlerがrequestへ返すHTTP response.
-
-        Raises:
-            Exception: 設定済みtoken_excまたはdata_excがrequest処理時に存在する場合.
         """
         if token_exc is not None:
             raise token_exc("token error")

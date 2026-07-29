@@ -85,9 +85,6 @@ return 1""")
             max_size (int): user ごとに保持する packet 数の上限.
             ttl (int): enqueue 時に queue key へ設定する TTL 秒数.
             key_prefix (str): key 名前空間を分離する任意の prefix.
-
-        Returns:
-            None: packet queue instance を初期化したことを表す.
         """
         self._client: GlideClient = client
         self._max_size: int = max_size

@@ -47,9 +47,6 @@ async def bancho_endpoint(request: Request) -> Response:
 
     Returns:
         Response: BanchoEndpointが生成したHTTP response.
-
-    Raises:
-        Exception: BanchoEndpointが送出した例外を変換せず伝播する場合.
     """
     handler: BanchoEndpoint = request.app.state.bancho_endpoint  # pyright: ignore[reportAny]
     return await handler(request)
@@ -63,9 +60,6 @@ async def registration_endpoint(request: Request) -> Response:
 
     Returns:
         Response: RegistrationHandlerが生成したHTTP response.
-
-    Raises:
-        Exception: RegistrationHandlerが送出した例外を変換せず伝播する場合.
     """
     handler: RegistrationHandler = request.app.state.registration_handler  # pyright: ignore[reportAny]
     return await handler(request)
@@ -79,9 +73,6 @@ async def getscores_endpoint(request: Request) -> Response:
 
     Returns:
         Response: GetscoresHandlerが生成したHTTP response.
-
-    Raises:
-        Exception: GetscoresHandlerが送出した例外を変換せず伝播する場合.
     """
     handler: GetscoresHandler = request.app.state.getscores_handler  # pyright: ignore[reportAny]
     return await handler(request)
@@ -95,9 +86,6 @@ async def score_submit_endpoint(request: Request) -> Response:
 
     Returns:
         Response: ScoreSubmitHandlerが生成したHTTP response.
-
-    Raises:
-        Exception: ScoreSubmitHandlerが送出した例外を変換せず伝播する場合.
     """
     handler: ScoreSubmitHandler = request.app.state.score_submit_handler  # pyright: ignore[reportAny]
     return await handler(request)
@@ -111,9 +99,6 @@ async def replay_download_endpoint(request: Request) -> Response:
 
     Returns:
         Response: ReplayDownloadHandlerが生成したHTTP response.
-
-    Raises:
-        Exception: ReplayDownloadHandlerが送出した例外を変換せず伝播する場合.
 
     Notes:
         handlerは`request.app.state.replay_download_handler`に設定済みであることを前提とする.

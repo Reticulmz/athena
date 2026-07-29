@@ -43,9 +43,6 @@ class DuplicateBeatmapChecksumError(ValueError):
         Args:
             checksum_md5 (str): 新たに保存しようとした MD5 checksum.
             existing_beatmap_id (int): checksum を所有する既存 beatmap ID.
-
-        Returns:
-            None: ValueError message と例外属性を初期化したことを示す.
         """
         self.checksum_md5 = checksum_md5
         self.existing_beatmap_id = existing_beatmap_id
@@ -62,9 +59,6 @@ class BeatmapNotFoundError(LookupError):
 
         Args:
             beatmap_id (int): 見つからなかった beatmap の識別子.
-
-        Returns:
-            None: LookupError message を初期化したことを示す.
         """
         super().__init__(f"beatmap {beatmap_id} was not found")
 
@@ -85,9 +79,6 @@ class InMemoryBeatmapCommandRepository:
 
         Args:
             state (InMemoryCommandRepositoryState): repository が直接読み書きする state.
-
-        Returns:
-            None: state への参照を保持したことを示す.
 
         Notes:
             state は clone せずに保持する. caller は state の排他所有を保証する必要がある.

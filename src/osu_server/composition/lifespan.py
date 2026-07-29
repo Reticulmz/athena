@@ -38,9 +38,6 @@ async def _initialize_dishka_app_container(container: AsyncContainer) -> None:
 
     Returns:
         None: configuration,infrastructure,HTTP handlerを一度ずつ解決したことを示す.
-
-    Raises:
-        Exception: APP scope dependencyの解決に失敗した場合.
     """
     _ = await container.get(AppConfig)
     _ = await container.get(AsyncEngine)
@@ -111,10 +108,6 @@ async def _run_lifespan(
 
     Yields:
         None: request handlerが必要とするstateを設定したapplication実行期間.
-
-    Raises:
-        Exception: configuration読み込み,container構築,dependency解決,infrastructure確認,
-            またはhandler解決が失敗した場合.
 
     Notes:
         test環境では`check_infrastructure()`を呼ばない. container構築後に発生した例外でも

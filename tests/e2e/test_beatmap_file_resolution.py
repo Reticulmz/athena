@@ -177,7 +177,6 @@ class StubFileProvider:
             OsuFileFetchResult: 設定済みfile取得結果.
 
         Raises:
-            Exception: exceptionが設定されている場合.
             ValueError: beatmap_idに対応するfile結果が未設定の場合.
         """
         self.calls.append(beatmap_id)

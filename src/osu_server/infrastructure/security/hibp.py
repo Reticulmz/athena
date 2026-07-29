@@ -48,9 +48,6 @@ class HTTPHIBPClient:
 
         Args:
             http_client (httpx.AsyncClient): lifecycleを呼出側が所有するHTTP client.
-
-        Returns:
-            None: clientをinstanceへ保存するだけでnetwork requestは送らない.
         """
         self._http_client: httpx.AsyncClient = http_client
 

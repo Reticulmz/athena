@@ -227,9 +227,6 @@ class _FakeCurrentUserStatsQuery:
 
         Returns:
             CurrentUserStatsQueryResult: 設定済みcurrent statsを持つresult.
-
-        Raises:
-            Exception: errorが設定されている場合.
         """
         self.calls.append(input_data.user_ids)
         self.inputs.append(input_data)

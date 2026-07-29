@@ -86,9 +86,6 @@ class InMemoryUnitOfWorkFactory:
         Args:
             state (InMemoryCommandRepositoryState | None): 初期 committed state. None の場合は空の
                 state を作成する.
-
-        Returns:
-            None: state を保持する factory を構築する.
         """
         self._state: InMemoryCommandRepositoryState = state or InMemoryCommandRepositoryState()
 
@@ -409,9 +406,6 @@ class InMemoryUnitOfWork:
 
         Args:
             factory (InMemoryUnitOfWorkFactory): snapshot と commit 先を提供する factory.
-
-        Returns:
-            None: 未 commit の UoW と command repository 群を構築する.
 
         Notes:
             初期 state は factory.snapshot() の clone であり, factory の committed state を直接

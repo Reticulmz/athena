@@ -31,9 +31,6 @@ class InMemoryReplayDownloadAccountingGate:
             time_func (Callable[[], float] | None): 現在時刻を秒で返す clock.未指定時は
                 time.monotonic.
 
-        Returns:
-            None: 空の marker storage を持つ gate instance を初期化したことを表す.
-
         Notes:
             test では time_func を注入して TTL expiration を決定的に検証できる.
         """

@@ -21,9 +21,6 @@ class BeatmapLeaderboardRebuildWorkerWake(Protocol):
 
         Returns:
             None: 起動依頼だけを行い 再構築結果は返さない.
-
-        Raises:
-            Exception: worker 起動に失敗した場合に実装が送出する例外.
         """
         ...
 
@@ -36,9 +33,6 @@ class BeatmapLeaderboardRebuildWorkerWake(Protocol):
 
         Returns:
             None: 起動依頼だけを行い 再構築結果は返さない.
-
-        Raises:
-            Exception: worker 起動に失敗した場合に実装が送出する例外.
         """
         ...
 

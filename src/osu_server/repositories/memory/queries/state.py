@@ -24,9 +24,6 @@ class InMemoryQueryStateSnapshotProvider:
 
         Args:
             state (InMemoryCommandRepositoryState): query repository family が読む committed state.
-
-        Returns:
-            None: state を保持する provider を構築する.
         """
         self._state: InMemoryCommandRepositoryState = state
 

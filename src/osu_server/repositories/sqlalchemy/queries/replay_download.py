@@ -49,9 +49,6 @@ class SQLAlchemyReplayDownloadQueryRepository:
         Args:
             session_factory (SQLAlchemyQuerySessionFactory): query用read session factory.
 
-        Returns:
-            None: 読み取り用session factoryを保持したrepository instanceを初期化する.
-
         Notes:
             factoryは保持するだけでsessionを先行生成しない.
         """

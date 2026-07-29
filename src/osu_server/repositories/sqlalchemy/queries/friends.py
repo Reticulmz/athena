@@ -27,9 +27,6 @@ class SQLAlchemyFriendRelationshipQueryRepository:
         Args:
             session_factory (SQLAlchemyQuerySessionFactory): query用の非同期read session factory.
 
-        Returns:
-            None: 読み取り用session factoryを保持したrepository instanceを初期化する.
-
         Notes:
             初期化時にはsessionを生成せず,relationship stateは変更しない.
         """

@@ -26,9 +26,6 @@ class InMemoryRateLimiter:
 
         Args:
             time_func (Callable[[], float] | None): 現在時刻を秒で返す clock.未指定時は time.time.
-
-        Returns:
-            None: rate limiter instance を初期化したことを表す.
         """
         self._timestamps: dict[int, list[float]] = {}
         self._time_func: Callable[[], float] = time_func or time.time

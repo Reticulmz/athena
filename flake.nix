@@ -34,10 +34,10 @@
             src = ./.;
             package = pkgs.prek;
             hooks = {
-              # --- Priority 0: フォーマッタ (ファイル修正系、最初に実行) ---
-              ruff-format = {
+              # --- Priority 0: 自動修正 (lint fixとtext正規化) ---
+              ruff = {
                 enable = true;
-                entry = "uv run ruff format";
+                entry = "uv run ruff check --fix";
                 files = "\\.py$";
                 priority = 0;
               };
@@ -56,10 +56,10 @@
                 priority = 0;
               };
 
-              # --- Priority 10: リンタ/チェック (読み取り専用、並列) ---
-              ruff = {
+              # --- Priority 10: formatterと軽量check ---
+              ruff-format = {
                 enable = true;
-                entry = "uv run ruff check --fix";
+                entry = "uv run ruff format";
                 files = "\\.py$";
                 priority = 10;
               };

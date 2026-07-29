@@ -152,7 +152,8 @@ class OsuApiMetadataProviderService:
             beatmap_id (int): 検索対象のビートマップID.
 
         Returns:
-            BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404の場合は ``None``.
+            BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404 Not Foundの場合は,
+                Athenaでmetadata未登録として扱い ``None`` を返す.
 
         Raises:
             BeatmapSourceError: OAuth取得,HTTP request,またはresponse正規化に失敗した場合.
@@ -166,7 +167,8 @@ class OsuApiMetadataProviderService:
             beatmapset_id (int): 検索対象のビートマップセットID.
 
         Returns:
-            BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404の場合は ``None``.
+            BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404 Not Foundの場合は,
+                Athenaでmetadata未登録として扱い ``None`` を返す.
 
         Raises:
             BeatmapSourceError: OAuth取得,HTTP request,またはresponse正規化に失敗した場合.
@@ -180,7 +182,8 @@ class OsuApiMetadataProviderService:
             checksum_md5 (str): 検索対象のビートマップMD5チェックサム.
 
         Returns:
-            BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404の場合は ``None``.
+            BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404 Not Foundの場合は,
+                Athenaでmetadata未登録として扱い ``None`` を返す.
 
         Raises:
             BeatmapSourceError: OAuth取得,HTTP request,またはresponse正規化に失敗した場合.
@@ -198,7 +201,8 @@ class OsuApiMetadataProviderService:
             lookup_key (str): エラーと構造化logへ記録する検索値.
 
         Returns:
-            BeatmapsetSnapshot | None: JSONを変換したスナップショット. HTTP 404の場合は ``None``.
+            BeatmapsetSnapshot | None: JSONを変換したスナップショット. HTTP 404 Not Foundの場合は,
+                Athenaでmetadata未登録として扱い ``None`` を返す.
 
         Raises:
             BeatmapSourceError: token取得,request,JSON形式,またはHTTP statusが正常でない場合.

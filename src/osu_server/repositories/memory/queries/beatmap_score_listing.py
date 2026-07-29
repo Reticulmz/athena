@@ -29,9 +29,6 @@ class InMemoryBeatmapScoreListingQueryRepository:
 
         Args:
             beatmaps (BeatmapQueryRepository): getscores read に使用する Beatmap repository.
-
-        Returns:
-            None: 委譲先を保持する adapter を構築する.
         """
         self._beatmaps: BeatmapQueryRepository = beatmaps
 

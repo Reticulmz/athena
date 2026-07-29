@@ -21,7 +21,8 @@ def upgrade() -> None:
     """submission時のbeatmap statusを保存するnullable columnを追加する.
 
     Returns:
-        None: scoresへbeatmap_status_at_submissionを追加したことを示す.
+        None: scoresへのbeatmap_status_at_submission追加を完了し, 呼び出し側へ値を返さずに
+            終了する.
     """
     op.add_column(
         "scores",
@@ -33,6 +34,7 @@ def downgrade() -> None:
     """submission時のbeatmap status columnを削除する.
 
     Returns:
-        None: scoresからbeatmap_status_at_submissionを削除したことを示す.
+        None: scoresからのbeatmap_status_at_submission削除を完了し, 呼び出し側へ値を返さずに
+            終了する.
     """
     op.drop_column("scores", "beatmap_status_at_submission")

@@ -47,9 +47,6 @@ class InMemoryUserStatsQueryRepository:
 
         Args:
             factory (InMemoryUnitOfWorkFactory): read に使用する committed state factory.
-
-        Returns:
-            None: factory を保持する repository を構築する.
         """
         self._factory: InMemoryUnitOfWorkFactory = factory
 

@@ -36,9 +36,6 @@ class ScorePerformanceCalculationExecutor(Protocol):
 
         Returns:
             ExecutePerformanceCalculationResult: calculation 実行の結果.
-
-        Raises:
-            Exception: use-case の処理に失敗した場合.
         """
         ...
 
@@ -57,9 +54,6 @@ class PerformanceRecalculationBatchProcessor(Protocol):
 
         Returns:
             ProcessPerformanceRecalculationBatchResult: batch 処理の結果.
-
-        Raises:
-            Exception: use-case の処理に失敗した場合.
         """
         ...
 
@@ -76,9 +70,6 @@ class _EnqueueableTask(Protocol):
 
         Returns:
             object: broker 実装が返す enqueue 結果.
-
-        Raises:
-            Exception: broker 実装が enqueue に失敗した場合.
         """
         ...
 
@@ -94,9 +85,6 @@ class _TaskBroker(Protocol):
 
         Returns:
             _EnqueueableTask | None: 対応する task または未登録時の None.
-
-        Raises:
-            Exception: broker 実装が検索に失敗した場合.
         """
         ...
 
@@ -114,9 +102,6 @@ class TaskiqPerformanceCalculationWorkerWake:
 
         Args:
             broker (_TaskBroker): task の検索と enqueue を担う broker.
-
-        Returns:
-            None: broker を instance に保持する.
         """
         self._broker = broker
 
@@ -132,7 +117,6 @@ class TaskiqPerformanceCalculationWorkerWake:
 
         Raises:
             RuntimeError: 対応する task が broker に未登録の場合.
-            Exception: task の検索または enqueue に失敗した場合.
         """
         task_name = "calculate_score_performance"
         task = self._broker.find_task(task_name)
@@ -171,9 +155,6 @@ class TaskiqPerformanceRecalculationBatchWorkerWake:
 
         Args:
             broker (_TaskBroker): task の検索と enqueue を担う broker.
-
-        Returns:
-            None: broker を instance に保持する.
         """
         self._broker = broker
 
@@ -188,7 +169,6 @@ class TaskiqPerformanceRecalculationBatchWorkerWake:
 
         Raises:
             RuntimeError: 対応する task が broker に未登録の場合.
-            Exception: task の検索または enqueue に失敗した場合.
         """
         task_name = "process_performance_recalculation_batch"
         task = self._broker.find_task(task_name)

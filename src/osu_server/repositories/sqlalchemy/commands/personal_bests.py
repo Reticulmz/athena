@@ -35,9 +35,6 @@ class SQLAlchemyPersonalBestCommandRepository:
         Args:
             session (AsyncSession): personal best操作に使うsession.
 
-        Returns:
-            None: repositoryの初期化完了を示す.
-
         Notes:
             commitとrollbackは呼び出し側のUnit of Workが所有する.
         """

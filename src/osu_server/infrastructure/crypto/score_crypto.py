@@ -10,11 +10,7 @@ from osu_server.shared.errors import DecryptionError
 
 
 class ScoreCryptoService:
-    """score payload復号のservice interfaceを提供するadapter.
-
-    Attributes:
-        なし: instance固有の状態を持たず, module関数へ復号を委譲する.
-    """
+    """score payload復号のservice interfaceを提供するadapter."""
 
     def decrypt_score_payload(
         self,
@@ -33,7 +29,7 @@ class ScoreCryptoService:
             DecryptedPayload: paddingを除去したpayloadとchecksum検証結果.
 
         Raises:
-            DecryptionError: payload, IV, またはclient versionが復号できない場合.
+            DecryptionError: 暗号化payload, IV, またはclient versionが無効な場合.
         """
         return decrypt_score_payload(encrypted, iv, osu_version)
 

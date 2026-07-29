@@ -27,9 +27,6 @@ class _EnqueueableTask(Protocol):
 
         Returns:
             object: broker 実装が返す enqueue 結果.
-
-        Raises:
-            Exception: broker 実装が enqueue に失敗した場合.
         """
         ...
 
@@ -45,9 +42,6 @@ class _TaskBroker(Protocol):
 
         Returns:
             _EnqueueableTask | None: 対応する task または未登録時の None.
-
-        Raises:
-            Exception: broker 実装が検索に失敗した場合.
         """
         ...
 
@@ -70,9 +64,6 @@ class TaskiqChatPersistenceWorkPublisher(ChatPersistenceWorkPublisher):
 
         Args:
             broker (_TaskBroker): task の検索と enqueue を担う broker.
-
-        Returns:
-            None: broker を instance に保持する.
         """
         self._broker = broker
 
@@ -88,9 +79,6 @@ class TaskiqChatPersistenceWorkPublisher(ChatPersistenceWorkPublisher):
 
         Returns:
             None: task を enqueue するか失敗をログに記録して完了する.
-
-        Raises:
-            Exception: broker で task の検索に失敗した場合.
 
         Notes:
             `persist_channel_message` task が未登録または enqueue 失敗なら例外を送出しない.
@@ -133,9 +121,6 @@ class TaskiqChatPersistenceWorkPublisher(ChatPersistenceWorkPublisher):
         Returns:
             None: task を enqueue するか失敗をログに記録して完了する.
 
-        Raises:
-            Exception: broker で task の検索に失敗した場合.
-
         Notes:
             `persist_private_message` task が未登録または enqueue 失敗なら例外を送出しない.
         """
@@ -173,8 +158,5 @@ class TaskiqChatPersistenceWorkPublisher(ChatPersistenceWorkPublisher):
 
         Returns:
             _EnqueueableTask | None: 対応する task または未登録時の None.
-
-        Raises:
-            Exception: broker 実装が task の検索に失敗した場合.
         """
         return self._broker.find_task(task_name)

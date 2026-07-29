@@ -77,9 +77,6 @@ class FakeCurrentUserStatsQuery:
 
         Returns:
             CurrentUserStatsQueryResult: 指定rulesetまたは既定値のstatsを持つresult.
-
-        Raises:
-            Exception: 初期化時に設定されたerrorが存在する場合.
         """
         self.inputs.append(input_data)
         if self._error is not None:

@@ -79,9 +79,6 @@ class FakeResult:
             value (object | None): scalar_one_or_none()で返す値. 未指定時はNone.
             values (list[object] | None): all()で返す値列. 未指定時は空列.
             row (tuple[object, object] | None): one_or_none()で返すrow. 未指定時はNone.
-
-        Returns:
-            None: Result fakeの固定応答を設定して値を返さない.
         """
         self._value = value
         self._values = values or []
@@ -150,9 +147,6 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
             execute_results (list[FakeResult] | None): execute()が順に返す結果列.
                 未指定時は空列を使う.
             flush_error (IntegrityError | None): flush()で送出するerror. 未指定時は送出しない.
-
-        Returns:
-            None: fake sessionの応答と呼び出し記録を設定して値を返さない.
         """
         self.get_results: dict[tuple[type[object], int], object] = get_results or {}
         self.execute_results: list[FakeResult] = execute_results or []

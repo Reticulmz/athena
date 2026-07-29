@@ -29,7 +29,7 @@ class ScoreRankKey:
         """順位比較に使う score と score ID の範囲を検証する.
 
         Returns:
-            None: score が非負で score_id が正であることを示す.
+            None: scoreとscore_idの検証を完了し, 呼び出し側へ値を返さずに終了する.
 
         Raises:
             ValueError: score が負,または score_id が 0 以下の場合.
@@ -72,7 +72,7 @@ class LeaderboardScope:
         """Leaderboard scope の beatmap ID が正であることを検証する.
 
         Returns:
-            None: beatmap_id が有効であることを示す.
+            None: beatmap_idの検証を完了し, 呼び出し側へ値を返さずに終了する.
 
         Raises:
             ValueError: beatmap_id が 0 以下の場合.

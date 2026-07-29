@@ -42,9 +42,6 @@ def run_migrations_offline() -> None:
     Returns:
         None: transaction単位をmigration fileごとに分けてSQL生成を完了したことを示す.
 
-    Raises:
-        Exception: Alembic contextの構成またはmigration SQL生成に失敗した場合.
-
     Notes:
         autocommit blockを含むmigrationと同じtransaction境界をoffline SQLにも適用する.
     """

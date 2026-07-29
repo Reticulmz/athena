@@ -26,9 +26,6 @@ class InMemoryBlobQueryRepository:
 
         Args:
             uow_factory (InMemoryUnitOfWorkFactory): read に使用する committed state factory.
-
-        Returns:
-            None: factory を保持する repository を構築する.
         """
         self._factory = uow_factory
 

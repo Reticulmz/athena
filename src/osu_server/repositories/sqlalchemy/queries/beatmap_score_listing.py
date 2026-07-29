@@ -31,9 +31,6 @@ class SQLAlchemyBeatmapScoreListingQueryRepository:
         Args:
             session_factory (SQLAlchemyQuerySessionFactory): delegate用のread session factory.
 
-        Returns:
-            None: Beatmap query repository delegateを構築して保持する.
-
         Notes:
             初期化時にはsessionを生成せず,delegate以外の永続stateを保持しない.
         """

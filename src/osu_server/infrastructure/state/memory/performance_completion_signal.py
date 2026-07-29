@@ -28,11 +28,7 @@ class InMemoryPerformanceCompletionSignal:
     """
 
     def __init__(self) -> None:
-        """Score ごとの空の condition registry を初期化する.
-
-        Returns:
-            None: signal instance を初期化したことを表す.
-        """
+        """Score ごとの空の condition registry を初期化する."""
         self._conditions: defaultdict[int, asyncio.Condition] = defaultdict(asyncio.Condition)
 
     async def notify(self, payload: PerformanceCompletionSignalPayload) -> None:

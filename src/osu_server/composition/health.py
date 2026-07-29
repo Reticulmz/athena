@@ -56,10 +56,8 @@ async def check_infrastructure(container: AsyncContainer) -> None:
         container (AsyncContainer): database engineとValkey clientを解決するDishka container.
 
     Returns:
-        None: PostgreSQLの`SELECT 1`とValkeyの`ping`を完了したことを示す.
-
-    Raises:
-        Exception: database connection,SQL実行,またはValkey pingが失敗した場合.
+        None: PostgreSQLの`SELECT 1`とValkeyの`ping`を完了し, 呼び出し側へ値を返さずに
+            終了する.
     """
     engine = await container.get(AsyncEngine)
     async with engine.connect() as conn:

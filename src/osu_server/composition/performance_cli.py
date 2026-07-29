@@ -61,9 +61,6 @@ async def create_performance_recalculation_batch_use_case(
     Yields:
         CreatePerformanceRecalculationBatchUseCase: callerがbatchを作成するためのuse-case.
 
-    Raises:
-        Exception: containerの構築またはuse-case解決が失敗した場合.
-
     Notes:
         yield終了後は一時containerを必ずcloseする.
     """

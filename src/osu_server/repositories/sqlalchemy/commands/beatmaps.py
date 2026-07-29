@@ -57,9 +57,6 @@ class DuplicateBeatmapChecksumError(ValueError):
         Args:
             checksum_md5 (str): 既存 beatmap と重複した MD5 checksum.
             existing_beatmap_id (int): checksum を既に所有する beatmap ID.
-
-        Returns:
-            None: 例外属性と human-readable message を設定したことを示す.
         """
         self.checksum_md5 = checksum_md5
         self.existing_beatmap_id = existing_beatmap_id
@@ -82,9 +79,6 @@ class BeatmapNotFoundError(LookupError):
 
         Args:
             beatmap_id (int): command が要求した beatmap ID.
-
-        Returns:
-            None: 例外属性と human-readable message を設定したことを示す.
         """
         self.beatmap_id = beatmap_id
         super().__init__(f"beatmap {beatmap_id} was not found")
@@ -102,9 +96,6 @@ class SQLAlchemyBeatmapCommandRepository:
 
         Args:
             session (AsyncSession): command transaction を共有する非同期 session.
-
-        Returns:
-            None: repository の初期化だけを行い transaction を開始または確定しないことを示す.
         """
         self._session: AsyncSession = session
 

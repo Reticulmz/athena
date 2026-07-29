@@ -27,9 +27,6 @@ class WorkerBeatmapMetadataFetch(Protocol):
 
         Returns:
             None: metadata 取得処理を完了する.
-
-        Raises:
-            Exception: use-case の処理に失敗した場合.
         """
         ...
 
@@ -45,9 +42,6 @@ class WorkerBeatmapFileFetch(Protocol):
 
         Returns:
             None: file 取得処理を完了する.
-
-        Raises:
-            Exception: use-case の処理に失敗した場合.
         """
         ...
 

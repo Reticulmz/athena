@@ -71,9 +71,6 @@ return redis.call('DEL', KEYS[1])""")
             client (_ValkeyReplayDownloadAccountingClient): Lua script を実行する Valkey client.
             key_prefix (str): test や環境分離に使う key prefix.
 
-        Returns:
-            None: replay download accounting gate instance を初期化したことを表す.
-
         Notes:
             key identity は viewer user id と score id から adapter 内で構築する.
         """
