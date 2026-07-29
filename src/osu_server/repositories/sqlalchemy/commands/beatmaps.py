@@ -1,4 +1,4 @@
-"""SQLAlchemy を用いて beatmap、file attachment、fetch state を永続化する command repository."""
+"""SQLAlchemy を用いて beatmap,file attachment,fetch state を永続化する command repository."""
 
 from __future__ import annotations
 
@@ -210,7 +210,7 @@ class SQLAlchemyBeatmapCommandRepository:
                 衝突する場合.
 
         Notes:
-            既存の local status override、submission count、欠損した official last updated
+            既存の local status override,submission count,欠損した official last updated
             時刻を保持する.
         """
         await self._check_checksum_conflicts(snapshot)
@@ -709,7 +709,7 @@ def _beatmap_to_model(
         pass_count (int): 保持する pass submission の累計数.
 
     Returns:
-        BeatmapModel: decimal、enum、verification を永続化値へ変換した未保存 model.
+        BeatmapModel: decimal,enum,verification を永続化値へ変換した未保存 model.
     """
     return BeatmapModel(
         id=beatmap.id,
@@ -781,7 +781,7 @@ def _beatmap_to_domain(
             None.
 
     Returns:
-        Beatmap: enum、decimal、file state、current attachment を復元した domain beatmap.
+        Beatmap: enum,decimal,file state,current attachment を復元した domain beatmap.
 
     Raises:
         ValueError: 保存済みの enum 値または attachment source が不正な場合.
@@ -873,7 +873,7 @@ def _fetch_state_to_domain(model: BeatmapFetchStateModel) -> BeatmapFetchRecord:
     """SQLAlchemy fetch state model を domain fetch record へ変換する.
 
     Args:
-        model (BeatmapFetchStateModel): 永続化済みの target kind、key、state を持つ model.
+        model (BeatmapFetchStateModel): 永続化済みの target kind,key,state を持つ model.
 
     Returns:
         BeatmapFetchRecord: target と lifecycle state を復元した domain fetch record.

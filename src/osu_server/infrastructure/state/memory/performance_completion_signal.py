@@ -23,8 +23,8 @@ class InMemoryPerformanceCompletionSignal:
             condition.
 
     Notes:
-        signal を保存しないため、notify より後に開始した wait は過去の通知を観測しない.
-        thread-safe ではなく、同一 asyncio event loop の test と in-memory runtime 向けである.
+        signal を保存しないため,notify より後に開始した wait は過去の通知を観測しない.
+        thread-safe ではなく,同一 asyncio event loop の test と in-memory runtime 向けである.
     """
 
     def __init__(self) -> None:
@@ -45,24 +45,24 @@ class InMemoryPerformanceCompletionSignal:
             None: 現在の待機者への通知処理が完了したことを表す.
 
         Notes:
-            payload は保存せず、通知時に待機していない task には届かない.
+            payload は保存せず,通知時に待機していない task には届かない.
         """
         condition = self._conditions[payload.score_id]
         async with condition:
             condition.notify_all()
 
     async def wait(self, score_id: int, timeout: timedelta) -> bool:
-        """Score の通知を期限まで待ち、観測結果を返す.
+        """Score の通知を期限まで待ち,観測結果を返す.
 
         Args:
             score_id (int): 待機対象となる正の score id.
             timeout (timedelta): 正である最大待機時間.
 
         Returns:
-            bool: 通知を観測した場合は True、期限切れなら False.
+            bool: 通知を観測した場合は True,期限切れなら False.
 
         Raises:
-            ValueError: score_id が正でない場合、または timeout が正でない場合.
+            ValueError: score_id が正でない場合,または timeout が正でない場合.
         """
         validate_performance_completion_timeout(timeout)
         if score_id <= 0:

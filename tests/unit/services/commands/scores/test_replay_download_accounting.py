@@ -103,7 +103,7 @@ class _RecordingAccountingGate:
         score_id: int,
         ttl_seconds: int,
     ) -> bool:
-        """replay閲覧claimを記録し、設定済みの可否を返す.
+        """replay閲覧claimを記録し,設定済みの可否を返す.
 
         Args:
             viewer_user_id (int): replayを閲覧するuserのID.
@@ -130,7 +130,7 @@ class _RecordingAccountingGate:
             score_id (int): release対象のscore ID.
 
         Returns:
-            None: releaseを記録して、呼び出し側へ値を返さずに完了する.
+            None: releaseを記録して,呼び出し側へ値を返さずに完了する.
         """
         self.releases.append(
             _ReplayViewRelease(
@@ -140,7 +140,7 @@ class _RecordingAccountingGate:
         )
 
     async def claim_latest_activity(self, viewer_user_id: int, ttl_seconds: int) -> bool:
-        """Latest activity claimを記録し、設定済みの可否を返す.
+        """Latest activity claimを記録し,設定済みの可否を返す.
 
         Args:
             viewer_user_id (int): activityを更新するuserのID.
@@ -164,7 +164,7 @@ class _RecordingAccountingGate:
             viewer_user_id (int): release対象のuser ID.
 
         Returns:
-            None: release対象userを記録して、呼び出し側へ値を返さずに完了する.
+            None: release対象userを記録して,呼び出し側へ値を返さずに完了する.
         """
         self.activity_releases.append(viewer_user_id)
 
@@ -199,7 +199,7 @@ class _FailingReplayViewGate:
             score_id (int): 未使用のscore ID.
 
         Returns:
-            None: 引数を破棄して、呼び出し側へ値を返さずに完了する.
+            None: 引数を破棄して,呼び出し側へ値を返さずに完了する.
         """
         del viewer_user_id, score_id
 
@@ -223,7 +223,7 @@ class _FailingReplayViewGate:
             viewer_user_id (int): 未使用のactivity対象user ID.
 
         Returns:
-            None: 引数を破棄して、呼び出し側へ値を返さずに完了する.
+            None: 引数を破棄して,呼び出し側へ値を返さずに完了する.
         """
         del viewer_user_id
 
@@ -258,7 +258,7 @@ class _FailingLatestActivityGate:
             score_id (int): 未使用のscore ID.
 
         Returns:
-            None: 引数を破棄して、呼び出し側へ値を返さずに完了する.
+            None: 引数を破棄して,呼び出し側へ値を返さずに完了する.
         """
         del viewer_user_id, score_id
 
@@ -282,7 +282,7 @@ class _FailingLatestActivityGate:
             viewer_user_id (int): 未使用のactivity対象user ID.
 
         Returns:
-            None: 引数を破棄して、呼び出し側へ値を返さずに完了する.
+            None: 引数を破棄して,呼び出し側へ値を返さずに完了する.
         """
         del viewer_user_id
 
@@ -358,7 +358,7 @@ class _FailingOperationUnitOfWork:
             traceback (object): context内例外のtraceback情報.
 
         Returns:
-            None: 例外情報を破棄して、呼び出し側へ値を返さずに完了する.
+            None: 例外情報を破棄して,呼び出し側へ値を返さずに完了する.
         """
         del exc_type, exc, traceback
 
@@ -366,7 +366,7 @@ class _FailingOperationUnitOfWork:
         """commit呼び出しを状態flagへ記録する.
 
         Returns:
-            None: committedをTrueにして、呼び出し側へ値を返さずに完了する.
+            None: committedをTrueにして,呼び出し側へ値を返さずに完了する.
         """
         self.committed = True
 
@@ -374,7 +374,7 @@ class _FailingOperationUnitOfWork:
         """rollback呼び出しを状態flagへ記録する.
 
         Returns:
-            None: committedをFalseにして、呼び出し側へ値を返さずに完了する.
+            None: committedをFalseにして,呼び出し側へ値を返さずに完了する.
         """
         self.committed = False
 
@@ -423,11 +423,11 @@ class _Clock:
 async def test_non_owner_download_with_open_cooldown_increments_once() -> None:
     """non-ownerのopen cooldown閲覧がcountとactivityを一度ずつ更新する契約を検証する.
 
-    所有者と別のviewer、claim可能なgateを用意する条件で、replay view countが1になり、viewerの
+    所有者と別のviewer,claim可能なgateを用意する条件で,replay view countが1になり,viewerの
     latest activityと両cooldown claimが観測できることを確認する.
 
     Returns:
-        None: count、activity、gate呼び出しを検証して、呼び出し側へ値を返さずに完了する.
+        None: count,activity,gate呼び出しを検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     owner = await _create_user(factory, username="Owner")
@@ -472,11 +472,11 @@ async def test_non_owner_download_with_open_cooldown_increments_once() -> None:
 async def test_self_view_skips_count_but_touches_latest_activity() -> None:
     """self-viewが閲覧countを増やさずactivityだけを更新する契約を検証する.
 
-    score所有者自身がdownloadする条件で、SKIPPED_SELF_VIEWとTOUCHEDのoutcome、0件のreplay
-    claim、更新済みactivityが観測できることを確認する.
+    score所有者自身がdownloadする条件で,SKIPPED_SELF_VIEWとTOUCHEDのoutcome,0件のreplay
+    claim,更新済みactivityが観測できることを確認する.
 
     Returns:
-        None: self-view分岐のcount非更新とactivity更新を検証して、呼び出し側へ値を返さずに完了する.
+        None: self-view分岐のcount非更新とactivity更新を検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     owner = await _create_user(factory, username="Owner")
@@ -514,11 +514,11 @@ async def test_self_view_skips_count_but_touches_latest_activity() -> None:
 async def test_duplicate_same_viewer_same_score_within_cooldown_is_suppressed() -> None:
     """同じviewerとscoreのcooldown内再試行を抑止する契約を検証する.
 
-    固定clockのまま同じscoreを二度downloadする条件で、初回だけcountとactivityを更新し、二回目が
+    固定clockのまま同じscoreを二度downloadする条件で,初回だけcountとactivityを更新し,二回目が
     SKIPPED_DUPLICATEとTHROTTLEDになってstateを増やさないことを確認する.
 
     Returns:
-        None: duplicate抑止後のoutcomeとstateを検証して、呼び出し側へ値を返さずに完了する.
+        None: duplicate抑止後のoutcomeとstateを検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     clock = _Clock()
@@ -559,11 +559,11 @@ async def test_duplicate_same_viewer_same_score_within_cooldown_is_suppressed() 
 async def test_duplicate_cooldown_hit_can_still_touch_latest_activity() -> None:
     """replay閲覧duplicateでもactivity claimがopenならactivityを更新する契約を検証する.
 
-    replay view claimだけがFalseを返すgateを使う条件で、閲覧countは0のままSKIPPED_DUPLICATEとなり、
+    replay view claimだけがFalseを返すgateを使う条件で,閲覧countは0のままSKIPPED_DUPLICATEとなり,
     viewerのlatest activityはTOUCHEDとなることを確認する.
 
     Returns:
-        None: replay countとactivity policyの独立性を検証して、呼び出し側へ値を返さずに完了する.
+        None: replay countとactivity policyの独立性を検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     owner = await _create_user(factory, username="Owner")
@@ -595,11 +595,11 @@ async def test_duplicate_cooldown_hit_can_still_touch_latest_activity() -> None:
 async def test_duplicate_cooldown_gate_failure_fails_closed_without_increment() -> None:
     """Replay cooldown gate障害がcountをfail-closedする契約を検証する.
 
-    replay view claimでRuntimeErrorを送出するgateを使う条件で、FAILED outcome、未増加のcount、
-    更新済みactivity、およびoperator向けのsanitized logが観測できることを確認する.
+    replay view claimでRuntimeErrorを送出するgateを使う条件で,FAILED outcome,未増加のcount,
+    更新済みactivity,およびoperator向けのsanitized logが観測できることを確認する.
 
     Returns:
-        None: gate障害時のfail-closed結果とlogを検証して、呼び出し側へ値を返さずに完了する.
+        None: gate障害時のfail-closed結果とlogを検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     owner = await _create_user(factory, username="Owner")
@@ -637,11 +637,11 @@ async def test_duplicate_cooldown_gate_failure_fails_closed_without_increment() 
 async def test_latest_activity_gate_failure_is_treated_as_open() -> None:
     """Latest activity gate障害がopenとしてactivity更新を続ける契約を検証する.
 
-    activity claimでRuntimeErrorを送出するgateを使う条件で、viewerのlatest activityが更新され、
+    activity claimでRuntimeErrorを送出するgateを使う条件で,viewerのlatest activityが更新され,
     TOUCHED outcomeが観測できることを確認する.
 
     Returns:
-        None: activity gate障害時のopen扱いを検証して、呼び出し側へ値を返さずに完了する.
+        None: activity gate障害時のopen扱いを検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     owner = await _create_user(factory, username="Owner")
@@ -670,12 +670,12 @@ async def test_latest_activity_gate_failure_is_treated_as_open() -> None:
 async def test_operation_failures_are_distinguishable_and_sanitized() -> None:
     """repository操作障害が区別可能かつsanitizedなoperator logになる契約を検証する.
 
-    replay countとlatest activityのrepositoryが各々RuntimeErrorを送出する条件で、両outcomeが
-    FAILED、operation別log、claim release、
+    replay countとlatest activityのrepositoryが各々RuntimeErrorを送出する条件で,両outcomeが
+    FAILED,operation別log,claim release,
     およびsensitive値を含まないlogが観測できることを確認する.
 
     Returns:
-        None: 操作別のfailure result、release、sanitized logを検証して、呼び出し側へ値を返さずに
+        None: 操作別のfailure result,release,sanitized logを検証して,呼び出し側へ値を返さずに
             完了する.
     """
     factory = _FailingOperationUnitOfWorkFactory()
@@ -717,13 +717,13 @@ async def test_operation_failures_are_distinguishable_and_sanitized() -> None:
 
 @pytest.mark.asyncio
 async def test_gate_failures_are_operator_visible_and_sanitized() -> None:
-    """gate障害がoperatorへ見え、sensitive値を漏らさない契約を検証する.
+    """gate障害がoperatorへ見え,sensitive値を漏らさない契約を検証する.
 
-    latest activity gateがRuntimeErrorを送出する条件で、TOUCHED outcomeとactivity_gateのopened
-    log、およびsensitive値を含まないlogが観測できることを確認する.
+    latest activity gateがRuntimeErrorを送出する条件で,TOUCHED outcomeとactivity_gateのopened
+    log,およびsensitive値を含まないlogが観測できることを確認する.
 
     Returns:
-        None: operator向けgate障害logの可視性とsanitizationを検証して、呼び出し側へ値を返さずに
+        None: operator向けgate障害logの可視性とsanitizationを検証して,呼び出し側へ値を返さずに
             完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
@@ -866,7 +866,7 @@ def _logs_do_not_expose_sensitive_values(logs: Sequence[Mapping[str, object]]) -
         logs (Sequence[Mapping[str, object]]): structlog captureから得たlog entry列.
 
     Returns:
-        bool: forbidden path、token、password、raw replay fragmentが一つもない場合はTrue.
+        bool: forbidden path,token,password,raw replay fragmentが一つもない場合はTrue.
     """
     rendered = repr(logs)
     forbidden_fragments = (
@@ -888,7 +888,7 @@ def _score(*, owner_user_id: int) -> Score:
         owner_user_id (int): scoreの所有user ID.
 
     Returns:
-        Score: ranked、pass済み、leaderboard対象のtest用score.
+        Score: ranked,pass済み,leaderboard対象のtest用score.
     """
     return Score(
         id=None,

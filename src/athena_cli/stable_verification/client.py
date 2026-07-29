@@ -23,7 +23,7 @@ class ProbeResponse:
 
     Attributes:
         status (VerificationStatus): Probeの成否またはtargetの可用性を表す状態.
-        body (bytes): HTTP response body。通信不能時は空bytes.
+        body (bytes): HTTP response body.通信不能時は空bytes.
         diagnostic_summary (DiagnosticSummary): Request pathとresponse metadataだけを含む診断情報.
     """
 
@@ -36,8 +36,8 @@ class StableProbeClient:
     """Stable web legacy endpointへHTTP probeを送信する.
 
     Attributes:
-        _target (StableTarget): URL、Host identity、timeoutを持つprobe接続先.
-        _http_client (httpx.Client): HTTP requestを実行するclient。
+        _target (StableTarget): URL,Host identity,timeoutを持つprobe接続先.
+        _http_client (httpx.Client): HTTP requestを実行するclient.
     """
 
     def __init__(
@@ -49,8 +49,8 @@ class StableProbeClient:
         """Stable probeの接続先とHTTP clientを初期化する.
 
         Args:
-            target (StableTarget): URL、Host identity、timeoutを定義する接続先.
-            http_client (httpx.Client | None): 注入するHTTP client。未指定時はtargetの
+            target (StableTarget): URL,Host identity,timeoutを定義する接続先.
+            http_client (httpx.Client | None): 注入するHTTP client.未指定時はtargetの
                 timeoutで生成する.
         """
         self._target: StableTarget = target
@@ -68,7 +68,7 @@ class StableProbeClient:
         """Stable web legacy endpointへGET requestを送信する.
 
         Args:
-            path (str): `/web/`配下のrequest path。先頭の`/`は任意.
+            path (str): `/web/`配下のrequest path.先頭の`/`は任意.
             query (Mapping[str, str]): URL query field名と値の対応.
             host_prefix (str): Host headerの先頭へ付けるstable service prefix.
 
@@ -93,7 +93,7 @@ class StableProbeClient:
         """Stable web legacy endpointへPOST requestを送信する.
 
         Args:
-            path (str): `/web/`配下のrequest path。先頭の`/`は任意.
+            path (str): `/web/`配下のrequest path.先頭の`/`は任意.
             body (bytes): Request bodyのbytes.
             content_type (str): `Content-Type` headerへ設定するmedia type.
             host_prefix (str): Host headerの先頭へ付けるstable service prefix.
@@ -122,10 +122,10 @@ class StableProbeClient:
         """Stable web legacy requestを実行してprobe結果へ変換する.
 
         Args:
-            method (str): HTTP method。
+            method (str): HTTP method.
             path (str): 正規化前のrequest path.
-            query (Mapping[str, str] | None): URL query field名と値の対応。GETで使用する.
-            body (bytes | None): Request body。POSTで使用する.
+            query (Mapping[str, str] | None): URL query field名と値の対応.GETで使用する.
+            body (bytes | None): Request body.POSTで使用する.
             content_type (str | None): 指定時に`Content-Type` headerへ設定するmedia type.
             host_prefix (str): target host identityの前へ付けるstable service prefix.
 
@@ -133,7 +133,7 @@ class StableProbeClient:
             ProbeResponse: HTTP responseまたは`httpx.RequestError`を変換したprobe結果.
 
         Notes:
-            `httpx.RequestError`はUNAVAILABLEのProbeResponseへ変換する。credentialやtarget
+            `httpx.RequestError`はUNAVAILABLEのProbeResponseへ変換する.credentialやtarget
             identityは診断から除去する.
         """
         request_path = _normalize_path(path)
@@ -215,7 +215,7 @@ def _sanitize_request_error(target: StableTarget, exc: httpx.RequestError) -> st
         str: 例外class名とsanitized messageを結合した診断文字列.
 
     Notes:
-        Base URLは`<target>`へ、host identityは`<host>`へ置換する.
+        Base URLは`<target>`へ,host identityは`<host>`へ置換する.
     """
     raw_message = str(exc).replace(target.base_url, "<target>")
     raw_message = raw_message.replace(target.host_identity, "<host>")

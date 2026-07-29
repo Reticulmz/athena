@@ -134,7 +134,7 @@ class AddFriendUseCase:
             FriendMutationOutcome: 追加成功またはBancho互換no-opを表す結果.
 
         Notes:
-            self target、許可されないsystem user、存在しないtarget、重複は永続化せずno-opになる.
+            self target,許可されないsystem user,存在しないtarget,重複は永続化せずno-opになる.
         """
         if command.owner_user_id == command.target_user_id:
             return _no_op()
@@ -222,7 +222,7 @@ class UpdateFriendOnlyDmUseCase:
             bool: active sessionの設定を更新できた場合はTrue.
 
         Notes:
-            durable user preferenceではなく、現在存在するsessionだけを更新する.
+            durable user preferenceではなく,現在存在するsessionだけを更新する.
         """
         return await self._session_store.update_pm_private(command.user_id, command.enabled)
 

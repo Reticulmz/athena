@@ -1,6 +1,6 @@
 """受理済み chat message の durable persistence work を発行する boundary を定義する.
 
-message delivery use-case は transaction を直接保持せず、受理した message の immutable work
+message delivery use-case は transaction を直接保持せず,受理した message の immutable work
 item を
 publisher port へ渡す. job adapter はこの port を実装して delivery-guaranteed な persistence
 workflow を起動する.
@@ -59,10 +59,10 @@ class ChatPersistenceWorkPublisher(Protocol):
 
         Args:
             work (ChannelMessagePersistenceWork):
-                sender、channel、受理済み content を含む immutable work item.
+                sender,channel,受理済み content を含む immutable work item.
 
         Returns:
-            None: durable-work delivery を要求して完了し、呼び出し側へ値を返さない.
+            None: durable-work delivery を要求して完了し,呼び出し側へ値を返さない.
         """
         ...
 
@@ -74,9 +74,9 @@ class ChatPersistenceWorkPublisher(Protocol):
 
         Args:
             work (PrivateMessagePersistenceWork):
-                sender、target、受理済み content を含む immutable work item.
+                sender,target,受理済み content を含む immutable work item.
 
         Returns:
-            None: durable-work delivery を要求して完了し、呼び出し側へ値を返さない.
+            None: durable-work delivery を要求して完了し,呼び出し側へ値を返さない.
         """
         ...

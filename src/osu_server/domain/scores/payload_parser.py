@@ -40,7 +40,7 @@ class ParsedScore:
         client_checksum (str | None): client 固有の checksum. 未送信時は None.
 
     Notes:
-        hit count、ruleset、grade の整合性は後段の validation が判定する.
+        hit count,ruleset,grade の整合性は後段の validation が判定する.
     """
 
     user_id: int

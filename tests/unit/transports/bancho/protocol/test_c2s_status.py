@@ -11,7 +11,11 @@ from osu_server.transports.stable.bancho.protocol.types import StatusUpdate
 
 
 def test_status_change_payload_round_trips_status_update() -> None:
-    """Canonical StatusUpdate payload が全 status field を round trip することを検証する."""
+    """Canonical StatusUpdate payload が全 status field を round trip することを検証する.
+
+    Returns:
+        None: 処理を完了し, 呼び出し側へ値を返さない.
+    """
     payload = status_change_payload(
         StatusUpdate(
             status=2,
@@ -34,7 +38,11 @@ def test_status_change_payload_round_trips_status_update() -> None:
 
 
 def test_status_change_payload_accepts_stable_client_present_empty_strings() -> None:
-    """Stable client の present-empty string 表現を STATUS_CHANGE として許容することを検証する."""
+    """Stable client の present-empty string 表現を STATUS_CHANGE として許容することを検証する.
+
+    Returns:
+        None: 処理を完了し, 呼び出し側へ値を返さない.
+    """
     payload = bytes.fromhex("000b000b0000000000016bb92000")
 
     result = parse_status_change_payload(payload)
@@ -48,13 +56,21 @@ def test_status_change_payload_accepts_stable_client_present_empty_strings() -> 
 
 
 def test_status_change_payload_rejects_malformed_payload() -> None:
-    """不完全な STATUS_CHANGE payload を PacketReadError で拒否することを検証する."""
+    """不完全な STATUS_CHANGE payload を PacketReadError で拒否することを検証する.
+
+    Returns:
+        None: 処理を完了し, 呼び出し側へ値を返さない.
+    """
     with pytest.raises(PacketReadError):
         _ = parse_status_change_payload(b"\x02\x0b")
 
 
 def test_status_change_payload_rejects_trailing_bytes() -> None:
-    """Canonical STATUS_CHANGE payload に続く余分な byte を拒否することを検証する."""
+    """Canonical STATUS_CHANGE payload に続く余分な byte を拒否することを検証する.
+
+    Returns:
+        None: 処理を完了し, 呼び出し側へ値を返さない.
+    """
     payload = status_change_payload(
         StatusUpdate(
             status=2,

@@ -85,7 +85,7 @@ class ScoreSubmitVerifier:
         """Score submit fixtureの読み込み先を初期化する.
 
         Args:
-            fixture_dir (Path | None): Fixture directory。未指定時はrepository既定pathを使用する.
+            fixture_dir (Path | None): Fixture directory.未指定時はrepository既定pathを使用する.
         """
         self._fixture_dir: Path = fixture_dir or _DEFAULT_FIXTURE_DIR
 
@@ -93,7 +93,7 @@ class ScoreSubmitVerifier:
         """Score submitのgolden fixtureと既知projection gapを検証する.
 
         Returns:
-            tuple[SurfaceResult, ...]: Request metadata、completed response、既知gapの順の検証結果.
+            tuple[SurfaceResult, ...]: Request metadata,completed response,既知gapの順の検証結果.
         """
         return (
             self._verify_request_metadata(),
@@ -135,7 +135,7 @@ class ScoreSubmitVerifier:
             SurfaceResult: Parse成功と必須chart fieldの有無を表すmandatory検証結果.
 
         Notes:
-            Response bodyの内容は診断に含めず、parse失敗時も固定の安全なmessageを返す.
+            Response bodyの内容は診断に含めず,parse失敗時も固定の安全なmessageを返す.
         """
         parsed = parse_score_submit_response(body)
         if parsed.response is None:
@@ -170,7 +170,7 @@ class ScoreSubmitVerifier:
         """Completed response fixtureを読み込み検証する.
 
         Returns:
-            SurfaceResult: Fixture未配置時はUNAVAILABLE、それ以外はresponse bodyの検証結果.
+            SurfaceResult: Fixture未配置時はUNAVAILABLE,それ以外はresponse bodyの検証結果.
         """
         reference = self._fixture_reference(_COMPLETED_RESPONSE_FIXTURE)
         try:
@@ -188,7 +188,7 @@ class ScoreSubmitVerifier:
         """Score submit request metadata fixtureのschemaと秘匿方針を検証する.
 
         Returns:
-            SurfaceResult: Fixture未配置時はUNAVAILABLE。JSONまたはmetadata不正時はFAIL。
+            SurfaceResult: Fixture未配置時はUNAVAILABLE.JSONまたはmetadata不正時はFAIL.
                 正常時はPASSの結果.
         """
         reference = self._fixture_reference(_REQUEST_METADATA_FIXTURE)
@@ -295,7 +295,7 @@ def _validate_request_metadata(metadata: dict[str, object]) -> str | None:
         metadata (dict[str, object]): JSON fixtureから読み込んだrequest metadata.
 
     Returns:
-        str | None: 最初のvalidation error。すべて有効な場合はNone.
+        str | None: 最初のvalidation error.すべて有効な場合はNone.
     """
     validators = (
         _validate_metadata_required_keys,
@@ -319,7 +319,7 @@ def _validate_metadata_required_keys(metadata: dict[str, object]) -> str | None:
         metadata (dict[str, object]): 検証するrequest metadata.
 
     Returns:
-        str | None: 欠落keyを示すerror。すべて存在する場合はNone.
+        str | None: 欠落keyを示すerror.すべて存在する場合はNone.
     """
     required_keys = (
         "content_type",
@@ -343,7 +343,7 @@ def _validate_metadata_report_safety(metadata: dict[str, object]) -> str | None:
         metadata (dict[str, object]): 検証するrequest metadata.
 
     Returns:
-        str | None: 禁止fragmentを検出したerror。検出しない場合はNone.
+        str | None: 禁止fragmentを検出したerror.検出しない場合はNone.
     """
     if _contains_forbidden_metadata(metadata):
         return "score submit request metadata contains report-unsafe values"
@@ -358,7 +358,7 @@ def _validate_metadata_content_type(metadata: dict[str, object]) -> str | None:
         metadata (dict[str, object]): 検証するrequest metadata.
 
     Returns:
-        str | None: `multipart/form-data`または`metadata-only`に一致しないerror。一致時はNone.
+        str | None: `multipart/form-data`または`metadata-only`に一致しないerror.一致時はNone.
     """
     content_type = _string_value(metadata["content_type"])
     if content_type != "multipart/form-data":
@@ -378,7 +378,7 @@ def _validate_metadata_field_order(metadata: dict[str, object]) -> str | None:
         metadata (dict[str, object]): 検証するrequest metadata.
 
     Returns:
-        str | None: 必須field、score field数、replay有無の不整合を示すerror。正常時はNone.
+        str | None: 必須field,score field数,replay有無の不整合を示すerror.正常時はNone.
     """
     field_order_result = _string_tuple(metadata["field_order"], "field_order")
     if isinstance(field_order_result, str):
@@ -408,7 +408,7 @@ def _validate_metadata_opaque_fields(metadata: dict[str, object]) -> str | None:
         metadata (dict[str, object]): 検証するrequest metadata.
 
     Returns:
-        str | None: 型不正または未対応opaque fieldを示すerror。正常時はNone.
+        str | None: 型不正または未対応opaque fieldを示すerror.正常時はNone.
     """
     opaque_result = _string_tuple(
         metadata["opaque_metadata_fields"],
@@ -469,7 +469,7 @@ def _string_value(value: object) -> str:
         value (object): JSON metadataから取得した値.
 
     Returns:
-        str: 値が文字列ならその値。それ以外は空文字列.
+        str: 値が文字列ならその値.それ以外は空文字列.
     """
     if isinstance(value, str):
         return value
@@ -484,7 +484,7 @@ def _int_value(value: object) -> int:
         value (object): JSON metadataから取得した値.
 
     Returns:
-        int: 値が整数ならその値。それ以外はvalidation用sentinelの`-1`.
+        int: 値が整数ならその値.それ以外はvalidation用sentinelの`-1`.
     """
     if isinstance(value, int) and not isinstance(value, bool):
         return value
@@ -499,7 +499,7 @@ def _bool_value(value: object) -> bool:
         value (object): JSON metadataから取得した値.
 
     Returns:
-        bool: 値がboolならその値。それ以外はFalse.
+        bool: 値がboolならその値.それ以外はFalse.
     """
     if isinstance(value, bool):
         return value
@@ -515,7 +515,7 @@ def _string_tuple(value: object, field_name: str) -> tuple[str, ...] | str:
         field_name (str): Error messageへ含めるfield名.
 
     Returns:
-        tuple[str, ...] | str: 文字列だけで構成されるtuple。型不正時はerror message.
+        tuple[str, ...] | str: 文字列だけで構成されるtuple.型不正時はerror message.
     """
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return f"score submit request metadata {field_name} must be a list"
@@ -551,7 +551,7 @@ def _missing_chart_fields(prefix: str, chart: ScoreSubmitChart) -> tuple[str, ..
         chart (ScoreSubmitChart): 検査する構造化chart.
 
     Returns:
-        tuple[str, ...]: 接頭辞付きの不足field名。すべて存在する場合は空tuple.
+        tuple[str, ...]: 接頭辞付きの不足field名.すべて存在する場合は空tuple.
     """
     required_fields = (
         _BEATMAP_CHART_REQUIRED_FIELDS if prefix == "beatmap" else _OVERALL_CHART_REQUIRED_FIELDS
@@ -573,8 +573,8 @@ def _mandatory_result(
         status (VerificationStatus): 検証の成否または可用性を表す状態.
         message (str): Report-safeな診断message.
         reference (str): Evidenceの参照先.
-        evidence_type (EvidenceType): Evidenceの取得手段。既定値はgolden fixture.
-        response_byte_size (int | None): Response bodyのbyte size。未測定時はNone.
+        evidence_type (EvidenceType): Evidenceの取得手段.既定値はgolden fixture.
+        response_byte_size (int | None): Response bodyのbyte size.未測定時はNone.
 
     Returns:
         SurfaceResult: `StableSurface.SCORE_SUBMIT`とmandatory scopeを持つ結果.

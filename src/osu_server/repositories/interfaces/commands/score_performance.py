@@ -125,7 +125,7 @@ class UpdateScorePerformanceCalculationState:
             None: State 遷移が pending lifecycle の制約を満たすことを示す.
 
         Raises:
-            ValueError: calculation_id が正でない場合、両 state が pending でない場合、
+            ValueError: calculation_id が正でない場合,両 state が pending でない場合,
                 または state が許可された次状態へ進まない場合に送出する.
         """
         if self.calculation_id <= 0:
@@ -179,8 +179,8 @@ class MarkScorePerformanceCalculationUnavailable:
         calculator_name (str): 使用を試みた performance calculator の名前.
         calculator_version (str): 使用を試みた calculator version.
         formula_profile (FormulaProfile): 使用を試みた formula profile.
-        beatmap_file_attachment_id (int | None): 使用を試みた file attachment ID。未取得時は None.
-        beatmap_file_checksum_md5 (str | None): 使用を試みた file の MD5 checksum。未取得時は None.
+        beatmap_file_attachment_id (int | None): 使用を試みた file attachment ID.未取得時は None.
+        beatmap_file_checksum_md5 (str | None): 使用を試みた file の MD5 checksum.未取得時は None.
         reason (str): Operator が確認できる unavailable reason.
         calculated_at (datetime): Unavailable を確定した日時.
     """
@@ -224,7 +224,7 @@ class CreateScorePerformanceRecalculationBatch:
         created_at (datetime): Batch と work item の作成日時.
 
     Notes:
-        Reason は domain Enum のまま repository へ渡し、adapter が永続化値へ変換する.
+        Reason は domain Enum のまま repository へ渡し,adapter が永続化値へ変換する.
     """
 
     filters: Mapping[str, object]
@@ -311,8 +311,8 @@ class ScorePerformanceCalculationLifecycleRepository(Protocol):
     """1件の score performance calculation lifecycle の mutation port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -330,7 +330,7 @@ class ScorePerformanceCalculationLifecycleRepository(Protocol):
 
         Raises:
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
         """
         ...
 
@@ -338,18 +338,18 @@ class ScorePerformanceCalculationLifecycleRepository(Protocol):
         self,
         command: ClaimScorePerformanceCalculation,
     ) -> ScorePerformanceCalculationClaimResult | None:
-        """Pending calculation を claim し、一時的な競合時は None を返す.
+        """Pending calculation を claim し,一時的な競合時は None を返す.
 
         Args:
             command (ClaimScorePerformanceCalculation): Claim の owner と期限を含む入力.
 
         Returns:
-            ScorePerformanceCalculationClaimResult | None: 成功した claim の metadata。一時的な
-                conflict、未存在、または claim 不可の state の場合は None.
+            ScorePerformanceCalculationClaimResult | None: 成功した claim の metadata.一時的な
+                conflict,未存在,または claim 不可の state の場合は None.
 
         Raises:
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
         """
         ...
 
@@ -363,12 +363,12 @@ class ScorePerformanceCalculationLifecycleRepository(Protocol):
             command (UpdateScorePerformanceCalculationState): Compare-and-set state 遷移の入力.
 
         Returns:
-            PerformanceCalculation | None: 遷移後の calculation。Expected state が一致しない場合
+            PerformanceCalculation | None: 遷移後の calculation.Expected state が一致しない場合
                 または対象が存在しない場合は None.
 
         Raises:
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
         """
         ...
 
@@ -382,11 +382,11 @@ class ScorePerformanceCalculationLifecycleRepository(Protocol):
             command (CompleteScorePerformanceCalculation): Completion の値を含む入力.
 
         Returns:
-            PerformanceCalculation | None: 完了後の calculation。対象が完了可能でない場合は None.
+            PerformanceCalculation | None: 完了後の calculation.対象が完了可能でない場合は None.
 
         Raises:
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
         """
         ...
 
@@ -400,11 +400,11 @@ class ScorePerformanceCalculationLifecycleRepository(Protocol):
             command (MarkScorePerformanceCalculationUnavailable): Unavailable completion の入力.
 
         Returns:
-            PerformanceCalculation | None: 完了後の calculation。対象が完了可能でない場合は None.
+            PerformanceCalculation | None: 完了後の calculation.対象が完了可能でない場合は None.
 
         Raises:
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
         """
         ...
 
@@ -415,7 +415,7 @@ class ScorePerformanceCalculationLifecycleRepository(Protocol):
             calculation_id (int): 取得する calculation の識別子.
 
         Returns:
-            PerformanceCalculation | None: 一致する calculation。存在しない場合は None.
+            PerformanceCalculation | None: 一致する calculation.存在しない場合は None.
         """
         ...
 
@@ -426,7 +426,7 @@ class ScorePerformanceCalculationLifecycleRepository(Protocol):
             score_id (int): Current calculation を取得する Score ID.
 
         Returns:
-            PerformanceCalculation | None: Score の current calculation。存在しない場合は None.
+            PerformanceCalculation | None: Score の current calculation.存在しない場合は None.
         """
         ...
 
@@ -435,8 +435,8 @@ class ScorePerformanceRecalculationWorkRepository(Protocol):
     """Durable recalculation batch work の mutation port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -454,7 +454,7 @@ class ScorePerformanceRecalculationWorkRepository(Protocol):
 
         Raises:
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
         """
         ...
 
@@ -465,17 +465,17 @@ class ScorePerformanceRecalculationWorkRepository(Protocol):
         """Pending または stale recalculation work item を上限付き chunk で claim する.
 
         Args:
-            command (ClaimScorePerformanceRecalculationWork): Claim の batch、owner、期限、上限を
+            command (ClaimScorePerformanceRecalculationWork): Claim の batch,owner,期限,上限を
                 含む入力.
 
         Returns:
-            tuple[PerformanceRecalculationWorkItem, ...]: Claim に成功した work item 群。対象が
+            tuple[PerformanceRecalculationWorkItem, ...]: Claim に成功した work item 群.対象が
                 ない場合は空 tuple.
 
         Raises:
             ValueError: command.limit が 0 以下の場合に送出する.
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
 
         Notes:
             command.limit は 0 より大きくなければならない.
@@ -493,12 +493,12 @@ class ScorePerformanceRecalculationWorkRepository(Protocol):
                 を含む入力.
 
         Returns:
-            PerformanceRecalculationWorkItem | None: 更新後の work item。対象が更新可能でない
+            PerformanceRecalculationWorkItem | None: 更新後の work item.対象が更新可能でない
                 場合は None.
 
         Raises:
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
         """
         ...
 
@@ -510,15 +510,15 @@ class ScorePerformanceRecalculationWorkRepository(Protocol):
 
         Args:
             command (MarkScorePerformanceRecalculationWorkUnavailable): Unavailable completion の
-                owner、calculation、reason を含む入力.
+                owner,calculation,reason を含む入力.
 
         Returns:
-            PerformanceRecalculationWorkItem | None: 更新後の work item。対象が更新可能でない
+            PerformanceRecalculationWorkItem | None: 更新後の work item.対象が更新可能でない
                 場合は None.
 
         Raises:
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
         """
         ...
 
@@ -526,19 +526,19 @@ class ScorePerformanceRecalculationWorkRepository(Protocol):
         self,
         command: MarkScorePerformanceRecalculationWorkFailed,
     ) -> PerformanceRecalculationWorkItem | None:
-        """Retryable work item failure を記録し、再試行は claim timeout へ委ねる.
+        """Retryable work item failure を記録し,再試行は claim timeout へ委ねる.
 
         Args:
             command (MarkScorePerformanceRecalculationWorkFailed): Failure の owner と detail を
                 含む入力.
 
         Returns:
-            PerformanceRecalculationWorkItem | None: 更新後の work item。対象が更新可能でない
+            PerformanceRecalculationWorkItem | None: 更新後の work item.対象が更新可能でない
                 場合は None.
 
         Raises:
             ScorePerformanceCommandConflictError: 永続化時の IntegrityError が command conflict に
-                変換され、command を再試行すべき場合に送出する.
+                変換され,command を再試行すべき場合に送出する.
         """
         ...
 
@@ -552,7 +552,7 @@ class ScorePerformanceRecalculationWorkRepository(Protocol):
             batch_id (int): 取得する recalculation batch の識別子.
 
         Returns:
-            PerformanceRecalculationBatch | None: 一致する batch progress。存在しない場合は None.
+            PerformanceRecalculationBatch | None: 一致する batch progress.存在しない場合は None.
         """
         ...
 
@@ -566,7 +566,7 @@ class ScorePerformanceRecalculationWorkRepository(Protocol):
             work_item_id (int): 取得する work item の識別子.
 
         Returns:
-            PerformanceRecalculationWorkItem | None: 一致する work item。存在しない場合は None.
+            PerformanceRecalculationWorkItem | None: 一致する work item.存在しない場合は None.
         """
         ...
 
@@ -580,7 +580,7 @@ class ScorePerformanceCommandRepository(
 
     Notes:
         Runtime 実装は calculation lifecycle と recalculation work の両 contract を同じ command
-        Unit of Work transaction 内で提供する。Repository 自身は commit または rollback を
+        Unit of Work transaction 内で提供する.Repository 自身は commit または rollback を
         実行しない.
     """
 

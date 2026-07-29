@@ -893,6 +893,9 @@ class TestHandlerExceptionEdgeCase:
                     *_a (object): handler contract の追加 positional value.
                     **_kw (object): handler contract の追加 keyword value.
 
+                Returns:
+                    None: 処理を完了し, 呼び出し側へ値を返さない.
+
                 Raises:
                     RuntimeError: 後続 handler の処理継続を検証するために常に送出する.
                 """

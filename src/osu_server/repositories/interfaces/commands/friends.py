@@ -9,8 +9,8 @@ class FriendRelationshipCommandRepository(Protocol):
     """Friend relationship の mutation と consistency-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -21,7 +21,7 @@ class FriendRelationshipCommandRepository(Protocol):
             user_id (int): 確認する friend target の User ID.
 
         Returns:
-            bool: Target identity が存在する場合は True。存在しない場合は False.
+            bool: Target identity が存在する場合は True.存在しない場合は False.
         """
         ...
 
@@ -33,7 +33,7 @@ class FriendRelationshipCommandRepository(Protocol):
             target_user_id (int): Friend として追加する target User ID.
 
         Returns:
-            bool: 新しい relationship row を作成した場合は True。既存 row なら False.
+            bool: 新しい relationship row を作成した場合は True.既存 row なら False.
         """
         ...
 
@@ -45,6 +45,6 @@ class FriendRelationshipCommandRepository(Protocol):
             target_user_id (int): Friend から削除する target User ID.
 
         Returns:
-            bool: Relationship row を削除した場合は True。存在しない場合は False.
+            bool: Relationship row を削除した場合は True.存在しない場合は False.
         """
         ...

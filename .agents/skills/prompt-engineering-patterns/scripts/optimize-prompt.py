@@ -51,9 +51,6 @@ class PromptOptimizer:
         Args:
             llm_client (Any): `complete(prompt)` を実装する LLM client.
             test_suite (list[TestCase]): 評価に使う test case の list.
-
-        Returns:
-            None: client, test suite, 空の結果履歴, 並列評価用 executor を instance に設定する.
         """
         self.client = llm_client
         self.test_suite = test_suite

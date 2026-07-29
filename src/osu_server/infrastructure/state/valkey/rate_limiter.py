@@ -17,7 +17,7 @@ class ValkeyRateLimiter:
 
     Notes:
         counter key は `{prefix}rate_limit:user:{user_id}` を使用する.
-        最初の INCR が 1 の場合だけ EXPIRE を設定し、count が limit を超えたら拒否する.
+        最初の INCR が 1 の場合だけ EXPIRE を設定し,count が limit を超えたら拒否する.
     """
 
     def __init__(self, client: GlideClient, *, key_prefix: str = "") -> None:
@@ -57,10 +57,10 @@ class ValkeyRateLimiter:
             window (int): 最初の hit で設定する TTL 秒数.
 
         Returns:
-            bool: increment 後の count が limit 以下なら True、超過なら False.
+            bool: increment 後の count が limit 以下なら True,超過なら False.
 
         Notes:
-            counter が新規作成された場合だけ TTL を設定し、後続 hit は既存 TTL を延長しない.
+            counter が新規作成された場合だけ TTL を設定し,後続 hit は既存 TTL を延長しない.
         """
         key = self._rate_key(user_id)
         count: int = await self._client.incr(key)

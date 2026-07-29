@@ -2,7 +2,7 @@
 
 この workflow は Unit of Work が利用可能な場合に message write を transaction 内で実行する.
 runtime が
-未構成または storage operation が失敗した場合は、例外を返さず `ChatPersistenceResult` の
+未構成または storage operation が失敗した場合は,例外を返さず `ChatPersistenceResult` の
 failure として返す.
 """
 
@@ -64,15 +64,15 @@ class PersistChannelMessageUseCase:
         self._uow_factory: UnitOfWorkFactory | None = uow_factory
 
     async def execute(self, command: PersistChannelMessageCommand) -> ChatPersistenceResult:
-        """Channel message を保存し、commit または failure result を返す.
+        """Channel message を保存し,commit または failure result を返す.
 
         Args:
             command (PersistChannelMessageCommand):
-                sender、channel、保存する text を含む command.
+                sender,channel,保存する text を含む command.
 
         Returns:
-            ChatPersistenceResult: 保存成功、channel 不存在などの repository failure、runtime
-            unavailable、または
+            ChatPersistenceResult: 保存成功,channel 不存在などの repository failure,runtime
+            unavailable,または
             storage error を表す結果.
 
         Notes:

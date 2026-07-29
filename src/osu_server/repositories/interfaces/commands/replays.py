@@ -12,8 +12,8 @@ class ReplayCommandRepository(Protocol):
     """Score replay の mutation と uniqueness-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -38,6 +38,6 @@ class ReplayCommandRepository(Protocol):
             checksum (str): 重複確認する Replay checksum.
 
         Returns:
-            bool: 一致する Replay が存在する場合は True。存在しない場合は False.
+            bool: 一致する Replay が存在する場合は True.存在しない場合は False.
         """
         ...

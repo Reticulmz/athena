@@ -1,6 +1,6 @@
 """Taskiq workerの実行エントリーポイントを提供する.
 
-別processでbackground jobを実行し、startup hookでDishka runtime stateを構築して、
+別processでbackground jobを実行し,startup hookでDishka runtime stateを構築して,
 shutdown hookでそのstateを解放する.
 
 `taskiq worker osu_server.worker:broker`で起動する.
@@ -95,11 +95,11 @@ async def startup(state: TaskiqState) -> None:
         state (TaskiqState): resolved use-caseとDishka containerを保存するTaskiq state.
 
     Returns:
-        None: logging、Dishka integration、job use-caseをstateへ設定したことを示す.
+        None: logging,Dishka integration,job use-caseをstateへ設定したことを示す.
 
     Raises:
         Exception: containerまたは依存use-caseの解決に失敗した場合. 途中まで設定した
-            stateを消去し、作成済みcontainerをcloseしてから元の例外を伝播する.
+            stateを消去し,作成済みcontainerをcloseしてから元の例外を伝播する.
     """
     setup_logging(_config)
     worker_container: AsyncContainer | None = None
@@ -150,7 +150,7 @@ async def shutdown(state: TaskiqState) -> None:
         state (TaskiqState): clear対象のcontainerとjob use-case参照を持つTaskiq state.
 
     Returns:
-        None: stateを消去し、存在したDishka containerをcloseしたことを示す.
+        None: stateを消去し,存在したDishka containerをcloseしたことを示す.
     """
     dishka_container = _get_dishka_container(state)
 

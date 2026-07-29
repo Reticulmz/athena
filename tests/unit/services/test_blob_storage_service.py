@@ -319,7 +319,12 @@ class FailingCreateUnitOfWork:
 
 
 class FailingCreateUnitOfWorkFactory:
-    """metadata create failure 用 UnitOfWork を生成する factory."""
+    """metadata create failure 用 UnitOfWork を生成する factory.
+
+    Attributes:
+        _state (InMemoryCommandRepositoryState): 生成する failing UnitOfWork が共有する
+            command state.
+    """
 
     _state: InMemoryCommandRepositoryState
 

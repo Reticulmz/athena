@@ -50,7 +50,7 @@ class JobRegistry:
 
         Returns:
             Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
-                関数を registry へ追加し、同じ関数を返す decorator です.
+                関数を registry へ追加し,同じ関数を返す decorator です.
         """
 
         def decorator(function: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:

@@ -1,6 +1,6 @@
 """management command向けの軽量なdependency composition helperを提供する.
 
-command実行中だけ必要なdatabase/Valkey adapterとidentity use-caseを組み立て、
+command実行中だけ必要なdatabase/Valkey adapterとidentity use-caseを組み立て,
 処理後に所有するresourceを解放する.
 """
 
@@ -43,7 +43,7 @@ async def change_user_password(
     """利用者password変更に必要な最小のdatabase graphを構築して実行する.
 
     Args:
-        config (AppConfig): database接続先、禁止password一覧を含むruntime設定.
+        config (AppConfig): database接続先,禁止password一覧を含むruntime設定.
         input_data (ChangeUserPasswordCommandInput): target userと新passwordを含むcommand input.
 
     Returns:

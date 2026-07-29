@@ -87,6 +87,7 @@ class ContractOnlyBlobStorageBackend:
         Returns:
             None: configurationを変更せず検証を完了する.
         """
+        return
 
     async def begin_write(self) -> StagedBlobWrite:
         """事前生成したstaged write fakeを返す.

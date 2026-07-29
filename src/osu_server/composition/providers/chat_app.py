@@ -121,7 +121,7 @@ class ChatAppProviderSet(Provider):
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> SendChannelMessageUseCase:
-        """Channel message送信commandを配送、rate limit、persistence依存で構成する.
+        """Channel message送信commandを配送,rate limit,persistence依存で構成する.
 
         Args:
             channel_delivery_query (ResolveChannelMessageDeliveryQuery):
@@ -134,7 +134,7 @@ class ChatAppProviderSet(Provider):
             config (AppConfig): chat送信に必要な実行時設定.
 
         Returns:
-            SendChannelMessageUseCase: channel messageを検証、配送、非同期永続化するcommand.
+            SendChannelMessageUseCase: channel messageを検証,配送,非同期永続化するcommand.
         """
         return SendChannelMessageUseCase(
             channel_delivery_query=channel_delivery_query,
@@ -156,7 +156,7 @@ class ChatAppProviderSet(Provider):
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> SendPrivateMessageUseCase:
-        """Private message送信commandを送信先、friend関係、rate limit依存で構成する.
+        """Private message送信commandを送信先,friend関係,rate limit依存で構成する.
 
         Args:
             target_query (ResolvePrivateMessageTargetQuery): recipient sessionを解決するquery.
@@ -170,7 +170,7 @@ class ChatAppProviderSet(Provider):
             config (AppConfig): private message送信に必要な実行時設定.
 
         Returns:
-            SendPrivateMessageUseCase: private messageを検証、配送、非同期永続化するcommand.
+            SendPrivateMessageUseCase: private messageを検証,配送,非同期永続化するcommand.
         """
         return SendPrivateMessageUseCase(
             target_query=target_query,

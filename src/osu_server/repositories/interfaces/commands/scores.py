@@ -14,8 +14,8 @@ class ScoreCommandRepository(Protocol):
     """Score ingestion の mutation と consistency-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -40,7 +40,7 @@ class ScoreCommandRepository(Protocol):
             checksum (str): 重複確認する online score checksum.
 
         Returns:
-            bool: 一致する Score が存在する場合は True。存在しない場合は False.
+            bool: 一致する Score が存在する場合は True.存在しない場合は False.
         """
         ...
 
@@ -51,7 +51,7 @@ class ScoreCommandRepository(Protocol):
             checksum (str): 検索する online score checksum.
 
         Returns:
-            Score | None: 一致する Score。存在しない場合は None.
+            Score | None: 一致する Score.存在しない場合は None.
         """
         ...
 
@@ -62,18 +62,18 @@ class ScoreCommandRepository(Protocol):
             score_id (int): 取得する Score ID.
 
         Returns:
-            Score | None: 一致する Score。存在しない場合は None.
+            Score | None: 一致する Score.存在しない場合は None.
         """
         ...
 
     async def increment_replay_view_count(self, score_id: int) -> bool:
-        """対象 score の Replay View Count を 1 増やし、存在したか返す.
+        """対象 score の Replay View Count を 1 増やし,存在したか返す.
 
         Args:
             score_id (int): Replay View Count を増やす対象 score の identifier.
 
         Returns:
-            bool: 対象 score が存在し、increment を実行した場合は True。存在しない
+            bool: 対象 score が存在し,increment を実行した場合は True.存在しない
                 場合は False.
         """
         ...

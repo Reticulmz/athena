@@ -15,7 +15,7 @@ class LocalEventBus(Protocol):
     """プロセス内イベントを同一プロセスの購読者へ配信する契約です.
 
     Notes:
-        実装は cross-replica、worker、durability、replay の保証を提供しません.
+        実装は cross-replica,worker,durability,replay の保証を提供しません.
         同一プロセス内の非クリティカルな fanout にだけ使用します.
     """
 

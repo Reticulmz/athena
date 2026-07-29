@@ -2,7 +2,7 @@
 
 この workflow は Unit of Work が利用可能な場合に private message write を transaction
 内で実行する.
-runtime が未構成または storage operation が失敗した場合は、例外を返さず
+runtime が未構成または storage operation が失敗した場合は,例外を返さず
 `ChatPersistenceResult` の failure として返す.
 """
 
@@ -64,14 +64,14 @@ class PersistPrivateMessageUseCase:
         self._uow_factory: UnitOfWorkFactory | None = uow_factory
 
     async def execute(self, command: PersistPrivateMessageCommand) -> ChatPersistenceResult:
-        """Private message を保存し、commit または failure result を返す.
+        """Private message を保存し,commit または failure result を返す.
 
         Args:
             command (PersistPrivateMessageCommand):
-                sender、target、保存する text を含む command.
+                sender,target,保存する text を含む command.
 
         Returns:
-            ChatPersistenceResult: 保存成功、runtime unavailable、または storage error
+            ChatPersistenceResult: 保存成功,runtime unavailable,または storage error
             を表す結果.
 
         Notes:

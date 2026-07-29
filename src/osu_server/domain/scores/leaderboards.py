@@ -32,7 +32,7 @@ class ScoreRankKey:
             None: score が非負で score_id が正であることを示す.
 
         Raises:
-            ValueError: score が負、または score_id が 0 以下の場合.
+            ValueError: score が負,または score_id が 0 以下の場合.
         """
         if self.score < 0:
             msg = "score must not be negative"
@@ -43,10 +43,10 @@ class ScoreRankKey:
 
     @property
     def ordering_key(self) -> tuple[int, datetime, int]:
-        """Score 降順、送信日時昇順、score ID 昇順の sort key を返す.
+        """Score 降順,送信日時昇順,score ID 昇順の sort key を返す.
 
         Returns:
-            tuple[int, datetime, int]: score を負にした値、submitted_at、score_id の順の key.
+            tuple[int, datetime, int]: score を負にした値,submitted_at,score_id の順の key.
 
         Notes:
             Python の昇順 sort に渡すことで score の大きい候補を先頭に置ける.

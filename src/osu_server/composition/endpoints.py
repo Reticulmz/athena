@@ -1,6 +1,6 @@
 """root ASGI application用のtransport endpoint adapterを提供する.
 
-routeからapp stateに保存されたhandlerを取得し、stable transportのrequest処理へ委譲する.
+routeからapp stateに保存されたhandlerを取得し,stable transportのrequest処理へ委譲する.
 """
 
 from __future__ import annotations

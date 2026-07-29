@@ -132,7 +132,7 @@ class BeatmapLeaderboardQueryRepositoryStub:
         *,
         limit: int,
     ) -> tuple[BeatmapLeaderboardRow, ...]:
-        """指定scopeのtop rowを返し、read条件を記録する.
+        """指定scopeのtop rowを返し,read条件を記録する.
 
         Args:
             scope (LeaderboardReadScope): leaderboardを絞り込む条件.
@@ -150,7 +150,7 @@ class BeatmapLeaderboardQueryRepositoryStub:
         *,
         viewer_user_id: int,
     ) -> BeatmapLeaderboardRow | None:
-        """指定viewerのpersonal bestを返し、read条件を記録する.
+        """指定viewerのpersonal bestを返し,read条件を記録する.
 
         Args:
             scope (LeaderboardReadScope): personal bestを絞り込む条件.
@@ -245,7 +245,7 @@ class ViewerPermissionServiceStub:
         self.calls: list[int] = []
 
     async def compute_permissions(self, user_id: int) -> Privileges:
-        """userのpermissionを返し、計算対象を記録する.
+        """userのpermissionを返し,計算対象を記録する.
 
         Args:
             user_id (int): permissionを求めるviewerのuser ID.
@@ -400,7 +400,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """未取得checksumのPENDING_FETCHをunavailableへ写像する契約を検証する.
 
-        PENDING_FETCHのmetadata記録を用意してresolveし、observable outcomeがUNAVAILABLEかつ
+        PENDING_FETCHのmetadata記録を用意してresolveし,observable outcomeがUNAVAILABLEかつ
         PENDING_FETCH reasonになることを確認する.
 
         Args:
@@ -435,7 +435,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """未取得checksumのFAILED fetch stateをmetadata failureへ写像する契約を検証する.
 
-        FAILEDのmetadata記録を用意してresolveし、observable outcomeがUNAVAILABLEかつ
+        FAILEDのmetadata記録を用意してresolveし,observable outcomeがUNAVAILABLEかつ
         FAILED_METADATA reasonになることを確認する.
 
         Args:
@@ -540,7 +540,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Top 50外のpersonal bestを別欄に残す契約を検証する.
 
-        50行のglobal rowsと51位のviewer scoreを用意してresolveし、observable outcomeとしてrowsへ
+        50行のglobal rowsと51位のviewer scoreを用意してresolveし,observable outcomeとしてrowsへ
         viewer scoreを混在させずpersonal_bestに返すことを確認する.
 
         Args:
@@ -599,7 +599,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Top rows内のpersonal bestもpersonal_best欄へ重複して返す契約を検証する.
 
-        viewerの同一scoreをtop rowとpersonal bestに設定してresolveし、observable outcomeとして
+        viewerの同一scoreをtop rowとpersonal bestに設定してresolveし,observable outcomeとして
         rowsとpersonal_bestの両方がそのscoreを保持することを確認する.
 
         Args:
@@ -651,7 +651,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Selected mods requestがselected mod scopeでpersonal bestをreadする契約を検証する.
 
-        DOUBLE_TIME requestとvisible viewerを用意してresolveし、observable outcomeとして
+        DOUBLE_TIME requestとvisible viewerを用意してresolveし,observable outcomeとして
         SELECTED_MODS scopeにDOUBLE_TIMEを含むpersonal best readが行われることを確認する.
 
         Args:
@@ -713,7 +713,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Country scopeがviewer countryを使いmodsを限定しない契約を検証する.
 
-        JPのvisible viewerとDOUBLE_TIME requestを用意してresolveし、observable outcomeとして
+        JPのvisible viewerとDOUBLE_TIME requestを用意してresolveし,observable outcomeとして
         COUNTRY scopeがJPを持ちselected modsなしでrowsとpersonal bestをreadすることを確認する.
 
         Args:
@@ -773,7 +773,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """未知または未解決のcountryではCountry scopeをheader-onlyにする契約を検証する.
 
-        XX countryのviewerとその後の欠落viewerを用意してresolveし、observable outcomeとして
+        XX countryのviewerとその後の欠落viewerを用意してresolveし,observable outcomeとして
         rowsとpersonal bestを返さずleaderboard readも行わないことを確認する.
 
         Args:
@@ -907,7 +907,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Visibilityを持たないviewerではpublic rowsだけを返す契約を検証する.
 
-        UNRESTRICTEDを持たないviewerとpublic rowを用意してresolveし、observable outcomeとして
+        UNRESTRICTEDを持たないviewerとpublic rowを用意してresolveし,observable outcomeとして
         row readは維持しpersonal best readと返却を抑止することを確認する.
 
         Args:
@@ -969,7 +969,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Leaderboard表示対象のrank statusでrow readを許可する契約を検証する.
 
-        RANKED、APPROVED、LOVED、QUALIFIEDのbeatmapを順に用意してresolveする.
+        RANKED,APPROVED,LOVED,QUALIFIEDのbeatmapを順に用意してresolveする.
         Observable outcomeとして各statusがHEADERと1回のtop row readを返すことを確認する.
 
         Args:
@@ -1012,7 +1012,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """未知のleaderboard categoryをGLOBALへfallbackしない契約を検証する.
 
-        未対応categoryのrequestと取得可能なbeatmapを用意してresolveし、observable outcomeとして
+        未対応categoryのrequestと取得可能なbeatmapを用意してresolveし,observable outcomeとして
         HEADERだけを返しrowとpersonal bestのreadを行わないことを確認する.
 
         Args:
@@ -1048,7 +1048,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """表示可能でもleaderboard非表示のstatusをheader-onlyにする契約を検証する.
 
-        PENDING beatmapと対応beatmapsetを用意してresolveし、observable outcomeとしてHEADERだけを
+        PENDING beatmapと対応beatmapsetを用意してresolveし,observable outcomeとしてHEADERだけを
         返しtop row readを行わないことを確認する.
 
         Args:
@@ -1086,7 +1086,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Category contextがないrequestをheader-onlyにする契約を検証する.
 
-        categoryなしのrequestと取得可能なbeatmapを用意してresolveし、observable outcomeとして
+        categoryなしのrequestと取得可能なbeatmapを用意してresolveし,observable outcomeとして
         rowsとpersonal bestなしのHEADERを返しtop row readを行わないことを確認する.
 
         Args:
@@ -1121,7 +1121,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Non-vanilla mod requestをheader-onlyにする契約を検証する.
 
-        RELAXを含むrequestと取得可能なbeatmapを用意してresolveし、observable outcomeとして
+        RELAXを含むrequestと取得可能なbeatmapを用意してresolveし,observable outcomeとして
         rowsとpersonal bestなしのHEADERを返しtop row readを行わないことを確認する.
 
         Args:
@@ -1156,7 +1156,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Song select requestでleaderboard readを抑止する契約を検証する.
 
-        song_selectがtrueのrequestと取得可能なbeatmapを用意してresolveし、observable outcomeとして
+        song_selectがtrueのrequestと取得可能なbeatmapを用意してresolveし,observable outcomeとして
         rowsとpersonal bestなしのHEADERを返しtop row readを行わないことを確認する.
 
         Args:
@@ -1191,7 +1191,7 @@ class TestBeatmapLeaderboardQuery:
     ) -> None:
         """Checksum missとfilename matchをUPDATE_AVAILABLEへ写像する契約を検証する.
 
-        古いchecksumと一致するfilenameのbeatmapを用意してresolveし、observable outcomeとして
+        古いchecksumと一致するfilenameのbeatmapを用意してresolveし,observable outcomeとして
         UPDATE_AVAILABLE reasonのheaderを返しleaderboard readを行わないことを確認する.
 
         Args:

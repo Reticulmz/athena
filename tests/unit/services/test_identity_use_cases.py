@@ -199,7 +199,7 @@ class FakeActiveSessionStore:
         """順不同の2件のactive sessionを返す.
 
         Returns:
-            list[SessionData]: user IDが3、1の順で並ぶ固定のonline session一覧.
+            list[SessionData]: user IDが3,1の順で並ぶ固定のonline session一覧.
         """
         return [
             SessionData(
@@ -233,7 +233,7 @@ class FakeSessionCredentialUserRepository:
 
     Attributes:
         inputs (list[str]): safe username lookupで受け取った値の履歴.
-        user (User): username、email、IDで照合する固定の登録済みuser.
+        user (User): username,email,IDで照合する固定の登録済みuser.
     """
 
     inputs: list[str]
@@ -344,7 +344,7 @@ class FakeCredentialSessionStore:
         self.inputs = []
 
     async def get_by_user(self, user_id: int) -> SessionData | None:
-        """固定userのactive sessionを取得し、lookup入力を記録する.
+        """固定userのactive sessionを取得し,lookup入力を記録する.
 
         Args:
             user_id (int): active sessionを取得するuser ID.
@@ -482,7 +482,7 @@ def _login_request() -> LoginRequest:
     """Login command testで使う固定のlegacy login requestを作成する.
 
     Returns:
-        LoginRequest: TestUser、MD5、client metadataを持つ固定request.
+        LoginRequest: TestUser,MD5,client metadataを持つ固定request.
     """
     return LoginRequest(
         username="TestUser",
@@ -500,7 +500,7 @@ def _login_request() -> LoginRequest:
 async def test_login_command_executes_login_workflow_as_command() -> None:
     """Login commandがrequestとcountryをauthentication serviceへdelegateする契約を検証する.
 
-    固定login requestでcommandを実行し、serviceのfailure結果と記録済み入力がそのまま返ることを
+    固定login requestでcommandを実行し,serviceのfailure結果と記録済み入力がそのまま返ることを
     確認する.
 
     Returns:
@@ -613,7 +613,7 @@ async def test_compute_session_authorization_query_returns_snapshot() -> None:
 async def test_list_active_sessions_query_returns_snapshot_tuple() -> None:
     """Active session list queryがuser IDでsortしたsnapshot tupleを返す契約を検証する.
 
-    順不同のfake storeでqueryを実行し結果のsession IDが1、3の昇順になることを確認する.
+    順不同のfake storeでqueryを実行し結果のsession IDが1,3の昇順になることを確認する.
 
     Returns:
         None: sort済みsession snapshot tupleを検証して完了する.
@@ -626,7 +626,7 @@ async def test_list_active_sessions_query_returns_snapshot_tuple() -> None:
 
 
 async def test_session_credentials_query_reads_credentials_and_active_session() -> None:
-    """Session credential queryがuser、password、session portを順に読む契約を検証する.
+    """Session credential queryがuser,password,session portを順に読む契約を検証する.
 
     固定usernameとMD5でqueryを実行しlegacy auth結果と各portの正規化済み入力を確認する.
 

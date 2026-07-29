@@ -12,8 +12,8 @@ class ScoreSubmissionCommandRepository(Protocol):
     """Score submission の mutation と idempotency-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -38,7 +38,7 @@ class ScoreSubmissionCommandRepository(Protocol):
             fingerprint (str): 検索する submission fingerprint.
 
         Returns:
-            ScoreSubmission | None: 一致する submission。存在しない場合は None.
+            ScoreSubmission | None: 一致する submission.存在しない場合は None.
         """
         ...
 
@@ -53,7 +53,7 @@ class ScoreSubmissionCommandRepository(Protocol):
         Args:
             submission_id (int): 更新する ScoreSubmission ID.
             state (ScoreSubmissionState): 記録する processing state.
-            result_snapshot (dict[str, object] | None): 記録する処理結果 snapshot。未指定時は
+            result_snapshot (dict[str, object] | None): 記録する処理結果 snapshot.未指定時は
                 None.
 
         Returns:

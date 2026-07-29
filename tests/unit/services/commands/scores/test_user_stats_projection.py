@@ -23,11 +23,11 @@ _NOW = datetime(2026, 7, 1, 0, 0, 0, tzinfo=UTC)
 def test_projection_accuracy_uses_weighted_performance_best_rows() -> None:
     """Projection accuracyがperformance bestの加重値を使う契約を検証する.
 
-    異なるaccuracyとPPを持つ二つのscoreおよびperformance bestを渡す条件で、policyの加重accuracy、
-    hit totals、play count、total scoreがprojectionに観測できることを確認する.
+    異なるaccuracyとPPを持つ二つのscoreおよびperformance bestを渡す条件で,policyの加重accuracy,
+    hit totals,play count,total scoreがprojectionに観測できることを確認する.
 
     Returns:
-        None: 加重accuracyとscore集計値を検証して、呼び出し側へ値を返さずに完了する.
+        None: 加重accuracyとscore集計値を検証して,呼び出し側へ値を返さずに完了する.
     """
     projection = build_current_user_stats_projection(
         user_id=1000,

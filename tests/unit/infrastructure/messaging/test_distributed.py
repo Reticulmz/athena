@@ -77,7 +77,7 @@ def test_envelope_contains_required_contract_fields() -> None:
     """有効なenvelopeが全必須contract fieldを保持することを検証します.
 
     Returns:
-        None: 入力したevent ID、type、時刻、schema、payloadがそのまま取得できることを表します.
+        None: 入力したevent ID,type,時刻,schema,payloadがそのまま取得できることを表します.
     """
     occurred_at = datetime.now(UTC)
 

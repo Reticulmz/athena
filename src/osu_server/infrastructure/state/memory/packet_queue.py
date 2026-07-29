@@ -12,7 +12,7 @@ class InMemoryPacketQueue:
 
     Notes:
         refresh_ttl を先に呼んだ user だけを active session として扱う.
-        TTL 自体は memory では計測せず、thread-safe ではない test environment 向け実装である.
+        TTL 自体は memory では計測せず,thread-safe ではない test environment 向け実装である.
     """
 
     def __init__(self, max_size: int = 4096) -> None:
@@ -32,13 +32,13 @@ class InMemoryPacketQueue:
 
         Args:
             user_id (int): 追加先 queue を持つ user id.
-            *data (bytes): 個別の S2C packet。複数指定時は同じ順序で追加する.
+            *data (bytes): 個別の S2C packet.複数指定時は同じ順序で追加する.
 
         Returns:
             None: enqueue 処理の完了を表す.
 
         Notes:
-            data が空、または user に active session がない場合は何も追加しない.
+            data が空,または user に active session がない場合は何も追加しない.
             size upper bound を超える場合は最も古い packet から切り捨てる.
         """
         if not data:
@@ -51,13 +51,13 @@ class InMemoryPacketQueue:
             del queue[: len(queue) - self._max_size]
 
     async def dequeue_all(self, user_id: int) -> bytes:
-        """User の queue を drain し、packet を連結した bytes を返す.
+        """User の queue を drain し,packet を連結した bytes を返す.
 
         Args:
             user_id (int): drain 対象 queue の user id.
 
         Returns:
-            bytes: queue 内 packet を連結した値。queue が空または未存在なら b"".
+            bytes: queue 内 packet を連結した値.queue が空または未存在なら b"".
 
         Notes:
             正常に返った後の active queue は空になる.
@@ -74,13 +74,13 @@ class InMemoryPacketQueue:
 
         Args:
             user_id (int): 活性化する queue の user id.
-            ttl (int): protocol 互換の session TTL 秒数。memory 実装では保持しない.
+            ttl (int): protocol 互換の session TTL 秒数.memory 実装では保持しない.
 
         Returns:
             None: queue の活性化処理が完了したことを表す.
 
         Notes:
-            既存 queue を消さず、TTL expiration は memory 実装では再現しない.
+            既存 queue を消さず,TTL expiration は memory 実装では再現しない.
         """
         if user_id not in self._queues:
             self._queues[user_id] = []

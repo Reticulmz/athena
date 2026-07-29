@@ -54,7 +54,7 @@ class SQLAlchemyBeatmapPerformanceBestCommandRepository:
         """同一 performance best scope の refresh を transaction 内で直列化する.
 
         Args:
-            scope (BeatmapPerformanceBestScope): user、beatmap、ruleset、playstyle を含む
+            scope (BeatmapPerformanceBestScope): user,beatmap,ruleset,playstyle を含む
                 lock scope.
 
         Returns:
@@ -85,7 +85,7 @@ class SQLAlchemyBeatmapPerformanceBestCommandRepository:
         """候補が PP 優先順で上位なら upsert し現在 row を返す.
 
         Args:
-            command (UpsertBeatmapPerformanceBest): 比較対象の scope、score、performance 候補.
+            command (UpsertBeatmapPerformanceBest): 比較対象の scope,score,performance 候補.
 
         Returns:
             BeatmapPerformanceBest: upsert 後に scope を所有する保存 row.
@@ -172,7 +172,7 @@ class SQLAlchemyBeatmapPerformanceBestCommandRepository:
             playstyle (Playstyle): 対象 playstyle.
 
         Returns:
-            tuple[BeatmapPerformanceBest, ...]: PP 降順、送信時刻昇順、score ID 昇順の best row.
+            tuple[BeatmapPerformanceBest, ...]: PP 降順,送信時刻昇順,score ID 昇順の best row.
         """
         models = (
             await self._session.execute(
@@ -198,7 +198,7 @@ def _select_by_scope(
     """Performance best の完全一致 scope を検索する SELECT statement を構築する.
 
     Args:
-        scope (BeatmapPerformanceBestScope): user、beatmap、ruleset、playstyle の natural key.
+        scope (BeatmapPerformanceBestScope): user,beatmap,ruleset,playstyle の natural key.
 
     Returns:
         Select[tuple[BeatmapPerformanceBestModel]]: scope に一致する保存 row だけを返す statement.
@@ -212,7 +212,7 @@ def _scope_conditions(
     """Performance best の natural key を比較する SQLAlchemy 条件を返す.
 
     Args:
-        scope (BeatmapPerformanceBestScope): 比較する user、beatmap、ruleset、playstyle の scope.
+        scope (BeatmapPerformanceBestScope): 比較する user,beatmap,ruleset,playstyle の scope.
 
     Returns:
         tuple[ColumnElement[bool], ...]: scope の各永続化列を完全一致で比較する条件.
@@ -229,7 +229,7 @@ def _scope_lock_key(scope: BeatmapPerformanceBestScope) -> int:
     """Performance best scope を PostgreSQL advisory lock 用の signed 64-bit key に変換する.
 
     Args:
-        scope (BeatmapPerformanceBestScope): user、beatmap、ruleset、playstyle を含む lock scope.
+        scope (BeatmapPerformanceBestScope): user,beatmap,ruleset,playstyle を含む lock scope.
 
     Returns:
         int: 同じ scope から常に得られる PostgreSQL bigint 範囲の lock key.
@@ -251,7 +251,7 @@ def _upsert_if_better_statement(command: UpsertBeatmapPerformanceBest) -> Insert
     """候補が既存 row より優先される場合だけ更新する UPSERT statement を構築する.
 
     Args:
-        command (UpsertBeatmapPerformanceBest): 保存する scope、score、performance 計算結果の候補.
+        command (UpsertBeatmapPerformanceBest): 保存する scope,score,performance 計算結果の候補.
 
     Returns:
         Insert: natural key 競合時に候補が優先される場合だけ保存 row を更新する statement.
@@ -292,10 +292,10 @@ def _candidate_beats_current(command: UpsertBeatmapPerformanceBest) -> ColumnEle
     """候補が保存済み performance best より優先される条件を構築する.
 
     Args:
-        command (UpsertBeatmapPerformanceBest): PP、送信時刻、score ID による候補順位.
+        command (UpsertBeatmapPerformanceBest): PP,送信時刻,score ID による候補順位.
 
     Returns:
-        ColumnElement[bool]: PP 降順、送信時刻昇順、score ID 昇順の優先順を表す条件.
+        ColumnElement[bool]: PP 降順,送信時刻昇順,score ID 昇順の優先順を表す条件.
     """
     return or_(
         BeatmapPerformanceBestModel.pp < command.pp,
@@ -330,7 +330,7 @@ def _delete_scope_statement(scope: BeatmapPerformanceBestScope) -> Delete:
     """完全一致の performance best scope を削除する DELETE statement を構築する.
 
     Args:
-        scope (BeatmapPerformanceBestScope): 削除する user、beatmap、ruleset、playstyle の scope.
+        scope (BeatmapPerformanceBestScope): 削除する user,beatmap,ruleset,playstyle の scope.
 
     Returns:
         Delete: scope の natural key に一致する row だけを削除する statement.

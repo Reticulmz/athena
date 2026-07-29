@@ -75,7 +75,7 @@ class FailingBlobByteReader:
 async def test_blob_byte_reader_adapter_returns_reader_bytes() -> None:
     """adapterがreaderのbytesをそのまま返す境界契約を検証する.
 
-    固定bytesを返すreaderでadapterを実行し、response bytesとreaderへ渡すblob IDが一致する
+    固定bytesを返すreaderでadapterを実行し,response bytesとreaderへ渡すblob IDが一致する
     ことを確認する.
 
     Returns:
@@ -93,11 +93,11 @@ async def test_blob_byte_reader_adapter_returns_reader_bytes() -> None:
 async def test_blob_byte_reader_adapter_converts_configured_unavailable_error() -> None:
     """Configured unavailable errorがquery用errorへ変換される契約を検証する.
 
-    非公開detailを含むbackend errorをconfigured typeとして与え、adapterがblob IDだけを公開する
+    非公開detailを含むbackend errorをconfigured typeとして与え,adapterがblob IDだけを公開する
     BlobBytesUnavailableErrorへ変換することを確認する.
 
     Returns:
-        None: 変換後error、cause、公開文字列からのprivate detail除外を検証して完了する.
+        None: 変換後error,cause,公開文字列からのprivate detail除外を検証して完了する.
     """
     backend_error = BackendUnavailableError(
         "backend_detail=SYNTHETIC_PRIVATE_BLOB_LOCATION",
@@ -123,7 +123,7 @@ async def test_blob_byte_reader_adapter_converts_configured_unavailable_error() 
 async def test_blob_byte_reader_adapter_preserves_query_unavailable_error() -> None:
     """既存のquery unavailable errorが同一instanceのまま伝播する契約を検証する.
 
-    BlobBytesUnavailableErrorを送出するreaderでadapterを実行し、別errorへ再変換せず同一instanceを送出することを確認する.
+    BlobBytesUnavailableErrorを送出するreaderでadapterを実行し,別errorへ再変換せず同一instanceを送出することを確認する.
 
     Returns:
         None: 送出されたerror instanceの同一性を検証して完了する.
@@ -140,7 +140,7 @@ async def test_blob_byte_reader_adapter_preserves_query_unavailable_error() -> N
 async def test_blob_byte_reader_adapter_preserves_unexpected_exceptions() -> None:
     """configuredされていないbackend errorがそのまま伝播する契約を検証する.
 
-    RuntimeErrorを送出するreaderでadapterを実行し、unavailable errorへ変換せず同一instanceを
+    RuntimeErrorを送出するreaderでadapterを実行し,unavailable errorへ変換せず同一instanceを
     送出することを確認する.
 
     Returns:

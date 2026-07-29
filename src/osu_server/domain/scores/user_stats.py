@@ -41,7 +41,7 @@ class UserPerformanceBest:
             None: pp と accuracy が集計可能であることを示す.
 
         Raises:
-            ValueError: pp が負、accuracy が finite でない、または accuracy が範囲外の場合.
+            ValueError: pp が負,accuracy が finite でない,または accuracy が範囲外の場合.
         """
         if self.pp < _ZERO_DECIMAL:
             msg = "pp must be non-negative"
@@ -72,7 +72,7 @@ class UserStatsPerformanceTotals:
             None: PP 値が非負で accuracy が有効であることを示す.
 
         Raises:
-            ValueError: PP 値が負、accuracy が finite でない、または accuracy が範囲外の場合.
+            ValueError: PP 値が負,accuracy が finite でない,または accuracy が範囲外の場合.
         """
         if self.weighted_pp < _ZERO_DECIMAL:
             msg = "weighted_pp must be non-negative"
@@ -132,7 +132,7 @@ class UserStatsHitTotals:
             int: ruleset の accuracy 式に含める判定数と miss 数の合計.
 
         Notes:
-            OSU は geki/katu を、TAIKO は n50/geki/katu を、CATCH は geki を集計に含めない.
+            OSU は geki/katu を,TAIKO は n50/geki/katu を,CATCH は geki を集計に含めない.
         """
         match ruleset:
             case Ruleset.OSU:
@@ -215,13 +215,13 @@ class UserCurrentStats:
     hit_totals: UserStatsHitTotals = field(default_factory=UserStatsHitTotals)
 
     def __post_init__(self) -> None:
-        """Current stats の ID、rank、集計値の範囲を検証する.
+        """Current stats の ID,rank,集計値の範囲を検証する.
 
         Returns:
             None: current stats が表示可能な範囲にあることを示す.
 
         Raises:
-            ValueError: ID、PP、accuracy、rank、または集計値が許容範囲外の場合.
+            ValueError: ID,PP,accuracy,rank,または集計値が許容範囲外の場合.
         """
         if self.user_id <= 0:
             msg = "user_id must be positive"
@@ -248,7 +248,7 @@ class UserCurrentStats:
             user_id (int): empty stats を作る user の ID.
 
         Returns:
-            UserCurrentStats: PP とすべての集計値が 0、global_rank と play time が None の stats.
+            UserCurrentStats: PP とすべての集計値が 0,global_rank と play time が None の stats.
 
         Raises:
             ValueError: user_id が 0 以下の場合.
@@ -283,13 +283,13 @@ class UserStatsProjection:
     hit_totals: UserStatsHitTotals = field(default_factory=UserStatsHitTotals)
 
     def __post_init__(self) -> None:
-        """Projection row の PP、accuracy、集計値の範囲を検証する.
+        """Projection row の PP,accuracy,集計値の範囲を検証する.
 
         Returns:
             None: projection 値が永続化可能な範囲にあることを示す.
 
         Raises:
-            ValueError: PP、accuracy、または集計値が許容範囲外の場合.
+            ValueError: PP,accuracy,または集計値が許容範囲外の場合.
         """
         if self.pp < _ZERO_DECIMAL:
             msg = "pp must be non-negative"
@@ -335,7 +335,7 @@ class UserStatsPolicy:
         self,
         bests: tuple[UserPerformanceBest, ...],
     ) -> UserStatsPerformanceTotals:
-        """Best performance 集合から weighted PP、bonus PP、accuracy を計算する.
+        """Best performance 集合から weighted PP,bonus PP,accuracy を計算する.
 
         Args:
             bests (tuple[UserPerformanceBest, ...]): eligibility 判定済みの best performance 群.
@@ -397,7 +397,7 @@ class UserStatsPolicy:
         self,
         _bests: tuple[UserPerformanceBest, ...],
     ) -> Decimal:
-        """未確認の bonus PP formula を使わず、明示的な 0 を返す.
+        """未確認の bonus PP formula を使わず,明示的な 0 を返す.
 
         Args:
             _bests (tuple[UserPerformanceBest, ...]): 将来の bonus formula 用 best performance 群.
@@ -406,7 +406,7 @@ class UserStatsPolicy:
             Decimal: 現在の policy では常に `Decimal("0")`.
 
         Notes:
-            引数は将来の formula 拡張のため保持するが、現在は計算へ使用しない.
+            引数は将来の formula 拡張のため保持するが,現在は計算へ使用しない.
         """
         return _ZERO_DECIMAL
 
@@ -544,7 +544,7 @@ def _validate_accuracy(accuracy: float) -> None:
         None: accuracy が集計に利用できる範囲にあることを示す.
 
     Raises:
-        ValueError: accuracy が finite でない、または 0.0 から 1.0 の範囲外の場合.
+        ValueError: accuracy が finite でない,または 0.0 から 1.0 の範囲外の場合.
     """
     if not isfinite(accuracy):
         msg = "accuracy must be a finite value between 0.0 and 1.0"

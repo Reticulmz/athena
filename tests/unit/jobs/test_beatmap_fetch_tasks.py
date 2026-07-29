@@ -1,6 +1,6 @@
 """Beatmap取得Taskiq adapterのunit testを提供する.
 
-registry登録、Taskiq stateからのuse-case解決、payload変換、runtime未登録時の
+registry登録,Taskiq stateからのuse-case解決,payload変換,runtime未登録時の
 例外と構造化logを検証する.
 """
 
@@ -218,7 +218,7 @@ class TestBeatmapFetchTaskExecution:
         """Metadata taskがID取得対象をuse-caseへ1回だけ渡すことを検証する.
 
         Returns:
-            None: kind、target key、既定refresh指定を含む取得対象を確認して完了する.
+            None: kind,target key,既定refresh指定を含む取得対象を確認して完了する.
         """
         fake = _FakeJob()
         context = _make_context(beatmap_metadata_fetch=fake)

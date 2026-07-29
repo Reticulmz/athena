@@ -35,7 +35,7 @@ class SQLAlchemyChannelQueryRepository:
             None: 読み取り用session factoryを保持したrepository instanceを初期化する.
 
         Notes:
-            初期化時にはsessionを生成せず、channel stateは変更しない.
+            初期化時にはsessionを生成せず,channel stateは変更しない.
         """
         self._session_factory = session_factory
 
@@ -158,7 +158,7 @@ class SQLAlchemyChannelQueryRepository:
             SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
 
         Notes:
-            空入力ではsessionを開かず、重複したIDは1つのdict keyとして扱う.
+            空入力ではsessionを開かず,重複したIDは1つのdict keyとして扱う.
         """
         if not channel_ids:
             return {}

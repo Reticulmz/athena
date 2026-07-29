@@ -100,7 +100,7 @@ class ScoreSubmissionProviderSet(Provider):
         current_user_stats_query: CurrentUserStatsQuery,
         beatmap_personal_best_rank_query: BeatmapPersonalBestRankQuery,
     ) -> ProcessScoreSubmissionUseCase:
-        """Score submission全体workflowを認可、beatmap、replay、performance依存で構成する.
+        """Score submission全体workflowを認可,beatmap,replay,performance依存で構成する.
 
         Args:
             submit_score_use_case (SubmitScoreUseCase): 正規化済みscoreを永続化するcommand.
@@ -121,7 +121,7 @@ class ScoreSubmissionProviderSet(Provider):
                 beatmap内personal best rankを取得するquery.
 
         Returns:
-            ProcessScoreSubmissionUseCase: stable submissionを認可、保存、response生成まで
+            ProcessScoreSubmissionUseCase: stable submissionを認可,保存,response生成まで
                 処理するcommand.
         """
         return ProcessScoreSubmissionUseCase(

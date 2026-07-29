@@ -73,6 +73,9 @@ class _IntegrityErrorSession:
     async def flush(self) -> None:
         """Flush失敗として設定済みIntegrityErrorを送出する.
 
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+
         Raises:
             IntegrityError: このdoubleの初期化時に渡された永続化エラー.
         """

@@ -266,11 +266,11 @@ def test_rotate_logs_cleanup_os_error(tmp_path: Path) -> None:
     # (latest.jsonl の削除は成功させるため、それ以外のみ raise する)
     original_unlink = Path.unlink
 
-    def side_effect(path: Path, missing_ok: bool = False) -> None:
+    def side_effect(self: Path, missing_ok: bool = False) -> None:
         """Source logだけを削除しarchive削除は失敗させるfakeを実行する.
 
         Args:
-            path (Path): unlinkが要求された対象path.
+            self (Path): unlinkが要求された対象path.
             missing_ok (bool): Path.unlinkから渡される欠損許容設定.
 
         Returns:
@@ -279,8 +279,8 @@ def test_rotate_logs_cleanup_os_error(tmp_path: Path) -> None:
         Raises:
             OSError: archive pathのunlinkを模擬的に拒否する場合.
         """
-        if path.name == "latest.jsonl":
-            original_unlink(path, missing_ok=missing_ok)
+        if self.name == "latest.jsonl":
+            original_unlink(self, missing_ok=missing_ok)
             return
         raise OSError("Permission Denied")
 

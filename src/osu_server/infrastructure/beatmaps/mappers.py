@@ -42,7 +42,7 @@ class _BeatmapJSON(TypedDict, total=False):
         beatmapset (_BeatmapsetJSON): 親ビートマップセットの埋め込みJSON.
 
     Notes:
-        ``total=False`` のため、外部APIが省略するfieldを含め全fieldは任意である.
+        ``total=False`` のため,外部APIが省略するfieldを含め全fieldは任意である.
     """
 
     id: int
@@ -80,7 +80,7 @@ class _BeatmapsetJSON(TypedDict, total=False):
         beatmaps (list[_BeatmapJSON]): 内包するビートマップJSON列.
 
     Notes:
-        ``total=False`` のため、外部APIが省略するfieldを含め全fieldは任意である.
+        ``total=False`` のため,外部APIが省略するfieldを含め全fieldは任意である.
     """
 
     id: int
@@ -311,7 +311,7 @@ def _maybe_int(value: object) -> int | None:
         value (object): 外部APIから受け取った変換対象値.
 
     Returns:
-        int | None: 変換した整数. ``bool``、 ``None``、不正な文字列、未対応型は ``None``.
+        int | None: 変換した整数. ``bool``, ``None``,不正な文字列,未対応型は ``None``.
 
     Notes:
         floatはPythonの ``int()`` と同じく小数部を切り捨てる.
@@ -337,7 +337,7 @@ def _maybe_str(value: object) -> str | None:
         value (object): 外部APIから受け取った変換対象値.
 
     Returns:
-        str | None: 文字列値、またはint/floatを文字列化した値. 未対応型と ``None`` は ``None``.
+        str | None: 文字列値,またはint/floatを文字列化した値. 未対応型と ``None`` は ``None``.
 
     Notes:
         ``bool`` はPythonでは ``int`` のsubclassであるため ``"True"`` または ``"False"`` になる.
@@ -355,13 +355,13 @@ def _maybe_datetime(value: object) -> datetime | None:
     """外部JSONのISO 8601日時をUTCのdatetimeへ変換する.
 
     Args:
-        value (object): 文字列、数値、またはその他の外部API値.
+        value (object): 文字列,数値,またはその他の外部API値.
 
     Returns:
-        datetime | None: UTCへ正規化した日時. 不正、空、または未対応の値は ``None``.
+        datetime | None: UTCへ正規化した日時. 不正,空,または未対応の値は ``None``.
 
     Notes:
-        末尾 ``Z`` はUTC offsetへ置換し、timezoneなしの日時はUTCとして扱う.
+        末尾 ``Z`` はUTC offsetへ置換し,timezoneなしの日時はUTCとして扱う.
     """
     text = _maybe_str(value)
     if text is None:
@@ -411,7 +411,7 @@ def _status_text(value: object) -> str:
         value (object): osu! APIが返す ``approved`` またはstatus値.
 
     Returns:
-        str: 数値statusに対応する名称、または前後空白を除いた文字列. 未対応値は空文字列.
+        str: 数値statusに対応する名称,または前後空白を除いた文字列. 未対応値は空文字列.
     """
     approved = _maybe_int(value)
     if approved is not None:
@@ -434,7 +434,7 @@ def _maybe_float(value: object) -> float | None:
         value (object): 外部APIから受け取った変換対象値.
 
     Returns:
-        float | None: 変換した浮動小数点数. ``bool``、 ``None``、不正な文字列、未対応型は ``None``.
+        float | None: 変換した浮動小数点数. ``bool``, ``None``,不正な文字列,未対応型は ``None``.
     """
     if isinstance(value, bool) or value is None:
         return None

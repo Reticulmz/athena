@@ -114,8 +114,8 @@ class Score:
         replay_view_count (int): replay を閲覧した回数.
 
     Notes:
-        この dataclass は timing 値と replay_view_count だけを検証する. timing source、
-        hit count、accuracy、ほかの ID の相互整合性はここでは検証しない.
+        この dataclass は timing 値と replay_view_count だけを検証する. timing source,
+        hit count,accuracy,ほかの ID の相互整合性はここでは検証しない.
     """
 
     id: int | None

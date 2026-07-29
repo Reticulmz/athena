@@ -35,7 +35,7 @@ class SQLAlchemyBlobQueryRepository:
             None: 読み取り用session factoryを保持したrepository instanceを初期化する.
 
         Notes:
-            初期化時にはsessionを生成せず、各read operationで短命なsessionを開閉する.
+            初期化時にはsessionを生成せず,各read operationで短命なsessionを開閉する.
         """
         self._session_factory = session_factory
 
@@ -73,7 +73,7 @@ class SQLAlchemyBlobQueryRepository:
             ValueError: model.storage_backendをBlobStorageBackendKindへ変換できない場合.
 
         Notes:
-            checksumの正規化は行わないため、呼び出し側は永続値と同じ表記を渡す.
+            checksumの正規化は行わないため,呼び出し側は永続値と同じ表記を渡す.
         """
         async with self._session_factory() as session:
             model = (

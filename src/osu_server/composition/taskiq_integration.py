@@ -105,7 +105,7 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
             result (TaskiqResult[object]): Taskiqの実行結果. 診断では参照しない.
 
         Returns:
-            None: 対応するscopeを終了し、必要なwarningを記録したことを示す.
+            None: 対応するscopeを終了し,必要なwarningを記録したことを示す.
 
         Raises:
             Exception: diagnostics scopeの終了またはwarning記録が失敗した場合.
@@ -128,7 +128,7 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
             exception (BaseException): 発生した例外. 診断では参照しない.
 
         Returns:
-            None: 対応するscopeを終了し、必要なwarningを記録したことを示す.
+            None: 対応するscopeを終了し,必要なwarningを記録したことを示す.
 
         Raises:
             Exception: diagnostics scopeの終了またはwarning記録が失敗した場合.
@@ -143,7 +143,7 @@ class SQLQueryDiagnosticsTaskiqMiddleware(TaskiqMiddleware):
             message (TaskiqMessage): 終了対象scopeのtask IDを持つTaskiq message.
 
         Returns:
-            None: scopeがない場合は何もせず、存在した場合はwarning記録まで完了したことを示す.
+            None: scopeがない場合は何もせず,存在した場合はwarning記録まで完了したことを示す.
 
         Raises:
             Exception: diagnostics scopeの終了またはwarning記録が失敗した場合.
@@ -189,7 +189,7 @@ def setup_taskiq_query_diagnostics(config: AppConfig, broker: AsyncBroker) -> No
         broker (AsyncBroker): workerが利用するTaskiq broker.
 
     Returns:
-        None: 既存diagnostics middlewareを除去し、有効時だけ新instanceを追加したことを示す.
+        None: 既存diagnostics middlewareを除去し,有効時だけ新instanceを追加したことを示す.
     """
     broker.middlewares = [
         middleware

@@ -24,7 +24,7 @@ class BeatmapSubmissionCounts:
 
     Attributes:
         play_count (int): 送信済み play の非負累積件数.
-        pass_count (int): 送信済み pass の非負累積件数。play_count を超えない.
+        pass_count (int): 送信済み pass の非負累積件数.play_count を超えない.
     """
 
     play_count: int
@@ -37,7 +37,7 @@ class BeatmapSubmissionCounts:
             None: Play/pass count が集計制約を満たすことを示す.
 
         Raises:
-            ValueError: いずれかの count が負の場合、または pass_count が play_count を
+            ValueError: いずれかの count が負の場合,または pass_count が play_count を
                 超える場合に送出する.
         """
         if self.play_count < 0:
@@ -56,8 +56,8 @@ class BeatmapCommandRepository(Protocol):
     """Beatmap refresh workflow の mutation と consistency-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -68,7 +68,7 @@ class BeatmapCommandRepository(Protocol):
             beatmap_id (int): 取得する Beatmap ID.
 
         Returns:
-            Beatmap | None: 一致する Beatmap。存在しない場合は None.
+            Beatmap | None: 一致する Beatmap.存在しない場合は None.
         """
         ...
 
@@ -79,7 +79,7 @@ class BeatmapCommandRepository(Protocol):
             beatmapset_id (int): 取得する BeatmapSet ID.
 
         Returns:
-            BeatmapSet | None: 一致する BeatmapSet。存在しない場合は None.
+            BeatmapSet | None: 一致する BeatmapSet.存在しない場合は None.
         """
         ...
 
@@ -90,7 +90,7 @@ class BeatmapCommandRepository(Protocol):
             checksum_md5 (str): 検索する Beatmap の MD5 checksum.
 
         Returns:
-            Beatmap | None: 一致する Beatmap。存在しない場合は None.
+            Beatmap | None: 一致する Beatmap.存在しない場合は None.
         """
         ...
 
@@ -104,7 +104,7 @@ class BeatmapCommandRepository(Protocol):
             original_filename (str): BeatmapSet 内で照合する元の filename.
 
         Returns:
-            Beatmap | None: 範囲内で一致する Beatmap。存在しない場合は None.
+            Beatmap | None: 範囲内で一致する Beatmap.存在しない場合は None.
         """
         ...
 
@@ -118,7 +118,7 @@ class BeatmapCommandRepository(Protocol):
             None: Snapshot の保存が Unit of Work に反映されたことを示す.
 
         Raises:
-            ValueError: Snapshot 内または保存済み Beatmap と、同じ checksum を異なる Beatmap ID に
+            ValueError: Snapshot 内または保存済み Beatmap と,同じ checksum を異なる Beatmap ID に
                 対応付けようとした場合に送出する.
         """
         ...
@@ -130,7 +130,7 @@ class BeatmapCommandRepository(Protocol):
 
         Args:
             beatmap_id (int): Override する Beatmap ID.
-            status (LocalBeatmapStatus | None): 設定する local status。None の場合は override を
+            status (LocalBeatmapStatus | None): 設定する local status.None の場合は override を
                 解除する.
 
         Returns:
@@ -147,7 +147,7 @@ class BeatmapCommandRepository(Protocol):
         *,
         passed: bool,
     ) -> BeatmapSubmissionCounts:
-        """Submitted play/pass count を増やし、更新後の値を返す.
+        """Submitted play/pass count を増やし,更新後の値を返す.
 
         Args:
             beatmap_id (int): Count を増やす Beatmap ID.
@@ -157,7 +157,7 @@ class BeatmapCommandRepository(Protocol):
             BeatmapSubmissionCounts: 増分を反映した play/pass count.
 
         Raises:
-            LookupError: 永続化対象の Beatmap が存在せず、count increment を実行できない場合に
+            LookupError: 永続化対象の Beatmap が存在せず,count increment を実行できない場合に
                 送出する.
         """
         ...
@@ -169,7 +169,7 @@ class BeatmapCommandRepository(Protocol):
             beatmap_id (int): Attachment を取得する Beatmap ID.
 
         Returns:
-            BeatmapFileAttachment | None: 現在の attachment。未登録時は None.
+            BeatmapFileAttachment | None: 現在の attachment.未登録時は None.
         """
         ...
 
@@ -194,7 +194,7 @@ class BeatmapCommandRepository(Protocol):
             target (BeatmapFetchTarget): 状態を取得する fetch target.
 
         Returns:
-            BeatmapFetchRecord | None: 現在の fetch state。未登録時は None.
+            BeatmapFetchRecord | None: 現在の fetch state.未登録時は None.
         """
         ...
 
@@ -206,7 +206,7 @@ class BeatmapCommandRepository(Protocol):
             now (datetime): Pending 状態を記録する現在日時.
 
         Returns:
-            bool: Work を claim できた場合は True。既存状態により claim できない場合は False.
+            bool: Work を claim できた場合は True.既存状態により claim できない場合は False.
         """
         ...
 

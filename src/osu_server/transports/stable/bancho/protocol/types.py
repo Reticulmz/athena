@@ -170,12 +170,10 @@ def _read_uleb128(stream: BytesIO) -> int:
 
 
 BanchoString: _BanchoString = _BanchoString()
-"""Caterpillar struct fieldとして使うBanchoString singletonを表す."""
-
 BanchoStringT = Annotated[str, BanchoString]
-"""Caterpillar struct annotationで使うBanchoString型aliasを表す.
+"""Singleton field type for use in Caterpillar struct annotations.
 
-Examples:
+Usage::
 
     @struct(order=LittleEndian)
     class SomePacket:

@@ -1,8 +1,8 @@
 """stable client の beatmap file warmup request を正規化して解決する command boundary を提供する.
 
-この module は authentication 済み request の beatmap identity を検証し、既存 resolver に file
+この module は authentication 済み request の beatmap identity を検証し,既存 resolver に file
 availability を問い合わせる. resolver
-の例外は呼出側へ返さず、診断可能で機密情報を含まない結果へ
+の例外は呼出側へ返さず,診断可能で機密情報を含まない結果へ
 変換する.
 """
 
@@ -49,7 +49,7 @@ class BeatmapFileWarmupOutcome(Enum):
     """operator と test が確認する beatmap file warmup の結果を表す.
 
     Attributes:
-        REQUESTED (BeatmapFileWarmupOutcome): metadata はあり、file fetch を要求した状態.
+        REQUESTED (BeatmapFileWarmupOutcome): metadata はあり,file fetch を要求した状態.
         ALREADY_AVAILABLE (BeatmapFileWarmupOutcome): 検証済み file がすでに利用可能な状態.
         METADATA_PENDING (BeatmapFileWarmupOutcome): beatmap metadata の取得完了を待つ状態.
         SKIPPED_NO_IDENTITY (BeatmapFileWarmupOutcome):
@@ -123,7 +123,7 @@ class BeatmapFileWarmupResolver(Protocol):
                 の既定を使う.
 
         Returns:
-            BeatmapResolveResult: metadata、file state、enqueue result を含む解決結果.
+            BeatmapResolveResult: metadata,file state,enqueue result を含む解決結果.
         """
         ...
 
@@ -141,7 +141,7 @@ class BeatmapFileWarmupResolver(Protocol):
                 の既定を使う.
 
         Returns:
-            BeatmapResolveResult: metadata、file state、enqueue result を含む解決結果.
+            BeatmapResolveResult: metadata,file state,enqueue result を含む解決結果.
         """
         ...
 
@@ -191,8 +191,8 @@ class _IdentityPolicyResult:
 class RequestBeatmapFileWarmupUseCase:
     """authentication 済み stable warmup request を正規化して resolver へ渡す use-case.
 
-    正の beatmap ID を checksum より優先し、checksum は lowercase MD5 へ正規化する. resolver の
-    exception は failure result に変換するため、stable workflow は retry 可能な診断を得られる.
+    正の beatmap ID を checksum より優先し,checksum は lowercase MD5 へ正規化する. resolver の
+    exception は failure result に変換するため,stable workflow は retry 可能な診断を得られる.
 
     Attributes:
         _resolver (BeatmapFileWarmupResolver):
@@ -214,19 +214,19 @@ class RequestBeatmapFileWarmupUseCase:
         self,
         request: BeatmapFileWarmupRequest,
     ) -> BeatmapFileWarmupResult:
-        """Request の identity を検証し、file warmup の outcome を返す.
+        """Request の identity を検証し,file warmup の outcome を返す.
 
         Args:
             request (BeatmapFileWarmupRequest):
                 authentication 済み user と beatmap identity を含む warmup request.
 
         Returns:
-            BeatmapFileWarmupResult: identity policy、resolver result、または resolver failure
+            BeatmapFileWarmupResult: identity policy,resolver result,または resolver failure
             を表す安全な
             outcome.
 
         Notes:
-            user ID が正でない場合、identity がない場合、不正な identity は resolver
+            user ID が正でない場合,identity がない場合,不正な identity は resolver
             を呼び出さない. resolver exception
             は例外本文を log field に含めずFAILED resultへ変換する.
         """
@@ -368,20 +368,20 @@ class RequestBeatmapFileWarmupUseCase:
 
 
 def _normalize_identity(request: BeatmapFileWarmupRequest) -> _IdentityPolicyResult:
-    """Request の beatmap identity を検証し、resolver 用に正規化する.
+    """Request の beatmap identity を検証し,resolver 用に正規化する.
 
     Args:
         request (BeatmapFileWarmupRequest):
             beatmap ID と optional MD5 checksum を含む warmup request.
 
     Returns:
-        _IdentityPolicyResult: 正の beatmap ID を優先したVALID、checksumを lowercase
-        化したVALID、または skip
+        _IdentityPolicyResult: 正の beatmap ID を優先したVALID,checksumを lowercase
+        化したVALID,または skip
         policy outcome.
 
     Notes:
         beatmap ID が正なら checksum の形式にかかわらず優先する.
-        0はidentityなし、負数と32桁hex以外のchecksumはmalformedとして扱う.
+        0はidentityなし,負数と32桁hex以外のchecksumはmalformedとして扱う.
     """
     beatmap_id = request.beatmap_id
     checksum_md5 = request.checksum_md5
@@ -440,8 +440,8 @@ def _outcome_from_resolve_result(
             metadata と file availability を含む resolver result.
 
     Returns:
-        BeatmapFileWarmupOutcome: metadata 未取得なら`METADATA_PENDING`、file
-        利用可能なら`ALREADY_AVAILABLE`、それ以外は`REQUESTED`.
+        BeatmapFileWarmupOutcome: metadata 未取得なら`METADATA_PENDING`,file
+        利用可能なら`ALREADY_AVAILABLE`,それ以外は`REQUESTED`.
     """
     if resolve_result.beatmap is None:
         return BeatmapFileWarmupOutcome.METADATA_PENDING
@@ -457,7 +457,7 @@ def _reason_from_resolve_result(resolve_result: BeatmapResolveResult) -> str | N
         resolve_result (BeatmapResolveResult): reason と file state を含む resolver result.
 
     Returns:
-        str | None: file 利用可能なら`"file_available"`、それ以外は resolver が返した reason.
+        str | None: file 利用可能なら`"file_available"`,それ以外は resolver が返した reason.
     """
     if resolve_result.file_status is BeatmapFileState.AVAILABLE:
         return "file_available"
@@ -473,12 +473,12 @@ def _log_result(
 
     Args:
         result (BeatmapFileWarmupResult):
-            outcome、入口、正規化済み identity、reason を含む診断結果.
+            outcome,入口,正規化済み identity,reason を含む診断結果.
         exception_type (str | None):
             resolver failure 時に記録する exception class 名. exception 本文は記録しない.
 
     Returns:
-        None: structured diagnostic event を出力して完了し、呼び出し側へ値を返さない.
+        None: structured diagnostic event を出力して完了し,呼び出し側へ値を返さない.
     """
     logger.info(
         "beatmap_file_warmup",

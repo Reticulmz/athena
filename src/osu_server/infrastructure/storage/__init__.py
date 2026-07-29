@@ -1,4 +1,4 @@
-"""blob storage backendのcontract、error、factoryを公開する."""
+"""blob storage backendのcontract,error,factoryを公開する."""
 
 from osu_server.infrastructure.storage.errors import (
     BackendReadError,

@@ -22,7 +22,7 @@ def to_asyncpg_url(database_url: str) -> URL:
         URL: ``postgresql+asyncpg`` driverを使うSQLAlchemy URL.
 
     Raises:
-        sqlalchemy.exc.ArgumentError: ``database_url``が空または不正で、
+        sqlalchemy.exc.ArgumentError: ``database_url``が空または不正で,
             ``make_url``が解析できない場合.
         ValueError: PostgreSQL以外のdriverを含むURLが渡された場合.
     """

@@ -128,7 +128,7 @@ class ChatPersistenceResult:
         reason (ChatPersistenceFailureReason | None): 失敗理由. 成功時はNone.
 
     Notes:
-        successがTrueならreasonはNoneであり、Falseならreasonを必ず指定する.
+        successがTrueならreasonはNoneであり,Falseならreasonを必ず指定する.
     """
 
     success: bool

@@ -1,4 +1,4 @@
-"""parsed score の hit count、accuracy、grade を検証する domain policy を定義する."""
+"""parsed score の hit count,accuracy,grade を検証する domain policy を定義する."""
 
 from dataclasses import dataclass
 
@@ -47,13 +47,13 @@ def validate_hit_counts(parsed: ParsedScore) -> ValidationResult:
         parsed (ParsedScore): client payload を mapping した score 入力.
 
     Returns:
-        ValidationResult: valid=True と計算済みの accuracy、grade を持つ結果.
+        ValidationResult: valid=True と計算済みの accuracy,grade を持つ結果.
 
     Raises:
-        ValidationError: ruleset が不明、hit count が負、または ruleset 上の総 hit 数が 0 の場合.
+        ValidationError: ruleset が不明,hit count が負,または ruleset 上の総 hit 数が 0 の場合.
 
     Notes:
-        client_grade は信頼せず、この関数が hit count だけから grade を再計算する.
+        client_grade は信頼せず,この関数が hit count だけから grade を再計算する.
     """
     # Validate ruleset
     try:
@@ -102,7 +102,7 @@ def _calculate_total_hits(ruleset: Ruleset, parsed: ParsedScore) -> int:
         int: ruleset が採用する判定数と miss 数の合計.
 
     Notes:
-        TAIKO は n50 を、CATCH は geki を、OSU は geki と katu を集計に含めない.
+        TAIKO は n50 を,CATCH は geki を,OSU は geki と katu を集計に含めない.
     """
     match ruleset:
         case Ruleset.OSU:
@@ -183,10 +183,10 @@ def _calculate_osu_grade(parsed: ParsedScore, accuracy: float) -> Grade:
         accuracy (float): 0.0 から 1.0 の accuracy ratio.
 
     Returns:
-        Grade: X、S、A、B、C、D のいずれか.
+        Grade: X,S,A,B,C,D のいずれか.
 
     Notes:
-        X は miss、n100、n50 がすべて 0 の完全 accuracy に限る. S 以下の閾値比較は厳密な
+        X は miss,n100,n50 がすべて 0 の完全 accuracy に限る. S 以下の閾値比較は厳密な
         `>` を使う.
     """
     if (
@@ -215,7 +215,7 @@ def _calculate_taiko_grade(parsed: ParsedScore, accuracy: float) -> Grade:
         accuracy (float): 0.0 から 1.0 の accuracy ratio.
 
     Returns:
-        Grade: X、S、A、B、C、D のいずれか.
+        Grade: X,S,A,B,C,D のいずれか.
 
     Notes:
         X は miss と n100 が 0 の完全 accuracy に限る. S 以下の閾値比較は厳密な `>` を使う.
@@ -240,10 +240,10 @@ def _calculate_catch_grade(accuracy: float) -> Grade:
         accuracy (float): 0.0 から 1.0 の accuracy ratio.
 
     Returns:
-        Grade: X、S、A、B、C、D のいずれか.
+        Grade: X,S,A,B,C,D のいずれか.
 
     Notes:
-        X は完全 accuracy、S/A/B/C の閾値はそれぞれ 0.98/0.94/0.90/0.85 より厳密に大きい値を使う.
+        X は完全 accuracy,S/A/B/C の閾値はそれぞれ 0.98/0.94/0.90/0.85 より厳密に大きい値を使う.
     """
     if accuracy >= _GRADE_SS_ACCURACY:
         return Grade.X
@@ -265,10 +265,10 @@ def _calculate_mania_grade(accuracy: float) -> Grade:
         accuracy (float): 0.0 から 1.0 の accuracy ratio.
 
     Returns:
-        Grade: X、S、A、B、C、D のいずれか.
+        Grade: X,S,A,B,C,D のいずれか.
 
     Notes:
-        X は完全 accuracy、S/A/B/C の閾値はそれぞれ 0.95/0.90/0.80/0.70 より厳密に大きい値を使う.
+        X は完全 accuracy,S/A/B/C の閾値はそれぞれ 0.95/0.90/0.80/0.70 より厳密に大きい値を使う.
     """
     if accuracy >= _GRADE_SS_ACCURACY:
         return Grade.X

@@ -1,7 +1,7 @@
 """BanchoBot command の registry と decorator contract を提供する.
 
 この module は command metadata と async handler の immutable binding
-を定義し、case-insensitive な
+を定義し,case-insensitive な
 lookup と決定的な登録順を提供する. builtin catalog と plugin-like command setup は同じ
 decorator
 contract を利用できる.
@@ -27,10 +27,10 @@ CommandHandler = Callable[[CommandContext], Awaitable[str | None]]
 class CommandDefinition:
     """command metadata と async handler の immutable binding を表す.
 
-    `@command` decorator で生成でき、`CommandRegistry` へ登録して command service から解決する.
+    `@command` decorator で生成でき,`CommandRegistry` へ登録して command service から解決する.
 
     Attributes:
-        metadata (CommandMetadata): name、usage、visibility を含む command metadata.
+        metadata (CommandMetadata): name,usage,visibility を含む command metadata.
         handler (CommandHandler):
             `CommandContext` を受けて optional response text を返す async handler.
     """
@@ -40,11 +40,11 @@ class CommandDefinition:
 
 
 class CommandRegistry:
-    """型付き command definition を保存、解決、一覧化する registry.
+    """型付き command definition を保存,解決,一覧化する registry.
 
-    command は canonical lowercase name で保存し、metadata の一覧では登録順を保持する.
+    command は canonical lowercase name で保存し,metadata の一覧では登録順を保持する.
     duplicate name は
-    registration 時に拒否し、instance ごとに独立した mutable state を持つ.
+    registration 時に拒否し,instance ごとに独立した mutable state を持つ.
 
     Attributes:
         _definitions (dict[str, CommandDefinition]):
@@ -65,10 +65,10 @@ class CommandRegistry:
             definition (CommandDefinition): 登録する metadata と async handler の binding.
 
         Returns:
-            None: definition を lookup table と登録順へ追加し、呼び出し側へ値を返さない.
+            None: definition を lookup table と登録順へ追加し,呼び出し側へ値を返さない.
 
         Raises:
-            ValueError: command name が空、または case-insensitive にすでに登録済みの場合.
+            ValueError: command name が空,または case-insensitive にすでに登録済みの場合.
         """
         name = definition.metadata.name
         canonical = name.lower()
@@ -127,13 +127,13 @@ class CommandRegistry:
                 command を実行できる destination. 既定値は`CommandDestination.BOTH`.
 
         Returns:
-            Callable[[CommandHandler], CommandDefinition]: handler を binding へ変換し、この
+            Callable[[CommandHandler], CommandDefinition]: handler を binding へ変換し,この
             registry へ登録する
             decorator.
         """
 
         def decorate(handler: CommandHandler) -> CommandDefinition:
-            """Handler を definition へ変換し、この registry へ登録する.
+            """Handler を definition へ変換し,この registry へ登録する.
 
             Args:
                 handler (CommandHandler):
@@ -141,10 +141,10 @@ class CommandRegistry:
                     handler.
 
             Returns:
-                CommandDefinition: metadata と handler を保持し、登録済みの immutable binding.
+                CommandDefinition: metadata と handler を保持し,登録済みの immutable binding.
 
             Raises:
-                ValueError: outer `name` が空、または case-insensitive に登録済みの場合.
+                ValueError: outer `name` が空,または case-insensitive に登録済みの場合.
             """
             definition = CommandDefinition(
                 metadata=CommandMetadata(

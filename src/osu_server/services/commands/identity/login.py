@@ -18,7 +18,7 @@ class _LoginService(Protocol):
         *,
         country: str,
     ) -> LoginResponse | LoginResult:
-        """ログインを認証し、成功時はactive sessionを作成する.
+        """ログインを認証し,成功時はactive sessionを作成する.
 
         Args:
             login_request (LoginRequest): パース済みのログインrequest.
@@ -70,7 +70,7 @@ class LoginCommand(Protocol):
 
 
 class LoginCommandUseCase:
-    """ログインrequestを認証し、成功時にactive sessionを作成する.
+    """ログインrequestを認証し,成功時にactive sessionを作成する.
 
     Attributes:
         _auth_service (_LoginService): 認証とsession作成を実行するservice.
@@ -88,7 +88,7 @@ class LoginCommandUseCase:
         self._auth_service = auth_service
 
     async def execute(self, input_data: LoginCommandInput) -> LoginCommandResult:
-        """ログインrequestをserviceへ渡し、結果をcommand resultへ包む.
+        """ログインrequestをserviceへ渡し,結果をcommand resultへ包む.
 
         Args:
             input_data (LoginCommandInput): ログインrequestと国コード.

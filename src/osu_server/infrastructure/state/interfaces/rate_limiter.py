@@ -10,7 +10,7 @@ class RateLimiter(Protocol):
     """User ごとの action 回数を time window 内で制限する contract.
 
     Notes:
-        check は現在の action を判定対象に含め、許可時だけその action を記録する.
+        check は現在の action を判定対象に含め,許可時だけその action を記録する.
     """
 
     async def check(self, user_id: int, limit: int, window: int) -> bool:
@@ -22,6 +22,6 @@ class RateLimiter(Protocol):
             window (int): 判定 window の秒数.
 
         Returns:
-            bool: action を許可する場合は True、rate limited の場合は False.
+            bool: action を許可する場合は True,rate limited の場合は False.
         """
         ...

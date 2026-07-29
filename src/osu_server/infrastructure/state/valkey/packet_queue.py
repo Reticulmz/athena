@@ -26,9 +26,9 @@ class ValkeyPacketQueue:
         _prefix (str): 環境または test を分離する key prefix.
 
     Notes:
-        queue key は `{prefix}packet_queue:{user_id}`、activation key は
-        `{prefix}pq_meta:{user_id}` を使用し、両方は同じ TTL を持つ.
-        enqueue と dequeue_all は Lua script を使い、TOCTOU race を避ける.
+        queue key は `{prefix}packet_queue:{user_id}`,activation key は
+        `{prefix}pq_meta:{user_id}` を使用し,両方は同じ TTL を持つ.
+        enqueue と dequeue_all は Lua script を使い,TOCTOU race を避ける.
     """
 
     # Lua script: atomically drain all packets from the queue.
@@ -125,14 +125,14 @@ return 1""")
 
         Args:
             user_id (int): 追加先 queue を持つ user id.
-            *data (bytes): 個別の S2C packet。複数指定時は同じ順序で追加する.
+            *data (bytes): 個別の S2C packet.複数指定時は同じ順序で追加する.
 
         Returns:
             None: enqueue script 実行の完了を表す.
 
         Notes:
             data が空なら script を呼ばない.
-            activation marker がない user の packet は script が破棄し、size upper bound を超える
+            activation marker がない user の packet は script が破棄し,size upper bound を超える
             packet は最も古いものから切り捨てる.
         """
         if not data:
@@ -145,16 +145,16 @@ return 1""")
         )
 
     async def dequeue_all(self, user_id: int) -> bytes:
-        """Valkey queue を atomic に drain し、packet を連結した bytes を返す.
+        """Valkey queue を atomic に drain し,packet を連結した bytes を返す.
 
         Args:
             user_id (int): drain 対象 queue の user id.
 
         Returns:
-            bytes: queue 内 packet を連結した値。queue が空または未存在なら b"".
+            bytes: queue 内 packet を連結した値.queue が空または未存在なら b"".
 
         Notes:
-            dequeue script は List を読み出してから削除するため、同時 drain で packet を
+            dequeue script は List を読み出してから削除するため,同時 drain で packet を
             重複返却しない.
         """
         packets = await self._client.invoke_script(
@@ -167,7 +167,7 @@ return 1""")
         return b"".join(cast("list[bytes]", packets))
 
     async def refresh_ttl(self, user_id: int, ttl: int) -> None:
-        """Queue を active session として有効化し、既存 key の TTL を更新する.
+        """Queue を active session として有効化し,既存 key の TTL を更新する.
 
         Args:
             user_id (int): 更新する queue の user id.
@@ -177,7 +177,7 @@ return 1""")
             None: refresh script 実行の完了を表す.
 
         Notes:
-            activation marker は常に設定し、packet List が存在する場合だけその TTL を更新する.
+            activation marker は常に設定し,packet List が存在する場合だけその TTL を更新する.
         """
         _ = await self._client.invoke_script(
             self._REFRESH_SCRIPT,

@@ -11,11 +11,11 @@ class ChannelStateStore(Protocol):
 
     Notes:
         実装は channel -> members と user -> channels を同じ論理状態として更新する.
-        追加と削除は冪等であり、存在しない参加状態への操作を失敗にしない.
+        追加と削除は冪等であり,存在しない参加状態への操作を失敗にしない.
     """
 
     async def add_member(self, channel_name: str, user_id: int) -> None:
-        """User をチャンネルへ参加させ、両方の index を更新する.
+        """User をチャンネルへ参加させ,両方の index を更新する.
 
         Args:
             channel_name (str): 参加先のチャンネル名.
@@ -30,7 +30,7 @@ class ChannelStateStore(Protocol):
         ...
 
     async def remove_member(self, channel_name: str, user_id: int) -> None:
-        """User をチャンネルから退会させ、両方の index を更新する.
+        """User をチャンネルから退会させ,両方の index を更新する.
 
         Args:
             channel_name (str): 退会元のチャンネル名.
@@ -52,7 +52,7 @@ class ChannelStateStore(Protocol):
             user_id (int): 確認する user id.
 
         Returns:
-            bool: 参加していれば True、そうでなければ False.
+            bool: 参加していれば True,そうでなければ False.
         """
         ...
 
@@ -63,7 +63,7 @@ class ChannelStateStore(Protocol):
             channel_name (str): 取得するチャンネル名.
 
         Returns:
-            set[int]: 現在の参加 user id。チャンネルが未存在または空なら空集合.
+            set[int]: 現在の参加 user id.チャンネルが未存在または空なら空集合.
         """
         ...
 
@@ -74,7 +74,7 @@ class ChannelStateStore(Protocol):
             channel_name (str): 件数を取得するチャンネル名.
 
         Returns:
-            int: 現在の参加者数。チャンネルが未存在なら 0.
+            int: 現在の参加者数.チャンネルが未存在なら 0.
         """
         ...
 
@@ -85,7 +85,7 @@ class ChannelStateStore(Protocol):
             user_id (int): 参加チャンネルを取得する user id.
 
         Returns:
-            set[str]: 現在のチャンネル名。参加状態がなければ空集合.
+            set[str]: 現在のチャンネル名.参加状態がなければ空集合.
         """
         ...
 
@@ -96,6 +96,6 @@ class ChannelStateStore(Protocol):
             user_id (int): 全参加状態を削除する user id.
 
         Returns:
-            set[str]: 削除したチャンネル名。参加状態がなければ空集合.
+            set[str]: 削除したチャンネル名.参加状態がなければ空集合.
         """
         ...

@@ -7,7 +7,7 @@ from caterpillar.fields import boolean, uint16, uint32
 from caterpillar.model import struct
 
 HEADER_SIZE: int = 7
-"""Bancho packet headerの固定byte長を表す."""
+"""Fixed byte length of a bancho packet header."""
 
 
 @struct(order=LittleEndian)

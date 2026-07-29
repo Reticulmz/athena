@@ -119,7 +119,7 @@ async def test_list_active_sessions_reflects_deleted_sessions() -> None:
 async def test_get_active_sessions_by_user_ids_returns_requested_online_sessions() -> None:
     """指定順のonline sessionだけをID queryが返す契約を検証する.
 
-    online userとmissing userを含むID列でqueryを実行し、登録済みsnapshotだけが指定順で返ることを
+    online userとmissing userを含むID列でqueryを実行し,登録済みsnapshotだけが指定順で返ることを
     確認する.
 
     Returns:

@@ -1,6 +1,6 @@
 """root ASGI applicationのversionとhealth endpointを提供する.
 
-起動時のinfrastructure確認と、request時に返すversion/依存service状態をここで定義する.
+起動時のinfrastructure確認と,request時に返すversion/依存service状態をここで定義する.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ async def check_infrastructure(container: AsyncContainer) -> None:
         None: PostgreSQLの`SELECT 1`とValkeyの`ping`を完了したことを示す.
 
     Raises:
-        Exception: database connection、SQL実行、またはValkey pingが失敗した場合.
+        Exception: database connection,SQL実行,またはValkey pingが失敗した場合.
     """
     engine = await container.get(AsyncEngine)
     async with engine.connect() as conn:
@@ -94,11 +94,11 @@ async def health_check_endpoint(request: Request) -> JSONResponse:
         request (Request): `version_info`と`dishka_container`を保持するStarlette request.
 
     Returns:
-        JSONResponse: 両serviceが正常なら200/healthy、いずれかが失敗なら503/unhealthyの
+        JSONResponse: 両serviceが正常なら200/healthy,いずれかが失敗なら503/unhealthyの
             response.
 
     Notes:
-        application lifespanがrequest app stateを設定済みであることを前提とし、各serviceの
+        application lifespanがrequest app stateを設定済みであることを前提とし,各serviceの
         確認失敗はresponseの`checks`へ`error`として記録する.
     """
     version, commit = request.app.state.version_info  # pyright: ignore[reportAny]

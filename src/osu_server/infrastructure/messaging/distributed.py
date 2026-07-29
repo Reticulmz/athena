@@ -25,7 +25,7 @@ class DistributedEventEnvelope:
         event_type (str): 購読と mapper が使う空でない安定イベント型です.
         occurred_at (datetime): 通知元でイベントが発生した日時です.
         schema_version (int): payload schema の正の互換性 version です.
-        payload (JsonObject): JSON primitive、list、object だけで構成する通知内容です.
+        payload (JsonObject): JSON primitive,list,object だけで構成する通知内容です.
 
     Notes:
         This is not a durable source of truth and has no replay guarantee.
@@ -38,14 +38,14 @@ class DistributedEventEnvelope:
     payload: JsonObject
 
     def __post_init__(self) -> None:
-        """通知 envelope の識別子、schema version、JSON payload を検証します.
+        """通知 envelope の識別子,schema version,JSON payload を検証します.
 
         Returns:
             None: 全ての不変条件を満たしたことを表します.
 
         Raises:
-            ValueError: event_id または event_type が空、あるいは schema_version が正でない場合.
-            TypeError: payload が JSON object でない、または JSON 非対応値を含む場合.
+            ValueError: event_id または event_type が空,あるいは schema_version が正でない場合.
+            TypeError: payload が JSON object でない,または JSON 非対応値を含む場合.
         """
         if not self.event_id:
             msg = "event_id must not be empty"
@@ -140,7 +140,7 @@ def _validate_json_object(value: object) -> None:
         None: 値が JSON object として有効であることを表します.
 
     Raises:
-        TypeError: 値が dict でない、key が文字列でない、または子要素が JSON 非対応の場合.
+        TypeError: 値が dict でない,key が文字列でない,または子要素が JSON 非対応の場合.
     """
     if not isinstance(value, dict):
         msg = "payload must be a dict"
@@ -154,7 +154,7 @@ def _validate_json_object(value: object) -> None:
 
 
 def _validate_json_value(value: object) -> None:
-    """値が JSON primitive、list、または object であることを検証します.
+    """値が JSON primitive,list,または object であることを検証します.
 
     Args:
         value (object): 検証する候補値です.

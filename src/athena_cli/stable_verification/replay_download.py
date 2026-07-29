@@ -215,7 +215,7 @@ class ReplayDownloadEvidenceBundle:
             fixture.
 
     Notes:
-        Raw query value、credential-like value、raw replay bytes、complete `.osr` bytesを
+        Raw query value,credential-like value,raw replay bytes,complete `.osr` bytesを
         保持しない.
     """
 
@@ -241,7 +241,7 @@ class _ScoreLookup(Protocol):
             score_id (int): 取得するscore ID.
 
         Returns:
-            object | None: Scoreが存在する場合はopaqueなscore object。存在しない場合はNone.
+            object | None: Scoreが存在する場合はopaqueなscore object.存在しない場合はNone.
         """
         ...
 
@@ -259,7 +259,7 @@ class _ReplayAttachmentLookup(Protocol):
             score_id (int): Replay attachmentを調べるscore ID.
 
         Returns:
-            ReplayBlobAttachmentRecord | None: Attachment record。存在しない場合はNone.
+            ReplayBlobAttachmentRecord | None: Attachment record.存在しない場合はNone.
         """
         ...
 
@@ -274,7 +274,7 @@ class _BlobMetadataLookup(Protocol):
             blob_id (int): 取得するblob metadata ID.
 
         Returns:
-            ReplayBlobMetadataRecord | None: Blob metadata。存在しない場合はNone.
+            ReplayBlobMetadataRecord | None: Blob metadata.存在しない場合はNone.
         """
         ...
 
@@ -341,11 +341,11 @@ async def diagnose_replay_blob(
             backend.
 
     Returns:
-        ReplayBlobDiagnosticResult: Score、attachment、metadata、storage object、SHA-256、
+        ReplayBlobDiagnosticResult: Score,attachment,metadata,storage object,SHA-256,
             byte sizeの照合結果.
 
     Notes:
-        Raw replay bytes、credential-like value、complete `.osr` bytes、storage key、digestを
+        Raw replay bytes,credential-like value,complete `.osr` bytes,storage key,digestを
         診断summaryへ含めない.
     """
     score = await score_lookup.get_by_id(diagnostic_input.score_id)
@@ -430,7 +430,7 @@ async def _observe_storage_object(
         storage_key (str): 読み込むbackend object key.
 
     Returns:
-        _StorageObservation | None: 読み込み成功時のdigestとbyte size。`OSError`時はNone.
+        _StorageObservation | None: 読み込み成功時のdigestとbyte size.`OSError`時はNone.
     """
     digest_builder = hashlib.sha256()
     byte_size = 0
@@ -510,7 +510,7 @@ def _replay_blob_diagnostic_status(
         classification (ReplayBlobDiagnosticClassification): Replay blobの診断分類.
 
     Returns:
-        VerificationStatus: Integrity passはPASS、integrity failureはFAIL、それ以外はUNAVAILABLE.
+        VerificationStatus: Integrity passはPASS,integrity failureはFAIL,それ以外はUNAVAILABLE.
     """
     if classification is ReplayBlobDiagnosticClassification.INTEGRITY_PASS:
         return VerificationStatus.PASS
@@ -535,7 +535,7 @@ def build_replay_download_body_decision(
         evidence_references (tuple[str, ...]): 判定に使ったsanitized evidenceの参照.
 
     Returns:
-        ReplayDownloadBodyDecision: Direct blob bytes、body assembly、blockedのいずれかを表す
+        ReplayDownloadBodyDecision: Direct blob bytes,body assembly,blockedのいずれかを表す
             report-safeなdecision.
 
     Notes:
@@ -667,7 +667,7 @@ def validate_replay_download_fixtures(
         tuple[SurfaceResult, ...]: Fixture fileごとのmandatory検証結果.
 
     Notes:
-        DiagnosticSummaryにはraw query value、credential value、raw replay bytesを含めない.
+        DiagnosticSummaryにはraw query value,credential value,raw replay bytesを含めない.
     """
     request_errors = _validate_request_metadata(bundle.request_metadata)
     response_errors = _validate_response_metadata(bundle.response_metadata)
@@ -713,7 +713,7 @@ def _validate_request_metadata(document: Mapping[str, object]) -> tuple[str, ...
         document (Mapping[str, object]): Request metadata fixtureのJSON object.
 
     Returns:
-        tuple[str, ...]: 重複を除いたreport-safeなvalidation error code。正常時は空tuple.
+        tuple[str, ...]: 重複を除いたreport-safeなvalidation error code.正常時は空tuple.
 
     Notes:
         Raw query valueやcredential valueをerror messageへ含めない.
@@ -793,7 +793,7 @@ def _validate_target_route_contract(document: Mapping[str, object]) -> tuple[str
         document (Mapping[str, object]): Request metadata fixtureのJSON object.
 
     Returns:
-        tuple[str, ...]: Route contractのreport-safeなvalidation error code。正常時は空tuple.
+        tuple[str, ...]: Route contractのreport-safeなvalidation error code.正常時は空tuple.
     """
     errors: list[str] = []
     route_contract = document.get("target_route_contract")
@@ -838,7 +838,7 @@ def _validate_response_metadata(document: Mapping[str, object]) -> tuple[str, ..
         document (Mapping[str, object]): Response metadata fixtureのJSON object.
 
     Returns:
-        tuple[str, ...]: Response captureのreport-safeなvalidation error code。正常時は空tuple.
+        tuple[str, ...]: Response captureのreport-safeなvalidation error code.正常時は空tuple.
     """
     errors = list(_validate_metadata_document(document))
     captures = _capture_mappings(document)
@@ -864,7 +864,7 @@ def _validate_reference_responses_metadata(document: Mapping[str, object]) -> tu
         document (Mapping[str, object]): Reference response fixtureのJSON object.
 
     Returns:
-        tuple[str, ...]: Reference entryのreport-safeなvalidation error code。正常時は空tuple.
+        tuple[str, ...]: Reference entryのreport-safeなvalidation error code.正常時は空tuple.
     """
     errors = list(_validate_metadata_document(document))
     references = _reference_response_mappings(document)
@@ -901,7 +901,7 @@ def _validate_reference_auth_fields(entry: Mapping[str, object]) -> tuple[str, .
         entry (Mapping[str, object]): Reference response entryのJSON object.
 
     Returns:
-        tuple[str, ...]: Auth fieldのreport-safeなvalidation error code。正常時は空tuple.
+        tuple[str, ...]: Auth fieldのreport-safeなvalidation error code.正常時は空tuple.
     """
     errors: list[str] = []
     auth_fields = _auth_field_mappings(entry.get("auth_fields"))
@@ -933,7 +933,7 @@ def _validate_response_contract_metadata(document: Mapping[str, object]) -> tupl
         document (Mapping[str, object]): Response contract fixtureのJSON object.
 
     Returns:
-        tuple[str, ...]: Branch metadataのreport-safeなvalidation error code。正常時は空tuple.
+        tuple[str, ...]: Branch metadataのreport-safeなvalidation error code.正常時は空tuple.
     """
     errors = list(_validate_metadata_document(document))
     branches = _response_contract_branch_mappings(document)
@@ -965,7 +965,7 @@ def _validate_body_assembly_decision(document: Mapping[str, object]) -> tuple[st
         document (Mapping[str, object]): Body assembly decision fixtureのJSON object.
 
     Returns:
-        tuple[str, ...]: Decision metadataのreport-safeなvalidation error code。正常時は空tuple.
+        tuple[str, ...]: Decision metadataのreport-safeなvalidation error code.正常時は空tuple.
     """
     errors = list(_validate_metadata_document(document))
     decision = document.get("decision")
@@ -1025,7 +1025,7 @@ def _validate_metadata_document(document: Mapping[str, object]) -> tuple[str, ..
         document (Mapping[str, object]): 検証するfixtureのtop-level JSON object.
 
     Returns:
-        tuple[str, ...]: 共通fieldと禁止contentのreport-safeなvalidation error code。正常時は
+        tuple[str, ...]: 共通fieldと禁止contentのreport-safeなvalidation error code.正常時は
             空tuple.
     """
     errors: list[str] = []
@@ -1047,7 +1047,7 @@ def _forbidden_content_errors(value: object) -> tuple[str, ...]:
         value (object): Mappingまたはsequenceを含み得る検証対象.
 
     Returns:
-        tuple[str, ...]: 重複を除いた禁止contentのerror code。禁止contentがなければ空tuple.
+        tuple[str, ...]: 重複を除いた禁止contentのerror code.禁止contentがなければ空tuple.
     """
     errors: list[str] = []
     _collect_forbidden_content_errors(value, errors)
@@ -1058,7 +1058,7 @@ def _collect_forbidden_content_errors(value: object, errors: list[str]) -> None:
     """入れ子のmetadataを巡回して禁止contentのerror codeを追加する.
 
     Args:
-        value (object): 巡回するMapping、sequence、またはleaf値.
+        value (object): 巡回するMapping,sequence,またはleaf値.
         errors (list[str]): 見つけたerror codeを追加する可変list.
 
     Returns:
@@ -1089,7 +1089,7 @@ def _forbidden_key_error(key: str) -> str | None:
         key (str): 検査するmetadata key.
 
     Returns:
-        str | None: Keyが禁止集合に属する場合のerror code。それ以外はNone.
+        str | None: Keyが禁止集合に属する場合のerror code.それ以外はNone.
     """
     normalized_key = key.lower().replace("-", "_")
     return _FORBIDDEN_KEY_ERRORS.get(normalized_key)
@@ -1280,7 +1280,7 @@ def _body_decision_message(decision: Mapping[str, object]) -> str:
         decision (Mapping[str, object]): Body assembly decision mapping.
 
     Returns:
-        str: Status、strategy、任意blocker、任意format classificationを結合したmessage.
+        str: Status,strategy,任意blocker,任意format classificationを結合したmessage.
     """
     status = _string_value(decision, "status")
     strategy = _string_value(decision, "download_body_strategy")
@@ -1428,7 +1428,7 @@ def _capture_mappings(document: Mapping[str, object]) -> tuple[Mapping[str, obje
         document (Mapping[str, object]): `captures` fieldを持ち得るfixture document.
 
     Returns:
-        tuple[Mapping[str, object], ...]: Mappingとして読めるcapture entry。field不正時は空tuple.
+        tuple[Mapping[str, object], ...]: Mappingとして読めるcapture entry.field不正時は空tuple.
     """
     captures_value = document.get("captures")
     if not isinstance(captures_value, Sequence) or isinstance(
@@ -1456,7 +1456,7 @@ def _reference_response_mappings(
         document (Mapping[str, object]): `references` fieldを持ち得るfixture document.
 
     Returns:
-        tuple[Mapping[str, object], ...]: Mappingとして読めるreference entry。field不正時は空tuple.
+        tuple[Mapping[str, object], ...]: Mappingとして読めるreference entry.field不正時は空tuple.
     """
     references_value = document.get("references")
     if not isinstance(references_value, Sequence) or isinstance(
@@ -1484,7 +1484,7 @@ def _response_contract_branch_mappings(
         document (Mapping[str, object]): `branches` fieldを持ち得るfixture document.
 
     Returns:
-        tuple[Mapping[str, object], ...]: Mappingとして読めるbranch entry。field不正時は空tuple.
+        tuple[Mapping[str, object], ...]: Mappingとして読めるbranch entry.field不正時は空tuple.
     """
     branches_value = document.get("branches")
     if not isinstance(branches_value, Sequence) or isinstance(
@@ -1510,7 +1510,7 @@ def _auth_fields(value: object) -> tuple[ReplayDownloadAuthField, ...]:
         value (object): JSON fixtureから取得したauth field候補.
 
     Returns:
-        tuple[ReplayDownloadAuthField, ...]: Mappingとして読めるauth fieldの解析結果。型不正時は
+        tuple[ReplayDownloadAuthField, ...]: Mappingとして読めるauth fieldの解析結果.型不正時は
             空tuple.
     """
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
@@ -1540,7 +1540,7 @@ def _auth_field_mappings(value: object) -> tuple[Mapping[str, object], ...]:
         value (object): JSON fixtureから取得したauth field候補.
 
     Returns:
-        tuple[Mapping[str, object], ...]: Mappingとして読めるauth field entry。型不正時は空tuple.
+        tuple[Mapping[str, object], ...]: Mappingとして読めるauth field entry.型不正時は空tuple.
     """
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return ()
@@ -1566,7 +1566,7 @@ def _missing_required_fields(
         required_fields (frozenset[str]): 存在を要求するfield名の集合.
 
     Returns:
-        tuple[str, ...]: `missing_required_fields:`接頭辞付きerror。欠落がなければ空tuple.
+        tuple[str, ...]: `missing_required_fields:`接頭辞付きerror.欠落がなければ空tuple.
     """
     missing_fields = sorted(
         field_name for field_name in required_fields if field_name not in entry
@@ -1590,7 +1590,7 @@ def _missing_required_fields_with_prefix(
         prefix (str): Error codeへ付ける対象領域の接頭辞.
 
     Returns:
-        tuple[str, ...]: 接頭辞付きmissing-field error。欠落がなければ空tuple.
+        tuple[str, ...]: 接頭辞付きmissing-field error.欠落がなければ空tuple.
     """
     missing_fields = sorted(
         field_name for field_name in required_fields if field_name not in entry
@@ -1617,7 +1617,7 @@ def _validate_string_list_field(
         safe_token (bool): 各文字列へ安全token制約を適用する場合はTrue.
 
     Returns:
-        tuple[str, ...]: 型または安全性が不正な場合のerror code。正常時は空tuple.
+        tuple[str, ...]: 型または安全性が不正な場合のerror code.正常時は空tuple.
     """
     value = entry.get(key)
     if value is None and not required:
@@ -1642,7 +1642,7 @@ def _validate_string_field(
         safe_token (bool): 文字列へ安全token制約を適用する場合はTrue.
 
     Returns:
-        tuple[str, ...]: 型または安全性が不正な場合のerror code。正常時は空tuple.
+        tuple[str, ...]: 型または安全性が不正な場合のerror code.正常時は空tuple.
     """
     value = entry.get(key)
     if isinstance(value, str) and value and (not safe_token or _is_safe_metadata_token(value)):
@@ -1662,7 +1662,7 @@ def _validate_optional_string_field(
         key (str): 検査する任意field名.
 
     Returns:
-        tuple[str, ...]: 値がNoneでも文字列でもない場合のerror code。正常時は空tuple.
+        tuple[str, ...]: 値がNoneでも文字列でもない場合のerror code.正常時は空tuple.
     """
     value = entry.get(key)
     if value is None:
@@ -1689,7 +1689,7 @@ def _validate_observed_metadata(
         note_key (str): 観測状況を補足する安全なnote field名.
 
     Returns:
-        tuple[str, ...]: Flag、value、noteの不整合を示すerror code。正常時は空tuple.
+        tuple[str, ...]: Flag,value,noteの不整合を示すerror code.正常時は空tuple.
     """
     errors: list[str] = []
     observed_value = entry.get(observed_key)
@@ -1758,7 +1758,7 @@ def _validate_int_field(entry: Mapping[str, object], key: str) -> tuple[str, ...
         key (str): 検査するfield名.
 
     Returns:
-        tuple[str, ...]: 整数でない場合のerror code。正常時は空tuple.
+        tuple[str, ...]: 整数でない場合のerror code.正常時は空tuple.
     """
     value = entry.get(key)
     if isinstance(value, int) and not isinstance(value, bool):
@@ -1778,7 +1778,7 @@ def _validate_optional_int_field(
         key (str): 検査する任意field名.
 
     Returns:
-        tuple[str, ...]: Noneでも整数でもない場合のerror code。正常時は空tuple.
+        tuple[str, ...]: Noneでも整数でもない場合のerror code.正常時は空tuple.
     """
     value = entry.get(key)
     if value is None or (isinstance(value, int) and not isinstance(value, bool)):
@@ -1795,7 +1795,7 @@ def _validate_bool_field(entry: Mapping[str, object], key: str) -> tuple[str, ..
         key (str): 検査するfield名.
 
     Returns:
-        tuple[str, ...]: Boolでない場合のerror code。正常時は空tuple.
+        tuple[str, ...]: Boolでない場合のerror code.正常時は空tuple.
     """
     if isinstance(entry.get(key), bool):
         return ()
@@ -1810,7 +1810,7 @@ def _is_safe_metadata_token(value: str) -> bool:
         value (str): 判定するmetadata token.
 
     Returns:
-        bool: `=`、`&`、`:`を含まない場合はTrue.
+        bool: `=`,`&`,`:`を含まない場合はTrue.
     """
     return "=" not in value and "&" not in value and ":" not in value
 
@@ -1823,7 +1823,7 @@ def _string_value(entry: Mapping[str, object], key: str) -> str:
         key (str): 取得するfield名.
 
     Returns:
-        str: 値が文字列ならその値。それ以外は空文字列.
+        str: 値が文字列ならその値.それ以外は空文字列.
     """
     value = entry.get(key)
     if isinstance(value, str):
@@ -1840,7 +1840,7 @@ def _optional_string_value(entry: Mapping[str, object], key: str) -> str | None:
         key (str): 取得する任意field名.
 
     Returns:
-        str | None: 値が文字列ならその値。Noneまたは型不正ならNone.
+        str | None: 値が文字列ならその値.Noneまたは型不正ならNone.
     """
     value = entry.get(key)
     if value is None:
@@ -1859,7 +1859,7 @@ def _bool_value(value: object) -> bool:
         value (object): JSON objectから取得した値.
 
     Returns:
-        bool: 値がboolならその値。それ以外はFalse.
+        bool: 値がboolならその値.それ以外はFalse.
     """
     if isinstance(value, bool):
         return value
@@ -1875,7 +1875,7 @@ def _optional_int_value(entry: Mapping[str, object], key: str) -> int | None:
         key (str): 取得する任意field名.
 
     Returns:
-        int | None: 値がboolではない整数ならその値。Noneまたは型不正ならNone.
+        int | None: 値がboolではない整数ならその値.Noneまたは型不正ならNone.
     """
     value = entry.get(key)
     if isinstance(value, int) and not isinstance(value, bool):
@@ -1895,7 +1895,7 @@ def _verification_status_value(
         key (str): VerificationStatus値を持つfield名.
 
     Returns:
-        VerificationStatus: 有効なenum値。欠損または不正値はKNOWN_GAP.
+        VerificationStatus: 有効なenum値.欠損または不正値はKNOWN_GAP.
     """
     value = entry.get(key)
     if isinstance(value, str):
@@ -1918,7 +1918,7 @@ def _blob_integrity_value(
         key (str): Blob integrity値を持つfield名.
 
     Returns:
-        ReplayDownloadBlobIntegrity: 有効なenum値。欠損または不正値はUNAVAILABLE.
+        ReplayDownloadBlobIntegrity: 有効なenum値.欠損または不正値はUNAVAILABLE.
     """
     value = entry.get(key)
     if isinstance(value, str):
@@ -1941,7 +1941,7 @@ def _body_compatibility_value(
         key (str): Body compatibility値を持つfield名.
 
     Returns:
-        ReplayDownloadBodyCompatibility: 有効なenum値。欠損または不正値はLOCAL_ONLY_UNVERIFIED.
+        ReplayDownloadBodyCompatibility: 有効なenum値.欠損または不正値はLOCAL_ONLY_UNVERIFIED.
     """
     value = entry.get(key)
     if isinstance(value, str):
@@ -1964,7 +1964,7 @@ def _body_strategy_value(
         key (str): Download body strategy値を持つfield名.
 
     Returns:
-        ReplayDownloadBodyStrategy: 有効なenum値。欠損または不正値はBLOCKED.
+        ReplayDownloadBodyStrategy: 有効なenum値.欠損または不正値はBLOCKED.
     """
     value = entry.get(key)
     if isinstance(value, str):
@@ -1983,7 +1983,7 @@ def _string_tuple(value: object) -> tuple[str, ...]:
         value (object): JSON fixtureから取得したsequence候補.
 
     Returns:
-        tuple[str, ...]: 文字列要素だけを元の順序で保持するtuple。型不正時は空tuple.
+        tuple[str, ...]: 文字列要素だけを元の順序で保持するtuple.型不正時は空tuple.
     """
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return ()
@@ -2020,7 +2020,7 @@ def _validation_result_from_errors(
         errors (tuple[str, ...]): Report-safeなvalidation error code.
 
     Returns:
-        SurfaceResult: Errorが空ならPASS、それ以外はredaction policy failureを表す結果.
+        SurfaceResult: Errorが空ならPASS,それ以外はredaction policy failureを表す結果.
     """
     if not errors:
         return _validation_result(

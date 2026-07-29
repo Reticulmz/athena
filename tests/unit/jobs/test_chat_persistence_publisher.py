@@ -12,7 +12,7 @@ from osu_server.services.commands.chat import (
 
 
 class StubTask:
-    """enqueue payloadを記録し、必要ならenqueue失敗を再現するtask double.
+    """enqueue payloadを記録し,必要ならenqueue失敗を再現するtask double.
 
     Attributes:
         fail (bool): kiq呼び出しでRuntimeErrorを送出するか.
@@ -29,7 +29,7 @@ class StubTask:
         self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
     async def kiq(self, *args: object, **kwargs: object) -> None:
-        """指定payloadをenqueueするか、設定済みの失敗を送出する.
+        """指定payloadをenqueueするか,設定済みの失敗を送出する.
 
         Args:
             *args (object): taskへ渡される位置引数payload.
@@ -65,7 +65,7 @@ class StubBroker:
         self.missing_tasks: set[str] = missing_tasks or set()
 
     def find_task(self, task_name: str) -> StubTask | None:
-        """task名に対応するtaskを返すか、未登録状態を返す.
+        """task名に対応するtaskを返すか,未登録状態を返す.
 
         Args:
             task_name (str): publisherが解決を試みるTaskiq task名.
@@ -86,7 +86,7 @@ async def test_publish_channel_message_enqueues_existing_task_payload() -> None:
     """Channel message workを既存taskのprimitive payloadへ変換することを検証する.
 
     Returns:
-        None: sender、channel、contentを順序どおりenqueueした履歴を確認して完了する.
+        None: sender,channel,contentを順序どおりenqueueした履歴を確認して完了する.
     """
     broker = StubBroker()
     publisher = TaskiqChatPersistenceWorkPublisher(broker)

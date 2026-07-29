@@ -236,6 +236,9 @@ async def _raise_after_command_mutation(factory: InMemoryUnitOfWorkFactory) -> N
     Args:
         factory (InMemoryUnitOfWorkFactory): 例外終了するUnit of Workを生成するfactory.
 
+    Returns:
+        None: 処理を完了し, 呼び出し側へ値を返さない.
+
     Raises:
         RuntimeError: 未コミット変更を中断するため常に送出する例外.
     """

@@ -201,7 +201,7 @@ class TestResolveBeatmapByIdQuery:
     ) -> None:
         """存在しないbeatmap IDのunavailable結果を検証する.
 
-        空のrepositoryで解決queryを実行し、beatmapとbeatmapsetがともにNoneのまま返ることを確認する.
+        空のrepositoryで解決queryを実行し,beatmapとbeatmapsetがともにNoneのまま返ることを確認する.
 
         Args:
             beatmap_query_repo (BeatmapQueryRepositoryStub): 空のbeatmap read model fixture.
@@ -223,7 +223,7 @@ class TestResolveBeatmapByIdQuery:
     ) -> None:
         """保存済みbeatmap IDの解決結果とmetadata stateを検証する.
 
-        beatmapとbeatmapsetをrepositoryへ登録してqueryを実行し、両方のobjectとfresh metadata
+        beatmapとbeatmapsetをrepositoryへ登録してqueryを実行し,両方のobjectとfresh metadata
         stateが返ることを確認する.
 
         Args:
@@ -254,7 +254,7 @@ class TestResolveBeatmapByChecksumQuery:
     ) -> None:
         """未登録MD5 checksumのunavailable結果を検証する.
 
-        空のrepositoryでqueryを実行し、beatmapとbeatmapsetがともにNoneのまま返ることを確認する.
+        空のrepositoryでqueryを実行し,beatmapとbeatmapsetがともにNoneのまま返ることを確認する.
 
         Args:
             beatmap_query_repo (BeatmapQueryRepositoryStub): checksum対応付けを持たない
@@ -277,7 +277,7 @@ class TestResolveBeatmapByChecksumQuery:
     ) -> None:
         """保存済みMD5 checksumがbeatmapとbeatmapsetへ解決されることを検証する.
 
-        checksum対応付けと保存済みobjectを登録してqueryを実行し、対応するbeatmapとbeatmapsetが返ることを確認する.
+        checksum対応付けと保存済みobjectを登録してqueryを実行し,対応するbeatmapとbeatmapsetが返ることを確認する.
 
         Args:
             beatmap_query_repo (BeatmapQueryRepositoryStub): checksum対応付けとobjectを登録する
@@ -304,7 +304,7 @@ class TestResolveBeatmapByChecksumQuery:
     ) -> None:
         """未登録MD5 checksumの明示的なpending fetch結果を検証する.
 
-        fetch stateを持たないrepositoryでqueryを実行し、read dataを補完せずpending fetch
+        fetch stateを持たないrepositoryでqueryを実行し,read dataを補完せずpending fetch
         stateを返すことを確認する.
 
         Args:
@@ -328,7 +328,7 @@ class TestResolveBeatmapByChecksumQuery:
     ) -> None:
         """保存済みfetch stateをread dataの補完なしで反映することを検証する.
 
-        failed fetch recordを登録してqueryを実行し、beatmapを作成せず保存済みfailed stateを
+        failed fetch recordを登録してqueryを実行し,beatmapを作成せず保存済みfailed stateを
         返すことを確認する.
 
         Args:

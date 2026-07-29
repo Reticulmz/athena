@@ -2,7 +2,7 @@
 
 この module は read-side channel ACL を確認してから channel state store へ member を追加する.
 すでに
-member の request は成功として扱い、membership state を重複変更しない.
+member の request は成功として扱い,membership state を重複変更しない.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class JoinChannelResult:
     """channel 参加要求の認可結果を表す.
 
     Attributes:
-        joined (bool): member だったか、新たに追加したかを問わず参加を許可した場合はTrue.
+        joined (bool): member だったか,新たに追加したかを問わず参加を許可した場合はTrue.
     """
 
     joined: bool
@@ -83,14 +83,14 @@ class JoinChannelUseCase:
         self._channel_state: ChannelStateStore = channel_state
 
     async def execute(self, command: JoinChannelCommand) -> JoinChannelResult:
-        """Command の user を channel へ参加させ、認可結果を返す.
+        """Command の user を channel へ参加させ,認可結果を返す.
 
         Args:
             command (JoinChannelCommand):
-                user、channel name、ACL を判定する authorization を含む command.
+                user,channel name,ACL を判定する authorization を含む command.
 
         Returns:
-            JoinChannelResult: すでに member、ACL が許可、または bypass privilege
+            JoinChannelResult: すでに member,ACL が許可,または bypass privilege
             の場合は`joined=True`. channel
             不存在または READ permission 不足では`joined=False`.
 

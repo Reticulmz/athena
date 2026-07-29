@@ -131,7 +131,7 @@ class PerformanceCalculator(Protocol):
         ...
 
     def calculate(self, input_data: PerformanceCalculatorInput) -> PerformanceCalculatorResult:
-        """PP と star rating を計算し、不能時は型付き理由を返します.
+        """PP と star rating を計算し,不能時は型付き理由を返します.
 
         Args:
             input_data (PerformanceCalculatorInput): score と .osu bytes を含む計算入力です.

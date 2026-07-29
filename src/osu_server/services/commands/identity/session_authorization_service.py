@@ -98,7 +98,7 @@ class SessionAuthorizationService:
             user_id (int): authorizationを再計算するユーザーID.
 
         Returns:
-            UserAuthorizationRefreshResult: 更新、active session不在、または計算失敗を表す結果.
+            UserAuthorizationRefreshResult: 更新,active session不在,または計算失敗を表す結果.
 
         Notes:
             authorization計算の例外はFAILED結果へ変換する. active sessionがない場合は
@@ -158,7 +158,7 @@ class SessionAuthorizationService:
             RoleAuthorizationRefreshResult: role所属ユーザーごとの更新結果を集約した結果.
 
         Notes:
-            各ユーザーを順番に更新し、個別の計算失敗はUserAuthorizationRefreshResultへ保持する.
+            各ユーザーを順番に更新し,個別の計算失敗はUserAuthorizationRefreshResultへ保持する.
         """
         user_ids = await self._role_repository.get_user_ids_for_role(role_id)
 

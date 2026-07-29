@@ -73,7 +73,7 @@ def _run_ci_command(
         cwd (Path): commandを実行しGit worktreeを判定させるdirectory.
 
     Returns:
-        subprocess.CompletedProcess[str]: 標準出力、標準エラー、exit statusを含む実行結果.
+        subprocess.CompletedProcess[str]: 標準出力,標準エラー,exit statusを含む実行結果.
     """
     return subprocess.run(
         [str(CI_SCRIPT_PATH), *arguments],
@@ -169,7 +169,7 @@ def _git_worktree_context_environment(repository_root: Path) -> dict[str, str]:
         repository_root (Path): Git contextの値を取得する初期化済みworktreeのroot directory.
 
     Returns:
-        dict[str, str]: `GIT_DIR`、`GIT_WORK_TREE`、`GIT_INDEX_FILE`を含むenvironment mapping.
+        dict[str, str]: `GIT_DIR`,`GIT_WORK_TREE`,`GIT_INDEX_FILE`を含むenvironment mapping.
 
     Raises:
         AssertionError: Gitがworktree metadataを解決できない場合.
@@ -326,7 +326,7 @@ def _docstring_noqa_locations() -> list[str]:
 def test_declares_only_active_docstring_tool_versions() -> None:
     """Activeなdocstring toolだけがdev dependencyとuv.lockに存在することを検証する.
 
-    これはruntime dependencyへtoolが混入せず、採用を見送ったpydoclintをactiveなquality
+    これはruntime dependencyへtoolが混入せず,採用を見送ったpydoclintをactiveなquality
     toolchainへ戻さない再現可能な開発環境を保証する.
 
     Returns:
@@ -346,11 +346,11 @@ def test_declares_only_active_docstring_tool_versions() -> None:
 def test_configures_repository_wide_google_docstring_toolchain() -> None:
     """Ruffとinterrogateのrepository-wide Google Style設定を検証する.
 
-    Global `D` selectionがD417を含むGoogle Style rule群を有効にし、interrogateが対象definitionの
+    Global `D` selectionがD417を含むGoogle Style rule群を有効にし,interrogateが対象definitionの
     100% coverageを要求することを固定する.
 
     Returns:
-        None: docstring ruleの有効化、convention、またはcoverage設定が期待値と異なる場合は
+        None: docstring ruleの有効化,convention,またはcoverage設定が期待値と異なる場合は
             assertionで失敗する.
     """
     pyproject = _load_toml(PYPROJECT_PATH)
@@ -446,11 +446,11 @@ def test_docstrings_command_runs_only_active_quality_tools() -> None:
 def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> None:
     """Qualityとfixがdocstring gateと同じfirst-party Python inventoryを使うことを検証する.
 
-    Ruff format/lint/fixの対象を`src/ tests/`に限定せず、Git indexから収集した`.py`へ統一する.
+    Ruff format/lint/fixの対象を`src/ tests/`に限定せず,Git indexから収集した`.py`へ統一する.
     BasedPyrightとimport-linterの既存scopeは変更しない.
 
     Returns:
-        None: qualityまたはfixが異なるinventoryを使うか、qualityにinterrogateが含まれない場合は
+        None: qualityまたはfixが異なるinventoryを使うか,qualityにinterrogateが含まれない場合は
             assertionで失敗する.
     """
     script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
@@ -497,7 +497,7 @@ def test_python_files_uses_staged_sources_from_an_isolated_git_index_despite_hoo
         monkeypatch (pytest.MonkeyPatch): hook由来のGit environmentを一時的に設定するfixture.
 
     Returns:
-        None: staged `.py`が欠落するか、親Git contextを参照するか、`.pyi`、ignored、untracked
+        None: staged `.py`が欠落するか,親Git contextを参照するか,`.pyi`,ignored,untracked
             pathが含まれる場合はassertionで失敗する.
 
     Raises:

@@ -13,8 +13,8 @@ class ChannelCommandRepository(Protocol):
     """Channel の mutation と consistency-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -39,7 +39,7 @@ class ChannelCommandRepository(Protocol):
             name (str): 検索する Channel name.
 
         Returns:
-            Channel | None: 一致する Channel。存在しない場合は None.
+            Channel | None: 一致する Channel.存在しない場合は None.
         """
         ...
 
@@ -53,7 +53,7 @@ class ChannelCommandRepository(Protocol):
             Channel: 永続化後の Channel.
 
         Raises:
-            ValueError: 対象 Channel が存在しない場合、または変更後の name が別 Channel と
+            ValueError: 対象 Channel が存在しない場合,または変更後の name が別 Channel と
                 重複する場合に送出する.
         """
         ...

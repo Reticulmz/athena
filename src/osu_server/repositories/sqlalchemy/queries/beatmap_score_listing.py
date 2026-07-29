@@ -35,7 +35,7 @@ class SQLAlchemyBeatmapScoreListingQueryRepository:
             None: Beatmap query repository delegateを構築して保持する.
 
         Notes:
-            初期化時にはsessionを生成せず、delegate以外の永続stateを保持しない.
+            初期化時にはsessionを生成せず,delegate以外の永続stateを保持しない.
         """
         self._beatmaps = SQLAlchemyBeatmapQueryRepository(session_factory)
 
@@ -94,7 +94,7 @@ class SQLAlchemyBeatmapScoreListingQueryRepository:
 
         Raises:
             SQLAlchemyError: delegateのsession readまたはrow取得に失敗した場合.
-            ValueError: delegateがBeatmapset、Beatmap、またはfile attachment modelのenum値をdomain
+            ValueError: delegateがBeatmapset,Beatmap,またはfile attachment modelのenum値をdomain
                 valueへ変換できない場合.
 
         Notes:

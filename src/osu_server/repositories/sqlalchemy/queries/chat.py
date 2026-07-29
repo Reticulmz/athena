@@ -36,7 +36,7 @@ class SQLAlchemyChatHistoryQueryRepository:
             None: 読み取り用session factoryを保持したrepository instanceを初期化する.
 
         Notes:
-            初期化時にはsessionを生成せず、message stateは変更しない.
+            初期化時にはsessionを生成せず,message stateは変更しない.
         """
         self._session_factory = session_factory
 
@@ -61,7 +61,7 @@ class SQLAlchemyChatHistoryQueryRepository:
             SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
 
         Notes:
-            limitの妥当性は呼び出し側が保証し、repositoryは値を変更しない.
+            limitの妥当性は呼び出し側が保証し,repositoryは値を変更しない.
         """
         async with self._session_factory() as session:
             stmt = (
@@ -99,7 +99,7 @@ class SQLAlchemyChatHistoryQueryRepository:
             SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
 
         Notes:
-            repositoryはmessageの送受信stateを変更せず、limitの妥当性は呼び出し側が保証する.
+            repositoryはmessageの送受信stateを変更せず,limitの妥当性は呼び出し側が保証する.
         """
         async with self._session_factory() as session:
             stmt = (
@@ -130,7 +130,7 @@ def _channel_message_to_read_model(model: ChannelMessageModel) -> ChatHistoryMes
         model (ChannelMessageModel): 永続化されたchannel message model.
 
     Returns:
-        ChatHistoryMessage: ID、sender、content、created_atを転記したread model.
+        ChatHistoryMessage: ID,sender,content,created_atを転記したread model.
 
     Notes:
         channel IDなどdisplay contractに不要なfieldは返さない.
@@ -150,7 +150,7 @@ def _private_message_to_read_model(model: PrivateMessageModel) -> ChatHistoryMes
         model (PrivateMessageModel): 永続化されたprivate message model.
 
     Returns:
-        ChatHistoryMessage: ID、sender、content、created_atを転記したread model.
+        ChatHistoryMessage: ID,sender,content,created_atを転記したread model.
 
     Notes:
         target User IDなどdisplay contractに不要なfieldは返さない.

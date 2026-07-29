@@ -17,10 +17,10 @@ class _RegistrationService(Protocol):
         form_data: RegistrationForm,
         check_only: bool = False,
     ) -> RegistrationResult:
-        """登録フォームを検証し、必要に応じてアカウントを作成する.
+        """登録フォームを検証し,必要に応じてアカウントを作成する.
 
         Args:
-            form_data (RegistrationForm): username、email、passwordを含む登録フォーム.
+            form_data (RegistrationForm): username,email,passwordを含む登録フォーム.
             check_only (bool): 永続化せず検証だけを行う場合はTrue.
 
         Returns:
@@ -34,7 +34,7 @@ class RegisterUserCommandInput:
     """ユーザー登録commandの入力を表す.
 
     Attributes:
-        form_data (RegistrationForm): username、email、passwordを含む登録フォーム.
+        form_data (RegistrationForm): username,email,passwordを含む登録フォーム.
         check_only (bool): 永続化せず検証だけを行う場合はTrue.
     """
 
@@ -69,7 +69,7 @@ class RegisterUserCommand(Protocol):
 
 
 class RegisterUserCommandUseCase:
-    """登録入力を検証し、要求時はアカウントを作成する.
+    """登録入力を検証し,要求時はアカウントを作成する.
 
     Attributes:
         _auth_service (_RegistrationService): 登録の検証と永続化を行うservice.
@@ -87,7 +87,7 @@ class RegisterUserCommandUseCase:
         self._auth_service = auth_service
 
     async def execute(self, input_data: RegisterUserCommandInput) -> RegisterUserCommandResult:
-        """登録フォームをserviceへ渡し、結果をcommand resultへ包む.
+        """登録フォームをserviceへ渡し,結果をcommand resultへ包む.
 
         Args:
             input_data (RegisterUserCommandInput): 登録フォームと検証専用指定.

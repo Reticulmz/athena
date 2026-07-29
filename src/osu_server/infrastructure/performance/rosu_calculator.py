@@ -68,11 +68,11 @@ class RosuPerformanceCalculator:
                 計算入力です.
 
         Returns:
-            PerformanceCalculatorResult: 計算済み値、または解析、変換、入力、実行失敗を表す
+            PerformanceCalculatorResult: 計算済み値,または解析,変換,入力,実行失敗を表す
                 型付き利用不能結果です.
 
         Notes:
-            rosu-pp-py が処理できない input は例外として伝播せず、利用不能結果へ変換します.
+            rosu-pp-py が処理できない input は例外として伝播せず,利用不能結果へ変換します.
         """
         invalid_input = _validate_score_input(input_data)
         if invalid_input is not None:
@@ -108,7 +108,7 @@ def _validate_score_input(
         input_data (PerformanceCalculatorInput): 検証する score と .osu bytes の入力です.
 
     Returns:
-        PerformanceCalculatorUnavailable | None: 不正な場合は利用不能結果、有効な場合は None です.
+        PerformanceCalculatorUnavailable | None: 不正な場合は利用不能結果,有効な場合は None です.
     """
     score = input_data.score
     accuracy_percent = _accuracy_percent(input_data)
@@ -136,7 +136,7 @@ def _parse_beatmap(
         osu_file_bytes (bytes): 解析する .osu beatmap の byte 列です.
 
     Returns:
-        rosu.Beatmap | PerformanceCalculatorUnavailable: 解析済み beatmap、または解析・実行失敗を
+        rosu.Beatmap | PerformanceCalculatorUnavailable: 解析済み beatmap,または解析・実行失敗を
             表す利用不能結果です.
 
     Notes:
@@ -165,11 +165,11 @@ def _convert_beatmap(
         input_data (PerformanceCalculatorInput): 変換先 ruleset と mod を持つ計算入力です.
 
     Returns:
-        None | PerformanceCalculatorUnavailable: 変換不要または成功時は None、変換・実行失敗時は
+        None | PerformanceCalculatorUnavailable: 変換不要または成功時は None,変換・実行失敗時は
             利用不能結果です.
 
     Notes:
-        rosu.ArgsError、rosu.ConvertError、予期しない実行例外は利用不能結果へ変換します.
+        rosu.ArgsError,rosu.ConvertError,予期しない実行例外は利用不能結果へ変換します.
     """
     target_mode = _ROSU_MODE_BY_RULESET[input_data.score.ruleset]
     if beatmap.mode is target_mode:
@@ -196,10 +196,10 @@ def _calculate_performance(
 
     Args:
         beatmap (rosu.Beatmap): 計算対象として解析・変換済みの beatmap です.
-        input_data (PerformanceCalculatorInput): mod、accuracy、hit count を持つ計算入力です.
+        input_data (PerformanceCalculatorInput): mod,accuracy,hit count を持つ計算入力です.
 
     Returns:
-        PerformanceCalculatorResult: PP と star rating の結果、または入力・実行失敗を表す
+        PerformanceCalculatorResult: PP と star rating の結果,または入力・実行失敗を表す
             利用不能結果です.
 
     Notes:
@@ -254,7 +254,7 @@ def _accuracy_percent(input_data: PerformanceCalculatorInput) -> float:
             計算入力です.
 
     Returns:
-        float: 0.0 から 100.0 の percent 表現、または入力された percent 表現です.
+        float: 0.0 から 100.0 の percent 表現,または入力された percent 表現です.
 
     Notes:
         0.0 から 1.0 の値だけを ratio とみなし 100 倍します.

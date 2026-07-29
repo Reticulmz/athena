@@ -12,7 +12,7 @@ class InMemoryChannelStateStore:
 
     Notes:
         channel -> members と user -> channels を常に同時に更新する.
-        thread-safe ではなく、single-threaded test environment 向けに限定する.
+        thread-safe ではなく,single-threaded test environment 向けに限定する.
     """
 
     def __init__(self) -> None:
@@ -51,7 +51,7 @@ class InMemoryChannelStateStore:
             None: 両方の参加 index を更新したことを表す.
 
         Notes:
-            未参加の場合は状態を変えず成功し、空になった index entry は削除する.
+            未参加の場合は状態を変えず成功し,空になった index entry は削除する.
         """
         members = self._channel_members.get(channel_name)
         if members is not None:
@@ -73,7 +73,7 @@ class InMemoryChannelStateStore:
             user_id (int): 確認する user id.
 
         Returns:
-            bool: 参加していれば True、そうでなければ False.
+            bool: 参加していれば True,そうでなければ False.
         """
         members = self._channel_members.get(channel_name)
         if members is None:
@@ -87,7 +87,7 @@ class InMemoryChannelStateStore:
             channel_name (str): 取得するチャンネル名.
 
         Returns:
-            set[int]: 参加 user id の独立した集合。未存在または空なら空集合.
+            set[int]: 参加 user id の独立した集合.未存在または空なら空集合.
         """
         return set(self._channel_members.get(channel_name, set()))
 
@@ -98,7 +98,7 @@ class InMemoryChannelStateStore:
             channel_name (str): 件数を取得するチャンネル名.
 
         Returns:
-            int: 現在の参加者数。チャンネルが未存在なら 0.
+            int: 現在の参加者数.チャンネルが未存在なら 0.
         """
         members = self._channel_members.get(channel_name)
         if members is None:
@@ -112,7 +112,7 @@ class InMemoryChannelStateStore:
             user_id (int): 参加チャンネルを取得する user id.
 
         Returns:
-            set[str]: 参加チャンネル名の独立した集合。未参加なら空集合.
+            set[str]: 参加チャンネル名の独立した集合.未参加なら空集合.
         """
         return set(self._user_channels.get(user_id, set()))
 
@@ -123,7 +123,7 @@ class InMemoryChannelStateStore:
             user_id (int): 全参加状態を削除する user id.
 
         Returns:
-            set[str]: 削除したチャンネル名の独立した集合。未参加なら空集合.
+            set[str]: 削除したチャンネル名の独立した集合.未参加なら空集合.
         """
         channels = self._user_channels.pop(user_id, set())
         for channel_name in channels:

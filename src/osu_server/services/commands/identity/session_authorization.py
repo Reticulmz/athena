@@ -25,7 +25,7 @@ class _SessionAuthorizationService(Protocol):
             user_id (int): authorizationを更新するユーザーID.
 
         Returns:
-            UserAuthorizationRefreshResult: 更新、session不在、または計算失敗を表す結果.
+            UserAuthorizationRefreshResult: 更新,session不在,または計算失敗を表す結果.
         """
         ...
 

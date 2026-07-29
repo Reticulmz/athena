@@ -15,7 +15,7 @@ class Replay:
         byte_size (int): replay binary の byte 数.
 
     Notes:
-        ID の正性、checksum の形式、byte_size の範囲はこの dataclass では検証しない.
+        ID の正性,checksum の形式,byte_size の範囲はこの dataclass では検証しない.
     """
 
     id: int | None

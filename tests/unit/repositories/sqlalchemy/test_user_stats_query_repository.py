@@ -138,6 +138,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
         Args:
             instance (object): 追加しようとしたpersistence model.
 
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+
         Raises:
             AssertionError: UserStats query repositoryがmutation APIを呼び出した場合.
         """
@@ -149,6 +152,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
 
         Args:
             instance (object): 削除しようとしたpersistence model.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
 
         Raises:
             AssertionError: UserStats query repositoryがmutation APIを呼び出した場合.
@@ -171,6 +177,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
     async def flush(self) -> None:
         """Query sessionでのflush操作を失敗させる.
 
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+
         Raises:
             AssertionError: UserStats query repositoryがmutation APIを呼び出した場合.
         """
@@ -179,6 +188,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
     async def commit(self) -> None:
         """Query sessionでのcommit操作を失敗させる.
 
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+
         Raises:
             AssertionError: UserStats query repositoryがmutation APIを呼び出した場合.
         """
@@ -186,6 +198,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
 
     async def rollback(self) -> None:
         """Query sessionでのrollback操作を失敗させる.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
 
         Raises:
             AssertionError: UserStats query repositoryがmutation APIを呼び出した場合.
@@ -197,6 +212,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
 
         Args:
             instance (object): refreshしようとしたpersistence model.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
 
         Raises:
             AssertionError: UserStats query repositoryがmutation APIを呼び出した場合.

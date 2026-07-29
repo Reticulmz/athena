@@ -64,7 +64,7 @@ class _FakeAccountingExecutor:
 
 @final
 class _StubTask:
-    """enqueue payloadを記録し、設定した例外を再現するTaskiq task double.
+    """enqueue payloadを記録し,設定した例外を再現するTaskiq task double.
 
     Attributes:
         calls (list[tuple[tuple[object, ...], dict[str, object]]]): kiqへ渡されたpayload履歴.
@@ -84,7 +84,7 @@ class _StubTask:
         self._error = error
 
     async def kiq(self, *args: object, **kwargs: object) -> object:
-        """payloadを記録して成功objectを返すか、設定済み例外を送出する.
+        """payloadを記録して成功objectを返すか,設定済み例外を送出する.
 
         Args:
             *args (object): taskへ渡される位置引数payload.
@@ -104,7 +104,7 @@ class _StubTask:
 
 @final
 class _StubBroker:
-    """指定taskを返し、lookupしたtask名を記録するbroker double.
+    """指定taskを返し,lookupしたtask名を記録するbroker double.
 
     Attributes:
         _task (_StubTask | None): lookup時に返すtask. Noneは未登録を表す.
@@ -130,7 +130,7 @@ class _StubBroker:
             task_name (str): publisherが解決を試みるtask名.
 
         Returns:
-            _StubTask | None: 設定済みtask、または未登録を表すNone.
+            _StubTask | None: 設定済みtask,または未登録を表すNone.
         """
         self.task_names.append(task_name)
         return self._task
@@ -171,7 +171,7 @@ def test_replay_download_accounting_job_stays_queue_adapter_only() -> None:
     """Accounting jobがrepositoryや低水準infrastructureへ依存しないことを検証する.
 
     Returns:
-        None: sourceにSQLAlchemy、repository、Valkey参照がないことを確認して完了する.
+        None: sourceにSQLAlchemy,repository,Valkey参照がないことを確認して完了する.
     """
     source = inspect.getsource(replay_download_accounting)
 
@@ -207,7 +207,7 @@ async def test_publisher_logs_missing_task_without_raising() -> None:
     """未登録taskを呼び出し側へ送出せず構造化error logへ記録することを検証する.
 
     Returns:
-        None: task名、score ID、viewer IDを含む未登録eventを確認して完了する.
+        None: task名,score ID,viewer IDを含む未登録eventを確認して完了する.
     """
     broker = _StubBroker(None)
     publisher = TaskiqReplayDownloadAccountingPublisher(broker)
@@ -234,7 +234,7 @@ async def test_publisher_logs_enqueue_failure_without_raising() -> None:
     """enqueue失敗を呼び出し側へ送出せず構造化error logへ記録することを検証する.
 
     Returns:
-        None: task名、score ID、viewer IDを含むfailure eventを確認して完了する.
+        None: task名,score ID,viewer IDを含むfailure eventを確認して完了する.
     """
     broker = _StubBroker(_StubTask(error=RuntimeError("broker unavailable")))
     publisher = TaskiqReplayDownloadAccountingPublisher(broker)
@@ -288,7 +288,7 @@ async def test_task_raises_when_runtime_state_is_missing() -> None:
     """executor未登録時にtaskが例外とruntime unavailable logを残すことを検証する.
 
     Returns:
-        None: task名、score ID、viewer IDを含むerror eventを確認して完了する.
+        None: task名,score ID,viewer IDを含むerror eventを確認して完了する.
     """
     context = _make_context()
 
@@ -319,7 +319,7 @@ async def test_task_rejects_invalid_occurred_at_payload() -> None:
     """不正なISO時刻payloadをexecutor実行前に拒否することを検証する.
 
     Returns:
-        None: ValueError、空のexecutor入力、invalid field logを確認して完了する.
+        None: ValueError,空のexecutor入力,invalid field logを確認して完了する.
     """
     executor = _FakeAccountingExecutor()
     context = _make_context(replay_download_accounting_executor=executor)

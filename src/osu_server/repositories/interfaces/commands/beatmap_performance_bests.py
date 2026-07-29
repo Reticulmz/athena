@@ -51,7 +51,7 @@ class BeatmapPerformanceBest:
     """PP 優先で選ばれた 1 user と 1 Beatmap scope の projection row.
 
     Attributes:
-        id (int | None): 永続化済み row の正の識別子。未保存時は None.
+        id (int | None): 永続化済み row の正の識別子.未保存時は None.
         scope (BeatmapPerformanceBestScope): Row が代表する自然キー.
         score_id (int): Row が参照する正の Score ID.
         performance_calculation_id (int): Row の PP を提供した正の calculation ID.
@@ -77,7 +77,7 @@ class BeatmapPerformanceBest:
             None: Row の識別子と数値が永続化制約を満たすことを示す.
 
         Raises:
-            ValueError: 識別子、PP、accuracy、または score が許容範囲外の場合に送出する.
+            ValueError: 識別子,PP,accuracy,または score が許容範囲外の場合に送出する.
         """
         _validate_projection_values(
             row_id=self.id,
@@ -118,7 +118,7 @@ class UpsertBeatmapPerformanceBest:
             None: 候補の識別子と数値が永続化制約を満たすことを示す.
 
         Raises:
-            ValueError: 識別子、PP、accuracy、または score が許容範囲外の場合に送出する.
+            ValueError: 識別子,PP,accuracy,または score が許容範囲外の場合に送出する.
         """
         _validate_projection_values(
             row_id=None,
@@ -171,7 +171,7 @@ class BeatmapPerformanceBestBeatmapProjectionSlice:
             None: beatmap_ids が projection slice の制約を満たすことを示す.
 
         Raises:
-            ValueError: beatmap_ids が空の場合、または非正の ID を含む場合に送出する.
+            ValueError: beatmap_ids が空の場合,または非正の ID を含む場合に送出する.
         """
         if len(self.beatmap_ids) == 0:
             msg = "beatmap_ids must not be empty"
@@ -190,8 +190,8 @@ class BeatmapPerformanceBestCommandRepository(Protocol):
     """Performance best projection の mutation と consistency check の port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -216,7 +216,7 @@ class BeatmapPerformanceBestCommandRepository(Protocol):
             scope (BeatmapPerformanceBestScope): 取得する自然キー.
 
         Returns:
-            BeatmapPerformanceBest | None: 現在の row。未登録時は None.
+            BeatmapPerformanceBest | None: 現在の row.未登録時は None.
         """
         ...
 
@@ -258,17 +258,17 @@ class BeatmapPerformanceBestCommandRepository(Protocol):
         scope: BeatmapPerformanceBestScope,
         row: UpsertBeatmapPerformanceBest | None,
     ) -> BeatmapPerformanceBest | None:
-        """1 scope の projection row を supplied winner で置換し、winner がなければ削除する.
+        """1 scope の projection row を supplied winner で置換し,winner がなければ削除する.
 
         Args:
             scope (BeatmapPerformanceBestScope): 置換する自然キー.
-            row (UpsertBeatmapPerformanceBest | None): 新しい winner。None の場合は削除する.
+            row (UpsertBeatmapPerformanceBest | None): 新しい winner.None の場合は削除する.
 
         Returns:
-            BeatmapPerformanceBest | None: 置換後の row。削除時は None.
+            BeatmapPerformanceBest | None: 置換後の row.削除時は None.
 
         Raises:
-            ValueError: row が None でなく、scope と異なる natural key を持つ場合に送出する.
+            ValueError: row が None でなく,scope と異なる natural key を持つ場合に送出する.
         """
         ...
 
@@ -304,7 +304,7 @@ def _validate_projection_values(
     """Performance best projection に保存できる数値範囲を検証する.
 
     Args:
-        row_id (int | None): 既存 row の識別子。新規候補では None.
+        row_id (int | None): 既存 row の識別子.新規候補では None.
         score_id (int): 対応する score の識別子.
         performance_calculation_id (int): 対応する計算結果の識別子.
         pp (Decimal): 非負でなければならない performance point.

@@ -56,7 +56,7 @@ class SQLAlchemyUserStatsQueryRepository:
             None: 読み取り用session factoryを保持したrepository instanceを初期化する.
 
         Notes:
-            初期化時にはsessionを生成せず、current stats projectionとScoreを変更しない.
+            初期化時にはsessionを生成せず,current stats projectionとScoreを変更しない.
         """
         self._session_factory: SQLAlchemyQuerySessionFactory = session_factory
 
@@ -84,7 +84,7 @@ class SQLAlchemyUserStatsQueryRepository:
             TypeError: SQL result rowの必須field型が期待値と異なる場合.
 
         Notes:
-            current projectionがない既知UserだけをScore aggregateとperformance bestからfallbackし、
+            current projectionがない既知UserだけをScore aggregateとperformance bestからfallbackし,
             空入力ではsessionを開かない.
         """
         ordered_user_ids = tuple(dict.fromkeys(user_ids))
@@ -213,10 +213,10 @@ def _score_aggregates_statement(
         playstyle (Playstyle): Scoreを絞り込むplaystyle.
 
     Returns:
-        Executable: play count、score、combo、play time、hit totalをUser別に返すSELECT statement.
+        Executable: play count,score,combo,play time,hit totalをUser別に返すSELECT statement.
 
     Notes:
-        ranked scoreはpassedかつleaderboard eligibleなScoreのBeatmap別最高値だけを合計し、
+        ranked scoreはpassedかつleaderboard eligibleなScoreのBeatmap別最高値だけを合計し,
         initial statsからRELAXとAUTOPILOT modを除外する.
     """
     ranked_score_model = aliased(ScoreModel)
@@ -314,7 +314,7 @@ def _requested_bests_statement(
         Executable: User別performance bestのPPとaccuracyを返すSELECT statement.
 
     Notes:
-        同一User内ではPP降順、submitted_at昇順、Score ID昇順で並べる.
+        同一User内ではPP降順,submitted_at昇順,Score ID昇順で並べる.
     """
     return (
         _best_rows_select()
@@ -349,7 +349,7 @@ def _requested_projection_ranks_statement(
         Executable: visibleなnonzero PPのUser別global rankを返すSELECT statement.
 
     Notes:
-        同PP時はUser IDが小さい方を上位とし、targetと比較対象の両方へRole visibilityを適用する.
+        同PP時はUser IDが小さい方を上位とし,targetと比較対象の両方へRole visibilityを適用する.
     """
     target = aliased(CurrentUserStatsModel)
     better = aliased(CurrentUserStatsModel)
@@ -407,10 +407,10 @@ def _projection_rows_select():
     """Current stats projectionをdomain source rowへ変換する全columnのSELECTを構築する.
 
     Returns:
-        Select: User ID、PP、accuracy、Score aggregate、hit totalを返すSELECT statement.
+        Select: User ID,PP,accuracy,Score aggregate,hit totalを返すSELECT statement.
 
     Notes:
-        filteringは呼び出し側が追加し、このhelperはcolumn projectionだけを所有する.
+        filteringは呼び出し側が追加し,このhelperはcolumn projectionだけを所有する.
     """
     return select(
         CurrentUserStatsModel.user_id.label("user_id"),
@@ -434,7 +434,7 @@ def _best_rows_select():
     """Performance bestをdomain valueへ変換する最小columnのSELECTを構築する.
 
     Returns:
-        Select: User ID、PP、accuracyを返すSELECT statement.
+        Select: User ID,PP,accuracyを返すSELECT statement.
 
     Notes:
         filteringとorderingは呼び出し側が追加する.
@@ -568,7 +568,7 @@ def _global_ranks_by_user(rows: tuple[Mapping[str, object], ...]) -> dict[int, i
         rows (tuple[Mapping[str, object], ...]): user_idとglobal_rankを含むmapping row.
 
     Returns:
-        dict[int, int]: User IDをkey、global rankをvalueとするmapping.
+        dict[int, int]: User IDをkey,global rankをvalueとするmapping.
 
     Raises:
         KeyError: mappingにuser_idまたはglobal_rankがない場合.
@@ -583,14 +583,14 @@ def _best_performances_by_user(
     """Performance best rowをUser ID別のdomain tupleへ変換する.
 
     Args:
-        rows (tuple[Mapping[str, object], ...]): user_id、PP、accuracyを含むmapping row.
+        rows (tuple[Mapping[str, object], ...]): user_id,PP,accuracyを含むmapping row.
 
     Returns:
         dict[int, tuple[UserPerformanceBest, ...]]: User IDごとの入力順performance best tuple.
 
     Raises:
-        KeyError: mappingにuser_id、pp、accuracyがない場合.
-        TypeError: user_id、PP、accuracyの型が期待値と異なる場合.
+        KeyError: mappingにuser_id,pp,accuracyがない場合.
+        TypeError: user_id,PP,accuracyの型が期待値と異なる場合.
     """
     grouped: dict[int, list[UserPerformanceBest]] = defaultdict(list)
     for row in rows:
@@ -627,14 +627,14 @@ def _source_row_for_user(
         playstyle (Playstyle): rowに記録するplaystyle scope.
 
     Returns:
-        UserStatsSourceRow: projection優先、aggregate fallback、またはzero値で構成したsource row.
+        UserStatsSourceRow: projection優先,aggregate fallback,またはzero値で構成したsource row.
 
     Raises:
         KeyError: 使用したmappingに必須fieldがない場合.
         TypeError: 使用したmappingの必須field型が期待値と異なる場合.
 
     Notes:
-        projectionがある場合はbest_performancesを空tupleにし、aggregateもない既知Userはzero値を返す.
+        projectionがある場合はbest_performancesを空tupleにし,aggregateもない既知Userはzero値を返す.
     """
     if projection is not None:
         return UserStatsSourceRow(
@@ -683,7 +683,7 @@ def _hit_totals_from_row(row: Mapping[str, object]) -> UserStatsHitTotals:
     """SQL mapping rowのhit count fieldをdomain UserStatsHitTotalsへ変換する.
 
     Args:
-        row (Mapping[str, object]): count_300、count_100、count_50、count_geki、count_katu、
+        row (Mapping[str, object]): count_300,count_100,count_50,count_geki,count_katu,
             count_missを持つrow.
 
     Returns:
@@ -713,7 +713,7 @@ def _mapping_rows(rows: object) -> tuple[Mapping[str, object], ...]:
         tuple[Mapping[str, object], ...]: 入力順を保持したmapping row tuple.
 
     Notes:
-        runtime validationは行わず、呼び出し側がmapping形式のresultを渡す契約に依存する.
+        runtime validationは行わず,呼び出し側がmapping形式のresultを渡す契約に依存する.
     """
     return tuple(cast("Mapping[str, object]", row) for row in cast("list[object]", rows))
 

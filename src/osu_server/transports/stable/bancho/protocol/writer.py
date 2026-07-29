@@ -17,7 +17,6 @@ QUIET_S2C_PACKETS: frozenset[ServerPacketID] = frozenset(
         ServerPacketID.USER_PRESENCE,
     }
 )
-"""debug levelで送信eventを記録する頻出S2C packet ID集合を表す."""
 
 
 def write_packet(packet_id: ServerPacketID, payload: bytes = b"") -> bytes:

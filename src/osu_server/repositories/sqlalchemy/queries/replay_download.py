@@ -37,7 +37,7 @@ class SQLAlchemyReplayDownloadQueryRepository:
         _session_factory (SQLAlchemyQuerySessionFactory): queryごとに閉じるread sessionのfactory.
 
     Notes:
-        raw replay bytes、blob storage key、filesystem pathは読まず、Score、owner visibility、
+        raw replay bytes,blob storage key,filesystem pathは読まず,Score,owner visibility,
         replay attachment metadataだけを参照する.
     """
 
@@ -67,7 +67,7 @@ class SQLAlchemyReplayDownloadQueryRepository:
             query (ReplayDownloadCandidateQuery): parsed Score IDとstable ruleset scope.
 
         Returns:
-            ReplayDownloadCandidate: score not found、hidden score、missing replay、
+            ReplayDownloadCandidate: score not found,hidden score,missing replay,
                 available replayのいずれか.
 
         Raises:
@@ -104,10 +104,10 @@ def _candidate_statement(query: ReplayDownloadCandidateQuery) -> Executable:
         query (ReplayDownloadCandidateQuery): 検索するScore IDとruleset scope.
 
     Returns:
-        Executable: Score、owner visibility、replay attachment metadataを最大1rowで返すSELECT.
+        Executable: Score,owner visibility,replay attachment metadataを最大1rowで返すSELECT.
 
     Notes:
-        passedかつleaderboard eligibleで権限上表示可能なScoreだけをdownload可能としてlabelし、
+        passedかつleaderboard eligibleで権限上表示可能なScoreだけをdownload可能としてlabelし,
         Blob tableやstorage detailはjoinしない.
     """
     role_permissions = _role_permissions_subquery()
@@ -182,7 +182,7 @@ def _candidate_from_mapping(row: Mapping[str, object]) -> ReplayDownloadCandidat
     """SQL mapping rowをreplay download candidate branchへ変換する.
 
     Args:
-        row (Mapping[str, object]): Score、visibility、replay attachment metadataを含むmapping row.
+        row (Mapping[str, object]): Score,visibility,replay attachment metadataを含むmapping row.
 
     Returns:
         ReplayDownloadCandidate: visibilityとattachment有無に対応するcandidate branch.

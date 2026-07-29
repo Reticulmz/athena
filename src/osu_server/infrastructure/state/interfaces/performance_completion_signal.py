@@ -20,7 +20,7 @@ class PerformanceCompletionSignalPayload:
         state (PerformanceCalculationState): 終端状態である calculation lifecycle state.
 
     Notes:
-        payload は performance value を運ばず、待機者を再照会へ促す hint だけを表す.
+        payload は performance value を運ばず,待機者を再照会へ促す hint だけを表す.
     """
 
     score_id: int
@@ -34,7 +34,7 @@ class PerformanceCompletionSignalPayload:
             None: 検証成功後に instance を確定する.
 
         Raises:
-            ValueError: score_id または calculation_id が正でない場合、あるいは state が
+            ValueError: score_id または calculation_id が正でない場合,あるいは state が
                 終端でない場合.
         """
         if self.score_id <= 0:
@@ -53,7 +53,7 @@ class PerformanceCompletionSignal(Protocol):
     """Score 単位で performance completion を知らせる best-effort contract.
 
     Notes:
-        signal は durable result ではないため、受信者は score を再照会して最終状態を取得する.
+        signal は durable result ではないため,受信者は score を再照会して最終状態を取得する.
         通知は terminal calculation の durable commit 後に発行する.
     """
 
@@ -69,17 +69,17 @@ class PerformanceCompletionSignal(Protocol):
         ...
 
     async def wait(self, score_id: int, timeout: timedelta) -> bool:
-        """Score の通知を期限まで待ち、観測結果を返す.
+        """Score の通知を期限まで待ち,観測結果を返す.
 
         Args:
             score_id (int): 待機対象となる正の score id.
             timeout (timedelta): 正である最大待機時間.
 
         Returns:
-            bool: 対象 score の通知を観測した場合は True、期限切れなら False.
+            bool: 対象 score の通知を観測した場合は True,期限切れなら False.
 
         Raises:
-            ValueError: score_id が正でない場合、または timeout が正でない場合.
+            ValueError: score_id が正でない場合,または timeout が正でない場合.
         """
         ...
 

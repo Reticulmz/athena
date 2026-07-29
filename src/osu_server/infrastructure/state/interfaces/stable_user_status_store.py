@@ -13,7 +13,7 @@ class StableUserStatusStore(Protocol):
     """Stable client の current status と play mode を一時保存する contract.
 
     Notes:
-        保存状態は session とともに失効する揮発状態であり、durable record ではない.
+        保存状態は session とともに失効する揮発状態であり,durable record ではない.
     """
 
     async def set_status(self, user_id: int, status: StableUserStatus) -> None:
@@ -61,7 +61,7 @@ class StableUserStatusStore(Protocol):
             user_id (int): 取得対象の user id.
 
         Returns:
-            int | None: 保存済み play mode。status が未保存なら None.
+            int | None: 保存済み play mode.status が未保存なら None.
         """
         ...
 

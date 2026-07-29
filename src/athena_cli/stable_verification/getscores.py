@@ -73,15 +73,15 @@ class GetscoresProbeClient(Protocol):
         """Stable web legacy endpointへGET requestを実行する.
 
         Args:
-            path (str): `/web/`配下のrequest path。
-            query (Mapping[str, str]): URL query fieldと文字列表現の対応。
-            host_prefix (str): Host header先頭へ付けるstable service prefix。
+            path (str): `/web/`配下のrequest path.
+            query (Mapping[str, str]): URL query fieldと文字列表現の対応.
+            host_prefix (str): Host header先頭へ付けるstable service prefix.
 
         Returns:
-            ProbeResponse: 通信可否、response body、report-safeな診断を含む結果。
+            ProbeResponse: 通信可否,response body,report-safeな診断を含む結果.
 
         Notes:
-            実装は通信失敗をProbeResponseへ変換することを想定する。
+            実装は通信失敗をProbeResponseへ変換することを想定する.
         """
         ...
 
@@ -97,14 +97,14 @@ class GetscoresOptionalProbe[ProbePrerequisitesT_contra](Protocol):
         """指定caseを任意clientで検証する.
 
         Args:
-            case (GetscoresProbeCase): 実行するstable getscores probe case。
-            prerequisites (ProbePrerequisitesT_contra): Adapter固有の実行前提条件。
+            case (GetscoresProbeCase): 実行するstable getscores probe case.
+            prerequisites (ProbePrerequisitesT_contra): Adapter固有の実行前提条件.
 
         Returns:
-            SurfaceResult: Optional evidenceとしてreport可能な検証結果。
+            SurfaceResult: Optional evidenceとしてreport可能な検証結果.
 
         Notes:
-            Adapterは失敗をSurfaceResultへ変換することを想定する。
+            Adapterは失敗をSurfaceResultへ変換することを想定する.
         """
         ...
 
@@ -113,14 +113,14 @@ class GetscoresVerifier[ProbePrerequisitesT]:
     """Getscores fixture検証とoptional target probeをまとめて実行する.
 
     Attributes:
-        _target (StableTarget | None): Optional probeの接続先。未設定時はtarget probeをskipする。
-        _client (GetscoresProbeClient | None): Stable web legacy requestを送るclient。
-        _optional_probe (GetscoresOptionalProbe[ProbePrerequisitesT] | None): 任意client用adapter。
-        _optional_probe_prerequisites (ProbePrerequisitesT | None): 任意client probeの前提条件。
-        _fixture_dir (Path): Legacy response fixtureを置くdirectory。
-        _probe_cases_path (Path): Optional target probe case JSONのpath。
-        _completion_manifest_root (Path): Completion evidence manifestのroot directory。
-        _completion_body_root (Path): Completion evidence body fixtureのroot directory。
+        _target (StableTarget | None): Optional probeの接続先.未設定時はtarget probeをskipする.
+        _client (GetscoresProbeClient | None): Stable web legacy requestを送るclient.
+        _optional_probe (GetscoresOptionalProbe[ProbePrerequisitesT] | None): 任意client用adapter.
+        _optional_probe_prerequisites (ProbePrerequisitesT | None): 任意client probeの前提条件.
+        _fixture_dir (Path): Legacy response fixtureを置くdirectory.
+        _probe_cases_path (Path): Optional target probe case JSONのpath.
+        _completion_manifest_root (Path): Completion evidence manifestのroot directory.
+        _completion_body_root (Path): Completion evidence body fixtureのroot directory.
     """
 
     def __init__(
@@ -138,22 +138,22 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         """Getscores fixture検証とoptional target probeの依存先を初期化する.
 
         Args:
-            target (StableTarget | None): Optionalなlocal target。未設定時はtarget probeを
-                skipする。
-            client (GetscoresProbeClient | None): Target requestに使うclient。未指定時はtargetから
-                生成する。
+            target (StableTarget | None): Optionalなlocal target.未設定時はtarget probeを
+                skipする.
+            client (GetscoresProbeClient | None): Target requestに使うclient.未指定時はtargetから
+                生成する.
             optional_probe (GetscoresOptionalProbe[ProbePrerequisitesT] | None): Optionalなclient
-                probe adapter。
+                probe adapter.
             optional_probe_prerequisites (ProbePrerequisitesT | None): Optional probe実行の
-                前提条件。
-            fixture_dir (Path | None): Legacy getscores response fixture directory。
-            probe_cases_path (Path | None): Optional target probe case JSON path。
-            completion_manifest_root (Path | None): Completion evidence manifest directory。
-            completion_body_root (Path | None): Completion evidence body fixture directory。
+                前提条件.
+            fixture_dir (Path | None): Legacy getscores response fixture directory.
+            probe_cases_path (Path | None): Optional target probe case JSON path.
+            completion_manifest_root (Path | None): Completion evidence manifest directory.
+            completion_body_root (Path | None): Completion evidence body fixture directory.
 
         Notes:
-            Fixture pathの安全性はverification実行時に判定する。completion evidenceの診断と
-            referenceへraw valueやfilesystem pathを含めない。
+            Fixture pathの安全性はverification実行時に判定する.completion evidenceの診断と
+            referenceへraw valueやfilesystem pathを含めない.
         """
         self._target: StableTarget | None = target
         self._client: GetscoresProbeClient | None = client or (
@@ -174,11 +174,11 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         """Legacy fixtureとcompletion evidenceを必須evidenceとして検証する.
 
         Returns:
-            tuple[SurfaceResult, ...]: Legacy response fixtureとcompletion manifestの検証結果。
+            tuple[SurfaceResult, ...]: Legacy response fixtureとcompletion manifestの検証結果.
 
         Notes:
-            Manifestの読込失敗は安全な必須失敗結果へ変換する。診断とreferenceへraw valueや
-            filesystem pathを含めない。
+            Manifestの読込失敗は安全な必須失敗結果へ変換する.診断とreferenceへraw valueや
+            filesystem pathを含めない.
         """
         legacy_results = tuple(
             self._verify_fixture(fixture_path)
@@ -196,16 +196,16 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         """Optional target probe用のcase JSONをtyped caseへ変換する.
 
         Returns:
-            tuple[GetscoresProbeCase, ...]: JSONに定義された順序を保つprobe case。
+            tuple[GetscoresProbeCase, ...]: JSONに定義された順序を保つprobe case.
 
         Raises:
-            OSError: Probe case JSONを読み出せない場合。
-            json.JSONDecodeError: JSON構文が不正な場合。
-            TypeError: JSON rootまたはcase entryがobjectでない場合。
-            ValueError: 必須文字列、整数、またはfield値が不正な場合。
+            OSError: Probe case JSONを読み出せない場合.
+            json.JSONDecodeError: JSON構文が不正な場合.
+            TypeError: JSON rootまたはcase entryがobjectでない場合.
+            ValueError: 必須文字列,整数,またはfield値が不正な場合.
 
         Notes:
-            JSONのraw valueを診断へ出力する責務は持たず、callerが例外種別をreport-safeに扱う。
+            JSONのraw valueを診断へ出力する責務は持たず,callerが例外種別をreport-safeに扱う.
         """
         raw_cases = cast(
             "object",
@@ -224,17 +224,17 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         """1件のprobe caseをtargetのstable getscores endpointへ送信する.
 
         Args:
-            case (GetscoresProbeCase): Queryへ変換するstable probe case。
+            case (GetscoresProbeCase): Queryへ変換するstable probe case.
 
         Returns:
-            SurfaceResult: Response grammarに基づくoptional headless probe結果。
+            SurfaceResult: Response grammarに基づくoptional headless probe結果.
 
         Raises:
-            TypeError: Case内の整数fieldがboolである場合。
-            ValueError: 必須文字列またはleaderboard typeが不正な場合。
+            TypeError: Case内の整数fieldがboolである場合.
+            ValueError: 必須文字列またはleaderboard typeが不正な場合.
 
         Notes:
-            Target未設定時は通信せずSKIP結果を返す。clientが返す通信失敗はそのstatusを維持する。
+            Target未設定時は通信せずSKIP結果を返す.clientが返す通信失敗はそのstatusを維持する.
         """
         if self._client is None:
             return _local_probe_result(
@@ -263,13 +263,13 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         """構成済みの任意client adapterで1件のprobe caseを検証する.
 
         Args:
-            case (GetscoresProbeCase): 任意clientへ渡すstable probe case。
+            case (GetscoresProbeCase): 任意clientへ渡すstable probe case.
 
         Returns:
-            SurfaceResult: 前提不足時のSKIP、またはadapterが返したoptional probe結果。
+            SurfaceResult: 前提不足時のSKIP,またはadapterが返したoptional probe結果.
 
         Notes:
-            target、prerequisites、adapterのいずれかが未設定ならadapterを呼び出さない。
+            target,prerequisites,adapterのいずれかが未設定ならadapterを呼び出さない.
         """
         if self._target is None:
             return _optional_osu_py_result(
@@ -296,16 +296,16 @@ class GetscoresVerifier[ProbePrerequisitesT]:
         """1つのlegacy response fixtureをparse可能性で検証する.
 
         Args:
-            fixture_path (Path): 読み出すlegacy getscores response fixtureのpath。
+            fixture_path (Path): 読み出すlegacy getscores response fixtureのpath.
 
         Returns:
-            SurfaceResult: Parse成功時のPASS、またはparse失敗時のmandatory FAIL結果。
+            SurfaceResult: Parse成功時のPASS,またはparse失敗時のmandatory FAIL結果.
 
         Raises:
-            OSError: Fixture bodyを読み出せない場合。
+            OSError: Fixture bodyを読み出せない場合.
 
         Notes:
-            Fixture名だけを診断へ含め、親directoryを含むpathはreferenceへ公開しない。
+            Fixture名だけを診断へ含め,親directoryを含むpathはreferenceへ公開しない.
         """
         parsed = parse_getscores_response(fixture_path.read_bytes())
         if parsed.error is not None or parsed.response is None:
@@ -336,17 +336,17 @@ def build_getscores_query(case: GetscoresProbeCase) -> dict[str, str]:
     """Probe caseをstable `/web/osu-osz2-getscores.php` queryへ変換する.
 
     Args:
-        case (GetscoresProbeCase): Stable request fieldを保持するprobe case。
+        case (GetscoresProbeCase): Stable request fieldを保持するprobe case.
 
     Returns:
-        dict[str, str]: `c`, `f`, `m`, `mods`, `v`, `vv`と必要時の`i`を含むquery。
+        dict[str, str]: `c`, `f`, `m`, `mods`, `v`, `vv`と必要時の`i`を含むquery.
 
     Raises:
-        TypeError: `mode`、`mods`、`beatmapset_id`がboolである場合。
-        ValueError: `checksum`、`filename`が空、または`leaderboard_type`が未対応の場合。
+        TypeError: `mode`,`mods`,`beatmapset_id`がboolである場合.
+        ValueError: `checksum`,`filename`が空,または`leaderboard_type`が未対応の場合.
 
     Notes:
-        `selected`と`selected_mods`はstable protocol上で同じ`v=2`へ変換する。
+        `selected`と`selected_mods`はstable protocol上で同じ`v=2`へ変換する.
     """
     query = {
         "c": _required_string(case.checksum, "checksum"),
@@ -366,15 +366,15 @@ def _probe_case_from_mapping(entry: object, index: int) -> GetscoresProbeCase:
     """JSON entryを検証済みGetscoresProbeCaseへ変換する.
 
     Args:
-        entry (object): JSON array内のcandidate entry。
-        index (int): Error messageに使う元のarray index。
+        entry (object): JSON array内のcandidate entry.
+        index (int): Error messageに使う元のarray index.
 
     Returns:
-        GetscoresProbeCase: 必須fieldを満たすtyped probe case。
+        GetscoresProbeCase: 必須fieldを満たすtyped probe case.
 
     Raises:
-        TypeError: Entryがobjectでない、または整数fieldがboolか整数以外の場合。
-        ValueError: 必須文字列が空、または必須整数fieldがnullの場合。
+        TypeError: Entryがobjectでない,または整数fieldがboolか整数以外の場合.
+        ValueError: 必須文字列が空,または必須整数fieldがnullの場合.
     """
     if not isinstance(entry, Mapping):
         msg = f"getscores probe case #{index} must be an object"
@@ -397,13 +397,13 @@ def _target_result_from_body(response: ProbeResponse) -> SurfaceResult:
     """Target probeのresponse bodyをstable getscores結果へ分類する.
 
     Args:
-        response (ProbeResponse): Clientが取得したtarget responseと通信診断。
+        response (ProbeResponse): Clientが取得したtarget responseと通信診断.
 
     Returns:
-        SurfaceResult: Parse不能時のFAIL、not submitted時のUNAVAILABLE、その他のPASS結果。
+        SurfaceResult: Parse不能時のFAIL,not submitted時のUNAVAILABLE,その他のPASS結果.
 
     Notes:
-        通信診断のmethod、path、HTTP status、body sizeは維持し、raw bodyは結果へ含めない。
+        通信診断のmethod,path,HTTP status,body sizeは維持し,raw bodyは結果へ含めない.
     """
     parsed = parse_getscores_response(response.body)
     if parsed.error is not None or parsed.response is None:
@@ -444,10 +444,10 @@ def _target_status(response: GetscoresResponse) -> VerificationStatus:
     """Parsed getscores responseをtarget probe用statusへ対応付ける.
 
     Args:
-        response (GetscoresResponse): Grammar検証済みのgetscores response。
+        response (GetscoresResponse): Grammar検証済みのgetscores response.
 
     Returns:
-        VerificationStatus: NOT_SUBMITTEDならUNAVAILABLE、それ以外ならPASS。
+        VerificationStatus: NOT_SUBMITTEDならUNAVAILABLE,それ以外ならPASS.
     """
     if response.kind is GetscoresResponseKind.NOT_SUBMITTED:
         return VerificationStatus.UNAVAILABLE
@@ -459,10 +459,10 @@ def _has_only_personal_best_fallback_score_row(header: GetscoresHeader) -> bool:
     """Personal Best rowだけがleaderboard fallbackとして重複したheaderか判定する.
 
     Args:
-        header (GetscoresHeader): Headerとpersonal best、score rowを含むparsed response。
+        header (GetscoresHeader): Headerとpersonal best,score rowを含むparsed response.
 
     Returns:
-        bool: Personal Bestがあり、score rowが同じ1行だけの場合はTrue。
+        bool: Personal Bestがあり,score rowが同じ1行だけの場合はTrue.
     """
     return (
         header.personal_best_row is not None
@@ -475,13 +475,13 @@ def _response_case(response: GetscoresResponse) -> str:
     """Parsed responseをreport用の固定case名へ分類する.
 
     Args:
-        response (GetscoresResponse): Targetまたはfixtureからparse済みのresponse。
+        response (GetscoresResponse): Targetまたはfixtureからparse済みのresponse.
 
     Returns:
-        str: `unavailable`、`update available`、またはheader内容を表す固定ラベル。
+        str: `unavailable`,`update available`,またはheader内容を表す固定ラベル.
 
     Notes:
-        ラベルはCLI report契約であり、response bodyのraw fieldを含めない。
+        ラベルはCLI report契約であり,response bodyのraw fieldを含めない.
     """
     if response.kind is GetscoresResponseKind.NOT_SUBMITTED:
         return "unavailable"
@@ -509,11 +509,11 @@ def _local_probe_result(status: VerificationStatus, message: str) -> SurfaceResu
     """Local getscores probe用のoptional結果を組み立てる.
 
     Args:
-        status (VerificationStatus): Probeの完了状態。
-        message (str): Reportへ出す固定またはredaction済みの診断文言。
+        status (VerificationStatus): Probeの完了状態.
+        message (str): Reportへ出す固定またはredaction済みの診断文言.
 
     Returns:
-        SurfaceResult: `local getscores probe`をreferenceに持つoptional headless probe結果。
+        SurfaceResult: `local getscores probe`をreferenceに持つoptional headless probe結果.
     """
     return SurfaceResult(
         surface=StableSurface.GETSCORES,
@@ -529,11 +529,11 @@ def _optional_osu_py_result(status: VerificationStatus, message: str) -> Surface
     """Optional osu.py getscores probe用の結果を組み立てる.
 
     Args:
-        status (VerificationStatus): Probeの完了状態。
-        message (str): Reportへ出す固定またはredaction済みの診断文言。
+        status (VerificationStatus): Probeの完了状態.
+        message (str): Reportへ出す固定またはredaction済みの診断文言.
 
     Returns:
-        SurfaceResult: `optional:osu.py getscores probe`をreferenceに持つoptional結果。
+        SurfaceResult: `optional:osu.py getscores probe`をreferenceに持つoptional結果.
     """
     return SurfaceResult(
         surface=StableSurface.GETSCORES,
@@ -549,18 +549,18 @@ def _verify_completion_evidence(
     manifest_root: Path,
     body_root: Path,
 ) -> tuple[SurfaceResult, ...]:
-    """Completion evidenceを読み込み、検証結果へ変換する.
+    """Completion evidenceを読み込み,検証結果へ変換する.
 
     Args:
-        manifest_root (Path): Completion evidence manifest directory。
-        body_root (Path): Completion evidence body fixture directory。
+        manifest_root (Path): Completion evidence manifest directory.
+        body_root (Path): Completion evidence body fixture directory.
 
     Returns:
-        tuple[SurfaceResult, ...]: 3種類のcompletion evidenceの必須検証結果。
+        tuple[SurfaceResult, ...]: 3種類のcompletion evidenceの必須検証結果.
 
     Notes:
-        Loaderの検証失敗は固定された失敗結果へ変換する。Loader由来の診断内容を出力せず、raw
-        value、path、internal provenanceを隠す。
+        Loaderの検証失敗は固定された失敗結果へ変換する.Loader由来の診断内容を出力せず,raw
+        value,path,internal provenanceを隠す.
     """
     try:
         evidence = load_getscores_completion_evidence(
@@ -577,10 +577,10 @@ def _completion_evidence_failure_results() -> tuple[SurfaceResult, ...]:
     """Completion evidenceのloader失敗を安全な必須結果として投影する.
 
     Returns:
-        tuple[SurfaceResult, ...]: 各completion evidence種類へ対応する固定の失敗結果。
+        tuple[SurfaceResult, ...]: 各completion evidence種類へ対応する固定の失敗結果.
 
     Notes:
-        入力値、path、loader内部のprovenanceやerror detailを診断へ露出しない。
+        入力値,path,loader内部のprovenanceやerror detailを診断へ露出しない.
     """
     return tuple(
         SurfaceResult(
@@ -601,15 +601,15 @@ def _json_string(entry: Mapping[object, object], key: str, index: int) -> str:
     """JSON mappingから空でない文字列fieldを取得する.
 
     Args:
-        entry (Mapping[object, object]): 検証対象のJSON object。
-        key (str): 取得するfield名。
-        index (int): Error messageに使うarray index。
+        entry (Mapping[object, object]): 検証対象のJSON object.
+        key (str): 取得するfield名.
+        index (int): Error messageに使うarray index.
 
     Returns:
-        str: 空でない文字列field値。
+        str: 空でない文字列field値.
 
     Raises:
-        ValueError: Fieldが文字列でないか空文字列の場合。
+        ValueError: Fieldが文字列でないか空文字列の場合.
     """
     value = entry.get(key)
     if not isinstance(value, str) or not value:
@@ -627,15 +627,15 @@ def _json_optional_int(
     """JSON mappingから任意の整数fieldを取得する.
 
     Args:
-        entry (Mapping[object, object]): 検証対象のJSON object。
-        key (str): 取得するfield名。
-        index (int): Error messageに使うarray index。
+        entry (Mapping[object, object]): 検証対象のJSON object.
+        key (str): 取得するfield名.
+        index (int): Error messageに使うarray index.
 
     Returns:
-        int | None: FieldがnullならNone、整数ならその値。
+        int | None: FieldがnullならNone,整数ならその値.
 
     Raises:
-        TypeError: Fieldがboolまたは整数以外の場合。
+        TypeError: Fieldがboolまたは整数以外の場合.
     """
     value = entry.get(key)
     if value is None:
@@ -651,16 +651,16 @@ def _json_int(entry: Mapping[object, object], key: str, index: int) -> int:
     """JSON mappingから必須の整数fieldを取得する.
 
     Args:
-        entry (Mapping[object, object]): 検証対象のJSON object。
-        key (str): 取得するfield名。
-        index (int): Error messageに使うarray index。
+        entry (Mapping[object, object]): 検証対象のJSON object.
+        key (str): 取得するfield名.
+        index (int): Error messageに使うarray index.
 
     Returns:
-        int: boolではない整数field値。
+        int: boolではない整数field値.
 
     Raises:
-        TypeError: Fieldがboolまたは整数以外の場合。
-        ValueError: Fieldがnullの場合。
+        TypeError: Fieldがboolまたは整数以外の場合.
+        ValueError: Fieldがnullの場合.
     """
     value = _json_optional_int(entry, key, index)
     if value is None:
@@ -674,14 +674,14 @@ def _required_string(value: str, field_name: str) -> str:
     """空でない必須文字列を検証して返す.
 
     Args:
-        value (str): 検証する文字列値。
-        field_name (str): Error messageに使うfield名。
+        value (str): 検証する文字列値.
+        field_name (str): Error messageに使うfield名.
 
     Returns:
-        str: 空でない入力文字列。
+        str: 空でない入力文字列.
 
     Raises:
-        ValueError: 値が空文字列の場合。
+        ValueError: 値が空文字列の場合.
     """
     if not value:
         msg = f"getscores probe case requires {field_name}"
@@ -694,14 +694,14 @@ def _required_int(value: int, field_name: str) -> int:
     """boolを除く必須整数を検証して返す.
 
     Args:
-        value (int): 検証する整数値。
-        field_name (str): Error messageに使うfield名。
+        value (int): 検証する整数値.
+        field_name (str): Error messageに使うfield名.
 
     Returns:
-        int: boolではない入力整数。
+        int: boolではない入力整数.
 
     Raises:
-        TypeError: 値がboolの場合。
+        TypeError: 値がboolの場合.
     """
     if isinstance(value, bool):
         msg = f"getscores probe case requires integer {field_name}"
@@ -714,13 +714,13 @@ def _leaderboard_type_query_value(leaderboard_type: str) -> str:
     """Namedまたは数値のleaderboard typeをstable query valueへ変換する.
 
     Args:
-        leaderboard_type (str): `local`などの名前、または10進数文字列。
+        leaderboard_type (str): `local`などの名前,または10進数文字列.
 
     Returns:
-        str: Stable getscores requestの`v` fieldに設定する値。
+        str: Stable getscores requestの`v` fieldに設定する値.
 
     Raises:
-        ValueError: 空白除去後の値が既知名でも10進数でもない場合。
+        ValueError: 空白除去後の値が既知名でも10進数でもない場合.
     """
     normalized = leaderboard_type.strip().lower()
     mapped = _LEADERBOARD_TYPE_QUERY_VALUES.get(normalized)
@@ -737,10 +737,10 @@ def _reference(path: Path) -> str:
     """Project root配下なら相対pathへ正規化してreferenceを作る.
 
     Args:
-        path (Path): Referenceへ変換するfixture path。
+        path (Path): Referenceへ変換するfixture path.
 
     Returns:
-        str: Project rootからの相対path。root外なら元の文字列表現。
+        str: Project rootからの相対path.root外なら元の文字列表現.
     """
     try:
         return str(path.relative_to(_PROJECT_ROOT))

@@ -1,6 +1,6 @@
 """`python -m osu_server` の実行エントリーポイントを提供する.
 
-環境設定を読み込み、ASGI applicationをUvicornで起動する。
+環境設定を読み込み,ASGI applicationをUvicornで起動する.
 """
 
 import uvicorn

@@ -116,7 +116,7 @@ class PersonalBest:
             None: ID と ranking_value が domain invariant を満たすことを示す.
 
         Raises:
-            ValueError: 指定された ID が 0 以下、または ranking_value が負の場合.
+            ValueError: 指定された ID が 0 以下,または ranking_value が負の場合.
         """
         if self.id is not None and self.id <= 0:
             msg = "personal best id must be positive"
@@ -145,7 +145,7 @@ class PersonalBestDelta:
         updated (bool): submission により personal best が更新された場合は True.
 
     Notes:
-        この差分値自体は score の範囲、ID の正性、before/after の整合性を検証しない.
+        この差分値自体は score の範囲,ID の正性,before/after の整合性を検証しない.
     """
 
     before_score_id: int | None
@@ -167,7 +167,7 @@ def score_beats_personal_best(candidate_value: int, current_value: int | None) -
         current_value (int | None): 現在の代表 score の ranking value. 未登録時は None.
 
     Returns:
-        bool: 現在値がない、または候補値が現在値より厳密に大きい場合は True.
+        bool: 現在値がない,または候補値が現在値より厳密に大きい場合は True.
 
     Notes:
         同値の候補は既存 personal best を置き換えない. 値の範囲はこの関数で検証しない.

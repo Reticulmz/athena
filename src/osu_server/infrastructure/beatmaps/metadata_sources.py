@@ -1,6 +1,6 @@
 """ビートマップメタデータproviderを優先順位付きで合成する.
 
-公式providerを優先し、通常の未検出または取得失敗時だけmirror providerへ
+公式providerを優先し,通常の未検出または取得失敗時だけmirror providerへ
 フォールバックする. 両providerは通常の未検出を ``None`` で表す.
 """
 

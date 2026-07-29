@@ -40,11 +40,11 @@ _CHECKSUM_2 = "b" * 32
 async def test_user_rebuild_recalculates_user_slice_from_source_scores() -> None:
     """user単位の再構築がsource scoreからprojection sliceを置換する契約を検証する.
 
-    同一userの通常scoreとmod別score、別userのscore、古いprojectionを登録する条件で、対象userの
-    two scopeだけが最新scoreへ置換され、別userのprojectionとsource scoreが保持されることを確認する.
+    同一userの通常scoreとmod別score,別userのscore,古いprojectionを登録する条件で,対象userの
+    two scopeだけが最新scoreへ置換され,別userのprojectionとsource scoreが保持されることを確認する.
 
     Returns:
-        None: 再構築結果とprojection sliceを検証して、呼び出し側へ値を返さずに完了する.
+        None: 再構築結果とprojection sliceを検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     await _seed_beatmapset(factory, beatmap_ids=(1,))
@@ -94,11 +94,11 @@ async def test_user_rebuild_recalculates_user_slice_from_source_scores() -> None
 async def test_beatmapset_rebuild_recalculates_only_beatmapset_slice() -> None:
     """beatmapset単位の再構築が含有beatmapだけを置換する契約を検証する.
 
-    対象beatmapsetの二つのbeatmapと対象外beatmapのscoreおよび古いprojectionを登録する条件で、
-    対象sliceのみ最新scoreへ置換され、対象外rowが保持されることを確認する.
+    対象beatmapsetの二つのbeatmapと対象外beatmapのscoreおよび古いprojectionを登録する条件で,
+    対象sliceのみ最新scoreへ置換され,対象外rowが保持されることを確認する.
 
     Returns:
-        None: 範囲限定されたprojection置換を検証して、呼び出し側へ値を返さずに完了する.
+        None: 範囲限定されたprojection置換を検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     await _seed_beatmapset(factory, beatmap_ids=(1, 2))
@@ -135,11 +135,11 @@ async def test_beatmapset_rebuild_recalculates_only_beatmapset_slice() -> None:
 async def test_empty_candidate_rebuild_deletes_stale_rows_without_deleting_scores() -> None:
     """候補なしの再構築が古いprojectionだけを削除する契約を検証する.
 
-    leaderboard対象外または未passのscoreと古いprojectionを登録する条件で、projectionが空になり、
+    leaderboard対象外または未passのscoreと古いprojectionを登録する条件で,projectionが空になり,
     source scoreは削除されないことを確認する.
 
     Returns:
-        None: 空候補時のprojection削除とscore保持を検証して、呼び出し側へ値を返さずに完了する.
+        None: 空候補時のprojection削除とscore保持を検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     await _seed_scores(
@@ -170,11 +170,11 @@ async def test_empty_candidate_rebuild_deletes_stale_rows_without_deleting_score
 async def test_duplicate_rebuild_converges_to_same_public_projection_result() -> None:
     """重複したuser再構築が同一公開projectionへ収束する契約を検証する.
 
-    同じ再構築commandを連続して実行する条件で、二回のresultと公開projection snapshotが等しく、
+    同じ再構築commandを連続して実行する条件で,二回のresultと公開projection snapshotが等しく,
     retryが新しい差分を作らないことを確認する.
 
     Returns:
-        None: 重複実行後の同一resultとprojectionを検証して、呼び出し側へ値を返さずに完了する.
+        None: 重複実行後の同一resultとprojectionを検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     await _seed_scores(
@@ -202,11 +202,11 @@ async def test_duplicate_rebuild_converges_to_same_public_projection_result() ->
 async def test_missing_beatmapset_rebuild_is_noop_success() -> None:
     """存在しないbeatmapsetの再構築が成功扱いのno-opとなる契約を検証する.
 
-    未登録beatmapsetを指定する条件で、target未発見と0件のsource scoreおよびprojection rowが
+    未登録beatmapsetを指定する条件で,target未発見と0件のsource scoreおよびprojection rowが
     resultとして観測できることを確認する.
 
     Returns:
-        None: no-op success resultを検証して、呼び出し側へ値を返さずに完了する.
+        None: no-op success resultを検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     result = await RebuildBeatmapLeaderboardsForBeatmapsetUseCase(factory).execute(
@@ -226,7 +226,7 @@ async def _seed_scores(factory: InMemoryUnitOfWorkFactory, *scores: Score) -> No
         scores (Score): 作成してcommitするscore列.
 
     Returns:
-        None: 全scoreをcommitして、呼び出し側へ値を返さずに完了する.
+        None: 全scoreをcommitして,呼び出し側へ値を返さずに完了する.
     """
     async with factory() as uow:
         for score in scores:
@@ -245,7 +245,7 @@ async def _seed_projection(
         rows (UpsertBeatmapLeaderboardUserBest): upsertしてcommitするprojection row列.
 
     Returns:
-        None: projection rowをcommitして、呼び出し側へ値を返さずに完了する.
+        None: projection rowをcommitして,呼び出し側へ値を返さずに完了する.
     """
     async with factory() as uow:
         for row in rows:
@@ -266,7 +266,7 @@ async def _seed_beatmapset(
         beatmap_ids (tuple[int, ...]): 作成するbeatmapのID列.
 
     Returns:
-        None: beatmapset snapshotをcommitして、呼び出し側へ値を返さずに完了する.
+        None: beatmapset snapshotをcommitして,呼び出し側へ値を返さずに完了する.
     """
     beatmaps = tuple(_beatmap(beatmap_id=beatmap_id) for beatmap_id in beatmap_ids)
     async with factory() as uow:
@@ -357,7 +357,7 @@ def _scope(
         mods (ModCombination | None): scopeに含めるmod組み合わせ. 未指定時はno-mod.
 
     Returns:
-        BeatmapLeaderboardUserBestScope: checksum、ruleset、playstyleを含むtest用scope.
+        BeatmapLeaderboardUserBestScope: checksum,ruleset,playstyleを含むtest用scope.
     """
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=beatmap_id,

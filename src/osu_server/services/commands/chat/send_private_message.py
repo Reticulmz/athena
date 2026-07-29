@@ -1,7 +1,7 @@
 """private message の送信可否と persistence work 発行を扱う use-case を提供する.
 
-この module は sender の silence と rate limit を確認し、target existence、online
-state、friend-only
+この module は sender の silence と rate limit を確認し,target existence,online
+state,friend-only
 setting を評価する. 受理済み message だけを BanchoBot command service と persistence work
 publisher へ渡す.
 """
@@ -39,7 +39,7 @@ class SendPrivateMessageCommand:
 
     Attributes:
         message (SendPrivateMessageInput):
-            sender、target、authorization、raw content を含む private message input.
+            sender,target,authorization,raw content を含む private message input.
     """
 
     message: SendPrivateMessageInput
@@ -58,11 +58,11 @@ class SendPrivateMessageResult:
 
 
 class SendPrivateMessageUseCase:
-    """private message の送信可否を検証し、delivery と persistence work を開始する use-case.
+    """private message の送信可否を検証し,delivery と persistence work を開始する use-case.
 
-    target が存在しない場合と friend-only により拒否された場合は、`PrivateMessageResult` の
+    target が存在しない場合と friend-only により拒否された場合は,`PrivateMessageResult` の
     delivery
-    status として返す. sender の silence、rate limit、content validation
+    status として返す. sender の silence,rate limit,content validation
     による拒否は`result=None`で返す.
 
     Attributes:
@@ -91,7 +91,7 @@ class SendPrivateMessageUseCase:
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> None:
-        """Private message workflow の query、state、publisher、rate-limit 依存関係を設定する.
+        """Private message workflow の query,state,publisher,rate-limit 依存関係を設定する.
 
         Args:
             target_query (ResolvePrivateMessageTargetQuery):
@@ -120,21 +120,21 @@ class SendPrivateMessageUseCase:
         self._config: AppConfig = config
 
     async def execute(self, command: SendPrivateMessageCommand) -> SendPrivateMessageResult:
-        """Private message を検証し、target status に応じた delivery result を作成する.
+        """Private message を検証し,target status に応じた delivery result を作成する.
 
         Args:
             command (SendPrivateMessageCommand):
-                sender、private target、authorization、content を含む command.
+                sender,private target,authorization,content を含む command.
 
         Returns:
-            SendPrivateMessageResult: target not found、friend-only blocked、online/offline
+            SendPrivateMessageResult: target not found,friend-only blocked,online/offline
             delivery
-            を表す結果. sender 側の silence、rate limit、validation 拒否では`result=None`.
+            を表す結果. sender 側の silence,rate limit,validation 拒否では`result=None`.
 
         Notes:
             target が friend-only の場合は target が sender を friend としている必要がある.
             persistence work は
-            target が存在し、friend-only policy を通過した場合だけ発行する.
+            target が存在し,friend-only policy を通過した場合だけ発行する.
         """
         message = command.message
         sender = message.sender
@@ -227,13 +227,13 @@ class SendPrivateMessageUseCase:
         return SendPrivateMessageResult(result=result)
 
     async def _check_silence(self, sender_id: int) -> bool:
-        """Sender が存在し、現在 silence 中でないかを判定する.
+        """Sender が存在し,現在 silence 中でないかを判定する.
 
         Args:
             sender_id (int): session と silence state を検索する sender の識別子.
 
         Returns:
-            bool: session が存在し、silence end が未設定または現在時刻以前ならTrue.
+            bool: session が存在し,silence end が未設定または現在時刻以前ならTrue.
             それ以外はFalse.
         """
         session = await self._session_store.get_by_user(sender_id)

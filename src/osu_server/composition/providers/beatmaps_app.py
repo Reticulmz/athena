@@ -100,7 +100,7 @@ async def enqueue_beatmap_fetch(broker: AsyncBroker, target: BeatmapFetchTarget)
         target (BeatmapFetchTarget): file fetchかmetadata fetchかと対象keyを表すrequest.
 
     Returns:
-        None: task未登録時はerror logを残して何もenqueueせず、それ以外はenqueue完了後に返す.
+        None: task未登録時はerror logを残して何もenqueueせず,それ以外はenqueue完了後に返す.
 
     Notes:
         ``force_refresh`` が真の場合だけkeyword argumentとしてworker taskへ渡す.

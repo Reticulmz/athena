@@ -54,7 +54,7 @@ class SQLAlchemyScorePerformanceQueryRepository:
                 初期化する.
 
         Notes:
-            policyはdefault設定で生成し、初期化時にはsessionを生成しない.
+            policyはdefault設定で生成し,初期化時にはsessionを生成しない.
         """
         self._session_factory: SQLAlchemyQuerySessionFactory = session_factory
         self._eligibility: PerformanceEligibilityPolicy = PerformanceEligibilityPolicy()
@@ -74,7 +74,7 @@ class SQLAlchemyScorePerformanceQueryRepository:
             ValueError: model.stateまたはmodel.formula_profileをdomain enumへ変換できない場合.
 
         Notes:
-            historical calculationは取得せず、calculation stateは変更しない.
+            historical calculationは取得せず,calculation stateは変更しない.
         """
         async with self._session_factory() as session:
             model = (
@@ -107,7 +107,7 @@ class SQLAlchemyScorePerformanceQueryRepository:
 
         Raises:
             SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
-            ValueError: candidate Score modelのenum値またはmods bitmask、またはperformance modelの
+            ValueError: candidate Score modelのenum値またはmods bitmask,またはperformance modelの
                 state/formula profileをdomain valueへ変換できない場合.
 
         Notes:
@@ -148,17 +148,17 @@ class SQLAlchemyScorePerformanceQueryRepository:
 
 
 def _candidate_statement(selection: ScorePerformanceCandidateSelection):
-    """再計算判定に必要なScore、current calculation、latest attachmentを読むstatementを構築する.
+    """再計算判定に必要なScore,current calculation,latest attachmentを読むstatementを構築する.
 
     Args:
-        selection (ScorePerformanceCandidateSelection): Score、Beatmap、User、rulesetの任意filterを
+        selection (ScorePerformanceCandidateSelection): Score,Beatmap,User,rulesetの任意filterを
             含む選別条件.
 
     Returns:
-        Select: Score、current calculation、最新Beatmap file attachmentを返すSELECT statement.
+        Select: Score,current calculation,最新Beatmap file attachmentを返すSELECT statement.
 
     Notes:
-        passedかつVANILLAのScoreだけを対象にし、limitはPython側のeligibility判定後に適用する.
+        passedかつVANILLAのScoreだけを対象にし,limitはPython側のeligibility判定後に適用する.
     """
     latest_attachment = (
         select(
@@ -215,12 +215,12 @@ def _iter_candidate_rows(
 
     Returns:
         list[tuple[ScoreModel, ScorePerformanceCalculationModel | None,
-            BeatmapFileAttachmentModel | None]]: Score model、current calculation model、
+            BeatmapFileAttachmentModel | None]]: Score model,current calculation model,
             latest attachment modelのtuple.
         Score modelを持たないrowは含めない.
 
     Notes:
-        calculationとattachmentはouter join由来のため、型が一致しない場合もNoneとして保持する.
+        calculationとattachmentはouter join由来のため,型が一致しない場合もNoneとして保持する.
     """
     result: list[
         tuple[
@@ -268,14 +268,14 @@ def _candidate_reason(
 
     Args:
         current (PerformanceCalculation | None): Scoreに紐づくcurrent calculation. 未計算時はNone.
-        selection (ScorePerformanceCandidateSelection): target calculator、formula、Beatmap fileを
+        selection (ScorePerformanceCandidateSelection): target calculator,formula,Beatmap fileを
             含む選別条件.
         target_attachment (BeatmapFileAttachmentModel | None): ScoreのBeatmapに対する
             最新attachment model.
 
     Returns:
         RecalculationCandidateReason | None: 再計算が必要なreason.
-        pending、historical、完全一致時はNone.
+        pending,historical,完全一致時はNone.
 
     Notes:
         UNAVAILABLEはselection.include_unavailableがTrueの場合だけ候補にする.
@@ -350,7 +350,7 @@ def _model_to_domain(model: ScorePerformanceCalculationModel) -> PerformanceCalc
         ValueError: model.stateまたはmodel.formula_profileを対応するdomain enumへ変換できない場合.
 
     Notes:
-        current flag、claim情報以外のread contract fieldを永続値から転記する.
+        current flag,claim情報以外のread contract fieldを永続値から転記する.
     """
     return PerformanceCalculation(
         id=model.id,

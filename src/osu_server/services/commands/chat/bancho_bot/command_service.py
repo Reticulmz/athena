@@ -1,10 +1,10 @@
-"""BanchoBot command text を解析し、登録済み handler の response へ変換する.
+"""BanchoBot command text を解析し,登録済み handler の response へ変換する.
 
-service は `!` prefix、command name、argument を抽出し、case-insensitive な registry から
+service は `!` prefix,command name,argument を抽出し,case-insensitive な registry から
 handler
 を解決する. handler が出力する場合は immutable `CommandContext` と `ChatCommandResponse`
 を作る.
-BanchoBot の author identity は transport layer の責務であり、この module は所有しない.
+BanchoBot の author identity は transport layer の責務であり,この module は所有しない.
 """
 
 from __future__ import annotations
@@ -24,10 +24,10 @@ if TYPE_CHECKING:
 
 
 class CommandService:
-    """chat content を解析し、登録済み BanchoBot command を実行する.
+    """chat content を解析し,登録済み BanchoBot command を実行する.
 
     command name の解決は case-insensitive である. channel target は channel へ response
-    を返し、
+    を返し,
     PM target は sender username へ response を返す.
 
     Attributes:
@@ -77,7 +77,7 @@ class CommandService:
                 command を実行しようとする channel または PM destination.
 
         Returns:
-            bool: privilege を満たし、metadata が destination を許可する場合はTrue.
+            bool: privilege を満たし,metadata が destination を許可する場合はTrue.
         """
         if meta.required_privileges != Privileges.NONE and not has_privilege(
             privileges, meta.required_privileges
@@ -195,25 +195,25 @@ class CommandService:
         content: str,
         authorization: ChatAuthorization,
     ) -> tuple[ChatCommandResponse, ...]:
-        """Content を解析し、登録済み command なら handler を実行する.
+        """Content を解析し,登録済み command なら handler を実行する.
 
         Args:
             sender_id (int): command を送信した user の識別子.
             sender_name (str): PM response target と `CommandContext` に使う sender username.
-            target (str): 先頭が`#`なら channel、それ以外なら PM と扱う送信先.
+            target (str): 先頭が`#`なら channel,それ以外なら PM と扱う送信先.
             content (str): `!` prefix を含む可能性がある chat message text.
             authorization (ChatAuthorization):
                 command visibility を判定する privilege と role snapshot.
 
         Returns:
-            tuple[ChatCommandResponse, ...]: non-command、空 command、handler のNone
+            tuple[ChatCommandResponse, ...]: non-command,空 command,handler のNone
             outputなら空 tuple.
             未登録または未認可なら unknown response. 実行成功なら handler output の response.
 
         Notes:
             PM の response target は input target ではなく sender name になる. destination
             gating は
-            privilege check の後に行い、未認可 command の存在を guidance で漏らさない.
+            privilege check の後に行い,未認可 command の存在を guidance で漏らさない.
         """
         if not content.startswith("!"):
             return ()

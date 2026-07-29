@@ -1,6 +1,6 @@
 """Starlette applicationのlifespanを管理するfactoryとcontext managerを提供する.
 
-Dishka application container、route handler、version metadataをstartup時に準備し、
+Dishka application container,route handler,version metadataをstartup時に準備し,
 lifespan終了時にcontainerをcloseする.
 """
 
@@ -37,7 +37,7 @@ async def _initialize_dishka_app_container(container: AsyncContainer) -> None:
         container (AsyncContainer): application用に構築済みのDishka container.
 
     Returns:
-        None: configuration、infrastructure、HTTP handlerを一度ずつ解決したことを示す.
+        None: configuration,infrastructure,HTTP handlerを一度ずつ解決したことを示す.
 
     Raises:
         Exception: APP scope dependencyの解決に失敗した場合.
@@ -105,7 +105,7 @@ async def _run_lifespan(
     """アプリケーションcontainerとroute handlerを準備してlifespanを実行する.
 
     Args:
-        app (Starlette): container、handler、version metadataをstateへ保存するapplication.
+        app (Starlette): container,handler,version metadataをstateへ保存するapplication.
         provider_overrides (Iterable[Provider]): production provider graphへ追加するDishka
             provider.
 
@@ -113,13 +113,13 @@ async def _run_lifespan(
         None: request handlerが必要とするstateを設定したapplication実行期間.
 
     Raises:
-        Exception: configuration読み込み、container構築、dependency解決、infrastructure確認、
+        Exception: configuration読み込み,container構築,dependency解決,infrastructure確認,
             またはhandler解決が失敗した場合.
 
     Notes:
         test環境では`check_infrastructure()`を呼ばない. container構築後に発生した例外でも
         `finally`でcontainerをcloseする.
-        startupでは`load_config()`、`make_app_container()`、dependencyの先行解決を順に行う.
+        startupでは`load_config()`,`make_app_container()`,dependencyの先行解決を順に行う.
         shutdownでは`dishka_container.close()`でDishka APP scope dependencyをfinalizeする.
     """
     config = load_config()

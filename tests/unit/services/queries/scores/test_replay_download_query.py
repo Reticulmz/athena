@@ -44,11 +44,11 @@ _PRIVATE_SENTINELS: Final[tuple[str, ...]] = (
 async def test_score_not_found_candidate_returns_hidden_score_without_blob_read() -> None:
     """score不在candidateがblob readなしでhidden scoreになる契約を検証する.
 
-    score-not-found candidateを返すrepositoryでqueryを実行し、client-visible detailを含まない
+    score-not-found candidateを返すrepositoryでqueryを実行し,client-visible detailを含まない
     hidden score結果と未呼び出しのcollaboratorを確認する.
 
     Returns:
-        None: branch、非公開failure結果、collaborator非呼び出しを検証して完了する.
+        None: branch,非公開failure結果,collaborator非呼び出しを検証して完了する.
     """
     harness = _make_harness(candidate=ReplayDownloadScoreNotFoundCandidate())
     input_data = _input(score_id=910, ruleset=Ruleset.TAIKO)
@@ -70,11 +70,11 @@ async def test_score_not_found_candidate_returns_hidden_score_without_blob_read(
 async def test_hidden_score_candidate_returns_hidden_score_without_blob_read() -> None:
     """Hidden score candidateがblob readなしでhidden scoreになる契約を検証する.
 
-    hidden-score candidateを返すrepositoryでqueryを実行し、client-visible detailを含まない
+    hidden-score candidateを返すrepositoryでqueryを実行し,client-visible detailを含まない
     hidden score結果と未呼び出しのcollaboratorを確認する.
 
     Returns:
-        None: branch、非公開failure結果、collaborator非呼び出しを検証して完了する.
+        None: branch,非公開failure結果,collaborator非呼び出しを検証して完了する.
     """
     harness = _make_harness(candidate=ReplayDownloadHiddenScoreCandidate())
     input_data = _input(score_id=303)
@@ -93,11 +93,11 @@ async def test_hidden_score_candidate_returns_hidden_score_without_blob_read() -
 async def test_missing_replay_candidate_returns_provisional_branch_without_blob_read() -> None:
     """Missing replay candidateがblob readなしでprovisional branchになる契約を検証する.
 
-    missing-replay candidateを返すrepositoryでqueryを実行し、client-visible detailを含まない
+    missing-replay candidateを返すrepositoryでqueryを実行し,client-visible detailを含まない
     provisional結果と未呼び出しのcollaboratorを確認する.
 
     Returns:
-        None: provisional branch、非公開failure結果、collaborator非呼び出しを検証して完了する.
+        None: provisional branch,非公開failure結果,collaborator非呼び出しを検証して完了する.
     """
     harness = _make_harness(candidate=ReplayDownloadMissingReplayCandidate())
     input_data = _input(score_id=404)
@@ -116,11 +116,11 @@ async def test_missing_replay_candidate_returns_provisional_branch_without_blob_
 async def test_available_replay_with_blob_unavailable_returns_storage_missing() -> None:
     """Blob readerのunavailableがstorage missing結果になる契約を検証する.
 
-    利用可能なreplay candidateに内部storage errorを設定し、blob read後にprivate detailを
+    利用可能なreplay candidateに内部storage errorを設定し,blob read後にprivate detailを
     露出しないstorage missing結果を返すことを確認する.
 
     Returns:
-        None: storage missing branch、非公開failure結果、body assembler非呼び出しを
+        None: storage missing branch,非公開failure結果,body assembler非呼び出しを
             検証して完了する.
     """
     storage_detail = BackendStorageDetailError(" ".join(_PRIVATE_SENTINELS))
@@ -140,11 +140,11 @@ async def test_available_replay_with_blob_unavailable_returns_storage_missing() 
 async def test_available_replay_with_default_strategy_returns_body_strategy_blocked() -> None:
     """Default body strategyがaccountingなしのblocked結果になる契約を検証する.
 
-    stored replay bytesを持つcandidateでdefault strategyを使い、blocked branchを返し
+    stored replay bytesを持つcandidateでdefault strategyを使い,blocked branchを返し
     view/activity mutationを行わないことを確認する.
 
     Returns:
-        None: blocked branch、非公開failure結果、assembler入力、mutation不在を検証して完了する.
+        None: blocked branch,非公開failure結果,assembler入力,mutation不在を検証して完了する.
     """
     stored_blob_payload = b"bk"
     harness = _make_harness(
@@ -168,11 +168,11 @@ async def test_available_replay_with_default_strategy_returns_body_strategy_bloc
 async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() -> None:
     """Direct blob bytes strategyが成功bodyとaccounting metadataを返す契約を検証する.
 
-    利用可能なreplay candidateと一致するblob bytesでqueryを実行し、payload、byte size、
+    利用可能なreplay candidateと一致するblob bytesでqueryを実行し,payload,byte size,
     score accounting metadataを持つ成功結果を確認する.
 
     Returns:
-        None: success branch、response body、accounting metadata、mutation不在を検証して完了する.
+        None: success branch,response body,accounting metadata,mutation不在を検証して完了する.
     """
     replay_payload = b"rd"
     harness = _make_harness(
@@ -210,7 +210,7 @@ async def test_available_replay_with_direct_strategy_returns_exact_blob_bytes() 
 def test_success_result_rejects_missing_accounting_metadata() -> None:
     """Success replay resultがaccounting metadataを必須とする不変条件を検証する.
 
-    success branchとresponse bodyだけでresultを構築し、accounting metadata欠落をValueErrorとして
+    success branchとresponse bodyだけでresultを構築し,accounting metadata欠落をValueErrorとして
     拒否することを確認する.
 
     Returns:
@@ -229,7 +229,7 @@ def test_success_result_rejects_missing_accounting_metadata() -> None:
 def test_non_success_result_rejects_accounting_metadata() -> None:
     """非success replay resultがaccounting metadataを拒否する不変条件を検証する.
 
-    hidden score branchへaccounting metadataを与えてresultを構築し、client accountingの混入を
+    hidden score branchへaccounting metadataを与えてresultを構築し,client accountingの混入を
     ValueErrorとして拒否することを確認する.
 
     Returns:
@@ -251,11 +251,11 @@ def test_non_success_result_rejects_accounting_metadata() -> None:
 async def test_available_replay_with_assemble_strategy_remains_blocked() -> None:
     """Assemble body strategyがlocal decisionなしでblockedのままになる契約を検証する.
 
-    利用可能なreplayとassemble strategyでqueryを実行し、bodyを組み立てずblocked結果を
+    利用可能なreplayとassemble strategyでqueryを実行し,bodyを組み立てずblocked結果を
     返すことを確認する.
 
     Returns:
-        None: blocked branch、非公開failure結果、assembler strategyを検証して完了する.
+        None: blocked branch,非公開failure結果,assembler strategyを検証して完了する.
     """
     stored_blob_payload = b"as"
     harness = _make_harness(
@@ -277,11 +277,11 @@ async def test_available_replay_with_assemble_strategy_remains_blocked() -> None
 async def test_available_replay_with_byte_size_mismatch_returns_storage_missing() -> None:
     """Stored blobのbyte size不一致がstorage missing結果になる契約を検証する.
 
-    candidateの期待byte sizeをpayloadと不一致にしてqueryを実行し、body assemblerを呼ばず
+    candidateの期待byte sizeをpayloadと不一致にしてqueryを実行し,body assemblerを呼ばず
     storage missing結果を返すことを確認する.
 
     Returns:
-        None: storage missing branch、非公開failure結果、assembler非呼び出しを検証して完了する.
+        None: storage missing branch,非公開failure結果,assembler非呼び出しを検証して完了する.
     """
     replay_payload = b"size-mismatch"
     harness = _make_harness(
@@ -305,11 +305,11 @@ async def test_available_replay_with_byte_size_mismatch_returns_storage_missing(
 async def test_available_replay_with_checksum_mismatch_returns_storage_missing() -> None:
     """Stored blobのchecksum不一致がstorage missing結果になる契約を検証する.
 
-    candidateの期待checksumをpayloadと不一致にしてqueryを実行し、body assemblerを呼ばず
+    candidateの期待checksumをpayloadと不一致にしてqueryを実行し,body assemblerを呼ばず
     storage missing結果を返すことを確認する.
 
     Returns:
-        None: storage missing branch、非公開failure結果、assembler非呼び出しを検証して完了する.
+        None: storage missing branch,非公開failure結果,assembler非呼び出しを検証して完了する.
     """
     replay_payload = b"checksum-mismatch"
     harness = _make_harness(
@@ -376,7 +376,7 @@ class ReplayDownloadQueryRepositoryStub:
         """Replay view mutationの呼び出し回数を記録する.
 
         Returns:
-            None: 呼び出し回数を増やし、呼び出し側へ値を返さずに完了する.
+            None: 呼び出し回数を増やし,呼び出し側へ値を返さずに完了する.
         """
         self.replay_view_update_count += 1
 
@@ -384,7 +384,7 @@ class ReplayDownloadQueryRepositoryStub:
         """Latest activity mutationの呼び出し回数を記録する.
 
         Returns:
-            None: 呼び出し回数を増やし、呼び出し側へ値を返さずに完了する.
+            None: 呼び出し回数を増やし,呼び出し側へ値を返さずに完了する.
         """
         self.latest_activity_update_count += 1
 
@@ -582,7 +582,7 @@ def _assert_available_replay_collaborators_not_called(
         harness (ReplayDownloadQueryHarness): 呼び出し記録を確認するquery test harness.
 
     Returns:
-        None: blob read、body build、view/activity mutationがないことを検証して完了する.
+        None: blob read,body build,view/activity mutationがないことを検証して完了する.
     """
     assert harness.blob_reader.read_blob_ids == []
     assert harness.body_assembler.inputs == []
@@ -601,7 +601,7 @@ def _assert_failure_result_has_no_client_visible_details(
         private_values (object): reprから除外されるべき追加の非公開値.
 
     Returns:
-        None: 非成功状態、response body不在、private detail非露出を検証して完了する.
+        None: 非成功状態,response body不在,private detail非露出を検証して完了する.
     """
     assert result.is_success is False
     assert result.response_body is None

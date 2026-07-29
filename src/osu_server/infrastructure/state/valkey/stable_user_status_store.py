@@ -26,7 +26,7 @@ class ValkeyStableUserStatusStore:
 
     Notes:
         status key は `{prefix}stable_user_status:{user_id}:status` を使用する.
-        get_statuses は user id 群を一度の MGET で読み、decode 不能な値を返却 mapping から除外する.
+        get_statuses は user id 群を一度の MGET で読み,decode 不能な値を返却 mapping から除外する.
     """
 
     def __init__(
@@ -130,7 +130,7 @@ class ValkeyStableUserStatusStore:
             user_id (int): 取得対象の user id.
 
         Returns:
-            int | None: 保存済み play mode。status が未保存または decode 不能なら None.
+            int | None: 保存済み play mode.status が未保存または decode 不能なら None.
         """
         status = (await self.get_statuses((user_id,))).get(user_id)
         return None if status is None else status.play_mode
@@ -172,7 +172,7 @@ def _encode_status(status: StableUserStatus) -> str:
         status (StableUserStatus): JSON へ serialise する stable client status.
 
     Returns:
-        str: status、status_text、beatmap_md5、mods、play_mode、beatmap_id を持つ JSON string.
+        str: status,status_text,beatmap_md5,mods,play_mode,beatmap_id を持つ JSON string.
     """
     return dumps(
         {
@@ -194,7 +194,7 @@ def _decode_status(raw: object) -> StableUserStatus | None:
         raw (object): MGET が返した raw status value.
 
     Returns:
-        StableUserStatus | None: 正しい JSON object なら status、未存在または不正値なら None.
+        StableUserStatus | None: 正しい JSON object なら status,未存在または不正値なら None.
     """
     raw_text = _raw_status_text(raw)
     if raw_text is None:
@@ -213,10 +213,10 @@ def _raw_status_text(raw: object) -> str | None:
     """Raw Valkey status value を JSON decode 用 text へ正規化する.
 
     Args:
-        raw (object): str、bytes、None、または別型の raw status value.
+        raw (object): str,bytes,None,または別型の raw status value.
 
     Returns:
-        str | None: str はそのまま、UTF-8 bytes は decoded text、それ以外または不正 bytes は None.
+        str | None: str はそのまま,UTF-8 bytes は decoded text,それ以外または不正 bytes は None.
     """
     if raw is None:
         return None
@@ -237,7 +237,7 @@ def _decode_status_mapping(payload: dict[object, object]) -> StableUserStatus | 
         payload (dict[object, object]): JSON decode 済みの raw mapping.
 
     Returns:
-        StableUserStatus | None: すべての required field が正しい型なら status、それ以外は None.
+        StableUserStatus | None: すべての required field が正しい型なら status,それ以外は None.
     """
     status = _decode_int(payload.get("status"))
     status_text = payload.get("status_text")
@@ -271,7 +271,7 @@ def _decode_int(raw: object) -> int | None:
         raw (object): 整数として検証する JSON field value.
 
     Returns:
-        int | None: bool ではない integer ならその値、それ以外は None.
+        int | None: bool ではない integer ならその値,それ以外は None.
     """
     return raw if isinstance(raw, int) and not isinstance(raw, bool) else None
 

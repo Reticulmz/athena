@@ -1,6 +1,6 @@
 """pydantic-settingsを使用してAthenaの環境設定を検証する.
 
-環境変数と環境別`.env` fileから設定を読み込み、起動前に型と運用上の制約を検証する.
+環境変数と環境別`.env` fileから設定を読み込み,起動前に型と運用上の制約を検証する.
 """
 
 import os
@@ -78,7 +78,7 @@ class AppConfig(BaseSettings):
         model_config (ClassVar[SettingsConfigDict]): environment variableを直接読むSettings設定.
 
     Notes:
-        `database_url`と`valkey_url`は必須であり、各validatorがbackend、URL、intervalの
+        `database_url`と`valkey_url`は必須であり,各validatorがbackend,URL,intervalの
         実行前制約を検証する.
     """
 
@@ -237,7 +237,7 @@ class AppConfig(BaseSettings):
             str: 大文字化済みの許可されたlogging level.
 
         Raises:
-            ValueError: levelがDEBUG、INFO、WARNING、ERROR、CRITICAL以外の場合.
+            ValueError: levelがDEBUG,INFO,WARNING,ERROR,CRITICAL以外の場合.
         """
         valid = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
         upper = v.upper()
@@ -258,7 +258,7 @@ class AppConfig(BaseSettings):
             str: 検証済みのusername.
 
         Raises:
-            ValueError: usernameが2から15文字の範囲外、または英数字、space、underscore、
+            ValueError: usernameが2から15文字の範囲外,または英数字,space,underscore,
                 hyphen以外を含む場合.
         """
         length = len(v)
@@ -289,7 +289,7 @@ class AppConfig(BaseSettings):
             v (object): Pydanticがvalidatorへ渡した未加工の設定値.
 
         Returns:
-            object: 文字列以外はそのまま、空文字列は空list、JSONまたはcomma-separated
+            object: 文字列以外はそのまま,空文字列は空list,JSONまたはcomma-separated
                 textは`list[str]`へ変換した値.
 
         Raises:
@@ -312,7 +312,7 @@ class AppConfig(BaseSettings):
             Self: 全fieldの相互制約を検証済みの設定instance.
 
         Raises:
-            ValueError: official source credential、URL、refresh interval、bounded waitの
+            ValueError: official source credential,URL,refresh interval,bounded waitの
                 いずれかが運用上の制約を満たさない場合.
         """
         environment = self.environment.lower()
@@ -393,7 +393,7 @@ class AppConfig(BaseSettings):
             None: templateを検証するだけで値を返さないことを示す.
 
         Raises:
-            ValueError: template構文、placeholder、または生成後URLが制約を満たさない場合.
+            ValueError: template構文,placeholder,または生成後URLが制約を満たさない場合.
         """
         parsed_fields = AppConfig._parse_beatmap_url_template_fields(
             template,
@@ -420,7 +420,7 @@ class AppConfig(BaseSettings):
         *,
         field_name: str,
     ) -> tuple[_BeatmapUrlTemplateField, ...]:
-        """URL templateからplaceholder、conversion、format specificationを抽出する.
+        """URL templateからplaceholder,conversion,format specificationを抽出する.
 
         Args:
             template (str): 解析するURL template.
@@ -461,7 +461,7 @@ class AppConfig(BaseSettings):
             None: fieldを検証するだけで値を返さないことを示す.
 
         Raises:
-            ValueError: `{beatmap_id}`がちょうど1個でない、または未対応placeholderを
+            ValueError: `{beatmap_id}`がちょうど1個でない,または未対応placeholderを
                 含む場合.
         """
         beatmap_id_fields = tuple(
@@ -502,7 +502,7 @@ class AppConfig(BaseSettings):
             None: placeholderを検証するだけで値を返さないことを示す.
 
         Raises:
-            ValueError: placeholder数が1以外、またはconversion/format specificationを
+            ValueError: placeholder数が1以外,またはconversion/format specificationを
                 指定している場合.
         """
         if len(beatmap_id_fields) != 1:
@@ -561,7 +561,7 @@ class AppConfig(BaseSettings):
             None: URLを検証するだけで値を返さないことを示す.
 
         Raises:
-            ValueError: URLがabsoluteでない、HTTP/HTTPS以外、またはtest以外でHTTPの場合.
+            ValueError: URLがabsoluteでない,HTTP/HTTPS以外,またはtest以外でHTTPの場合.
         """
         parsed = urlparse(value)
         if not parsed.scheme or not parsed.netloc:
@@ -627,13 +627,13 @@ def load_config() -> AppConfig:
     """環境変数と環境別`.env` fileから完全なapplication設定を読み込む.
 
     Returns:
-        AppConfig: PostgreSQL、Valkey、runtime設定を検証済みのconfiguration.
+        AppConfig: PostgreSQL,Valkey,runtime設定を検証済みのconfiguration.
 
     Raises:
         pydantic.ValidationError: 必須設定またはfield間の制約が満たされない場合.
 
     Notes:
-        `ENVIRONMENT`を小文字化して`.env.<environment>`を選び、未指定時はdevelopmentを使う.
+        `ENVIRONMENT`を小文字化して`.env.<environment>`を選び,未指定時はdevelopmentを使う.
     """
     environment = os.environ.get(_ENVIRONMENT_VARIABLE, _DEFAULT_ENVIRONMENT).lower()
     return AppConfig(_env_file=f".env.{environment}")  # pyright: ignore[reportCallIssue]
@@ -646,7 +646,7 @@ def load_routing_config() -> RoutingConfig:
         RoutingConfig: host-based routingに必要なenvironmentとdomainを含む設定.
 
     Notes:
-        `ENVIRONMENT`を小文字化して`.env.<environment>`を選び、DB/Valkeyの必須設定は
+        `ENVIRONMENT`を小文字化して`.env.<environment>`を選び,DB/Valkeyの必須設定は
         この段階で検証しない.
     """
     environment = os.environ.get(_ENVIRONMENT_VARIABLE, _DEFAULT_ENVIRONMENT).lower()

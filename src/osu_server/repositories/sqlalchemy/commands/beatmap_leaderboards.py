@@ -212,7 +212,7 @@ def _scope_conditions(
     """Raw Mod を含む projection scope の絞り込み条件を返す.
 
     Args:
-        scope (BeatmapLeaderboardUserBestScope): 比較する beatmap、ruleset、user、Mod の scope.
+        scope (BeatmapLeaderboardUserBestScope): 比較する beatmap,ruleset,user,Mod の scope.
 
     Returns:
         tuple[ColumnElement[bool], ...]: natural key の各列を完全一致で比較する条件列.
@@ -251,7 +251,7 @@ def _upsert_if_better_statement(command: UpsertBeatmapLeaderboardUserBest) -> In
     """候補が既存 rank key を上回る場合だけ更新する UPSERT statement を構築する.
 
     Args:
-        command (UpsertBeatmapLeaderboardUserBest): 保存する scope、score ID、rank key の候補.
+        command (UpsertBeatmapLeaderboardUserBest): 保存する scope,score ID,rank key の候補.
 
     Returns:
         Insert: natural key 競合時に freshness または順位が改善した行だけを更新する statement.
@@ -293,10 +293,10 @@ def _candidate_beats_current(rank_key: ScoreRankKey) -> ColumnElement[bool]:
     """候補の rank key が保存済み row より優先される条件を構築する.
 
     Args:
-        rank_key (ScoreRankKey): score、送信時刻、score ID による候補順位.
+        rank_key (ScoreRankKey): score,送信時刻,score ID による候補順位.
 
     Returns:
-        ColumnElement[bool]: score 降順、submitted_at 昇順、score ID 昇順の優先順を表す条件.
+        ColumnElement[bool]: score 降順,submitted_at 昇順,score ID 昇順の優先順を表す条件.
     """
     return or_(
         BeatmapLeaderboardUserBestModel.score < rank_key.score,
@@ -316,7 +316,7 @@ def _scope_lock_key(scope: BeatmapLeaderboardUserScope) -> int:
     """Leaderboard 更新 scope を PostgreSQL advisory lock key へ変換する.
 
     Args:
-        scope (BeatmapLeaderboardUserScope): user、beatmap、ruleset、playstyle を含む lock scope.
+        scope (BeatmapLeaderboardUserScope): user,beatmap,ruleset,playstyle を含む lock scope.
 
     Returns:
         int: `pg_advisory_xact_lock`へ渡すsigned 64-bit key.
@@ -419,7 +419,7 @@ def _model_has_scope(
         bool: checksumを除くnatural keyが一致する場合はTrue.
 
     Notes:
-        beatmap_checksumは置換可能なfreshness属性であり、row identityには含めない.
+        beatmap_checksumは置換可能なfreshness属性であり,row identityには含めない.
     """
     return (
         model.beatmap_id == scope.beatmap_id
@@ -437,10 +437,10 @@ def _model_to_domain(model: BeatmapLeaderboardUserBestModel) -> BeatmapLeaderboa
         model (BeatmapLeaderboardUserBestModel): 永続化済みの projection row.
 
     Returns:
-        BeatmapLeaderboardUserBest: ruleset、playstyle、Mod、rank key を復元した domain value.
+        BeatmapLeaderboardUserBest: ruleset,playstyle,Mod,rank key を復元した domain value.
 
     Raises:
-        ValueError: 保存済みの ruleset、playstyle、または Mod bitmask が不正な場合.
+        ValueError: 保存済みの ruleset,playstyle,または Mod bitmask が不正な場合.
     """
     return BeatmapLeaderboardUserBest(
         id=model.id,

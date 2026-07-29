@@ -44,7 +44,7 @@ def make_app_container(
         AsyncContainer: stable transportを含むapp process用の非同期Dishka container.
 
     Notes:
-        ``overrides`` は標準provider setの後に渡し、testなどが明示した置換を優先できる.
+        ``overrides`` は標準provider setの後に渡し,testなどが明示した置換を優先できる.
     """
     return make_async_container(
         InfrastructureProviderSet(config),
@@ -79,7 +79,7 @@ def make_worker_container(
         AsyncContainer: background job実行に必要な共有providerを持つ非同期Dishka container.
 
     Notes:
-        app専用transport providerは登録せず、worker用provider setだけを追加する.
+        app専用transport providerは登録せず,worker用provider setだけを追加する.
     """
     return make_async_container(
         InfrastructureProviderSet(config),

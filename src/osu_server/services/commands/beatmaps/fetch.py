@@ -1,8 +1,8 @@
 """beatmap metadata と .osu file を冪等に取得する command use-case を提供する.
 
-metadata fetch は freshness policy と fetch state を用いて provider 呼び出しを制御し、file
+metadata fetch は freshness policy と fetch state を用いて provider 呼び出しを制御し,file
 fetch は取得した bytes の checksum を検証して blob attachment を保存する. いずれも失敗状態を
-記録して、同じ target を後続の worker が再試行できるようにする.
+記録して,同じ target を後続の worker が再試行できるようにする.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ class BeatmapBlobStorage(Protocol):
         *,
         content_type: str,
     ) -> BlobStoreResult:
-        """Bytes を保存し、作成済み blob の識別情報を返す.
+        """Bytes を保存し,作成済み blob の識別情報を返す.
 
         Args:
             data (bytes): 保存する検証済み .osu file の内容.
@@ -67,9 +67,9 @@ class BeatmapBlobStorage(Protocol):
 
 
 class FetchBeatmapMetadataUseCase:
-    """beatmap metadata を provider から取得し、永続 cache を更新する use-case.
+    """beatmap metadata を provider から取得し,永続 cache を更新する use-case.
 
-    同一 target の同時実行を fetch state で抑止し、再利用可能な cache があれば provider
+    同一 target の同時実行を fetch state で抑止し,再利用可能な cache があれば provider
     を呼び出さない.
     metadata の有効 status または checksum が変わった場合だけ leaderboard rebuild を起床する.
 
@@ -120,15 +120,15 @@ class FetchBeatmapMetadataUseCase:
 
         Args:
             target (BeatmapFetchTarget):
-                metadata lookup の対象、force refresh 指定、fetch state の識別子を持つ値.
+                metadata lookup の対象,force refresh 指定,fetch state の識別子を持つ値.
 
         Returns:
-            None: metadata または失敗 state を永続化し、呼び出し側へ値を返さずに完了する.
+            None: metadata または失敗 state を永続化し,呼び出し側へ値を返さずに完了する.
 
         Notes:
             provider がValueErrorを送出する場合と全 provider が結果を返さない場合は失敗 state
             を記録して終了する. leaderboard
-            rebuild の起床失敗は、保存済み metadata transaction を rollback しない.
+            rebuild の起床失敗は,保存済み metadata transaction を rollback しない.
         """
         now = datetime.now(UTC)
 
@@ -248,7 +248,7 @@ class FetchBeatmapMetadataUseCase:
                 直前の fetch state が失敗だったか. True の場合は cache を再利用しない.
 
         Returns:
-            bool: force refresh と失敗再試行ではなく、対象の全 beatmap が freshness policy
+            bool: force refresh と失敗再試行ではなく,対象の全 beatmap が freshness policy
             上も再利用可能ならTrue.
         """
         if target.force_refresh:
@@ -278,7 +278,7 @@ class FetchBeatmapMetadataUseCase:
 
         Args:
             repository (BeatmapCommandRepository):
-                beatmap、beatmapset、checksum を検索する command repository.
+                beatmap,beatmapset,checksum を検索する command repository.
             target (BeatmapFetchTarget): 保存済み metadata を探す lookup target.
 
         Returns:
@@ -306,13 +306,13 @@ class FetchBeatmapMetadataUseCase:
 
         Args:
             target (BeatmapFetchTarget):
-                beatmap ID、beatmapset ID、または checksum を持つ metadata lookup target.
+                beatmap ID,beatmapset ID,または checksum を持つ metadata lookup target.
 
         Returns:
             BeatmapsetSnapshot | None: provider が取得した snapshot. 見つからない場合はNone.
 
         Raises:
-            ValueError: target がmetadata lookup targetを導出できない、または未対応の lookup
+            ValueError: target がmetadata lookup targetを導出できない,または未対応の lookup
             kind を持つ場合.
         """
         lookup = target.metadata_lookup_target()
@@ -340,7 +340,7 @@ class FetchBeatmapMetadataUseCase:
             now (datetime): failure state に記録する時刻.
 
         Returns:
-            None: failure state を commit して完了し、呼び出し側へ値を返さない.
+            None: failure state を commit して完了し,呼び出し側へ値を返さない.
         """
         async with self._uow_factory() as uow:
             await uow.beatmaps.mark_fetch_failed(target, error, now)
@@ -348,7 +348,7 @@ class FetchBeatmapMetadataUseCase:
 
 
 class FetchBeatmapFileUseCase:
-    """.osu file を冪等に取得、検証し、blob attachment として保存する use-case.
+    """.osu file を冪等に取得,検証し,blob attachment として保存する use-case.
 
     checksum が既存 attachment と一致する場合は provider を呼び出さずに成功として扱う.
     新しく取得した
@@ -368,7 +368,7 @@ class FetchBeatmapFileUseCase:
         file_provider: BeatmapFileProvider,
         blob_storage: BeatmapBlobStorage,
     ) -> None:
-        """File fetch workflow に必要な永続化、取得、保存の依存関係を設定する.
+        """File fetch workflow に必要な永続化,取得,保存の依存関係を設定する.
 
         Args:
             uow_factory (UnitOfWorkFactory):
@@ -389,10 +389,10 @@ class FetchBeatmapFileUseCase:
             target (BeatmapFetchTarget): file beatmap ID と fetch state の識別子を持つ target.
 
         Returns:
-            None: attachment または failure state を永続化し、呼び出し側へ値を返さずに完了する.
+            None: attachment または failure state を永続化し,呼び出し側へ値を返さずに完了する.
 
         Notes:
-            file ID が不正、beatmap 未保存、provider failure、checksum mismatch は failure
+            file ID が不正,beatmap 未保存,provider failure,checksum mismatch は failure
             state を記録して終了する.
             同一 checksum の既存 attachment は再利用する.
         """
@@ -545,7 +545,7 @@ class FetchBeatmapFileUseCase:
             now (datetime): failure state に記録する時刻.
 
         Returns:
-            None: failure state を commit して完了し、呼び出し側へ値を返さない.
+            None: failure state を commit して完了し,呼び出し側へ値を返さない.
         """
         async with self._uow_factory() as uow:
             await uow.beatmaps.mark_fetch_failed(target, error, now)
@@ -559,7 +559,7 @@ class FetchBeatmapFileUseCase:
             now (datetime): success state に記録する時刻.
 
         Returns:
-            None: success state を commit して完了し、呼び出し側へ値を返さない.
+            None: success state を commit して完了し,呼び出し側へ値を返さない.
         """
         async with self._uow_factory() as uow:
             await uow.beatmaps.mark_fetch_succeeded(target, now)
@@ -578,7 +578,7 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
         aggregate.
 
     Notes:
-        provider snapshot の official status と local override を保持し、file attachment
+        provider snapshot の official status と local override を保持し,file attachment
         は新規 metadata
         fetch では作成しない.
     """
@@ -639,8 +639,8 @@ def _leaderboard_rebuild_reason(
         current (BeatmapSet): 新しい metadata snapshot から変換した beatmapset.
 
     Returns:
-        str | None: status change なら`"beatmap_status_changed"`、checksum change
-        なら`"beatmap_checksum_changed"`、rebuild 不要ならNone.
+        str | None: status change なら`"beatmap_status_changed"`,checksum change
+        なら`"beatmap_checksum_changed"`,rebuild 不要ならNone.
     """
     if previous is None:
         return None

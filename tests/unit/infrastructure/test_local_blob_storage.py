@@ -100,19 +100,19 @@ async def test_validate_configuration_uses_collision_safe_final_probe_path(
     """
     original_write_bytes = type(tmp_path).write_bytes
 
-    def delete_fixed_probe_after_write(path: Path, data: bytes) -> int:
+    def delete_fixed_probe_after_write(self: Path, data: bytes) -> int:
         """固定名probeのwrite後にfileを削除するtest doubleを実行する.
 
         Args:
-            path (Path): write対象となるPath instance.
+            self (Path): write対象となるPath instance.
             data (bytes): Path.write_bytesへ渡されるprobe content.
 
         Returns:
             int: 元のwrite_bytesが書き込んだbyte数.
         """
-        written = original_write_bytes(path, data)
-        if path.name == ".probe":
-            path.unlink()
+        written = original_write_bytes(self, data)
+        if self.name == ".probe":
+            self.unlink()
         return written
 
     monkeypatch.setattr(type(tmp_path), "write_bytes", delete_fixed_probe_after_write)
@@ -161,7 +161,7 @@ async def test_validate_configuration_rejects_uncreatable_final_storage_path(
     blocked_final_directory = tmp_path / "sha256" / "00" / "00"
 
     def fail_final_storage_mkdir(
-        path: Path,
+        self: Path,
         mode: int = 0o777,
         parents: bool = False,
         exist_ok: bool = False,
@@ -169,7 +169,7 @@ async def test_validate_configuration_rejects_uncreatable_final_storage_path(
         """指定final directoryだけを作成不能にするPath.mkdir test doubleを実行する.
 
         Args:
-            path (Path): mkdir対象となるPath instance.
+            self (Path): mkdir対象となるPath instance.
             mode (int): 元のmkdirへ渡すpermission mode.
             parents (bool): parent directory作成を許可するかを示すflag.
             exist_ok (bool): 既存directoryを許可するかを示すflag.
@@ -180,9 +180,9 @@ async def test_validate_configuration_rejects_uncreatable_final_storage_path(
         Raises:
             OSError: blocked final directoryの作成が要求された場合.
         """
-        if path == blocked_final_directory:
+        if self == blocked_final_directory:
             raise OSError("final storage directory cannot be created")
-        original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
+        original_mkdir(self, mode=mode, parents=parents, exist_ok=exist_ok)
 
     monkeypatch.setattr(type(tmp_path), "mkdir", fail_final_storage_mkdir)
     backend = LocalBlobStorageBackend(tmp_path)

@@ -8,9 +8,10 @@ from typing import ClassVar, TypeVar
 _F = TypeVar("_F", bound=Callable[..., object])
 
 _ROUTE_KEYS: dict[Callable[..., object], object] = {}
-"""装飾済み関数から route key への module level registry.
+"""Module-level registry mapping decorated functions to their route keys.
 
-route(key) が decoration 時に登録し, RouteGroup.__init_subclass__ が class 定義時に参照する.
+Populated by ``@route(key)`` at decoration time, consumed by
+``RouteGroup.__init_subclass__`` at class-definition time.
 """
 
 

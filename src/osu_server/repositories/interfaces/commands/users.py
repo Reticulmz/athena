@@ -16,8 +16,8 @@ class UserCommandRepository(Protocol):
     """User の mutation と consistency-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -43,7 +43,7 @@ class UserCommandRepository(Protocol):
             safe_username (str): 検索する normalized username.
 
         Returns:
-            User | None: 一致する User。存在しない場合は None.
+            User | None: 一致する User.存在しない場合は None.
         """
         ...
 
@@ -54,7 +54,7 @@ class UserCommandRepository(Protocol):
             email (str): 検索する email address.
 
         Returns:
-            User | None: 一致する User。存在しない場合は None.
+            User | None: 一致する User.存在しない場合は None.
         """
         ...
 
@@ -65,7 +65,7 @@ class UserCommandRepository(Protocol):
             safe_username (str): 確認する normalized username.
 
         Returns:
-            bool: Username が予約済みの場合は True。予約されていない場合は False.
+            bool: Username が予約済みの場合は True.予約されていない場合は False.
         """
         ...
 
@@ -100,19 +100,19 @@ class UserCommandRepository(Protocol):
             password_hash (str): 保存する password hash.
 
         Returns:
-            bool: 対象 User を更新した場合は True。存在しない場合は False.
+            bool: 対象 User を更新した場合は True.存在しない場合は False.
         """
         ...
 
     async def touch_latest_activity(self, user_id: int, occurred_at: datetime) -> bool:
-        """対象 user の latest activity を更新し、存在したか返す.
+        """対象 user の latest activity を更新し,存在したか返す.
 
         Args:
             user_id (int): 更新する user の識別子.
             occurred_at (datetime): activity が発生した日時.
 
         Returns:
-            bool: 対象 user を更新した場合は True。存在しない場合は False.
+            bool: 対象 user を更新した場合は True.存在しない場合は False.
         """
         ...
 

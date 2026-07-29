@@ -457,6 +457,38 @@ Sources:
 - [sphinx-build official manual](https://www.sphinx-doc.org/en/master/man/sphinx-build.html)
 - [Sphinx PyPI](https://pypi.org/project/Sphinx/)
 
+### Final Transient PoC (2026-07-29T07:11:12+0900)
+
+Nix development environmentのPython 3.14.4で、repository外のtemporary directoryに
+`conf.py`、`index.rst`、`modules.rst`だけを作成し、次を実行した。
+
+```bash
+nix develop --command uv run --locked --with "sphinx==9.1.0" \
+  sphinx-build -W -b html -E <temporary-source> <temporary-build>
+```
+
+temporary `conf.py`は`sphinx.ext.autodoc`と`sphinx.ext.napoleon`を有効化し、
+`napoleon_google_docstring = True`、`napoleon_numpy_docstring = False`、
+private、`__init__`、special memberを含めるNapoleon/autodoc optionを設定した。次の
+import-safe representative moduleを`automodule`で処理し、Sphinx 9.1.0のHTML buildはwarning 0で
+成功した。
+
+- `osu_server.domain.identity.authorization`
+- `osu_server.services.queries.identity.permission_service`
+- `osu_server.repositories.interfaces.commands.beatmaps`
+- `osu_server.infrastructure.performance.calculator_identity`
+- `osu_server.transports.stable.bancho.protocol.errors`
+- `athena_cli.context`
+- `tests.unit.athena_cli.test_context`
+
+外部documentation repositoryはAthena本体と対象moduleのdependencyをinstallし、autodocが実際に
+moduleをimportできるenvironmentを所有する。test moduleをdocument対象にする場合はAthena checkout
+rootと`src`をimport pathへ加え、不要ならtest moduleを対象外にする。private、`__init__`、special
+memberを出力したい場合はNapoleon/autodocの対応optionをそのrepositoryの`conf.py`で有効化する。
+module selection、runtime environment、Sphinx config、theme、stub、generated output、deploymentは
+すべて外部documentation repositoryの責務である。PoC後にtemporary source/build directoryを削除し、
+AthenaへSphinx dependency、config、stub、theme、generated outputを追加しない。
+
 ## Adjacent BasedPyright Suppression Audit
 
 現行first-party Pythonには`# pyright: ignore[...]`が194件、`# type: ignore`が2件ある。

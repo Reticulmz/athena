@@ -30,7 +30,7 @@ class ValkeyPerformanceCompletionPublisher(Protocol):
     """
 
     async def publish(self, message: str, channel: str) -> int:
-        """文字列 payload を指定 channel へ publish し、受信者数を返す.
+        """文字列 payload を指定 channel へ publish し,受信者数を返す.
 
         Args:
             message (str): publish する serialised payload.
@@ -46,7 +46,7 @@ class _ValkeyPerformanceCompletionSubscriber(Protocol):
     """Score-scoped completion channel を購読する private Pub/Sub client contract.
 
     Notes:
-        wait ごとに生成され、終了時には unsubscribe と close を受ける.
+        wait ごとに生成され,終了時には unsubscribe と close を受ける.
     """
 
     async def subscribe(self, channels: set[str], timeout_ms: int = 0) -> None:
@@ -54,7 +54,7 @@ class _ValkeyPerformanceCompletionSubscriber(Protocol):
 
         Args:
             channels (set[str]): 購読する Valkey Pub/Sub channel 名.
-            timeout_ms (int): 購読応答を待つ最大ミリ秒数。0 は client default を表す.
+            timeout_ms (int): 購読応答を待つ最大ミリ秒数.0 は client default を表す.
 
         Returns:
             None: 購読開始処理の完了を表す.
@@ -66,11 +66,11 @@ class _ValkeyPerformanceCompletionSubscriber(Protocol):
         channels: set[str] | None = None,
         timeout_ms: int = 0,
     ) -> None:
-        """指定した channel 群、または全購読を解除する.
+        """指定した channel 群,または全購読を解除する.
 
         Args:
-            channels (set[str] | None): 解除する channel 名。None の場合は全購読を解除する.
-            timeout_ms (int): 解除応答を待つ最大ミリ秒数。0 は client default を表す.
+            channels (set[str] | None): 解除する channel 名.None の場合は全購読を解除する.
+            timeout_ms (int): 解除応答を待つ最大ミリ秒数.0 は client default を表す.
 
         Returns:
             None: 購読解除処理の完了を表す.
@@ -107,7 +107,7 @@ class ValkeyPerformanceCompletionSignal:
 
     Notes:
         channel は `{key_prefix}performance_completion:{score_id}` の score-scoped name を使う.
-        payload は wake-up hint であり、受信側は durable calculation result を再照会する.
+        payload は wake-up hint であり,受信側は durable calculation result を再照会する.
     """
 
     def __init__(
@@ -155,20 +155,20 @@ class ValkeyPerformanceCompletionSignal:
         _ = await self._publisher.publish(_encode_payload(payload), channel)
 
     async def wait(self, score_id: int, timeout: timedelta) -> bool:
-        """Score channel を購読して通知を期限まで待ち、観測結果を返す.
+        """Score channel を購読して通知を期限まで待ち,観測結果を返す.
 
         Args:
             score_id (int): 待機対象となる正の score id.
             timeout (timedelta): 正である最大待機時間.
 
         Returns:
-            bool: 対象 score の通知を観測した場合は True、期限切れなら False.
+            bool: 対象 score の通知を観測した場合は True,期限切れなら False.
 
         Raises:
-            ValueError: score_id が正でない場合、または timeout が正でない場合.
+            ValueError: score_id が正でない場合,または timeout が正でない場合.
 
         Notes:
-            成功、timeout、subscription error のいずれでも unsubscribe と close を試行する.
+            成功,timeout,subscription error のいずれでも unsubscribe と close を試行する.
         """
         validate_performance_completion_timeout(timeout)
         channel = performance_completion_channel(score_id, key_prefix=self._key_prefix)
@@ -180,13 +180,13 @@ class ValkeyPerformanceCompletionSignal:
 
             Args:
                 message (PubSubMsg): Pub/Sub client から受け取った message.
-                context (object): client が渡す callback context。adapter では使用しない.
+                context (object): client が渡す callback context.adapter では使用しない.
 
             Returns:
                 None: event scheduling 処理の完了を表す.
 
             Notes:
-                別 channel の message は無視し、event loop thread へ安全に通知する.
+                別 channel の message は無視し,event loop thread へ安全に通知する.
             """
             _ = context
             if _decode_text(message.channel) == channel:
@@ -217,7 +217,7 @@ def _encode_payload(payload: PerformanceCompletionSignalPayload) -> str:
         payload (PerformanceCompletionSignalPayload): serialise する終端 calculation payload.
 
     Returns:
-        str: calculation_id、score_id、state を持つ key sorted JSON string.
+        str: calculation_id,score_id,state を持つ key sorted JSON string.
     """
     data = {
         "calculation_id": payload.calculation_id,
@@ -231,10 +231,10 @@ def _decode_text(value: object) -> str | None:
     """Valkey callback value を channel 比較用の text へ正規化する.
 
     Args:
-        value (object): str、bytes、またはそれ以外の callback value.
+        value (object): str,bytes,またはそれ以外の callback value.
 
     Returns:
-        str | None: str はそのまま、bytes は UTF-8 decoded text、それ以外は None.
+        str | None: str はそのまま,bytes は UTF-8 decoded text,それ以外は None.
 
     Raises:
         UnicodeDecodeError: bytes value が UTF-8 として decode できない場合.

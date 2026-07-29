@@ -54,7 +54,7 @@ class InMemoryBeatmapMetadataProvider:
             snapshot (BeatmapsetSnapshot): ビートマップセットと内包ビートマップを表す登録対象.
 
         Returns:
-            None: 対応するビートマップセットID、ビートマップID、MD5チェックサムで検索可能にする.
+            None: 対応するビートマップセットID,ビートマップID,MD5チェックサムで検索可能にする.
         """
         self._by_beatmapset_id[snapshot.beatmapset_id] = snapshot
         for bm in snapshot.beatmaps:
@@ -155,7 +155,7 @@ class OsuApiMetadataProviderService:
             BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404の場合は ``None``.
 
         Raises:
-            BeatmapSourceError: OAuth取得、HTTP request、またはresponse正規化に失敗した場合.
+            BeatmapSourceError: OAuth取得,HTTP request,またはresponse正規化に失敗した場合.
         """
         return await self._lookup(f"/beatmaps/{beatmap_id}", lookup_key=str(beatmap_id))
 
@@ -169,7 +169,7 @@ class OsuApiMetadataProviderService:
             BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404の場合は ``None``.
 
         Raises:
-            BeatmapSourceError: OAuth取得、HTTP request、またはresponse正規化に失敗した場合.
+            BeatmapSourceError: OAuth取得,HTTP request,またはresponse正規化に失敗した場合.
         """
         return await self._lookup(f"/beatmapsets/{beatmapset_id}", lookup_key=str(beatmapset_id))
 
@@ -183,7 +183,7 @@ class OsuApiMetadataProviderService:
             BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404の場合は ``None``.
 
         Raises:
-            BeatmapSourceError: OAuth取得、HTTP request、またはresponse正規化に失敗した場合.
+            BeatmapSourceError: OAuth取得,HTTP request,またはresponse正規化に失敗した場合.
         """
         return await self._lookup(
             f"/beatmaps/lookup?checksum={checksum_md5}",
@@ -201,7 +201,7 @@ class OsuApiMetadataProviderService:
             BeatmapsetSnapshot | None: JSONを変換したスナップショット. HTTP 404の場合は ``None``.
 
         Raises:
-            BeatmapSourceError: token取得、request、JSON形式、またはHTTP statusが正常でない場合.
+            BeatmapSourceError: token取得,request,JSON形式,またはHTTP statusが正常でない場合.
         """
         source_label = "osu_api_v2"
         token = await self._get_token()
@@ -286,13 +286,13 @@ class OsuApiMetadataProviderService:
         )
 
     async def _get_token(self) -> str:
-        """有効なOAuth access tokenを返し、必要なら再取得する.
+        """有効なOAuth access tokenを返し,必要なら再取得する.
 
         Returns:
             str: 公式API requestのBearer認証に使うaccess token.
 
         Raises:
-            BeatmapSourceError: token endpointのrequest、JSON形式、認証、またはstatusが不正な場合.
+            BeatmapSourceError: token endpointのrequest,JSON形式,認証,またはstatusが不正な場合.
 
         Notes:
             cached tokenは現在時刻が ``expires_in - 60`` 秒で計算した有効期限より前だけ再利用する.
@@ -540,7 +540,7 @@ class MirrorMetadataProviderService:
                 ``None``.
 
         Raises:
-            BeatmapSourceError: 未検出以外の最後のsource error、または不正JSONを全sourceで
+            BeatmapSourceError: 未検出以外の最後のsource error,または不正JSONを全sourceで
                 解決できない場合.
         """
         if not self._base_urls:
@@ -612,7 +612,7 @@ def _normalize_base_urls(
         base_urls (Sequence[str] | None): 優先順で受け取るURL列.
 
     Returns:
-        tuple[str, ...]: 前後空白と末尾 ``/`` を除去し、空文字を除外したURL列.
+        tuple[str, ...]: 前後空白と末尾 ``/`` を除去し,空文字を除外したURL列.
     """
     raw_urls: Sequence[str]
     if base_urls is not None:

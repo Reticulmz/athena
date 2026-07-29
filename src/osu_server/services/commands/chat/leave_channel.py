@@ -58,7 +58,7 @@ class LeaveChannelUseCase:
             command (LeaveChannelCommand): 削除する user と channel name を含む command.
 
         Returns:
-            None: membership 削除を要求して log を記録し、呼び出し側へ値を返さずに完了する.
+            None: membership 削除を要求して log を記録し,呼び出し側へ値を返さずに完了する.
         """
         await self._channel_state.remove_member(command.channel_name, command.user_id)
         logger.info("leave", user_id=command.user_id, channel=command.channel_name)

@@ -35,7 +35,7 @@ class SQLAlchemyUserQueryRepository:
             None: 読み取り用session factoryを保持したrepository instanceを初期化する.
 
         Notes:
-            初期化時にはsessionを生成せず、User stateは変更しない.
+            初期化時にはsessionを生成せず,User stateは変更しない.
         """
         self._session_factory = session_factory
 
@@ -68,7 +68,7 @@ class SQLAlchemyUserQueryRepository:
             SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
 
         Notes:
-            検索前にstr.lower()だけを適用し、空白除去やUnicode正規化は行わない.
+            検索前にstr.lower()だけを適用し,空白除去やUnicode正規化は行わない.
         """
         async with self._session_factory() as session:
             model = (
@@ -91,7 +91,7 @@ class SQLAlchemyUserQueryRepository:
             SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
 
         Notes:
-            検索前にstr.lower()だけを適用し、空白除去やemail validationは行わない.
+            検索前にstr.lower()だけを適用し,空白除去やemail validationは行わない.
         """
         async with self._session_factory() as session:
             model = (
@@ -112,7 +112,7 @@ class SQLAlchemyUserQueryRepository:
             SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
 
         Notes:
-            検索前にstr.lower()だけを適用し、禁止一覧は変更しない.
+            検索前にstr.lower()だけを適用し,禁止一覧は変更しない.
         """
         async with self._session_factory() as session:
             model = (

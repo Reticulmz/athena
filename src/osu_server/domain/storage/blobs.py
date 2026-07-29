@@ -20,7 +20,7 @@ class BlobStorageBackendKind(StrEnum):
         S3 (str): S3互換object storage backendの永続化値.
 
     Notes:
-        Domain内ではEnum memberを使い、設定/DB境界だけで文字列値へ変換する.
+        Domain内ではEnum memberを使い,設定/DB境界だけで文字列値へ変換する.
     """
 
     LOCAL = "local"
@@ -42,8 +42,8 @@ class Blob:
 
     Notes:
         sha256はSHA256_PATTERN.fullmatch()で64文字すべてが小文字16進数であることを検証する.
-        末尾改行など、64文字を超える値は受け入れない.
-        byte_sizeは0以上、文字列値は空を許可しない.
+        末尾改行など,64文字を超える値は受け入れない.
+        byte_sizeは0以上,文字列値は空を許可しない.
     """
 
     id: int
@@ -61,7 +61,7 @@ class Blob:
             None: 各fieldを検証して完了する.
 
         Raises:
-            InvalidBlobError: 空の文字列、負のbyte_size、無効なSHA-256、未知のbackendを
+            InvalidBlobError: 空の文字列,負のbyte_size,無効なSHA-256,未知のbackendを
                 受け取った場合.
         """
         if not self.content_type:
@@ -92,8 +92,8 @@ class NewBlob:
 
     Notes:
         sha256はSHA256_PATTERN.fullmatch()で64文字すべてが小文字16進数であることを検証する.
-        末尾改行など、64文字を超える値は受け入れない.
-        byte_sizeは0以上、文字列値は空を許可しない.
+        末尾改行など,64文字を超える値は受け入れない.
+        byte_sizeは0以上,文字列値は空を許可しない.
     """
 
     sha256: str
@@ -109,7 +109,7 @@ class NewBlob:
             None: 各fieldを検証して完了する.
 
         Raises:
-            InvalidBlobError: 空の文字列、負のbyte_size、無効なSHA-256、未知のbackendを
+            InvalidBlobError: 空の文字列,負のbyte_size,無効なSHA-256,未知のbackendを
                 受け取った場合.
         """
         if not self.content_type:

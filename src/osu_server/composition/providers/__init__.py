@@ -1,4 +1,4 @@
-"""app、worker、test用のDishka provider setを遅延公開する."""
+"""app,worker,test用のDishka provider setを遅延公開する."""
 
 from __future__ import annotations
 
@@ -195,13 +195,13 @@ def __getattr__(name: str) -> object:
         name (str): ``__all__``に含まれるproviderまたはcontainer factoryの公開名.
 
     Returns:
-        object: 対応moduleから解決し、このpackageのglobal namespaceへcacheした属性.
+        object: 対応moduleから解決し,このpackageのglobal namespaceへcacheした属性.
 
     Raises:
         AttributeError: ``name``が遅延公開対象に登録されていない場合.
 
     Notes:
-        既に解決済みの属性はPythonの通常の属性探索で返り、この関数は呼ばれない.
+        既に解決済みの属性はPythonの通常の属性探索で返り,この関数は呼ばれない.
     """
     try:
         module_name, attribute_name = _EXPORTS[name]

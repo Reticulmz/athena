@@ -1,4 +1,4 @@
-"""score performance calculation の domain model、状態、policy を定義する."""
+"""score performance calculation の domain model,状態,policy を定義する."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ class PerformanceCalculationState(Enum):
         """完了 payload を持たない active lifecycle state の集合を返す.
 
         Returns:
-            frozenset[PerformanceCalculationState]: QUEUED、FETCHING_FILE、CALCULATING の集合.
+            frozenset[PerformanceCalculationState]: QUEUED,FETCHING_FILE,CALCULATING の集合.
         """
         return frozenset({cls.QUEUED, cls.FETCHING_FILE, cls.CALCULATING})
 
@@ -56,7 +56,7 @@ class PerformanceCalculationState(Enum):
             frozenset[PerformanceCalculationState]: COMPLETED と UNAVAILABLE の集合.
 
         Notes:
-            SUPERSEDED は履歴管理上の状態であり、この集合には含めない.
+            SUPERSEDED は履歴管理上の状態であり,この集合には含めない.
         """
         return frozenset({cls.COMPLETED, cls.UNAVAILABLE})
 
@@ -147,7 +147,7 @@ class RecalculationCandidateReason(Enum):
         UNAVAILABLE (RecalculationCandidateReason): 既存計算が unavailable で再試行対象になる理由.
 
     Notes:
-        domain/use-case 境界では enum member を使い、永続化境界だけで文字列値へ変換する.
+        domain/use-case 境界では enum member を使い,永続化境界だけで文字列値へ変換する.
     """
 
     UNCALCULATED = "uncalculated"
@@ -194,8 +194,8 @@ class PerformanceCalculation:
         calculated_at (datetime | None): calculation の終了日時. state により None となる.
 
     Notes:
-        pending state は pp、star_rating、unavailable_reason、calculated_at を保持できない.
-        COMPLETED は pp、star_rating、calculated_at を必要とし、UNAVAILABLE は空でない
+        pending state は pp,star_rating,unavailable_reason,calculated_at を保持できない.
+        COMPLETED は pp,star_rating,calculated_at を必要とし,UNAVAILABLE は空でない
         unavailable_reason と calculated_at を必要とする. SUPERSEDED は current ではない.
     """
 
@@ -214,13 +214,13 @@ class PerformanceCalculation:
     calculated_at: datetime | None
 
     def __post_init__(self) -> None:
-        """Calculation の identity、provenance、state payload を検証する.
+        """Calculation の identity,provenance,state payload を検証する.
 
         Returns:
             None: calculation がすべての domain invariant を満たすことを示す.
 
         Raises:
-            ValueError: ID、provenance、checksum、または state 固有 payload が不正な場合.
+            ValueError: ID,provenance,checksum,または state 固有 payload が不正な場合.
         """
         _validate_identity(self)
         _validate_provenance(self)
@@ -246,7 +246,7 @@ class PerformanceRecalculationBatch:
         updated_at (datetime): batch 最終更新日時.
 
     Raises:
-        ValueError: ID、件数、進捗、version、error が domain invariant を満たさない場合.
+        ValueError: ID,件数,進捗,version,error が domain invariant を満たさない場合.
     """
 
     id: int | None
@@ -263,13 +263,13 @@ class PerformanceRecalculationBatch:
     updated_at: datetime
 
     def __post_init__(self) -> None:
-        """Recalculation batch の identity、進捗、reason count を検証する.
+        """Recalculation batch の identity,進捗,reason count を検証する.
 
         Returns:
             None: batch が domain invariant を満たすことを示す.
 
         Raises:
-            ValueError: ID、version、件数、進捗、error、reason count が不正な場合.
+            ValueError: ID,version,件数,進捗,error,reason count が不正な場合.
         """
         _validate_recalculation_batch(self)
 
@@ -294,7 +294,7 @@ class PerformanceRecalculationWorkItem:
 
     Notes:
         CLAIMED では claim_owner と claim_expires_at を同時に設定する. terminal state では
-        calculation_id が必須となり、active claim は保持しない.
+        calculation_id が必須となり,active claim は保持しない.
     """
 
     id: int | None
@@ -311,13 +311,13 @@ class PerformanceRecalculationWorkItem:
     updated_at: datetime
 
     def __post_init__(self) -> None:
-        """Recalculation work item の identity、claim、terminal payload を検証する.
+        """Recalculation work item の identity,claim,terminal payload を検証する.
 
         Returns:
             None: work item が domain invariant を満たすことを示す.
 
         Raises:
-            ValueError: ID、claim metadata、attempt count、error、state 固有 payload が不正な場合.
+            ValueError: ID,claim metadata,attempt count,error,state 固有 payload が不正な場合.
         """
         _validate_recalculation_work_item(self)
 
@@ -342,10 +342,10 @@ class PerformanceEligibilityPolicy:
         """Score が ranked PP calculation の対象か判定する.
 
         Args:
-            score (Score): submit 時点の status、playstyle、mod を保持する accepted score.
+            score (Score): submit 時点の status,playstyle,mod を保持する accepted score.
 
         Returns:
-            PerformanceEligibilityDecision: eligible 結果、または最初に検出した
+            PerformanceEligibilityDecision: eligible 結果,または最初に検出した
                 machine-readable 除外理由.
 
         Raises:
@@ -353,7 +353,7 @@ class PerformanceEligibilityPolicy:
                 無効な場合.
 
         Notes:
-            passed な VANILLA score だけを対象とし、RELAX/AUTOPILOT を除外する. beatmap status は
+            passed な VANILLA score だけを対象とし,RELAX/AUTOPILOT を除外する. beatmap status は
             RANKED または APPROVED だけを対象とする.
         """
         if not score.passed:
@@ -376,7 +376,7 @@ class PerformanceEligibilityPolicy:
             score (Score): submit 時点の leaderboard eligibility を保持する accepted score.
 
         Returns:
-            PerformanceEligibilityDecision: score_not_eligible、または `evaluate()` の判定結果.
+            PerformanceEligibilityDecision: score_not_eligible,または `evaluate()` の判定結果.
 
         Raises:
             ValueError: score の beatmap_status_at_submission が BeatmapRankStatus として
@@ -441,7 +441,7 @@ class FormulaProfilePolicy:
             FormulaProfile: 指定 playstyle に対応する active profile.
 
         Raises:
-            ValueError: playstyle が Playstyle instance でない、または対応 profile がない場合.
+            ValueError: playstyle が Playstyle instance でない,または対応 profile がない場合.
         """
         if isinstance(playstyle, Playstyle):
             profile = self._profiles_by_playstyle.get(playstyle)
@@ -461,7 +461,7 @@ def _score_status(score: Score) -> BeatmapRankStatus | None:
         score (Score): beatmap_status_at_submission を持つ accepted score.
 
     Returns:
-        BeatmapRankStatus | None: 記録済み status、または status が未記録であることを表す None.
+        BeatmapRankStatus | None: 記録済み status,または status が未記録であることを表す None.
 
     Raises:
         ValueError: 記録された値が BeatmapRankStatus の定義値へ変換できない場合.
@@ -479,10 +479,10 @@ def _validate_identity(calculation: PerformanceCalculation) -> None:
         calculation (PerformanceCalculation): ID と score ID を検証する calculation.
 
     Returns:
-        None: calculation ID が未設定または正で、score_id が正であることを示す.
+        None: calculation ID が未設定または正で,score_id が正であることを示す.
 
     Raises:
-        ValueError: calculation ID が 0 以下、または score_id が 0 以下の場合.
+        ValueError: calculation ID が 0 以下,または score_id が 0 以下の場合.
     """
     if calculation.id is not None and calculation.id <= 0:
         msg = "performance calculation id must be positive"
@@ -502,7 +502,7 @@ def _validate_provenance(calculation: PerformanceCalculation) -> None:
         None: provenance 情報が domain invariant を満たすことを示す.
 
     Raises:
-        ValueError: calculator 名または version が空、attachment ID が 0 以下、または checksum が
+        ValueError: calculator 名または version が空,attachment ID が 0 以下,または checksum が
             lowercase 32 文字 MD5 hexadecimal string ではない場合.
     """
     if calculation.calculator_name == "":
@@ -534,7 +534,7 @@ def _validate_state_payload(calculation: PerformanceCalculation) -> None:
         None: state 固有の payload 条件を満たすことを示す.
 
     Raises:
-        ValueError: state に対応しない payload、または current SUPERSEDED state の場合.
+        ValueError: state に対応しない payload,または current SUPERSEDED state の場合.
     """
     if calculation.state.is_pending:
         _validate_pending_payload(calculation)
@@ -557,7 +557,7 @@ def _validate_pending_payload(calculation: PerformanceCalculation) -> None:
         calculation (PerformanceCalculation): pending state の calculation.
 
     Returns:
-        None: pp、star_rating、unavailable_reason、calculated_at がすべて None であることを示す.
+        None: pp,star_rating,unavailable_reason,calculated_at がすべて None であることを示す.
 
     Raises:
         ValueError: pending calculation が完了または unavailable の payload を保持する場合.
@@ -580,10 +580,10 @@ def _validate_completed_payload(calculation: PerformanceCalculation) -> None:
         calculation (PerformanceCalculation): COMPLETED state の calculation.
 
     Returns:
-        None: PP と star rating が非負で、calculated_at があり reason がないことを示す.
+        None: PP と star rating が非負で,calculated_at があり reason がないことを示す.
 
     Raises:
-        ValueError: result payload の必須値不足、負の値、または unavailable reason がある場合.
+        ValueError: result payload の必須値不足,負の値,または unavailable reason がある場合.
     """
     if calculation.pp is None or calculation.star_rating is None:
         msg = "completed calculation requires pp and star rating"
@@ -606,10 +606,10 @@ def _validate_unavailable_payload(calculation: PerformanceCalculation) -> None:
         calculation (PerformanceCalculation): UNAVAILABLE state の calculation.
 
     Returns:
-        None: PP/star rating が None で、空でない reason と calculated_at があることを示す.
+        None: PP/star rating が None で,空でない reason と calculated_at があることを示す.
 
     Raises:
-        ValueError: result payload、unavailable reason、または calculated_at が不正な場合.
+        ValueError: result payload,unavailable reason,または calculated_at が不正な場合.
     """
     if calculation.pp is not None or calculation.star_rating is not None:
         msg = "unavailable calculation cannot have pp or star rating"
@@ -626,13 +626,13 @@ def _validate_recalculation_batch(batch: PerformanceRecalculationBatch) -> None:
     """Recalculation batch の identity と進捗 invariant を検証する.
 
     Args:
-        batch (PerformanceRecalculationBatch): 件数、status、error、reason count を検証する batch.
+        batch (PerformanceRecalculationBatch): 件数,status,error,reason count を検証する batch.
 
     Returns:
         None: batch が有効な再計算進捗を表すことを示す.
 
     Raises:
-        ValueError: batch の ID、version、count、progress、error、reason count が不正な場合.
+        ValueError: batch の ID,version,count,progress,error,reason count が不正な場合.
 
     Notes:
         COMPLETED batch の terminal item 数は candidate_count と等しい.
@@ -667,7 +667,7 @@ def _validate_recalculation_batch(batch: PerformanceRecalculationBatch) -> None:
 
 
 def _validate_recalculation_work_item(item: PerformanceRecalculationWorkItem) -> None:
-    """Recalculation work item の identity、claim、state invariant を検証する.
+    """Recalculation work item の identity,claim,state invariant を検証する.
 
     Args:
         item (PerformanceRecalculationWorkItem): identity と state payload を検証する item.
@@ -676,7 +676,7 @@ def _validate_recalculation_work_item(item: PerformanceRecalculationWorkItem) ->
         None: work item が state に対応する処理状態を表すことを示す.
 
     Raises:
-        ValueError: ID、attempt、error、claim、CLAIMED payload、terminal payload が不正な場合.
+        ValueError: ID,attempt,error,claim,CLAIMED payload,terminal payload が不正な場合.
     """
     if item.id is not None and item.id <= 0:
         msg = "recalculation work item id must be positive"
@@ -717,10 +717,10 @@ def _validate_claimed_recalculation_work_item(
         item (PerformanceRecalculationWorkItem): CLAIMED state の work item.
 
     Returns:
-        None: claim owner、claim expiry、正の attempt count があることを示す.
+        None: claim owner,claim expiry,正の attempt count があることを示す.
 
     Raises:
-        ValueError: claim metadata がない、または attempt_count が 0 以下の場合.
+        ValueError: claim metadata がない,または attempt_count が 0 以下の場合.
     """
     if item.claim_owner is None or item.claim_expires_at is None:
         msg = "claimed recalculation work item requires claim metadata"
@@ -739,10 +739,10 @@ def _validate_terminal_recalculation_work_item(
         item (PerformanceRecalculationWorkItem): COMPLETED または UNAVAILABLE state の work item.
 
     Returns:
-        None: calculation_id が存在し、claim metadata がないことを示す.
+        None: calculation_id が存在し,claim metadata がないことを示す.
 
     Raises:
-        ValueError: calculation_id がない、または active claim metadata が残っている場合.
+        ValueError: calculation_id がない,または active claim metadata が残っている場合.
     """
     if item.calculation_id is None:
         msg = "terminal recalculation work item requires calculation_id"

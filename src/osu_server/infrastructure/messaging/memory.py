@@ -21,7 +21,7 @@ class InMemoryLocalEventBus:
             具象イベント型ごとに登録順で保持する非同期 handler の一覧です.
 
     Notes:
-        handler は具象イベント型ごとに登録順で呼び出します. handler の例外は記録し、
+        handler は具象イベント型ごとに登録順で呼び出します. handler の例外は記録し,
         後続 handler の配信を止めません.
     """
 

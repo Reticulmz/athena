@@ -31,7 +31,7 @@ class SQLAlchemyFriendRelationshipQueryRepository:
             None: 読み取り用session factoryを保持したrepository instanceを初期化する.
 
         Notes:
-            初期化時にはsessionを生成せず、relationship stateは変更しない.
+            初期化時にはsessionを生成せず,relationship stateは変更しない.
         """
         self._session_factory: SQLAlchemyQuerySessionFactory = session_factory
 

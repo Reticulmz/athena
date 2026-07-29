@@ -60,7 +60,7 @@ class TestProtocolCompliance:
 
 
 class TestFireAndSubscribe:
-    """イベントの購読、型選別、購読者不在時の配信を検証します."""
+    """イベントの購読,型選別,購読者不在時の配信を検証します."""
 
     async def test_handler_receives_event(self, bus: InMemoryLocalEventBus) -> None:
         """購読済みhandlerが同じ具象型のイベントを一回受け取ることを検証します.
@@ -254,6 +254,9 @@ class TestExceptionIsolation:
             Args:
                 _event (_UserLoggedIn): 失敗handlerへ配信されたログインイベントです.
 
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+
             Raises:
                 RuntimeError: handler error を意図的に送出します.
             """
@@ -298,6 +301,9 @@ class TestExceptionIsolation:
 
             Args:
                 _event (_UserLoggedIn): 失敗handlerへ配信されたログインイベントです.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
 
             Raises:
                 ValueError: boom を意図的に送出します.

@@ -1,6 +1,6 @@
-"""Beatmapの公開状態、鮮度、取得対象を表すdomain modelを定義するmodule.
+"""Beatmapの公開状態,鮮度,取得対象を表すdomain modelを定義するmodule.
 
-公式rank status、operatorのローカル上書き、metadata/fileの鮮度、
+公式rank status,operatorのローカル上書き,metadata/fileの鮮度,
 leaderboard eligibilityを同じ語彙として扱う.
 """
 
@@ -53,7 +53,7 @@ class BeatmapMode(Enum):
         UNKNOWN (str): provider値をmodeへ確定できない場合の永続化値.
 
     Notes:
-        Domain内ではEnum memberを使い、wire/DB境界だけで文字列値へ変換する.
+        Domain内ではEnum memberを使い,wire/DB境界だけで文字列値へ変換する.
     """
 
     OSU = "osu"
@@ -77,7 +77,7 @@ class LocalBeatmapStatus(Enum):
         UNKNOWN (str): statusを確定できないとして扱うことを示す値.
 
     Notes:
-        APPROVEDは公式status専用のため、ローカル上書きには含めない.
+        APPROVEDは公式status専用のため,ローカル上書きには含めない.
     """
 
     RANKED = "ranked"
@@ -163,7 +163,7 @@ class BeatmapFileAttachment:
         id (int | None): 永続化前はNoneとなるattachment ID.
 
     Notes:
-        checksum_md5は32文字の小文字16進数MD5で、設定済みidは正の値に限る.
+        checksum_md5は32文字の小文字16進数MD5で,設定済みidは正の値に限る.
     """
 
     beatmap_id: int
@@ -182,7 +182,7 @@ class BeatmapFileAttachment:
             None: checksumと任意の永続IDを検証して完了する.
 
         Raises:
-            ValueError: checksum_md5が小文字16進数MD5でないか、idが正の値でない場合.
+            ValueError: checksum_md5が小文字16進数MD5でないか,idが正の値でない場合.
         """
         _validate_md5(self.checksum_md5)
         if self.id is not None and self.id <= 0:
@@ -262,7 +262,7 @@ class Beatmap:
 
         Raises:
             TypeError: local_status_overrideがLocalBeatmapStatusまたはNoneでない場合.
-            ValueError: checksum_md5が無効か、APPROVEDをローカル上書きに指定した場合.
+            ValueError: checksum_md5が無効か,APPROVEDをローカル上書きに指定した場合.
         """
         _validate_md5(self.checksum_md5)
         _validate_local_override(self.local_status_override)
@@ -405,12 +405,12 @@ class BeatmapFreshnessDecision:
     """Metadata freshness policyの判定結果を表す.
 
     Attributes:
-        is_stale (bool): metadataがrefresh期限を過ぎたか、または公式sourceを利用できる
+        is_stale (bool): metadataがrefresh期限を過ぎたか,または公式sourceを利用できる
             mirror由来recordであるか.
         should_refresh (bool): metadata fetchを要求すべきか.
         requests_official_refresh (bool): mirror由来recordに公式sourceでの再取得を要求するか.
         next_refresh_at (datetime | None): 判定に使用した次回refresh日時. 未確定時はNone.
-        reason (str | None): refresh判断の理由code. 通常のfresh状態ではNoneだが、
+        reason (str | None): refresh判断の理由code. 通常のfresh状態ではNoneだが,
             PENDING_FETCHではpending_fetchを返す.
     """
 
@@ -426,8 +426,8 @@ class BeatmapFreshnessPolicy:
     """Beatmap metadataを再取得すべきか判定するpolicyを表す.
 
     Attributes:
-        ranked_refresh_interval (timedelta): ranked、approved、lovedのrefresh間隔.
-        pending_refresh_interval (timedelta): qualified、pending、WIPなどのrefresh間隔.
+        ranked_refresh_interval (timedelta): ranked,approved,lovedのrefresh間隔.
+        pending_refresh_interval (timedelta): qualified,pending,WIPなどのrefresh間隔.
         graveyard_refresh_interval (timedelta): graveyardのrefresh間隔.
         mirror_refresh_interval (timedelta): mirror由来metadataのrefresh間隔.
     """
@@ -454,10 +454,10 @@ class BeatmapFreshnessPolicy:
             force_refresh (bool): freshでもmetadata fetchを強制するか.
 
         Returns:
-            BeatmapFreshnessDecision: stale状態、refresh要否、公式source再取得要否を含む判定結果.
+            BeatmapFreshnessDecision: stale状態,refresh要否,公式source再取得要否を含む判定結果.
 
         Notes:
-            force_refreshがFalseのPENDING_FETCHではshould_refreshをFalseにし、
+            force_refreshがFalseのPENDING_FETCHではshould_refreshをFalseにし,
             reasonとしてpending_fetchを返す. 公式sourceが利用できるmirror由来recordは
             次回予定日時に関わらず公式再取得を要求する.
         """
@@ -539,7 +539,7 @@ class BeatmapFreshnessPolicy:
         return beatmap.next_refresh_at
 
     def _derive_next_refresh_at(self, beatmap: Beatmap) -> datetime | None:
-        """取得時刻、source、採用statusから次回refresh日時を導出する.
+        """取得時刻,source,採用statusから次回refresh日時を導出する.
 
         Args:
             beatmap (Beatmap): refresh日時を導出するbeatmap.
@@ -717,7 +717,7 @@ class BeatmapMetadataLookupTarget:
             int: valueを変換した正の整数.
 
         Raises:
-            ValueError: valueが整数へ変換できないか、0以下の場合.
+            ValueError: valueが整数へ変換できないか,0以下の場合.
         """
         value = int(self.value)
         if value <= 0:
@@ -765,7 +765,7 @@ class BeatmapFetchTarget:
             None: target_typeとtarget_keyを検証して完了する.
 
         Raises:
-            ValueError: target_typeが未対応か、target_keyが空文字列の場合.
+            ValueError: target_typeが未対応か,target_keyが空文字列の場合.
         """
         _ = self.kind
         if not self.target_key:
@@ -806,7 +806,7 @@ class BeatmapFetchTarget:
             BeatmapMetadataLookupTarget: metadata providerへ渡すlookup種別と値.
 
         Raises:
-            ValueError: target_typeが未対応か、file fetch targetをmetadata lookupへ
+            ValueError: target_typeが未対応か,file fetch targetをmetadata lookupへ
                 変換しようとした場合.
         """
         match self.kind:
@@ -836,7 +836,7 @@ class BeatmapFetchTarget:
             int: target_keyを整数化したbeatmap ID.
 
         Raises:
-            ValueError: target_typeがfile fetchでないか、target_keyを整数へ変換できない場合.
+            ValueError: target_typeがfile fetchでないか,target_keyを整数へ変換できない場合.
         """
         if self.kind is not BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID:
             msg = f"unsupported file fetch target type: {self.target_type}"
@@ -847,7 +847,7 @@ class BeatmapFetchTarget:
         """Worker queueへ渡せるprimitive payloadを返す.
 
         Returns:
-            BeatmapFetchQueuePayload: kindの文字列表現、target key、force refresh指定を持つpayload.
+            BeatmapFetchQueuePayload: kindの文字列表現,target key,force refresh指定を持つpayload.
 
         Raises:
             ValueError: target_typeがBeatmapFetchTargetKindの値でない場合.
@@ -877,7 +877,7 @@ class BeatmapFetchTarget:
             BeatmapFetchTarget: typed target typeを持つfetch target.
 
         Raises:
-            ValueError: target_typeが未対応か、target_keyが空文字列の場合.
+            ValueError: target_typeが未対応か,target_keyが空文字列の場合.
         """
         return cls(
             target_type=BeatmapFetchTargetKind(target_type),
@@ -1092,7 +1092,7 @@ class BeatmapMetadataProvider(Protocol):
     """Beatmap metadataを検索するproviderのstructural contractを表す.
 
     Notes:
-        実装は各lookupで一致するbeatmapset全体のsnapshotを返し、見つからない場合はNoneを返す.
+        実装は各lookupで一致するbeatmapset全体のsnapshotを返し,見つからない場合はNoneを返す.
     """
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
@@ -1105,7 +1105,7 @@ class BeatmapMetadataProvider(Protocol):
             BeatmapsetSnapshot | None: 一致するbeatmapset snapshot. 見つからない場合はNone.
 
         Raises:
-            BeatmapSourceError: metadata sourceが利用不能か、source responseを検証できない場合.
+            BeatmapSourceError: metadata sourceが利用不能か,source responseを検証できない場合.
         """
         ...
 
@@ -1119,7 +1119,7 @@ class BeatmapMetadataProvider(Protocol):
             BeatmapsetSnapshot | None: 一致するbeatmapset snapshot. 見つからない場合はNone.
 
         Raises:
-            BeatmapSourceError: metadata sourceが利用不能か、source responseを検証できない場合.
+            BeatmapSourceError: metadata sourceが利用不能か,source responseを検証できない場合.
         """
         ...
 
@@ -1133,7 +1133,7 @@ class BeatmapMetadataProvider(Protocol):
             BeatmapsetSnapshot | None: 一致するbeatmapset snapshot. 見つからない場合はNone.
 
         Raises:
-            BeatmapSourceError: metadata sourceが利用不能か、source responseを検証できない場合.
+            BeatmapSourceError: metadata sourceが利用不能か,source responseを検証できない場合.
         """
         ...
 
@@ -1191,6 +1191,6 @@ class BeatmapFileProvider(Protocol):
             OsuFileFetchResult: body bytesと取得sourceを含むfile取得結果.
 
         Raises:
-            BeatmapSourceError: すべてのfile sourceが利用不能か、取得結果を検証できない場合.
+            BeatmapSourceError: すべてのfile sourceが利用不能か,取得結果を検証できない場合.
         """
         ...

@@ -77,7 +77,7 @@ _DISHKA_RUNTIME_HINTS = (
 
 @final
 class StableWebLegacyProviderSet(Provider):
-    """stable legacy web handler、parser、mapperをAPP scopeで登録する.
+    """stable legacy web handler,parser,mapperをAPP scopeで登録する.
 
     Attributes:
         scope (Scope): app container内で共有するDishkaのAPP scope.
@@ -146,7 +146,7 @@ class StableWebLegacyProviderSet(Provider):
         beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
         config: AppConfig,
     ) -> GetscoresHandler:
-        """Legacy getscores handlerを認証、score query、beatmap warmup依存で構成する.
+        """Legacy getscores handlerを認証,score query,beatmap warmup依存で構成する.
 
         Args:
             auth_query (SessionCredentialsQueryUseCase):
@@ -222,7 +222,7 @@ class StableWebLegacyProviderSet(Provider):
             StableScorePayloadParser: plaintext payloadをparsed scoreへ変換するparser.
 
         Notes:
-            parserはstable transportのdecode境界で使用し、command use-caseへ直接渡さない.
+            parserはstable transportのdecode境界で使用し,command use-caseへ直接渡さない.
         """
         return StableScorePayloadParser()
 
@@ -260,7 +260,7 @@ class StableWebLegacyProviderSet(Provider):
         current_user_stats_query: CurrentUserStatsQuery,
         event_bus: LocalEventBus,
     ) -> ScoreSubmitHandler:
-        """Stable score submit handlerをcommand、decoder、response依存で構成する.
+        """Stable score submit handlerをcommand,decoder,response依存で構成する.
 
         Args:
             submit_score_command (ProcessScoreSubmissionUseCase):
@@ -295,7 +295,7 @@ class StableWebLegacyProviderSet(Provider):
         replay_download_query: ReplayDownloadQuery,
         replay_download_accounting: ReplayDownloadAccountingPublisher,
     ) -> ReplayDownloadHandler:
-        """Legacy replay download handlerを認証、parser、query、accounting publisherで構成する.
+        """Legacy replay download handlerを認証,parser,query,accounting publisherで構成する.
 
         Args:
             auth_query (SessionCredentialsQueryUseCase):
@@ -327,6 +327,6 @@ def _stable_web_base_url(domain: str) -> str:
         str: ``https://osu.`` prefixとperiodを除去した ``domain`` を結合したbase URL.
 
     Notes:
-        domainの妥当性検証は行わず、leading/trailing periodだけを除去する.
+        domainの妥当性検証は行わず,leading/trailing periodだけを除去する.
     """
     return f"https://osu.{domain.strip('.')}"

@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 
 class _FakeUserRebuildUseCase:
-    """user単位再構築commandを記録し、設定済み結果または例外を返すtest double.
+    """user単位再構築commandを記録し,設定済み結果または例外を返すtest double.
 
     Attributes:
         calls (list[RebuildBeatmapLeaderboardsForUserCommand]): executeへ渡されたcommand履歴.
@@ -87,7 +87,7 @@ class _FakeUserRebuildUseCase:
 
 
 class _FakeBeatmapsetRebuildUseCase:
-    """beatmapset単位再構築commandを記録し、設定済み結果または例外を返すtest double.
+    """beatmapset単位再構築commandを記録し,設定済み結果または例外を返すtest double.
 
     Attributes:
         calls (list[RebuildBeatmapLeaderboardsForBeatmapsetCommand]): executeへ渡されたcommand履歴.
@@ -184,7 +184,7 @@ class _FakeEnqueueableTask:
         self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
     async def kiq(self, *args: object, **kwargs: object) -> object:
-        """payloadを記録して成功objectを返すか、設定済み例外を送出する.
+        """payloadを記録して成功objectを返すか,設定済み例外を送出する.
 
         Args:
             *args (object): taskへ渡される位置引数payload.
@@ -203,7 +203,7 @@ class _FakeEnqueueableTask:
 
 
 class _FakeBroker:
-    """指定taskを返し、worker wakeのtask lookupを記録するbroker double.
+    """指定taskを返し,worker wakeのtask lookupを記録するbroker double.
 
     Attributes:
         _task (_FakeEnqueueableTask | None): lookup時に返すtask. Noneは未登録を表す.
@@ -226,7 +226,7 @@ class _FakeBroker:
             task_name (str): worker wakeが解決を試みるtask名.
 
         Returns:
-            _FakeEnqueueableTask | None: 設定済みtask、または未登録を表すNone.
+            _FakeEnqueueableTask | None: 設定済みtask,または未登録を表すNone.
         """
         self.task_names.append(task_name)
         return self._task
@@ -294,7 +294,7 @@ def test_beatmap_leaderboard_job_stays_queue_adapter_only() -> None:
     """Leaderboard jobがrepositoryや低水準infrastructureを所有しないことを検証する.
 
     Returns:
-        None: sourceにSQLAlchemy、repository、Valkey参照がないことを確認して完了する.
+        None: sourceにSQLAlchemy,repository,Valkey参照がないことを確認して完了する.
     """
     source = inspect.getsource(beatmap_leaderboards)
 
@@ -472,7 +472,7 @@ class TestBeatmapLeaderboardTaskExecution:
         """User payloadをuser IDとreasonを持つcommandとして委譲することを検証する.
 
         Returns:
-            None: use-caseが1回呼ばれ、commandの値がpayloadと一致することを確認する.
+            None: use-caseが1回呼ばれ,commandの値がpayloadと一致することを確認する.
         """
         fake = _FakeUserRebuildUseCase()
         context = _make_context(beatmap_leaderboard_user_rebuild_use_case=fake)
@@ -492,7 +492,7 @@ class TestBeatmapLeaderboardTaskExecution:
         """Beatmapset payloadをIDとreasonを持つcommandとして委譲することを検証する.
 
         Returns:
-            None: use-caseが1回呼ばれ、commandの値がpayloadと一致することを確認する.
+            None: use-caseが1回呼ばれ,commandの値がpayloadと一致することを確認する.
         """
         fake = _FakeBeatmapsetRebuildUseCase()
         context = _make_context(beatmap_leaderboard_beatmapset_rebuild_use_case=fake)

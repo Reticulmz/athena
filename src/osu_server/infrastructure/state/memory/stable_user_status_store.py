@@ -15,7 +15,7 @@ class InMemoryStableUserStatusStore:
         _statuses_by_user_id (dict[int, StableUserStatus]): user id ごとの current stable status.
 
     Notes:
-        TTL expiration を計測しないため、test と in-memory runtime 用の double として使う.
+        TTL expiration を計測しないため,test と in-memory runtime 用の double として使う.
     """
 
     def __init__(self) -> None:
@@ -79,7 +79,7 @@ class InMemoryStableUserStatusStore:
             user_id (int): 取得対象の user id.
 
         Returns:
-            int | None: 保存済み play mode。status が未保存なら None.
+            int | None: 保存済み play mode.status が未保存なら None.
         """
         status = self._statuses_by_user_id.get(user_id)
         return None if status is None else status.play_mode
@@ -103,8 +103,8 @@ class InMemoryStableUserStatusStore:
         """Protocol 互換の TTL refresh を no-op として受け取る.
 
         Args:
-            user_id (int): refresh 対象の user id。memory 実装では使用しない.
-            ttl (int): session と同期する TTL 秒数。memory 実装では使用しない.
+            user_id (int): refresh 対象の user id.memory 実装では使用しない.
+            ttl (int): session と同期する TTL 秒数.memory 実装では使用しない.
 
         Returns:
             None: no-op refresh の完了を表す.

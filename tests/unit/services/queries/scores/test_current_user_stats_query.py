@@ -64,8 +64,8 @@ class UserStatsQueryRepositoryStub:
 async def test_query_dedupes_requested_ids_applies_policy_and_global_rank() -> None:
     """重複IDを除外しperformance policyとglobal rankを適用する契約を検証する.
 
-    重複と未知IDを含むrequestをsource dataへ適用し、observable outcomeとしてID順のstats、
-    weighted PPとaccuracy、global rankが返ることを確認する.
+    重複と未知IDを含むrequestをsource dataへ適用し,observable outcomeとしてID順のstats,
+    weighted PPとaccuracy,global rankが返ることを確認する.
 
     Returns:
         None: 集計済みstatsとrepository read条件を検証して値を返さずに完了する.
@@ -131,7 +131,7 @@ async def test_query_dedupes_requested_ids_applies_policy_and_global_rank() -> N
 async def test_query_uses_projected_pp_accuracy_and_rank_inputs_when_present() -> None:
     """Projection済みPPとaccuracyおよびrank inputを優先する契約を検証する.
 
-    projection値を持つsourceと順位入力を用意してqueryを実行し、observable outcomeとして
+    projection値を持つsourceと順位入力を用意してqueryを実行し,observable outcomeとして
     再計算値ではなくprojection値とrank input由来の順位が返ることを確認する.
 
     Returns:
@@ -167,7 +167,7 @@ async def test_query_uses_projected_pp_accuracy_and_rank_inputs_when_present() -
 async def test_query_prefers_source_global_rank_when_repository_provides_it() -> None:
     """Repositoryが提供するglobal rankを計算順位より優先する契約を検証する.
 
-    source global rankと順位入力の両方を用意してqueryを実行し、observable outcomeとして
+    source global rankと順位入力の両方を用意してqueryを実行し,observable outcomeとして
     sourceのglobal rankがそのままstatsへ返ることを確認する.
 
     Returns:
@@ -202,7 +202,7 @@ async def test_query_prefers_source_global_rank_when_repository_provides_it() ->
 async def test_empty_known_user_returns_stable_safe_defaults_without_rank() -> None:
     """Performanceを持たない既知userに安定したdefault statsを返す契約を検証する.
 
-    play countとscoreが空の既知userを用意してqueryを実行し、observable outcomeとして
+    play countとscoreが空の既知userを用意してqueryを実行し,observable outcomeとして
     rankなしのUserCurrentStats.emptyと等しい結果を返すことを確認する.
 
     Returns:
@@ -234,8 +234,8 @@ async def test_empty_known_user_returns_stable_safe_defaults_without_rank() -> N
 async def test_non_positive_user_ids_are_omitted_before_repository_read() -> None:
     """0以下のuser IDをrepository read前に除外する契約を検証する.
 
-    0、負数、重複した正数を含むrequestをqueryへ渡し、observable outcomeとして正数1件だけが
-    repositoryへ渡され、statsが空になることを確認する.
+    0,負数,重複した正数を含むrequestをqueryへ渡し,observable outcomeとして正数1件だけが
+    repositoryへ渡され,statsが空になることを確認する.
 
     Returns:
         None: non-positive IDの除外と空結果を検証して値を返さずに完了する.
@@ -252,7 +252,7 @@ async def test_non_positive_user_ids_are_omitted_before_repository_read() -> Non
 async def test_query_forwards_requested_ruleset_and_playstyle_to_repository() -> None:
     """Requestのrulesetとplaystyleをrepositoryへそのまま渡す契約を検証する.
 
-    MANIA rulesetを持つrequestをqueryへ渡し、observable outcomeとしてrepositoryの記録が
+    MANIA rulesetを持つrequestをqueryへ渡し,observable outcomeとしてrepositoryの記録が
     requestのrulesetとplaystyleを保持することを確認する.
 
     Returns:

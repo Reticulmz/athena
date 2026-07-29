@@ -51,7 +51,7 @@ class SQLAlchemyBeatmapQueryRepository:
             None: 読み取り用session factoryを保持したrepository instanceを初期化する.
 
         Notes:
-            初期化時にはsessionを生成せず、Beatmap metadataやfile attachmentを変更しない.
+            初期化時にはsessionを生成せず,Beatmap metadataやfile attachmentを変更しない.
         """
         self._session_factory = session_factory
 
@@ -93,7 +93,7 @@ class SQLAlchemyBeatmapQueryRepository:
 
         Raises:
             SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
-            ValueError: Beatmapset、所属Beatmap、またはfile attachment modelのenum値をdomain
+            ValueError: Beatmapset,所属Beatmap,またはfile attachment modelのenum値をdomain
                 valueへ変換できない場合.
 
         Notes:
@@ -133,7 +133,7 @@ class SQLAlchemyBeatmapQueryRepository:
             ValueError: Beatmapまたはfile attachment modelのenum値をdomain valueへ変換できない場合.
 
         Notes:
-            checksumの正規化は行わず、file attachmentはIDの降順で最新を選ぶ.
+            checksumの正規化は行わず,file attachmentはIDの降順で最新を選ぶ.
         """
         async with self._session_factory() as session:
             model = (
@@ -228,7 +228,7 @@ class SQLAlchemyBeatmapQueryRepository:
             ValueError: fetch state modelのtarget typeまたはstatusをdomain enumへ変換できない場合.
 
         Notes:
-            fetch状態を補完または更新せず、現在の永続値だけをreadする.
+            fetch状態を補完または更新せず,現在の永続値だけをreadする.
         """
         async with self._session_factory() as session:
             model = (
@@ -262,7 +262,7 @@ class SQLAlchemyBeatmapQueryRepository:
             SQLAlchemyError: statementの実行またはrow取得に失敗した場合.
 
         Notes:
-            session lifecycleは呼び出し側が所有し、結果の並び順は指定しない.
+            session lifecycleは呼び出し側が所有し,結果の並び順は指定しない.
         """
         result = await session.execute(
             select(BeatmapModel).where(BeatmapModel.beatmapset_id == beatmapset_id)
@@ -288,7 +288,7 @@ class SQLAlchemyBeatmapQueryRepository:
             SQLAlchemyError: statementの実行またはrow取得に失敗した場合.
 
         Notes:
-            session lifecycleは呼び出し側が所有し、attachment stateは変更しない.
+            session lifecycleは呼び出し側が所有し,attachment stateは変更しない.
         """
         model = (
             await session.execute(

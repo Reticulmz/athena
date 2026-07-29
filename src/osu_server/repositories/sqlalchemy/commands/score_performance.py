@@ -80,7 +80,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
                 作成要求.
 
         Returns:
-            ScorePerformanceCalculationRequestResult: 作成、再利用、replacement、commit 必要性を
+            ScorePerformanceCalculationRequestResult: 作成,再利用,replacement,commit 必要性を
                 表す結果.
 
         Raises:
@@ -185,7 +185,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
         """期限切れまたは未所有の pending calculation を owner に claim する.
 
         Args:
-            command (ClaimScorePerformanceCalculation): calculation ID、owner、claim 時刻と期限を
+            command (ClaimScorePerformanceCalculation): calculation ID,owner,claim 時刻と期限を
                 持つ要求.
 
         Returns:
@@ -224,7 +224,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
         """Pending calculation を completed にし replacement は current calculation へ昇格する.
 
         Args:
-            command (CompleteScorePerformanceCalculation): performance 値、calculator metadata、
+            command (CompleteScorePerformanceCalculation): performance 値,calculator metadata,
                 完了時刻を持つ要求.
 
         Returns:
@@ -266,7 +266,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
         """Expected state と一致する calculation だけを指定 state へ遷移する.
 
         Args:
-            command (UpdateScorePerformanceCalculationState): calculation ID、expected state、
+            command (UpdateScorePerformanceCalculationState): calculation ID,expected state,
                 遷移先 state を持つ要求.
 
         Returns:
@@ -304,8 +304,8 @@ class SQLAlchemyScorePerformanceCommandRepository:
         """Pending calculation を unavailable にして理由と calculator metadata を保存する.
 
         Args:
-            command (MarkScorePerformanceCalculationUnavailable): unavailable 理由、calculator
-                metadata、完了時刻を持つ要求.
+            command (MarkScorePerformanceCalculationUnavailable): unavailable 理由,calculator
+                metadata,完了時刻を持つ要求.
 
         Returns:
             PerformanceCalculation | None: unavailable にした calculation. 未登録または別 terminal
@@ -439,7 +439,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
 
         Args:
             command (ClaimScorePerformanceRecalculationWork):
-                batch ID、owner、claim 期限、最大件数を持つ要求.
+                batch ID,owner,claim 期限,最大件数を持つ要求.
 
         Returns:
             tuple[PerformanceRecalculationWorkItem, ...]: lock を取得して claim した work item.
@@ -518,8 +518,8 @@ class SQLAlchemyScorePerformanceCommandRepository:
         """Owner が有効に claim した再計算 work item を completed にする.
 
         Args:
-            command (CompleteScorePerformanceRecalculationWork): work item ID、owner、calculation
-                ID、完了時刻を持つ要求.
+            command (CompleteScorePerformanceRecalculationWork): work item ID,owner,calculation
+                ID,完了時刻を持つ要求.
 
         Returns:
             PerformanceRecalculationWorkItem | None: completed work item. claim が無効なら None.
@@ -570,8 +570,8 @@ class SQLAlchemyScorePerformanceCommandRepository:
         """Owner が有効に claim した再計算 work item を unavailable にする.
 
         Args:
-            command (MarkScorePerformanceRecalculationWorkUnavailable): work item ID、owner、理由、
-                calculation ID、完了時刻を持つ要求.
+            command (MarkScorePerformanceRecalculationWorkUnavailable): work item ID,owner,理由,
+                calculation ID,完了時刻を持つ要求.
 
         Returns:
             PerformanceRecalculationWorkItem | None: unavailable work item. claim が無効なら None.
@@ -623,7 +623,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
         """Owner が有効に claim した work item の最新 error を記録したまま claim を保持する.
 
         Args:
-            command (MarkScorePerformanceRecalculationWorkFailed): work item ID、owner、error、
+            command (MarkScorePerformanceRecalculationWorkFailed): work item ID,owner,error,
                 失敗時刻を持つ要求.
 
         Returns:
@@ -635,7 +635,7 @@ class SQLAlchemyScorePerformanceCommandRepository:
                 場合.
 
         Notes:
-            state、claim owner、claim expiry は変更しないため同じ owner が後続の処理を継続できる.
+            state,claim owner,claim expiry は変更しないため同じ owner が後続の処理を継続できる.
         """
         model = await self._get_claimed_recalculation_work_item_for_update(
             work_item_id=command.work_item_id,
@@ -974,7 +974,7 @@ def _matches_request(
 
     Args:
         model (ScorePerformanceCalculationModel): 比較する保存済み calculation model.
-        command (CreateScorePerformanceCalculation): calculator name、version、formula profile を
+        command (CreateScorePerformanceCalculation): calculator name,version,formula profile を
             持つ request.
 
     Returns:
@@ -1028,12 +1028,12 @@ def _batch_model_to_domain(
         last_error (str | None): work item から取得した最新 error. error がなければ None.
 
     Returns:
-        PerformanceRecalculationBatch: status、reason count、target formula profile を復元した
+        PerformanceRecalculationBatch: status,reason count,target formula profile を復元した
             batch.
 
     Raises:
         TypeError: reason_counts の値が bool を含む int 以外の場合.
-        ValueError: 保存済みの batch status、reason、formula profile が不正な場合.
+        ValueError: 保存済みの batch status,reason,formula profile が不正な場合.
     """
     return PerformanceRecalculationBatch(
         id=model.id,
@@ -1085,7 +1085,7 @@ def _work_item_model_to_domain(
         model (PerformanceRecalculationWorkItemModel): 永続化済みの再計算 work item model.
 
     Returns:
-        PerformanceRecalculationWorkItem: reason、state、claim metadata を復元した domain work
+        PerformanceRecalculationWorkItem: reason,state,claim metadata を復元した domain work
             item.
 
     Raises:

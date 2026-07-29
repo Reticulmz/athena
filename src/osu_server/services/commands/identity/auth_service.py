@@ -53,13 +53,13 @@ class AuthService:
         _uow_factory (UnitOfWorkFactory): durable mutationを行うUnit of Workのfactory.
         _user_query_repo (UserQueryRepository): usernameとemailでユーザーを検索するrepository.
         _role_query_repo (RoleQueryRepository): default roleを読むrepository.
-        _password_service (PasswordService): password検証、hash化、照合を提供するservice.
+        _password_service (PasswordService): password検証,hash化,照合を提供するservice.
         _permission_service (PermissionService): login時のsession authorizationを計算するservice.
         _session_store (LoginSessionWriter): login成功時のactive sessionを作成するstore.
         _system_user_id (int): loginを拒否するsystem userのID.
 
     Notes:
-        register()は検証、重複確認、password検査の後にユーザー作成とdefault role付与を
+        register()は検証,重複確認,password検査の後にユーザー作成とdefault role付与を
         atomicに実行する.
     """
 
@@ -88,7 +88,7 @@ class AuthService:
             uow_factory (UnitOfWorkFactory): durable mutationを行うUnit of Workのfactory.
             user_query_repo (UserQueryRepository): usernameとemailでユーザーを検索するrepository.
             role_query_repo (RoleQueryRepository): default roleを読むrepository.
-            password_service (PasswordService): password検証、hash化、照合を提供するservice.
+            password_service (PasswordService): password検証,hash化,照合を提供するservice.
             permission_service (PermissionService): session authorizationを計算するservice.
             session_store (LoginSessionWriter): login成功時のactive sessionを作成するstore.
             system_user_id (int): loginを拒否するsystem userのID.
@@ -109,17 +109,17 @@ class AuthService:
         form_data: RegistrationForm,
         check_only: bool = False,
     ) -> RegistrationResult:
-        """アカウント登録を検証し、要求時はユーザーとdefault roleを作成する.
+        """アカウント登録を検証し,要求時はユーザーとdefault roleを作成する.
 
         Args:
-            form_data (RegistrationForm): username、email、平文passwordを含む登録フォーム.
+            form_data (RegistrationForm): username,email,平文passwordを含む登録フォーム.
             check_only (bool): 永続化せず検証だけを行う場合はTrue.
 
         Returns:
             RegistrationResult: 登録成功またはfield別validation errorを表す結果.
 
         Notes:
-            check_onlyではidempotent retryを成功扱いにせず、credential valueはlogへ出力しない.
+            check_onlyではidempotent retryを成功扱いにせず,credential valueはlogへ出力しない.
         """
         errors: dict[str, list[str]] = {}
 
@@ -238,7 +238,7 @@ class AuthService:
             errors (dict[str, list[str]]): 直前のvalidationまたは重複検査で収集したerror.
 
         Returns:
-            bool: 同一username、email、passwordを持つ既存ユーザーの場合はTrue.
+            bool: 同一username,email,passwordを持つ既存ユーザーの場合はTrue.
 
         Notes:
             usernameまたはemailだけの重複errorがある場合にだけ既存password hashを照合する.
@@ -271,7 +271,7 @@ class AuthService:
         *,
         country: str,
     ) -> LoginResponse | LoginResult:
-        """ログインを認証し、成功時はsession情報を返す.
+        """ログインを認証し,成功時はsession情報を返す.
 
         Args:
             login_request (LoginRequest): パース済みのログインrequest.
@@ -281,7 +281,7 @@ class AuthService:
             LoginResponse | LoginResult: 成功時のsession情報または認証失敗理由.
 
         Notes:
-            ユーザー不在とpassword不一致は同じAUTHENTICATION_FAILEDへ正規化し、想定外の例外はSERVER_ERRORへ変換する.
+            ユーザー不在とpassword不一致は同じAUTHENTICATION_FAILEDへ正規化し,想定外の例外はSERVER_ERRORへ変換する.
         """
         try:
             return await self._do_login(login_request, country=country)
@@ -299,7 +299,7 @@ class AuthService:
         *,
         country: str,
     ) -> LoginResponse | LoginResult:
-        """ログイン認証、session作成、必要時のcountry更新を実行する.
+        """ログイン認証,session作成,必要時のcountry更新を実行する.
 
         Args:
             login_request (LoginRequest): パース済みのログインrequest.
@@ -399,14 +399,14 @@ class AuthService:
         username: str,
         errors: dict[str, list[str]],
     ) -> None:
-        """usernameの長さと文字種を検証し、errorを収集する.
+        """usernameの長さと文字種を検証し,errorを収集する.
 
         Args:
             username (str): 検証する入力username.
             errors (dict[str, list[str]]): validation errorを書き込むmutable mapping.
 
         Returns:
-            None: 不正なusernameのerrorを必要に応じて追加し、呼び出し側へ値を返さずに完了する.
+            None: 不正なusernameのerrorを必要に応じて追加し,呼び出し側へ値を返さずに完了する.
         """
         msgs: list[str] = []
 
@@ -429,14 +429,14 @@ class AuthService:
         password: str,
         errors: dict[str, list[str]],
     ) -> None:
-        """平文passwordのpolicyを検証し、errorを収集する.
+        """平文passwordのpolicyを検証し,errorを収集する.
 
         Args:
             password (str): 検証する平文password.
             errors (dict[str, list[str]]): validation errorを書き込むmutable mapping.
 
         Returns:
-            None: policy errorを必要に応じて追加し、呼び出し側へ値を返さずに完了する.
+            None: policy errorを必要に応じて追加し,呼び出し側へ値を返さずに完了する.
         """
         msgs = list(validate_plain_password(password))
         if msgs:
@@ -447,14 +447,14 @@ class AuthService:
         email: str,
         errors: dict[str, list[str]],
     ) -> None:
-        """emailの形式を検証し、errorを収集する.
+        """emailの形式を検証し,errorを収集する.
 
         Args:
             email (str): 検証する入力email.
             errors (dict[str, list[str]]): validation errorを書き込むmutable mapping.
 
         Returns:
-            None: 不正なemailのerrorを必要に応じて追加し、呼び出し側へ値を返さずに完了する.
+            None: 不正なemailのerrorを必要に応じて追加し,呼び出し側へ値を返さずに完了する.
         """
         if not _EMAIL_PATTERN.match(email):
             errors["email"] = ["Invalid email address format."]
@@ -464,14 +464,14 @@ class AuthService:
         safe_username: str,
         errors: dict[str, list[str]],
     ) -> None:
-        """usernameの重複と禁止状態を確認し、errorを収集する.
+        """usernameの重複と禁止状態を確認し,errorを収集する.
 
         Args:
             safe_username (str): repository検索用に正規化したusername.
             errors (dict[str, list[str]]): availability errorを書き込むmutable mapping.
 
         Returns:
-            None: 重複または禁止のerrorを必要に応じて追加し、呼び出し側へ値を返さずに完了する.
+            None: 重複または禁止のerrorを必要に応じて追加し,呼び出し側へ値を返さずに完了する.
         """
         existing = await self._user_query_repo.get_by_safe_username(safe_username)
         if existing is not None:
@@ -486,14 +486,14 @@ class AuthService:
         email: str,
         errors: dict[str, list[str]],
     ) -> None:
-        """emailの重複を確認し、errorを収集する.
+        """emailの重複を確認し,errorを収集する.
 
         Args:
             email (str): repository検索に使用する入力email.
             errors (dict[str, list[str]]): duplicate errorを書き込むmutable mapping.
 
         Returns:
-            None: 重複errorを必要に応じて追加し、呼び出し側へ値を返さずに完了する.
+            None: 重複errorを必要に応じて追加し,呼び出し側へ値を返さずに完了する.
         """
         existing = await self._user_query_repo.get_by_email(email)
         if existing is not None:
@@ -504,14 +504,14 @@ class AuthService:
         password: str,
         errors: dict[str, list[str]],
     ) -> None:
-        """漏えいまたは禁止されたpasswordを確認し、errorを収集する.
+        """漏えいまたは禁止されたpasswordを確認し,errorを収集する.
 
         Args:
             password (str): security serviceへ渡す平文password.
             errors (dict[str, list[str]]): compromise errorを書き込むmutable mapping.
 
         Returns:
-            None: 禁止passwordのerrorを必要に応じて追加し、呼び出し側へ値を返さずに完了する.
+            None: 禁止passwordのerrorを必要に応じて追加し,呼び出し側へ値を返さずに完了する.
         """
         if await self._password_service.is_password_banned(password):
             errors.setdefault("password", []).append(PASSWORD_COMPROMISED_MESSAGE)

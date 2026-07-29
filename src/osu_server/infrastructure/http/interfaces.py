@@ -122,7 +122,7 @@ class BeatmapHttpClient(Protocol):
             HttpFetchResult: 取得した body と filename metadata です.
 
         Raises:
-            BeatmapSourceError: HTTP error、timeout、または connection failure を分類して
+            BeatmapSourceError: HTTP error,timeout,または connection failure を分類して
                 送出する場合.
         """
         ...
@@ -145,7 +145,7 @@ class BeatmapHttpClient(Protocol):
             dict[str, object] | list[object]: JSON object または array です.
 
         Raises:
-            BeatmapSourceError: HTTP、接続、JSON decode の失敗、または top-level JSON primitive
+            BeatmapSourceError: HTTP,接続,JSON decode の失敗,または top-level JSON primitive
                 の場合.
         """
         ...

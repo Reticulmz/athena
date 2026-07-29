@@ -4,7 +4,7 @@
 > Task 1.*と5.*は同じtooling ownerが直列に担当する。corpus taskは共有tooling、生成hook、
 > project documentation、spec fileを編集しない。
 
-- [ ] 1. Foundation: canonical standardと非blocking toolchainを整備する
+- [x] 1. Foundation: canonical standardと非blocking toolchainを整備する
 - [x] 1.1 Python docstringのcanonical standardを定義する
   - AGENTS.mdでtracked first-party Pythonの全module、class、function、methodを必須対象とし、
     private、nested、dunder、Protocol、abstract、overload、property、test、fixture、fake、helperを
@@ -66,7 +66,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 5.1_
   - _Boundary: pyproject.toml, uv.lock, scripts/ci.sh, tests/unit/test_docstring_quality_configuration.py, AGENTS.md, README.md, docs/architecture.md, .kiro/steering/tech.md, research.md_
 
-- [ ] 2. Productionとruntime corpusを整備する
+- [x] 2. Productionとruntime corpusを整備する
   - 2.*の共通完了条件: implementation、call site、relevant testを読み、所有する全definitionを
     日本語Google Styleで説明する。Args:/Returns:/Yields:/Raises:/Attributes:の型と意味、class attribute、
     直接送出または意図的伝播exceptionをimplementation、call site、relevant testと手動照合する。型整合に
@@ -360,7 +360,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: src/osu_server/transports/*.py, transports/{api,lazer}/**, stable/*.py, web_legacy/*.py_
 
-- [ ] 3. Test corpusを整備する
+- [x] 3. Test corpusを整備する
   - 3.*の共通完了条件: 全module、test、fixture、fake、helper、nested definition、dunder、propertyへ
     日本語Google Style docstringを記述する。各testはcontract、condition、observable outcomeを説明する。
     Args:、Noneを含むReturns:、Yields:、Raises:、Attributes:、Notes:の型と意味をimplementation、
@@ -787,7 +787,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: 明記したtests/integrationの3 file_
 
-- [ ] 4. Ancillary first-party Python corpusを整備する
+- [x] 4. Ancillary first-party Python corpusを整備する
   - 4.*の共通完了条件: production/testの該当する共通条件を適用し、Google Style sectionの型と意味を
     implementationとrelevant testまたはexecution probeに照らして手動確認する。Ruff D、interrogate
     100%、focused validation以外のruntime behaviorは変更しない
@@ -807,7 +807,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.4_
   - _Boundary: gitlint_rules/**/*.py, athena-crypto/tests/**/*.py, tracked .agents/**/*.py_
 
-- [ ] 5. Gate activation、Sphinx readiness、final validationを行う
+- [x] 5. Gate activation、Sphinx readiness、final validationを行う
 - [x] 5.1 Repository-wide docstring gateを有効化する
   - 既存のnon-docstring ruleを維持したままRuff global selectへDを追加し、Google conventionの
     documented exclusion以外のdocstring ignoreを追加しない
@@ -822,7 +822,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 3.1, 3.2, 3.3, 4.4, 5.1_
   - _Boundary: pyproject.toml, scripts/ci.sh, tests/unit/test_docstring_quality_configuration.py_
 
-- [ ] 5.2 Generated pre-commit hookとdeveloper documentationを同期する
+- [x] 5.2 Generated pre-commit hookとdeveloper documentationを同期する
   - flake.nixでRuff format/lint hookをuv lock済みRuffへ統一し、.pyだけにmatchさせて.pyiを除外する
   - First-party .py変更時にfull docstring hookを起動し、pass_filenamesを無効化してscripts/ci.shを
     inventoryの唯一のownerにする。.pre-commit-config.yamlはflake.nixから再生成し、直接編集しない
@@ -834,7 +834,7 @@
   - _Requirements: 1.1, 1.2, 3.2, 3.3, 5.1, 5.2_
   - _Boundary: flake.nix, generated .pre-commit-config.yaml, README.md, docs/architecture.md, .kiro/steering/tech.md_
 
-- [ ] 5.3 Transient Sphinx/Napoleon readiness PoCを再実行する
+- [x] 5.3 Transient Sphinx/Napoleon readiness PoCを再実行する
   - Repository外のtemporary directoryへSphinx 9.1.0 autodoc/Napoleon projectを作り、
     Google docstringとprivate、__init__、special memberを有効にする
   - Domain、services、repositories、infrastructure、transports、CLI、testsから代表的なimport-safe
@@ -848,7 +848,7 @@
   - _Requirements: 6.1, 6.2, 6.3, 6.4_
   - _Boundary: .kiro/specs/python-docstring-quality/research.mdとrepository外のtemporary directory_
 
-- [ ] 5.4 Full validationとfinal diff reviewを行う
+- [x] 5.4 Full validationとfinal diff reviewを行う
   - nix develop経由で./scripts/ci.sh docstrings、./scripts/ci.sh quality、
     ./scripts/ci.sh test、prek run --all-filesを実行する
   - Indexed first-party .pyが全件対象で、Ruff D 0件、interrogate 100%であり、pydoclint dependency/config、
@@ -868,3 +868,6 @@
 - 全corpus taskはRuff Dとinterrogateに加え、ASTでdocstring token中のnon-ASCII punctuationが0件であることを確認する. `。`と`、`はASCII `.`と`,`へ置換し、runtime stringは変更しない.
 - Task 3.26では、nested handlerの`return None`をuser承認済みのruntime-equivalent bare `return`へ変更した. AST監査はこの正規化以外のruntime statement差分がないことを確認した.
 - Task 3のfile partitionから`tests/unit/repositories/test_sqlalchemy_beatmap_repository.py`が漏れていたため、Task 4開始前の補正でdocstring coverage 2.1%から100%へ回復した.
+- Task 5.4では、docstring追加後のno-op `pass`/`...`はRuff PIE790、only-None callableの`return None`はRuff RET501により許容されない. 後者は5 test fileの8 callableでbare `return`へ正規化し、いずれも戻り値と評価順序が不変であることをfocused testで確認した. suppressionや設定緩和は追加していない.
+- 2026-07-29に利用者は、Task 5.4のapproved runtime statement exceptionとして、Ruff RET501対応の`return None`からbare `return`への正規化を承認した. 対象は`tests/unit/composition/test_starlette_lifecycle.py`、`tests/unit/factories/test_beatmap_blob_contract.py`、`tests/unit/infrastructure/test_blob_storage_contracts.py`、`tests/unit/services/bancho_bot/test_command_service.py`、`tests/unit/services/test_blob_storage_service.py`のonly-None callable計8件である. 各callableの戻り値と評価順序は不変である.
+- 2026-07-29に利用者は、Task 5.4のapproved runtime statement exceptionとして、`tests/unit/services/commands/scores/performance/test_execute_calculation.py`の`score = _score()`と後続の`_persist_score()`呼出しをwalrus expressionへ統合することを承認した. docstring追加後のRuff PLR0915を回避するためであり、`_score()`の評価、`score`への束縛、`_persist_score()`呼出しの順序とtestのobservable outcomeは不変である.

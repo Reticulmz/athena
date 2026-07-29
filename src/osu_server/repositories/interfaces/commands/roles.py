@@ -13,8 +13,8 @@ class RoleCommandRepository(Protocol):
     """Role と assignment の mutation と consistency-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -25,7 +25,7 @@ class RoleCommandRepository(Protocol):
             role_id (int): 検索する internal Role ID.
 
         Returns:
-            Role | None: 一致する Role。存在しない場合は None.
+            Role | None: 一致する Role.存在しない場合は None.
         """
         ...
 
@@ -36,7 +36,7 @@ class RoleCommandRepository(Protocol):
             name (str): 検索する Role name.
 
         Returns:
-            Role | None: 一致する Role。存在しない場合は None.
+            Role | None: 一致する Role.存在しない場合は None.
         """
         ...
 

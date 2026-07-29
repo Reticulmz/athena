@@ -47,7 +47,7 @@ def _category_for_status(status_code: int) -> BeatmapSourceErrorCategory:
         status_code (int): 分類対象の HTTP response status code です.
 
     Returns:
-        BeatmapSourceErrorCategory: retry、認証、not found、invalid response を表す分類です.
+        BeatmapSourceErrorCategory: retry,認証,not found,invalid response を表す分類です.
     """
     if status_code == HTTPStatus.TOO_MANY_REQUESTS:
         return BeatmapSourceErrorCategory.RATE_LIMITED
@@ -103,7 +103,7 @@ def _beatmap_id_from_lookup_key(lookup_key: str) -> int | None:
         lookup_key (str): ``beatmap_id=<integer>`` 形式を期待する検索 key です.
 
     Returns:
-        int | None: 形式と整数変換が有効な beatmap ID、または抽出不能時は None です.
+        int | None: 形式と整数変換が有効な beatmap ID,または抽出不能時は None です.
     """
     prefix = "beatmap_id="
     if not lookup_key.startswith(prefix):
@@ -150,7 +150,7 @@ def _extract_filename(headers: Mapping[str, str]) -> str | None:
         headers (Mapping[str, str]): response header の大文字小文字を保持する mapping です.
 
     Returns:
-        str | None: filename parameter の値、または header と形式がない場合は None です.
+        str | None: filename parameter の値,または header と形式がない場合は None です.
     """
     disposition = headers.get("Content-Disposition")
     if disposition is None:
@@ -166,7 +166,7 @@ def is_permanent_error(error: BeatmapSourceError) -> bool:
         error (BeatmapSourceError): 分類済みの beatmap source error です.
 
     Returns:
-        bool: NOT_FOUND または UNAUTHORIZED の場合は True、それ以外は False です.
+        bool: NOT_FOUND または UNAUTHORIZED の場合は True,それ以外は False です.
     """
     return error.category in {
         BeatmapSourceErrorCategory.NOT_FOUND,
@@ -178,7 +178,7 @@ class BeatmapHttpClient:
     """beatmap mirror source から file と JSON を取得する HTTP client です.
 
     Attributes:
-        _client (httpx.AsyncClient | None): 注入済み、または初回利用時に生成する HTTP client です.
+        _client (httpx.AsyncClient | None): 注入済み,または初回利用時に生成する HTTP client です.
     """
 
     _client: httpx.AsyncClient | None
@@ -228,7 +228,7 @@ class BeatmapHttpClient:
             HttpFetchResult: 取得した response body と任意の filename metadata です.
 
         Raises:
-            BeatmapSourceError: HTTP error、timeout、または接続 failure を分類した場合.
+            BeatmapSourceError: HTTP error,timeout,または接続 failure を分類した場合.
         """
         client = self._get_client()
 
@@ -260,7 +260,7 @@ class BeatmapHttpClient:
         source: str,
         lookup_key: str,
     ) -> dict[str, object] | list[object]:
-        """URL から JSON を取得し、object または array として返します.
+        """URL から JSON を取得し,object または array として返します.
 
         Args:
             url (str): 取得対象 URL です.
@@ -271,7 +271,7 @@ class BeatmapHttpClient:
             dict[str, object] | list[object]: JSON object または array です.
 
         Raises:
-            BeatmapSourceError: HTTP error、接続失敗、JSON decode failure、または top-level JSON
+            BeatmapSourceError: HTTP error,接続失敗,JSON decode failure,または top-level JSON
                 primitive の場合に分類済み error を送出します.
 
         Notes:

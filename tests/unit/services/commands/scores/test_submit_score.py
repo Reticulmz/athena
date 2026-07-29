@@ -146,7 +146,7 @@ class _FailingReplayContext:
         self._context: AbstractAsyncContextManager[UnitOfWork] = context
 
     async def __aenter__(self) -> UnitOfWork:
-        """Wrapped Unit of Workへ入り、replay repositoryを失敗fakeへ差し替える.
+        """Wrapped Unit of Workへ入り,replay repositoryを失敗fakeへ差し替える.
 
         Returns:
             UnitOfWork: replay createでRuntimeErrorを送出するUnit of Work.
@@ -169,14 +169,14 @@ class _FailingReplayContext:
             traceback (TracebackType | None): context内例外のtraceback.
 
         Returns:
-            None: wrapped contextの終了処理を実行して、呼び出し側へ値を返さずに完了する.
+            None: wrapped contextの終了処理を実行して,呼び出し側へ値を返さずに完了する.
         """
         _ = await self._context.__aexit__(exc_type, exc, traceback)
 
 
 @final
 class _FailingReplayRepository:
-    """createだけを失敗させ、checksum照会はwrapped repositoryへ委譲するfakeを提供する.
+    """createだけを失敗させ,checksum照会はwrapped repositoryへ委譲するfakeを提供する.
 
     Attributes:
         _wrapped (ReplayCommandRepository): checksum照会に利用する実repository.
@@ -216,14 +216,14 @@ class _FailingReplayRepository:
 
 @pytest.mark.asyncio
 async def test_replay_create_failure_rolls_back_submission_score_and_replay() -> None:
-    """replay作成障害がsubmission、score、replayを全てrollbackする契約を検証する.
+    """replay作成障害がsubmission,score,replayを全てrollbackする契約を検証する.
 
     replay createがRuntimeErrorを送出するUnit of Work factoryで
-    completed submissionを実行する条件で、例外が伝播し、fingerprint、score checksum、
+    completed submissionを実行する条件で,例外が伝播し,fingerprint,score checksum,
     replay checksumの永続stateが空であることを確認する.
 
     Returns:
-        None: transaction rollback後の永続stateを検証して、呼び出し側へ値を返さずに完了する.
+        None: transaction rollback後の永続stateを検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = FailingReplayUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
@@ -255,12 +255,12 @@ async def test_replay_create_failure_rolls_back_submission_score_and_replay() ->
 async def test_completed_submission_commits_one_snapshot() -> None:
     """Completed submissionが一つのresult snapshotをcommitしretryで再利用する契約を検証する.
 
-    replay metadataとscore詳細を持つcompleted commandを実行し、同じfingerprintでretryする条件で、
-    submission snapshot、current user stats、初回result、
+    replay metadataとscore詳細を持つcompleted commandを実行し,同じfingerprintでretryする条件で,
+    submission snapshot,current user stats,初回result,
     および既存submission resultが一致することを確認する.
 
     Returns:
-        None: committed snapshotとidempotent retryの観測結果を検証して、呼び出し側へ値を返さずに
+        None: committed snapshotとidempotent retryの観測結果を検証して,呼び出し側へ値を返さずに
             完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
@@ -369,11 +369,11 @@ async def test_completed_submission_commits_one_snapshot() -> None:
 async def test_completed_submission_returns_cumulative_beatmap_play_and_pass_counts() -> None:
     """Completed submissionが累積beatmap play数とpass数を返す契約を検証する.
 
-    failed scoreとpassed scoreを同じbeatmapへ順にsubmitする条件で、各resultが累積play countと
+    failed scoreとpassed scoreを同じbeatmapへ順にsubmitする条件で,各resultが累積play countと
     passed scoreだけを反映した累積pass countを返すことを確認する.
 
     Returns:
-        None: 二つのsubmission resultに含まれる累積countを検証して、呼び出し側へ値を返さずに
+        None: 二つのsubmission resultに含まれる累積countを検証して,呼び出し側へ値を返さずに
             完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
@@ -414,12 +414,12 @@ async def test_completed_submission_returns_cumulative_beatmap_play_and_pass_cou
 async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_delta() -> None:
     """Eligible submissionがleaderboard projectionとpersonal best snapshotを更新する契約を検証する.
 
-    最初のmod付きscore、より低いno-mod score、同じfingerprintのretryをsubmitする条件で、mod scopeと
-    global scopeのbest、personal best delta snapshot、idempotent retryが既存resultを保持することを
+    最初のmod付きscore,より低いno-mod score,同じfingerprintのretryをsubmitする条件で,mod scopeと
+    global scopeのbest,personal best delta snapshot,idempotent retryが既存resultを保持することを
     確認する.
 
     Returns:
-        None: projection、snapshot delta、retry後stateを検証して、呼び出し側へ値を返さずに完了する.
+        None: projection,snapshot delta,retry後stateを検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
@@ -579,11 +579,11 @@ async def test_eligible_submission_updates_leaderboard_projection_and_snapshot_d
 async def test_submission_persists_leaderboard_eligibility_snapshot() -> None:
     """submission時のleaderboard eligibilityがscoreとsnapshotへ固定される契約を検証する.
 
-    eligibilityがFalseのcompleted scoreをsubmitする条件で、永続scoreとscore eligibility snapshotが
+    eligibilityがFalseのcompleted scoreをsubmitする条件で,永続scoreとscore eligibility snapshotが
     どちらもFalseとして観測できることを確認する.
 
     Returns:
-        None: submission時eligibilityの永続化を検証して、呼び出し側へ値を返さずに完了する.
+        None: submission時eligibilityの永続化を検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
@@ -630,15 +630,15 @@ async def test_ineligible_submission_does_not_update_submit_personal_best_delta(
 ) -> None:
     """Ineligible submissionがpersonal best deltaとbest rowを更新しない契約を検証する.
 
-    既存eligible bestの後にfailedまたはsubmission時ineligibleな高scoreをsubmitする条件で、
-    候補resultのpersonal best deltaがNoneとなり、既存all-mod bestが保持されることを確認する.
+    既存eligible bestの後にfailedまたはsubmission時ineligibleな高scoreをsubmitする条件で,
+    候補resultのpersonal best deltaがNoneとなり,既存all-mod bestが保持されることを確認する.
 
     Args:
         candidate_passed (bool): 候補scoreがpass済みかを表すparameterized条件.
         candidate_eligible (bool): 候補scoreがsubmission時にleaderboard対象かを表す条件.
 
     Returns:
-        None: ineligible候補後のpersonal best非更新を検証して、呼び出し側へ値を返さずに完了する.
+        None: ineligible候補後のpersonal best非更新を検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)
@@ -703,11 +703,11 @@ async def test_ineligible_submission_does_not_update_submit_personal_best_delta(
 async def test_stored_but_ineligible_submission_is_not_returned_from_leaderboard_rows() -> None:
     """保存済みでもineligibleなscoreをleaderboard queryが返さない契約を検証する.
 
-    submission時eligibilityがFalseのscoreに可視user、beatmap、best rowを後から設定する条件で、
+    submission時eligibilityがFalseのscoreに可視user,beatmap,best rowを後から設定する条件で,
     score自体は保持されつつglobal leaderboard rowが空になることを確認する.
 
     Returns:
-        None: eligibility snapshotに基づくquery除外を検証して、呼び出し側へ値を返さずに完了する.
+        None: eligibility snapshotに基づくquery除外を検証して,呼び出し側へ値を返さずに完了する.
     """
     factory = InMemoryUnitOfWorkFactory()
     use_case = SubmitScoreUseCase(unit_of_work_factory=factory)

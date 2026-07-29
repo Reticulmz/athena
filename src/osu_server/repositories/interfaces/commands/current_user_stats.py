@@ -12,8 +12,8 @@ class CurrentUserStatsCommandRepository(Protocol):
     """Current UserStats projection の mutation と consistency check の port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -35,7 +35,7 @@ class CurrentUserStatsCommandRepository(Protocol):
             scope (UserStatsScope): 取得する projection の自然キー.
 
         Returns:
-            UserStatsProjection | None: 現在の projection row。未登録時は None.
+            UserStatsProjection | None: 現在の projection row.未登録時は None.
         """
         ...
 

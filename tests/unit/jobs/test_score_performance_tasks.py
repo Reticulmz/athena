@@ -119,7 +119,7 @@ class _FakeBatchProcessor:
 
 @final
 class _FakeEnqueueableTask:
-    """worker wakeのenqueue payloadを記録し、設定済み失敗を再現するtask double.
+    """worker wakeのenqueue payloadを記録し,設定済み失敗を再現するtask double.
 
     Attributes:
         _error (Exception | None): kiqで送出する例外. Noneならenqueue成功を返す.
@@ -136,7 +136,7 @@ class _FakeEnqueueableTask:
         self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
     async def kiq(self, *args: object, **kwargs: object) -> object:
-        """payloadを記録して成功objectを返すか、設定済み例外を送出する.
+        """payloadを記録して成功objectを返すか,設定済み例外を送出する.
 
         Args:
             *args (object): taskへ渡される位置引数payload.
@@ -156,7 +156,7 @@ class _FakeEnqueueableTask:
 
 @final
 class _FakeBroker:
-    """指定taskを返し、worker wakeのlookupを記録するbroker double.
+    """指定taskを返し,worker wakeのlookupを記録するbroker double.
 
     Attributes:
         _task (_FakeEnqueueableTask | None): lookup時に返すtask. Noneは未登録を表す.
@@ -179,7 +179,7 @@ class _FakeBroker:
             task_name (str): worker wakeが解決を試みるtask名.
 
         Returns:
-            _FakeEnqueueableTask | None: 設定済みtask、または未登録を表すNone.
+            _FakeEnqueueableTask | None: 設定済みtask,または未登録を表すNone.
         """
         self.task_names.append(task_name)
         return self._task
@@ -266,7 +266,7 @@ def test_score_performance_job_stays_queue_adapter_only() -> None:
     """Score performance jobがrepositoryやcalculator実装を所有しないことを検証する.
 
     Returns:
-        None: sourceにSQLAlchemy、repository、Valkey、Rosu calculator参照がないことを確認する.
+        None: sourceにSQLAlchemy,repository,Valkey,Rosu calculator参照がないことを確認する.
     """
     source = inspect.getsource(score_performance)
 
@@ -382,7 +382,7 @@ class TestScorePerformanceTaskExecution:
         """Calculation taskがTaskiq task IDをclaim ownerにしたcommandを委譲することを検証する.
 
         Returns:
-            None: calculation ID、claim owner、UTC claim時刻を持つcommandを確認して完了する.
+            None: calculation ID,claim owner,UTC claim時刻を持つcommandを確認して完了する.
         """
         fake = _FakeCalculationExecutor()
         context = _make_context(score_performance_calculation_executor=fake)
@@ -403,7 +403,7 @@ class TestScorePerformanceTaskExecution:
         """Batch taskがTaskiq task IDをclaim ownerにしたcommandを委譲することを検証する.
 
         Returns:
-            None: batch ID、claim owner、UTC claim時刻を持つcommandを確認して完了する.
+            None: batch ID,claim owner,UTC claim時刻を持つcommandを確認して完了する.
         """
         fake = _FakeBatchProcessor()
         context = _make_context(performance_recalculation_batch_processor=fake)
@@ -464,7 +464,7 @@ class TestTaskiqPerformanceCalculationWorkerWake:
         """Calculation task未登録時に例外と対象情報付きerror logを残すことを検証する.
 
         Returns:
-            None: task名、score ID、calculation IDを含む未登録eventを確認して完了する.
+            None: task名,score ID,calculation IDを含む未登録eventを確認して完了する.
         """
         broker = _FakeBroker(None)
         wake = TaskiqPerformanceCalculationWorkerWake(broker)

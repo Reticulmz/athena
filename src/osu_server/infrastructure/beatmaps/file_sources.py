@@ -41,7 +41,7 @@ class _FoundError(Exception):
 
 @dataclass(slots=True)
 class BeatmapFileProviderService:
-    """.osuファイルを公式current、legacy、community mirrorの順で取得する.
+    """.osuファイルを公式current,legacy,community mirrorの順で取得する.
 
     Attributes:
         http_client (BeatmapHttpClient): ファイルrequestを実行してsource errorを正規化する
@@ -68,14 +68,14 @@ class BeatmapFileProviderService:
             beatmap_id (int): 取得対象のビートマップID.
 
         Returns:
-            OsuFileFetchResult: 取得したファイル本体、source、元filenameを持つ結果.
+            OsuFileFetchResult: 取得したファイル本体,source,元filenameを持つ結果.
 
         Raises:
-            BeatmapSourceError: 直接sourceの永続的失敗、または全sourceの一時的失敗で
+            BeatmapSourceError: 直接sourceの永続的失敗,または全sourceの一時的失敗で
                 取得できない場合.
 
         Notes:
-            現行公式source、legacy公式source、community mirrorの順で試す.
+            現行公式source,legacy公式source,community mirrorの順で試す.
             mirrorは直接sourceの一時的失敗後だけ使う.
         """
         lookup_key = f"beatmap_id={beatmap_id}"
@@ -152,11 +152,11 @@ class BeatmapFileProviderService:
             lookup_key (str): source errorとlogへ渡す検索値.
 
         Returns:
-            None: 成功時は ``_FoundError`` を送出するため、正常復帰はしない.
+            None: 成功時は ``_FoundError`` を送出するため,正常復帰はしない.
 
         Raises:
             _FoundError: いずれかの直接sourceがファイルを取得した場合.
-            BeatmapSourceError: 永続的失敗を直ちに検出した場合、または両直接sourceが一時的に
+            BeatmapSourceError: 永続的失敗を直ちに検出した場合,または両直接sourceが一時的に
                 失敗した場合.
         """
         last_error: BeatmapSourceError | None = None
@@ -190,11 +190,11 @@ class BeatmapFileProviderService:
             lookup_key (str): source errorとlogへ渡す検索値.
 
         Returns:
-            None: mirror URLが未設定の場合に、取得結果なしで復帰する.
+            None: mirror URLが未設定の場合に,取得結果なしで復帰する.
 
         Raises:
             _FoundError: いずれかのmirror sourceがファイルを取得した場合.
-            BeatmapSourceError: mirror sourceが永続的に失敗した場合、または全mirrorが一時的に
+            BeatmapSourceError: mirror sourceが永続的に失敗した場合,または全mirrorが一時的に
                 失敗した場合.
         """
         last_error: BeatmapSourceError | None = None

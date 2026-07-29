@@ -97,7 +97,7 @@ class AppEventListeners:
 
 @final
 class StableBanchoProviderSet(Provider):
-    """stable banchoのlogin、polling、handler、listenerをAPP scopeで登録する.
+    """stable banchoのlogin,polling,handler,listenerをAPP scopeで登録する.
 
     Attributes:
         scope (Scope): app container内で共有するDishkaのAPP scope.
@@ -132,7 +132,7 @@ class StableBanchoProviderSet(Provider):
             bot_identity (SystemUserIdentity): system botのidentityを表すvalue object.
 
         Returns:
-            LoginResponseBuilder: channel、friend、presence、stats packetを含むlogin response
+            LoginResponseBuilder: channel,friend,presence,stats packetを含むlogin response
                 builder.
         """
         return LoginResponseBuilder(
@@ -153,7 +153,7 @@ class StableBanchoProviderSet(Provider):
         response_builder: LoginResponseBuilder,
         event_bus: LocalEventBus,
     ) -> LoginWorkflow:
-        """Stable bancho login workflowをidentity、country、response依存で構成する.
+        """Stable bancho login workflowをidentity,country,response依存で構成する.
 
         Args:
             login_command (LoginCommandUseCase): credentialを検証してsessionを開始するcommand.
@@ -235,7 +235,7 @@ class StableBanchoProviderSet(Provider):
             update_friend_only_dm (UpdateFriendOnlyDmUseCase): friend-only DM設定を更新するcommand.
 
         Returns:
-            FriendHandlers: friend追加、削除、DM設定packetを登録するhandler group.
+            FriendHandlers: friend追加,削除,DM設定packetを登録するhandler group.
         """
         return FriendHandlers(
             add_friend=add_friend,
@@ -314,7 +314,7 @@ class StableBanchoProviderSet(Provider):
         stable_user_status_store: StableUserStatusStore,
         bot_identity: SystemUserIdentity,
     ) -> StatsRequestHandler:
-        """Stable user stats request handlerをquery、queue、status依存で構成する.
+        """Stable user stats request handlerをquery,queue,status依存で構成する.
 
         Args:
             current_user_stats_query (CurrentUserStatsQuery):
@@ -346,7 +346,7 @@ class StableBanchoProviderSet(Provider):
         channel_state: ChannelStateStore,
         stable_user_status_store: StableUserStatusStore,
     ) -> AppEventListeners:
-        """App event listenerを登録し、登録完了markerを返す.
+        """App event listenerを登録し,登録完了markerを返す.
 
         Args:
             event_bus (LocalEventBus): domain eventをsubscribeするlocal event bus.
@@ -363,7 +363,7 @@ class StableBanchoProviderSet(Provider):
             AppEventListeners: listener登録が完了したことを依存graphへ伝えるmarker.
 
         Notes:
-            ``PacketDispatcher`` がこのmarkerを要求するため、handler登録前に
+            ``PacketDispatcher`` がこのmarkerを要求するため,handler登録前に
             ``setup_listeners`` が実行される.
         """
         setup_listeners(
@@ -403,7 +403,7 @@ class StableBanchoProviderSet(Provider):
             PacketDispatcher: 全handlerをregistration済みのstable C2S packet dispatcher.
 
         Notes:
-            ``listeners`` は値を使わず、Dishkaにevent listener providerの解決を
+            ``listeners`` は値を使わず,Dishkaにevent listener providerの解決を
             要求するためだけに受け取る.
         """
         _ = listeners
@@ -425,7 +425,7 @@ class StableBanchoProviderSet(Provider):
         stable_user_status_store: StableUserStatusStore,
         config: AppConfig,
     ) -> PollingWorkflow:
-        """Stable bancho polling workflowをsession、queue、dispatcherで構成する.
+        """Stable bancho polling workflowをsession,queue,dispatcherで構成する.
 
         Args:
             session_store (SessionStore): polling userのsessionを解決するvolatile store.

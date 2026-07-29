@@ -145,6 +145,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
         Args:
             instance (object): 追加しようとした永続化instance.
 
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+
         Raises:
             AssertionError: query repositoryがaddを実行した場合.
         """
@@ -157,6 +160,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
 
         Args:
             instance (object): 削除しようとした永続化instance.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
 
         Raises:
             AssertionError: query repositoryがdeleteを実行した場合.
@@ -181,6 +187,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
     async def flush(self) -> None:
         """読み取りquery repositoryによるflush呼び出しを失敗として記録する.
 
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+
         Raises:
             AssertionError: query repositoryがflushを実行した場合.
         """
@@ -190,6 +199,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
     async def commit(self) -> None:
         """読み取りquery repositoryによるcommit呼び出しを失敗として記録する.
 
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+
         Raises:
             AssertionError: query repositoryがcommitを実行した場合.
         """
@@ -198,6 +210,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
 
     async def rollback(self) -> None:
         """読み取りquery repositoryによるrollback呼び出しを失敗として記録する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
 
         Raises:
             AssertionError: query repositoryがrollbackを実行した場合.
@@ -210,6 +225,9 @@ class FakeQuerySession(AbstractAsyncContextManager["FakeQuerySession"]):
 
         Args:
             instance (object): refreshしようとした永続化instance.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
 
         Raises:
             AssertionError: query repositoryがrefreshを実行した場合.

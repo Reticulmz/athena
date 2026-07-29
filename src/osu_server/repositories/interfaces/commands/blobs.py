@@ -32,8 +32,8 @@ class BlobCommandRepository(Protocol):
     """Blob metadata の mutation と deduplication-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -44,7 +44,7 @@ class BlobCommandRepository(Protocol):
             blob_id (int): 取得する Blob ID.
 
         Returns:
-            Blob | None: 一致する Blob。存在しない場合は None.
+            Blob | None: 一致する Blob.存在しない場合は None.
         """
         ...
 
@@ -55,7 +55,7 @@ class BlobCommandRepository(Protocol):
             sha256 (str): 検索する content の SHA-256 digest.
 
         Returns:
-            Blob | None: 一致する Blob。存在しない場合は None.
+            Blob | None: 一致する Blob.存在しない場合は None.
         """
         ...
 

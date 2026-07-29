@@ -1,7 +1,7 @@
 """公開ASGIエントリーポイントを提供する.
 
-`uvicorn osu_server.app:app`から参照されるruntime objectを公開し、
-ルーティング、middleware、依存graphの構築はcomposition packageに委譲する.
+`uvicorn osu_server.app:app`から参照されるruntime objectを公開し,
+ルーティング,middleware,依存graphの構築はcomposition packageに委譲する.
 """
 
 from __future__ import annotations

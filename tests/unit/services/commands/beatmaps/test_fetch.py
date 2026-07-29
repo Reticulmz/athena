@@ -197,6 +197,9 @@ class FailingLeaderboardRebuildWake:
             beatmapset_id (int): 再構築対象beatmapsetの識別子.
             reason (str): 再構築を要求する理由.
 
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+
         Raises:
             RuntimeError: 非同期通知失敗時のmetadata fetch継続処理を検証する場合.
         """

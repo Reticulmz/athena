@@ -67,4 +67,4 @@ class BackendReadError(OSError):
 
 
 class BackendWriteError(OSError):
-    """backendがblob contentの書き込み、公開、または破棄に失敗した場合に送出する."""
+    """backendがblob contentの書き込み,公開,または破棄に失敗した場合に送出する."""

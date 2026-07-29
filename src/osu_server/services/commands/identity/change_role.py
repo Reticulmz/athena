@@ -39,7 +39,7 @@ class _SessionAuthorizationRefreshService(Protocol):
             user_id (int): authorizationを再計算するユーザーID.
 
         Returns:
-            UserAuthorizationRefreshResult: 更新、session不在、または計算失敗を表す結果.
+            UserAuthorizationRefreshResult: 更新,session不在,または計算失敗を表す結果.
         """
         ...
 
@@ -177,16 +177,16 @@ class ChangeUserRoleCommandUseCase:
         self,
         input_data: ChangeUserRoleCommandInput,
     ) -> ChangeUserRoleCommandResult:
-        """Target roleだけをユーザーへ割り当て、authorizationを更新する.
+        """Target roleだけをユーザーへ割り当て,authorizationを更新する.
 
         Args:
             input_data (ChangeUserRoleCommandInput): 対象usernameとtarget role名.
 
         Returns:
-            ChangeUserRoleCommandResult: role変更、authorization更新、再構築要求の状態を表す結果.
+            ChangeUserRoleCommandResult: role変更,authorization更新,再構築要求の状態を表す結果.
 
         Notes:
-            visibilityが変化した場合だけleaderboard再構築を要求し、その失敗は結果へ記録する.
+            visibilityが変化した場合だけleaderboard再構築を要求し,その失敗は結果へ記録する.
         """
         safe_username = User.normalize_username(input_data.username)
         async with self._uow_factory() as uow:

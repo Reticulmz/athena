@@ -1,6 +1,6 @@
 """Starlette root applicationを組み立てるfactoryを提供する.
 
-stable transportのhost-based route、local development向けfallback route、lifespan、
+stable transportのhost-based route,local development向けfallback route,lifespan,
 request middlewareをtop-levelで結合する.
 """
 
@@ -46,11 +46,11 @@ def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
         Starlette: host/path routingとrequest middlewareを設定済みのapplication.
 
     Notes:
-        routing domainは`load_routing_config()`から取得する. stable client用host routeと、
+        routing domainは`load_routing_config()`から取得する. stable client用host routeと,
         DNSなしのlocal development向けpath fallbackを同時に登録する.
-        `Host("c.$domain")`、`Host("c<digits>.$domain")`、`Host("ce.$domain")`には
-        Bancho routeを、`Host("osu.$domain")`にはweb legacy routeを登録する. path fallbackとして
-        `GET /`、`GET /health`、`POST /web/users`も登録する.
+        `Host("c.$domain")`,`Host("c<digits>.$domain")`,`Host("ce.$domain")`には
+        Bancho routeを,`Host("osu.$domain")`にはweb legacy routeを登録する. path fallbackとして
+        `GET /`,`GET /health`,`POST /web/users`も登録する.
     """
     domain = load_routing_config().domain
 

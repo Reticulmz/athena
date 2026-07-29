@@ -87,9 +87,9 @@ class SQLQueryDiagnosticsMiddleware(BaseHTTPMiddleware):
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """HTTP requestのmethod、path、status、durationをstructured logへ記録する.
+    """HTTP requestのmethod,path,status,durationをstructured logへ記録する.
 
-    各requestの開始時に`structlog.contextvars`をclearし、前requestでbindしたuser contextが
+    各requestの開始時に`structlog.contextvars`をclearし,前requestでbindしたuser contextが
     次requestへ漏れないようにする.
     """
 
@@ -101,7 +101,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         """response生成後に`http_request` eventを記録する.
 
         Args:
-            request (Request): logにhost、method、pathを記録するStarlette request.
+            request (Request): logにhost,method,pathを記録するStarlette request.
             call_next (RequestResponseEndpoint): 次のmiddlewareまたはendpointを呼び出すcallable.
 
         Returns:

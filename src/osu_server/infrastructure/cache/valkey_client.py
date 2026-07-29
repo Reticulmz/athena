@@ -21,7 +21,7 @@ def parse_valkey_database_id(path: str) -> int | None:
         int | None: 単一のdecimal path componentを整数化したdatabase ID. 未指定なら ``None``.
 
     Raises:
-        ValueError: pathが複数component、または単一のdecimal値でない場合.
+        ValueError: pathが複数component,または単一のdecimal値でない場合.
     """
     if not path or path == "/":
         return None
@@ -38,10 +38,10 @@ async def create_valkey_client(valkey_url: str) -> GlideClient:
     """Valkey URLから通常command用のconnected GlideClientを生成する.
 
     Args:
-        valkey_url (str): host、optional port、optional database pathを含むValkey connection URL.
+        valkey_url (str): host,optional port,optional database pathを含むValkey connection URL.
 
     Returns:
-        GlideClient: URLのhost、port、database IDで接続済みのclient.
+        GlideClient: URLのhost,port,database IDで接続済みのclient.
 
     Raises:
         ValueError: URLのportまたはdatabase pathが不正な場合.
@@ -65,7 +65,7 @@ async def create_valkey_pubsub_client(
     """Pub/Sub callbackを設定したconnected GlideClientを生成する.
 
     Args:
-        valkey_url (str): host、optional port、optional database pathを含むValkey connection URL.
+        valkey_url (str): host,optional port,optional database pathを含むValkey connection URL.
         callback (ValkeyPubSubCallback): Pub/Sub messageとcontextを受け取るcallback.
 
     Returns:

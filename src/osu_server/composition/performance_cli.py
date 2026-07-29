@@ -1,6 +1,6 @@
 """PP recalculation command用のCLI隣接dependency compositionを提供する.
 
-performance calculator runtimeを含めず、recalculation batch作成に必要なproviderだけを組み立てる.
+performance calculator runtimeを含めず,recalculation batch作成に必要なproviderだけを組み立てる.
 """
 
 from __future__ import annotations

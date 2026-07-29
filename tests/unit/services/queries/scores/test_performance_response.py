@@ -135,7 +135,7 @@ class CompletionSignalStub:
                 completion通知.
 
         Returns:
-            None: 通知を記録せず、呼び出し側へ値を返さずに完了する.
+            None: 通知を記録せず,呼び出し側へ値を返さずに完了する.
         """
         _ = payload
 
@@ -158,11 +158,11 @@ class CompletionSignalStub:
 async def test_completed_current_response_returns_stable_safe_integer_without_wait() -> None:
     """完了済みPPが待機なしでstable用整数へ丸められる契約を検証する.
 
-    completed calculationを初回readで返し、completion signalを待たずに四捨五入済みPPと
+    completed calculationを初回readで返し,completion signalを待たずに四捨五入済みPPと
     non-retryable結果を返すことを確認する.
 
     Returns:
-        None: stable responseの状態、PP、待機回数を検証して完了する.
+        None: stable responseの状態,PP,待機回数を検証して完了する.
     """
     repository = ScorePerformanceQueryRepositoryStub(
         (_calculation(state=PerformanceCalculationState.COMPLETED, pp=Decimal("122.5")),)
@@ -184,11 +184,11 @@ async def test_completed_current_response_returns_stable_safe_integer_without_wa
 async def test_signal_observed_rereads_current_state_before_returning_pp() -> None:
     """Completion signal後にcurrent stateを再readする契約を検証する.
 
-    queued calculationの後にcompleted calculationを返し、signalをwake-up hintとして扱って
+    queued calculationの後にcompleted calculationを返し,signalをwake-up hintとして扱って
     最新stateから整数PPを返すことを確認する.
 
     Returns:
-        None: repository read履歴、wait引数、completed responseを検証して完了する.
+        None: repository read履歴,wait引数,completed responseを検証して完了する.
     """
     repository = ScorePerformanceQueryRepositoryStub(
         (
@@ -213,11 +213,11 @@ async def test_signal_observed_rereads_current_state_before_returning_pp() -> No
 async def test_timeout_performs_final_current_state_check_and_returns_completed() -> None:
     """timeout後の最終current state確認がcompleted結果へ収束することを検証する.
 
-    signal未観測の待機後にrepositoryがcompleted calculationを返す条件で、最終readから
+    signal未観測の待機後にrepositoryがcompleted calculationを返す条件で,最終readから
     completed responseを返すことを確認する.
 
     Returns:
-        None: 最終read回数、丸め済みPP、non-retryable状態を検証して完了する.
+        None: 最終read回数,丸め済みPP,non-retryable状態を検証して完了する.
     """
     repository = ScorePerformanceQueryRepositoryStub(
         (
@@ -242,11 +242,11 @@ async def test_timeout_performs_final_current_state_check_and_returns_completed(
 async def test_timeout_final_check_returns_retryable_when_current_is_still_pending() -> None:
     """timeout後もpendingなcurrent stateがretryableになる契約を検証する.
 
-    初回と最終readがともに非terminal stateの条件で、PPを返さずretryable responseを
+    初回と最終readがともに非terminal stateの条件で,PPを返さずretryable responseを
     返すことを確認する.
 
     Returns:
-        None: response state、PP、retryable flagを検証して完了する.
+        None: response state,PP,retryable flagを検証して完了する.
     """
     repository = ScorePerformanceQueryRepositoryStub(
         (
@@ -270,11 +270,11 @@ async def test_timeout_final_check_returns_retryable_when_current_is_still_pendi
 async def test_unavailable_current_response_is_accepted_with_zero_pp_without_diagnostics() -> None:
     """Unavailable current stateがdiagnosticなしのPPゼロとして受理されることを検証する.
 
-    unavailable calculationを返す条件で、内部reasonを公開せずaccepted-without-PP responseを
+    unavailable calculationを返す条件で,内部reasonを公開せずaccepted-without-PP responseを
     返すことを確認する.
 
     Returns:
-        None: response state、ゼロPP、非公開diagnostic、待機なしを検証して完了する.
+        None: response state,ゼロPP,非公開diagnostic,待機なしを検証して完了する.
     """
     repository = ScorePerformanceQueryRepositoryStub(
         (_calculation(state=PerformanceCalculationState.UNAVAILABLE),)
@@ -297,11 +297,11 @@ async def test_unavailable_current_response_is_accepted_with_zero_pp_without_dia
 async def test_out_of_scope_response_is_accepted_with_zero_pp_without_waiting() -> None:
     """Current calculation不在が待機なしのPPゼロとして受理されることを検証する.
 
-    repositoryがNoneを返す条件で、out-of-scopeとしてaccepted-without-PP responseを即時に
+    repositoryがNoneを返す条件で,out-of-scopeとしてaccepted-without-PP responseを即時に
     返すことを確認する.
 
     Returns:
-        None: response state、ゼロPP、非retryable状態、待機なしを検証して完了する.
+        None: response state,ゼロPP,非retryable状態,待機なしを検証して完了する.
     """
     repository = ScorePerformanceQueryRepositoryStub((None,))
     signal = CompletionSignalStub(observed=False)

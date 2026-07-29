@@ -18,14 +18,14 @@ class InMemoryRateLimiter:
 
     Notes:
         check は window 外の timestamp を削除してから判定する.
-        thread-safe ではなく、single-threaded test environment 向けに限定する.
+        thread-safe ではなく,single-threaded test environment 向けに限定する.
     """
 
     def __init__(self, *, time_func: Callable[[], float] | None = None) -> None:
         """Timestamp storage と action 判定用 clock を初期化する.
 
         Args:
-            time_func (Callable[[], float] | None): 現在時刻を秒で返す clock。未指定時は time.time.
+            time_func (Callable[[], float] | None): 現在時刻を秒で返す clock.未指定時は time.time.
 
         Returns:
             None: rate limiter instance を初期化したことを表す.
@@ -42,10 +42,10 @@ class InMemoryRateLimiter:
             window (int): 判定 window の秒数.
 
         Returns:
-            bool: action を許可して timestamp を記録した場合は True、上限到達なら False.
+            bool: action を許可して timestamp を記録した場合は True,上限到達なら False.
 
         Notes:
-            上限到達時は action を記録せず、期限切れ timestamp だけを保存する.
+            上限到達時は action を記録せず,期限切れ timestamp だけを保存する.
         """
         now = self._time_func()
         cutoff = now - window

@@ -270,7 +270,7 @@ class TestBeatmapScoreListingQuery:
     ) -> None:
         """Checksumでbeatmapが見つからない場合にunavailableを返す契約を検証する.
 
-        空のrepositoryでchecksum解決を実行し、observable outcomeとしてheaderなしのUNAVAILABLEと
+        空のrepositoryでchecksum解決を実行し,observable outcomeとしてheaderなしのUNAVAILABLEと
         NOT_FOUND reasonを返すことを確認する.
 
         Args:
@@ -296,7 +296,7 @@ class TestBeatmapScoreListingQuery:
     ) -> None:
         """Checksumでbeatmapとbeatmapsetが見つかる場合にheaderを返す契約を検証する.
 
-        対応するbeatmapとbeatmapsetを登録してchecksum解決を実行し、observable outcomeとして
+        対応するbeatmapとbeatmapsetを登録してchecksum解決を実行し,observable outcomeとして
         HEADERと両metadataを持つheaderおよびKNOWN_CHECKSUM reasonを返すことを確認する.
 
         Args:
@@ -328,7 +328,7 @@ class TestBeatmapScoreListingQuery:
     ) -> None:
         """Beatmapsetが見つからない場合にunavailableを返す契約を検証する.
 
-        beatmapだけを登録してchecksum解決を実行し、observable outcomeとしてheaderなしの
+        beatmapだけを登録してchecksum解決を実行し,observable outcomeとしてheaderなしの
         UNAVAILABLEとNOT_FOUND reasonを返すことを確認する.
 
         Args:
@@ -357,7 +357,7 @@ class TestBeatmapScoreListingQuery:
     ) -> None:
         """NOT_SUBMITTED beatmapをunavailableにするcompatibility契約を検証する.
 
-        NOT_SUBMITTED statusのbeatmapと対応beatmapsetを登録してchecksum解決を実行し、observable
+        NOT_SUBMITTED statusのbeatmapと対応beatmapsetを登録してchecksum解決を実行し,observable
         outcomeとしてheaderなしのUNAVAILABLEとNOT_SUBMITTED reasonを返すことを確認する.
 
         Args:
@@ -417,7 +417,7 @@ class TestBeatmapScoreListingQuery:
     ) -> None:
         """Checksum missとfilename matchでUPDATE_AVAILABLEを返すcompatibility契約を検証する.
 
-        filenameで一致するbeatmapを登録してparsed requestをresolveし、observable outcomeとして
+        filenameで一致するbeatmapを登録してparsed requestをresolveし,observable outcomeとして
         UPDATE_AVAILABLEとmetadataを持つheaderをread-onlyで返すことを確認する.
 
         Args:
@@ -463,7 +463,7 @@ class TestBeatmapScoreListingQuery:
     ) -> None:
         """Legacy personal best fallbackを使用しない契約を検証する.
 
-        GLOBAL selectionを持つstable requestと既知beatmapをresolveし、observable outcomeとして
+        GLOBAL selectionを持つstable requestと既知beatmapをresolveし,observable outcomeとして
         top row readだけを行いpersonal best readとheaderのpersonal bestを空にすることを確認する.
 
         Args:
@@ -514,8 +514,8 @@ class TestBeatmapScoreListingQuery:
     ) -> None:
         """Song select requestでpersonal bestとtop row readを省略する契約を検証する.
 
-        song_selectがtrueのGLOBAL selectionを持つrequestをresolveし、observable outcomeとして
-        headerのpersonal bestを空にし、leaderboard readを全て行わないことを確認する.
+        song_selectがtrueのGLOBAL selectionを持つrequestをresolveし,observable outcomeとして
+        headerのpersonal bestを空にし,leaderboard readを全て行わないことを確認する.
 
         Args:
             getscores_repo (BeatmapScoreListingQueryRepositoryStub): metadataを登録するstub.

@@ -55,7 +55,7 @@ _DISHKA_RUNTIME_HINTS = (
 
 @final
 class BeatmapProviderSet(Provider):
-    """共有beatmap policy、query、fetch workflowをAPP scopeで登録する.
+    """共有beatmap policy,query,fetch workflowをAPP scopeで登録する.
 
     Attributes:
         scope (Scope): appとworker container内で共有するDishkaのAPP scope.
@@ -68,7 +68,7 @@ class BeatmapProviderSet(Provider):
         """設定された更新間隔からbeatmap freshness policyを構成する.
 
         Args:
-            config (AppConfig): ranked、pending、graveyard、mirrorの更新秒数を持つ設定.
+            config (AppConfig): ranked,pending,graveyard,mirrorの更新秒数を持つ設定.
 
         Returns:
             BeatmapFreshnessPolicy: 各source種別の更新間隔を ``timedelta`` で表すpolicy.
@@ -99,7 +99,7 @@ class BeatmapProviderSet(Provider):
             BeatmapMetadataProvider: 公式sourceとmirror sourceを組み合わせたprovider.
 
         Notes:
-            未設定の公式credentialは空文字列として公式providerへ渡し、利用可否は上位workflowが判断する.
+            未設定の公式credentialは空文字列として公式providerへ渡し,利用可否は上位workflowが判断する.
         """
         official = OsuApiMetadataProviderService(
             client_id=config.beatmap_official_api_client_id or "",
@@ -190,7 +190,7 @@ class BeatmapProviderSet(Provider):
                 metadata更新後にleaderboard rebuild workerを起動するport.
 
         Returns:
-            FetchBeatmapMetadataUseCase: freshness判定、metadata永続化、rebuild wakeを行うcommand.
+            FetchBeatmapMetadataUseCase: freshness判定,metadata永続化,rebuild wakeを行うcommand.
         """
         return FetchBeatmapMetadataUseCase(
             uow_factory=uow_factory,

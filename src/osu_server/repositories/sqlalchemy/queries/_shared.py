@@ -62,7 +62,7 @@ def user_to_domain(model: UserModel) -> User:
         User: 永続fieldを転記したdomain User.
 
     Notes:
-        modelの値は検証または正規化せず、read modelとしてそのまま転記する.
+        modelの値は検証または正規化せず,read modelとしてそのまま転記する.
     """
     return User(
         id=model.id,
@@ -132,7 +132,7 @@ def channel_override_to_domain(model: ChannelRoleOverrideModel) -> ChannelRoleOv
         model (ChannelRoleOverrideModel): ChannelとRoleの関連tableから取得済みの永続model.
 
     Returns:
-        ChannelRoleOverride: channel、Role、read/write permissionを転記したdomain value.
+        ChannelRoleOverride: channel,Role,read/write permissionを転記したdomain value.
 
     Notes:
         permissionの解決やdefault overrideの補完は行わない.
@@ -155,11 +155,11 @@ def score_to_domain(model: ScoreModel) -> Score:
         Score: enum値とmods bitmaskをdomain valueへ変換したScore.
 
     Raises:
-        ValueError: 永続enum値を対応するdomain enumへ変換できない場合、またはmods bitmaskが
+        ValueError: 永続enum値を対応するdomain enumへ変換できない場合,またはmods bitmaskが
             永続化表現として無効な場合.
 
     Notes:
-        NULL可能なsubmission fieldはNoneを維持し、replay dataはこの変換に含めない.
+        NULL可能なsubmission fieldはNoneを維持し,replay dataはこの変換に含めない.
     """
     return Score(
         id=model.id,
@@ -213,7 +213,7 @@ def blob_to_domain(model: BlobModel) -> Blob:
         ValueError: model.storage_backendがBlobStorageBackendKindの既知値でない場合.
 
     Notes:
-        blob payloadは読み込まず、metadataだけを転記する.
+        blob payloadは読み込まず,metadataだけを転記する.
     """
     return Blob(
         id=model.id,
@@ -269,14 +269,14 @@ def beatmap_to_domain(
             未取得時はNone.
 
     Returns:
-        Beatmap: enum、numeric metadata、file stateをdomain valueへ変換したBeatmap.
+        Beatmap: enum,numeric metadata,file stateをdomain valueへ変換したBeatmap.
 
     Raises:
         ValueError: Beatmap modelまたはattachment modelのenum値が対応するdomain enumの既知値で
             ない場合.
 
     Notes:
-        checksum_md5がNoneの場合は空文字列とし、attachmentの有無だけでfile stateを決定する.
+        checksum_md5がNoneの場合は空文字列とし,attachmentの有無だけでfile stateを決定する.
     """
     attachment = attachment_to_domain(attachment_model) if attachment_model is not None else None
     return Beatmap(
@@ -329,7 +329,7 @@ def attachment_to_domain(model: BeatmapFileAttachmentModel) -> BeatmapFileAttach
         ValueError: model.sourceがBeatmapFileSourceの既知値でない場合.
 
     Notes:
-        fileの内容やblob objectは読み込まず、attachment metadataだけを転記する.
+        fileの内容やblob objectは読み込まず,attachment metadataだけを転記する.
     """
     return BeatmapFileAttachment(
         beatmap_id=model.beatmap_id,
@@ -356,7 +356,7 @@ def fetch_state_to_domain(model: BeatmapFetchStateModel) -> BeatmapFetchRecord:
         ValueError: model.target_typeまたはmodel.statusが対応するdomain enumの既知値でない場合.
 
     Notes:
-        attempt count、error、timestampは永続値を変更せずに転記する.
+        attempt count,error,timestampは永続値を変更せずに転記する.
     """
     return BeatmapFetchRecord(
         target=BeatmapFetchTarget(
@@ -395,7 +395,7 @@ def decimal_or_none(value: float | None) -> Decimal | None:
         Decimal | None: floatの文字列表現から生成したDecimal. 入力がNoneの場合はNone.
 
     Notes:
-        Decimal(value)ではなくDecimal(str(value))を使い、binary floatの直接変換を避ける.
+        Decimal(value)ではなくDecimal(str(value))を使い,binary floatの直接変換を避ける.
     """
     if value is None:
         return None

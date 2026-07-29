@@ -20,7 +20,12 @@ from osu_server.transports.stable.bancho.workflows import (
 
 @dataclass(slots=True, frozen=True)
 class _WorkflowCalls:
-    """test fake workflow が受け取った login と polling call 数を表す."""
+    """test fake workflow が受け取った login と polling call 数を表す.
+
+    Attributes:
+        login_count (int): login workflow が受け取った call 数.
+        polling_count (int): polling workflow が受け取った call 数.
+    """
 
     login_count: int
     polling_count: int
@@ -28,7 +33,12 @@ class _WorkflowCalls:
 
 @final
 class _RecordingLoginWorkflow:
-    """endpoint から渡された LoginWorkflowInput を記録する login workflow fake を表す."""
+    """endpoint から渡された LoginWorkflowInput を記録する login workflow fake を表す.
+
+    Attributes:
+        _result (LoginWorkflowResult): execute ごとに返す固定 login workflow result.
+        inputs (list[LoginWorkflowInput]): endpoint から受け取った login input の記録順 list.
+    """
 
     _result: LoginWorkflowResult
     inputs: list[LoginWorkflowInput]
@@ -57,7 +67,12 @@ class _RecordingLoginWorkflow:
 
 @final
 class _RecordingPollingWorkflow:
-    """endpoint から渡された PollingWorkflowInput を記録する polling workflow fake を表す."""
+    """endpoint から渡された PollingWorkflowInput を記録する polling workflow fake を表す.
+
+    Attributes:
+        _result (PollingWorkflowResult): execute ごとに返す固定 polling workflow result.
+        inputs (list[PollingWorkflowInput]): endpoint から受け取った polling input の記録順 list.
+    """
 
     _result: PollingWorkflowResult
     inputs: list[PollingWorkflowInput]
@@ -142,7 +157,11 @@ class TestBanchoEndpoint:
     """BanchoEndpoint が HTTP request を workflow input と response に変換することを検証する."""
 
     def test_without_osu_token_header_delegates_to_login_workflow(self) -> None:
-        """osu-token がない request が login workflow に body と headers を渡すことを検証する."""
+        """osu-token がない request が login workflow に body と headers を渡すことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         client, login_workflow, polling_workflow = _make_client()
 
         response = client.post("/", content=b"raw-login", headers={"x-test": "1"})
@@ -159,7 +178,11 @@ class TestBanchoEndpoint:
         assert workflow_input.headers["x-test"] == "1"
 
     def test_login_result_token_is_mapped_to_cho_token_header(self) -> None:
-        """Login result cho token が response cho-token header に mapping されることを検証する."""
+        """Login result cho token が response cho-token header に mapping されることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         client, login_workflow, polling_workflow = _make_client(
             login_result=LoginWorkflowResult(
                 content=b"successful-login",
@@ -178,7 +201,11 @@ class TestBanchoEndpoint:
         )
 
     def test_osu_token_header_presence_delegates_to_polling_workflow(self) -> None:
-        """osu-token がある request が polling workflow に token と body を渡すことを検証する."""
+        """osu-token がある request が polling workflow に token と body を渡すことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         client, login_workflow, polling_workflow = _make_client()
 
         response = client.post(
@@ -198,7 +225,11 @@ class TestBanchoEndpoint:
         assert workflow_input.body == b"raw-c2s"
 
     def test_empty_osu_token_header_still_selects_polling_branch(self) -> None:
-        """空文字列の osu-token も login ではなく polling branch を選ぶことを検証する."""
+        """空文字列の osu-token も login ではなく polling branch を選ぶことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         client, login_workflow, polling_workflow = _make_client()
 
         response = client.post("/", content=b"raw-c2s", headers={"osu-token": ""})

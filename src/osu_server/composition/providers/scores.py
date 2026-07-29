@@ -72,7 +72,7 @@ _DISHKA_RUNTIME_HINTS = (
 
 @final
 class ScoreProviderSet(Provider):
-    """共有score helper、query、worker wake portをAPP scopeで登録する.
+    """共有score helper,query,worker wake portをAPP scopeで登録する.
 
     Attributes:
         scope (Scope): appとworker container内で共有するDishkaのAPP scope.
@@ -173,7 +173,7 @@ class ScoreProviderSet(Provider):
         blob_reader: BlobByteReader,
         body_assembler: ReplayDownloadBodyAssembler,
     ) -> ReplayDownloadQuery:
-        """Replay download queryをread repository、blob reader、body strategyで構成する.
+        """Replay download queryをread repository,blob reader,body strategyで構成する.
 
         Args:
             repository (ReplayDownloadQueryRepository): replay metadataと可視性を読むrepository.

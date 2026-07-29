@@ -24,7 +24,6 @@ from osu_server.transports.stable.bancho.protocol.types import (
 from osu_server.transports.stable.bancho.protocol.writer import write_packet
 
 PROTOCOL_VERSION = 19
-"""stable clientへ通知するBancho protocol versionを表す."""
 
 __all__ = [
     "HEADER_SIZE",

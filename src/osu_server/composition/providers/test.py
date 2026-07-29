@@ -84,7 +84,7 @@ class TestProviderSet(Provider):
                 factory定義.
 
         Notes:
-            各replacementは ``override=True`` で登録され、同じ型を提供する標準providerを
+            各replacementは ``override=True`` で登録され,同じ型を提供する標準providerを
             test内で置換する.
         """
         super().__init__(scope=Scope.APP)
@@ -168,7 +168,7 @@ class PassingHIBPClient:
             password (str): HIBP照会対象として渡されるpassword.
 
         Returns:
-            bool: 常に ``False`` を返し、network accessを行わない.
+            bool: 常に ``False`` を返し,network accessを行わない.
         """
         _ = password
         return False
@@ -186,11 +186,11 @@ def make_in_memory_runtime_provider_set(
         packet_queue_max_size (int): in-memory packet queueに保持できる最大packet数.
 
     Returns:
-        TestProviderSet: broker、repository、state、storage、HIBP、beatmap metadataを置換する
+        TestProviderSet: broker,repository,state,storage,HIBP,beatmap metadataを置換する
             provider set.
 
     Notes:
-        test graphはnetwork serviceとproduction persistence adapterを使用せず、明示的なin-memory
+        test graphはnetwork serviceとproduction persistence adapterを使用せず,明示的なin-memory
         implementationをAPP scopeで登録する.
     """
     repository_adapters = InMemoryRepositoryAdapterFamily()

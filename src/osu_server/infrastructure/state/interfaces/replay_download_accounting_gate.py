@@ -10,7 +10,7 @@ class ReplayDownloadAccountingGate(Protocol):
     """Replay download accounting の一時 first-claim marker を扱う contract.
 
     Notes:
-        replay view duplicate cooldown と latest activity throttle は temporary state であり、
+        replay view duplicate cooldown と latest activity throttle は temporary state であり,
         durable source of truth として利用しない.
     """
 
@@ -28,7 +28,7 @@ class ReplayDownloadAccountingGate(Protocol):
             ttl_seconds (int): caller が policy として渡す marker の保持秒数.
 
         Returns:
-            bool: marker を新規作成した場合は True、既存 marker がある場合は False.
+            bool: marker を新規作成した場合は True,既存 marker がある場合は False.
 
         Raises:
             ValueError: ttl_seconds が 1 未満の場合.
@@ -69,7 +69,7 @@ class ReplayDownloadAccountingGate(Protocol):
             ttl_seconds (int): caller が policy として渡す marker の保持秒数.
 
         Returns:
-            bool: marker を新規作成した場合は True、既存 marker がある場合は False.
+            bool: marker を新規作成した場合は True,既存 marker がある場合は False.
 
         Raises:
             ValueError: ttl_seconds が 1 未満の場合.

@@ -66,7 +66,7 @@ class Channel:
             None: channel名を検証して完了する.
 
         Raises:
-            ValueError: nameが`#`で始まらないか、許可外文字を含む場合.
+            ValueError: nameが`#`で始まらないか,許可外文字を含む場合.
         """
         _validate_channel_name(self.name)
 
@@ -102,7 +102,7 @@ def _validate_channel_name(name: str) -> None:
         None: nameが命名規則を満たすことを確認して完了する.
 
     Raises:
-        ValueError: nameが`#`で始まらないか、`#`の後ろが空か、許可外文字を含む場合.
+        ValueError: nameが`#`で始まらないか,`#`の後ろが空か,許可外文字を含む場合.
     """
     if not name.startswith("#"):
         msg = "Channel name must start with '#'"

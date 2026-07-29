@@ -23,7 +23,7 @@ class _ValkeyReplayDownloadAccountingClient(Protocol):
         keys: list[TEncodable] | None = None,
         args: list[TEncodable] | None = None,
     ) -> object:
-        """Lua script を key と argument で実行し、raw result を返す.
+        """Lua script を key と argument で実行し,raw result を返す.
 
         Args:
             script (Script): 実行する事前登録済み Lua script.
@@ -46,7 +46,7 @@ class ValkeyReplayDownloadAccountingGate:
         _prefix (str): 環境または test を分離する key prefix.
 
     Notes:
-        view key は `{prefix}replay_download_accounting:view:{viewer_user_id}:score:{score_id}`、
+        view key は `{prefix}replay_download_accounting:view:{viewer_user_id}:score:{score_id}`,
         activity key は `{prefix}replay_download_accounting:activity:{viewer_user_id}` を使用する.
         SET NX EX の Lua script が first-claim 判定と TTL 設定を atomic に実行する.
     """
@@ -117,7 +117,7 @@ return redis.call('DEL', KEYS[1])""")
             ttl_seconds (int): marker を保持する秒数.
 
         Returns:
-            bool: marker を新規作成した場合は True、既存 marker がある場合は False.
+            bool: marker を新規作成した場合は True,既存 marker がある場合は False.
 
         Raises:
             ValueError: ttl_seconds が 1 未満の場合.
@@ -162,7 +162,7 @@ return redis.call('DEL', KEYS[1])""")
             ttl_seconds (int): marker を保持する秒数.
 
         Returns:
-            bool: marker を新規作成した場合は True、既存 marker がある場合は False.
+            bool: marker を新規作成した場合は True,既存 marker がある場合は False.
 
         Raises:
             ValueError: ttl_seconds が 1 未満の場合.
@@ -194,14 +194,14 @@ return redis.call('DEL', KEYS[1])""")
         await self._release(self._activity_key(viewer_user_id))
 
     async def _claim(self, key: str, ttl_seconds: int) -> bool:
-        """Key の first-claim Lua script を実行し、結果を bool へ変換する.
+        """Key の first-claim Lua script を実行し,結果を bool へ変換する.
 
         Args:
             key (str): first-claim 対象の Valkey marker key.
             ttl_seconds (int): 新規 marker を保持する正の秒数.
 
         Returns:
-            bool: marker を新規作成した場合は True、既存 marker がある場合は False.
+            bool: marker を新規作成した場合は True,既存 marker がある場合は False.
 
         Raises:
             ValueError: ttl_seconds が 1 未満の場合.
@@ -243,7 +243,7 @@ def _claim_result_to_bool(result: object) -> bool:
         result (object): claim Lua script が返した raw result.
 
     Returns:
-        bool: result が integer 1 なら True、それ以外の integer なら False.
+        bool: result が integer 1 なら True,それ以外の integer なら False.
 
     Raises:
         TypeError: result が integer ではない場合.

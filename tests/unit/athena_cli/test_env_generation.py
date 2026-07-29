@@ -69,7 +69,7 @@ def test_optional_bool_with_default_is_written(
             values (object): generate_env_contentがvalidationへ渡す環境変数mapping.
 
         Returns:
-            None: stubとして入力を受け取り、値を返さずに完了する.
+            None: stubとして入力を受け取り,値を返さずに完了する.
         """
         _ = values
 

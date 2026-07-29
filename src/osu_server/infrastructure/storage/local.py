@@ -57,13 +57,13 @@ class LocalBlobStorageBackend:
         self._read_chunk_size = read_chunk_size
 
     async def validate_configuration(self) -> None:
-        """root、staging、finalized blob directoryの作成可能性を検証する.
+        """root,staging,finalized blob directoryの作成可能性を検証する.
 
         Returns:
-            None: 必要なdirectoryが存在し、rootとfinalized blob directoryへ書き込める状態にする.
+            None: 必要なdirectoryが存在し,rootとfinalized blob directoryへ書き込める状態にする.
 
         Raises:
-            BlobStorageConfigurationError: directoryの作成、種別、または書き込みprobeが
+            BlobStorageConfigurationError: directoryの作成,種別,または書き込みprobeが
                 失敗した場合.
         """
         try:
@@ -130,7 +130,7 @@ class LocalBlobStorageBackend:
             ByteChunks: 設定済みread sizeでblob内容を返す非同期iterator.
 
         Raises:
-            BlobContentMissingError: keyが不正、blobが未存在、directory、またはsymbolic linkの場合.
+            BlobContentMissingError: keyが不正,blobが未存在,directory,またはsymbolic linkの場合.
             BackendReadError: iteratorによるblob読取中にfilesystem errorが発生した場合.
         """
         path = _final_path_for_read(self._root, storage_key)
@@ -165,7 +165,7 @@ class LocalBlobStorageBackend:
             storage_key (str): ``sha256/xx/yy/<digest>`` 形式の保存key.
 
         Returns:
-            bool: keyが正しく、root配下にsymbolic linkではないregular fileがある場合は ``True``.
+            bool: keyが正しく,root配下にsymbolic linkではないregular fileがある場合は ``True``.
         """
         path = _final_path_for_read(self._root, storage_key)
         return path is not None and _is_finalized_file(path)
@@ -194,7 +194,7 @@ class LocalBlobStorageBackend:
             None: probe directoryとtemporary probe fileを検証後に削除する.
 
         Raises:
-            BlobStorageConfigurationError: finalized pathの作成、種別、または書き込みprobeが
+            BlobStorageConfigurationError: finalized pathの作成,種別,または書き込みprobeが
                 失敗した場合.
         """
         probe_directory = self._root / "sha256" / "00" / "00"
@@ -255,7 +255,7 @@ class _LocalStagedBlobWrite:
             None: chunkを書き込む. 失敗時はstaging fileを破棄してclosed状態にする.
 
         Raises:
-            BackendWriteError: closed済み、またはstaging fileへの追記に失敗した場合.
+            BackendWriteError: closed済み,またはstaging fileへの追記に失敗した場合.
         """
         self._ensure_open()
         try:
@@ -273,10 +273,10 @@ class _LocalStagedBlobWrite:
             storage_key (str): ``sha256/xx/yy/<digest>`` 形式の公開先key.
 
         Returns:
-            None: staging fileを破棄し、同じkeyのfinalized fileを公開済みにする.
+            None: staging fileを破棄し,同じkeyのfinalized fileを公開済みにする.
 
         Raises:
-            BackendWriteError: closed済み、不正key、root外path、既存の不正file、または公開処理に
+            BackendWriteError: closed済み,不正key,root外path,既存の不正file,または公開処理に
                 失敗した場合.
 
         Notes:
@@ -353,7 +353,7 @@ class _LocalStagedBlobWrite:
             raise BackendWriteError("local blob staging write is already closed")
 
     def _discard_without_error(self) -> None:
-        """一時fileを削除し、cleanup時のfilesystem errorを無視する.
+        """一時fileを削除し,cleanup時のfilesystem errorを無視する.
 
         Returns:
             None: staging fileの削除を試みる. filesystem errorは呼出元へ伝播しない.
@@ -393,7 +393,7 @@ def _final_path_for_write(root: Path, storage_key: str) -> Path:
         Path: root配下で検証済みのfinalized blob path.
 
     Raises:
-        BackendWriteError: keyがSHA-256形式でない場合、またはpathがroot外へ解決される場合.
+        BackendWriteError: keyがSHA-256形式でない場合,またはpathがroot外へ解決される場合.
     """
     digest = _storage_key_digest(storage_key)
     if digest is None:
@@ -411,7 +411,7 @@ def _storage_key_digest(storage_key: str) -> str | None:
         storage_key (str): ``sha256/xx/yy/<64桁hex>`` 形式であることが期待されるkey.
 
     Returns:
-        str | None: 64桁digest. 形式、hex文字、またはdirectory prefixが一致しない場合は ``None``.
+        str | None: 64桁digest. 形式,hex文字,またはdirectory prefixが一致しない場合は ``None``.
     """
     match = _SHA256_STORAGE_KEY_PATTERN.fullmatch(storage_key)
     if match is None:
@@ -451,7 +451,7 @@ def _ensure_existing_finalized_file(path: Path, storage_key: str) -> None:
         None: pathがfinalized regular fileであることを確認する.
 
     Raises:
-        BackendWriteError: pathがregular fileでない、またはsymbolic linkの場合.
+        BackendWriteError: pathがregular fileでない,またはsymbolic linkの場合.
     """
     if not _is_finalized_file(path):
         raise BackendWriteError(f"local blob final path is not a file: {storage_key}")

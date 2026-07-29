@@ -164,10 +164,10 @@ class ChangeUserPasswordCommandUseCase:
             input_data (ChangeUserPasswordCommandInput): 対象usernameと新しい平文password.
 
         Returns:
-            ChangeUserPasswordCommandResult: 更新、拒否、または未発見を表す結果.
+            ChangeUserPasswordCommandResult: 更新,拒否,または未発見を表す結果.
 
         Notes:
-            system userのpasswordは変更せず、漏えいpasswordもINVALID_PASSWORDとして返す.
+            system userのpasswordは変更せず,漏えいpasswordもINVALID_PASSWORDとして返す.
         """
         safe_username = User.normalize_username(input_data.username)
         user = await self._user_query_repository.get_by_safe_username(safe_username)

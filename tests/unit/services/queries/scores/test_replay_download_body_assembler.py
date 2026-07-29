@@ -17,11 +17,11 @@ from osu_server.services.queries.scores import (
 def test_blocked_strategy_returns_blocked_branch_without_response_body() -> None:
     """Blocked strategyがresponse bodyを生成しない契約を検証する.
 
-    stored blobを与えてblocked strategyを実行し、body strategy blocked branchとNoneの
+    stored blobを与えてblocked strategyを実行し,body strategy blocked branchとNoneの
     response bodyを返すことを確認する.
 
     Returns:
-        None: blocked branch、非成功状態、payload非露出を検証して完了する.
+        None: blocked branch,非成功状態,payload非露出を検証して完了する.
     """
     stored_payload = b"bk"
 
@@ -41,11 +41,11 @@ def test_blocked_strategy_returns_blocked_branch_without_response_body() -> None
 def test_direct_blob_bytes_strategy_returns_stored_bytes_exactly() -> None:
     """Direct blob bytes strategyが保存済みbytesをそのまま返す契約を検証する.
 
-    validation済みstored blobを与えてdirect strategyを実行し、成功bodyのpayloadとbyte sizeが
+    validation済みstored blobを与えてdirect strategyを実行し,成功bodyのpayloadとbyte sizeが
     入力と一致することを確認する.
 
     Returns:
-        None: 成功branch、response body、payload非露出を検証して完了する.
+        None: 成功branch,response body,payload非露出を検証して完了する.
     """
     stored_blob = _stored_blob(b"db")
 
@@ -68,11 +68,11 @@ def test_direct_blob_bytes_strategy_returns_stored_bytes_exactly() -> None:
 def test_assemble_download_body_strategy_stays_blocked_without_local_decision() -> None:
     """未確定transformのassemble strategyがblockedのままになる契約を検証する.
 
-    stored blobを与えてassemble strategyを実行し、local decisionでsuccess bodyを作らず
+    stored blobを与えてassemble strategyを実行し,local decisionでsuccess bodyを作らず
     blocked branchを返すことを確認する.
 
     Returns:
-        None: blocked branch、Noneのresponse body、payload非露出を検証して完了する.
+        None: blocked branch,Noneのresponse body,payload非露出を検証して完了する.
     """
     stored_payload = b"as"
 

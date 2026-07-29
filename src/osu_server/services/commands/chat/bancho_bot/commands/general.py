@@ -2,7 +2,7 @@
 
 handler は `setup_general()` 内で `registry.command()` decorator により登録される. handler
 自体は
-registry が保持するため、module から個別に公開しない.
+registry が保持するため,module から個別に公開しない.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def setup_general(registry: CommandRegistry) -> None:
         registry (CommandRegistry): `!roll` と `!help` を決定的な順番で受け取る registry.
 
     Returns:
-        None: 2つの builtin handler を登録して完了し、呼び出し側へ値を返さない.
+        None: 2つの builtin handler を登録して完了し,呼び出し側へ値を返さない.
     """
 
     @registry.command(
@@ -49,7 +49,7 @@ def setup_general(registry: CommandRegistry) -> None:
             は常にstrを返す.
 
         Notes:
-            先頭 argument が数値なら maximum として使い、0以下の数値は1へ丸める.
+            先頭 argument が数値なら maximum として使い,0以下の数値は1へ丸める.
             数値以外または argument なしでは100を使う.
         """
         max_val = 100
@@ -68,7 +68,7 @@ def setup_general(registry: CommandRegistry) -> None:
                 visibility filter 済み available command と argument を含む command context.
 
         Returns:
-            str | None: `--all`なら description 付きの command list、それ以外なら command name
+            str | None: `--all`なら description 付きの command list,それ以外なら command name
             list. 現在の
             handler は常にstrを返す.
         """

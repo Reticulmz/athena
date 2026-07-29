@@ -41,7 +41,7 @@ def has_channel_permission(
         permission (ChannelPermission): 判定するreadまたはwrite permission.
 
     Returns:
-        bool: BYPASS_CHANNEL_ACLを持つか、一致するrole overrideが要求permissionを許可するとTrue.
+        bool: BYPASS_CHANNEL_ACLを持つか,一致するrole overrideが要求permissionを許可するとTrue.
 
     Notes:
         一致するoverrideがない場合はfail-closedでFalseを返す.

@@ -1,4 +1,4 @@
-"""blobのstream書込み、整合性metadata、deduplicationを提供するserviceを定義する."""
+"""blobのstream書込み,整合性metadata,deduplicationを提供するserviceを定義する."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ class BlobStorageService:
     Attributes:
         _blob_query_repo (BlobQueryRepository): blob metadataを読むrepository.
         _uow_factory (UnitOfWorkFactory): 新しいblob metadataを書き込むUnit of Workのfactory.
-        _backend (BlobStorageBackend): contentをstagedに書込み、読み出すstorage backend.
+        _backend (BlobStorageBackend): contentをstagedに書込み,読み出すstorage backend.
         _storage_backend (BlobStorageBackendKind): 作成するmetadataに保存するbackend種別.
     """
 
@@ -68,7 +68,7 @@ class BlobStorageService:
         Args:
             blob_query_repo (BlobQueryRepository): SHA-256またはIDでblob metadataを読むrepository.
             uow_factory (UnitOfWorkFactory): 新しいblob metadataを書き込むUnit of Workのfactory.
-            backend (BlobStorageBackend): contentをstagedに書込み、読み出すstorage backend.
+            backend (BlobStorageBackend): contentをstagedに書込み,読み出すstorage backend.
             storage_backend (BlobStorageBackendKind): 作成するmetadataに保存するbackend種別.
 
         """
@@ -114,7 +114,7 @@ class BlobStorageService:
         *,
         content_type: str,
     ) -> BlobStoreResult:
-        """順序付きbyte streamを保存するか、既存の同一blobを返す.
+        """順序付きbyte streamを保存するか,既存の同一blobを返す.
 
         Args:
             chunks (ByteChunks): 順番に消費して保存するbyte chunk stream.
@@ -129,7 +129,7 @@ class BlobStorageService:
             BackendWriteError: staged backendへの書込みまたはfinalizeが失敗した場合.
 
         Notes:
-            SHA-256、byte size、storage keyをstream消費中に計算する. metadataはcontent
+            SHA-256,byte size,storage keyをstream消費中に計算する. metadataはcontent
             finalize後に作成する.
         """
         normalized_content_type = _require_content_type(content_type)
@@ -226,7 +226,7 @@ class BlobStorageService:
             ByteChunks: backendから順番にcontentを読むchunk stream.
 
         Raises:
-            BlobContentUnavailableError: metadataがないか、streamを開く前にbackend
+            BlobContentUnavailableError: metadataがないか,streamを開く前にbackend
                 contentがない場合.
             BlobContentMissingError: streamを返した後にbackend contentが削除された場合.
             BackendReadError: 開いたbackend streamの読取り中にerrorが発生した場合.
@@ -260,20 +260,20 @@ class BlobStorageService:
             bytes: streamの全chunkを連結したblob content.
 
         Raises:
-            BlobContentUnavailableError: metadataがないか、streamを開く前にbackend
+            BlobContentUnavailableError: metadataがないか,streamを開く前にbackend
                 contentがない場合.
             BlobContentMissingError: streamを返した後にbackend contentが削除された場合.
             BackendReadError: backend streamの読取り中にerrorが発生した場合.
 
         Notes:
-            大きいblobにはstream_read()を使い、全contentをmemoryへ保持しないこと.
+            大きいblobにはstream_read()を使い,全contentをmemoryへ保持しないこと.
         """
         chunks = await self.stream_read(blob_id)
         return b"".join([chunk async for chunk in chunks])
 
 
 def _require_content_type(content_type: str) -> str:
-    """Content typeから前後空白を除去し、空文字列を拒否する.
+    """Content typeから前後空白を除去し,空文字列を拒否する.
 
     Args:
         content_type (str): callerが指定したMIME content type.
@@ -303,13 +303,13 @@ def _storage_key_for_sha256(digest: str) -> str:
 
 
 async def _discard_for_failure(staged: StagedBlobWrite) -> None:
-    """未finalizeのstaged writeを破棄し、破棄失敗を記録する.
+    """未finalizeのstaged writeを破棄し,破棄失敗を記録する.
 
     Args:
         staged (StagedBlobWrite): failure後に破棄するstaged backend write.
 
     Returns:
-        None: 破棄を試行し、呼び出し側へ値を返さずに完了する.
+        None: 破棄を試行し,呼び出し側へ値を返さずに完了する.
 
     Notes:
         discard()の例外は元の書込み失敗を隠さないためlogへ記録して抑制する.

@@ -20,7 +20,7 @@ class InMemoryReplayDownloadAccountingGate:
         _activity_markers (dict[int, float]): viewer ごとの activity marker expiration.
 
     Notes:
-        claim 時に期限切れ marker を削除し、Valkey adapter と同じ first-claim semantics を提供する.
+        claim 時に期限切れ marker を削除し,Valkey adapter と同じ first-claim semantics を提供する.
         process local memory のため永続性と cross-process atomicity は持たない.
     """
 
@@ -28,7 +28,7 @@ class InMemoryReplayDownloadAccountingGate:
         """Clock を指定して replay download accounting gate を初期化する.
 
         Args:
-            time_func (Callable[[], float] | None): 現在時刻を秒で返す clock。未指定時は
+            time_func (Callable[[], float] | None): 現在時刻を秒で返す clock.未指定時は
                 time.monotonic.
 
         Returns:
@@ -55,7 +55,7 @@ class InMemoryReplayDownloadAccountingGate:
             ttl_seconds (int): marker を保持する秒数.
 
         Returns:
-            bool: marker を新規作成した場合は True、既存 marker がある場合は False.
+            bool: marker を新規作成した場合は True,既存 marker がある場合は False.
 
         Raises:
             ValueError: ttl_seconds が 1 未満の場合.
@@ -100,7 +100,7 @@ class InMemoryReplayDownloadAccountingGate:
             ttl_seconds (int): marker を保持する秒数.
 
         Returns:
-            bool: marker を新規作成した場合は True、既存 marker がある場合は False.
+            bool: marker を新規作成した場合は True,既存 marker がある場合は False.
 
         Raises:
             ValueError: ttl_seconds が 1 未満の場合.
@@ -146,7 +146,7 @@ class InMemoryReplayDownloadAccountingGate:
             ttl_seconds (int): 新規 marker を保持する正の秒数.
 
         Returns:
-            bool: marker を新規作成した場合は True、既存 marker が有効なら False.
+            bool: marker を新規作成した場合は True,既存 marker が有効なら False.
 
         Raises:
             ValueError: ttl_seconds が 1 未満の場合.

@@ -41,7 +41,7 @@ class SQLAlchemyPersonalBestQueryRepository:
             None: 読み取り用session factoryを保持したrepository instanceを初期化する.
 
         Notes:
-            初期化時にはsessionを生成せず、personal best projectionを変更しない.
+            初期化時にはsessionを生成せず,personal best projectionを変更しない.
         """
         self._session_factory = session_factory
 
@@ -72,7 +72,7 @@ class SQLAlchemyPersonalBestQueryRepository:
             ValueError: result Score modelのrulesetまたはplaystyleをdomain enumへ変換できない場合.
 
         Notes:
-            queryは最大1rowを返し、projectionとScoreの永続stateを変更しない.
+            queryは最大1rowを返し,projectionとScoreの永続stateを変更しない.
         """
         async with self._session_factory() as session:
             rows = (
@@ -106,7 +106,7 @@ def _personal_best_statement(
     playstyle: Playstyle,
     category: LeaderboardCategory,
 ) -> Executable:
-    """Personal best Score、表示User名、replay有無、rankを取得するstatementを構築する.
+    """Personal best Score,表示User名,replay有無,rankを取得するstatementを構築する.
 
     Args:
         user_id (int): personal bestを検索するUserの永続ID.
@@ -116,10 +116,10 @@ def _personal_best_statement(
         category (LeaderboardCategory): personal best projectionを絞り込むleaderboard category.
 
     Returns:
-        Executable: 最大1rowのScore、username、has_replay、rankを返すSELECT statement.
+        Executable: 最大1rowのScore,username,has_replay,rankを返すSELECT statement.
 
     Notes:
-        rankは同一Beatmap、ruleset、playstyle、category内でranking valueが大きいrowの数に1を加える.
+        rankは同一Beatmap,ruleset,playstyle,category内でranking valueが大きいrowの数に1を加える.
     """
     better_personal_best = aliased(PersonalBestModel)
     replay_exists = (
@@ -165,11 +165,11 @@ def _iter_personal_best_rows(
         rows (object): tuple形式またはattribute形式のSQLAlchemy result row list.
 
     Returns:
-        list[tuple[ScoreModel, str, bool, int]]: Score、username、replay有無、rankの順のtuple.
+        list[tuple[ScoreModel, str, bool, int]]: Score,username,replay有無,rankの順のtuple.
         必須fieldの型が一致しないrowは含めない.
 
     Notes:
-        has_replayはtruthinessでboolへ変換し、tuple形式とnamed row形式の両方を受け入れる.
+        has_replayはtruthinessでboolへ変換し,tuple形式とnamed row形式の両方を受け入れる.
     """
     result: list[tuple[ScoreModel, str, bool, int]] = []
     for row in cast("list[object]", rows):
@@ -220,7 +220,7 @@ def _score_listing_from_models(
         ValueError: score_modelのrulesetまたはplaystyleをdomain enumへ変換できない場合.
 
     Notes:
-        Score fieldは変換せずに転記し、rulesetとplaystyleだけをdomain enumへ変換する.
+        Score fieldは変換せずに転記し,rulesetとplaystyleだけをdomain enumへ変換する.
     """
     return GetscoresPersonalBest(
         score_id=score_model.id,

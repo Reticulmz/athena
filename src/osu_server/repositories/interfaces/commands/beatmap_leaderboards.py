@@ -40,7 +40,7 @@ class BeatmapLeaderboardUserScope:
             None: 値が永続化キーの制約を満たすことを確認したことを示す.
 
         Raises:
-            ValueError: beatmap_id または user_id が正でない場合、あるいは checksum が
+            ValueError: beatmap_id または user_id が正でない場合,あるいは checksum が
                 32文字の小文字 MD5 hexadecimal string でない場合に送出する.
         """
         if self.beatmap_id <= 0:
@@ -73,10 +73,10 @@ class BeatmapLeaderboardUserBest:
     """1 user の Raw Mod scope に対応する score-priority projection row.
 
     Attributes:
-        id (int | None): 永続化済み row の正の識別子。未保存時は None.
+        id (int | None): 永続化済み row の正の識別子.未保存時は None.
         scope (BeatmapLeaderboardUserBestScope): Row が代表する user と Mod の自然キー.
         score_id (int): Row が参照する正の Score ID.
-        rank_key (ScoreRankKey): Score priority を決める rank key。score_id と一致する.
+        rank_key (ScoreRankKey): Score priority を決める rank key.score_id と一致する.
     """
 
     id: int | None
@@ -91,7 +91,7 @@ class BeatmapLeaderboardUserBest:
             None: Row の識別子と rank key が整合していることを示す.
 
         Raises:
-            ValueError: 存在する id または score_id が正でない場合、あるいは rank_key の
+            ValueError: 存在する id または score_id が正でない場合,あるいは rank_key の
                 score_id が score_id と一致しない場合に送出する.
         """
         if self.id is not None and self.id <= 0:
@@ -112,7 +112,7 @@ class UpsertBeatmapLeaderboardUserBest:
     Attributes:
         scope (BeatmapLeaderboardUserBestScope): 比較対象となる user と Mod の自然キー.
         score_id (int): 候補となる正の Score ID.
-        rank_key (ScoreRankKey): 候補の score priority を決める key。score_id と一致する.
+        rank_key (ScoreRankKey): 候補の score priority を決める key.score_id と一致する.
     """
 
     scope: BeatmapLeaderboardUserBestScope
@@ -126,7 +126,7 @@ class UpsertBeatmapLeaderboardUserBest:
             None: 候補の score 識別子と rank key が整合していることを示す.
 
         Raises:
-            ValueError: score_id が正でない場合、または rank_key の score_id が score_id と
+            ValueError: score_id が正でない場合,または rank_key の score_id が score_id と
                 一致しない場合に送出する.
         """
         if self.score_id <= 0:
@@ -178,7 +178,7 @@ class BeatmapLeaderboardBeatmapProjectionSlice:
             None: beatmap_ids が projection slice の制約を満たすことを示す.
 
         Raises:
-            ValueError: beatmap_ids が空の場合、または非正の ID を含む場合に送出する.
+            ValueError: beatmap_ids が空の場合,または非正の ID を含む場合に送出する.
         """
         if len(self.beatmap_ids) == 0:
             msg = "beatmap_ids must not be empty"
@@ -197,8 +197,8 @@ class BeatmapLeaderboardCommandRepository(Protocol):
     """Raw Mod scope ごとの user 最高 score を更新する command port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -245,7 +245,7 @@ class BeatmapLeaderboardCommandRepository(Protocol):
             scope (BeatmapLeaderboardUserScope): Mod を含まない検索 scope.
 
         Returns:
-            BeatmapLeaderboardUserBest | None: Global 最高 score。未登録時は None.
+            BeatmapLeaderboardUserBest | None: Global 最高 score.未登録時は None.
         """
         ...
 
@@ -282,7 +282,7 @@ class BeatmapLeaderboardCommandRepository(Protocol):
             None: Projection slice の置換が完了したことを示す.
 
         Raises:
-            ValueError: rows に slice 外の scope が含まれる場合、または score_id が別の
+            ValueError: rows に slice 外の scope が含まれる場合,または score_id が別の
                 leaderboard projection scope で既に使用されている場合に送出する.
         """
         ...

@@ -30,7 +30,7 @@ class UpsertPersonalBest:
             None: score_id と ranking_value が候補の制約を満たすことを示す.
 
         Raises:
-            ValueError: score_id が正でない場合、または ranking_value が負の場合に送出する.
+            ValueError: score_id が正でない場合,または ranking_value が負の場合に送出する.
         """
         if self.score_id <= 0:
             msg = "score_id must be positive"
@@ -44,8 +44,8 @@ class PersonalBestCommandRepository(Protocol):
     """Personal best projection の mutation と consistency-check port.
 
     Notes:
-        Runtime 実装は command Unit of Work から取得する。各操作は同じ Unit of Work が
-        所有する transaction に参加し、この repository 自身は commit または rollback を
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
         実行しない.
     """
 
@@ -56,7 +56,7 @@ class PersonalBestCommandRepository(Protocol):
             scope (PersonalBestScope): 取得する personal best の自然キー.
 
         Returns:
-            PersonalBest | None: 現在の personal best。未登録時は None.
+            PersonalBest | None: 現在の personal best.未登録時は None.
         """
         ...
 
