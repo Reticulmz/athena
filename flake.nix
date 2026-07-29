@@ -37,6 +37,8 @@
               # --- Priority 0: フォーマッタ (ファイル修正系、最初に実行) ---
               ruff-format = {
                 enable = true;
+                entry = "uv run ruff format";
+                files = "\\.py$";
                 priority = 0;
               };
               trailing-whitespace = {
@@ -57,7 +59,17 @@
               # --- Priority 10: リンタ/チェック (読み取り専用、並列) ---
               ruff = {
                 enable = true;
+                entry = "uv run ruff check --fix";
+                files = "\\.py$";
                 priority = 10;
+              };
+              docstrings = {
+                enable = true;
+                name = "docstrings";
+                entry = "./scripts/ci.sh docstrings";
+                files = "\\.py$";
+                pass_filenames = false;
+                priority = 20;
               };
               check-merge-conflict = {
                 enable = true;
